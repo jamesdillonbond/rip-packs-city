@@ -238,6 +238,52 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const skipRefresh = req.nextUrl.searchParams.get("skip_refresh") === "true"
 
+  // Call a propagation RPC and record the outcome in pipeline_runs, so a persistent
+  // failure is visible to the DB-side monitors instead of only to Vercel logs.
+  // p_collection_slug is null: both RPCs are global, not per-collection.
+  async function runRefresh(fn: string, args: Record<string, unknown>) {
+    const startedAtIso = new Date().toISOString()
+    const t0 = Date.now()
+    let ok = true
+    let errorMessage: string | null = null
+    let rowsWritten = 0
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc(fn, args)
+      if (error) {
+        ok = false
+        errorMessage = error.message
+        console.log(`[wmc-fmv-populate] ${fn} rpc error: ${error.message}`)
+      } else {
+        rowsWritten = Number(data ?? 0) || 0
+      }
+    } catch (e) {
+      ok = false
+      errorMessage = e instanceof Error ? e.message : String(e)
+      console.log(`[wmc-fmv-populate] ${fn} threw: ${errorMessage}`)
+    }
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: fn,
+        p_started_at: startedAtIso,
+        p_rows_found: rowsWritten,
+        p_rows_written: rowsWritten,
+        p_rows_skipped: 0,
+        p_ok: ok,
+        p_error: errorMessage,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { ...args, duration_ms: Date.now() - t0 },
+      })
+    } catch (e) {
+      console.log(
+        `[wmc-fmv-populate] ${fn} log_pipeline_run err: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+  }
+
   // CRON-30S: the per-collection FMV+image populate + the FMV-drift refresh take
   // >30s to finish — longer than cron-job.org's hard client cap, so every tick
   // was marked "Failed (timeout)" even though the work lands fine server-side
@@ -255,35 +301,35 @@ async function handle(req: NextRequest): Promise<Response> {
       // Targeted FMV-drift refresh: re-evaluate wmc.fmv_usd for editions whose
       // snapshot moved in the last REFRESH_SINCE_MINUTES. The per-collection loop
       // above is NULL-only (never re-evals an already-set fmv), so without this a
-      // changed snapshot never propagates to wmc. refresh_wmc_fmv_changed is
-      // global + timeout-proof (chunked internal loop). Runs once per full tick;
+      // changed snapshot never propagates to wmc. Runs once per full tick;
       // skipped on single-collection calls and ?skip_refresh=true.
+      //
+      // ⚠ THESE TWO RPCs USED TO LOG ONLY TO console.log. On 2026-08-12 both were
+      // found failing with 57014 on EVERY 5-minute tick, and had been for 10+ hours
+      // (rwfd_state.last_cutoff frozen) — while pipeline_runs showed 988 runs and
+      // ZERO failures, because only runOne wrote rows there and the route returns
+      // 202 regardless. The propagation path had no DB-visible failure signal at
+      // all, so nothing could alert. They now log to pipeline_runs like everything
+      // else. Do not quietly revert this to console.log.
       if (!slugParam && !skipRefresh) {
-        try {
-          const { error } = await (supabaseAdmin as any).rpc(
-            "refresh_wmc_fmv_changed",
-            { p_since_minutes: REFRESH_SINCE_MINUTES, p_limit: 50000 }
-          )
-          if (error) console.log(`[wmc-fmv-populate] refresh rpc error: ${error.message}`)
-        } catch (e) {
-          console.log(`[wmc-fmv-populate] refresh threw: ${e instanceof Error ? e.message : String(e)}`)
-        }
+        await runRefresh("refresh_wmc_fmv_changed", {
+          p_since_minutes: REFRESH_SINCE_MINUTES,
+          p_limit: 50000,
+        })
 
         // Audit 2026-06-09 Class 3: keep the small set of active (allow_list)
-        // user wallets converged. refresh_wmc_fmv_changed only re-evals editions
-        // whose snapshot MOVED recently, so a poison that settled days ago stays
-        // drifted (Trevor saw one edition at $9,000 and $3.30 across two copies).
-        // This deviation-driven sweep rewrites any held wmc row that deviates
-        // >25% from the latest snapshot. Scoped + chunked + budget-bounded.
-        try {
-          const { error } = await (supabaseAdmin as any).rpc(
-            "refresh_wmc_fmv_drift_active",
-            { p_deviation_pct: 25, p_limit: 20000 }
-          )
-          if (error) console.log(`[wmc-fmv-populate] drift refresh rpc error: ${error.message}`)
-        } catch (e) {
-          console.log(`[wmc-fmv-populate] drift refresh threw: ${e instanceof Error ? e.message : String(e)}`)
-        }
+        // user wallets converged.
+        //
+        // ⚠ The old comment here claimed this "rewrites any held wmc row that
+        // deviates >25% from the latest snapshot" — i.e. the backstop for a poison
+        // that settled days ago. THE BODY DOES NOT DO THAT: it is gated on
+        // fmv_snapshots.computed_at > rwfd_state.last_cutoff, so it only ever
+        // considers RECENTLY CHANGED editions. Settled drift is never revisited by
+        // either sweep. There is currently no catch-all anywhere.
+        await runRefresh("refresh_wmc_fmv_drift_active", {
+          p_deviation_pct: 25,
+          p_limit: 20000,
+        })
       }
     } catch (e) {
       // pipeline_runs-as-crash-logger: a background crash before/around runOne

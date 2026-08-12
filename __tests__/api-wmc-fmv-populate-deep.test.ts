@@ -206,6 +206,58 @@ describe("wmc-fmv-populate — params + refresh degradation", () => {
     expect(rpcNames(spy.rpcCalls)).not.toContain("refresh_wmc_fmv_drift_active")
   })
 
+  // 2026-08-12 REGRESSION GUARD. Both propagation RPCs were failing with 57014 on
+  // every 5-minute tick for 10+ hours while pipeline_runs showed 988 runs and ZERO
+  // failures, because their only failure signal was console.log. The route returns
+  // 202 regardless, so nothing DB-side could ever alert. These two tests assert the
+  // failure is now RECORDED, not merely logged -- that is the whole fix.
+  it("records each global refresh in pipeline_runs under its own pipeline name", async () => {
+    const spy = install({
+      "rpc:refresh_wmc_fmv_changed": { data: 12, error: null },
+      "rpc:refresh_wmc_fmv_drift_active": { data: 7, error: null },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const changed = logsFor("refresh_wmc_fmv_changed", spy.rpcCalls)
+    const drift = logsFor("refresh_wmc_fmv_drift_active", spy.rpcCalls)
+    expect(changed).toHaveLength(1)
+    expect(drift).toHaveLength(1)
+    expect((changed[0].args as any).p_ok).toBe(true)
+    expect((changed[0].args as any).p_rows_written).toBe(12)
+    expect((drift[0].args as any).p_ok).toBe(true)
+    expect((drift[0].args as any).p_rows_written).toBe(7)
+    // Global RPCs are not per-collection; a slug here would corrupt cadence checks.
+    expect((changed[0].args as any).p_collection_slug).toBeNull()
+  })
+
+  it("a statement timeout in either refresh is written to pipeline_runs as NOT ok", async () => {
+    const spy = install({
+      "rpc:refresh_wmc_fmv_changed": {
+        data: null,
+        error: { message: "canceling statement due to statement timeout" },
+      },
+      "rpc:refresh_wmc_fmv_drift_active": {
+        data: null,
+        error: { message: "canceling statement due to statement timeout" },
+      },
+    })
+    await POST(req())
+    await runDeferred()
+
+    for (const fn of ["refresh_wmc_fmv_changed", "refresh_wmc_fmv_drift_active"]) {
+      const rows = logsFor(fn, spy.rpcCalls).map((c) => c.args as any)
+      expect(rows).toHaveLength(1)
+      expect(rows[0].p_ok).toBe(false)
+      expect(rows[0].p_error).toMatch(/statement timeout/)
+    }
+    // The per-collection rows still report ok -- which is exactly why the old
+    // console.log-only handling was invisible. The distinct pipeline names are what
+    // make the outage detectable.
+    const perColl = logsFor("wmc-fmv-populate", spy.rpcCalls).map((c) => c.args as any)
+    expect(perColl.every((r) => r.p_ok !== false)).toBe(true)
+  })
+
   it("a refresh_wmc_fmv_changed error does not stop the drift sweep", async () => {
     const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: { message: "refresh down" } } })
     await GET(req())
