@@ -75,23 +75,23 @@ export default defineConfig({
         // app/api/**/route.ts; this gate was components/** only). Scoped to
         // *Client.tsx so the async server page.tsx wrappers — which can't be
         // cleanly rendered in jsdom — don't drown the signal. Added 2026-07-31.
-        "app/insights/**/*Client.tsx",
-        // Added 2026-08-11. The app/ glob above reaches only app/insights, so
-        // the PUBLIC collector profile (app/profile/[username]/ProfileClient.tsx,
-        // 627 lines) was measured by NEITHER gate and had zero tests — its money
-        // formatting, RPC-score bands, portfolio sparkline and trophy grid all
-        // dark. Scoped to app/profile rather than a blanket app/**/*Client.tsx
-        // because two other client components (pack/[id]/PackLifecycleClient,
-        // admin/flowty-errors/ErrorTriageClient) are still untested; widen this
-        // when they gain tests rather than importing their debt into the gate.
-        "app/profile/**/*Client.tsx",
-        // Three insights surfaces are CLIENT page.tsx files (not the *Client.tsx
-        // convention), so the glob above missed them and they sat under app/
-        // measured by NEITHER gate despite carrying real wallet-paste + fetch +
-        // row-mapping logic. Named by explicit path (the only client page.tsx
-        // under app/insights) so the server page.tsx wrappers stay out. The
-        // insights-gate-include-completeness rot-guard keeps this list honest.
-        // Added 2026-08-01.
+        // ⚠ ONE blanket glob for every client component under app/, NOT a list
+        // of per-directory globs. `app/(collections)/**/*Client.tsx` matches
+        // NOTHING: Next.js route groups are parenthesised, and picomatch reads
+        // `(...)` as an extglob group. It fails SILENTLY — the config looks
+        // right, vitest reports no error, and the file simply never enters the
+        // measured set. Verified 2026-08-11: that glob returned false for
+        // app/(collections)/[collection]/pack/[id]/PackLifecycleClient.tsx while
+        // `app/**/*Client.tsx` returned true. (Dynamic segments like
+        // `[collection]` are the same hazard — `[...]` is a character class —
+        // though `**` absorbs them.) Escaping works but is easy to get wrong on
+        // the next edit, so prefer the blanket glob and keep every matched file
+        // tested.
+        //
+        // Currently matches: the ~24 insights board clients, ProfileClient (the
+        // public collector profile), PackLifecycleClient (the public pack page)
+        // and ErrorTriageClient (the admin triage console's auth gate).
+        "app/**/*Client.tsx",
         "app/insights/squeeze-check/page.tsx",
         "app/insights/tc-report/page.tsx",
         "app/insights/pack-reality/page.tsx",
