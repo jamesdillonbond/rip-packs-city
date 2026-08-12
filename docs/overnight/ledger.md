@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 3) · the silent-empty class covered 13 MORE `/insights` pages; hand-enumeration replaced with a directory-driven guard that actually fails
+
+**Fourth and final widening of the same class tonight.** The prior two passes wired 11 boards and I recorded the class as closed. It was closed for the pages I had listed. A directory sweep found **13 more server pages** that swallow a failed read into empty data and render it at HTTP 200.
+
+- **10 `catch`-cohort pages** (`new-collectors`, `pack-drops`, `pack-sniper`, `parallel-premiums`, `rookie-board`, `serial-premiums`, `set-completers`, `top-sales`, `underpriced-serials`, `market-pulse`): the fetch helper's `catch` returned an empty payload. Each now threads `ok` and renders `<DegradedDataNotice>` — **server-side, no client changes**, because the component is documented server-safe (no `"use client"`, no hooks). 14 files touched instead of 28.
+- **3 self-rendering pages** (`allday-pack-market`, `allday-pack-reality`, `topshot-pack-market`) — **the sharpest instance yet.** Their empty state does not merely render blank, it asserts a REASON: *"Still gathering sales. The complete sealed-pack sale history is backfilling…"*. On a query failure that is a **false explanation of an outage as progress**. The copy is now gated on `ok`, so a failure shows the notice instead of a fabricated pipeline status.
+- **`market` was already honest** (its `loadError` prop, 2026-08-02) and was correctly left alone.
+
+**⚠ The guard I wrote first COULD NOT FAIL, and only mutation-testing caught it.** It gated on the page naming `supabaseAdmin` — but many of these fetch through a lib helper (`top-sales` → `fetchTopSales`, `market-pulse` → `fetchMarketPulse`) and never name the client, so those pages were **skipped entirely**: I removed every signal from `top-sales` and the guard still passed. Re-pointed at the failure-handling shape instead, it immediately surfaced 3 pages my hand sweep had missed. **Mutation-test a guard by breaking the thing it guards and confirming it reds — a guard that passes on clean code proves nothing.**
+- It then over-matched 3 CLIENT pages (`pack-reality`, `squeeze-check`, `tc-report`) whose `catch` already calls `setError`, so the failure is visible. Those are a different class and are now excluded by a `"use client"` check — recorded so nobody "fixes" them.
+
+**The transferable lesson, stated once for all four passes:** every one of these was filed with the scope of *where I happened to look* — 6 routes when it was 29, `/insights` when it was all of `/api/public`, inline-fetch when there was a second cache path, 11 boards when it was 24 pages. **Enumerate the paths that can produce a class, not the instances you tripped over — and prefer a directory-driven property over a hand-maintained list, because the list cannot catch the page nobody thought to add.**
+
+**Verification.** `tsc` clean · primary gate **exit 0** (91/77.65/92.79/93.15) · component gate **exit 0** (89.57/80.39/88.84/92.66).
+
+**Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+
 ### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 2) · the CACHED boards had the same silent-empty hole by a different route — all 5 now surface a `live-degraded` cache read
 
 **Completes the honest-degradation class.** Earlier tonight wired the 6 inline-fetch boards and recorded them as done. That was true for the path I was looking at and **missed a second path entirely**: the 5 boards served through `readBoardOrLive` (`deals`, `first-mint`, `rookies`, `candy-mlb`, `panini-squeeze`).
