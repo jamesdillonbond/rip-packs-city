@@ -754,11 +754,21 @@ export default defineConfig({
       //     uncovered per-card render helpers that only run on specific data
       //     branches. Raise these once those cards gain per-card data-branch
       //     tests — and as always, never lower them to make a red build pass.
+      //   2026-08-11 (same session, cont.): NOW RAISED — the condition stated
+      //     directly above is met. The OG cards gained per-card data-branch
+      //     coverage (__tests__/api-og-cards-render-sweep.test.ts now supplies
+      //     each card's real envelope shape and PROVES the data branch ran by
+      //     requiring the populated render to differ from the dead-upstream
+      //     one), so the ~65 uncovered render helpers largely execute. Functions
+      //     — the metric left at a fragile +0.61 — went 92.11 → 92.77, and every
+      //     buffer is now ≥ +1.27. Actuals: 90.98 st / 77.59 br / 92.77 fn /
+      //     93.14 ln; thresholds set ~0.5 under, the margin prior waves used
+      //     successfully against concurrent-push churn (lesson 47f901a1).
       thresholds: {
-        statements: 89.3,
-        branches: 75.1,
-        functions: 91.5,
-        lines: 91.6,
+        statements: 90.4,
+        branches: 77.0,
+        functions: 92.2,
+        lines: 92.6,
       },
     },
   },

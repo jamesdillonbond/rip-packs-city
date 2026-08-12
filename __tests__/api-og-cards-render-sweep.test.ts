@@ -148,22 +148,77 @@ const UNIVERSAL_ROW: Record<string, unknown> = {
 const ROWS = Array.from({ length: 8 }, (_, i) => ({ ...UNIVERSAL_ROW, rank: i + 1 }))
 
 /**
- * JSON body shaped as a superset of every public-insights envelope the cards
- * consume (`rows`, `data`, `items`, plus assorted scalar summary fields).
+ * JSON body shaped as the UNION of every envelope these cards consume.
+ *
+ * ⚠ The union matters more than it looks. Each card reads a DIFFERENT top-level
+ * key — `rows` (market, market-pulse), `wallets` + `stats` (cross-collection),
+ * `deals` + `meta.stats` (pack-sniper), `drops` + `meta` (pack-drops),
+ * `trophies` + `stats` (first-mint), `stats.*` scalars (the /insights hub). A
+ * payload carrying only `rows` silently sends most cards down their FALLBACK
+ * branch, which still renders a valid PNG — so the sweep passes while the
+ * per-card formatters (fmtVol / shortAddr / tierColor / num / usd …) never
+ * execute. That is exactly how these cards sat at 20-40% function coverage
+ * while every assertion here was green.
  */
+const MARKET_ROWS = (() => {
+  // market/ needs a per-tier time series incl. an "ALL" tier, spanning >30d so
+  // the 30-day change leg resolves rather than short-circuiting to null.
+  const out: Array<Record<string, unknown>> = []
+  const day = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 86_400_000).toISOString().slice(0, 10)
+  for (const tier of ["ALL", "LEGENDARY", "RARE", "FANDOM", "COMMON"]) {
+    for (let i = 0; i < 45; i += 1) {
+      out.push({
+        tier,
+        d: day(i),
+        median_px: 100 + i,
+        sales: 10 + i,
+        volume_usd: 1000 + i * 10,
+        // market-pulse reads the SAME `rows` key but a different row shape, and
+        // filters on `sales_7d > 0` — without these three it dropped every row
+        // and silently rendered its fallback (caught by the data-branch check).
+        collection_name: "NBA Top Shot",
+        volume_7d: 125_000 + i * 100,
+        sales_7d: 900 + i,
+        buyers_7d: 400 + i,
+      })
+    }
+  }
+  return out
+})()
+
 const UNIVERSAL_JSON: Record<string, unknown> = {
   ok: true,
-  rows: ROWS,
+  rows: MARKET_ROWS,
   data: ROWS,
   items: ROWS,
   results: ROWS,
   editions: ROWS,
   packs: ROWS,
   sales: ROWS,
+  // Per-card envelope keys (see the note above).
+  wallets: ROWS.map((r, i) => ({ ...r, address: `0x${(i + 1).toString(16).padStart(16, "0")}`, moments: 10 + i, collections: 3 })),
+  deals: ROWS.map((r) => ({ ...r, pack_name: "Test Pack", ev: 12.5, ask: 10, ev_ratio: 1.25 })),
+  drops: ROWS.map((r) => ({ ...r, drop_name: "Test Drop", packs: 500, sold_pct: 40 })),
+  trophies: ROWS.map((r) => ({ ...r, multiplier: 3.2, price_usd: 500 })),
+  distribution: ROWS,
+  top_ev: ROWS,
   count: ROWS.length,
   total: ROWS.length,
-  meta: { coverage: { basis: "listing_gated", note: "test" } },
-  summary: { ...UNIVERSAL_ROW },
+  meta: {
+    coverage: { basis: "listing_gated", note: "test" },
+    total_drops: 12,
+    stats: { positiveEv: 7 },
+  },
+  stats: {
+    ...UNIVERSAL_ROW,
+    rips_60d: 1234,
+    zero_value_pct: 8.1,
+    cohort_size: 246,
+    trophies_90d: 42,
+    avg_multiplier: 3.4,
+    median_pull_value_usd: 26,
+    mean_pull_value_usd: 86,
+  },
   ...UNIVERSAL_ROW,
 }
 
@@ -194,6 +249,40 @@ function chainProxy(data: unknown): any {
   })
 }
 
+/** Rows PostgREST returns for the profile card's four reads, keyed by table. */
+const REST_ROWS: Record<string, unknown[]> = {
+  profile_bio: [
+    {
+      user_id: "11111111-1111-1111-1111-111111111111",
+      display_name: "Trevor",
+      tagline: "Portland Trail Blazers Team Captain",
+      accent_color: "#E03A2F",
+      avatar_url: null,
+      favorite_team: "Portland Trail Blazers",
+    },
+  ],
+  saved_wallets: [
+    { cached_fmv_usd: 12345.67, cached_moment_count: 250, cached_badges: ["rookie_year"] },
+    { cached_fmv_usd: 890.12, cached_moment_count: 40, cached_badges: [] },
+  ],
+  trophy_moments: Array.from({ length: 6 }, (_, i) => ({
+    slot: i,
+    player_name: `Player ${i + 1}`,
+    thumbnail_url: null, // a URL would make Satori fetch real art
+    tier: ["LEGENDARY", "RARE", "COMMON", "FANDOM", "ULTIMATE", "RARE"][i],
+  })),
+  profile_achievements: [
+    { achievement_key: "first_moment", tier: "gold" },
+    { achievement_key: "set_completer", tier: "silver" },
+  ],
+}
+
+/** Pick the PostgREST table out of a `/rest/v1/<table>?...` URL. */
+function restRowsFor(url: string): unknown[] {
+  const m = url.match(/\/rest\/v1\/([a-z_]+)/)
+  return (m && REST_ROWS[m[1]]) || []
+}
+
 function installSupabaseStub() {
   const client = {
     from: () => chainProxy(ROWS),
@@ -205,6 +294,31 @@ function installSupabaseStub() {
     supabase: client,
     default: client,
   }))
+  // og/pack/lifecycle builds its OWN client from @supabase/supabase-js rather
+  // than importing @/lib/supabase, so mocking only the latter left it on the
+  // null-lifecycle path.
+  vi.doMock("@supabase/supabase-js", () => ({
+    createClient: () => ({
+      ...client,
+      rpc: async () => ({ data: PACK_LIFECYCLE, error: null }),
+    }),
+  }))
+}
+
+/** Shape of get_pack_lifecycle's jsonb return (og/pack/lifecycle). */
+const PACK_LIFECYCLE = {
+  status: "opened",
+  pack_nft_id: "1",
+  collection: "nba_top_shot",
+  dist_name: "Test Drop",
+  purchased_at: "2026-07-01T00:00:00Z",
+  opened_at: "2026-07-02T00:00:00Z",
+  price_usd: 25,
+  pull_value_usd: 62.5,
+  pulls: [
+    { player_name: "Dame", tier: "LEGENDARY", serial_number: 7, fmv_usd: 40 },
+    { player_name: "Ant", tier: "RARE", serial_number: 88, fmv_usd: 22.5 },
+  ],
 }
 
 let originalFetch: typeof globalThis.fetch
@@ -225,35 +339,49 @@ function isAppApiRequest(input: RequestInfo | URL): boolean {
   const url =
     typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url
   if (!/^https?:/i.test(url)) return false
-  return url.includes("/api/")
+  // `/rest/v1/` is PostgREST: og/profile/[username] reads its bio/wallets/
+  // trophies/achievements straight from it rather than through an app route.
+  // Without this the card's fetches escaped to the real network, failed, and it
+  // rendered its FALLBACK — which is a valid PNG, so the sweep stayed green
+  // while the whole data branch (11 of 15 functions) never ran.
+  return url.includes("/api/") || url.includes("/rest/v1/")
 }
 
-function stubFetch(respond: () => Promise<Response>) {
+function stubFetch(respond: (url: string) => Promise<Response>) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!isAppApiRequest(input)) return originalFetch(input as never, init)
-    return respond()
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url
+    return respond(url)
   }) as unknown as typeof globalThis.fetch
 }
 
 beforeEach(() => {
+  // Both PostgREST-backed cards return their fallback outright when these are
+  // unset, so without them their data branches are unreachable in test.
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://stub.supabase.co"
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "stub-service-key"
   originalFetch = globalThis.fetch
   // Every self-fetch resolves to the universal envelope. No card in this sweep
   // may touch the network: an unstubbed fetch would make the suite dependent on
   // prod being up, and on a slow/500 upstream it would assert the WRONG card.
-  stubFetch(
-    async () =>
-      new Response(JSON.stringify(UNIVERSAL_JSON), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-  )
+  stubFetch(async (url) => {
+    const body = url.includes("/rest/v1/") ? restRowsFor(url) : UNIVERSAL_JSON
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
+  })
   installSupabaseStub()
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY
   vi.resetModules()
   vi.doUnmock("@/lib/supabase")
+  vi.doUnmock("@supabase/supabase-js")
   vi.restoreAllMocks()
 })
 
@@ -304,9 +432,9 @@ describe("OG cards degrade to a valid card when upstreams fail", () => {
 
   for (const path of SAMPLE) {
     it(`${path} still renders when the upstream throws`, async () => {
-      globalThis.fetch = vi.fn(async () => {
+      stubFetch(async () => {
         throw new Error("upstream down")
-      }) as unknown as typeof globalThis.fetch
+      })
       vi.doMock("@/lib/supabase", () => {
         const dead = {
           from: () => {
@@ -328,21 +456,78 @@ describe("OG cards degrade to a valid card when upstreams fail", () => {
   }
 
   it("renders when the upstream returns a non-ok status", async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response("nope", { status: 503 })
-    ) as unknown as typeof globalThis.fetch
+    stubFetch(async () => new Response("nope", { status: 503 }))
     const { res, buf } = await renderCard("app/api/og/insights/deals/route")
     assertRealPng(buf, res, "app/api/og/insights/deals/route")
   }, 60000)
 
   it("renders when the upstream returns an empty board", async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: true, rows: [], data: [], items: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-    ) as unknown as typeof globalThis.fetch
+    stubFetch(
+      async () =>
+        new Response(JSON.stringify({ ok: true, rows: [], data: [], items: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+    )
     const { res, buf } = await renderCard("app/api/og/insights/deals/route")
     assertRealPng(buf, res, "app/api/og/insights/deals/route")
   }, 60000)
+})
+
+describe("data-rich cards actually TAKE their data branch", () => {
+  // The sweep above proves every card emits a valid PNG. It cannot, on its own,
+  // prove the card USED its data: a card whose upstream shape it does not
+  // recognise falls back to generic copy and still returns a perfectly good
+  // 1200x630 PNG. That is not hypothetical — it is why these cards sat at
+  // 20-40% function coverage while every byte assertion was green.
+  //
+  // So for the cards carrying real per-card formatters, render TWICE — once with
+  // the populated fixture, once with a dead upstream — and require the two to
+  // differ. Identical bytes mean the populated render produced the fallback
+  // card, i.e. the data path is dead.
+  const DATA_CARDS: Array<{ path: string; query?: string; params?: Record<string, string> }> = [
+    { path: "app/api/og/insights/market/route" },
+    { path: "app/api/og/insights/cross-collection/route" },
+    { path: "app/api/og/insights/route" },
+    { path: "app/api/og/insights/market-pulse/route" },
+    { path: "app/api/og/insights/pack-sniper/route" },
+    { path: "app/api/og/insights/pack-drops/route" },
+    { path: "app/api/og/insights/first-mint/route" },
+    { path: "app/api/og/insights/deals/route" },
+    { path: "app/api/og/profile/[username]/route", params: { username: "trevor" } },
+    { path: "app/api/og/pack/lifecycle/route", query: "?id=1" },
+  ]
+
+  for (const card of DATA_CARDS) {
+    it(`${card.path} renders differently with data than without`, async () => {
+      const populated = await renderCard(card.path, card.query, card.params)
+      assertRealPng(populated.buf, populated.res, card.path)
+
+      // Same card, every upstream dead.
+      vi.resetModules()
+      stubFetch(async () => {
+        throw new Error("upstream down")
+      })
+      vi.doMock("@/lib/supabase", () => {
+        const dead = {
+          from: () => {
+            throw new Error("view unavailable")
+          },
+          rpc: async () => ({ data: null, error: { message: "down" } }),
+        }
+        return { supabaseAdmin: dead, supabase: dead, default: dead }
+      })
+      vi.doMock("@supabase/supabase-js", () => ({
+        createClient: () => ({ rpc: async () => ({ data: null, error: { message: "down" } }) }),
+      }))
+      const fallback = await renderCard(card.path, card.query, card.params)
+      assertRealPng(fallback.buf, fallback.res, card.path)
+
+      expect(
+        populated.buf.length,
+        `${card.path} rendered byte-identically with and without data — its data ` +
+          `branch is dead and the card is silently serving fallback copy.`
+      ).not.toBe(fallback.buf.length)
+    }, 60000)
+  }
 })
