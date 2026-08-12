@@ -22,6 +22,14 @@ import { createClient } from "@supabase/supabase-js"
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set ALLDAY_PACK_SUPPLY_GATE_KEY=<new-random>
 const GATE = Deno.env.get("ALLDAY_PACK_SUPPLY_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set ALLDAY_PACK_SUPPLY_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GATE_OLD = Deno.env.get("ALLDAY_PACK_SUPPLY_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
+}
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
 const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")
 const H = {
@@ -110,7 +118,7 @@ async function run() {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   const result = await run()
   return new Response(JSON.stringify({ done: true, ...result }), { status: 200, headers: { "content-type": "application/json" } })
 })

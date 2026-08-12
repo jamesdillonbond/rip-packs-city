@@ -75,6 +75,14 @@ import { createClient } from "@supabase/supabase-js"
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set TOPSHOT_PACK_OPENS_HISTORY_GATE_KEY=<new-random>
 const GATE = Deno.env.get("TOPSHOT_PACK_OPENS_HISTORY_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set TOPSHOT_PACK_OPENS_HISTORY_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GATE_OLD = Deno.env.get("TOPSHOT_PACK_OPENS_HISTORY_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
+}
 const REST = "https://rest-mainnet.onflow.org"
 const COLL = "95f28a17-224a-4025-96ad-adf8a4c63bfd" // Top Shot
 const OPENED = "A.0b2a3299cc857e29.PackNFT.Opened"
@@ -342,7 +350,7 @@ async function logRun(pipeline: string, startMs: number, ok: boolean, found: num
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   const mode = url.searchParams.get("mode") ?? "probe"
   const requestedFloor = Number(url.searchParams.get("floor") ?? SPORK_FLOOR)
   const floor = reachableFloor(requestedFloor)

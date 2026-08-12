@@ -25,6 +25,14 @@ const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set TOPSHOT_PACK_SUPPLY_GATE_KEY=<new-random>
 const GATE = Deno.env.get("TOPSHOT_PACK_SUPPLY_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set TOPSHOT_PACK_SUPPLY_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GATE_OLD = Deno.env.get("TOPSHOT_PACK_SUPPLY_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
+}
 const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? ""
 const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
 const GQL_ENDPOINT = TS_PROXY_URL || "https://public-api.nbatopshot.com/marketplace/graphql"
@@ -149,7 +157,7 @@ async function debugPool() {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   if (!USING_PROXY) return new Response(JSON.stringify({ error: "proxy env missing" }), { status: 500, headers: { "content-type": "application/json" } })
   const mode = url.searchParams.get("mode") ?? "supply"
   const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 1), 400)

@@ -43,6 +43,14 @@ import { createClient } from "@supabase/supabase-js"
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set ALLDAY_PACK_OPENS_GATE_KEY=<new-random>
 const GATE = Deno.env.get("ALLDAY_PACK_OPENS_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set ALLDAY_PACK_OPENS_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GATE_OLD = Deno.env.get("ALLDAY_PACK_OPENS_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
+}
 const REST = "https://rest-mainnet.onflow.org"
 const COLL = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const OPENED = "A.e4cf4bdc1751c65d.PackNFT.Opened"
@@ -409,7 +417,7 @@ async function logRun(pipeline: string, startMs: number, ok: boolean, found: num
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   const mode = url.searchParams.get("mode") ?? "probe"
   // Requested floor defaults to AllDay genesis; reachableFloor() clamps it up to
   // whatever is actually reachable (SPORK_FLOOR if the proxy is wired, else the

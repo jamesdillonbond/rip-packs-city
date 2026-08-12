@@ -32,6 +32,14 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required"
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set GOLAZOS_PACK_EV_GATE_KEY=<new-random>
 const GOLAZOS_CRON_KEY = Deno.env.get("GOLAZOS_PACK_EV_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set GOLAZOS_PACK_EV_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GOLAZOS_CRON_KEY_OLD = Deno.env.get("GOLAZOS_PACK_EV_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GOLAZOS_CRON_KEY !== "" && k === GOLAZOS_CRON_KEY) || (GOLAZOS_CRON_KEY_OLD !== "" && k === GOLAZOS_CRON_KEY_OLD))
+}
 
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
@@ -365,7 +373,7 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   const auth = req.headers.get("Authorization") ?? ""
   const keyParam = url.searchParams.get("key")
-  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}` && (!GOLAZOS_CRON_KEY || keyParam !== GOLAZOS_CRON_KEY)) {
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}` && !gateKeyOk(keyParam)) {
     return new Response("Unauthorized", { status: 401 })
   }
 

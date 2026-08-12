@@ -59,6 +59,14 @@ import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-w
 // accepting an empty ?key=. Rotate with:
 //   supabase secrets set PINNACLE_PACK_EV_GATE_KEY=<new-random>
 const GATE = Deno.env.get("PINNACLE_PACK_EV_GATE_KEY") ?? ""
+// Transitional SECOND key, read from its own secret — never a literal (this repo is PUBLIC).
+// During a key rotation, set PINNACLE_PACK_EV_GATE_KEY_OLD to the OUTGOING key: both are then accepted, so the
+// pg_cron ?key= values can be repointed one job at a time instead of atomically. Finish the
+// rotation by DELETING the _OLD secret — no redeploy needed. Both unset ⇒ still fails CLOSED.
+const GATE_OLD = Deno.env.get("PINNACLE_PACK_EV_GATE_KEY_OLD") ?? ""
+function gateKeyOk(k: string | null): boolean {
+  return !!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))
+}
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN") ?? ""
 
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -356,7 +364,7 @@ Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
   const url = new URL(req.url)
   const keyParam = url.searchParams.get("key")
-  const authed = (!!GATE && keyParam === GATE) ||
+  const authed = gateKeyOk(keyParam) ||
     (INGEST_SECRET_TOKEN !== "" && auth === `Bearer ${INGEST_SECRET_TOKEN}`)
   if (!authed) {
     return new Response(JSON.stringify({ error: "forbidden" }), {
