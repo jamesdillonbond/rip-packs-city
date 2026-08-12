@@ -133,6 +133,14 @@ const TABLE: Row[] = [
   ["/api/search", "POST", false],
   ["/api/search/anything", "GET", false, "exact match only — no subtree"],
 
+  // ── Follow-state probe ───────────────────────────────────────────────────────
+  // GET is public so the Follow button on the anon-readable profile page gets
+  // JSON instead of 50KB of login HTML; the route still calls requireUser() for
+  // its listing form, and the writers stay gated here.
+  ["/api/profile/follows", "GET", true],
+  ["/api/profile/follows", "POST", false, "follow write stays gated"],
+  ["/api/profile/follows", "DELETE", false, "unfollow write stays gated"],
+
   // ── Share cards + public profiles ────────────────────────────────────────────
   ["/share/0xabc", "GET", true],
   ["/share/0xabc", "POST", false],

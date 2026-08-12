@@ -525,6 +525,24 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if ((method === "GET" || method === "HEAD") && pathname === "/api/search") {
     return true
   }
+  // GET /api/profile/follows — the follow-state probe behind the Follow button
+  // on the anon-readable /profile/<username> page.
+  //
+  // Without this the proxy 302s anon to /login and the button receives ~50KB of
+  // login HTML at status 200 on every anonymous profile view. The button
+  // survives it (r.json() throws and its catch falls back to the sign-in CTA),
+  // so this is a waste-and-honesty fix rather than a broken-UI one: it lets the
+  // route return the { authed: false } it was written to return.
+  //
+  // Safe because the route gates ITSELF, per form: the ?username= probe reveals
+  // only whether the CURRENT viewer follows someone (anon → authed:false, no
+  // data), and the listing form (no query param) still calls requireUser() and
+  // 401s. isPublicPath sees no query string, so both forms bypass the proxy and
+  // the route's own guard is what protects the listing. GET/HEAD only — the
+  // POST/DELETE writers stay fully gated here.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/profile/follows") {
+    return true
+  }
 
   // ── Public share cards ───────────────────────────────────────────────
   // /share/<wallet> — the wallet-keyed, read-only collection-snapshot card
