@@ -75,10 +75,10 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (statsRes.error) {
-    return boardUnavailable(statsRes.error, "first-mint/stats");
+    return boardUnavailable(statsRes.error, "insights/first-mint/stats");
   }
   if (trophiesRes.error) {
-    return boardUnavailable(trophiesRes.error, "first-mint/trophies");
+    return boardUnavailable(trophiesRes.error, "insights/first-mint/trophies");
   }
 
   const elapsedMs = Date.now() - startedAt;

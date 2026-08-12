@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "offer-spread");
+    return boardUnavailable(error, "insights/offer-spread");
   }
 
   const res = NextResponse.json({

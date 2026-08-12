@@ -31,7 +31,7 @@ const TIMEOUT_TEXT = "canceling statement due to statement timeout"
 
 describe("boardUnavailable", () => {
   it("classifies a Postgres statement timeout as a retryable 503", async () => {
-    const res = boardUnavailable({ code: "57014", message: TIMEOUT_TEXT }, "squeeze")
+    const res = boardUnavailable({ code: "57014", message: TIMEOUT_TEXT }, "insights/squeeze")
     expect(res.status).toBe(503)
     expect(res.headers.get("Retry-After")).toBe("30")
     const body = await res.json()
@@ -49,7 +49,7 @@ describe("boardUnavailable", () => {
       { message: 'relation "topshot_squeeze_board" does not exist', code: "42P01" },
     ]
     for (const err of shapes) {
-      const body = await boardUnavailable(err, "squeeze").json()
+      const body = await boardUnavailable(err, "insights/squeeze").json()
       expect(JSON.stringify(body)).not.toContain("canceling statement")
       expect(JSON.stringify(body)).not.toContain("topshot_squeeze_board")
     }
@@ -61,19 +61,19 @@ describe("boardUnavailable", () => {
     // hand us one. safeApiError's message reader only understands Error objects
     // and objects with `.message`, so without normalization this silently fell
     // through to "internal" and a timeout was reported as a hard 500.
-    const res = boardUnavailable(TIMEOUT_TEXT, "market")
+    const res = boardUnavailable(TIMEOUT_TEXT, "insights/market")
     expect(res.status).toBe(503)
     expect((await res.json()).code).toBe("timeout")
   })
 
   it("reports a missing relation as unavailable (503), not as the caller's fault", async () => {
-    const res = boardUnavailable({ code: "42P01", message: "relation does not exist" }, "deals")
+    const res = boardUnavailable({ code: "42P01", message: "relation does not exist" }, "insights/deals")
     expect(res.status).toBe(503)
     expect((await res.json()).code).toBe("unavailable")
   })
 
   it("falls back to a generic 500 for an unrecognized failure", async () => {
-    const res = boardUnavailable({ message: "boom" }, "trophies")
+    const res = boardUnavailable({ message: "boom" }, "insights/trophies")
     expect(res.status).toBe(500)
     expect(res.headers.get("Retry-After")).toBeNull()
     const body = await res.json()
@@ -83,19 +83,19 @@ describe("boardUnavailable", () => {
   })
 
   it("uses the caller's fallback copy for an unclassified failure", async () => {
-    const body = await boardUnavailable({ message: "boom" }, "trophies", "Trophies are offline.").json()
+    const body = await boardUnavailable({ message: "boom" }, "insights/trophies", "Trophies are offline.").json()
     expect(body.error).toBe("Trophies are offline.")
   })
 
   it("marks every failure no-store so a 503 is never edge-cached", async () => {
     for (const err of [{ code: "57014", message: TIMEOUT_TEXT }, { message: "boom" }]) {
-      expect(boardUnavailable(err, "squeeze").headers.get("Cache-Control")).toBe("no-store")
+      expect(boardUnavailable(err, "insights/squeeze").headers.get("Cache-Control")).toBe("no-store")
     }
   })
 
   it("logs the detail server-side so the failure stays diagnosable", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {})
-    boardUnavailable({ code: "57014", message: TIMEOUT_TEXT }, "squeeze")
+    boardUnavailable({ code: "57014", message: TIMEOUT_TEXT }, "insights/squeeze")
     expect(spy).toHaveBeenCalledOnce()
     const logged = String(spy.mock.calls[0]?.[0] ?? "")
     expect(logged).toContain("public/insights/squeeze")

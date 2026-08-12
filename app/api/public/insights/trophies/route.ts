@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "trophies");
+    return boardUnavailable(error, "insights/trophies");
   }
 
   const elapsedMs = Date.now() - startedAt;

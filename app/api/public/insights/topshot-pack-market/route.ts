@@ -66,7 +66,7 @@ export async function GET(_req: NextRequest) {
   );
 
   if (error) {
-    return boardUnavailable(error, "topshot-pack-market/market");
+    return boardUnavailable(error, "insights/topshot-pack-market/market");
   }
 
   const rows: MarketRow[] = ((data ?? []) as MarketRow[]).map((r) => ({

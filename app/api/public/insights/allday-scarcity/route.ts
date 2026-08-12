@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "allday-scarcity");
+    return boardUnavailable(error, "insights/allday-scarcity");
   }
 
   const elapsedMs = Date.now() - startedAt;

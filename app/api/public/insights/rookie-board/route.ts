@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchRookieEditionBoard(supabase, { mode, tier, parallelId, player, set, sort, limit })
   } catch (e) {
-    return boardUnavailable(e, "rookie-board")
+    return boardUnavailable(e, "insights/rookie-board")
   }
 
   const elapsedMs = Date.now() - startedAt

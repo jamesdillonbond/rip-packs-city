@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (error) {
-    return boardUnavailable(error, "squeeze-check");
+    return boardUnavailable(error, "insights/squeeze-check");
   }
 
   const elapsedMs = Date.now() - startedAt;

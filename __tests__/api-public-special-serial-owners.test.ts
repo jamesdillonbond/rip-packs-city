@@ -62,6 +62,11 @@ describe("GET /api/public/special-serial-owners", () => {
     fetchState.err = new Error("rpc boom")
     const res = await GET(req(BASE))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc boom")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // this route is under app/api/public/**, so proxy.ts serves it unauthenticated.
+    expect(body.error).not.toContain("rpc boom")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

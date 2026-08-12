@@ -68,7 +68,7 @@ export async function GET(_req: NextRequest) {
   );
 
   if (error) {
-    return boardUnavailable(error, "allday-pack-reality/realized");
+    return boardUnavailable(error, "insights/allday-pack-reality/realized");
   }
 
   const rows: RealizedRow[] = ((data ?? []) as RealizedRow[]).map((r) => ({

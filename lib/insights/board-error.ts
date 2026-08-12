@@ -58,8 +58,12 @@ function errDetail(err: unknown): string {
 /**
  * Build the publishable failure response for a board route.
  *
- * @param err     the PostgrestError (or thrown value) — logged, never published
- * @param board   route slug, used for the log prefix, e.g. "squeeze"
+ * @param err   the PostgrestError (or thrown value) — logged, never published
+ * @param board the route's path BELOW /api/public/, used verbatim as the log
+ *              scope — e.g. "insights/squeeze", "special-serial-owners". It is
+ *              the full segment rather than a bare slug so this helper can serve
+ *              every anon-public read surface without emitting a log prefix that
+ *              names the wrong directory.
  * @param fallback human copy for an unclassified failure
  */
 export function boardUnavailable(
@@ -69,7 +73,7 @@ export function boardUnavailable(
 ): NextResponse {
   const safe = safeApiError(normalize(err), fallback)
   // Detail goes to the log so the failure is still diagnosable in Vercel.
-  console.error(`[public/insights/${board}] code=${safe.code} detail=${errDetail(err)}`)
+  console.error(`[public/${board}] code=${safe.code} detail=${errDetail(err)}`)
   return NextResponse.json(safe, {
     status: statusForSafeError(safe),
     headers: {

@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "squeeze");
+    return boardUnavailable(error, "insights/squeeze");
   }
 
   const elapsedMs = Date.now() - startedAt;

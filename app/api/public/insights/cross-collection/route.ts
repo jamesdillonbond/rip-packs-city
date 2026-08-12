@@ -90,13 +90,13 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (statsRes.error) {
-    return boardUnavailable(statsRes.error, "cross-collection/stats");
+    return boardUnavailable(statsRes.error, "insights/cross-collection/stats");
   }
   if (cohortRes.error) {
-    return boardUnavailable(cohortRes.error, "cross-collection/cohort");
+    return boardUnavailable(cohortRes.error, "insights/cross-collection/cohort");
   }
   if (setOverlapRes.error) {
-    return boardUnavailable(setOverlapRes.error, "cross-collection/set-overlap");
+    return boardUnavailable(setOverlapRes.error, "insights/cross-collection/set-overlap");
   }
 
   const elapsedMs = Date.now() - startedAt;

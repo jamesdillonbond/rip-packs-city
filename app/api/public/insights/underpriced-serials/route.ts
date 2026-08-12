@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchUnderpricedSerials(supabase, { headline, tier, quality, minDiscount, sort, limit })
   } catch (e) {
-    return boardUnavailable(e, "underpriced-serials")
+    return boardUnavailable(e, "insights/underpriced-serials")
   }
 
   const elapsedMs = Date.now() - startedAt

@@ -19,6 +19,6 @@ export async function GET() {
     res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=120")
     return res
   } catch (e) {
-    return boardUnavailable(e, "market-pulse")
+    return boardUnavailable(e, "insights/market-pulse")
   }
 }

@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
   if (errors.length === 4) {
     // Total outage stays loud, but classified: a statement timeout becomes a
     // retryable 503 rather than a 500 carrying Postgres's own wording.
-    return boardUnavailable(statsRes.error ?? distRes.error, "pack-reality");
+    return boardUnavailable(statsRes.error ?? distRes.error, "insights/pack-reality");
   }
 
   // ── Model-vs-reality buckets ────────────────────────────────────────────

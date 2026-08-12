@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchParallelPremiums(supabase, { parallelName, minPremium, highConfOnly, sort, limit })
   } catch (e) {
-    return boardUnavailable(e, "parallel-premiums")
+    return boardUnavailable(e, "insights/parallel-premiums")
   }
 
   const elapsedMs = Date.now() - startedAt

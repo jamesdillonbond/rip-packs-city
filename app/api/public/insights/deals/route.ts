@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "deals");
+    return boardUnavailable(error, "insights/deals");
   }
 
   const res = NextResponse.json({

@@ -27,7 +27,12 @@ import { join } from "node:path"
 // The sanctioned replacement is boardUnavailable() from lib/insights/board-error.ts,
 // which classifies server-side, logs the detail, and returns stable safe copy.
 
-const ROOT = join(process.cwd(), "app", "api", "public", "insights")
+// Scoped to the WHOLE anon-public API tree, not just /insights. The leak was
+// first found on the insights boards, but the same shapes reached
+// app/api/public/special-serial-owners — every route under app/api/public is
+// allowlisted by proxy.ts and therefore anon-readable, so they share the
+// invariant. Widened 2026-08-12 after the insights sweep.
+const ROOT = join(process.cwd(), "app", "api", "public")
 
 function routeFiles(dir: string): string[] {
   const out: string[] = []
@@ -59,7 +64,7 @@ const LEAKS: { name: string; re: RegExp }[] = [
   },
 ]
 
-describe("public /insights API never publishes a driver message", () => {
+describe("public API never publishes a driver message", () => {
   const files = routeFiles(ROOT)
 
   it("finds the route files (guard is not vacuously passing)", () => {

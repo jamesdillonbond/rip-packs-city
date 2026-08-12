@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "panini-squeeze");
+    return boardUnavailable(error, "insights/panini-squeeze");
   }
 
   // Honest-coverage disclosure, carried in the CONTRACT so a consumer cannot render this

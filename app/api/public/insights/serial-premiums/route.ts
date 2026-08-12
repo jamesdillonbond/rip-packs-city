@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchSerialPremiums(supabase, { mode: headline, tier, windowDays, minPremium, sort, limit })
   } catch (e) {
-    return boardUnavailable(e, "serial-premiums")
+    return boardUnavailable(e, "insights/serial-premiums")
   }
 
   const elapsedMs = Date.now() - startedAt

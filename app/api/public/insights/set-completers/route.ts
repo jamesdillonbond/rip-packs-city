@@ -32,6 +32,6 @@ export async function GET(_req: NextRequest) {
     res.headers.set("Cache-Control", "public, s-maxage=900, stale-while-revalidate=1800")
     return res
   } catch (e) {
-    return boardUnavailable(e, "set-completers")
+    return boardUnavailable(e, "insights/set-completers")
   }
 }

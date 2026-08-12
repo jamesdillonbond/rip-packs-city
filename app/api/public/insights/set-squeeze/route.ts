@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "set-squeeze");
+    return boardUnavailable(error, "insights/set-squeeze");
   }
 
   const elapsedMs = Date.now() - startedAt;

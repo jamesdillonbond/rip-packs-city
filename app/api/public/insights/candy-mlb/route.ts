@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "candy-mlb");
+    return boardUnavailable(error, "insights/candy-mlb");
   }
   // fmv_usd is stored numeric(12,4) → PostgREST serializes it with 4 decimals ($3.2500). Round to 2 for
   // display parity with every other USD figure on the board (Item 4 cosmetic, 2026-07-24).

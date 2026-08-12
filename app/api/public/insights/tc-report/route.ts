@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (error) {
-    return boardUnavailable(error, "tc-report");
+    return boardUnavailable(error, "insights/tc-report");
   }
 
   const elapsedMs = Date.now() - startedAt;

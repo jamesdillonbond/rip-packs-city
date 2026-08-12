@@ -28,6 +28,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   fetchSpecialSerialOwners,
   VALID_TAGS_BY_COLLECTION,
@@ -83,9 +84,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchSpecialSerialOwners(supabase, { tag, tier, player, holder, sort, limit, offset, collection })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/special-serial-owners]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "special-serial-owners")
   }
 
   // Resolve holder wallet → @username (Item 7, 2026-06-22 audit) so the board

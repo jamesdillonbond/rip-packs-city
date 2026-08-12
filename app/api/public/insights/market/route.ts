@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     { label: "public/insights/market" },
   );
   if (error) {
-    return boardUnavailable(error, "market");
+    return boardUnavailable(error, "insights/market");
   }
 
   const elapsedMs = Date.now() - startedAt;

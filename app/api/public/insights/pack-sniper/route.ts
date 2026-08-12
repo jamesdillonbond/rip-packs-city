@@ -67,6 +67,6 @@ export async function GET(req: NextRequest) {
     res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=30")
     return res
   } catch (e) {
-    return boardUnavailable(e, "pack-sniper")
+    return boardUnavailable(e, "insights/pack-sniper")
   }
 }

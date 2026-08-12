@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     ;({ rows, fetchedAt } = await fetchTopSales({ collection, window, sort, limit }))
   } catch (e) {
-    return boardUnavailable(e, "top-sales")
+    return boardUnavailable(e, "insights/top-sales")
   }
 
   const elapsedMs = Date.now() - startedAt

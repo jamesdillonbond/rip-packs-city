@@ -30,7 +30,7 @@ export async function GET() {
   try {
     drops = await fetchScoredDrops(supabase)
   } catch (e) {
-    return boardUnavailable(e, "pack-drops")
+    return boardUnavailable(e, "insights/pack-drops")
   }
 
   const elapsedMs = Date.now() - startedAt

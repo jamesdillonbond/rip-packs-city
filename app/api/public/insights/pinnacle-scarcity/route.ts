@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    return boardUnavailable(error, "pinnacle-scarcity");
+    return boardUnavailable(error, "insights/pinnacle-scarcity");
   }
 
   const elapsedMs = Date.now() - startedAt;
