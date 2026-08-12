@@ -1,14 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// /api/admin/discover-moment-descriptors — the read-only probe that answers
+// /api/admin/discover-moment-descriptors — the read-only probe that asks
 // whether the upstream exposes the descriptive text the Top Shot moment page
-// renders (headline, prose, box score) and whether it is populated.
+// renders (headline, prose, box score).
 //
-// The behaviours worth pinning: it is admin-gated, it NEVER writes, it degrades
-// to a report rather than throwing when the proxy is unreachable, and — the
-// point of the whole route — it distinguishes "field does not exist" from
-// "field exists but is empty", because those imply completely different next
-// steps (give up vs. ingest it).
+// V1 OF THIS PROBE PRODUCED A FALSE NEGATIVE IN PRODUCTION, and these tests
+// exist mostly to make that unrepeatable. V1 reported `exists: false` for every
+// field on both leagues — including `classification` and `dateOfMoment`, which
+// our live ingest queries every day. Two transport failures (wrong AllDay
+// endpoint → 404; null setID/playID → Top Shot 422) had been rendered as schema
+// facts. It was the same "a failed read served as data" class this codebase has
+// been burned by repeatedly, committed by the diagnostic itself.
+//
+// V2's contract, pinned below:
+//   · status is "yes" | "no" | "unknown"; a transport failure is NEVER "no"
+//   · each arm probes CONTROL fields we already query in production, and an arm
+//     whose controls fail is INCONCLUSIVE with its results disclaimed
+//   · error BODIES are captured, because Top Shot's 422 body names the field
 
 const fetchMock = vi.fn()
 
@@ -17,6 +25,7 @@ beforeEach(() => {
   fetchMock.mockReset()
   process.env.RPC_ADMIN_TOKEN = "admin-tok"
   process.env.TS_PROXY_URL = "https://proxy.test"
+  process.env.ALLDAY_PROXY_URL = "https://allday.test/graphql"
   process.env.TS_PROXY_SECRET = "sekrit"
   delete process.env.INGEST_SECRET_TOKEN
 })
@@ -29,120 +38,172 @@ const req = (auth?: string, qs = "") =>
     headers: { get: (k: string) => (k.toLowerCase() === "authorization" ? auth ?? null : null) },
   }) as any
 
-const gqlOk = (body: any) =>
-  ({ ok: true, status: 200, json: async () => body }) as any
+const okBody = (body: any) => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) as any
+const httpErr = (status: number, body = "") => ({ ok: false, status, text: async () => body }) as any
 
-describe("POST /api/admin/discover-moment-descriptors", () => {
+function fieldOf(q: string): string {
+  return q.match(/\{\s*([A-Za-z]+)\s*\}/)?.[1] ?? "x"
+}
+
+/** Answer every field with a value — controls included. */
+function allFieldsResolve() {
+  fetchMock.mockImplementation(async (_url: string, init: any) => {
+    const q = JSON.parse(init.body).query as string
+    const field = fieldOf(q)
+    if (q.includes("allEditions")) {
+      return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: `val:${field}` } } }] } } })
+    }
+    const inStats = q.includes("stats {")
+    return okBody({
+      data: {
+        searchEditions: {
+          data: [{ play: inStats ? { stats: { [field]: `val:${field}` } } : { [field]: `val:${field}` } }],
+        },
+      },
+    })
+  })
+}
+
+describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
   it("401s without the admin token", async () => {
-    const res = await POST(req())
-    expect(res.status).toBe(401)
+    expect((await POST(req())).status).toBe(401)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("401s with a wrong token", async () => {
-    expect((await POST(req("Bearer nope"))).status).toBe(401)
-    expect(fetchMock).not.toHaveBeenCalled()
+  it("a blanket HTTP failure is INCONCLUSIVE, never 'absent' — the V1 regression", async () => {
+    // Exactly what happened in prod: every request failed and V1 called every
+    // field non-existent.
+    fetchMock.mockResolvedValue(httpErr(422, "unprocessable"))
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    expect(j.topshot.conclusive).toBe(false)
+    expect(j.allday.conclusive).toBe(false)
+    // The critical assertion: nothing may be reported absent.
+    expect(j.topshot.absent).toEqual([])
+    expect(j.allday.absent).toEqual([])
+    expect(j.topshot.warning).toMatch(/INCONCLUSIVE/)
+    expect(j.verdict.allday_description).toBe("inconclusive")
+    expect(j.verdict.topshot_descriptive_fields_found).toBe("inconclusive")
   })
 
-  it("reports introspection when the upstream allows it, and skips brute-force probing", async () => {
-    fetchMock.mockResolvedValue(
-      gqlOk({ data: { __type: { name: "PlayStats", fields: [{ name: "description", description: "prose", type: { name: "String" } }] } } })
-    )
-    const res = await POST(req("Bearer admin-tok"))
-    expect(res.status).toBe(200)
-    const j = await res.json()
-    expect(j.topshot_introspection.PlayStats[0]).toMatchObject({ name: "description" })
-    // Introspection is complete, so the candidate walk must not also run.
-    expect(String(j.topshot_stats_probe)).toMatch(/skipped/i)
-  })
-
-  it("falls back to field probing when introspection is disabled", async () => {
-    // __type returns null (introspection off), then every probe answers.
+  it("a 404 on one arm does not contaminate the other", async () => {
     fetchMock.mockImplementation(async (_url: string, init: any) => {
-      const body = JSON.parse(init.body)
-      if (body.query.includes("__type")) return gqlOk({ data: { __type: null } })
-      return gqlOk({ errors: [{ message: "Cannot query field \"zzz\" on type \"PlayStats\"." }] })
+      const q = JSON.parse(init.body).query as string
+      if (q.includes("allEditions")) return httpErr(404, "not found")
+      return okBody({ data: { searchEditions: { data: [{ play: { stats: { [fieldOf(q)]: "v" } } }] } } })
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
-    expect(Array.isArray(j.topshot_stats_probe)).toBe(true)
-    expect(j.topshot_stats_probe.every((p: any) => p.exists === false)).toBe(true)
+    expect(j.topshot.conclusive).toBe(true)
+    expect(j.allday.conclusive).toBe(false)
+    expect(j.allday.absent).toEqual([])
   })
 
-  it("distinguishes a MISSING field from an EMPTY one — the whole point", async () => {
+  it("marks a field absent ONLY on a genuine unknown-field error", async () => {
     fetchMock.mockImplementation(async (_url: string, init: any) => {
-      const body = JSON.parse(init.body)
-      if (body.query.includes("__type")) return gqlOk({ data: { __type: null } })
-      if (body.query.includes("allEditions")) {
-        // AllDay: `description` exists and is populated; `headline` does not exist.
-        if (body.query.includes("description")) {
-          return gqlOk({ data: { allEditions: { edges: [{ node: { play: { description: "Mahomes threads the needle." } } }] } } })
-        }
-        return gqlOk({ errors: [{ message: 'Cannot query field "headline" on type "Play".' }] })
+      const q = JSON.parse(init.body).query as string
+      const field = fieldOf(q)
+      if (field === "headline") {
+        return okBody({ errors: [{ message: 'Cannot query field "headline" on type "PlayStats".' }] })
       }
-      return gqlOk({ errors: [{ message: 'Cannot query field "x" on type "PlayStats".' }] })
-    })
-    const j = await (await POST(req("Bearer admin-tok"))).json()
-    const desc = j.allday_play_probe.find((p: any) => p.field === "description")
-    const headline = j.allday_play_probe.find((p: any) => p.field === "headline")
-    expect(desc).toMatchObject({ exists: true, sample: "Mahomes threads the needle." })
-    expect(headline).toMatchObject({ exists: false })
-    expect(j.verdict.allday_description_exists).toBe(true)
-    expect(j.verdict.allday_description_populated).toBe(true)
-  })
-
-  it("reports exists-but-EMPTY as not populated", async () => {
-    fetchMock.mockImplementation(async (_url: string, init: any) => {
-      const body = JSON.parse(init.body)
-      if (body.query.includes("__type")) return gqlOk({ data: { __type: null } })
-      if (body.query.includes("allEditions")) {
-        return gqlOk({ data: { allEditions: { edges: [{ node: { play: { description: "" } } }] } } })
+      if (q.includes("allEditions")) {
+        return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: "v" } } }] } } })
       }
-      return gqlOk({ errors: [{ message: 'Cannot query field "x" on type "PlayStats".' }] })
+      const inStats = q.includes("stats {")
+      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: "v" } } : { [field]: "v" } }] } } })
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
-    // The field is real, so we must not report it missing — but it carries no
-    // text, so nothing can be built on it yet.
-    expect(j.verdict.allday_description_exists).toBe(true)
-    expect(j.verdict.allday_description_populated).toBe(false)
+    expect(j.topshot.conclusive).toBe(true)
+    expect(j.topshot.absent).toContain("headline")
+    expect(j.topshot.found.map((f: any) => f.field)).toContain("description")
   })
 
-  it("degrades to a report (not a throw) when the proxy is unconfigured", async () => {
-    delete process.env.TS_PROXY_SECRET
-    const res = await POST(req("Bearer admin-tok"))
-    expect(res.status).toBe(200)
-    const j = await res.json()
-    expect(JSON.stringify(j)).toMatch(/missing TS_PROXY_URL or TS_PROXY_SECRET/)
+  it("treats an unknown-field message inside an HTTP error body as absent", async () => {
+    // Top Shot answers 422 for an invalid query and names the field in the body.
+    fetchMock.mockImplementation(async (_url: string, init: any) => {
+      const q = JSON.parse(init.body).query as string
+      const field = fieldOf(q)
+      if (field === "caption") return httpErr(422, 'Cannot query field "caption" on type "PlayStats".')
+      if (q.includes("allEditions")) return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: "v" } } }] } } })
+      const inStats = q.includes("stats {")
+      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: "v" } } : { [field]: "v" } }] } } })
+    })
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    expect(j.topshot.absent).toContain("caption")
   })
 
-  it("degrades to a report when the proxy throws", async () => {
+  it("reports found fields with their sample values when the arm is conclusive", async () => {
+    allFieldsResolve()
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    expect(j.allday.conclusive).toBe(true)
+    expect(j.allday.found.find((f: any) => f.field === "description").sample).toBe("val:description")
+    expect(j.verdict.allday_description).toBe("exists and populated")
+  })
+
+  it("distinguishes exists-but-empty from populated", async () => {
+    fetchMock.mockImplementation(async (_url: string, init: any) => {
+      const q = JSON.parse(init.body).query as string
+      const field = fieldOf(q)
+      const val = field === "description" ? "" : "v"
+      if (q.includes("allEditions")) return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: val } } }] } } })
+      const inStats = q.includes("stats {")
+      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: val } } : { [field]: val } }] } } })
+    })
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    expect(j.verdict.allday_description).toBe("exists but empty")
+  })
+
+  it("does not send null setID/playID into searchEditions (the V1 422 cause)", async () => {
+    allFieldsResolve()
+    await POST(req("Bearer admin-tok"))
+    const tsCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes("proxy.test"))
+    expect(tsCalls.length).toBeGreaterThan(0)
+    for (const c of tsCalls) {
+      const q = JSON.parse(c[1].body).query as string
+      expect(q).not.toMatch(/setID:\s*null/)
+      expect(q).not.toMatch(/\$setID/)
+    }
+  })
+
+  it("posts All Day to ALLDAY_PROXY_URL, not a TS_PROXY_URL subpath (the V1 404 cause)", async () => {
+    allFieldsResolve()
+    await POST(req("Bearer admin-tok"))
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u === "https://allday.test/graphql")).toBe(true)
+    expect(urls.some((u) => u.includes("proxy.test/allday"))).toBe(false)
+  })
+
+  it("uses the supplied setID/playID when given", async () => {
+    allFieldsResolve()
+    await POST(req("Bearer admin-tok", "?setID=99&playID=1234"))
+    const q = JSON.parse(
+      fetchMock.mock.calls.find((c) => String(c[0]).includes("proxy.test"))![1].body
+    ).query as string
+    expect(q).toContain('setID: "99"')
+    expect(q).toContain('playID: "1234"')
+  })
+
+  it("surfaces missing configuration instead of reporting fields absent", async () => {
+    delete process.env.TS_PROXY_URL
+    fetchMock.mockResolvedValue(okBody({ data: { allEditions: { edges: [{ node: { play: { x: "v" } } }] } } }))
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    expect(j.endpoints.topshot).toMatch(/MISSING/)
+    expect(j.topshot.conclusive).toBe(false)
+    expect(j.topshot.absent).toEqual([])
+  })
+
+  it("degrades to a report when the network throws", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNRESET"))
     const res = await POST(req("Bearer admin-tok"))
     expect(res.status).toBe(200)
-    expect(JSON.stringify(await res.json())).toMatch(/ECONNRESET/)
-  })
-
-  it("truncates a long sample so the report stays readable", async () => {
-    const long = "x".repeat(900)
-    fetchMock.mockImplementation(async (_url: string, init: any) => {
-      const body = JSON.parse(init.body)
-      if (body.query.includes("__type")) return gqlOk({ data: { __type: null } })
-      if (body.query.includes("allEditions") && body.query.includes("description")) {
-        return gqlOk({ data: { allEditions: { edges: [{ node: { play: { description: long } } }] } } })
-      }
-      return gqlOk({ errors: [{ message: 'Cannot query field "x" on type "Play".' }] })
-    })
-    const j = await (await POST(req("Bearer admin-tok"))).json()
-    const desc = j.allday_play_probe.find((p: any) => p.field === "description")
-    expect(String(desc.sample).length).toBeLessThan(450)
-    expect(String(desc.sample).endsWith("…")).toBe(true)
+    const j = await res.json()
+    expect(j.topshot.conclusive).toBe(false)
+    expect(JSON.stringify(j)).toMatch(/ECONNRESET/)
   })
 
   it("never issues a mutating request", async () => {
-    fetchMock.mockResolvedValue(gqlOk({ data: { __type: null } }))
+    allFieldsResolve()
     await POST(req("Bearer admin-tok"))
     for (const call of fetchMock.mock.calls) {
-      const body = JSON.parse(call[1].body)
-      expect(body.query).not.toMatch(/\bmutation\b/i)
+      expect(JSON.parse(call[1].body).query).not.toMatch(/\bmutation\b/i)
     }
   })
 })

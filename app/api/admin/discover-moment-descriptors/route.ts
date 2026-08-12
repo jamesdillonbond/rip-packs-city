@@ -1,160 +1,167 @@
 // app/api/admin/discover-moment-descriptors/route.ts
 //
 // ONE-SHOT DISCOVERY PROBE — does the upstream expose the descriptive text the
-// Top Shot site shows on a moment page, and is it populated?
+// Top Shot moment page shows (headline, prose paragraph, per-moment box score),
+// and is it populated?
 //
 // WHY THIS EXISTS. The Top Shot moment page renders a headline ("Victor
 // Wembanyama stuffs stat sheet in historic 5x5 vs Lakers"), a prose paragraph,
-// and a full per-moment box score. NONE of that is in our catalog: `editions`
-// has no description column, `editions.name` is just "<Player> — <Set>", and
-// play_type/play_category are shot mechanics. That gap is the single thing
-// standing between our catalog search and an actual moment encyclopedia — a
-// query like "game winner" is unanswerable today because the CONCEPT is absent
-// from our data, not because the query is wrong.
+// and a full box score. None of that is in our catalog, which is exactly why a
+// narrative search ("game winner", "buzzer beater") matches nothing — the
+// CONCEPT is absent from our data. It runs as a route because the upstream is
+// Cloudflare-proxied and needs TS_PROXY_SECRET, which exists only in Vercel;
+// the dev sandbox holds no secrets and cannot reach either upstream at all
+// (measured: curl to both returns status=000).
 //
-// It runs as a route rather than a script because the Cloudflare-proxied
-// Top Shot/AllDay GraphQL needs TS_PROXY_SECRET, which exists only in the
-// Vercel environment — the dev sandbox has no secrets and cannot reach the
-// upstream at all. Same reasoning as the staged golazos-offers-indexer probe.
+// ─────────────────────────────────────────────────────────────────────────────
+// V2, AFTER V1 PRODUCED A FALSE NEGATIVE (2026-08-11). Read this before
+// trusting any output.
 //
-// WHAT IT ALREADY KNOWS (verified in-repo, 2026-08-11):
-//   · AllDay — lib/chains/flow/editions-hydrate.ts ALREADY SELECTS
-//     `play { description }` in its live seed query, but the mapper keeps only
-//     `classification` as play_type. So we have been FETCHING a description
-//     field and throwing it away on every run. Whether it is POPULATED is the
-//     open question, which is why this probe returns sample values, not just
-//     field names.
-//   · Top Shot — we select `play { stats { playerName, playCategory, playType,
-//     dateOfMoment, teamAtMoment, … } }` and no descriptive field at all. The
-//     site clearly has more; the probe walks candidates to find out what.
+// V1 reported `exists: false` for EVERY field on both leagues. That was wrong,
+// and its own data proved it: it marked `classification`, `gameDate`,
+// `homeTeamName` and `dateOfMoment` as non-existent — all four are in our LIVE
+// production ingest queries and work every day. What actually happened was two
+// transport failures that V1 rendered as schema facts:
+//   · AllDay 404 — V1 posted to `${TS_PROXY_URL}/allday`, but the AllDay
+//     ingest resolves `ALLDAY_PROXY_URL` (default nflallday.com/consumer/graphql).
+//     Wrong endpoint, so every field 404'd.
+//   · Top Shot 422 — V1 passed `setID: null, playID: null` into searchEditions.
+//     Top Shot answers HTTP 422 for an invalid QUERY (documented in CLAUDE.md
+//     re: topshotScore), so every field 422'd regardless of whether it exists.
 //
-// METHOD. Introspection first (cheap and complete when the upstream allows it).
-// If introspection is disabled — common on public gateways — it falls back to
-// FIELD PROBING: ask for one candidate field at a time and read the error.
-// GraphQL answers "Cannot query field X on type Y" for a field that does not
-// exist and returns data for one that does, so the error text is itself the
-// schema. Every probe is a bounded, read-only query.
+// The root design flaw was having NO CONTROL: with nothing known-good probed
+// alongside, a blanket failure is indistinguishable from a blanket "absent".
+// V2 fixes that structurally:
+//   1. `status` is "yes" | "no" | "unknown" — a transport failure is NEVER "no".
+//   2. Every league probes CONTROL fields we already query in production. If a
+//      control does not come back "yes", the whole arm is reported INCONCLUSIVE
+//      and its per-field results are explicitly not to be trusted.
+//   3. Error BODIES are captured (truncated), because Top Shot's 422 body
+//      carries the GraphQL message naming the offending field — that message is
+//      the actual schema signal.
+//   4. Endpoints mirror the production resolvers rather than being guessed.
 //
-// This route WRITES NOTHING. It reports. Acting on the result is a separate,
-// reviewable change.
+// This route WRITES NOTHING.
 //
 //   curl -s -X POST https://www.rippackscity.com/api/admin/discover-moment-descriptors \
-//     -H "Authorization: Bearer $RPC_ADMIN_TOKEN" | jq
+//     -H "Authorization: Bearer $RPC_ADMIN_TOKEN" -o descriptors.json \
+//     -w "http_status=%{http_code}\n"
 
 import { NextRequest, NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+export const maxDuration = 120
 
-// Candidate descriptive fields on the Top Shot `PlayStats` type. Drawn from
-// what the moment page visibly renders (headline, prose, box score, bio).
-const TOPSHOT_STATS_CANDIDATES = [
-  // headline / prose
-  "description", "headline", "title", "subtitle", "caption", "summary",
-  "playSummary", "momentDescription",
-  // box score — the numbers under "Highlight stats"
-  "points", "rebounds", "assists", "steals", "blocks", "turnovers",
-  "minutes", "fieldGoalsMade", "fieldGoalsAttempted", "threePointersMade",
-  "threePointersAttempted", "freeThrowsMade", "freeThrowsAttempted",
-  "plusMinus",
-  // game context — the scoreboard row
-  "homeTeamName", "awayTeamName", "homeTeamScore", "awayTeamScore",
-  "nbaSeason", "dateOfMoment", "quarter", "gameId",
-  // player bio — the "Player details" card
-  "height", "weight", "birthdate", "birthplace", "currentTeamId",
-  "draftYear", "draftRound", "draftPick", "position", "jerseyNumber",
-]
-
-// Candidate fields directly on the Top Shot `Play` type (not under stats).
-const TOPSHOT_PLAY_CANDIDATES = ["description", "headline", "title", "summary", "assetPathPrefix"]
-
-// AllDay's `play` already accepts `description` in our live query; these are
-// the neighbours worth confirming in the same pass.
-const ALLDAY_PLAY_CANDIDATES = [
-  "description", "headline", "title", "classification", "playType",
-  "gameDate", "homeTeamName", "awayTeamName", "homeTeamScore", "awayTeamScore",
-  "week", "season", "quarter", "yards", "playerPosition",
-]
-
-const INTROSPECT = `
-  query T($name: String!) {
-    __type(name: $name) {
-      name
-      fields { name description type { name kind ofType { name kind } } }
-    }
-  }
-`
+type Status = "yes" | "no" | "unknown"
 
 interface ProbeResult {
   field: string
-  exists: boolean
+  status: Status
   sample?: unknown
-  error?: string
+  detail?: string
 }
 
-function proxyUrl(path: string): string | null {
-  const base = process.env.TS_PROXY_URL || process.env.TOPSHOT_PROXY_URL
-  if (!base) return null
-  return base.replace(/\/+$/, "") + path
+// Fields we ALREADY query in production, so they must come back "yes". If they
+// don't, the transport is broken and nothing else in that arm means anything.
+const TOPSHOT_STATS_CONTROLS = ["playerName", "playCategory", "dateOfMoment"]
+const ALLDAY_PLAY_CONTROLS = ["playerName", "classification"]
+
+const TOPSHOT_STATS_CANDIDATES = [
+  "description", "headline", "title", "subtitle", "caption", "summary",
+  "playSummary", "momentDescription", "playDescription",
+  "points", "rebounds", "assists", "steals", "blocks", "turnovers",
+  "minutes", "fieldGoalsMade", "threePointersMade", "freeThrowsMade", "plusMinus",
+  "homeTeamName", "awayTeamName", "homeTeamScore", "awayTeamScore",
+  "nbaSeason", "quarter", "gameId", "gameDate",
+  "height", "weight", "birthdate", "birthplace",
+  "draftYear", "draftRound", "draftPick", "position", "jerseyNumber",
+]
+
+const TOPSHOT_PLAY_CANDIDATES = ["description", "headline", "title", "summary", "statsValues"]
+
+const ALLDAY_PLAY_CANDIDATES = [
+  "description", "headline", "title", "playType", "gameDate",
+  "homeTeamName", "awayTeamName", "homeTeamScore", "awayTeamScore",
+  "week", "season", "quarter", "yards", "playerPosition", "stats",
+]
+
+/** Top Shot: the worker root IS the Top Shot endpoint (see editions-hydrate). */
+function topshotUrl(): string | null {
+  return process.env.TS_PROXY_URL || null
+}
+
+/**
+ * All Day: mirror lib/editions-hydrate.ts exactly — ALLDAY_PROXY_URL, falling
+ * back to the consumer endpoint. V1 guessed `${TS_PROXY_URL}/allday` and 404'd
+ * every probe.
+ */
+function alldayUrl(): string | null {
+  return process.env.ALLDAY_PROXY_URL || "https://nflallday.com/consumer/graphql"
 }
 
 async function gql(
-  path: string,
+  url: string | null,
   query: string,
-  variables: Record<string, unknown>
+  variables: Record<string, unknown>,
+  withSecret: boolean
 ): Promise<{ data?: any; errors?: Array<{ message: string }>; transport?: string }> {
-  const url = proxyUrl(path)
   const secret = process.env.TS_PROXY_SECRET
-  if (!url || !secret) return { transport: "missing TS_PROXY_URL or TS_PROXY_SECRET" }
+  if (!url) return { transport: "no endpoint configured" }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "rip-packs-city/descriptor-probe",
+  }
+  if (withSecret && secret) headers["X-Proxy-Secret"] = secret
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Proxy-Secret": secret },
-      body: JSON.stringify({ query, variables }),
-    })
-    if (!res.ok) return { transport: `HTTP ${res.status}` }
-    return (await res.json()) as any
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ query, variables }) })
+    const text = await res.text()
+    if (!res.ok) {
+      // The BODY is the diagnostic: Top Shot's 422 names the offending field.
+      return { transport: `HTTP ${res.status}: ${text.slice(0, 300)}` }
+    }
+    try {
+      return JSON.parse(text)
+    } catch {
+      return { transport: `unparseable body: ${text.slice(0, 200)}` }
+    }
   } catch (e) {
     return { transport: e instanceof Error ? e.message : "fetch failed" }
   }
 }
 
-/** Try introspection on a named type. Returns null when it is disabled. */
-async function introspect(path: string, typeName: string) {
-  const r = await gql(path, INTROSPECT, { name: typeName })
-  const fields = r?.data?.__type?.fields
-  if (!Array.isArray(fields)) return null
-  return fields.map((f: any) => ({
-    name: f.name,
-    description: f.description ?? null,
-    type: f.type?.name ?? f.type?.ofType?.name ?? f.type?.kind ?? null,
-  }))
+/** Does this message name a field the schema does not have? */
+function isUnknownFieldError(msg: string): boolean {
+  return /cannot query field|unknown field|doesn't exist|has no field|did you mean|not defined on type/i.test(msg)
 }
 
-/**
- * Probe one candidate field by asking for it and reading the error. A
- * GraphQL server answers "Cannot query field X on type Y" for an unknown
- * field, so a failed probe is as informative as a successful one.
- */
 async function probeField(
-  path: string,
+  url: string | null,
   buildQuery: (field: string) => string,
   variables: Record<string, unknown>,
   field: string,
-  pluck: (data: any) => unknown
+  pluck: (data: any) => unknown,
+  withSecret: boolean
 ): Promise<ProbeResult> {
-  const r = await gql(path, buildQuery(field), variables)
-  if (r.transport) return { field, exists: false, error: r.transport }
-  const err = r.errors?.[0]?.message
-  if (err && /cannot query field|unknown field|doesn't exist|has no field/i.test(err)) {
-    return { field, exists: false }
+  const r = await gql(url, buildQuery(field), variables, withSecret)
+
+  if (r.transport) {
+    // A transport failure says NOTHING about the schema — unless the body
+    // itself names the field as unknown, which is how Top Shot reports it.
+    if (isUnknownFieldError(r.transport)) {
+      return { field, status: "no", detail: r.transport.slice(0, 200) }
+    }
+    return { field, status: "unknown", detail: r.transport.slice(0, 200) }
   }
-  if (err) return { field, exists: false, error: err.slice(0, 180) }
+
+  const err = r.errors?.[0]?.message
+  if (err && isUnknownFieldError(err)) return { field, status: "no", detail: err.slice(0, 200) }
+  if (err) return { field, status: "unknown", detail: err.slice(0, 200) }
+
   let sample: unknown
   try { sample = pluck(r.data) } catch { sample = undefined }
   if (typeof sample === "string" && sample.length > 400) sample = sample.slice(0, 400) + "…"
-  return { field, exists: true, sample }
+  return { field, status: "yes", sample }
 }
 
 async function inBatches<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -165,104 +172,112 @@ async function inBatches<T, R>(items: T[], size: number, fn: (t: T) => Promise<R
   return out
 }
 
+/** An arm is only trustworthy when every control came back "yes". */
+function summarize(controls: ProbeResult[], probes: ProbeResult[]) {
+  const passed = controls.filter((c) => c.status === "yes").map((c) => c.field)
+  const failed = controls.filter((c) => c.status !== "yes")
+  const conclusive = failed.length === 0
+  return {
+    conclusive,
+    controls_passed: passed,
+    controls_failed: failed,
+    warning: conclusive
+      ? null
+      : "INCONCLUSIVE — control fields we query in production did not resolve, so the transport or query shape is wrong. The per-field results below are NOT evidence that anything is absent. Fix the transport and re-run.",
+    found: conclusive ? probes.filter((p) => p.status === "yes").map((p) => ({ field: p.field, sample: p.sample })) : [],
+    absent: conclusive ? probes.filter((p) => p.status === "no").map((p) => p.field) : [],
+    indeterminate: probes.filter((p) => p.status === "unknown").map((p) => p.field),
+  }
+}
+
 export async function POST(req: NextRequest) {
   const admin = process.env.RPC_ADMIN_TOKEN
   const ingest = process.env.INGEST_SECRET_TOKEN
   const auth = req.headers.get("authorization") ?? ""
-  const ok =
-    (admin && auth === `Bearer ${admin}`) || (ingest && auth === `Bearer ${ingest}`)
+  const ok = (admin && auth === `Bearer ${admin}`) || (ingest && auth === `Bearer ${ingest}`)
   if (!ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
   const sp = req.nextUrl.searchParams
-  // Defaults are the Wembanyama 5x5 moment from the reference screenshots, so
-  // the probe's sample values can be eyeballed against a page we have seen.
-  const setID = sp.get("setID") ?? ""
-  const playID = sp.get("playID") ?? ""
+  const setID = sp.get("setID")
+  const playID = sp.get("playID")
 
   const report: Record<string, unknown> = {
     ran_at: new Date().toISOString(),
+    probe_version: 2,
     note:
-      "Read-only schema discovery. Reports which descriptive fields the upstream exposes and whether they are populated. Writes nothing.",
-    inputs: { setID: setID || "(none — set ?setID=&playID= for richer samples)", playID: playID || "(none)" },
+      "Read-only schema discovery. status is yes|no|unknown — a transport failure is never 'no'. Each arm carries CONTROL fields we query in production; if a control fails the arm is INCONCLUSIVE and its results prove nothing.",
+    endpoints: {
+      topshot: topshotUrl() ? "TS_PROXY_URL (set)" : "TS_PROXY_URL MISSING",
+      allday: process.env.ALLDAY_PROXY_URL ? "ALLDAY_PROXY_URL (set)" : "ALLDAY_PROXY_URL unset — using nflallday.com/consumer/graphql",
+      secret: process.env.TS_PROXY_SECRET ? "TS_PROXY_SECRET (set)" : "TS_PROXY_SECRET MISSING",
+    },
   }
 
   // ── Top Shot ──────────────────────────────────────────────────────────────
-  const tsIntrospection = {
-    PlayStats: await introspect("/topshot", "PlayStats"),
-    Play: await introspect("/topshot", "Play"),
-    MintedMoment: await introspect("/topshot", "MintedMoment"),
-  }
-  report.topshot_introspection = tsIntrospection
+  // No null setID/playID: that shape is what made V1 422 on every field.
+  const tsInput = setID && playID
+    ? `input: { setID: "${setID.replace(/"/g, "")}", playID: "${playID.replace(/"/g, "")}", first: 1 }`
+    : `input: { first: 1 }`
 
-  const tsArgs = setID && playID
-    ? { setID, playID, first: 1 }
-    : { setID: null as string | null, playID: null as string | null, first: 1 }
+  const tsStatsQuery = (field: string) => `
+    query { searchEditions(${tsInput}) { data { play { stats { ${field} } } } } }`
+  const tsPlayQuery = (field: string) => `
+    query { searchEditions(${tsInput}) { data { play { ${field} } } } }`
+  const tsStatsPluck = (f: string) => (d: any) => d?.searchEditions?.data?.[0]?.play?.stats?.[f]
+  const tsPlayPluck = (f: string) => (d: any) => d?.searchEditions?.data?.[0]?.play?.[f]
 
-  // If introspection worked we do not need to brute-force; probing is the
-  // fallback, and saying which path produced the answer keeps the report honest.
-  if (!tsIntrospection.PlayStats) {
-    report.topshot_stats_probe = await inBatches(TOPSHOT_STATS_CANDIDATES, 4, (f) =>
-      probeField(
-        "/topshot",
-        (field) => `
-          query P($setID: ID, $playID: ID, $first: Int!) {
-            searchEditions(input: { setID: $setID, playID: $playID, first: $first }) {
-              data { play { stats { ${field} } } }
-            }
-          }`,
-        tsArgs,
-        f,
-        (d) => d?.searchEditions?.data?.[0]?.play?.stats?.[f]
-      )
-    )
-    report.topshot_play_probe = await inBatches(TOPSHOT_PLAY_CANDIDATES, 4, (f) =>
-      probeField(
-        "/topshot",
-        (field) => `
-          query P($setID: ID, $playID: ID, $first: Int!) {
-            searchEditions(input: { setID: $setID, playID: $playID, first: $first }) {
-              data { play { ${field} } }
-            }
-          }`,
-        tsArgs,
-        f,
-        (d) => d?.searchEditions?.data?.[0]?.play?.[f]
-      )
-    )
-  } else {
-    report.topshot_stats_probe = "skipped — introspection succeeded, read topshot_introspection.PlayStats"
+  const tsControls = await inBatches(TOPSHOT_STATS_CONTROLS, 3, (f) =>
+    probeField(topshotUrl(), tsStatsQuery, {}, f, tsStatsPluck(f), true)
+  )
+  const tsStats = await inBatches(TOPSHOT_STATS_CANDIDATES, 4, (f) =>
+    probeField(topshotUrl(), tsStatsQuery, {}, f, tsStatsPluck(f), true)
+  )
+  const tsPlay = await inBatches(TOPSHOT_PLAY_CANDIDATES, 4, (f) =>
+    probeField(topshotUrl(), tsPlayQuery, {}, f, tsPlayPluck(f), true)
+  )
+
+  report.topshot = {
+    ...summarize(tsControls, [...tsStats, ...tsPlay]),
+    control_detail: tsControls,
+    stats_probe: tsStats,
+    play_probe: tsPlay,
   }
 
   // ── All Day ───────────────────────────────────────────────────────────────
-  // We already select play.description here and discard it; confirm it is
-  // populated before anyone builds on it.
-  const adIntrospection = await introspect("/allday", "Play")
-  report.allday_introspection = adIntrospection
+  const adQuery = (field: string) => `
+    query { allEditions(first: 1) { edges { node { play { ${field} } } } } }`
+  const adPluck = (f: string) => (d: any) => d?.allEditions?.edges?.[0]?.node?.play?.[f]
 
-  report.allday_play_probe = await inBatches(ALLDAY_PLAY_CANDIDATES, 4, (f) =>
-    probeField(
-      "/allday",
-      (field) => `
-        query P($first: Int!) {
-          allEditions(first: $first) {
-            edges { node { play { ${field} } } }
-          }
-        }`,
-      { first: 1 },
-      f,
-      (d) => d?.allEditions?.edges?.[0]?.node?.play?.[f]
-    )
+  const adControls = await inBatches(ALLDAY_PLAY_CONTROLS, 2, (f) =>
+    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
+  )
+  const adProbe = await inBatches(ALLDAY_PLAY_CANDIDATES, 4, (f) =>
+    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
   )
 
+  report.allday = {
+    ...summarize(adControls, adProbe),
+    control_detail: adControls,
+    play_probe: adProbe,
+  }
+
   // ── Verdict ───────────────────────────────────────────────────────────────
-  const adDesc = (report.allday_play_probe as ProbeResult[])?.find?.((p) => p.field === "description")
+  const ts = report.topshot as any
+  const ad = report.allday as any
+  const adDesc = adProbe.find((p) => p.field === "description")
   report.verdict = {
-    allday_description_exists: adDesc?.exists ?? null,
-    allday_description_populated:
-      typeof adDesc?.sample === "string" && adDesc.sample.trim().length > 0,
-    allday_description_sample: adDesc?.sample ?? null,
+    topshot_conclusive: ts.conclusive,
+    allday_conclusive: ad.conclusive,
+    topshot_descriptive_fields_found: ts.conclusive ? ts.found.map((f: any) => f.field) : "inconclusive",
+    allday_description:
+      !ad.conclusive
+        ? "inconclusive"
+        : adDesc?.status === "yes"
+          ? (typeof adDesc.sample === "string" && adDesc.sample.trim() ? "exists and populated" : "exists but empty")
+          : "absent",
+    allday_description_sample: ad.conclusive ? adDesc?.sample ?? null : null,
     next_step:
-      "If a descriptive field exists AND is populated, the follow-up is: add editions.description (+ headline), capture it in the ingest that already fetches it, and extend rpc_search_catalog's edition arm to search it. Until then a narrative search query correctly returns nothing.",
+      "Trust ONLY arms marked conclusive. For each descriptive field found: capture it in the ingest, backfill, measure coverage, add a trigram index, THEN extend rpc_search_catalog's edition arm. Do not add the search predicate before the column is populated and indexed.",
   }
 
   return NextResponse.json(report, { headers: { "Cache-Control": "no-store" } })
