@@ -13,6 +13,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
+import { describeBoardFailures } from "@/lib/insights/board-cache"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -35,6 +36,9 @@ export async function fetchDealsDefault(
     payload: { rows, fetched_at: new Date().toISOString() },
     ok: !error,
     rowCount: rows.length,
+    error: describeBoardFailures([
+      { label: "cross_collection_deals_board", ok: !error, error: error?.message },
+    ]),
   }
 }
 
@@ -61,6 +65,10 @@ export async function fetchRookiesDefault(
     },
     ok: !statsRes.error && !indexRes.error,
     rowCount: rows.length,
+    error: describeBoardFailures([
+      { label: "topshot_2025_rookie_cohort_stats", ok: !statsRes.error, error: statsRes.error?.message },
+      { label: "topshot_2025_rookie_index", ok: !indexRes.error, error: indexRes.error?.message },
+    ]),
   }
 }
 
@@ -90,5 +98,9 @@ export async function fetchFirstMintDefault(
     },
     ok: !statsRes.error && !trophiesRes.error,
     rowCount: trophies.length,
+    error: describeBoardFailures([
+      { label: "topshot_first_mint_trophy_stats", ok: !statsRes.error, error: statsRes.error?.message },
+      { label: "topshot_first_mint_trophies", ok: !trophiesRes.error, error: trophiesRes.error?.message },
+    ]),
   }
 }

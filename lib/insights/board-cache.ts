@@ -58,6 +58,38 @@ export interface BoardLiveResult<T extends Record<string, unknown>> {
   payload: T
   ok: boolean
   rowCount: number | null
+  /**
+   * WHY a fetch reported ok:false — for the CRON'S TELEMETRY ONLY.
+   *
+   * Measured 2026-08-12 over 6h / 68 warm runs: `deals` warmed 19% of the time and
+   * `first-mint` 16%, and every pipeline_runs row read exactly
+   * `"deals; first-mint; panini-squeeze"` — the failing board KEYS with no reason,
+   * because warmBoard only carried an error when the closure THREW, and these
+   * fetchers do not throw: they reduce a PostgrestError to `ok: !error` and drop it.
+   * So the estate had recorded 68 times that a board failed and zero times why.
+   *
+   * ⚠ This is the LOG side of the same rule lib/api-error.ts enforces on the
+   * response side: classify what you publish, but keep the real detail where an
+   * operator can read it. It lands in `pipeline_runs.error`, a service-role-only
+   * table — it is NOT user-facing, so a driver message belongs here. Do not
+   * "fix" this into a classified string, and do not surface it on a board.
+   *
+   * readBoardOrLive deliberately ignores it: consumers must never publish it.
+   */
+  error?: string
+}
+
+/**
+ * Build a telemetry reason from a set of named sub-fetches. Boards assemble several
+ * queries, so "which one failed" is the whole diagnostic value — a bare board key
+ * (what we had) cannot distinguish a timed-out view from a dropped column.
+ */
+export function describeBoardFailures(
+  parts: { label: string; ok: boolean; error?: string | null }[]
+): string | undefined {
+  const failed = parts.filter((p) => !p.ok)
+  if (!failed.length) return undefined
+  return failed.map((p) => (p.error ? `${p.label}: ${p.error}` : p.label)).join(", ")
 }
 
 export interface BoardSnapshot {
@@ -198,7 +230,9 @@ export async function warmBoard<T extends Record<string, unknown>>(
     return { key, ok: false, rowCount: null, error: e instanceof Error ? e.message : String(e) }
   }
   if (!res.ok) {
-    return { key, ok: false, rowCount: res.rowCount }
+    // Carry the fetcher's reason through. Before 2026-08-12 this dropped it, so a
+    // board failing 84% of the time produced telemetry that said only that it failed.
+    return { key, ok: false, rowCount: res.rowCount, error: res.error }
   }
   await writeBoardSnapshot(key, res.payload, res.rowCount)
   return { key, ok: true, rowCount: res.rowCount }

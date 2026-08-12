@@ -14,6 +14,7 @@
 import { supabaseAdmin } from "@/lib/supabase"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
+import { describeBoardFailures } from "@/lib/insights/board-cache"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -176,5 +177,12 @@ export async function fetchCandyMlbDefault(
     },
     ok: rows.ok, // gate on the primary Market section (see doc comment above)
     rowCount: rows.rows.length,
+    // Telemetry only. `ok` gates on Market alone, but a warm that succeeded with
+    // three dead sections is worth seeing in pipeline_runs — so report EVERY failed
+    // section, not just the gating one. (Candy already console.errors each view; this
+    // is what puts the same information in the pipeline row an operator actually reads.)
+    error: describeBoardFailures(
+      sections.map((sec) => ({ label: sec.label, ok: sec.ok }))
+    ),
   }
 }

@@ -115,5 +115,14 @@ export async function fetchPaniniSqueezeDefault(
     },
     ok: rows.ok && !rows.partial, // complete board only — never cache a truncated ranking
     rowCount: rows.rows.length,
+    // Telemetry only. The two ways this board declines to cache are DIFFERENT
+    // failures and were previously indistinguishable in pipeline_runs: the view
+    // errored, versus the view worked but paged out mid-ranking (partial). The
+    // second is the one that needs MAX_PAGES revisited, so name it.
+    error: rows.ok
+      ? rows.partial
+        ? `panini_squeeze_board: partial ranking (${rows.rows.length} rows, hit the page cap)`
+        : undefined
+      : "panini_squeeze_board: query failed",
   }
 }

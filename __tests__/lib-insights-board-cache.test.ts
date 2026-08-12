@@ -151,6 +151,37 @@ describe("warmBoard", () => {
     expect(state.upserts).toHaveLength(0)
   })
 
+  // The ok:false path is the COMMON one — these fetchers report a PostgrestError as
+  // `ok: !error` rather than throwing — and until 2026-08-12 it dropped the reason,
+  // so pipeline_runs recorded 68 failures of `deals`/`first-mint` with no cause at
+  // all. Carrying `error` through is the whole point of that change.
+  it("carries the fetcher's reason through on the ok:false path", async () => {
+    const live = vi.fn(async () => ({
+      payload: { rows: [] },
+      ok: false,
+      rowCount: 0,
+      error: "topshot_first_mint_trophy_stats: canceling statement due to statement timeout",
+    }))
+    const res = await warmBoard("first-mint", live)
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe(
+      "topshot_first_mint_trophy_stats: canceling statement due to statement timeout"
+    )
+    expect(state.upserts).toHaveLength(0)
+  })
+
+  it("still reports a THROWN error, and does not invent one on success", async () => {
+    const threw = await warmBoard("deals", vi.fn(async () => {
+      throw new Error("socket hang up")
+    }))
+    expect(threw.ok).toBe(false)
+    expect(threw.error).toBe("socket hang up")
+
+    const fine = await warmBoard("deals", liveOk())
+    expect(fine.ok).toBe(true)
+    expect(fine.error).toBeUndefined()
+  })
+
   it("reports an error and does not write when the live query throws", async () => {
     const live = vi.fn(async () => {
       throw new Error("kaboom")
