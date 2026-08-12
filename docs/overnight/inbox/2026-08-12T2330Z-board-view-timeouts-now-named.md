@@ -55,3 +55,40 @@ job; the cost is elsewhere. Re-measure on a genuinely quiet instance before choo
   purpose (the fetcher separates "errored" from "partial ranking hit the page cap"), and its
   message is not a timeout string — so it may be a different fault and should be read separately,
   not folded into the timeout cohort.
+
+---
+
+## Swept the estate for the same blind-instrument class — it is NOT wider. (Negative result, worth recording.)
+
+The board-warm gap was "a failure recorded with the reason discarded". Obvious next question:
+how many other pipelines do that? Measured over 24h, every pipeline with at least one failure:
+
+| pipeline | failures | failures with NO reason |
+|---|---|---|
+| `promote_unmapped_sales` | 5 | **5** |
+| `wallet-backfill-allday` | 49 | 0 |
+| `wallet-backfill-pinnacle` | 44 | 0 |
+| `pinnacle-nft-resolver` | 29 | 0 |
+| `compute-topshot-pack-ev` | 28 | 0 |
+| …11 more | — | 0 |
+
+**Exactly one candidate, and on inspection it is not the defect.** `promote_unmapped_sales` logs
+`error IS NULL` because *nothing errored*. Its `ok:false` comes from a purpose-built branch whose
+own comment reads:
+
+```sql
+-- ...true silent-failure signature reds the run:
+-- there was work to do and absolutely nothing changed.
+IF v_eligible > 0 AND v_promoted = 0 AND v_dedup = 0 AND v_merged = 0 AND v_blocked = 0 THEN
+  v_ok := false;
+```
+
+All five runs match it exactly (`eligible 1, promoted 0`, every explanatory bucket 0). **The
+condition IS the reason** — it is a deliberate silent-no-op detector, working. The only gap is
+that an operator must read `extra` rather than `error` to see it.
+
+⚠ **Deliberately NOT "fixed".** Setting `p_error` to a human string would be a one-line
+readability win on a function that is (a) DB-invariant **pinned**, (b) whose pin CLAUDE.md records
+as **STALE** — so a change needs a snapshot migration authored first — and (c) on the sales-ingest
+path, which is off-limits for autonomous shipping. Low benefit, real blast radius. **Recorded so
+nobody re-investigates these 5 rows/day as an anomaly: they are the detector doing its job.**
