@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive) · the D3 driver-message leak was SURFACE-WIDE on `/api/public/insights/**` (29 routes, THREE shapes) — closed + source-guarded; plus 5 smaller corrections and an unbreak of `main`'s CI
+
+**The leak was ~5× bigger than filed.** The follow-up I filed earlier today scoped it to the six single-view boards. Sweeping the directory found it in **all 29 public insights routes**, in **three shapes** — which is why a grep for the obvious one found less than half:
+1. `{ error: error.message }` (14 sites)
+2. `const msg = e instanceof Error ? e.message : String(e)` → `{ error: msg }` (10 sites)
+3. `{ error }` **shorthand where `error` is already a bare string** — `lib/supabase-paginate` returns `error: string` (4 sites: market, topshot-pack-market, allday-pack-market, allday-pack-reality)
+Plus `pack-reality`, which published a per-source `errors[]` of driver messages into `meta.errors` on its **200** response. All 29 now route through one new helper.
+
+**New: `lib/insights/board-error.ts` → `boardUnavailable(err, board, fallback?)`.** New/edited public-insights failure paths MUST use it. Two things it adds over a bare `safeApiError()` call, both load-bearing:
+- ⚠ **`Cache-Control: no-store`.** Every one of these routes sets a PUBLIC edge cache (`s-maxage` 300..3600) on success. Without an explicit no-store on the failure, a transient 503 risks being held at the CDN and served to everyone for the rest of the TTL — **pinning a momentary blip into a sustained outage.**
+- ⚠ **String normalization.** `safeApiError`'s message reader only understands `Error` and objects with `.message`; a **bare string** (shape 3) fell through to `internal`, so a statement timeout was reported as a hard 500 instead of a retryable 503. Pinned by a test that fails without it.
+
+**Blast radius of the old behavior:** these are anon-readable routes AND the concierge's `fetchPublicInsight` forwards `json.error` straight into the model's tool result — so Postgres's own "canceling statement due to statement timeout" reached both visitors and the assistant.
+
+**Guarded, not just fixed:** `__tests__/public-insights-no-driver-message-leak-guard.test.ts` walks the directory and fails on any of the four leak spellings. ⚠ A source test because **no type forbids this** — `error` is a string and putting a string in a response body type-checks perfectly, so `tsc` can never catch a regression, and a behavioural fixture would need writing per route (29 of them). It asserts `files.length > 20` first so it can't pass vacuously. Both new tests are mutation-proven.
+
+**Also corrected (each verified, not assumed):**
+- ⚠ **`main`'s CI was RED on the blocking `unit-tests` job** — `edge-fn-no-hardcoded-gate-keys.test.ts` failed on clean HEAD (`caf9da34`), proven by stashing my diff. All 8 pack edge fns are genuinely fail-closed (`!!k && ((GATE !== "" && k === GATE) || …)`); the TEST only knew the `!GATE ||` / `!!GATE &&` spellings and reported 8 SAFE functions as offenders. I widened the accepted idioms, then **a concurrent session landed a strictly better fix and I took theirs instead**: it EXECUTES the real `gateKeyOk` helper under set/unset secrets rather than pattern-matching, and pins `executed === 8` so the extraction cannot silently stop covering anything. Their reasoning is the right one — a syntactic proxy breaks on a refactor AND would pass a rewrite that kept the spelling while breaking the logic. My edit to that file was dropped in the rebase.
+- ⚠ **`app/api/topshot-listing-cache/route.ts`: a pre-authorized deletion whose PREMISE IS FALSE.** Its note said the wallet-verification matcher "is effectively a no-op — cached_listings is frozen (Flowty shut 2026-05-13)" and was "safe to delete". Measured live: `cached_listings` holds **309 rows, newest `cached_at` minutes old** — the Flowty *frontend* shut, `api2.flowty.io` is alive, and this very route writes that table. Deleting would have dropped a **working backstop**. It has never fired, but for a different reason: all 9 `wallet_verification_challenges` resolved `expired` (8) or `gql_on_demand` (1) because the on-demand GQL route gets there first. Comment corrected to say KEEP.
+- ⚠ **`workers/rpc-mcp-proxy` was telling every LLM agent a working tool is broken.** `get_badge_data`'s description claimed the backing RPC "currently raises an `unaccent` error… returns badges:{}". Verified live: `get_edition_badges_unified` carries `search_path=public, extensions, pg_temp`, and a real call returns `gaps: []` with actual badges (`2:3` → "Top Shot Debut"). Stale text removed. ⚠ Worker is committed but **needs an operator `wrangler deploy`** to take effect.
+- `app/api/admin/backfill-badges-from-sets`: `perSet[].matchedMissing` was filled with `wanted.size` (keys **sought**) while the real count was computed and dropped with `void matched` — so a dry run could never show that a set matched **nothing**, the one thing it exists to tell you. Now counts DISTINCT matched keys (several edition nodes map to one key — that is why the merge branch exists, so counting nodes would over-report) and adds `wantedMissing` as the denominator.
+- `app/api/fmv`: removed the provably-unreachable `if (fallbackTier !== "rpc_fmv")` log, duplicated in both handlers (`const` bound to the literal, so TS narrows it). **API contract untouched** — the published `fallbackTier` field and the four `"none"` paths are intact; 87 FMV tests green.
+- `components/rtr/RTRClient.tsx`: "stub until the Odds API is wired" was stale — the section fetches `/api/rtr/picks/today`, renders `LivePick` rows, and handles `no_fresh_odds`. `disney-pinnacle/collection/page.tsx`: dropped a genuinely unused import kept alive by `void PINNACLE_COLLECTION_ID`.
+
+**Verification.** `tsc` clean · primary gate **exit 0** (90.84/77.34/92.14/93.02) · component gate **exit 0** (89.91/80.86/89.61/93.04) · all 30 public-insights route test files green (145 tests). ⚠ Run the two gates into SEPARATE `--coverage.reportsDirectory` dirs — a stray concurrent run collided on `coverage/` and failed with a bogus `ENOENT coverage/.tmp/*.json`, which reads like a real break.
+
+**Revert:** `git revert <sha>` (code). No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change. The 16 route tests that pinned the leaked driver text were rewritten to assert the safe contract (`code`/`retryable`, and `not.toContain` the driver text) rather than repointed.
+
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 4) · guards for the two CI-gating SCRIPTS that had none (`check-brand-tokens`, `check-migration-parity`)
 
 **The class: a guard that quietly stops guarding does not fail.** Both scripts run in CI (brand-tokens in the **BLOCKING** `typecheck` job; migration-parity daily), both are pure regex/parsing, and neither had a test. When such a script's pattern stops matching it prints "N surface(s) clean" / "0 drift" and exits 0 — a weakened guard and a genuinely clean repo are **byte-identical to CI**. Same failure shape as the pin-staleness parser blind spot that silently dropped 2 pins from the live-drift check.
@@ -22,7 +50,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Verification:** both suites green; `tsc` clean. **No script was changed** — both restored byte-clean after mutation testing (`git diff --stat scripts/` empty).
 
 **Revert:** `git revert <sha>` — test-only.
-
 
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 3) · the sitemap route handlers were outside `app/api`, so BOTH gates missed them — SEO surface, silent failure mode
 
