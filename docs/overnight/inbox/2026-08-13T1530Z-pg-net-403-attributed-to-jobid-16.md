@@ -1,5 +1,29 @@
 # The recurring `pg_net_http_403` CRITICAL is ONE job — jobid 16 — and it is one of the three D2b calls "rotated + verified"
 
+> 🔴 **CORRECTION, same session ~09:00 PT — THIS ATTRIBUTION IS NOT NEW.**
+> [`2026-08-12T1354Z-jobid16-403s-and-a-newly-critical-arm.md`](2026-08-12T1354Z-jobid16-403s-and-a-newly-critical-arm.md)
+> reached the same conclusion a day earlier, by the SAME minute-fingerprinting method. I did not
+> read the inbox before investigating, so the framing below — "the attribution the monitor said was
+> impossible" — overclaims: the monitor could not do it, but a prior Claude Code session already had.
+> The register's own standing warning is exactly this: *re-probe before acting; concurrent sessions
+> ship to this repo constantly.* Left in place rather than rewritten, so the duplication stays visible.
+>
+> **What this file still adds, each checked independently:**
+> 1. The 08-12 filing called the onset "unprovable directly" because `net._http_response` retains only
+>    ~1.6h. The `gql_historical` staleness of **35.9h** dates it to ~2026-08-12 03:33Z from a second,
+>    independent instrument — and **agrees** with the 03:33Z burst they inferred.
+> 2. The **key-digest comparison**: jobs 20/55 carry an identical digest and 20 is healthy, which rules
+>    out the AllDay pair; 15/16 share one key, so fixing one fixes both.
+> 3. That jobid 16 is one of the **three functions D2b records as ✅ rotated + verified** — so the
+>    rotation has REGRESSED. Neither the 08-12 file nor the runbook makes that point, and it is the
+>    reason a D2b progress audit would wrongly read 15/16 as done.
+> 4. The jobid-55 addendum at the foot of this file.
+>
+> ⚠ Their impact finding is also sharper than mine on one point and should be preferred:
+> **`backfill-topshot-pack-supply` never calls `logPipelineRun` at all**, so its absence from
+> `pipeline_runs` is BY DESIGN and is not evidence of anything. My "do not read `pipeline_runs` for
+> confirmation" note below reaches the right conclusion for a weaker reason.
+
 Claude Code, interactive, 2026-08-13 ~08:30 PT. **Read-only investigation; nothing changed.**
 Operator action required (secrets) — see the bottom.
 
