@@ -17,6 +17,18 @@ import path from "path"
 // (Server page.tsx wrappers are deliberately NOT gated — they're async server
 // components that can't be cleanly rendered in jsdom, and their board CLIENTS
 // carry the logic; so we only enforce on CLIENT page.tsx files.)
+//
+// ⚠ SCOPE — READ THIS BEFORE TRUSTING THIS GUARD (added 2026-08-13).
+// This file enforces on `app/insights/**` ONLY, and that limit is invisible from
+// inside it: it walks INSIGHTS_DIR, so it is silent about client pages anywhere
+// else by construction, no matter how many times it runs green. Measured
+// 2026-08-13: **33 `"use client"` page.tsx files outside app/insights, 27,016
+// LOC**, gated by neither coverage gate — `app/dashboard/page.tsx` (2,299),
+// `[collection]/sniper` (1,748), `[collection]/analytics` (1,706). That whole
+// population is held by a separate ratchet, `client-page-gate-ratchet.test.ts`.
+// Same lesson CLAUDE.md records for the anon driver-message guard: a guard that
+// derives its inputs from a narrow predicate is fixed to that predicate's scope.
+// Ask what a guard CANNOT see, not just whether it passes.
 
 const ROOT = path.resolve(__dirname, "..")
 const INSIGHTS_DIR = path.join(ROOT, "app", "insights")
