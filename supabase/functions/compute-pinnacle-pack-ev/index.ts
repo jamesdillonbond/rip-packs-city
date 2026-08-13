@@ -44,6 +44,7 @@
 
 import { createClient } from "@supabase/supabase-js"
 import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-weighted.ts"
+import { dedupeByConflictKey } from "../_shared/upsert-dedupe.ts"
 
 // Gated by ?key=GATE (matches the ingest/backfill pg_cron convention);
 // deployed with verify_jwt=false. A Bearer INGEST_SECRET_TOKEN header is also
@@ -306,9 +307,27 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
 
     // === Phase 3a: upsert pack_distributions (dist_id, collection_id) ===
+    //
+    // ⚠ Dedupe on the conflict key FIRST. `ON CONFLICT DO UPDATE` cannot touch
+    // the same target row twice, so two upstream nodes sharing a dist_id abort
+    // the whole statement with 21000 and discard every other row in the chunk.
+    // That is what pinned this function at 100% failure from 2026-08-11 06:17Z
+    // — 4 identical `cannot affect row a second time` ticks a day, Pinnacle
+    // pack EV frozen, because the throw here also skips Phase 3b.
+    //
+    // collection_id is constant for this function, so dist_id alone is the key.
+    // The collision count is REPORTED, never swallowed: a quiet dedupe would
+    // trade a loud deterministic failure for an invisible one, and two nodes
+    // under one dist_id is a genuine upstream anomaly worth seeing. If
+    // dist_dupe_count stays non-zero, investigate the studio-platform walk
+    // rather than treating this as the fix.
+    const dedupedDists = dedupeByConflictKey(
+      distRows,
+      (r) => String((r as { dist_id: unknown }).dist_id),
+    )
     let distWritten = 0
-    for (let i = 0; i < distRows.length; i += 500) {
-      const chunk = distRows.slice(i, i + 500)
+    for (let i = 0; i < dedupedDists.rows.length; i += 500) {
+      const chunk = dedupedDists.rows.slice(i, i + 500)
       const { error: de } = await supabase
         .from("pack_distributions")
         .upsert(chunk, { onConflict: "dist_id,collection_id" })
@@ -324,7 +343,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: distWritten, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, dist_written: distWritten, elapsed_ms: Date.now() - started, function_version: 2 },
+          extra: {
+            counters, dist_written: distWritten,
+            dist_dupe_count: dedupedDists.duplicates,
+            dist_dupe_sample: dedupedDists.duplicateKeys,
+            elapsed_ms: Date.now() - started, function_version: 2,
+          },
         })
         return
       }
@@ -340,6 +364,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       extra: {
         ...counters,
         dist_written: distWritten,
+        dist_dupe_count: dedupedDists.duplicates,
+        dist_dupe_sample: dedupedDists.duplicateKeys,
         editions_resolved: renderByEditionId.size,
         editions_requested: allEditionIds.size,
         elapsed_ms: Date.now() - started,
