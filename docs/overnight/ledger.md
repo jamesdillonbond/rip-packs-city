@@ -8,6 +8,80 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-12 · SHIPPED — DB ×2 + code half in a patch (Cowork cloud) · both wmc FMV propagation writers had been dead on EVERY tick for 10+ hours, invisibly; drift sweep made resumable, failures made visible
+
+**The outage.** `refresh_wmc_fmv_changed` AND `refresh_wmc_fmv_drift_active` were both failing
+`57014 canceling statement due to statement timeout` on **every 5-minute tick** — confirmed in Vercel
+runtime logs, 9 of 9 sampled ticks, both RPCs — while `pipeline_runs` showed **988 runs / 0 failures
+in 12h**. They log only to `console.log`; the per-collection rows come from `runOne` (which
+succeeds) and the route returns 202 by design, so **nothing DB-side could alert.**
+`rwfd_state.last_cutoff` was frozen at 12:53:59Z, **10h27m stale**.
+
+**Root cause (measured, not inferred).** `service_role` carries `statement_timeout=30s`
+(`pg_roles.rolconfig`), and the route calls both RPCs through supabase-js → PostgREST → service_role.
+`refresh_wmc_fmv_drift_active` declared `SET statement_timeout TO '120s'` — **inert**, per the proven
+`proconfig`-cannot-raise-the-calling-statement's-budget finding — and `refresh_wmc_fmv_changed`
+sets a 60s internal deadline, **twice the budget it actually has**, so it can never fire before the
+kill. Run by hand with a **55s** budget the drift sweep still timed out, so this was never a
+"widen the timeout" problem.
+
+⚠ **Not lock contention — I checked and it isn't.** `pg_blocking_pids()` was empty for every
+backend; the instance is **I/O-starved** (11+ authenticator backends parked 15–30s in
+`DataFileRead`/`BufferIo`, a `cron_heavy backfill_nft_edition_map_from_sales` at 122s in
+`DataFileRead`). Job 302's runs also do **not** overlap the route's ticks (measured: 0 of 12).
+
+**Shipped (2 migrations, signature unchanged so no new overload, grants verified intact — SECDEF,
+`service_role`+`postgres` EXECUTE only, `check_secdef_anon_execute_violations()` = `[]`):**
+
+- `audit_20260812_drift_active_chunked_resumable` — chunked loop, deadline **inside** the 30s
+  budget, `p_limit` now **honoured** (it was accepted and never referenced — a budget knob that did
+  nothing), the misleading inert `SET statement_timeout` removed, and **the ratchet eliminated**:
+  `last_cutoff` now advances to just below the oldest UNPROCESSED edition, so a partial run banks
+  its progress instead of widening the next attempt.
+- `audit_20260812_drift_active_chunk_sized_for_saturation` — chunk 100→**25**, deadline 20s→**15s**,
+  sized to FIT the current I/O budget rather than to finish.
+
+**✅ Verified working:** `last_cutoff` advanced **12:53:59Z → 13:08:58Z** — the first forward
+progress in 10.5 hours. ⚠ **Converging, not fixed:** ~1 chunk/tick under present saturation, so the
+8,027-edition backlog drains slowly. Watch `rwfd_state.last_cutoff` — if it stops advancing again,
+the next lever is chunking by wmc ROWS rather than by editions.
+
+**Code half — NOT pushed from the cloud session; patch `0003-wmc-propagation-pipeline-runs-logging.patch`.**
+`runRefresh()` records each RPC in `pipeline_runs` under its own pipeline name with `p_ok`,
+`p_error`, `duration_ms` (`p_collection_slug` null — both are global; a slug would corrupt the
+per-collection cadence checks). Proven **both ways**: the 2 new tests fail against the shipped route
+and pass against the new one; 22/22 route tests green; `npx tsc --noEmit` clean.
+
+Also corrected two comments that were wrong about their own code: `refresh_wmc_fmv_changed` is
+**not** "timeout-proof", and the drift sweep does **not** rewrite "any held wmc row that deviates
+>25%" — it is gated on `computed_at > last_cutoff`, so settled drift is revisited by **neither**
+sweep. **There is no catch-all anywhere**; that, plus its 26-wallet `allow_list` scope, is a separate
+open item.
+
+**Revert:**
+- DB: re-apply the previous body — one unchunked `UPDATE`, `SET statement_timeout TO '120s'`,
+  `p_limit` unused — recorded verbatim in
+  `claude/finding-wmc-fmv-propagation-dead-2026-08-12.md`.
+- Code: `git log --grep='log the two FMV propagation RPCs'` → `git revert <sha>`.
+- Neither revert touches data; both are behaviour-only.
+
+**Measured drift this caused** (`TABLESAMPLE SYSTEM (3)`, ~68k rows, vs `fmv_current`): Top Shot
+**7.0%** exact match / median ratio 1.192 / **+6.9%** overstated; AllDay 32.2% / p95 **14.2×** /
+**+44.7%** overstated; Golazos 87.9% / +23.4%. **Candy −0.1% and UFC +0.3% are the positive
+control** — the comparison method does not manufacture drift.
+
+---
+
+## Apply the code half
+
+```bash
+cd /c/Users/TDill/rip-packs-city
+git pull --rebase
+git am 0003-wmc-propagation-pipeline-runs-logging.patch
+npx vitest run __tests__/api-wmc-fmv-populate-deep.test.ts   # expect 16 passed
+git push origin main
+```
+
 ### 2026-08-13 · SHIPPED — CODE ONLY, DEPLOY WITHHELD (Claude Code, interactive) — a silent 200 in `ingest-allday-pack-opens`, and two dead ends closed on jobid 55
 
 - **The fix.** `const t = await tip(); if (!t) return … status 200` sits **OUTSIDE** the `try`, so it never reached the catch's `logRun`. An unreachable Flow tip therefore produced **HTTP 200** (not a 4xx/5xx → invisible to `check_edge_fn_http_failures`), **no `pipeline_runs` row** (→ invisible to `failure_rate`), and `cron.job_run_details` **"succeeded"** (dispatch worked). **Every instrument in the estate read clean while the walk did nothing** — the exact shape that made the 08-11 gate-key outage undetectable for a day. Now logs `ok:false` / `tip_unreachable`.
