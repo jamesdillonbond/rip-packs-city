@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Deep drive of /api/cron/run-insider-detectors' DEFERRED after() body (the
@@ -35,17 +35,28 @@ const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
 }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: (...a: any[]) => rpc(...(a as [string, any?])) } }))
 
-import { POST } from "@/app/api/cron/run-insider-detectors/route"
+import { POST, shouldCountCandidates } from "@/app/api/cron/run-insider-detectors/route"
 
 const url = "https://t/api/cron/run-insider-detectors"
 
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "tok"
+  // Candidate counts are SAMPLED (every 6th UTC hour) because they cost ~27 GB/day
+  // of disk reads for pure telemetry. These legs assert the telemetry MATH, so
+  // they force counting on — otherwise they would pass or fail depending on the
+  // wall-clock hour the suite happened to run at, which is a flaky test, not a
+  // contract. The sampling itself is pinned separately below with a fixed clock.
+  process.env.INSIDER_CANDIDATE_COUNTS = "always"
   capturedAfter = null
   rpc.mockClear()
   runImpl.fn = async (_p: any) => ({ data: {}, error: null })
   countImpl.fn = async (_p: any) => ({ data: 0, error: null })
   logImpl.fn = async () => ({ error: null })
+})
+
+afterEach(() => {
+  delete process.env.INSIDER_CANDIDATE_COUNTS
+  vi.useRealTimers()
 })
 
 function logParams() {
@@ -69,6 +80,85 @@ const slugResult = (slug: string, unusualAlerts: number) => ({
 })
 
 describe("/api/cron/run-insider-detectors — deferred body", () => {
+  // ── Candidate-count sampling ───────────────────────────────────────────────
+  //
+  // Measured 2026-08-13: 12 calls per hourly tick, 44.7 GB over 39.7 h at 114 MB
+  // per call and 65.8% buffer hit — ~3% of ALL disk reads on the instance, spent
+  // on telemetry nothing pages on. Sampled every 6th UTC hour instead.
+
+  it("samples on the 6-hour boundary and skips otherwise", () => {
+    // ⚠ Control the ENV, not the argument: `mode` defaults to
+    // process.env.INSIDER_CANDIDATE_COUNTS, and a default parameter still fires
+    // when you pass an explicit `undefined` — so passing undefined here reads
+    // the "always" that beforeEach sets and the test asserts nothing.
+    delete process.env.INSIDER_CANDIDATE_COUNTS
+    for (const h of [0, 6, 12, 18]) {
+      expect(shouldCountCandidates(new Date(Date.UTC(2026, 7, 13, h)), undefined)).toBe(true)
+    }
+    for (const h of [1, 5, 7, 11, 13, 17, 19, 23]) {
+      expect(shouldCountCandidates(new Date(Date.UTC(2026, 7, 13, h)), undefined)).toBe(false)
+    }
+  })
+
+  it("honours the env escape hatch in both directions", () => {
+    // A diagnostic window must be openable without a deploy, and closable too.
+    const offHour = new Date(Date.UTC(2026, 7, 13, 5))
+    const onHour = new Date(Date.UTC(2026, 7, 13, 12))
+    expect(shouldCountCandidates(offHour, "always")).toBe(true)
+    expect(shouldCountCandidates(onHour, "never")).toBe(false)
+  })
+
+  it("issues ZERO count RPCs on a skipped tick, and says skipped rather than failed", async () => {
+    // The saving is the point: on a non-sampling tick the 12 scans must not run.
+    delete process.env.INSIDER_CANDIDATE_COUNTS
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 13, 5, 30))) // 05:30Z — not a boundary
+    runImpl.fn = async (p: any) => ({ data: slugResult(p.p_collection_slugs[0], 0), error: null })
+
+    await drive()
+
+    expect(rpc.mock.calls.filter((c) => c[0] === "count_insider_detector_candidates")).toHaveLength(0)
+    const p = logParams()
+    const uv = p.p_extra.totals_by_detector.unusual_volume
+    expect(uv.candidates_evaluated).toBeNull()
+    // ⚠ The load-bearing assertion: a SKIP must never read as a failed count.
+    // Before candidates_status existed, null meant "the RPC errored", so sampling
+    // would have made a broken telemetry RPC invisible behind a deliberate skip.
+    expect(uv.candidates_status).toBe("skipped")
+    expect(p.p_extra.per_collection.nba_top_shot.floor_drops.candidates_status).toBe("skipped")
+    // Detectors themselves still run on every tick — only the telemetry sampled.
+    expect(rpc.mock.calls.filter((c) => c[0] === "run_all_insider_detectors")).toHaveLength(3)
+  })
+
+  it("issues the full 12 count RPCs on a sampling tick", async () => {
+    delete process.env.INSIDER_CANDIDATE_COUNTS
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 13, 12, 4))) // 12:04Z — a boundary
+    runImpl.fn = async (p: any) => ({ data: slugResult(p.p_collection_slugs[0], 0), error: null })
+    countImpl.fn = async () => ({ data: 7, error: null })
+
+    await drive()
+
+    expect(rpc.mock.calls.filter((c) => c[0] === "count_insider_detector_candidates")).toHaveLength(12)
+    const p = logParams()
+    expect(p.p_extra.totals_by_detector.unusual_volume.candidates_evaluated).toBe(21) // 3 × 7
+    expect(p.p_extra.totals_by_detector.unusual_volume.candidates_status).toBe("counted")
+  })
+
+  it("marks the TOTAL failed when one leg's count errors, rather than under-reporting", async () => {
+    // A partial sum reads as a real, smaller number — the same shape as a
+    // silently truncated ranking. Say the total is untrustworthy instead.
+    let n = 0
+    countImpl.fn = async () => (n++ === 0 ? { data: null, error: { message: "boom" } } : { data: 4, error: null })
+    runImpl.fn = async (p: any) => ({ data: slugResult(p.p_collection_slugs[0], 0), error: null })
+
+    await drive()
+
+    const totals = logParams().p_extra.totals_by_detector
+    const anyFailed = Object.values(totals).some((d: any) => d.candidates_status === "failed")
+    expect(anyFailed).toBe(true)
+  })
+
   it("401 without the bearer, after() never scheduled", async () => {
     const res = await POST(makeReq({ url, auth: "Bearer nope" }))
     expect(res.status).toBe(401)

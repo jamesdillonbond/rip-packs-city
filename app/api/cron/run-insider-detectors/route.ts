@@ -33,7 +33,15 @@ const COLLECTIONS = ["nba_top_shot", "nfl_all_day", "ufc_strike"]
 
 interface DetectorBreakdown {
   alerts_emitted: number
+  /** null when the count was not obtained — read `candidates_status` for WHY. */
   candidates_evaluated: number | null
+  /**
+   * Why `candidates_evaluated` is what it is. Before this existed, `null` meant
+   * "the count RPC failed"; sampling would have overloaded it to also mean "we
+   * chose not to count", making a broken telemetry RPC indistinguishable from a
+   * deliberate skip — the exact conflation this repo keeps paying for.
+   */
+  candidates_status: "counted" | "failed" | "skipped"
 }
 
 interface PerCollectionTelemetry {
@@ -49,6 +57,39 @@ const DETECTOR_NAMES: Array<keyof PerCollectionTelemetry> = [
   "concentration_buys",
   "early_buyers",
 ]
+
+// ── Candidate-count sampling ────────────────────────────────────────────────
+//
+// `candidates_evaluated` is DIAGNOSTIC telemetry, not an alarm: it exists so a
+// 0-alert run is interpretable ("no candidates existed" vs "candidates existed
+// but were threshold-rejected"). Nothing pages on it and no product surface
+// reads it.
+//
+// It was costing more than the detectors it explains. Measured 2026-08-13 over a
+// 39.7 h window: 402 calls, 44.7 GB of disk reads, 114 MB per call at 65.8%
+// buffer hit — ~27 GB/day, roughly 3% of ALL disk reads on an IO-throttled
+// Small tier. The shape is 3 collections × 4 detectors = 12 calls EVERY hourly
+// tick, and each one re-scans the same 24 h `sales` window for that collection:
+// `unusual_volume` and `floor_drops` are literally the same scan differing only
+// in HAVING (>=5 vs >=3). The detectors' own output cannot substitute —
+// detect_unusual_edition_volume returns `sales_examined_24h`, which is raw sale
+// ROWS, not qualifying editions.
+//
+// The question it answers ("is the market thin or are the thresholds too tight")
+// moves over weeks, not hours, so it is sampled every SAMPLE_EVERY_HOURS rather
+// than hourly. Set INSIDER_CANDIDATE_COUNTS=always to restore hourly counting
+// for a diagnostic window without a deploy.
+//
+// ⚠ The cheaper fix is a DB one and is NOT done here: a single RPC returning all
+// four counts from ONE pass over the 24 h window would cut 12 scans to 3 while
+// keeping hourly granularity. That needs a migration; this route change does not.
+const SAMPLE_EVERY_HOURS = 6
+
+export function shouldCountCandidates(at: Date, mode = process.env.INSIDER_CANDIDATE_COUNTS): boolean {
+  if (mode === "always") return true
+  if (mode === "never") return false
+  return at.getUTCHours() % SAMPLE_EVERY_HOURS === 0
+}
 
 async function countCandidates(slug: string, detector: keyof PerCollectionTelemetry): Promise<number | null> {
   try {
@@ -125,35 +166,48 @@ export async function POST(req: NextRequest) {
     errMsg = failed.join(" | ")
   }
 
-  // Pull candidate counts in parallel. These are cheap COUNT(*) queries
-  // (the same shape as each detector's outermost filtering CTE) and run
-  // even when the main RPC failed so we always have some telemetry.
+  // Candidate counts. These are NOT the "cheap COUNT(*)" this comment used to
+  // claim — see the measurement above shouldCountCandidates(). They run even
+  // when the main RPC failed, so a failed detector run still carries telemetry.
+  const sampleCandidates = shouldCountCandidates(new Date(started))
+  const blank = (): DetectorBreakdown => ({
+    alerts_emitted: 0,
+    candidates_evaluated: null,
+    candidates_status: sampleCandidates ? "failed" : "skipped",
+  })
   const perCollection: Record<string, PerCollectionTelemetry> = {}
   const totals: PerCollectionTelemetry = {
-    unusual_volume: { alerts_emitted: 0, candidates_evaluated: 0 },
-    floor_drops: { alerts_emitted: 0, candidates_evaluated: 0 },
-    concentration_buys: { alerts_emitted: 0, candidates_evaluated: 0 },
-    early_buyers: { alerts_emitted: 0, candidates_evaluated: 0 },
+    unusual_volume: { alerts_emitted: 0, candidates_evaluated: sampleCandidates ? 0 : null, candidates_status: sampleCandidates ? "counted" : "skipped" },
+    floor_drops: { alerts_emitted: 0, candidates_evaluated: sampleCandidates ? 0 : null, candidates_status: sampleCandidates ? "counted" : "skipped" },
+    concentration_buys: { alerts_emitted: 0, candidates_evaluated: sampleCandidates ? 0 : null, candidates_status: sampleCandidates ? "counted" : "skipped" },
+    early_buyers: { alerts_emitted: 0, candidates_evaluated: sampleCandidates ? 0 : null, candidates_status: sampleCandidates ? "counted" : "skipped" },
   }
 
   await Promise.all(
     COLLECTIONS.flatMap(slug =>
       DETECTOR_NAMES.map(async detector => {
-        const candidates = await countCandidates(slug, detector)
+        const candidates = sampleCandidates ? await countCandidates(slug, detector) : null
         const alerts = extractAlertsFromDetectorResult(result?.[slug]?.[detector])
         if (!perCollection[slug]) {
           perCollection[slug] = {
-            unusual_volume: { alerts_emitted: 0, candidates_evaluated: null },
-            floor_drops: { alerts_emitted: 0, candidates_evaluated: null },
-            concentration_buys: { alerts_emitted: 0, candidates_evaluated: null },
-            early_buyers: { alerts_emitted: 0, candidates_evaluated: null },
+            unusual_volume: blank(),
+            floor_drops: blank(),
+            concentration_buys: blank(),
+            early_buyers: blank(),
           }
         }
-        perCollection[slug][detector] = { alerts_emitted: alerts, candidates_evaluated: candidates }
+        perCollection[slug][detector] = {
+          alerts_emitted: alerts,
+          candidates_evaluated: candidates,
+          candidates_status: !sampleCandidates ? "skipped" : candidates === null ? "failed" : "counted",
+        }
         totals[detector].alerts_emitted += alerts
         if (typeof candidates === "number" && typeof totals[detector].candidates_evaluated === "number") {
           (totals[detector].candidates_evaluated as number) += candidates
         }
+        // One failed count makes the TOTAL a partial sum, which would read as a
+        // real (smaller) number. Say so instead of quietly under-reporting.
+        if (sampleCandidates && candidates === null) totals[detector].candidates_status = "failed"
       })
     )
   )
