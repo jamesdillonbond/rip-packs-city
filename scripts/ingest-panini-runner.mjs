@@ -104,12 +104,34 @@ function loadPskus() {
 const BATCH = 60;
 
 const BACKUP_FILE = process.env.PANINI_BACKUP_FILE || "panini-capture.jsonl";
+// Size cap (2026-08-13). This appends EVERY batch of EVERY 4-hourly walk, forever, and nothing
+// prunes it on success — measured 1.27 GB on Trevor's box after ~4 weeks live. The disk is the
+// small half. The real defect: scripts/panini-replay.mjs does readFileSync(file, "utf8"), and
+// Node's MAX_STRING_LENGTH is 536,870,888 bytes on 64-bit, so past ~512 MB the recovery tool this
+// backup EXISTS to feed can no longer read it — the safety net stops being a safety net silently,
+// and you only discover it at the moment you need it. (replay now streams, but keep the bound:
+// the recovery window is one walk, so batches older than a day or two have no consumer at all.)
+// Same treatment as the ops-capture file below — rotate rather than truncate, so a recovery that
+// is already in flight keeps its evidence. Override with PANINI_BACKUP_MAX_BYTES.
+const BACKUP_MAX_BYTES = Number(process.env.PANINI_BACKUP_MAX_BYTES || 100 * 1024 * 1024);
+let backupBytes = -1; // lazily seeded from the existing file, then tracked in-process
+function appendBackup(line) {
+  try {
+    if (backupBytes < 0) { try { backupBytes = fs.statSync(BACKUP_FILE).size; } catch { backupBytes = 0; } }
+    if (backupBytes + line.length > BACKUP_MAX_BYTES) {
+      try { fs.renameSync(BACKUP_FILE, BACKUP_FILE + ".1"); } catch {}
+      backupBytes = 0;
+    }
+    fs.appendFileSync(BACKUP_FILE, line);
+    backupBytes += line.length;
+  } catch {}
+}
 async function post(payload) {
   const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0) + (payload.sales?.length || 0);
   if (!n) return;
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
-  try { fs.appendFileSync(BACKUP_FILE, JSON.stringify(payload) + "\n"); } catch {}
+  appendBackup(JSON.stringify(payload) + "\n");
   // Retry transient POST failures (network blip / cold lambda). The batch is already in the backup
   // file, so a permanent failure is recoverable via scripts/panini-replay.mjs — but retrying here
   // means a blip doesn't silently cost a batch of live data.
