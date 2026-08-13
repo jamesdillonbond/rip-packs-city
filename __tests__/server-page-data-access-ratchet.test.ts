@@ -47,10 +47,10 @@ const APP_DIR = join(process.cwd(), "app")
 /**
  * The ceiling. Lower it when you extract a page's reads into `lib/`; NEVER raise
  * it to make a build pass — raising it re-opens the exact hole this exists to
- * hold shut. It was 37 when this landed and immediately became 36 because the
- * pack-dist page was converted in the same wave.
+ * hold shut. It was 37 when this landed, became 36 when the pack-dist page was
+ * converted in the same wave, and 35 when app/moment/[id] followed.
  */
-const BUDGET = 36
+const BUDGET = 35
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
@@ -87,7 +87,14 @@ describe("server-page data-access ratchet", () => {
     // would pass forever while the blind spot grew — the failure mode that makes
     // a guard worse than no guard, because it reads as active protection.
     expect(pages.length).toBeGreaterThan(10)
-    expect(pages).toContain("app/moment/[id]/page.tsx")
+    // Self-consistency rather than naming a specific page: every page the walk
+    // returns must really carry the import. Naming one would be a canary that
+    // dies the moment someone converts it — which is the goal, so the guard
+    // would punish its own success.
+    for (const rel of pages) {
+      const src = readFileSync(join(process.cwd(), ...rel.split("/")), "utf8")
+      expect(DIRECT_CLIENT.some((rx) => rx.test(src)), `${rel} should match`).toBe(true)
+    }
   })
 
   it("does not measure app/api — that tree is already gated", () => {

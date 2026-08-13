@@ -23,15 +23,36 @@
 //   - Moved the 6-cell info bar from the footer into the body, between
 //     the hero and Recent Activity, with linked Team.
 
-import { cache } from "react"
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
-import { supabaseAdmin } from "@/lib/supabase"
+// The data-access layer moved to lib/ (2026-08-13) so it lands inside the primary
+// coverage gate — `app/**/page.tsx` is measured by neither — and so a failed read
+// can be told apart from an absent moment. Before that, an RPC failure answered
+// notFound() on the platform's most-shared URL. See the module header.
+import {
+  fetchMomentDetail,
+  fetchHighOffer,
+  fetchMomentBestOffer,
+  fetchParallels,
+  fetchSubeditionSiblings,
+  fetchBadges,
+  fetchSpecialSerialsForSerial,
+  fetchEditionNotableSerials,
+  fetchActiveListingAsk,
+  type HighOffer,
+  type ParallelEdition,
+  type EditionBadge,
+  type SpecialSerialRow,
+  type NotableSerialRow,
+  type MomentBestOffer,
+  type SubeditionSibling,
+} from "@/lib/moment-detail/fetchers"
+import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { seriesDisplay } from "@/lib/series-label"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
-import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
 import { isMarketClosed } from "@/lib/market-closed"
 import {
   decodeMomentId,
@@ -246,35 +267,6 @@ interface MomentDetail {
   renders?: PinnacleRender[]
 }
 
-// New (Phase 2):
-interface HighOffer {
-  highest_offer: number | null
-  low_ask: number | null
-  updated_at: string | null
-}
-
-interface ParallelEdition {
-  id: string
-  external_id: string | null
-  set_name: string | null
-  tier: string | null
-  series: number | null
-  circulation_count: number | null
-  thumbnail_url: string | null
-  set_id_onchain: number | null
-  player_name: string | null
-}
-
-interface EditionBadge {
-  id: string
-  title: string
-  source: string
-}
-
-interface SpecialSerialRow {
-  badge_type: string
-  serial_number: number
-}
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -284,223 +276,9 @@ interface SpecialSerialRow {
 // lambda boundary — same footgun fixed on the edition pages (bf3f4f6). No-op for
 // numeric nft_ids and uuids. (decodeMomentId extracted to @/lib/moment-detail-format.)
 
-// cache()'d (2026-07-25): generateMetadata and the page component both need the
-// full detail payload, so this fired get_moment_detail TWICE per request. React's
-// per-request cache collapses them to one call — which pays for the cheap
-// resolve_moment_id gate added in layout.tsx.
-const fetchDetail = cache(async function fetchDetail(id: string): Promise<MomentDetail | null> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_moment_detail", {
-      p_id: id,
-    })
-    if (error) {
-      console.warn(`[moment-page] rpc error id=${id}: ${error.message}`)
-      return null
-    }
-    const payload = data as MomentDetail | null
-    if (!payload || payload.ok === false) return payload
-    return payload
-  } catch (err) {
-    console.warn(`[moment-page] fetch threw id=${id}: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-})
-
-async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_high_offer", { p_edition_id: editionId })
-    if (error) { console.warn(`[moment-page] high_offer rpc: ${error.message}`); return null }
-    if (Array.isArray(data) && data.length > 0) return data[0] as HighOffer
-    if (data && typeof data === "object") return data as HighOffer
-    return null
-  } catch (err) {
-    console.warn(`[moment-page] high_offer threw: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-// Item 1 (2026-06-11): per-moment "best offer" — the single highest offer this
-// exact serial is eligible for, across the edition-grain offer and any
-// serial-grain offer targeting its serial. One number, no floor.
-interface MomentBestOffer {
-  best_offer: number | null
-  grain: string | null
-  updated_at: string | null
-}
-
-async function fetchMomentBestOffer(editionId: string, serial: number): Promise<MomentBestOffer | null> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_moment_best_offer", {
-      p_edition_id: editionId,
-      p_serial: serial,
-    })
-    if (error) { console.warn(`[moment-page] moment_best_offer rpc: ${error.message}`); return null }
-    if (Array.isArray(data) && data.length > 0) return data[0] as MomentBestOffer
-    if (data && typeof data === "object") return data as MomentBestOffer
-    return null
-  } catch (err) {
-    console.warn(`[moment-page] moment_best_offer threw: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_parallels", { p_edition_id: editionId })
-    if (error) { console.warn(`[moment-page] parallels rpc: ${error.message}`); return [] }
-    return Array.isArray(data) ? (data as ParallelEdition[]) : []
-  } catch (err) {
-    console.warn(`[moment-page] parallels threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
-  }
-}
-
-// Parallel-printing ladder (Standard / Club Collection / Hexwave / …) for the
-// edition-page ParallelTierSwitcher, reused here (2026-07-11 — Trevor: the
-// printing toggler was missing on /moment pages). Keyed by external_id; the
-// SECDEF RPC marks is_self relative to the id passed. Top Shot only — other
-// collections return <2 rows and the switcher renders nothing. fmv_usd comes
-// back as a numeric string from PostgREST, so coerce for the premium math.
-interface SubeditionSibling {
-  external_id: string
-  subedition_id: number | null
-  subedition_name: string | null
-  circulation_count: number | null
-  thumbnail_url: string | null
-  fmv_usd: number | null
-  confidence: string | null
-  is_self: boolean
-}
-
-async function fetchSubeditionSiblings(externalId: string): Promise<SubeditionSibling[]> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_subedition_siblings", { p_external_id: externalId })
-    if (error) { console.warn(`[moment-page] subedition_siblings rpc: ${error.message}`); return [] }
-    if (!Array.isArray(data)) return []
-    return (data as SubeditionSibling[]).map((s) => ({
-      ...s,
-      fmv_usd: s.fmv_usd != null ? Number(s.fmv_usd) : null,
-    }))
-  } catch (err) {
-    console.warn(`[moment-page] subedition_siblings threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
-  }
-}
-
-async function fetchBadges(editionId: string): Promise<EditionBadge[]> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_badges_unified", { p_edition_id: editionId })
-    if (error) { console.warn(`[moment-page] badges rpc: ${error.message}`); return [] }
-    if (Array.isArray(data)) return data as EditionBadge[]
-    return []
-  } catch (err) {
-    console.warn(`[moment-page] badges threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
-  }
-}
-
-// Hero special-serial pills for THIS serial.
-//
-// REPOINTED 2026-07-25 off the abandoned special_serial_holders table.
-// That table is a dead resolver: 25 rows against ~56,202 target tuples (0.04%),
-// last written 2026-07-05, and the "daily delta sweep" its comment advertised is
-// unscheduled (see the table's own DB comment). Because it was empty
-// platform-wide, this reader returned [] for every moment — so the "Jersey Match"
-// hero pill could NEVER render, and an empty pill row was indistinguishable from
-// "this serial is not special". #1 and Perfect Serial happened to survive only
-// because derivedSerialBadges recomputes those two deterministically below.
-//
-// Now reads the live wmc-backed path — get_edition_special_serials, the same RPC
-// this page already calls for its edition-wide "Special serials" section — and
-// filters to the current serial. Its tags are mapped back into the legacy
-// badge_type vocabulary so specialSerialLabel / SpecialSerialGlyph and the
-// derivedSerialBadges dedup all keep working untouched (SpecialSerialGlyph
-// accepts both vocabularies by design).
-async function fetchSpecialSerialsForSerial(editionId: string, serial: number): Promise<SpecialSerialRow[]> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_special_serials", {
-      p_edition_id: editionId,
-    })
-    if (error) { console.warn(`[moment-page] special_serials: ${error.message}`); return [] }
-    if (!Array.isArray(data)) return []
-    return mapNotableTagsToSpecialSerials(
-      data as Array<{ serial: number | null; tag: string | null }>,
-      serial,
-    )
-  } catch (err) {
-    console.warn(`[moment-page] special_serials threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
-  }
-}
-
-// Edition-wide notable serials (#1, jersey match, perfect serial) with
-// last sale and current holder from wallet_moments_cache — the
-// get_edition_special_serials RPC (enriched 2026-06-13 with the wmc holder).
-// Powers the moment-page "Special serials" section (Item 2). holder_address /
-// nft_id are NULL where we haven't indexed that serial's owner.
-interface NotableSerialRow {
-  serial: number
-  tag: string
-  last_sale_usd: number | null
-  last_sold_at: string | null
-  holder_address: string | null
-  nft_id: string | null
-}
-
-async function fetchEditionNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_special_serials", { p_edition_id: editionId })
-    if (error) { console.warn(`[moment-page] notable_serials rpc: ${error.message}`); return [] }
-    return Array.isArray(data) ? (data as NotableSerialRow[]) : []
-  } catch (err) {
-    console.warn(`[moment-page] notable_serials threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
-  }
-}
 
 // notableTagLabel extracted to @/lib/moment-labels (imported below).
 
-// Bug 13 (2026-07-03): live "Listed" state from cached_listings_v2 — the actively
-// written on-chain listing feed (AllDay/Golazos `direct`/`direct_v2`), replacing
-// the dead ts_listings source. Join key is the NFT's flow_id (bigint) == the
-// serial's nft_id, SCOPED to this moment's collection_id. A flow_id can carry
-// multiple active rows (stale entries from the same source at slightly different
-// prices), so we take the CHEAPEST active ask (completed_at IS NULL, ORDER BY
-// price_usd ASC LIMIT 1). No active row → not listed → null → the cell renders a
-// dash. The collection scope is REQUIRED: Flow nft_ids are unique only per
-// contract, so without it a Top Shot moment whose nft_id collides with an
-// AllDay/Golazos listing's flow_id would show that other collection's price
-// (the 2026-07-03 QA-audit finding). Top Shot has no own rows here, so its
-// moments correctly show "—".
-async function fetchActiveListingAsk(nftId: string, collectionId: string | null): Promise<number | null> {
-  const flowId = Number(nftId)
-  if (!Number.isFinite(flowId)) return null
-  // Flow nft_ids are unique only PER CONTRACT, so flow_id alone collides across
-  // collections (a TS moment's nft_id can equal an AllDay/Golazos listing's
-  // flow_id and bleed that other collection's price in). Scope to this moment's
-  // collection so we only ever read this collection's own listings. When the
-  // collection is unknown, return null rather than risk a cross-collection match.
-  if (!collectionId) return null
-  try {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("cached_listings_v2")
-      .select("price_usd")
-      .eq("flow_id", flowId)
-      .eq("collection_id", collectionId)
-      .is("completed_at", null)
-      .order("price_usd", { ascending: true })
-      .limit(1)
-    if (error) { console.warn(`[moment-page] active_listing: ${error.message}`); return null }
-    if (Array.isArray(data) && data.length > 0) {
-      const p = Number(data[0]?.price_usd)
-      return Number.isFinite(p) && p > 0 ? p : null
-    }
-    return null
-  } catch (err) {
-    console.warn(`[moment-page] active_listing threw: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
 
 // ── Formatters ─────────────────────────────────────────────────────────────
 // fmtUsd / fmtRelDate / fmtAbsDate / tierColorVar / collectionLabel /
@@ -522,12 +300,21 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { id: rawId } = await params
   const id = decodeMomentId(rawId)
-  const detail = await fetchDetail(id)
+  const { data: raw, ok: detailOk } = await fetchMomentDetail(id)
+  const detail = raw as MomentDetail | null
   if (!detail || detail.ok === false || !detail.edition) {
-    return {
-      title: "Moment Not Found — Rip Packs City",
-      description: "This moment isn't in our index yet.",
-    }
+    // Only an ANSWERED read may claim the moment is not in the index. A failed
+    // one says so instead — the title is what a crawler and a shared link read.
+    return detailOk
+      ? {
+          title: "Moment Not Found — Rip Packs City",
+          description: "This moment isn't in our index yet.",
+        }
+      : {
+          title: "Moment Unavailable — Rip Packs City",
+          description: "We couldn't load this moment right now. Try again in a moment.",
+          robots: { index: false, follow: true },
+        }
   }
   // Pinnacle render disambiguation (Wave 2): a legacy edition_key maps to many
   // renders — noindex,follow (mirrors /pinnacle/moment/<legacy-key>).
@@ -603,7 +390,14 @@ export default async function MomentPage(
 ) {
   const { id: rawId } = await params
   const id = decodeMomentId(rawId)
-  const detail = await fetchDetail(id)
+  const { data: raw, ok: detailOk } = await fetchMomentDetail(id)
+  const detail = raw as MomentDetail | null
+  // ⚠ A FAILED read must never become a 404. This page is the platform's most
+  // shared URL; answering "no such moment" because the RPC timed out tells a
+  // collector their moment does not exist and hands a crawler a hard 404 for a
+  // real, linked page. `detail.ok === false` is the RPC's own verdict — that IS
+  // an answer and still 404s. See lib/moment-detail/fetchers.ts on the two `ok`s.
+  if (!detailOk) return <MomentUnavailableCard id={id} />
   if (!detail || detail.ok === false) {
     notFound()
   }
@@ -715,18 +509,18 @@ export default async function MomentPage(
   })
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials, activeListingAsk, subSiblings] = await Promise.all([
+  const [highOfferRes, parallelsRes, badgesRes, specialSerialsRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
     r?.kind === "moment" && serial != null
       ? fetchSpecialSerialsForSerial(e.id, serial)
-      : Promise.resolve([] as SpecialSerialRow[]),
+      : Promise.resolve({ rows: [] as SpecialSerialRow[], ok: true }),
     // Item 1: serial-aware best offer only for a concrete serial (kind='moment').
     // Edition-level pages stay edition-grain (highOffer below).
     r?.kind === "moment" && serial != null
       ? fetchMomentBestOffer(e.id, serial)
-      : Promise.resolve(null as MomentBestOffer | null),
+      : Promise.resolve({ data: null as MomentBestOffer | null, ok: true }),
     // Item 2 (2026-06-13): edition-wide notable serials + holders for the
     // "Special serials" section.
     fetchEditionNotableSerials(e.id),
@@ -734,13 +528,36 @@ export default async function MomentPage(
     // cached_listings_v2, keyed on its concrete nft_id (kind='moment' only).
     r?.kind === "moment" && ss?.nft_id
       ? fetchActiveListingAsk(ss.nft_id, r?.collection_id ?? null)
-      : Promise.resolve(null as number | null),
+      : Promise.resolve({ data: null as number | null, ok: true }),
     // Parallel-printing ladder for the switcher (Top Shot editions only —
     // the setID:playID[::subID] external_id form is what the RPC keys on).
     isTopShotColl && e.external_id
       ? fetchSubeditionSiblings(e.external_id)
-      : Promise.resolve([] as SubeditionSibling[]),
+      : Promise.resolve({ rows: [] as SubeditionSibling[], ok: true }),
   ])
+  const highOffer = highOfferRes.data
+  const parallels = parallelsRes.rows
+  const badges = badgesRes.rows
+  const specialSerials = specialSerialsRes.rows
+  const momentBestOffer = momentBestOfferRes.data
+  const notableSerials = notableSerialsRes.rows
+  const activeListingAsk = activeListingAskRes.data
+  const subSiblings = subSiblingsRes.rows
+  // Every one of these panels SELF-HIDES when its data is absent, so a failed
+  // read is indistinguishable from "this moment has no badges / no parallels /
+  // no offers" — the reader sees a shorter page and no reason for it. The notice
+  // is the only thing separating those. A panel that does not APPLY (the
+  // Top-Shot-only subedition ladder, the edition-level pages that skip the
+  // serial-grain reads) reports ok:true and never fires this.
+  const auxDegraded = summarizeDegraded([
+    boardStatus("Offers", highOfferRes.ok && momentBestOfferRes.ok),
+    boardStatus("Parallels", parallelsRes.ok),
+    boardStatus("Badges", badgesRes.ok),
+    boardStatus("Special serials", specialSerialsRes.ok && notableSerialsRes.ok),
+    boardStatus("Live ask", activeListingAskRes.ok),
+    boardStatus("Printing ladder", subSiblingsRes.ok),
+  ])
+
 
   // Resolve owner/buyer/seller + special-serial holder addresses to Top Shot
   // @handles once, server-side (Item 3, 2026-06-09; extended 2026-06-13 to
@@ -828,6 +645,8 @@ export default async function MomentPage(
         color: "var(--rpc-text-primary)",
       }}
     >
+      <DegradedDataNotice summary={auxDegraded} />
+
       {/* ── Header band ────────────────────────────────────────────────── */}
       <nav
         style={{
@@ -1975,5 +1794,51 @@ function Td({ children }: { children: React.ReactNode }) {
     <td style={{ padding: "10px 12px" }}>
       {children}
     </td>
+  )
+}
+
+/**
+ * Shown when the moment READ failed — never when the moment genuinely does not
+ * exist (that is still `notFound()`).
+ *
+ * ⚠ Deliberately NOT a 404. This is the platform's most-shared URL, so a 404 for
+ * a real moment is a hard "this does not exist" served to a collector who just
+ * posted the link and to any crawler that follows it. The page also carries
+ * `robots: noindex, follow` in that branch so a transient failure cannot
+ * de-index a real moment.
+ */
+function MomentUnavailableCard({ id }: { id: string }) {
+  return (
+    <main
+      style={{
+        maxWidth: 640,
+        margin: "0 auto",
+        padding: "64px 24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 28,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          color: "var(--rpc-text-primary)",
+        }}
+      >
+        This moment didn&apos;t load
+      </h1>
+      <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: "var(--rpc-text-secondary)" }}>
+        The catalog is under heavy load right now. This says nothing about whether the moment
+        exists — only that we couldn&apos;t read it. Reload in a moment.
+      </p>
+      <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+        {id}
+      </p>
+    </main>
   )
 }

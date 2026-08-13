@@ -132,4 +132,53 @@ describe("server pages distinguish a failed read from an absent record", () => {
     // 404s instead of falling through to ISR.
     expect(src).toContain("export const dynamicParams = true")
   })
+
+  // 4. /moment/[id] — the FOURTH instance, and the highest-stakes one, because
+  //    of where it sits rather than what it does. This is the platform's most-
+  //    shared URL: every moment link posted into Discord, Twitter or a DM lands
+  //    here. `fetchDetail` returned a bare `null` for both "no such moment" and
+  //    "the RPC failed", and the page answered `notFound()` — so a statement
+  //    timeout told a collector who had just shared the link that their moment
+  //    does not exist, and handed any crawler following it a hard 404.
+  //
+  //    ⚠ The two `ok`s here are NOT the same and must never be merged. The RPC's
+  //    payload carries its own `ok` meaning "I looked and there is none" — an
+  //    ANSWER, which must still 404. The envelope's `ok` means the read worked.
+  it("moment/[id] does not turn a failed read into a 404", () => {
+    const src = read("app", "moment", "[id]", "page.tsx")
+
+    expect(src, "page must destructure the transport ok").toMatch(
+      /const \{\s*data:\s*raw\s*,\s*ok:\s*detailOk\s*\}\s*=\s*await fetchMomentDetail\(id\)/
+    )
+    // The transport-failure branch must fire BEFORE the not-found branch.
+    const unavailable = src.indexOf("if (!detailOk) return <MomentUnavailableCard")
+    const notFoundBranch = src.indexOf("if (!detail || detail.ok === false) {")
+    expect(unavailable, "the !detailOk branch must exist").toBeGreaterThan(-1)
+    expect(unavailable, "it must precede the notFound() branch").toBeLessThan(notFoundBranch)
+    // ...and the RPC's own verdict must STILL 404, or every genuinely-missing
+    // moment renders the unavailable card instead — the mirror-image defect.
+    expect(notFoundBranch, "payload.ok === false must still notFound()").toBeGreaterThan(-1)
+    expect(src.slice(notFoundBranch, notFoundBranch + 120)).toContain("notFound()")
+
+    // The copy must not assert non-existence.
+    expect(src, "the card must not claim the moment is absent").toContain(
+      "says nothing about whether the moment"
+    )
+  })
+
+  it("moment/[id] does not let a transient failure de-index a real moment", () => {
+    const src = read("app", "moment", "[id]", "page.tsx")
+
+    // generateMetadata must branch on the same transport flag...
+    expect(src).toContain('title: "Moment Unavailable — Rip Packs City"')
+    // ...and mark that branch noindex,follow. Without it a crawler that hits the
+    // page mid-outage can drop a real, linked moment from the index on the
+    // strength of a five-minute saturation spell.
+    const unavailableMeta = src.indexOf('title: "Moment Unavailable — Rip Packs City"')
+    expect(src.slice(unavailableMeta, unavailableMeta + 300)).toContain(
+      "robots: { index: false, follow: true }"
+    )
+    // The not-found copy must remain reachable for a genuine miss.
+    expect(src).toContain('title: "Moment Not Found — Rip Packs City"')
+  })
 })
