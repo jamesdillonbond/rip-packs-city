@@ -5,9 +5,19 @@
 // tracker mismatch (49 complete vs Top Shot's reported 87) and fills the
 // 23% thumbnail / 100% video gap on existing TopShot rows.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=).
+// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) — this route accepts NOTHING else,
+// which is why it cannot be scheduled directly.
 // Methods: GET or POST — both run the same loop.
-// Cron: daily at 4am ET (cron-job.org).
+//
+// Cron: /api/cron/topshot-catalog-backfill (Vercel, daily 02:12 UTC) wraps this
+// route and translates CRON_SECRET → RPC_ADMIN_TOKEN. ⚠ The header used to
+// claim "daily at 4am ET (cron-job.org)"; that was STALE — measured 2026-08-13
+// the pipeline had only 4 lifetime `pipeline_runs` rows, all manual, and
+// commit b1018e63 independently confirmed the route was absent from
+// vercel.json and every workflow. Do NOT add a vercel.json entry pointing at
+// THIS path: Vercel cron sends only `Bearer $CRON_SECRET`, so it would 401 on
+// every tick, and a 401 writes no pipeline_runs row — indistinguishable from
+// never having been scheduled.
 //
 // Loop control: orders sets by updated_at ASC (least-recently-touched first),
 // bounded by maxDuration - 30s, paginates 100 editions/page through

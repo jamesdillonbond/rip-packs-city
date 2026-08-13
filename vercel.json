@@ -148,6 +148,10 @@
     {
       "path": "/api/candy-listings-indexer",
       "schedule": "35 */3 * * *"
+    },
+    {
+      "path": "/api/cron/topshot-catalog-backfill",
+      "schedule": "12 2 * * *"
     }
   ]
 }
