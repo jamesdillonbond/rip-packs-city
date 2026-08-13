@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-13 · SHIPPED (Claude Code, interactive) — the Panini backup grew past Node's max string length, so the recovery tool it exists to feed could no longer read it
+
+**Shipped** (Cowork cloud authored the patch; both its push routes were closed, so it handed off a verified diff — applied, re-verified against the REAL file, and pushed here).
+
+`scripts/ingest-panini-runner.mjs` — `PANINI_BACKUP_FILE` (`panini-capture.jsonl`) was appended before every POST, on every batch, of every 4-hourly walk, with **no cap, no rotation, no prune-on-success**. Measured on Trevor's box: **1,268,982,254 B (1.21 GiB)**, ~26 days live ⇒ ~46 MB/day. Added `appendBackup()` with `PANINI_BACKUP_MAX_BYTES` (default 100 MB) + rotate-to-`.1`. ⚠ **The bound it needed already existed 87 lines below it** — the *optional* ops-capture is correctly capped at 25 MB with one generation (19.8 MB + 26.2 MB on disk, working as designed). The always-on disaster-recovery file, written far more often, got no such treatment.
+
+`scripts/panini-replay.mjs` — rewritten to stream via `readline` over `createReadStream`, and to replay the **rotated generation first** (`.1`, then live) in capture order.
+
+**⚠ DURABLE — the disk was the small half. `readFileSync(FILE,"utf8")` materializes the whole file as ONE JavaScript string, and Node caps a single string at `MAX_STRING_LENGTH` = 536,870,888 B on 64-bit. At 2.36× that, the recovery tool the backup EXISTS to feed threw before POSTing a single batch — a safety net that fails only at the exact moment it is needed** (bad token, walk to recover), and fails silently until then. Verified here against the **actual 1.21 GiB file**, not a fixture: old path `ERR_STRING_TOO_LONG`; new path streamed **15,279 batches in 3.7 s, 0 parse failures**.
+
+**Verification:** `node --check` both. Rotation tested against the **verbatim shipped bytes** (extracted with `sed` from the patched file) across caps 30/100/1000 B, one fresh process per cap — pinned: total never exceeds 2× cap, newest batch always retained, fresh file never rotates. Replay tested end-to-end against a local server: ordering `old-1, old-2, new-1, new-2`, blanks skipped, CRLF handled. ⚠ My first rotation harness failed at cap=30 and **the harness was wrong, not the code** — `BACKUP_MAX_BYTES` is a module-load-time `const`, so mutating `process.env` inside a loop never took effect; re-run with a fresh process per cap, all three pass. (Cowork recorded the same class of error on its own first assertion.)
+
+**Scope:** local-only runner scripts on the residential box. No route, DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV/pricing change. `panini-capture.jsonl` is gitignored (`.gitignore:125`, `panini*capture*.jsonl*`), so `git add -A` was never at risk.
+
+**Not done here (operator):** the existing 1.21 GiB file must be deleted/truncated by hand to reclaim the space — the runner recreates it and the cap then holds it at ≤200 MB. **Unrelated to the `/sessions` no-space shell outage** (Cowork VM disk, not the Windows host) — that is still "delete old Cowork sessions", ~6 nights.
+
+**Revert:** `git revert <sha>` — restores the unbounded append and the slurping replay. No DB unwind. To keep the code but disable the bound, set `PANINI_BACKUP_MAX_BYTES` very high.
+
 ### 2026-08-13 · SHIPPED (Claude Code, docs — 2nd pass of the day) — CLAUDE.md refreshed to tip `48369a45`: all 13 canonical facts CURRENT, but a canonical bullet was asserting a SCOPE that today's work disproved
 
 - **Docs-only, direct to `main`. No code, no DB, no migration, no cron, no prod-state change.** All 13 checkable canonical-reference facts re-verified and **every one is current** (38 Vercel crons · 125 pins over 124 distinct fns, parser not grep · both launch flags `true` · 8 collections / 5 published · 17 workers · 20 GHA workflows, 17 scheduled · 8 CI jobs · concierge 29 tools on `claude-sonnet-4-6` · primary 90.4/77.0/92.2/92.6 · component 88.5/79.4/88.2/91.6) — the earlier pass today had just corrected the five that drifted, so the work was entirely in the **four code commits since `df0779fb`**.
