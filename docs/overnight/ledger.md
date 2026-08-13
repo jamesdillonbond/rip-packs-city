@@ -8,6 +8,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-13 · SHIPPED — CODE ONLY, DEPLOY DELIBERATELY WITHHELD (Claude Code, interactive) — `compute-pinnacle-pack-ev` duplicate-conflict-key upsert
+
+- **The defect.** `ON CONFLICT DO UPDATE` may not touch one target row twice, so a single duplicated `dist_id` in the batch aborts the WHOLE statement with `21000 ON CONFLICT DO UPDATE command cannot affect row a second time` and discards every other row in the chunk. The throw also skips Phase 3b, so **no `pack_ev_history` row was written either**. Live: 100% failing, identical error on every tick since the last successful write at **2026-08-11 06:17Z**; `pack_distributions` for Pinnacle is 143 rows all stamped that instant. Bounded to Pinnacle pack-EV staleness — no corruption, and unlike the catalog-walker bug this one **logged its error honestly**, which is why it was caught in 2 days rather than by accident.
+- **The fix.** New `supabase/functions/_shared/upsert-dedupe.ts` → `dedupeByConflictKey(rows, key)`, wired into Phase 3a. **Last occurrence wins**, so the batched form matches what a sequential per-row upsert would have left. `collection_id` is constant for this function, so `dist_id` alone is the key — the helper's contract requires the key fn use the same columns as the `onConflict` string.
+- **⚠ The dedupe is COUNTED, not silent.** `dist_dupe_count` + a 5-key `dist_dupe_sample` now ride both `pipeline_runs.extra` payloads. Quietly collapsing the rows would trade a loud deterministic failure for an invisible one — the exact class fixed on the Top Shot catalog walker the same day. **If `dist_dupe_count` stays non-zero, the studio-platform walk is emitting two nodes under one `dist_id` and THAT is the thing to investigate; this fix stops the crash, it does not explain the duplicate.**
+- **Scope checked, not assumed:** the three sibling pack-EV functions (`compute-allday`/`golazos`/`topshot-pack-ev`) carry **no** `onConflict` upsert, so this shape is unique to Pinnacle. `evRows` is deliberately NOT deduped — `pack_ev_history` is append-only history and two listing uuids under one dist is a real upstream state, not a conflict.
+- **⚠ NOT DEPLOYED, and the reason is a hard coupling — do not deploy this file alone.** `compute-pinnacle-pack-ev` is **jobid 42, one of D2b's five un-rotated functions**: the repo copy reads `PINNACLE_PACK_EV_GATE_KEY`, that secret is **not set**, and the gate fails CLOSED. Deploying now would turn a deterministic SQL failure into a **403 on every tick** — strictly worse. The deploy must ride the rotation window (set the secret → deploy → repoint the pg_cron `?key=`), or at minimum the operator sets `PINNACLE_PACK_EV_GATE_KEY` to the currently-deployed literal first. Until then Pinnacle pack EV stays frozen at 08-11 06:17Z and the alert stays honestly red.
+- **Tests.** `__tests__/edge-upsert-dedupe.test.ts` (8 cases) pins upsert-safety, last-wins, the collision count, the sample cap, first-seen key order, and that `7` and `"7"` collapse to one key (the fn builds `dist_id` with `String(node.id)`, so type-split keys would still be one target row in Postgres). Required anyway by the `edge-shared-test-completeness` rot-guard, which reds CI on any untested `_shared` module.
+- **Verified.** `tsc --noEmit` clean; dedupe + rot-guard tests 12/12. ⚠ `deno check` NOT run locally (deno is not installed on this box and `jsr.io` is proxy-blocked) — the blocking `edge-deno` CI job is the check. The new module has zero imports, so the risk is confined to the one added import line.
+- **Revert:** `git revert <sha>` — removes the dedupe + counters and deletes the `_shared` module and its test. No DB, cron or deploy change to unwind (nothing was deployed).
+
+### 2026-08-13 · reconcile-saved-wallet-stats soft deadline 100s → 50s (fixes intermittent 120s hard-abort)
+
+`rpc-reconcile-saved-wallet-stats` (pg_cron jobid 259, runs as `postgres`) was flapping to cron
+status `failed` on saturated days (2026-08-09 and 2026-08-12, both **exactly 120.0s** = the global
+`statement_timeout`; postgres has no role-level override, and `cron_heavy`'s 600s is unreachable
+because the proc is invoker-rights, directly writes RLS-protected `saved_wallets`, and `cron_heavy`
+is not BYPASSRLS). Root cause: per-wallet `aggregate_saved_wallet_stats` costs **16–55s** under IO
+saturation (EXPLAIN: the top-tier correlated subquery does a Bitmap Heap Scan + Sort per collection,
+~70% of the plan; the 43k-moment whale wallet `0xf77bf547fccf6656` is the worst case), while the
+soft deadline (100s) is only checked BETWEEN wallets — so a single expensive wallet entered near the
+100s mark pushed cumulative time past the 120s hard cap and aborted the whole CALL.
+
+Fix: lowered `p_max_seconds` default **100 → 50** in `reconcile_all_saved_wallet_stats` — leaves ~70s
+of headroom below the 120s cap for the in-flight wallet, converting the straddle-abort into a clean
+`succeeded` truncation (partial progress already commits per-wallet; stalest-first resumes next run).
+Body byte-identical otherwise: invoker-rights (COMMIT requires it), no SET clause, same signature →
+grants preserved (`postgres` + `service_role` only, verified; not anon/authenticated). Structural
+fixes were re-checked and remain correctly declined: array_agg fold (−21%, loses index-only outer
+scan — `tier` not in `idx_wmc_cohort_cover`), tier covering index (HOT write amplification on 2.2M-row
+wmc), cron_heavy (RLS/BYPASSRLS), schedule move (13:33Z not structurally congested).
+
+Migration: `supabase/migrations/20260813150925_audit_20260813_reconcile_saved_wallet_stats_lower_soft_deadline.sql`
+(applied to prod as version `20260813150925`; committed file matches by name — commit it to close the
+`migration-parity` window).
+
+Residual (NOT fixed, monitored): a single wallet whose aggregate alone exceeds ~70s under extreme
+saturation could still abort — unavoidable without the declined structural work; Check 7 (daily
+onboarding watch) surfaces a recurrence. Behavioral proof is the next scheduled run (06:33 PT
+2026-08-14) reading `succeeded`; the deployment (new default, invoker, no-SET, grants) is verified.
+
+**Revert (NOT `git revert` — the migration file is not yet committed):**
+```
+CREATE OR REPLACE PROCEDURE public.reconcile_all_saved_wallet_stats(
+  IN p_max_seconds integer DEFAULT 100, IN p_max_wallets integer DEFAULT 500, IN p_min_age_minutes integer DEFAULT 360)
+-- ...restore the identical body with DEFAULT 100...
+```
+i.e. re-apply the prior definition with `p_max_seconds DEFAULT 100`, and delete the migration file.
+
 ### 2026-08-13 · SHIPPED — NARRATIVE SEARCH IS LIVE (Claude Code, interactive) · "Damian Lillard game winner" now returns the For the Win moments
 
 The thing this whole thread was for. After the `Play.description` fix, two backfill runs landed prose on **5,885 of 13,197 canonical Top Shot editions (44.6%)**, avg 632 chars, max 1,896 — and **76 Top Shot moments describe a game-winner**, none of which were reachable before. Live check: `rpc_search_catalog('lillard game winner')` returns `128:5147` "Damian Lillard — For the Win" FIRST, then a Base Set Lillard, then Spencer Dinwiddie's For the Win block. **THE ORDER I committed to was followed and mattered:** capture → backfill → MEASURE coverage → INDEX → only then extend the search arm. **Shipped:** (1) `idx_editions_description_trgm` (GIN trgm, partial `WHERE description IS NOT NULL`, built CONCURRENTLY out of band) — with it the description arm of the anchor predicate is index-backed and the whole call got **FASTER, 33ms → 23ms**, because the extra selective index narrows earlier; (2) `rpc_search_catalog` edition arm now searches `description` in both halves — the index-backed anchor and the multi-token combined text — plus a `via_prose` **0.12 ranking boost** so a deliberate narrative query surfaces the moments that ARE game-winners above editions merely containing the words; (3) new view **`edition_description_coverage`** (security_invoker, anon/authenticated REVOKED, service_role only) measuring prose coverage per collection over the CANONICAL population search reads; (4) `/api/search` reads it LIVE into `meta.coverage` + `meta.note`, and `GlobalSearch`'s empty state renders that note. **⚠ THE COVERAGE DISCLOSURE IS THE POINT, NOT DECORATION.** Prose exists for 44.6% of Top Shot and **0% everywhere else** (All Day's ingest is WAF-blocked; no other collection has a prose source), so a narrative query matching nothing is AMBIGUOUS — it may mean "no such moment" OR "no description for that moment", which are completely different statements to make to a collector. The note says which. It is measured live and **never hardcoded**: the backfill moves the number every run, and a hardcoded percentage is stale the moment it ships (the Panini lesson). A failed coverage read degrades to omitting the disclosure — it never fails the search and never states a number it cannot substantiate (pinned by test). **Two stale test assertions were rewritten, not deleted:** both asserted the old copy "Moment descriptions aren't in the catalog", which is now FALSE — a test that pins outdated copy makes the copy look like the contract. Also fixed a real bug caught while wiring: `meta` was missing from `GlobalSearch`'s `useMemo` deps, so the panel would not have re-rendered when coverage arrived. Verified: primary gate **1150 files / 10975 tests green**, component gate **185 / 1561 green**, `tsc --noEmit` clean. ⚠ The RPC + view were applied via `execute_sql`, so prod carries no migration row; the committed file documents both deltas verbatim against the superseded 20260812020600 file and records the live md5 (`ccb0d012f48dd09ed2e034d299d4be9b`). **Revert:** `git revert <sha>`, then `DROP VIEW IF EXISTS public.edition_description_coverage;`, `DROP INDEX CONCURRENTLY IF EXISTS public.idx_editions_description_trgm;`, and re-apply 20260812020600 for the pre-description search function.
