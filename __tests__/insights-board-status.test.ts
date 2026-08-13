@@ -123,3 +123,38 @@ describe("degradedFromSource", () => {
     }
   })
 })
+
+// The combination { ok: true, partial: true } means "the query succeeded and I
+// KNOW the result was cut short" — a hard row/page cap that filled exactly. It used
+// to be silently dropped, because `partial` was only read inside the `!ok` branch
+// and the type's own doc called it "meaningless when ok is true". On 2026-08-12
+// that shipped a blank Panini board with no notice at all: the fetcher emptied its
+// truncated rows (correctly) and the notice explaining the blank never rendered.
+//
+// The callers now also fold truncation into `ok` themselves, so this is belt and
+// braces — deliberately. The point is that the PRIMITIVE cannot be misused: a
+// caller that says its read was truncated must never be ignored.
+describe("summarizeDegraded — a successful but CAPPED read", () => {
+  it("reports ok:true + partial:true as truncated, not as healthy", () => {
+    const sum = summarizeDegraded([{ label: "Squeeze board", ok: true, partial: true }])
+    expect(sum, "a capped read must not summarize to null").not.toBeNull()
+    expect(sum!.truncated).toContain("Squeeze board")
+    expect(sum!.failed).not.toContain("Squeeze board")
+    expect(sum!.headline).toContain("incomplete slice")
+  })
+
+  it("still returns null when nothing is wrong", () => {
+    expect(summarizeDegraded([{ label: "A", ok: true }])).toBeNull()
+    expect(summarizeDegraded([{ label: "A", ok: true, partial: false }])).toBeNull()
+  })
+
+  it("mixes a capped section with a failed one without conflating them", () => {
+    const sum = summarizeDegraded([
+      { label: "Serials", ok: true, partial: true },
+      { label: "Deals", ok: false, partial: false },
+      { label: "Market", ok: true },
+    ])
+    expect(sum!.truncated).toEqual(["Serials"])
+    expect(sum!.failed).toEqual(["Deals"])
+  })
+})

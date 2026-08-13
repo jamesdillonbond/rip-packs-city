@@ -30,8 +30,16 @@ export interface BoardStatus {
   /** false when the query errored. NOT the same as "returned no rows". */
   ok: boolean
   /**
-   * true when some rows arrived before the failure (paginated reads only), so the
-   * section is TRUNCATED rather than absent. Meaningless when `ok` is true.
+   * true when the section is TRUNCATED rather than absent — some rows arrived
+   * before a failure, OR the read filled a hard cap and there is more behind it.
+   *
+   * ⚠ Reported REGARDLESS of `ok`, and the doc here used to say the opposite
+   * ("meaningless when `ok` is true"). That sentence licensed a real defect on
+   * 2026-08-12: a page-capped read is `ok: true, partial: true` — "the query
+   * succeeded and I know it was cut short" — and summarizeDegraded read `partial`
+   * only inside its `!ok` branch, so the notice vanished while the caller emptied
+   * its rows. A blank board with nothing explaining it. A caller that KNOWS its
+   * read was truncated must never be able to say so and be ignored.
    */
   partial?: boolean
 }
@@ -61,9 +69,15 @@ export function summarizeDegraded(statuses: BoardStatus[]): DegradedSummary | nu
   const truncated: string[] = []
 
   for (const s of statuses) {
+    // Truncation is checked FIRST and independently of `ok` — see BoardStatus.partial.
+    // A successful-but-capped read is still an incomplete slice, and silently
+    // dropping it is what produced a blank, unexplained board.
+    if (s.partial) {
+      truncated.push(s.label)
+      continue
+    }
     if (s.ok) continue
-    if (s.partial) truncated.push(s.label)
-    else failed.push(s.label)
+    failed.push(s.label)
   }
 
   if (failed.length === 0 && truncated.length === 0) return null
