@@ -1,0 +1,107 @@
+# The recurring `pg_net_http_403` CRITICAL is ONE job — jobid 16 — and it is one of the three D2b calls "rotated + verified"
+
+Claude Code, interactive, 2026-08-13 ~08:30 PT. **Read-only investigation; nothing changed.**
+Operator action required (secrets) — see the bottom.
+
+## The attribution the monitor said was impossible
+
+The 08-13 daytime monitor filed `pg_net_http_403` CRITICAL (24 per 2h) and stated:
+
+> "Can't attribute exact jobs (`net._http_response` won't join to URL)."
+
+That is true as stated — `net.http_request_queue` is pruned on completion, so the response
+row genuinely cannot be joined back to the URL it came from. **But the FIRING MINUTE is a
+fingerprint, and pg_cron schedules are distinct enough to be identifying.**
+
+```sql
+select extract(minute from created)::int AS min_of_hour, count(*) n
+from net._http_response where status_code = 403 group by 1 order by 1;
+```
+
+Result — 72 rows over the ~6h `net._http_response` retention window:
+
+| minute | 3 | 8 | 13 | 18 | 23 | 28 | 33 | 38 | 43 | 48 | 53 | 58 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| count | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 |
+
+That is **exactly and only** the schedule of **jobid 16 `rpc-backfill-pack-pool`**:
+
+```
+3,8,13,18,23,28,33,38,43,48,53,58 * * * *
+```
+
+12 firings/hour × 6 hours = 72. Perfectly uniform, **no other minute carries a single 403**.
+So 100% of the 403s are one job, not "a different subset of the 14 gate-keyed jobs".
+
+⚠ **DURABLE METHOD — minute-fingerprinting attributes a pg_net response to its cron job
+without any join.** Applicable to any `net._http_response` triage. It works because pg_cron
+minute-lists are near-unique across the estate; verify the candidate is unique before
+concluding (here, no other gate-keyed job fires on a 5-minute offset-3 pattern).
+
+## Why this matters more than a normal 403
+
+**Jobid 16 is one of the THREE functions D2b records as already done:**
+
+> ✅ Rotated + verified: `backfill-pack-opens-api`, `backfill-allday-pack-supply`,
+> **`backfill-topshot-pack-supply` (cron 15+16 repointed)**
+
+The 08-10 handoff says v25 was deployed, `mode=debugpool` probed **200 OK**, and cron 15+16
+were repointed to the new key. It is now 403ing **100% of ticks**. So the rotation of
+`backfill-topshot-pack-supply` has **REGRESSED since 2026-08-10** — the secret and the
+deployed function no longer agree with the `?key=` in cron.
+
+This also means the monitor's framing — "the 08-11 real-loss ingest jobs are healthy now, so a
+*different* subset re-403'd" — is right that it is a different job, but the important part is
+that **it is a job the runbook considers finished.** Anything auditing D2b progress by reading
+the handoff will conclude 15/16 are done. They are not.
+
+## What is NOT the cause (checked, so nobody re-derives it)
+
+- **Jobs 15 and 16 share one key** (identical md5 digest, both length 25). Job 15 runs
+  `15 8 * * *` — once daily, outside the retention window — so it is unobserved here but is
+  almost certainly 403ing too. **Fixing one fixes both.**
+- **It is NOT the AllDay pack-opens pair.** Jobs 20 and 55 carry an **identical key digest**
+  (`d971b592…`, length 27) and job 20 is **100% healthy** (46/48 runs in 24h), which proves
+  that key is valid for `ingest-allday-pack-opens`. Separately, jobs 56, 83 and 84 are all
+  delivering their full expected tick counts (8/8, 12/12, 60/60 per 2h).
+- ⚠ **Keys were compared by md5 digest only, never echoed** — the technique the 08-12 inbox
+  note recommends after `get_edge_function` was found to return live gate keys in plaintext.
+
+## Impact — bounded, and smaller than it looks
+
+`pack_drop_pool` for Top Shot, by source:
+
+| pool_source | rows | newest | stale |
+|---|---|---|---|
+| `gql` | 26,322 | 2026-08-13 15:25:33Z | **0.0h** |
+| `gql_historical` | 9,316 | 2026-08-12 03:33:08Z | **35.9h** |
+| `atlas` | 25,594 | 2026-07-17 14:18:10Z | 649.1h (separate, known) |
+
+The **live pool is fresh** — `compute-topshot-pack-ev` is healthy (1,383 runs in the retention
+window, last 15:25:09Z) and refreshes the `gql` rows. So pack EV is NOT broken. What has
+stopped is the `gql_historical` leg, stale **35.9h**, which dates the onset to roughly
+**2026-08-12 03:33Z** — i.e. this began well after the 08-10 rotation was verified.
+
+⚠ Do **not** read `pipeline_runs` for confirmation: `backfill-topshot-pack-supply` has **no
+rows under any name** in the full 73h window, and that is exactly the D2 signature — a 403'd
+edge function writes NO `pipeline_runs` row, so silence is indistinguishable from "never
+scheduled". The 403 rows are the positive evidence; the absence is not.
+
+## Operator action
+
+Realign `TOPSHOT_PACK_SUPPLY_GATE_KEY` with what cron 15/16 send. Either:
+
+1. Set the secret to the value cron currently sends (fastest — restores service now), or
+2. Fold jobs 15/16 into the single atomic rotation window the runbook already specifies
+   (set the 8 `*_GATE_KEY` secrets → deploy the env-var functions → repoint every pg_cron
+   `?key=` together).
+
+Option 2 is preferable because **the partial-rotation state is what produced both this and the
+08-11 outage**, and four other functions are still un-rotated. Full mechanics:
+[docs/handoff-2026-08-10-gate-key-rotation-progress.md](../../handoff-2026-08-10-gate-key-rotation-progress.md).
+
+**Re-probe after fixing** — the check is one query, and it should return zero rows:
+
+```sql
+select count(*) from net._http_response where status_code = 403;
+```
