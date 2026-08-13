@@ -9,12 +9,13 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound, permanentRedirect } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows } from "@/lib/entity-section-rpc"
+import { supabaseAdmin } from "@/lib/supabase"
+import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -175,15 +176,6 @@ const SALES_PAGE_SIZE = 30
 // extracted to @/lib/edition-detail-format (measured by the coverage ratchet);
 // imported below. Bodies are byte-identical.
 
-type RpcClient = {
-  rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
-  from: (t: string) => unknown
-}
-
-function rpcClient() {
-  return supabaseAdmin as unknown as RpcClient
-}
-
 // Routed through the shared cache()'d fetch so the segment layout's 404 gate,
 // generateMetadata and this render collapse into ONE get_edition_detail call per
 // request. See lib/entity-detail-gate.ts.
@@ -251,27 +243,6 @@ async function fetchPacks(collectionId: string, routeSlug: string): Promise<Pack
 // keyed by edition_id. Window-bounded (TS ~Apr 2026 →, AllDay ~Jun 2026 →) and
 // undercounts because not every pulled NFT resolves to its edition, so this is a
 // directional "pack-distributed" signal, not a precise fraction (copy reflects that).
-interface PackProvenanceRow {
-  pack_pulls_observed: number | null
-  distinct_packs: number | null
-  observed_pull_share_pct: number | null
-  first_pull_at: string | null
-  last_pull_at: string | null
-}
-
-async function fetchPackProvenance(editionId: string, isAllDay: boolean): Promise<PackProvenanceRow | null> {
-  const view = isAllDay ? "v_allday_edition_pull_provenance" : "v_topshot_edition_pull_provenance"
-  const client = rpcClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = (client.from(view) as any)
-    .select("pack_pulls_observed, distinct_packs, observed_pull_share_pct, first_pull_at, last_pull_at")
-    .eq("edition_id", editionId)
-    .maybeSingle()
-  const { data, error } = await q
-  if (error) { console.error("[edition] pack provenance", error.message); return null }
-  return (data ?? null) as PackProvenanceRow | null
-}
-
 // Item 3b — the deterministic notable-serial breakdown (tags + last sale) from
 // get_edition_special_serials. Complements special_serial_holders (which carries
 // the tracked OWNER, omitted from this RPC's v1 due to partial coverage) — the
@@ -312,22 +283,6 @@ async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
 // matches the Recent Sales rows (which resolve usernames client-side). The
 // special-serials section is server-rendered, so we read wallet_usernames here.
 // (Item 7, 2026-06-22 audit.)
-async function fetchOwnerUsernames(addresses: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  const lowered = Array.from(new Set(addresses.filter(Boolean).map((a) => a.toLowerCase())))
-  if (lowered.length === 0) return out
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (rpcClient().from("wallet_usernames") as any)
-    .select("wallet_addr, username")
-    .in("wallet_addr", lowered)
-    .not("username", "is", null)
-  if (error) { console.error("[edition] owner_usernames", error.message); return out }
-  for (const r of (data ?? []) as Array<{ wallet_addr: string; username: string | null }>) {
-    if (r.wallet_addr && r.username) out.set(r.wallet_addr.toLowerCase(), r.username)
-  }
-  return out
-}
-
 // Market bundle — high_offer + subedition (parallel) ladder + IPFS assets in ONE
 // pooled connection (get_edition_market_bundle composes the three SECDEF helpers
 // server-side). Cuts the edition-page hero fan-out from 3 round-trips to 1,
@@ -938,7 +893,10 @@ async function EditionBottomSections({
     fetchParallels(detail.id).catch(() => [] as ParallelEdition[]),
     fetchPacks(detail.collection_id, slug).catch(() => [] as PackRow[]),
     (isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id)).catch(() => [] as NotableSerialRow[]),
-    (isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null)).catch(() => null),
+    (isTopShot || isAllDay
+      ? fetchPackProvenance(detail.id, isAllDay).then((r) => r.data)
+      : Promise.resolve(null)
+    ).catch(() => null),
     (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
   ])
 
@@ -960,7 +918,7 @@ async function EditionBottomSections({
     ...sales.flatMap((s) => [s.buyer_address, s.seller_address]),
     ...offers.map((o) => o.buyer_address),
   ].filter((a): a is string => !!a)
-  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values(), ...activityAddrs, ...topOwners.map((t) => t.owner_address)])
+  const ownerNames = (await fetchOwnerUsernames([...ownerBySerial.values(), ...activityAddrs, ...topOwners.map((t) => t.owner_address)])).data
   const initialActivityNames: Record<string, string> = Object.fromEntries(ownerNames)
 
   // H5: only render pack tiles that resolved a real title. Some All Day dist_ids

@@ -225,3 +225,37 @@ export async function rpcWithRetry<T>(
   }
   return { data: null, error: lastErr }
 }
+
+/**
+ * Bound a PostgREST **table-read builder** (`.from(...).select(...)...`) with the
+ * same wall-clock deadline `rpcWithRetry` gives an `.rpc()` call.
+ *
+ * WHY THIS EXISTS. `rpcWithRetry` is RPC-shaped — it takes `(client, fnName,
+ * args)` and calls `.rpc()` itself — so a `.from()` builder cannot go through it.
+ * The edition page's two remaining table reads were therefore still unbounded
+ * after the 2026-08-13 RPC fix, and both are live production error sources
+ * ("Timed out acquiring connection from connection pool", 19 + 5 events). An
+ * unbounded read there does not just fail: it parks the render until Vercel's
+ * 300 s kill and leaves a streamed section spinning forever.
+ *
+ * ⚠ This is deliberately a THIN WRAPPER over the existing `withDeadline`, not a
+ * second primitive. The filing that scoped this work suggested writing one, but
+ * `withDeadline` only ever probes for `.abortSignal` — it never touches anything
+ * RPC-specific — so it already accepts any thenable builder. One mechanism with
+ * one set of edge cases beats two that can drift.
+ *
+ * ⚠ NO RETRY, unlike `rpcWithRetry`. These are supplementary sections; a retry
+ * doubles the worst-case hold on a pool that is already the thing saturating.
+ * The deadline releases the slot, which is the half that matters here.
+ *
+ * Keeps the 45 s default on purpose — see `DEFAULT_RPC_TIMEOUT_MS`. A tighter
+ * client bound would pre-empt Postgres's own `statement_timeout=30s`, which is
+ * the handled path that turns a slow query into a retryable error boundary.
+ */
+export function withQueryDeadline<T>(
+  builder: unknown,
+  label: string,
+  timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS,
+): Promise<{ data: T | null; error: PostgrestError | null }> {
+  return withDeadline<T>(builder, Math.max(1, timeoutMs), label)
+}
