@@ -85,3 +85,49 @@ describe("fetchCandyMlbDefault", () => {
     expect((res.payload as any).degraded.failed).toContain("Pack market")
   })
 })
+
+// Each candy section is an ORDERED view read with a hard `.limit()`. Filling that
+// limit exactly is a TRUNCATED RANKING served as the complete set: nothing errors,
+// every row on screen is correct, the board just stops. Measured 2026-08-12,
+// candy_special_serials_board sits at 607 rows against a cap of 800 and
+// candy_holder_board at 395 against 600 — both growing with each Candy drop.
+describe("fetchCandyMlbDefault — row-cap truncation", () => {
+  it("discloses a section that filled its cap, and names it in telemetry", async () => {
+    // serials cap is 800; hand back exactly 800 rows.
+    const full = Array.from({ length: 800 }, (_, i) => ({ x: i }))
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_special_serials_board: { data: full, error: null } }))
+    )
+    const p = res.payload as any
+    expect(p.degraded, "a capped section must produce a notice").not.toBeNull()
+    expect(p.degraded.truncated).toContain("Serials")
+    // ...and the telemetry must say WHICH kind of failure it was, because a dead
+    // view and a filled cap need opposite responses.
+    expect(res.error).toContain("Serials")
+    expect(res.error).toContain("row cap")
+  })
+
+  it("does NOT flag a section that came back under its cap", async () => {
+    const res = await fetchCandyMlbDefault(fakeDb(allOk()))
+    const p = res.payload as any
+    expect(p.degraded).toBeNull()
+    expect(res.error).toBeUndefined()
+  })
+
+  it("keeps serving the truncated slice — disclosure, not blanking", async () => {
+    // Unlike panini's ranking (emptied on truncation), a large top-N candy slice is
+    // still useful; blanking a tab because it filled its cap would be a far bigger
+    // behaviour change than the problem. The rows must survive.
+    // holders is read with limit 800, NOT the 600 default — the call sites differ.
+    const full = Array.from({ length: 800 }, (_, i) => ({ x: i }))
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_holder_board: { data: full, error: null } }))
+    )
+    const p = res.payload as any
+    expect(p.holders.length).toBe(800)
+    expect(p.degraded.truncated).toContain("Holders")
+    // The cache gate stays on Market alone — a capped Holders tab must not stop the
+    // whole board being warmed.
+    expect(res.ok).toBe(true)
+  })
+})

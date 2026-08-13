@@ -103,6 +103,15 @@ describe("fetchPaniniSqueezeDefault", () => {
     expect(res.ok).toBe(false)
     expect(res.error).toContain("partial ranking")
     expect(res.error).not.toContain("page 0:")
+    // ⚠ THE ASSERTION WHOSE ABSENCE SHIPPED A DEFECT. Not caching the truncated
+    // ranking is only half the job: the payload empties its rows, so without a
+    // notice the reader gets a blank board that reads as "nothing matched".
+    // summarizeDegraded skips any status with ok:true, and a page-capped read is
+    // ok:true — so the first version of this fix produced exactly that.
+    const p2 = res.payload as any
+    expect(p2.initialRows).toEqual([])
+    expect(p2.degraded).not.toBeNull()
+    expect(p2.degraded.truncated).toContain("Squeeze board")
   })
 
   it("a healthy board carries no telemetry reason", async () => {

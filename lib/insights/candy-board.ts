@@ -12,7 +12,7 @@
 // (warmBoard). `db` defaults to supabaseAdmin but is injectable for tests.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
+import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
 import { describeBoardFailures } from "@/lib/insights/board-cache"
 
@@ -31,7 +31,7 @@ async function fetchView(
   orderCol: string,
   asc = false,
   limit = 600
-): Promise<{ rows: any[]; ok: boolean }> {
+): Promise<{ rows: any[]; ok: boolean; truncated: boolean }> {
   const { data, error } = await db
     .from(view)
     .select(cols)
@@ -39,22 +39,46 @@ async function fetchView(
     .limit(limit)
   if (error) {
     console.error(`[candy-mlb] ${view} error:`, error.message)
-    return { rows: [] as any[], ok: false }
+    return { rows: [] as any[], ok: false, truncated: false }
   }
-  return { rows: (data ?? []) as any[], ok: true }
+  const rows = (data ?? []) as any[]
+  // Every one of these views is ORDERED, so a hard `.limit()` that fills exactly is
+  // a TRUNCATED RANKING served as the complete set — the same defect just fixed on
+  // panini's page cap, one layer up. Nothing errors, every row on screen is correct,
+  // and the board simply stops.
+  //
+  // ⚠ Not theoretical any more. Measured live 2026-08-12, rows against each call's
+  // OWN limit (they differ — do not assume the 600 default):
+  //   candy_special_serials_board  607 / 800   ← tightest, 1.32x
+  //   candy_holder_board           395 / 800
+  //   candy_player_board           100 / 600
+  //   secondary / deals / spread / scarcity  ~125 / 600
+  //   candy_parallel_premium         2 / 5     (semantically bounded: parallel groups)
+  // CLAUDE.md recorded the serials board at 500 rows and 246 collectors when those
+  // caps were chosen — +21% and +61% since. Both grow with every Candy drop, and
+  // nothing today is at its cap, so this reports rather than cries wolf.
+  //
+  // ⚠ This does NOT gate the cache (`ok` stays true): unlike panini's ranking, a
+  // large top-N slice is still useful, and blanking a tab because it filled its cap
+  // would be a far bigger behaviour change than the problem. It is reported instead —
+  // which is also what keeps the client's "Showing N of M" honest, since M is the
+  // fetched length and would silently become the cap.
+  return { rows, ok: true, truncated: rows.length >= limit }
 }
 
 async function fetchOne(
   db: Db,
   view: string,
   cols: string
-): Promise<{ row: any; ok: boolean }> {
+): Promise<{ row: any; ok: boolean; truncated: boolean }> {
   const { data, error } = await db.from(view).select(cols).limit(1)
   if (error) {
     console.error(`[candy-mlb] ${view} error:`, error.message)
-    return { row: null, ok: false }
+    return { row: null, ok: false, truncated: false }
   }
-  return { row: data?.[0] ?? null, ok: true }
+  // A single-row summary fetch cannot be truncated in the meaningful sense — the
+  // field exists so every section has the same shape below.
+  return { row: data?.[0] ?? null, ok: true, truncated: false }
 }
 
 /**
@@ -147,18 +171,27 @@ export async function fetchCandyMlbDefault(
       ),
     ])
 
-  const sections = [
-    boardStatus("Market", rows.ok),
-    boardStatus("Pack EV", packEv.ok),
-    boardStatus("Pack market", packMarket.ok),
-    boardStatus("Deals", deals.ok),
-    boardStatus("Offer spread", spreads.ok),
-    boardStatus("Serials", serials.ok),
-    boardStatus("Scarcity", scarcity.ok),
-    boardStatus("Holders", holders.ok),
-    boardStatus("Players", players.ok),
-    boardStatus("Parallels", parallel.ok),
-  ]
+  // ⚠ `ok` on a BoardStatus means "usable", not "the query succeeded":
+  // summarizeDegraded skips any status with ok:true (`if (s.ok) continue`), so a
+  // section that filled its `.limit()` must report ok:false + partial:true or it
+  // renders a truncated ranking with no notice at all. Same semantics as panini's
+  // Squeeze board status.
+  const sections: BoardStatus[] = [
+    ["Market", rows],
+    ["Pack EV", packEv],
+    ["Pack market", packMarket],
+    ["Deals", deals],
+    ["Offer spread", spreads],
+    ["Serials", serials],
+    ["Scarcity", scarcity],
+    ["Holders", holders],
+    ["Players", players],
+    ["Parallels", parallel],
+  ].map(([label, sec]: any) => ({
+    label: label as string,
+    ok: sec.ok && !sec.truncated,
+    partial: sec.truncated,
+  }))
 
   return {
     payload: {
@@ -181,8 +214,15 @@ export async function fetchCandyMlbDefault(
     // three dead sections is worth seeing in pipeline_runs — so report EVERY failed
     // section, not just the gating one. (Candy already console.errors each view; this
     // is what puts the same information in the pipeline row an operator actually reads.)
+    // `sec.ok` is already "usable", so a capped section lands here too — but it
+    // must SAY which kind it is, because "the view is down" and "the view filled
+    // its cap" need opposite responses (fix the query vs raise the limit).
     error: describeBoardFailures(
-      sections.map((sec) => ({ label: sec.label, ok: sec.ok }))
+      sections.map((sec) => ({
+        label: sec.label,
+        ok: sec.ok,
+        error: sec.partial ? "hit the row cap — ranking truncated" : null,
+      }))
     ),
   }
 }

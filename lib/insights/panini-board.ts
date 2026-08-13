@@ -115,7 +115,18 @@ export async function fetchPaniniSqueezeDefault(
     fetchTotals(db),
   ])
 
-  const status: BoardStatus = { label: "Squeeze board", ok: rows.ok, partial: rows.partial }
+  // ⚠ `ok` here must be "usable", NOT "the query succeeded" — summarizeDegraded
+  // skips any status with `ok: true` (`if (s.ok) continue`), so a page-capped read
+  // (which returns ok:true, partial:true) would emit NO notice while the payload
+  // below empties its rows: a blank board with nothing explaining it, i.e. exactly
+  // the "empty reads as 'nothing matched'" defect this whole module exists to
+  // prevent. Introduced by my own cap fix earlier today and caught by asking what
+  // the READER sees rather than what the function returns.
+  const status: BoardStatus = {
+    label: "Squeeze board",
+    ok: rows.ok && !rows.partial,
+    partial: rows.partial,
+  }
 
   return {
     payload: {
