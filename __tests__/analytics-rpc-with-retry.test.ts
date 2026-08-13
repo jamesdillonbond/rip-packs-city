@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
+import { rpcWithRetry, DEFAULT_RPC_TIMEOUT_MS } from "@/lib/analytics/rpc-with-retry"
 
 // Unit tests for lib/analytics/rpc-with-retry.ts — the wrapper every
 // /api/analytics/* route uses. It must retry connection-class (transient)
@@ -147,5 +147,103 @@ describe("rpcWithRetry", () => {
     const { client: c2, rpc: r2 } = fakeClient([err("08006")])
     await rpcWithRetry(c2, "f", {}, { attempts: 0, baseDelayMs: 1 })
     expect(r2).toHaveBeenCalledTimes(1) // clamped up to 1
+  })
+})
+
+// ── The wall-clock bound (2026-08-13) ──────────────────────────────────────
+// These cover the defect the retry loop above could never see: an RPC that
+// never ANSWERS. Retrying handles a call that fails; nothing handled a call
+// that just parks, and that is what left /[collection]/edition/[slug] sitting
+// on "SCANNING THE MARKETPLACE…" until Vercel killed the function at 300s.
+describe("rpcWithRetry — wall-clock bound", () => {
+  // A client whose .rpc() never settles, i.e. a stuck connection acquire.
+  // Deliberately shaped like the repo's own mocks: a bare thenable with NO
+  // .abortSignal, which is why the implementation cannot rely on the signal.
+  function hangingClient() {
+    const rpc = vi.fn(() => new Promise(() => {}))
+    return { client: { rpc } as any, rpc }
+  }
+
+  // Every other test here passes an explicit timeoutMs, so none of them would
+  // notice the DEFAULT being removed or set to Infinity — which is the exact
+  // state production was in. This pins the default itself, and the window it
+  // has to sit in for the reasoning to hold.
+  it("defaults to a bound above the DB's own ceiling and below Vercel's", () => {
+    expect(Number.isFinite(DEFAULT_RPC_TIMEOUT_MS)).toBe(true)
+    // Above service_role's statement_timeout=30s, or we would start cancelling
+    // statements Postgres would have finished and answered.
+    expect(DEFAULT_RPC_TIMEOUT_MS).toBeGreaterThan(30_000)
+    // Below the 300s function kill, or the bound never gets to fire and the
+    // request dies as an unattributed "Task timed out" instead.
+    expect(DEFAULT_RPC_TIMEOUT_MS).toBeLessThan(300_000)
+  })
+
+  it("settles with a timeout error instead of hanging forever", async () => {
+    const { client } = hangingClient()
+    const res = await rpcWithRetry(client, "get_edition_detail", {}, { timeoutMs: 60, baseDelayMs: 1 })
+    expect(res.data).toBeNull()
+    expect(res.error).toMatchObject({ code: "RPC_TIMEOUT" })
+    // The message must name the function — an unattributed timeout in a
+    // 6-wide Promise.all tells an operator nothing about which leg stuck.
+    expect(res.error?.message).toContain("get_edition_detail")
+  })
+
+  it("spends the budget in TOTAL, not per attempt", async () => {
+    // The trap this pins: a per-attempt timeout silently multiplies by
+    // `attempts`, so a "30s" bound would really be 90s.
+    const { client } = hangingClient()
+    const t0 = Date.now()
+    await rpcWithRetry(client, "f", {}, { timeoutMs: 80, attempts: 3, baseDelayMs: 1 })
+    const elapsed = Date.now() - t0
+    expect(elapsed).toBeLessThan(240) // 3 x 80ms would be >= 240ms
+  })
+
+  it("does not cut off a slow query that answers inside the budget", async () => {
+    // MUST consume real time. An immediately-resolving mock settles as a
+    // microtask before the timer macrotask ever runs, so this assertion would
+    // pass even with timeoutMs: 0 and prove nothing.
+    const rpc = vi.fn(
+      () => new Promise((r) => setTimeout(() => r({ data: { slow: true }, error: null }), 60)),
+    )
+    const res = await rpcWithRetry({ rpc } as any, "f", {}, { timeoutMs: 400, baseDelayMs: 1 })
+    expect(res.error).toBeNull()
+    expect(res.data).toEqual({ slow: true })
+  })
+
+  it("does not retry after a timeout — the hang consumed the whole budget", async () => {
+    // Each attempt is handed the REMAINING budget, so an attempt that times
+    // out has spent all of it and no retry can follow, even with attempts: 3.
+    // Pinned because the tempting "fix" — slicing the budget per attempt so a
+    // retry fits — would cap one statement below the 30s service_role allows
+    // and start cancelling queries Postgres would have finished and answered.
+    const rpc = vi.fn(() => new Promise(() => {}))
+    const res = await rpcWithRetry({ rpc } as any, "f", {}, { timeoutMs: 80, attempts: 3, baseDelayMs: 1 })
+    expect(res.error).toMatchObject({ code: "RPC_TIMEOUT" })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it("still retries a FAST transient error under the same budget", async () => {
+    // The bound must not disable the retry behaviour this helper exists for:
+    // an error that comes back quickly leaves budget, so attempt 2 runs.
+    const { client, rpc } = fakeClient([err("53300", "too many connections"), ok({ v: 9 })])
+    const res = await rpcWithRetry(client, "f", {}, { timeoutMs: 5_000, baseDelayMs: 1 })
+    expect(res.data).toEqual({ v: 9 })
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("cancels the real request via abortSignal when the builder supports it", async () => {
+    // The race alone would settle our promise but leave the socket and its
+    // pool slot held — the opposite of helpful while the pool is saturated.
+    let seen: AbortSignal | undefined
+    const builder: any = {
+      abortSignal: (s: AbortSignal) => {
+        seen = s
+        return new Promise(() => {})
+      },
+    }
+    const rpc = vi.fn(() => builder)
+    await rpcWithRetry({ rpc } as any, "f", {}, { timeoutMs: 60, attempts: 1, baseDelayMs: 1 })
+    expect(seen).toBeInstanceOf(AbortSignal)
+    expect(seen?.aborted).toBe(true)
   })
 })

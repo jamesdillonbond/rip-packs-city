@@ -15,6 +15,7 @@ import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows } from "@/lib/entity-section-rpc"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -349,15 +350,25 @@ interface MarketBundle {
 // instead of being indistinguishable from a genuinely empty tab. None is marked
 // structural — the edition hero carries the page, and these are tab contents.
 //
-// The two fetchers BELOW are deliberately NOT converted: each has a bespoke
-// non-empty default (EMPTY_MARKET_BUNDLE / EMPTY_INSIGHT_LINKS) rather than [],
-// so routing them through sectionRows would change their contract. They keep
+// The two fetchers BELOW are deliberately NOT converted to sectionRows: each has
+// a bespoke non-empty default (EMPTY_MARKET_BUNDLE / EMPTY_INSIGHT_LINKS) rather
+// than [], so routing them through it would change their contract. They keep
 // their own error handling.
+//
+// They DO go through rpcWithRetry directly (2026-08-13), which is a different
+// thing and was the gap: both sit in this page's blocking shell Promise.all, and
+// a bare .rpc() has no wall-clock bound at all, so a stuck connection-acquire
+// parked the whole render on "SCANNING THE MARKETPLACE…" until Vercel killed the
+// function at 300s. rpcWithRetry returns the same { data, error } shape these
+// already destructure, so the contract is unchanged — it only adds the bound
+// (and the retry the rest of the page had). market_bundle is the single most
+// frequent edition error in production, so leaving it unbounded would have left
+// the hang in place on the exact page that reported it.
 const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [], active_listings: null }
 
 async function fetchMarketBundle(editionId: string, externalId: string | null): Promise<MarketBundle> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (rpcClient() as any).rpc("get_edition_market_bundle", { p_edition_id: editionId, p_external_id: externalId })
+  const { data, error } = await rpcWithRetry<any>(supabaseAdmin as never, "get_edition_market_bundle", { p_edition_id: editionId, p_external_id: externalId })
   if (error) { console.error("[edition] market_bundle", error.message); return EMPTY_MARKET_BUNDLE }
   return {
     high_offer: (data?.high_offer ?? null) as HighOffer | null,
@@ -389,7 +400,7 @@ async function fetchInsightLinks(editionId: string, externalId: string | null): 
     // Bundled into ONE RPC (get_edition_insight_links) so the edition page holds a
     // single pooled connection here instead of three separate view reads.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (rpcClient() as any).rpc("get_edition_insight_links", { p_edition_id: editionId, p_external_id: externalId })
+    const { data, error } = await rpcWithRetry<any>(supabaseAdmin as never, "get_edition_insight_links", { p_edition_id: editionId, p_external_id: externalId })
     if (error) { console.error("[edition] insight_links", error.message); return EMPTY_INSIGHT_LINKS }
     return {
       squeeze_pct: data?.squeeze_pct ?? null,

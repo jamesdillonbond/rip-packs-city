@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { normalizeBadgeKey } from "./normalize"
 
 // Server-side resolver for real badge ARTWORK (the SVGs Trevor wants in place
@@ -21,7 +22,10 @@ export async function fetchBadgeArt(
   const unique = Array.from(new Set(titles.filter(Boolean)))
   if (unique.length === 0) return out
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_badge_display_metadata", {
+    // Via rpcWithRetry for its wall-clock bound: this runs inside the edition
+    // page's BLOCKING shell Promise.all, where a bare .rpc() that never answers
+    // parks the whole render on the loading skeleton. (2026-08-13)
+    const { data, error } = await rpcWithRetry<any>(supabaseAdmin as never, "get_badge_display_metadata", {
       p_titles: unique,
       p_collection_id: collectionId ?? null,
     })

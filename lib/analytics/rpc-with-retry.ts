@@ -36,9 +36,114 @@ const TRANSIENT_CODES = new Set(["08006", "08001", "08000", "53300", "57P01"])
 // 57014 — query_canceled ("canceling statement due to statement timeout")
 const NEVER_RETRY_CODES = new Set(["57014"])
 
+// ── The wall-clock bound (2026-08-13) ──────────────────────────────────────
+// Retrying handles an RPC that FAILS. Nothing here handled an RPC that never
+// answers at all — and those are not the same event. supabase-js issues a plain
+// `fetch` with no signal, so a stuck connection-acquire inside Supavisor parks
+// the await indefinitely (undici's own default ceiling is ~300s). The retry
+// loop never runs, because there is no error to retry.
+//
+// That is how /[collection]/edition/[slug] hung on "SCANNING THE MARKETPLACE…".
+// These five entity routes ship a loading.tsx, so Next flushes the shell and a
+// 200 immediately and streams the page after — a render that never finishes
+// leaves the skeleton on screen with no error, no failing status and no client
+// XHR to inspect, until Vercel kills the function. Production bears this out:
+// the largest error group on the project is "Task timed out after 300 seconds",
+// and /[collection]/edition/[slug] is one of the routes listed in it.
+//
+// Same lesson the public boards learned on 2026-08-12 (BOARD_LIVE_TIMEOUT_MS):
+// SLOW and BROKEN are equally unservable, and only broken was modelled.
+//
+// ── Why 45s, and why it must not be tighter ────────────────────────────────
+// This bound exists to catch hangs the DATABASE CANNOT BOUND ITSELF. A query
+// that is genuinely RUNNING is already bounded: service_role carries
+// statement_timeout=30s, so Postgres kills it and returns 57014 (which we
+// deliberately never retry). Anything still outstanding past 45s is therefore
+// not a statement — it is a stuck acquire or a dead socket, the one case with
+// no other stop condition.
+//
+// So 45s is a ceiling ABOVE the database's own, not a performance target. A
+// tighter budget would start cancelling statements Postgres would have finished
+// and answered, converting working-but-slow pages into errors — and these pages
+// really do render in 11–17s under load. Do not "tune this down" to improve
+// perceived latency; that is a query-cost problem, not a timeout problem.
+export const DEFAULT_RPC_TIMEOUT_MS = 45_000
+
+// Distinct from any Postgres SQLSTATE so a bound we imposed is greppable in
+// logs and never mistaken for something the server reported.
+export const RPC_TIMEOUT_CODE = "RPC_TIMEOUT"
+
 interface RetryOptions {
   attempts?: number
   baseDelayMs?: number
+  /**
+   * TOTAL wall-clock budget for the whole call INCLUDING retries and backoff —
+   * not a per-attempt allowance. rpcWithRetry always settles within roughly
+   * this long, which is the property the callers actually need; a per-attempt
+   * timeout would silently multiply by `attempts`.
+   */
+  timeoutMs?: number
+}
+
+function timeoutError(ms: number, fn: string): PostgrestError {
+  return {
+    // NOTE: a timeout is always TERMINAL for the call that raised it. Each
+    // attempt is handed the whole REMAINING budget, so an attempt that times
+    // out has by definition consumed the rest of it and no retry can follow.
+    // That is deliberate, not an oversight: slicing the budget per attempt is
+    // the obvious alternative and it is wrong here, because a slice smaller
+    // than service_role's 30s statement_timeout would start cancelling
+    // statements Postgres would have finished and answered.
+    message: `rpc ${fn} timed out after ${ms}ms with no response`,
+    details: "",
+    hint: "",
+    code: RPC_TIMEOUT_CODE,
+  } as PostgrestError
+}
+
+/**
+ * Bound one attempt.
+ *
+ * Two mechanisms on purpose, because they buy different things:
+ *  - `.abortSignal()` genuinely CANCELS the request, releasing the socket and
+ *    the pool slot. Under saturation that matters — abandoning a request while
+ *    it keeps holding a connection makes the pile-up worse.
+ *  - the race GUARANTEES we settle. The builder is reached through an `as any`
+ *    cast and every test in this repo mocks `.rpc` as a bare async function
+ *    with no `.abortSignal`, so the signal cannot be relied on to exist. The
+ *    race is what makes the contract true for real clients and mocks alike.
+ */
+function withDeadline<T>(
+  builder: unknown,
+  ms: number,
+  fn: string,
+): Promise<{ data: T | null; error: PostgrestError | null }> {
+  const b = builder as {
+    abortSignal?: (s: AbortSignal) => unknown
+  }
+
+  let pending: unknown = builder
+  if (
+    typeof b?.abortSignal === "function" &&
+    typeof AbortSignal !== "undefined" &&
+    typeof AbortSignal.timeout === "function"
+  ) {
+    pending = b.abortSignal(AbortSignal.timeout(ms))
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const guard = new Promise<{ data: null; error: PostgrestError }>((resolve) => {
+    timer = setTimeout(() => resolve({ data: null, error: timeoutError(ms, fn) }), ms)
+  })
+
+  return Promise.race([
+    pending as Promise<{ data: T | null; error: PostgrestError | null }>,
+    guard,
+    // Always clear the timer. A dangling one holds the event loop open, which
+    // on a serverless invocation delays teardown and in vitest leaks handles.
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
 }
 
 function isTransient(err: PostgrestError | null | undefined): boolean {
@@ -91,16 +196,28 @@ export async function rpcWithRetry<T>(
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const attempts = Math.max(1, opts.attempts ?? 3)
   const base = Math.max(1, opts.baseDelayMs ?? 50)
+  const budget = Math.max(1, opts.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
+  const deadline = Date.now() + budget
 
   let lastErr: PostgrestError | null = null
   for (let i = 0; i < attempts; i++) {
-    const { data, error } = await (client.rpc as any)(fn, args)
+    // Each attempt may use whatever is LEFT of the shared budget, so the whole
+    // call still settles within `budget` no matter how the attempts fall.
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) {
+      lastErr = lastErr ?? timeoutError(budget, fn)
+      break
+    }
+    const { data, error } = await withDeadline<T>((client.rpc as any)(fn, args), remaining, fn)
     if (!error) return { data: (data as T | null) ?? null, error: null }
     lastErr = error
     if (i === attempts - 1) break
     if (!isTransient(error)) break
     // Exponential backoff: 50ms, 200ms, 800ms (with the default base of 50).
-    const delay = base * Math.pow(4, i)
+    // Never sleep past the deadline — waiting out a budget we no longer have
+    // would spend the caller's time to reach a retry that cannot run.
+    const delay = Math.min(base * Math.pow(4, i), Math.max(0, deadline - Date.now()))
+    if (delay <= 0) break
     console.log(
       `[rpc-with-retry] transient error on ${fn} attempt ${i + 1}/${attempts}: ${error.message || (error as any)?.code || "unknown"} — retrying in ${delay}ms`
     )
