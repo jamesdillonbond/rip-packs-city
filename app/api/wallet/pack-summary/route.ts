@@ -9,6 +9,7 @@
 // { totals, by_currency, by_collection, note, wallet, computed_at }.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   if (lookupErr) {
     console.error("[wallet/pack-summary] verify lookup", lookupErr.message)
-    return NextResponse.json({ error: lookupErr.message }, { status: 500 })
+    return apiErrorResponse(lookupErr, "api/wallet/pack-summary");
   }
   if (!matches || matches.length === 0) {
     return NextResponse.json(
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
     })
     if (error) {
       console.error("[wallet/pack-summary]", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/wallet/pack-summary");
     }
     return NextResponse.json(data ?? {}, {
       headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
@@ -64,6 +65,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[wallet/pack-summary] unexpected", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/wallet/pack-summary");
   }
 }

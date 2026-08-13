@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { topshotGraphql } from "@/lib/chains/flow/topshot";
 import type { Badge, MarketMoment } from "@/lib/types";
 
@@ -129,14 +130,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ results });
  } catch (error) {
     console.error("[MOMENT_MARKET_500]", error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch moment market data.",
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "api/moment-market");
   }
 }

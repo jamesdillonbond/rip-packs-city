@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -53,6 +54,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ total, tierBreakdown: tierCounts })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
+    return apiErrorResponse(err, "api/pack-listings/historical-pulls");
   }
 }

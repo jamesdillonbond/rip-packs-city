@@ -50,6 +50,6 @@ describe("GET /api/edition-search", () => {
     state.error = { message: "db down" }
     const res = await GET(req("https://t/api/edition-search?q=84:2892"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 })

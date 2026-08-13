@@ -6,6 +6,7 @@
 // multiple collections.
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
@@ -119,7 +120,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error("[saved-wallets GET]", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/profile/saved-wallets");
     }
 
     const mapRow = (row: any) => ({
@@ -262,7 +263,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error("[saved-wallets POST]", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/profile/saved-wallets");
     }
 
     // Deep cross-collection warm for the paste-an-address entry path. Until
@@ -317,7 +318,7 @@ export async function DELETE(req: NextRequest) {
     const { error } = await query;
     if (error) {
       console.error("[saved-wallets DELETE]", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/profile/saved-wallets");
     }
     return NextResponse.json({ ok: true });
   } catch (err: any) {
@@ -383,7 +384,7 @@ export async function PATCH(req: NextRequest) {
 
     if (error) {
       console.error("[saved-wallets PATCH]", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/profile/saved-wallets");
     }
 
     if (!data || data.length === 0) {

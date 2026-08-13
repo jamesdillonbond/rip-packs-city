@@ -7,6 +7,7 @@
 // Stripe itself only shows the customer their own data, so the blast radius
 // was small, but the auth gate matches /api/stripe/checkout's contract.
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { getStripe } from "@/lib/stripe"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { createClient } from "@supabase/supabase-js"
@@ -69,6 +70,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: session.url })
   } catch (err: any) {
     console.log("[stripe/portal] error:", err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return apiErrorResponse(err, "api/stripe/portal");
   }
 }

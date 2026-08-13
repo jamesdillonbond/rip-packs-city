@@ -14,6 +14,7 @@ export const maxDuration = 15;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { createChannelLinkCode, isChannel, type Channel } from "@/lib/alerts";
@@ -65,7 +66,7 @@ export async function GET() {
     .from("notification_channels")
     .select("channel, channel_user_id, channel_username, verified, verified_at, last_used_at")
     .eq("owner_key", user.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts/channels");
 
   const channels = (data ?? []).map((c: any) => ({
     channel: c.channel,
@@ -150,7 +151,7 @@ export async function DELETE(req: NextRequest) {
     .delete()
     .eq("owner_key", user.id)
     .eq("channel", channel);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts/channels");
   return NextResponse.json({ ok: true });
 }
 

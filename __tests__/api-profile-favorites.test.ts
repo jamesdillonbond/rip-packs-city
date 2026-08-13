@@ -92,7 +92,7 @@ describe("GET /api/profile/favorites", () => {
     state.list = { data: null, error: { message: "prefs down" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("prefs down")
+    expect((await res.json()).error).not.toContain("prefs down")
   })
 })
 

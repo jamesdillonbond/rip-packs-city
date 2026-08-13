@@ -16,6 +16,7 @@
 // reason every pinned trophy ended up with thumbnail_url IS NULL.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[profile/top-moments]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/top-moments");
   }
 
   return NextResponse.json({ moments: data ?? [] });

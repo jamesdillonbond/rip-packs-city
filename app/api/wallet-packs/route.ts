@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import {safeApiError, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 
 const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
@@ -156,19 +157,21 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "wallet-packs failed"
 
-    // Username resolution failures and similar client errors → 400
-    if (message.includes("Could not resolve")) {
-      return NextResponse.json({ error: message }, { status: 400 })
-    }
+    // Username resolution failures and similar client errors → 400. Reading the
+    // message SERVER-SIDE to classify is fine; what is published is fixed copy,
+    // since `message` here is whatever the resolver threw.
+    if (isUnresolvedIdentifierError(e)) return unresolvedIdentifierResponse()
 
-    // GraphQL / network failures → return empty result instead of 500
+    // GraphQL / network failures → return empty result instead of 500. That
+    // degradation is deliberate (the caller reads packsByTitle and renders
+    // nothing), but the `error` key must not carry the upstream's own text.
     console.error("[wallet-packs] error:", message)
     return NextResponse.json({
       walletAddress: null,
       totalSealedPacks: 0,
       owned: {},
       packsByTitle: {},
-      error: message,
+      error: safeApiError(e, "Sealed pack data is unavailable right now.").error,
     })
   }
 }

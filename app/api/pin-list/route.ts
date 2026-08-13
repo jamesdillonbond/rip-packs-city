@@ -29,6 +29,7 @@
 //   script           — a commented `ipfs pin add <cid>` bash script (download).
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
 
   if (lookupErr) {
     console.error("[pin-list] saved_wallets lookup", lookupErr.message)
-    return NextResponse.json({ error: lookupErr.message }, { status: 500 })
+    return apiErrorResponse(lookupErr, "api/pin-list");
   }
   if (!owned || owned.length === 0) {
     return NextResponse.json(
@@ -102,13 +103,13 @@ export async function GET(req: NextRequest) {
     const { data, error } = await sb.rpc("get_wallet_ipfs_pin_export", { p_wallet: wallet })
     if (error) {
       console.error("[pin-list]", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/pin-list");
     }
     exp = (data ?? {}) as PinExport
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[pin-list] unexpected", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/pin-list");
   }
 
   // The single-row RPC already did the aggregation. video/artwork are the

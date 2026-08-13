@@ -74,7 +74,7 @@ describe("GET /api/wallet-hold-time — guards", () => {
     state.error = { message: "db down" }
     const res = await GET(req(`?wallet=${WALLET}&collection=nba-top-shot`))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 })
 

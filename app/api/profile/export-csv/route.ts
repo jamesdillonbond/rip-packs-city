@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       .select("wallet_addr")
       .eq("owner_key", ownerKey)
     if (walletsErr) {
-      return NextResponse.json({ error: walletsErr.message }, { status: 500 })
+      return apiErrorResponse(walletsErr, "api/profile/export-csv");
     }
 
     const addrs = (wallets ?? [])

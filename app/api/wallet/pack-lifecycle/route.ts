@@ -10,6 +10,7 @@
 // and history endpoints — defense-in-depth.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
     .limit(1)
 
   if (lookupErr) {
-    return NextResponse.json({ error: lookupErr.message }, { status: 500 })
+    return apiErrorResponse(lookupErr, "api/wallet/pack-lifecycle");
   }
   if (!matches || matches.length === 0) {
     return NextResponse.json({ error: "wallet not verified on this account" }, { status: 403 })
@@ -49,13 +50,12 @@ export async function GET(req: NextRequest) {
     const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
     if (error) {
       console.error("[wallet/pack-lifecycle]", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/wallet/pack-lifecycle");
     }
     return NextResponse.json(data ?? {}, {
       headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/wallet/pack-lifecycle");
   }
 }

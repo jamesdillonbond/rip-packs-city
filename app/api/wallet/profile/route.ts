@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
       console.error(
         `[wallet/profile] RPC details=${JSON.stringify(error.details ?? null).slice(0, 200)}`
       )
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/wallet/profile");
     }
     setCached(cacheKey, data)
     if (rpcMs > 3000) {
@@ -90,6 +91,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[wallet/profile] unexpected: ${msg} ownerKey=${rawOwnerKey}`)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/wallet/profile");
   }
 }

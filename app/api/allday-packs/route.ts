@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 
@@ -23,7 +24,7 @@ export async function GET() {
       .range(from, from + pageSize - 1)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/allday-packs");
     }
     if (!data || data.length === 0) break
     rows.push(...data)

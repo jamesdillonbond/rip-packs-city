@@ -180,3 +180,32 @@ export function apiErrorResponse(
     },
   });
 }
+
+/**
+ * A "we couldn't turn that username into a wallet" failure is a CALLER error,
+ * not an internal one, and its copy is OUR OWN — written for the user, not by a
+ * driver. Classifying it as `internal` (which is what safeApiError does, since
+ * it only knows Postgres) replaces the one thing the user needed to be told
+ * with "Something went wrong.", and returns 500 for what is really a 400.
+ *
+ * The check is on the message because that is where the routes' own resolvers
+ * encode it (`throw new Error("Could not resolve …")`). Reading a message
+ * server-side to CLASSIFY is fine; what must never happen is publishing it, so
+ * callers of this pair return fixed copy rather than the message itself.
+ */
+export function isUnresolvedIdentifierError(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return /could not resolve/i.test(m);
+}
+
+/** The publishable 400 for the above. Fixed copy — never the thrown message. */
+export function unresolvedIdentifierResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: "We couldn't find that wallet or username. Check the spelling and try again.",
+      code: "not_found" as const,
+      retryable: false,
+    },
+    { status: 400, headers: { "Cache-Control": "no-store" } }
+  );
+}

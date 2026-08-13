@@ -96,7 +96,7 @@ describe("/api/profile/trophy", () => {
     state.result = { data: null, error: { message: "read boom" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("read boom")
+    expect((await res.json()).error).not.toContain("read boom")
   })
 
   it("POST upserts with the NBA-Top-Shot collection default + pinned_at, returns the trophy", async () => {
@@ -126,7 +126,7 @@ describe("/api/profile/trophy", () => {
     state.result = { data: null, error: { message: "upsert boom" } }
     const res = await POST(req({ slot: 1, momentId: "m1" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("upsert boom")
+    expect((await res.json()).error).not.toContain("upsert boom")
   })
 
   it("DELETE removes a slot and returns ok on success", async () => {
@@ -142,6 +142,6 @@ describe("/api/profile/trophy", () => {
     state.result = { error: { message: "delete boom" } }
     const res = await DELETE(req({ slot: 4 }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("delete boom")
+    expect((await res.json()).error).not.toContain("delete boom")
   })
 })

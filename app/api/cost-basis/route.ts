@@ -5,6 +5,7 @@
 // Bypasses PostgREST 1000-row cap.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
 
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
     }
   }
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/cost-basis");
   }
 
   return NextResponse.json(

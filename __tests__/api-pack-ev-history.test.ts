@@ -31,7 +31,7 @@ describe("GET /api/pack-ev-history", () => {
     state.error = { message: "db down" }
     const res = await GET(req("https://t/api/pack-ev-history?packListingId=abc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("returns the history array and echoes the clamped days", async () => {

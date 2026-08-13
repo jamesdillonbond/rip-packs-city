@@ -200,7 +200,7 @@ describe("GET /api/pin-list — summary shape + failures", () => {
     state.exp = { data: null, error: { message: "pin export rpc down" } }
     const res = await GET(req("https://t/api/pin-list?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("pin export rpc down")
+    expect((await res.json()).error).not.toContain("pin export rpc down")
   })
 
   it("sets a private cache header on every format (never public — it is per-account)", async () => {

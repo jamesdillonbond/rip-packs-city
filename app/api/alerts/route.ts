@@ -17,6 +17,7 @@ export const maxDuration = 10;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 
@@ -257,7 +258,7 @@ export async function PATCH(req: NextRequest) {
     .eq("owner_key", user.id)
     .select()
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts");
   if (!data) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
   return NextResponse.json(data);
 }
@@ -279,7 +280,7 @@ export async function DELETE(req: NextRequest) {
     .eq("id", id)
     .eq("owner_key", user.id)
     .select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts");
   if (!data || data.length === 0) {
     return NextResponse.json({ error: "Alert not found" }, { status: 404 });
   }

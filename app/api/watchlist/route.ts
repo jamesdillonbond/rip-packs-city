@@ -6,6 +6,7 @@
 export const maxDuration = 10;
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js";
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { awardPoints } from "@/lib/rewards";
@@ -114,7 +115,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(enriched);
   } catch (err: any) {
     console.error("[watchlist GET]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, "api/watchlist");
   }
 }
 
@@ -167,7 +168,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
     console.error("[watchlist POST]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, "api/watchlist");
   }
 }
 
@@ -200,6 +201,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("[watchlist DELETE]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, "api/watchlist");
   }
 }

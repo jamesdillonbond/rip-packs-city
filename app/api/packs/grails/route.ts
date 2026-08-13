@@ -17,6 +17,7 @@
 // URL so the leaderboard is shareable in either state.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG, SLUG_TO_DB_SLUG } from "@/lib/collections"
 
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
 
     if (gErr) {
       console.error("[packs/grails] mv read", gErr.message)
-      return NextResponse.json({ error: gErr.message }, { status: 500 })
+      return apiErrorResponse(gErr, "api/packs/grails");
     }
     const grailRows = (grails ?? []) as GrailMvRow[]
     if (grailRows.length === 0) {
@@ -142,7 +143,7 @@ export async function GET(req: NextRequest) {
 
     if (mErr) {
       console.error("[packs/grails] meta read", mErr.message)
-      return NextResponse.json({ error: mErr.message }, { status: 500 })
+      return apiErrorResponse(mErr, "api/packs/grails");
     }
     const metaMap = new Map<string, PackRowMeta>()
     for (const m of (meta ?? []) as PackRowMeta[]) metaMap.set(m.dist_id, m)
@@ -162,6 +163,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[packs/grails] unexpected", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/packs/grails");
   }
 }

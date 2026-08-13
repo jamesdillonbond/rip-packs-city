@@ -13,6 +13,7 @@
 // validation is moot.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -48,7 +49,7 @@ export async function POST(
     .maybeSingle()
   if (brkErr) {
     console.log(`[breaks/validate-recipients] break load error: ${brkErr.message}`)
-    return NextResponse.json({ error: brkErr.message }, { status: 500 })
+    return apiErrorResponse(brkErr, "api/breaks/id/validate-recipients");
   }
   if (!brk) {
     return NextResponse.json({ error: "break not found" }, { status: 404 })
@@ -67,7 +68,7 @@ export async function POST(
     .order("spot_index", { ascending: true })
   if (spotsErr) {
     console.log(`[breaks/validate-recipients] spots load error: ${spotsErr.message}`)
-    return NextResponse.json({ error: spotsErr.message }, { status: 500 })
+    return apiErrorResponse(spotsErr, "api/breaks/id/validate-recipients");
   }
   if (!spots || spots.length === 0) {
     return NextResponse.json({ validated: 0, failures: [] })

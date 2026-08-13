@@ -22,6 +22,7 @@
 // transferred, or distributing if any are still pending/failed.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -84,7 +85,7 @@ export async function POST(
     .eq("id", id)
     .maybeSingle()
   if (brkErr) {
-    return NextResponse.json({ error: brkErr.message }, { status: 500 })
+    return apiErrorResponse(brkErr, "api/breaks/id/distribute");
   }
   if (!brk) {
     return NextResponse.json({ error: "break not found" }, { status: 404 })
@@ -102,7 +103,7 @@ export async function POST(
     .eq("break_id", id)
     .eq("transfer_status", "pending")
   if (resErr) {
-    return NextResponse.json({ error: resErr.message }, { status: 500 })
+    return apiErrorResponse(resErr, "api/breaks/id/distribute");
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,7 +142,7 @@ export async function POST(
     .order("chunk_index", { ascending: false })
     .limit(1)
   if (chunkErr) {
-    return NextResponse.json({ error: chunkErr.message }, { status: 500 })
+    return apiErrorResponse(chunkErr, "api/breaks/id/distribute");
   }
   let nextChunkIndex = (existingChunks && existingChunks[0]?.chunk_index != null)
     ? Number(existingChunks[0].chunk_index) + 1

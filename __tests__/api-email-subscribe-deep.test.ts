@@ -141,7 +141,7 @@ describe("POST /api/email/subscribe — preference defaults + type guards", () =
     state.row = { data: null, error: { message: "subscribers table down" } }
     const err = await POST(postReq({}))
     expect(err.status).toBe(500)
-    expect((await err.json()).error).toBe("subscribers table down")
+    expect((await err.json()).error).not.toContain("subscribers table down")
 
     state.row = { data: null, error: null }
     const none = await POST(postReq({}))
@@ -213,6 +213,6 @@ describe("GET /api/email/subscribe", () => {
     state.row = { data: null, error: { message: "read down" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("read down")
+    expect((await res.json()).error).not.toContain("read down")
   })
 })

@@ -38,11 +38,11 @@ describe("GET /api/topshot/set-plan — validation", () => {
 })
 
 describe("GET /api/topshot/set-plan — lookup outcomes", () => {
-  it("500s and surfaces the message when the RPC errors", async () => {
+  it("500s without publishing the RPC's message", async () => {
     h.rpc = async () => ({ data: null, error: { message: "boom" } })
     const res = await GET(get(`?setId=${VALID_UUID}`))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("boom")
+    expect((await res.json()).error).not.toContain("boom")
   })
 
   it("404s when the plan has no set_name (set not found)", async () => {
@@ -85,12 +85,12 @@ describe("GET /api/topshot/set-plan — lookup outcomes", () => {
     expect(seenLimit).toBe(1)
   })
 
-  it("500s and stringifies a thrown (non-Error) rejection", async () => {
+  it("500s on a thrown (non-Error) rejection without publishing it", async () => {
     h.rpc = async () => {
       throw new Error("network down")
     }
     const res = await GET(get(`?setId=${VALID_UUID}`))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("network down")
+    expect((await res.json()).error).not.toContain("network down")
   })
 })

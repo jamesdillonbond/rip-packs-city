@@ -74,7 +74,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.follows = { data: null, error: { message: "boom" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("boom")
+    expect((await res.json()).error).not.toContain("boom")
   })
 
   it("returns an empty feed when followees track no wallets", async () => {
@@ -95,7 +95,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.sales = { data: null, error: { message: "sales boom" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("sales boom")
+    expect((await res.json()).error).not.toContain("sales boom")
   })
 
   it("returns an empty feed when no recent sales touch the tracked wallets", async () => {

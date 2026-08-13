@@ -51,6 +51,6 @@ describe("POST /api/moment-market", () => {
     state.throwGql = true
     const res = await POST(req({ momentIds: ["m1"] }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("gql down")
+    expect((await res.json()).error).not.toContain("gql down")
   })
 })

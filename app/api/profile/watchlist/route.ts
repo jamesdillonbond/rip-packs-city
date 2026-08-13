@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 import { awardPoints } from "@/lib/rewards"
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
       .eq("owner_key", ownerKey)
       .order("created_at", { ascending: false })
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/profile/watchlist");
     }
     const rows = (items ?? []) as WatchlistRow[]
 
@@ -144,7 +145,7 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/profile/watchlist");
     }
 
     // Rewards: a logged-in user tracking a Moment earns add_watchlist_item
@@ -186,7 +187,7 @@ export async function DELETE(req: NextRequest) {
       .eq("id", itemId)
       .eq("owner_key", ownerKey)
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/profile/watchlist");
     }
     return NextResponse.json({ ok: true })
   } catch (err: any) {

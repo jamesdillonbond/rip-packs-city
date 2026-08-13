@@ -15,6 +15,7 @@ export const maxDuration = 15;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import {
@@ -103,7 +104,7 @@ export async function GET() {
 
   if (error) {
     console.error("[alerts/subscriptions GET]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/alerts/subscriptions");
   }
 
   // Enrich each with a live preview count (best-effort; never block the list).
@@ -200,7 +201,7 @@ export async function PATCH(req: NextRequest) {
     .eq("owner_key", user.id)
     .select()
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts/subscriptions");
   if (!data) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
   return NextResponse.json({ subscription: data });
 }
@@ -221,7 +222,7 @@ export async function DELETE(req: NextRequest) {
     .eq("id", id)
     .eq("owner_key", user.id)
     .select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, "api/alerts/subscriptions");
   if (!data || data.length === 0) {
     return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
   }

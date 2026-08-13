@@ -98,7 +98,7 @@ describe("/api/profile/first-run-tour — deeper legs", () => {
     state.bio = { data: null, error: { message: "bio down" } }
     const res = await GET(nreq())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("bio down")
+    expect((await res.json()).error).not.toContain("bio down")
   })
 
   it("POST 401s when unauthenticated (fail-closed)", async () => {

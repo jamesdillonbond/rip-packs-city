@@ -79,7 +79,7 @@ describe("/api/profile/recent-searches", () => {
     state.result = { data: null, error: { message: "db down" } }
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("POST inserts and returns the new row on the happy path", async () => {
@@ -95,7 +95,7 @@ describe("/api/profile/recent-searches", () => {
     state.single = { data: null, error: { message: "insert failed" } }
     const res = await POST(req("https://t/api/profile/recent-searches", { query: "x" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("insert failed")
+    expect((await res.json()).error).not.toContain("insert failed")
   })
 
   it("POST honors an explicit valid queryType and a provided collectionId", async () => {

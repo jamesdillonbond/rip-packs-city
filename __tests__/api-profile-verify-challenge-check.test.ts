@@ -144,7 +144,7 @@ describe("POST /api/profile/verify-challenge/check — guards & degrade paths", 
     state.challenges = { data: null, error: { message: "db boom" } }
     const res = await POST(req({ wallet_addr: "0xabc" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db boom")
+    expect((await res.json()).error).not.toContain("db boom")
   })
 
   it("409s a legacy challenge that has no server-chosen target moment", async () => {
@@ -219,7 +219,7 @@ describe("POST /api/profile/verify-challenge/check — confirmed match", () => {
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.matched).toBe(true)
-    expect(body.error).toBe("resolve failed")
+    expect(body.error).not.toContain("resolve failed")
   })
 
   it("returns the race result verbatim (200 matched:true) when the RPC reports ok:false", async () => {

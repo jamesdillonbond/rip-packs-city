@@ -63,7 +63,7 @@ describe("wallet/pack-summary — guards + error legs", () => {
     state.savedWallets = { data: null, error: { message: "lookup boom" } }
     const res = await GET(req(URL_OK))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("lookup boom")
+    expect((await res.json()).error).not.toContain("lookup boom")
   })
 
   it("403s when the wallet is not verified on the account", async () => {
@@ -76,14 +76,14 @@ describe("wallet/pack-summary — guards + error legs", () => {
     state.rpcResult = { data: null, error: { message: "rpc boom" } }
     const res = await GET(req(URL_OK))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc boom")
+    expect((await res.json()).error).not.toContain("rpc boom")
   })
 
   it("500s when the RPC throws unexpectedly", async () => {
     state.rpcThrows = true
     const res = await GET(req(URL_OK))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toContain("connection reset")
+    expect((await res.json()).error).not.toContain("connection reset")
   })
 
   it("200s with the summary + no-store cache header for a verified wallet", async () => {

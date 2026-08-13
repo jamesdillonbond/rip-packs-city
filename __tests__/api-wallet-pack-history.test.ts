@@ -97,7 +97,7 @@ describe("GET /api/wallet/pack-history", () => {
     state.owned = { data: null, error: { message: "lookup down" } }
     const res = await GET(req("https://t/api/wallet/pack-history?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("lookup down")
+    expect((await res.json()).error).not.toContain("lookup down")
   })
 
   it("200s and returns the RPC payload for a verified wallet", async () => {
@@ -138,7 +138,7 @@ describe("GET /api/wallet/pack-history", () => {
     state.rpc = { data: null, error: { message: "rpc boom" } }
     const res = await GET(req("https://t/api/wallet/pack-history?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc boom")
+    expect((await res.json()).error).not.toContain("rpc boom")
   })
 
   it("500s (caught) when the history RPC throws", async () => {
@@ -146,6 +146,6 @@ describe("GET /api/wallet/pack-history", () => {
     state.rpcThrows = true
     const res = await GET(req("https://t/api/wallet/pack-history?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc exploded")
+    expect((await res.json()).error).not.toContain("rpc exploded")
   })
 })

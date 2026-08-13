@@ -46,7 +46,7 @@ describe("GET /api/golazos-sniper-feed", () => {
     st.listings = { data: null, error: { message: "cached_listings down" } }
     const res = await GET(get())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("cached_listings down")
+    expect((await res.json()).error).not.toContain("cached_listings down")
   })
 
   it("empty listings → count 0, flowtyCount 0", async () => {

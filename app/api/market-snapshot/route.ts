@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { safeApiError } from "@/lib/api-error";
 import {
   buildMarketSnapshot,
   type MarketSnapshot,
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         results: [],
-        error: e instanceof Error ? e.message : "market-snapshot failed",
+        error: safeApiError(e, "market-snapshot failed").error,
       } satisfies ResponseShape,
       { status: 500 }
     )

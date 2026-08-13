@@ -5,6 +5,7 @@
 // Returns {edition_id, edition_key, player_name, set_name}.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.log(`[search-editions] err: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/search-editions");
   }
 
   const editions = (data ?? []).map((row: any) => ({

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { safeApiError, statusForSafeError } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -54,7 +55,11 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.log("[profile/touch] upsert failed:", error.message)
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    // `ok: false` is this route's contract with its caller and is preserved;
+    // only the driver message is replaced. The full text stays in the log line
+    // directly above.
+    const safe = safeApiError(error)
+    return NextResponse.json({ ok: false, ...safe }, { status: statusForSafeError(safe) })
   }
 
   return NextResponse.json({ ok: true, last_active_at: now })

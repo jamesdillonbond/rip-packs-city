@@ -1,5 +1,6 @@
 // app/api/user-resolve/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import {
   isWalletAddress,
   resolveTopShotUsername,
@@ -59,14 +60,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("[USER_RESOLVE_ERROR]", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Username resolution failed.",
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "api/user-resolve");
   }
 }

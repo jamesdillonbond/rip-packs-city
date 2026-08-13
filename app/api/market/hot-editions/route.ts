@@ -5,6 +5,7 @@
 // check getCurrentUser here so the route is safe to expose directly.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.log(`[market/hot-editions] rpc error: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/market/hot-editions");
   }
 
   return NextResponse.json({ ok: true, slug, limit, editions: data ?? [] });

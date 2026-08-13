@@ -67,6 +67,6 @@ describe("GET /api/portfolio/history", () => {
     rpc.error = { message: "db down" }
     const res = await GET(req("https://t/api/portfolio/history?owner_key=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 })

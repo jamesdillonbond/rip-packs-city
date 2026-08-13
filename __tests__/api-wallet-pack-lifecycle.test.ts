@@ -69,7 +69,7 @@ describe("GET /api/wallet/pack-lifecycle", () => {
     state.owned = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("403s when the wallet is not a verified saved wallet on this account", async () => {
@@ -86,7 +86,7 @@ describe("GET /api/wallet/pack-lifecycle", () => {
     state.rpc = { data: null, error: { message: "rpc boom" } }
     const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc boom")
+    expect((await res.json()).error).not.toContain("rpc boom")
   })
 
   it("normalizes the wallet to lowercase before the ownership check", async () => {

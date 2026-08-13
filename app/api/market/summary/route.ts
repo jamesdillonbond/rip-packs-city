@@ -3,6 +3,7 @@
 // Thin wrapper around get_market_summary(). Cookie-auth gated.
 
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -17,7 +18,7 @@ export async function GET() {
   const { data, error } = await supabaseAdmin.rpc("get_market_summary");
   if (error) {
     console.log(`[market/summary] rpc error: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/market/summary");
   }
 
   return NextResponse.json({ ok: true, summary: data ?? {} });

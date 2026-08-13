@@ -6,6 +6,7 @@
 // so the consuming card can hide gracefully.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -100,6 +101,6 @@ export async function GET(req: NextRequest) {
     )
   } catch (err) {
     console.log("[wallet-hold-time] error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 })
+    return apiErrorResponse(err, "api/wallet-hold-time");
   }
 }

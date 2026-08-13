@@ -5,6 +5,7 @@
 // and stripped of non-alphanumerics). Users can override on their profile.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { awardPoints } from "@/lib/rewards";
@@ -30,7 +31,7 @@ export async function GET() {
 
   if (error) {
     console.error("[profile/bio GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/bio");
   }
 
   return NextResponse.json({ bio: data ?? null });
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[profile/bio POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/bio");
   }
 
   // Rewards: saving a profile earns complete_profile (per_user_limit=1, so only
@@ -132,7 +133,7 @@ export async function PATCH(req: NextRequest) {
 
   if (error) {
     console.error("[profile/bio PATCH]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/bio");
   }
 
   return NextResponse.json({ bio: data });

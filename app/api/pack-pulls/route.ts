@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { createHash } from "crypto"
 
@@ -32,7 +33,10 @@ export async function GET(req: NextRequest) {
   })
   if (error) {
     console.warn(`[pack-pulls] rpc error: ${error.message}`)
-    return NextResponse.json({ error: error.message, stats: [] }, { status: 500 })
+    // `stats: []` is dropped deliberately: shipping an empty stats array
+    // alongside a 500 invites a caller that forgets to check `res.ok` to render
+    // "no pulls" — a claim about the pack — from a database failure.
+    return apiErrorResponse(error, "api/pack-pulls")
   }
 
   return NextResponse.json(
@@ -93,7 +97,7 @@ export async function POST(req: NextRequest) {
   })
   if (insertErr) {
     console.warn(`[pack-pulls] insert error: ${insertErr.message}`)
-    return NextResponse.json({ error: insertErr.message }, { status: 500 })
+    return apiErrorResponse(insertErr, "api/pack-pulls");
   }
 
   return NextResponse.json({ ok: true })

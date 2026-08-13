@@ -13,6 +13,7 @@
 // the input to lower-case so a user pasting `0xABC…` matches the cache.
 
 import { NextRequest, NextResponse } from "next/server";
+import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { normalizeAddress } from "@/lib/address";
 
@@ -56,9 +57,16 @@ export async function GET(req: NextRequest) {
           { status: 503 }
         );
       }
+      // The 57014 branch above is the good case: it already classifies. This
+      // one published the driver message AND the raw SQLSTATE. Both are
+      // internal detail — the full text is already in the console.error above,
+      // which is where it belongs. `safe.code` is our own stable vocabulary
+      // ("timeout" | "internal" | …), so the key survives for clients that
+      // branch on it while the Postgres code stops being published.
+      const safe = safeApiError(error);
       return NextResponse.json(
-        { error: error.message, code, wallet_addr: walletAddr, elapsed_ms: elapsedMs },
-        { status: 500 }
+        { ...safe, wallet_addr: walletAddr, elapsed_ms: elapsedMs },
+        { status: statusForSafeError(safe) }
       );
     }
 

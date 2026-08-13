@@ -12,6 +12,7 @@
 // permute. Other formats leave team_pool null.
 
 import { NextRequest, NextResponse } from "next/server"
+import {apiErrorResponse, safeApiError} from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { CANONICAL_NBA_TEAMS } from "@/lib/breaks/draft-shuffle"
 import { getFlowAccessNode } from "@/lib/breaks/server-authz"
@@ -71,7 +72,7 @@ export async function POST(
     .eq("id", id)
     .maybeSingle<BreakRow>()
   if (brkErr) {
-    return NextResponse.json({ error: brkErr.message }, { status: 500 })
+    return apiErrorResponse(brkErr, "api/breaks/id/lock");
   }
   if (!brk) {
     return NextResponse.json({ error: "break not found" }, { status: 404 })
@@ -89,7 +90,7 @@ export async function POST(
     .eq("break_id", id)
     .order("spot_index", { ascending: true })
   if (spotsErr) {
-    return NextResponse.json({ error: spotsErr.message }, { status: 500 })
+    return apiErrorResponse(spotsErr, "api/breaks/id/lock");
   }
   if (!spots || spots.length === 0) {
     return NextResponse.json({ error: "no spots sold" }, { status: 409 })
@@ -112,7 +113,11 @@ export async function POST(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[breaks/lock] sealed-height fetch failed: ${msg}`)
-    return NextResponse.json({ error: msg }, { status: 502 })
+    // 502, not 500 — see the matching note in breaks/[id]/draft.
+    return NextResponse.json(
+      { ...safeApiError(err, "Couldn't reach the Flow network right now."), code: "upstream" },
+      { status: 502, headers: { "Cache-Control": "no-store", "Retry-After": "30" } }
+    )
   }
 
   const targetHeight = currentHeight + TARGET_BLOCK_OFFSET
@@ -136,7 +141,7 @@ export async function POST(
     .eq("status", "selling")
   if (updErr) {
     console.log(`[breaks/lock] update failed: ${updErr.message}`)
-    return NextResponse.json({ error: updErr.message }, { status: 500 })
+    return apiErrorResponse(updErr, "api/breaks/id/lock");
   }
 
   console.log(

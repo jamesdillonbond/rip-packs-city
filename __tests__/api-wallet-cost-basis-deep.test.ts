@@ -153,19 +153,21 @@ describe("wallet-cost-basis — P&L fold", () => {
 })
 
 describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => {
-  it("500s when a username cannot be resolved to a wallet", async () => {
+  it("400s with actionable copy when a username cannot be resolved to a wallet", async () => {
     state.gql = () => ({ getUserProfileByUsername: { publicInfo: { flowAddress: null } } })
     install({})
     const res = await GET(req("wallet=nobody&collection=nba-top-shot"))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toContain("Could not resolve")
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).toMatch(/wallet or username/i)
   })
 
   it("500s when the acquisitions read errors", async () => {
     install({ moment_acquisitions: { data: null, error: { message: "acq boom" } } })
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("acq boom")
+    expect((await res.json()).error).not.toContain("acq boom")
   })
 
   it("500s when the wallet_moments_cache read errors", async () => {
@@ -178,7 +180,7 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     })
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("cache boom")
+    expect((await res.json()).error).not.toContain("cache boom")
   })
 
   it("500s when the editions read errors", async () => {
@@ -195,7 +197,7 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     })
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("editions boom")
+    expect((await res.json()).error).not.toContain("editions boom")
   })
 
   it("500s when the FMV RPC errors", async () => {
@@ -213,7 +215,7 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     })
     const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("fmv boom")
+    expect((await res.json()).error).not.toContain("fmv boom")
   })
 
   it("counts fmv==buy as neither win nor loss, and unpriced/uncached moments as fmv 0", async () => {

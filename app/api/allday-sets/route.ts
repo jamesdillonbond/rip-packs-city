@@ -3,6 +3,7 @@
 // and AllDay Cadence scripts instead of TopShot equivalents.
 
 import { NextRequest, NextResponse } from "next/server";
+import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import fcl from "@/lib/chains/flow/flow";
 import * as t from "@onflow/types";
 import { alldayGraphql } from "@/lib/chains/flow/allday";
@@ -663,6 +664,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[/api/allday-sets] error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
+    return apiErrorResponse(err, "api/allday-sets");
   }
 }

@@ -4,6 +4,7 @@
 // of users the current user follows. Used on /profile under "Friend Activity".
 
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { isFlowAddress } from "@/lib/postgrest-safe";
@@ -23,7 +24,7 @@ export async function GET() {
     .eq("follower_user_id", user.id);
   if (fErr) {
     console.error("[activity follows]", fErr);
-    return NextResponse.json({ error: fErr.message }, { status: 500 });
+    return apiErrorResponse(fErr, "api/profile/activity");
   }
   const followeeIds = (follows ?? []).map((f: any) => f.followee_user_id);
   if (followeeIds.length === 0) {
@@ -81,7 +82,7 @@ export async function GET() {
 
   if (sErr) {
     console.error("[activity sales]", sErr);
-    return NextResponse.json({ error: sErr.message }, { status: 500 });
+    return apiErrorResponse(sErr, "api/profile/activity");
   }
 
   const salesRows = sales ?? [];

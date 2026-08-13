@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { computeFmv, type MarketTruthInput } from "@/lib/market-compute"
 import { buildUnifiedEditionMarketMap } from "@/lib/market-sources"
 import {
@@ -76,12 +77,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ rows: enriched })
   } catch (e) {
-    return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "market truth failed",
-        rows: [],
-      },
-      { status: 500 }
-    )
+    // `rows: []` is deliberately NOT shipped alongside the failure: an empty
+    // rows array next to a 500 invites a caller that forgets to check res.ok
+    // into rendering "no market data" — a claim about the market — from an
+    // internal error. Same call as /api/pack-pulls and /api/edition-sales.
+    return apiErrorResponse(e, "api/market-truth");
   }
 }

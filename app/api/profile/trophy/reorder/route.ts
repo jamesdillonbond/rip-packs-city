@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
   let user;
@@ -63,11 +64,20 @@ export async function POST(req: NextRequest) {
   if (error) {
     console.error("[trophy reorder]", error);
     // A mismatch (stale client) surfaces here; 409 tells the client to refetch.
+    // Reading the message SERVER-SIDE to make that decision is fine — what was
+    // not fine is publishing it. `app/dashboard/page.tsx` throws `data.error`
+    // and renders it straight into a toast, so a statement timeout was being
+    // shown to the collector as the reason their arrangement did not save.
     const stale = /mismatch|not owned|duplicate/i.test(error.message || "");
-    return NextResponse.json(
-      { error: error.message || "reorder failed" },
-      { status: stale ? 409 : 500 }
-    );
+    if (stale) {
+      // Not a failure to hide: it is an actionable, non-driver condition, so it
+      // gets copy the toast can show as-is.
+      return NextResponse.json(
+        { error: "Your trophy case changed on another device. Refresh and try again.", code: "conflict" },
+        { status: 409 }
+      );
+    }
+    return apiErrorResponse(error, "api/profile/trophy/reorder", "Couldn't save your arrangement.");
   }
 
   return NextResponse.json({ ok: true });

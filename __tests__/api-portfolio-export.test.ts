@@ -37,7 +37,7 @@ describe("GET /api/portfolio-export", () => {
     rpc.error = { message: "db down" }
     const res = await GET(req("https://t/api/portfolio-export?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("returns a CSV attachment with a header row and one moment row", async () => {

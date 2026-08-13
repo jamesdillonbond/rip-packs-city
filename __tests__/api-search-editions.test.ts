@@ -55,7 +55,7 @@ describe("GET /api/search-editions", () => {
     state.result = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/search-editions?q=lebron"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("maps rows to the edition search shape for an authed user", async () => {

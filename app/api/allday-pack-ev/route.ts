@@ -3,6 +3,7 @@
 // Uses alldayGraphql and filters Supabase with .eq("collection", "nfl_all_day").
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { alldayGraphql } from "@/lib/chains/flow/allday"
 
@@ -699,9 +700,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error(`[allday-pack-ev] Unhandled error for ${packListingId}:`, msg)
-    return NextResponse.json(
-      { error: msg || "allday-pack-ev failed" },
-      { status: 500 }
-    )
+    return apiErrorResponse(e, "api/allday-pack-ev", "allday-pack-ev failed")
   }
 }

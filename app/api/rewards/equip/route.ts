@@ -8,6 +8,7 @@
 // row — never from the client. A user can only equip what they've redeemed.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     .eq("sku", sku)
     .maybeSingle();
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/rewards/equip");
   }
   if (!owned) {
     return NextResponse.json({ error: "not_owned" }, { status: 403 });
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       { onConflict: "user_id" }
     );
   if (upErr) {
-    return NextResponse.json({ error: upErr.message }, { status: 500 });
+    return apiErrorResponse(upErr, "api/rewards/equip");
   }
 
   return NextResponse.json({ ok: true, slot, value });

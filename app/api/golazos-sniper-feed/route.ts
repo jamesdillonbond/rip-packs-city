@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { getClubAbbrev } from "@/lib/laliga-clubs"
 
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
 
     const { data: listings, error } = await q
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/golazos-sniper-feed");
     }
     const rows: any[] = listings ?? []
 
@@ -174,6 +175,6 @@ export async function GET(req: NextRequest) {
       elapsed: Date.now() - t0,
     })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "unknown" }, { status: 500 })
+    return apiErrorResponse(e, "api/golazos-sniper-feed")
   }
 }

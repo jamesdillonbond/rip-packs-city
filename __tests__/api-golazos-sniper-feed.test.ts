@@ -48,7 +48,7 @@ describe("GET /api/golazos-sniper-feed", () => {
     tables.cached_listings = { data: null, error: { message: "db down" } }
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("still 200s with a tier filter applied to an empty cache", async () => {

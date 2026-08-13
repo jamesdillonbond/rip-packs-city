@@ -121,17 +121,23 @@ describe("GET /api/wallet/profile — guards", () => {
 })
 
 describe("GET /api/wallet/profile — RPC failures", () => {
-  it("500s and surfaces the message when the RPC returns an error", async () => {
+  // Was "500s and surfaces the message" — a title that made the leak read like
+  // the contract. A 57014 is transient capacity, so it is a retryable 503 and
+  // keeps this route out of the hard-5xx budget that pages on real breakage.
+  it("503s on a statement timeout without publishing the driver text", async () => {
     st.error = { message: "statement timeout", code: "57014", hint: "h", details: "d" }
     const res = await GET(req(uniqueKey()))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("statement timeout")
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("30")
+    const body = await res.json()
+    expect(body.code).toBe("timeout")
+    expect(body.error).not.toContain("statement timeout")
   })
   it("500s when the RPC throws outright", async () => {
     st.throws = true
     const res = await GET(req(uniqueKey()))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("pool exhausted")
+    expect((await res.json()).error).not.toContain("pool exhausted")
   })
   it("does not cache a failed lookup (the next call re-hits the RPC)", async () => {
     const key = uniqueKey()

@@ -10,6 +10,7 @@
 // pending.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { getStripe, PRO_PRICE_ID } from "@/lib/stripe"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 
@@ -53,6 +54,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: session.url })
   } catch (err: any) {
     console.log("[stripe/checkout] error:", err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return apiErrorResponse(err, "api/stripe/checkout");
   }
 }

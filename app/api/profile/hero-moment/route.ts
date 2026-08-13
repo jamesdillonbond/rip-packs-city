@@ -14,6 +14,7 @@
 //      Mirrors the pattern in /api/support-chat.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { COLLECTIONS } from "@/lib/collections";
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[profile/hero-moment]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/hero-moment");
   }
 
   const row = Array.isArray(data) ? data[0] : data;

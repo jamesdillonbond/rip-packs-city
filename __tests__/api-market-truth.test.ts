@@ -50,7 +50,10 @@ describe("POST /api/market-truth", () => {
     const res = await POST(req({ rows: [{ momentId: "1" }] }))
     expect(res.status).toBe(500)
     const body = await res.json()
-    expect(body.error).toBe("sources down")
-    expect(body.rows).toEqual([])
+    expect(body.error).not.toContain("sources down")
+    // `rows` is deliberately ABSENT on the failure path now. It used to ship as
+    // [] beside the 500, which lets a caller that skips res.ok render "no
+    // market data" — a claim about the market — out of an internal error.
+    expect(body.rows).toBeUndefined()
   })
 })

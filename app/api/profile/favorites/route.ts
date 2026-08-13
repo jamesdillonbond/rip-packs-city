@@ -7,6 +7,7 @@
 //   DELETE { collectionId } — unfavorite
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 
@@ -27,7 +28,7 @@ export async function GET() {
 
   if (error) {
     console.error("[favorites GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/favorites");
   }
   return NextResponse.json({ favorites: data ?? [] });
 }
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[favorites POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/favorites");
   }
   return NextResponse.json({ favorite: data });
 }
@@ -84,7 +85,7 @@ export async function DELETE(req: NextRequest) {
 
   if (error) {
     console.error("[favorites DELETE]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/favorites");
   }
   return NextResponse.json({ ok: true });
 }

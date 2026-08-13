@@ -13,6 +13,7 @@
 // already-shipped one.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     .eq("user_id", user.id)
     .maybeSingle();
   if (readErr) {
-    return NextResponse.json({ error: readErr.message }, { status: 500 });
+    return apiErrorResponse(readErr, "api/rewards/shipping");
   }
   if (!red) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
     .eq("id", redemptionId)
     .eq("user_id", user.id);
   if (upErr) {
-    return NextResponse.json({ error: upErr.message }, { status: 500 });
+    return apiErrorResponse(upErr, "api/rewards/shipping");
   }
 
   return NextResponse.json({ ok: true });

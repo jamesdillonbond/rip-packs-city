@@ -119,7 +119,7 @@ describe("GET /api/profile/hero-moment", () => {
     state.rpc = { data: null, error: { message: "rpc down" } }
     const res = await GET(req("https://t/api/profile/hero-moment"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc down")
+    expect((await res.json()).error).not.toContain("rpc down")
   })
 
   it("returns hero:null reason no_moments when the RPC yields no row", async () => {

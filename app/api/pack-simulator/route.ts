@@ -10,6 +10,7 @@
 // to sum to 1.0 across the surviving pool.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     })
     if (error) {
       console.error("[pack-simulator]", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/pack-simulator");
     }
     return NextResponse.json(data ?? { error: "pack not found", dist_id: distId }, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
@@ -42,6 +43,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[pack-simulator] unexpected", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/pack-simulator");
   }
 }

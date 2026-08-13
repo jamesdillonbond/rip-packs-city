@@ -11,6 +11,7 @@
 //   PATCH  { wallet_addr? }             → legacy cron resolver pass (harmless)
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { fetchMomentListingState, topShotMomentUrl } from "@/lib/verify-wallet-gql";
@@ -330,7 +331,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[verify-challenge POST]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/verify-challenge");
   }
 
   return NextResponse.json({
@@ -365,7 +366,7 @@ export async function GET(req: NextRequest) {
     .limit(1);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/verify-challenge");
   }
 
   const row = data?.[0] ?? null;
@@ -443,7 +444,7 @@ export async function PATCH(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(1);
   if (rowErr) {
-    return NextResponse.json({ error: rowErr.message }, { status: 500 });
+    return apiErrorResponse(rowErr, "api/profile/verify-challenge");
   }
 
   const row = rows?.[0] ?? null;

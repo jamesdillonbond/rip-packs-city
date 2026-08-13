@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { isPublicPath } from "@/proxy"
+import { leakSites } from "./helpers/driver-message-leak"
 
 // Source guard: no route that ANONYMOUS visitors can reach may publish a driver
 // message.
@@ -59,60 +60,11 @@ function urlFor(file: string): string {
   )
 }
 
-/**
- * Spellings the leak has actually taken in this repo. All four were found in
- * production code; a grep for any ONE of them finds well under half the class,
- * which is why they are enumerated rather than approximated.
- */
-function leakSites(src: string): string[] {
-  const hits: string[] = []
-  const lines = src.split("\n")
-
-  // (1) `error: err.message` — and the `message:` / `details:` variants.
-  //     `result.message` and friends are DOMAIN values from our own helpers
-  //     (the concierge's tool payloads), not driver text.
-  const direct =
-    /\b(?:error|details|message)\s*:\s*(?!result\.|item\.|row\.|payload\.)[A-Za-z_$][\w$]*(?:\?\.)?\.message\b/
-  // (2) `error: String(err)` — stringifying the caught value.
-  const stringified = /\berror\s*:\s*String\(\s*(?:err|e|error|ex|caught)\b/
-  // (3) template interpolation of a caught value into the body.
-  const interpolated = /\berror\s*:\s*`[^`]*\$\{\s*(?:err|e|ex|caught)(?:\?\.)?\.message/
-
-  // (4b) The INLINE ternary, written straight into the response body:
-  //       `{ error: err instanceof Error ? err.message : "Unknown error" }`
-  //   Distinct from (4): there is no intermediate variable, so the indirect
-  //   scan below never sees it, and `direct` does not match because `error:` is
-  //   followed by an identifier + `instanceof`, not by `<id>.message`. The
-  //   sibling public-insights guard has always carried this shape; it was the
-  //   one spelling this guard did not inherit, and 7 anon-reachable routes were
-  //   still publishing through it.
-  const inlineTernary = /\berror\s*:\s*[A-Za-z_$][\w$]*\s+instanceof\s+Error\s*\?\s*[A-Za-z_$][\w$]*(?:\?\.)?\.message/
-
-  // (4) The indirect form: `const msg = e instanceof Error ? e.message : ...`
-  //     then `{ error: msg }` further down. Collect the variable names first.
-  const indirect = new Set<string>()
-  for (const m of src.matchAll(
-    /const\s+([A-Za-z_$][\w$]*)\s*=\s*[A-Za-z_$][\w$]*\s+instanceof\s+Error\s*\?\s*[A-Za-z_$][\w$]*\.message/g
-  )) {
-    indirect.add(m[1])
-  }
-  const indirectRx = indirect.size
-    ? new RegExp(`\\berror\\s*:\\s*(?:${[...indirect].join("|")})\\b`)
-    : null
-
-  lines.forEach((line, i) => {
-    if (
-      direct.test(line) ||
-      stringified.test(line) ||
-      interpolated.test(line) ||
-      inlineTernary.test(line) ||
-      (indirectRx && indirectRx.test(line))
-    ) {
-      hits.push(`${i + 1}: ${line.trim()}`)
-    }
-  })
-  return hits
-}
+// The leak-detection patterns live in __tests__/helpers/driver-message-leak.ts
+// so this guard and its authenticated-surface sibling cannot drift apart. That
+// split exists because this guard once shipped with FOUR spellings where the
+// guard it replaced had FIVE, and the missing inline-ternary form was still
+// live on 12 sites. Add a new spelling THERE, not here.
 
 const ROUTE_FILES = walk(join(process.cwd(), "app", "api")).map((p) =>
   p.slice(process.cwd().length + 1).replace(/\\/g, "/")

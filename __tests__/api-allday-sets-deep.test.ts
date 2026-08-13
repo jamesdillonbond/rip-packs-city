@@ -204,10 +204,17 @@ describe("allday-sets — resolution + guards", () => {
     expect(body).toMatchObject({ wallet: "collector99", resolvedAddress: WALLET, totalSets: 0 })
   })
 
-  it("an unresolvable username surfaces the friendly error (500)", async () => {
+  // A bad username is a CALLER error, not an internal one. It used to 500 with
+  // the resolver's own thrown text; it now 400s with fixed copy. The thing the
+  // user needs to be told — that the username is wrong — must survive being
+  // routed through the driver-message classifier, which only knows Postgres and
+  // would otherwise flatten it to "Something went wrong."
+  it("400s with actionable copy when the username cannot be resolved", async () => {
     const res = await GET(req("?wallet=nobody-here"))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toContain("Could not resolve")
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).toMatch(/wallet or username/i)
   })
 
   it("400s without a wallet param; an empty wallet returns the zero-state envelope", async () => {

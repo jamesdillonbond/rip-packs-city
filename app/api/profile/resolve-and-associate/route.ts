@@ -28,6 +28,7 @@
 // short-circuits for several of them.
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
@@ -192,7 +193,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[resolve-and-associate] upsert error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/resolve-and-associate");
   }
 
   // after() runs the callback once the response is flushed, so the client gets

@@ -13,6 +13,7 @@
 // need a team draft.
 
 import { NextRequest, NextResponse } from "next/server"
+import {apiErrorResponse, safeApiError} from "@/lib/api-error";
 import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -76,7 +77,7 @@ export async function POST(
     .eq("id", id)
     .maybeSingle<BreakRow>()
   if (brkErr) {
-    return NextResponse.json({ error: brkErr.message }, { status: 500 })
+    return apiErrorResponse(brkErr, "api/breaks/id/draft");
   }
   if (!brk) {
     return NextResponse.json({ error: "break not found" }, { status: 404 })
@@ -117,7 +118,13 @@ export async function POST(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[breaks/draft] sealed-height fetch failed: ${msg}`)
-    return NextResponse.json({ error: msg }, { status: 502 })
+    // 502, not 500: the Flow access node is a third-party upstream, and that
+    // distinction is what tells an operator whether WE broke. safeApiError is
+    // used for the copy so the node's own text is still never published.
+    return NextResponse.json(
+      { ...safeApiError(err, "Couldn't reach the Flow network right now."), code: "upstream" },
+      { status: 502, headers: { "Cache-Control": "no-store", "Retry-After": "30" } }
+    )
   }
 
   if (currentHeight < brk.draft_seed_target_height) {
@@ -165,7 +172,7 @@ export async function POST(
     .eq("break_id", id)
     .order("spot_index", { ascending: true })
   if (spotsErr) {
-    return NextResponse.json({ error: spotsErr.message }, { status: 500 })
+    return apiErrorResponse(spotsErr, "api/breaks/id/draft");
   }
   if (!spots || spots.length === 0) {
     return NextResponse.json({ error: "no spots to draft" }, { status: 409 })
@@ -175,8 +182,7 @@ export async function POST(
   try {
     teams = assignTeamsToSpots(brk.team_pool, spots.length, seed)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/breaks/id/draft");
   }
 
   const assignment: Record<string, string> = {}
@@ -205,7 +211,7 @@ export async function POST(
     .eq("id", id)
   if (brkUpdErr) {
     console.log(`[breaks/draft] break update failed: ${brkUpdErr.message}`)
-    return NextResponse.json({ error: brkUpdErr.message }, { status: 500 })
+    return apiErrorResponse(brkUpdErr, "api/breaks/id/draft");
   }
 
   console.log(

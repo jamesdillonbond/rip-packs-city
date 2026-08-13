@@ -180,7 +180,7 @@ describe("DELETE /api/alerts", () => {
     install({ fmv_alerts: { data: null, error: { message: "del boom" } } })
     const res = await DELETE(getReq("https://t/api/alerts?id=al1"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("del boom")
+    expect((await res.json()).error).not.toContain("del boom")
   })
 })
 
@@ -331,6 +331,6 @@ describe("PATCH /api/alerts — remaining branches", () => {
     install({ fmv_alerts: { data: null, error: { message: "patch boom" } } })
     const res = await PATCH(bodyReq({ id: "al1", active: true }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("patch boom")
+    expect((await res.json()).error).not.toContain("patch boom")
   })
 })

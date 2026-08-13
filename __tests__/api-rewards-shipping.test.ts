@@ -145,7 +145,7 @@ describe("POST /api/rewards/shipping", () => {
     state.red = { data: null, error: { message: "read boom" } }
     const res = await POST(req({ body: { redemptionId: 1, address: goodAddress } }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("read boom")
+    expect((await res.json()).error).not.toContain("read boom")
   })
 
   it("500s when the update errors", async () => {
@@ -153,6 +153,6 @@ describe("POST /api/rewards/shipping", () => {
     state.up = { error: { message: "update boom" } }
     const res = await POST(req({ body: { redemptionId: 1, address: goodAddress } }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("update boom")
+    expect((await res.json()).error).not.toContain("update boom")
   })
 })

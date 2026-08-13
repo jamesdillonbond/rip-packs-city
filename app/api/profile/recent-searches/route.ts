@@ -3,6 +3,7 @@
 // Phase 4: auth.uid()-keyed recent searches. Optional collection_id scope.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { isSupportedAddress } from "@/lib/address";
@@ -35,7 +36,7 @@ export async function GET() {
 
   if (error) {
     console.error("[recent-searches GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/recent-searches");
   }
   return NextResponse.json({ searches: data ?? [] });
 }
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[recent-searches POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/recent-searches");
   }
   return NextResponse.json({ search: data });
 }

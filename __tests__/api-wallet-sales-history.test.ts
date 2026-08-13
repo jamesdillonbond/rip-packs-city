@@ -146,10 +146,12 @@ describe("GET /api/wallet-sales-history — username resolution", () => {
     expect(body.wallet).toBe("0xbd94cade097e50ac")
   })
 
-  it("500s when the username cannot be resolved", async () => {
+  it("400s with actionable copy when the username cannot be resolved", async () => {
     state.gql = { getUserProfileByUsername: { publicInfo: { flowAddress: null } } }
     const res = await GET(req("https://t/api/wallet-sales-history?wallet=nobody&collection=nba-top-shot"))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toMatch(/resolve/i)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).toMatch(/wallet or username/i)
   })
 })

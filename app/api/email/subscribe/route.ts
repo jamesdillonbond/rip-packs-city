@@ -7,6 +7,7 @@
 // on insert; we surface it back through a confirmation link.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/email/subscribe");
   }
   if (!upserted) {
     return NextResponse.json({ error: "upsert returned no row" }, { status: 500 })
@@ -151,7 +152,7 @@ export async function GET() {
     .ilike("email", user.email.toLowerCase())
     .maybeSingle()
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/email/subscribe");
   }
   return NextResponse.json({ ok: true, subscriber: data ?? null })
 }

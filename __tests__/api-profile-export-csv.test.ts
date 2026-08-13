@@ -78,7 +78,7 @@ describe("GET /api/profile/export-csv", () => {
     state.wallets = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/profile/export-csv?ownerKey=trevor"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("returns a header-only CSV when the owner has no wallets", async () => {

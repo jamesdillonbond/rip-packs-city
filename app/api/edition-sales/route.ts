@@ -7,6 +7,7 @@
 // collection pages should fall back to Supabase fmv_snapshots for those.
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { fetchEditionStats, parseEditionKey } from "@/lib/chains/flow/topshot-graphql"
 
 type EditionSalesResult = {
@@ -88,12 +89,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ results, collectionId })
   } catch (e) {
-    return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "edition-sales failed",
-        results: [],
-      },
-      { status: 500 }
-    )
+    // `results: []` deliberately dropped — see the note in /api/market-truth.
+    return apiErrorResponse(e, "api/edition-sales");
   }
 }

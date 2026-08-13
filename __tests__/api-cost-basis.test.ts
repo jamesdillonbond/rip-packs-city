@@ -70,7 +70,7 @@ describe("GET /api/cost-basis", () => {
     state.costBasis = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/cost-basis?wallet=0xdeadbeef00000000"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("normalizes a wallet with no 0x prefix before the RPC", async () => {

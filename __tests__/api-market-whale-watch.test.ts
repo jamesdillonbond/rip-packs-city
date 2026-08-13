@@ -49,6 +49,6 @@ describe("GET /api/market/whale-watch", () => {
     rpc.error = { message: "db down" }
     const res = await GET(req("https://t/api/market/whale-watch"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    expect((await res.json()).error).not.toContain("db down")
   })
 })

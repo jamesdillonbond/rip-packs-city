@@ -81,7 +81,11 @@ describe("GET /api/wallet-packs", () => {
     gql.flowAddress = null // profile lookup returns no address
     const res = await GET(req("https://t/api/wallet-packs?wallet=@ghost"))
     expect(res.status).toBe(400)
-    expect((await res.json()).error).toContain("Could not resolve")
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    // Fixed copy, not the resolver's thrown text.
+    expect(body.error).toMatch(/wallet or username/i)
+    expect(body.error).not.toContain("Could not resolve")
   })
 
   it("degrades GraphQL errors to an empty 200 (never a 500)", async () => {
@@ -91,6 +95,6 @@ describe("GET /api/wallet-packs", () => {
     const body = await res.json()
     expect(body.walletAddress).toBeNull()
     expect(body.totalSealedPacks).toBe(0)
-    expect(body.error).toBe("rate limited")
+    expect(body.error).not.toContain("rate limited")
   })
 })

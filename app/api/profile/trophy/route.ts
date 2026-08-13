@@ -8,6 +8,7 @@
 // (service-role read). This handler is strictly authenticated.
 
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 
@@ -29,7 +30,7 @@ export async function GET() {
 
   if (error) {
     console.error("[trophy GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/trophy");
   }
   return NextResponse.json({ trophies: data ?? [] });
 }
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[trophy POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/trophy");
   }
   return NextResponse.json({ trophy: data });
 }
@@ -125,7 +126,7 @@ export async function DELETE(req: NextRequest) {
 
   if (error) {
     console.error("[trophy DELETE]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/trophy");
   }
   return NextResponse.json({ ok: true });
 }

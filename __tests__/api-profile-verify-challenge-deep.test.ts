@@ -367,7 +367,7 @@ describe("POST /api/profile/verify-challenge — guard + fallback + error branch
     })
     const res = await POST(postReq({ wallet_addr: "0xABC" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("insert boom")
+    expect((await res.json()).error).not.toContain("insert boom")
   })
 })
 
@@ -385,7 +385,7 @@ describe("GET /api/profile/verify-challenge — remaining branches", () => {
     install({ wallet_verification_challenges: { data: null, error: { message: "get boom" } } })
     const res = await GET(getReq("https://t/api/profile/verify-challenge?wallet_addr=0xABC"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("get boom")
+    expect((await res.json()).error).not.toContain("get boom")
   })
 
   it("marks an expired challenge and returns no target card", async () => {
@@ -456,7 +456,7 @@ describe("PATCH /api/profile/verify-challenge — remaining branches", () => {
     })
     const res = await PATCH(postReq({ wallet_addr: "0xABC" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("row boom")
+    expect((await res.json()).error).not.toContain("row boom")
   })
 
   it("returns { challenge: null } when the user has no challenge row", async () => {

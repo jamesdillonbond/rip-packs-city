@@ -127,7 +127,7 @@ describe("GET /api/profile/watchlist", () => {
     state.tables.watchlist_items = { data: null, error: { message: "wl boom" } }
     const res = await GET(req("https://t/api/profile/watchlist?ownerKey=trevor"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("wl boom")
+    expect((await res.json()).error).not.toContain("wl boom")
   })
 
   it("enriches with edition fields, latest FMV/floor, and below_target", async () => {
@@ -206,7 +206,7 @@ describe("POST /api/profile/watchlist", () => {
     state.single = { data: null, error: { message: "upsert boom" } }
     const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "trevor", editionId: "e1" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("upsert boom")
+    expect((await res.json()).error).not.toContain("upsert boom")
   })
 })
 
@@ -235,7 +235,7 @@ describe("DELETE /api/profile/watchlist", () => {
     state.tables.watchlist_items = { data: null, error: { message: "del boom" } }
     const res = await DELETE(req("https://t/api/profile/watchlist", { ownerKey: "trevor", itemId: "w1" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("del boom")
+    expect((await res.json()).error).not.toContain("del boom")
   })
 })
 

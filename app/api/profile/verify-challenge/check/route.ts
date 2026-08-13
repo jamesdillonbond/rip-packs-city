@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { fetchMomentListingState, priceMatchesCents } from "@/lib/verify-wallet-gql";
 
 // Light per-user rate limit so repeated "check" clicks stay polite to the
@@ -93,7 +94,8 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   if (chErr) {
-    return NextResponse.json({ ok: false, error: chErr.message }, { status: 500 });
+    const safe = safeApiError(chErr);
+    return NextResponse.json({ ok: false, ...safe }, { status: statusForSafeError(safe) });
   }
   const challenge = challenges?.[0] ?? null;
   if (!challenge) {
@@ -141,7 +143,14 @@ export async function POST(req: NextRequest) {
   });
   if (resErr) {
     console.error("[verify-challenge/check] resolve RPC:", resErr.message);
-    return NextResponse.json({ ok: false, matched: true, error: resErr.message }, { status: 500 });
+    // `matched: true` is load-bearing and MUST survive: the user's listing DID
+    // match and only the recording failed, which is a different thing to tell
+    // them than "no match". Only the driver message is replaced.
+    const safe = safeApiError(resErr);
+    return NextResponse.json(
+      { ok: false, matched: true, ...safe },
+      { status: statusForSafeError(safe) }
+    );
   }
 
   const r = (resolved ?? {}) as Record<string, any>;

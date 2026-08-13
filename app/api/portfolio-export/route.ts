@@ -3,6 +3,7 @@
 // GET /api/portfolio-export?wallet=0x...&collection=slug
 
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 
 const COLLECTION_UUID_MAP: Record<string, string> = {
@@ -37,9 +38,7 @@ export async function GET(req: NextRequest) {
       p_offset: 0,
       p_collection_id: collectionId,
     })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-    const moments: any[] = (data?.moments ?? []) as any[]
+    if (error) return apiErrorResponse(error, "api/portfolio-export");const moments: any[] = (data?.moments ?? []) as any[]
 
     const headers = [
       "Player", "Set", "Series", "Tier", "Serial", "Circulation",
@@ -76,9 +75,6 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    )
+    return apiErrorResponse(err, "api/portfolio-export");
   }
 }

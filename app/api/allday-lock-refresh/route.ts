@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { refreshAllDayWalletLocks } from "@/lib/allday-lock"
 
@@ -24,6 +25,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.log("[allday-lock-refresh] error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ error: err instanceof Error ? err.message : "internal error" }, { status: 500 })
+    return apiErrorResponse(err, "api/allday-lock-refresh");
   }
 }

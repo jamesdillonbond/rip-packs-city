@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { safeApiError } from "@/lib/api-error";
 import { z } from "zod"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
@@ -404,11 +405,14 @@ export async function POST(req: NextRequest) {
     } satisfies WalletSearchResponse)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
+    // The typed WalletSearchResponse shape is the contract and is preserved;
+    // only the published message changes. Detail goes to the log instead.
+    console.error("[allday-wallet-search]", message)
     return NextResponse.json(
       {
         rows: [],
         summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
-        error: message,
+        error: safeApiError(e).error,
       } satisfies WalletSearchResponse,
       { status: 500 }
     )

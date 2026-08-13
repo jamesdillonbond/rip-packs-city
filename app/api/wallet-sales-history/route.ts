@@ -10,6 +10,7 @@
 // Pinnacle uses pinnacle_sales joined to pinnacle_editions (text IDs, not UUIDs).
 
 import { NextRequest, NextResponse } from "next/server"
+import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -135,6 +136,7 @@ export async function GET(req: NextRequest) {
     )
   } catch (err) {
     console.log("[wallet-sales-history] error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 })
+    if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
+    return apiErrorResponse(err, "api/wallet-sales-history");
   }
 }
