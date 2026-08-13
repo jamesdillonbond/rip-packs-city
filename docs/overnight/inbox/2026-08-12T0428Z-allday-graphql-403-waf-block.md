@@ -63,3 +63,59 @@ blocks the descriptive-search work for one of the two biggest collections.
 
 No env var was touched and no routing was changed — both are outward-facing operator decisions, and
 a wrong guess here would silently redirect a production ingest. Filing rather than fixing.
+
+---
+
+## ANSWERED — Claude Code, 2026-08-13. Routing confirmed against the worker source, not guessed.
+
+The doc above asked for exactly this before anyone changed an env var. All three checks now
+resolve, and they agree.
+
+**1. `allEditions` is a CONSUMER-endpoint operation.** `lib/chains/flow/alldayGraphql.ts`
+hardcodes `ALLDAY_CONSUMER_GRAPHQL_URL = "https://nflallday.com/consumer/graphql"`, and
+`docs/allday-graphql-callers-broken.md` records on triage that
+`scripts/backfill-residual-edition-metadata.mjs` "uses `allEditions(first, after)` for AllDay,
+which still resolves on `nflallday.com/consumer/graphql`". So `ALLDAY_RELAY_QUERY` must reach the
+**consumer** host — `/allday` (public-api) is the wrong route and would fail on the schema, not
+the WAF.
+
+**2. The consumer host REQUIRES a browser fingerprint, and only the worker route adds one.**
+`workers/topshot-proxy/index.js` says so in its own header:
+
+> `/allday-consumer` additional gating: the consumer endpoint serves a reduced public schema
+> (no `getMintedMoment`) to non-browser-fingerprinted requests. This route adds Origin / Referer
+> / browser User-Agent so the schema flips to the full view. **Scoped to this route only** —
+> public-api routes stay on the bare `sports-collectible-tool/0.1` UA.
+
+`ROUTE_HEADERS["allday-consumer"]` sets `Origin: https://nflallday.com`,
+`Referer: https://nflallday.com/`, and a full Chrome `User-Agent`.
+
+**3. The hydrate sends a NON-browser UA.** `lib/editions-hydrate.ts` sends
+`User-Agent: rip-packs-city/editions-hydrate`. An HTML `<title>block</title>` body is a WAF
+verdict on the CLIENT, which is exactly what that UA earns at `nflallday.com` — and it explains
+why the Top Shot arm of the same request succeeded (different host, no such gating).
+
+### Conclusion
+
+`ALLDAY_PROXY_URL` should be **`https://<topshot-proxy-host>/allday-consumer`**. That single value
+fixes both failure modes at once: it moves egress onto Cloudflare (off the WAF-blocked Vercel
+range) **and** applies the browser fingerprint the consumer endpoint demands. A bare
+`nflallday.com/consumer/graphql` — which is also the code's fallback when the env var is unset —
+**can never work from a Vercel lambda**, so if the current value is the bare host, the observed
+403 is fully explained.
+
+⚠ **Still operator-gated**: this is a Vercel env-var write, and the pass condition needs
+`RPC_ADMIN_TOKEN` to re-run the probe. Neither is available here.
+
+**Operator steps:** set `ALLDAY_PROXY_URL` to the worker's `/allday-consumer` route → redeploy
+(⚠ an empty or docs-only commit will NOT rebake it — use the v13 deployments POST, per
+CLAUDE.md) → re-run `POST /api/admin/discover-moment-descriptors`. **Pass condition: the All Day
+arm goes `conclusive: true`** (controls `playerName` + `classification` return real values).
+Until then AllDay `editions.description` cannot populate, so AllDay prose stays absent from
+narrative search — a disclosed coverage gap, not a search bug.
+
+⚠ **One caveat that is NOT resolved here:** the corroborating signal above (all 6,190
+`nfl_all_day` rows have `last_updated_at` NULL) still has not been traced to a write path.
+It remains corroboration, not proof, exactly as the original filing said. Do not upgrade it to
+"the AllDay ingest is broken" without checking whether that column is written by the AllDay path
+at all.
