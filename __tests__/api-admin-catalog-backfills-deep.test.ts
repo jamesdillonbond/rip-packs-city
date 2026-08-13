@@ -108,6 +108,30 @@ const KD_EDITION = {
 // No play.flowID → unkeyable → counted as skipped, never written.
 const SKIPPED_EDITION = { tier: "MOMENT_TIER_COMMON", set: { flowId: 165 }, play: null }
 
+// The GQL query MUST select `description` on `Play`, not on `Play.stats` —
+// `PlayStats` has no such field and asking for it 422s the whole page. This
+// fixture puts the prose at the correct depth and a decoy at the wrong one, so
+// a regression that reads stats.description writes the decoy (or null) instead.
+const DESCRIBED_EDITION = {
+  tier: "MOMENT_TIER_LEGENDARY",
+  circulationCount: 99,
+  assetPathPrefix: "https://assets.nbatopshot.com/editions/165_x/uuid/play_uuid_capture_",
+  set: { flowId: 165, flowName: "MVP Moments", flowSeriesNumber: 5 },
+  play: {
+    flowID: "7001",
+    description: "  Damian Lillard  pulls up\nfrom the logo   as time expires.  ",
+    stats: {
+      playerName: "Damian Lillard",
+      teamAtMoment: "Portland Trail Blazers",
+      playCategory: "Jump Shot",
+      playType: "3 Pointer",
+      dateOfMoment: "2026-02-01T03:00:00Z",
+      // Decoy at the WRONG depth — must never reach editions.description.
+      description: "WRONG-DEPTH-SENTINEL",
+    },
+  },
+}
+
 describe("/api/admin/backfill-topshot-catalog", () => {
   it("is RPC_ADMIN_TOKEN-only: INGEST and CRON bearers are rejected", async () => {
     for (const auth of [undefined, "Bearer ingest-secret", "Bearer cron-secret", "Bearer nope"]) {
@@ -460,10 +484,112 @@ describe("/api/admin/backfill-topshot-catalog", () => {
       adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
     )
     const body = await res.json()
-    // All three sets yielded zero editions and were marked processed (bump only).
-    expect(body).toMatchObject({ ok: true, sets_processed: 3, editions_upserted: 0, gql_calls: 3 })
+    // All three sets FAULTED. This used to assert ok:true — a test pinning the
+    // exact silent-success that let the 2026-08-11 malformed-query outage run a
+    // full day reporting sets_processed=257 / editions_upserted=0 /
+    // errors_count=0. Every set faulting is unambiguous and must be loud.
+    expect(body).toMatchObject({
+      ok: false,
+      sets_processed: 3,
+      sets_faulted: 3,
+      editions_upserted: 0,
+      gql_calls: 3,
+      errors_count: 3,
+    })
+    // The fault REASON is what makes the next outage diagnosable in one look:
+    // for a malformed query the upstream body names the offending field.
+    const reasons = (body.errors_sample as Array<{ reason: string }>).map((e) => e.reason)
+    expect(reasons[0]).toMatch(/HTTP 500/)
+    expect(reasons[1]).toMatch(/gql: gql err/)
+    expect(reasons[2]).toMatch(/network down/)
+    // Sets are still stamped, so a persistently-broken set cannot pin itself at
+    // the head of the least-recently-touched queue and starve everything behind.
     expect((spy.writes.editions ?? [])).toHaveLength(0)
     expect((spy.writes.sets ?? []).filter((w) => w.method === "update")).toHaveLength(3)
+  })
+
+  it("reads the play description from Play, not Play.stats, and normalizes it", async () => {
+    const spy = install({
+      sets: [
+        {
+          data: [{
+            id: "s1", external_id: SET_UUID, name: "MVP Moments",
+            set_id_onchain: null, cover_art_url: null, asset_path_prefix: null, updated_at: null,
+          }],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+      pipeline_runs: { data: null, error: null },
+    })
+    fetchMock = installFetchMock([
+      {
+        match: (_url, init) => String(init?.body ?? "").includes("SearchEditionBackfill"),
+        respond: () => ({ json: tsPage([DESCRIBED_EDITION], null) }),
+      },
+    ])
+
+    const res = await tsCatalog.GET(
+      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+    )
+    expect(res.status).toBe(200)
+
+    // The query itself must ask at the right depth. Selecting `description`
+    // inside `stats { … }` is the 2026-08-11 outage: PlayStats has no such
+    // field, so the upstream 422s every page and nothing is ever written.
+    const sent = String(fetchMock.calls[0]?.init?.body ?? "")
+    // Slice to the stats block's own closing brace — a fixed-width window is
+    // long enough to look right and short enough to assert nothing.
+    const statsStart = sent.indexOf("stats {")
+    expect(statsStart).toBeGreaterThan(-1)
+    const statsBlock = sent.slice(statsStart, sent.indexOf("}", statsStart))
+    expect(statsBlock).not.toContain("description")
+    expect(sent).toMatch(/flowID\\n\s*description/)
+
+    const rows = (spy.writes.editions ?? []).flatMap((w) => w.rows as any[])
+    const row = rows.find((r) => r.external_id === "165:7001")!
+    // Whitespace collapsed for trigram consistency; decoy never reached it.
+    expect(row.description).toBe("Damian Lillard pulls up from the logo as time expires.")
+    expect(row.description).not.toContain("WRONG-DEPTH-SENTINEL")
+  })
+
+  it("a genuinely EMPTY set is not a fault — walk stays ok with sets_faulted 0", async () => {
+    // The other half of the distinction the fault type exists to draw: a set
+    // that really holds no editions answers HTTP 200 with an empty data array.
+    // That is a RESULT, not a failure to obtain one, so it must not redden the
+    // run — otherwise the fix trades a silent failure for a crying-wolf one.
+    const spy = install({
+      sets: [
+        {
+          data: ["s1", "s2"].map((id) => ({
+            id, external_id: SET_UUID, name: id,
+            set_id_onchain: null, cover_art_url: null, asset_path_prefix: null, updated_at: null,
+          })),
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+      pipeline_runs: { data: null, error: null },
+    })
+    fetchMock = installFetchMock([
+      {
+        match: (_url, init) => String(init?.body ?? "").includes("SearchEditionBackfill"),
+        respond: () => ({ json: tsPage([], null) }),
+      },
+    ])
+
+    const res = await tsCatalog.GET(
+      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+    )
+    const body = await res.json()
+    expect(body).toMatchObject({
+      ok: true,
+      sets_processed: 2,
+      sets_faulted: 0,
+      editions_upserted: 0,
+      errors_count: 0,
+    })
+    expect((spy.writes.editions ?? [])).toHaveLength(0)
   })
 
   it("500s when the natural-mode sets read errors", async () => {

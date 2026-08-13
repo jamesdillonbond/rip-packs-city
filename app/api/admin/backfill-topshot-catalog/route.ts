@@ -169,10 +169,28 @@ function buildVideoUrl(prefix: string | null | undefined): string | null {
   return `${prefix}Animated_1080_1080_Black.mp4`;
 }
 
+/**
+ * Outcome of one GQL page fetch.
+ *
+ * ⚠ This used to be `… | null`, and that single collapsed `null` is why the
+ * 2026-08-11 malformed-query bug (description selected on `PlayStats`, which
+ * 422s) was invisible: "the set has no editions" and "we could not ask" are
+ * opposite facts that shared one return value. The first is a result, the
+ * second is a failure to obtain one. Two live runs reported sets_processed=257
+ * / editions_upserted=0 / errors_count=0 and read as clean.
+ *
+ * The `fault` string carries the HTTP status or the GQL error message, because
+ * for a malformed query the upstream's own body names the offending field and
+ * is the entire diagnostic — it was being thrown away.
+ */
+type PageFetch =
+  | { ok: true; editions: RawEdition[]; nextCursor: string | null }
+  | { ok: false; fault: string };
+
 async function fetchEditionsPage(
   setUuid: string,
   cursor: string,
-): Promise<{ editions: RawEdition[]; nextCursor: string | null } | null> {
+): Promise<PageFetch> {
   type Resp = {
     searchEditions?: {
       searchSummary?: {
@@ -198,26 +216,41 @@ async function fetchEditionsPage(
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // The BODY is the diagnostic: Top Shot answers 422 for an invalid query
+      // and names the offending field in the message.
+      const body = await res.text().catch(() => "");
+      return { ok: false, fault: `HTTP ${res.status}: ${body.slice(0, 200)}` };
+    }
     const json = (await res.json()) as { data?: Resp; errors?: unknown[] };
-    if (Array.isArray(json.errors) && json.errors.length > 0) return null;
+    if (Array.isArray(json.errors) && json.errors.length > 0) {
+      const first = json.errors[0] as { message?: string } | undefined;
+      return { ok: false, fault: `gql: ${String(first?.message ?? "unknown").slice(0, 200)}` };
+    }
     const summary = json.data?.searchEditions?.searchSummary;
     return {
+      ok: true,
       editions: summary?.data?.data ?? [],
       nextCursor: summary?.pagination?.rightCursor ?? null,
     };
-  } catch {
-    return null;
+  } catch (e) {
+    return { ok: false, fault: e instanceof Error ? e.message.slice(0, 200) : "fetch failed" };
   }
 }
 
+/**
+ * `fault` is the reason the walk stopped early, or null when it completed.
+ * A set that genuinely holds no editions returns `editions: []` with
+ * `fault: null` — the caller must not conflate the two.
+ */
 async function walkSet(
   setUuid: string,
-): Promise<{ editions: RawEdition[]; gqlCalls: number }> {
+): Promise<{ editions: RawEdition[]; gqlCalls: number; fault: string | null }> {
   const collected: RawEdition[] = [];
   const seenCursors = new Set<string>();
   let cursor = "";
   let gqlCalls = 0;
+  let fault: string | null = null;
   // Hard cap at 50 pages = 5000 editions/set. No real Top Shot set is that
   // large; this is a runaway-loop guard.
   for (let page = 0; page < 50; page++) {
@@ -225,14 +258,20 @@ async function walkSet(
     if (cursor) seenCursors.add(cursor);
     const result = await fetchEditionsPage(setUuid, cursor);
     gqlCalls++;
-    if (!result) break;
+    if (!result.ok) {
+      // Page 0 failing means we learned nothing about this set. A later page
+      // failing means we hold a PARTIAL set, which is still a fault: upserting
+      // it silently would look like a complete walk.
+      fault = `page ${page}: ${result.fault}`;
+      break;
+    }
     const { editions, nextCursor } = result;
     collected.push(...editions);
     // Loop while cursor is truthy and not equal to the previous cursor.
     if (!nextCursor || nextCursor === cursor) break;
     cursor = nextCursor;
   }
-  return { editions: collected, gqlCalls };
+  return { editions: collected, gqlCalls, fault };
 }
 
 interface EditionUpsertRow {
@@ -415,6 +454,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let editionsSkipped = 0;
   let setsProcessed = 0;
   let setsWithCoverSet = 0;
+  let setsFaulted = 0;
+  let upsertErrors = 0;
   let gqlCalls = 0;
   let lastSetId: string | null = null;
   let terminatedReason: string = "no_more_sets";
@@ -433,12 +474,23 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
 
     const setUuid = setRow.external_id as string;
-    const { editions, gqlCalls: setGqlCalls } = await walkSet(setUuid);
+    const { editions, gqlCalls: setGqlCalls, fault } = await walkSet(setUuid);
     gqlCalls += setGqlCalls;
 
+    // Recorded even when some editions came back: a PARTIAL walk upserted
+    // silently is indistinguishable from a complete one.
+    if (fault) {
+      setsFaulted++;
+      errors.push({ set_id: setRow.id, reason: fault });
+    }
+
     if (editions.length === 0) {
-      // Either an empty set (rare) or a GQL fault. Mark processed and move on
-      // so we don't get stuck re-walking it every tick.
+      // An empty set (rare) or a faulted walk — now told apart by `fault`
+      // above, so this branch is only about not getting stuck re-walking the
+      // same set every tick. The updated_at stamp is applied in BOTH cases
+      // deliberately: withholding it on a fault would pin a persistently
+      // broken set at the head of the least-recently-touched queue forever
+      // and starve every set behind it.
       setsProcessed++;
       lastSetId = setRow.id;
       await supabase
@@ -462,6 +514,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         .from("editions")
         .upsert(rows, { onConflict: "external_id,collection_id", count: "exact" });
       if (upsertErr) {
+        upsertErrors++;
         errors.push({ set_id: setRow.id, reason: upsertErr.message });
       } else {
         editionsUpserted += count ?? rows.length;
@@ -500,7 +553,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   const durationMs = Date.now() - startedAt;
   const finishedAt = new Date().toISOString();
-  const ok = errors.length === 0;
+  // `ok` deliberately does NOT redden on a single fault: Top Shot GQL is
+  // intermittently flaky, and a chronically-red pipeline trains the operator
+  // to skim past it — the lesson this repo already paid for with
+  // ufc_fmv_stale_hours. What IS unambiguous, and is exactly the shape of the
+  // 2026-08-11 malformed-query bug, is EVERY walked set faulting: that cannot
+  // be upstream noise, it means we are asking a question the upstream refuses.
+  // Partial faults stay fully visible in errors_count / errors_sample /
+  // sets_faulted without flipping the flag.
+  const totalFault = setsProcessed > 0 && setsFaulted >= setsProcessed;
+  const ok = upsertErrors === 0 && !totalFault;
 
   try {
     await supabase.from("pipeline_runs").insert({
@@ -516,6 +578,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       extra: {
         sets_processed: setsProcessed,
         sets_with_cover_set: setsWithCoverSet,
+        sets_faulted: setsFaulted,
         editions_upserted: editionsUpserted,
         editions_skipped: editionsSkipped,
         gql_calls: gqlCalls,
@@ -537,6 +600,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     mode: staleThumbnailMode ? "stale_thumbnails" : "natural",
     sets_processed: setsProcessed,
     sets_with_cover_set: setsWithCoverSet,
+    sets_faulted: setsFaulted,
     editions_upserted: editionsUpserted,
     editions_skipped: editionsSkipped,
     gql_calls: gqlCalls,
