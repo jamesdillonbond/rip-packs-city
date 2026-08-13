@@ -63,7 +63,16 @@ describe("pack dist page — What's Inside must not depend on stream completion"
   it("distinguishes a failed contents read (null) from an empty pool ([])", () => {
     // fetchPackContents must signal failure as null, so the panel can say so
     // rather than silently vanishing.
-    expect(SRC).toContain("Promise<EditionTile[] | null>")
+    //
+    // The fetcher itself moved to lib/pack-dist/fetchers.ts on 2026-08-13 (so it
+    // lands inside the primary coverage gate), where it reports failure as
+    // `ok:false` and is tested directly in lib-pack-dist-fetchers.test.ts. What
+    // this guard still owns is the PAGE half of the contract: the shell must map
+    // that flag back to the `null` PackContentsSection branches on, rather than
+    // handing the empty rows straight through — which would restore the silent
+    // vanish this file exists to prevent. Assert the mapping, not the old
+    // signature text, so a legitimate extraction doesn't red a behavioural guard.
+    expect(SRC).toContain("packContentsRes.ok ? (packContentsRes.rows as EditionTile[]) : null")
     const sec = SRC.slice(SRC.indexOf("function PackContentsSection"))
     expect(sec).toContain("contents === null")
     expect(sec).toContain("Couldn&apos;t load this pack&apos;s contents")

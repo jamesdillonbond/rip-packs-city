@@ -58,6 +58,29 @@ import {
   evContributorsLowConfShare as computeEvContributorsLowConfShare,
   deriveGrailPremium,
 } from "@/lib/pack-dist-verdict"
+// The data-access layer moved to lib/ (2026-08-13) so it lands inside the primary
+// coverage gate — `app/**/page.tsx` is measured by neither gate — and so each
+// fetcher can report `ok: false` on a query failure instead of returning an empty
+// value the page then renders as a fact about the catalogue. See the module header.
+import {
+  fetchPackRow,
+  fetchDistFallback,
+  fetchPackLifecycle,
+  fetchPackRealizedEv,
+  fetchAllDayCorrectedEv,
+  fetchPackMarket,
+  fetchEvContributors,
+  fetchTopPulls,
+  fetchPackContents,
+  fetchExhaustedCount,
+  fetchPackSalesHistory,
+  type PackTableRow,
+  type DistFallbackRow,
+  type PackSaleRow,
+  type AllDayCorrectedEvRow,
+} from "@/lib/pack-dist/fetchers"
+import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -71,431 +94,13 @@ const CARD_STYLE: React.CSSProperties = {
   padding: 18,
 }
 
-interface PackTableRow {
-  dist_id: string
-  collection_id: string
-  collection_name: string
-  collection_slug: string
-  title: string | null
-  image_url: string | null
-  nft_type: string | null
-  tier: string | null
-  pack_type: string | null
-  description: string | null
-  retail_price_usd: string | number | null
-  slots: number | null
-  total_minted: number | null
-  total_opened: number | null
-  total_sealed: number | null
-  depletion_pct: number | null
-  pack_ev: string | number | null
-  gross_ev: string | number | null
-  // Typical Pull EV = slots × weighted-MEDIAN moment FMV over the remaining pool
-  // (vs gross_ev = weighted MEAN = "Actual EV"). Sits near the common floor;
-  // the gap gross_ev − typical_ev is the "grail premium" (lottery shape).
-  // NULL when the pool is incomplete/sentinel — same as gross_ev.
-  typical_ev: string | number | null
-  ev_pack_price: string | number | null
-  value_ratio: string | number | null
-  is_positive_ev: boolean | null
-  fmv_coverage_pct: number | null
-  edition_count: number | null
-  total_unopened: number | null
-  ev_depletion_pct: number | null
-  ev_snapshotted_at: string | null
-  ev_margin_pct: string | number | null
-  is_rare_single_pack: boolean | null
-  // Dual-price model (May 2026) — see /api/pack-ev for derivation rules.
-  primary_price: string | number | null
-  secondary_ask: string | number | null
-  price_source: "primary" | "secondary" | "min" | "none" | null
-  primary_available: boolean | null
-  secondary_available: boolean | null
-}
-
-interface DistFallbackRow {
-  metadata: Record<string, unknown> | null
-  image_url: string | null
-  title: string | null
-}
-
-interface DropPoolRow {
-  edition_id: string
-  drop_weight: string | number | null
-}
-
-interface EditionLite {
-  id: string
-  name: string | null
-  tier: string | null
-  external_id: string | null
-  player_name: string | null
-  set_name: string | null
-}
-
-interface FmvRow {
-  edition_id: string
-  fmv_usd: string | number | null
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
 
-async function fetchPackRow(collectionId: string, distId: string): Promise<PackTableRow | null> {
-  const { data, error } = await sb
-    .from("pack_table_rows")
-    .select("*")
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .limit(1)
-    .maybeSingle()
-  if (error) {
-    console.error("[pack-detail] pack_table_rows error", error.message)
-    return null
-  }
-  return (data as PackTableRow | null) ?? null
-}
-
-async function fetchDistFallback(collectionId: string, distId: string): Promise<DistFallbackRow | null> {
-  const { data, error } = await sb
-    .from("pack_distributions")
-    .select("metadata, image_url, title")
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .limit(1)
-    .maybeSingle()
-  if (error) {
-    console.error("[pack-detail] pack_distributions error", error.message)
-    return null
-  }
-  return (data as DistFallbackRow | null) ?? null
-}
-
-// ── Observed pack lifecycle (Top Shot only) ──────────────────────────────────
-// pack_distributions.total_minted/total_opened/total_sealed/depletion_pct are
-// dead (all zero for every TS dist), so the cached view's counters are useless.
-// v_topshot_pack_lifecycle carries the real, honest numbers derived from
-// pack_rips + the rip→dist attribution table. These are OBSERVED (since
-// Apr 2026), not all-time-minted — labelled as such in the UI.
-interface PackLifecycleRow {
-  packs_opened: string | number | null
-  packs_opened_confirmed: string | number | null
-  packs_opened_inferred: string | number | null
-  packs_sealed_observed: string | number | null
-  moments_pulled: string | number | null
-  realized_pull_value_usd: string | number | null
-  avg_realized_value_per_pack: string | number | null
-  observed_depletion_pct: string | number | null
-}
-
-// Modeled-EV-vs-realized-pull reality check (Top Shot only). The view filters
-// to dists with >= 10 attributed opens so the realized distribution is stable.
-interface PackRealizedEvRow {
-  modeled_gross_ev: string | number | null
-  n_opens: string | number | null
-  realized_mean: string | number | null
-  realized_median: string | number | null
-  realized_p90: string | number | null
-  realized_to_modeled_ratio: string | number | null
-  // calibrated_ev = confidence-weighted blend of modeled gross EV and the realized
-  // pull mean (Item 2 calibrate). Non-destructive: the canonical gross_ev stays raw.
-  calibrated_ev: string | number | null
-}
-
-async function fetchPackLifecycle(collectionSlug: string, distId: string): Promise<PackLifecycleRow | null> {
-  // AllDay reaches parity via v_allday_pack_lifecycle (pack-OPEN events ingested
-  // since ~Jun 2026 + on-chain pull-edition resolution). Its columns differ from
-  // the TS view — no confirmed/inferred split (every AllDay open is on-chain
-  // confirmed) and depletion is opened_pct_of_minted — so map it into the shared
-  // PackLifecycleRow shape. Per-dist rows are sparse while resolve-allday-pack-dist
-  // grinds the mint era; dists with no attributed opens just return packs_opened 0
-  // → the strip self-hides (showLifecycle gate).
-  if (collectionSlug === "nfl-all-day") {
-    const { data, error } = await sb
-      .from("v_allday_pack_lifecycle")
-      .select("packs_opened, minted, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted")
-      .eq("dist_id", distId)
-      .maybeSingle()
-    if (error) {
-      console.error("[pack-detail] allday_pack_lifecycle error", error.message)
-      return null
-    }
-    if (!data) return null
-    return {
-      packs_opened: data.packs_opened ?? null,
-      packs_opened_confirmed: data.packs_opened ?? null, // all on-chain confirmed
-      packs_opened_inferred: 0,
-      // Sealed = minted - opened (the registry knows the full mint; honest
-      // "unopened" figure — was previously null, hiding the sealed count).
-      packs_sealed_observed:
-        data.minted != null && data.packs_opened != null && Number(data.minted) >= Number(data.packs_opened)
-          ? Number(data.minted) - Number(data.packs_opened)
-          : null,
-      moments_pulled: data.moments_pulled ?? null,
-      realized_pull_value_usd: data.realized_pull_value_usd ?? null,
-      avg_realized_value_per_pack: data.avg_realized_value_per_pack ?? null,
-      observed_depletion_pct: data.opened_pct_of_minted ?? null,
-    }
-  }
-  if (collectionSlug !== "nba-top-shot") return null
-  // Per-dist SECDEF RPC (2026-07-16): v_topshot_pack_lifecycle aggregates ALL
-  // pack_rips + attribution + pack_purchases before the dist filter (~48s under
-  // load — one 30s service-role statement timeout per page view). Same cure as
-  // get_pack_market_row; the view stays for board consumers.
-  const { data, error } = await sb
-    .rpc("get_pack_lifecycle_row", { p_dist_id: distId })
-    .maybeSingle()
-  if (error) {
-    console.error("[pack-detail] pack_lifecycle error", error.message)
-    return null
-  }
-  return (data as PackLifecycleRow | null) ?? null
-}
-
-async function fetchPackRealizedEv(collectionSlug: string, distId: string): Promise<PackRealizedEvRow | null> {
-  // AllDay reality-check via v_allday_pack_realized_ev (modeled corrected EV vs
-  // observed realized pulls). No p90 / calibrated_ev columns — map into the shared
-  // shape with nulls. Currently 0 rows until a paid dist ∩ opened overlap exists.
-  if (collectionSlug === "nfl-all-day") {
-    const { data, error } = await sb
-      .from("v_allday_pack_realized_ev")
-      .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_to_modeled_ratio")
-      .eq("dist_id", distId)
-      .maybeSingle()
-    if (error) {
-      console.error("[pack-detail] allday_pack_realized_ev error", error.message)
-      return null
-    }
-    if (!data) return null
-    return {
-      modeled_gross_ev: data.modeled_gross_ev ?? null,
-      n_opens: data.n_opens ?? null,
-      realized_mean: data.realized_mean ?? null,
-      realized_median: data.realized_median ?? null,
-      realized_p90: null,
-      realized_to_modeled_ratio: data.realized_to_modeled_ratio ?? null,
-      calibrated_ev: null,
-    }
-  }
-  if (collectionSlug !== "nba-top-shot") return null
-  // Per-dist SECDEF RPC (2026-07-16): v_topshot_pack_realized_ev aggregates the
-  // whole attribution table per lookup (~24s under load). Identical columns.
-  const { data, error } = await sb
-    .rpc("get_pack_realized_ev_row", { p_dist_id: distId })
-    .maybeSingle()
-  if (error) {
-    console.error("[pack-detail] pack_realized_ev error", error.message)
-    return null
-  }
-  return (data as PackRealizedEvRow | null) ?? null
-}
-
-// NFL All Day corrected EV (AllDay only). The canonical headline AllDay EV
-// (compute_pack_ev_per_edition_weighted, edge fn v8) is now a per-edition
-// SUPPLY-weighted mean(fmv) × slots — each edition weighted by its circulation
-// share, so low-supply rares no longer count as much as commons. This corrected
-// EV is a robust cross-check: it values each tier by its MEDIAN FMV (resistant to
-// per-edition FMV outliers) and weights tiers by pull probability (published
-// packOdds where we captured them, else circulation share). Surfaced with the
-// low_confidence_ev caveat, mirroring the TS calibrated reality-check adoption pattern.
-interface AllDayCorrectedEvRow {
-  corrected_gross_ev: string | number | null
-  corrected_net_ev: string | number | null
-  corrected_value_ratio: string | number | null
-  ev_method: string | null
-  has_published_odds: boolean | null
-  stale_value_share_pct: string | number | null
-  low_confidence_ev: boolean | null
-  // Authoritative complete depletion (Dapper searchPackNft, all dists). Use this
-  // for AllDay "% opened", not the rip-based v_allday_pack_lifecycle figure which
-  // only covers ingested opens (2026-06-29 full-history pack data layer).
-  opened_count: string | number | null
-  packnft_total: string | number | null
-  opened_pct_of_minted: string | number | null
-}
-
-async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): Promise<AllDayCorrectedEvRow | null> {
-  if (collectionSlug !== "nfl-all-day") return null
-  // v_allday_pack_detail_ev, NOT v_allday_pack_info: identical columns and values
-  // (verified 0-row EXCEPT diff over all 3,052 AllDay dists) but without that view's
-  // LEFT JOIN over pack_ev_latest, whose dist_id predicate cannot push below its
-  // DISTINCT ON — it scanned 119,591 pack_ev_history rows per request to produce a
-  // column no caller reads. Per-dist planner cost 1,195,280 -> 7.54. See migration
-  // 20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.
-  const { data, error } = await sb
-    .from("v_allday_pack_detail_ev")
-    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev, opened_count, packnft_total, opened_pct_of_minted")
-    .eq("dist_id", distId)
-    .maybeSingle()
-  if (error) {
-    console.error("[pack-detail] allday_corrected_ev error", error.message)
-    return null
-  }
-  return (data as AllDayCorrectedEvRow | null) ?? null
-}
-
-// ── Secondary sealed-pack resale market (NFL All Day + Top Shot) ─────────────
-// v_{allday,topshot}_pack_market roll up the complete sealed-pack secondary sale
-// history (Dapper Studio Platform, backfilling to each collection's genesis) per
-// dist: median / last / count + the premium-or-discount vs the original retail
-// price. What a SEALED pack actually trades for — something Top Shot's own site
-// never surfaces cleanly. Single-dist lookup is index-driven (~2-3ms). Both
-// views share the same market columns, so one fetcher covers both.
-interface PackMarketRow {
-  n_sales: string | number | null
-  n_sales_30d: string | number | null
-  n_sales_90d: string | number | null
-  last_sale_price: string | number | null
-  last_sale_at: string | null
-  avg_price_90d: string | number | null
-  median_price_90d: string | number | null
-  min_price_all: string | number | null
-  max_price_all: string | number | null
-  retail_price: string | number | null
-  secondary_vs_retail_ratio: string | number | null
-}
-
-const PACK_MARKET_VIEW: Record<string, string> = {
-  "nfl-all-day": "v_allday_pack_market",
-  "nba-top-shot": "v_topshot_pack_market",
-}
-
-async function fetchPackMarket(collectionSlug: string, distId: string): Promise<PackMarketRow | null> {
-  if (!PACK_MARKET_VIEW[collectionSlug]) return null
-  // Per-dist SECDEF RPC (2026-07-14): the v_*_pack_market views aggregate the
-  // entire *_pack_sales_history table (570k rows) before the dist filter can
-  // apply (~26s under load — the smoke-failing tail of this page). The RPC
-  // computes the same columns for one dist via idx_*_pack_sales_hist_dist.
-  const { data, error } = await sb.rpc("get_pack_market_row", {
-    p_collection_slug: collectionSlug,
-    p_dist_id: distId,
-  })
-  if (error) {
-    console.error(`[pack-detail] pack_market rpc error (${collectionSlug})`, error.message)
-    return null
-  }
-  const row = Array.isArray(data) ? data[0] : data
-  return (row as PackMarketRow | null) ?? null
-}
-
-// ── "What drives the remaining EV" (Top Shot only) ──────────────────────────
-// get_pack_ev_contributors ranks the editions STILL in the drop pool by their
-// per-slot EV contribution (pull_prob × FMV) as a share of the pack's per-slot
-// expected value, each tagged with its FMV confidence. Surfaces how much of the
-// headline EV leans on low-confidence chase prices — the honest read the raw
-// Gross EV number hides.
-interface EvContributor {
-  edition_id: string
-  external_id: string | null
-  name: string | null
-  player_name: string | null
-  set_name: string | null
-  tier: string | null
-  circulation_count: number | null
-  fmv_usd: string | number | null
-  confidence: string | null
-  pull_prob: string | number | null
-  ev_per_slot: string | number | null
-  pct_of_ev: string | number | null
-}
-
-async function fetchEvContributors(collectionSlug: string, distId: string): Promise<EvContributor[]> {
-  if (collectionSlug !== "nba-top-shot") return []
-  const { data, error } = await sb.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 })
-  if (error) { console.error("[pack-detail] ev_contributors error", error.message); return [] }
-  return Array.isArray(data) ? (data as EvContributor[]) : []
-}
-
-async function fetchTopPulls(
-  collectionId: string,
-  distId: string,
-  totalUnopened: number | null,
-  slots: number | null,
-): Promise<TopPull[]> {
-  const { data: poolRows, error: poolErr } = await sb
-    .from("pack_drop_pool")
-    .select("edition_id, drop_weight")
-    .eq("dist_id", distId)
-    .eq("collection_id", collectionId)
-    .gt("drop_weight", 0)
-    .order("drop_weight", { ascending: false })
-    .limit(50)
-  if (poolErr) {
-    console.error("[pack-detail] pack_drop_pool error", poolErr.message)
-    return []
-  }
-  const pool = (poolRows ?? []) as DropPoolRow[]
-  if (pool.length === 0) return []
-
-  const editionIds = pool.map((r) => r.edition_id)
-
-  // Full-pool weight sum for the probability denominator. `pool` is the top-50
-  // by drop_weight, so summing only its rows over-states the probability of
-  // each pull (Pack audit B2). Fall back to that partial sum only as a last
-  // resort, and surface probability as null when we can't compute the real
-  // denominator.
-  const [editionsRes, fmvRes, fullPoolWeightRes] = await Promise.all([
-    sb.from("editions").select("id, name, tier, external_id, player_name, set_name").in("id", editionIds),
-    sb.rpc("get_fmv_for_editions", {
-      p_collection_id: collectionId,
-      p_edition_ids: editionIds,
-    }),
-    sb.rpc("query_sql", {
-      query: `
-        SELECT COALESCE(SUM(drop_weight), 0)::numeric AS total_weight
-        FROM pack_drop_pool
-        WHERE dist_id = '${distId.replace(/'/g, "''")}'
-          AND collection_id = '${collectionId.replace(/'/g, "''")}'
-          AND drop_weight > 0
-      `,
-    }),
-  ])
-
-  if (editionsRes.error) console.error("[pack-detail] editions error", editionsRes.error.message)
-  if (fmvRes.error) console.error("[pack-detail] fmv rpc error", fmvRes.error.message)
-  if (fullPoolWeightRes.error) console.error("[pack-detail] full pool weight error", fullPoolWeightRes.error.message)
-
-  // Probability denominator: prefer cached total_unopened (true contents
-  // remaining); otherwise use the full-pool drop_weight sum we just fetched.
-  // Never fall back to summing only the top-50 weights — that inflates % (B2).
-  const fullPoolWeight = Number(
-    (fullPoolWeightRes.data as Array<{ total_weight: number | string }> | null)?.[0]?.total_weight ?? 0,
-  )
-
-  // Edition EV = the edition's contribution to one pack's gross EV
-  // (FMV × drop_weight/denom × slots), reconciling with the cached Gross EV KPI.
-  // The pure engine (computeTopPulls) owns the map build, denominator choice,
-  // EV formula, and sort — unit-tested in lib/pack-dist-odds.ts.
-  return computeTopPulls({
-    pool,
-    editions: (editionsRes.data ?? []) as EditionLite[],
-    fmv: (fmvRes.data ?? []) as FmvRow[],
-    fullPoolWeight,
-    totalUnopened,
-    slots,
-  })
-}
 
 const PACK_CONTENTS_PAGE_SIZE = 24
 
-// Phase 2 (entity media): the visual "What's Inside" grid. get_pack_contents
-// returns full EditionTile-shaped rows (thumbnail_url, route_slug, fmv_usd,
-// drop_weight, hit_probability, …), so the moment art renders instead of the
-// text-only Top-Pulls table below.
-// Returns null on a LOAD FAILURE and [] for a genuinely empty pool. The caller
-// renders different copy for each: collapsing both to [] silently deleted the
-// whole "What's Inside" panel whenever the RPC errored, with nothing on screen
-// to say so (the silent-failure class).
-async function fetchPackContents(collectionId: string, distId: string, limit: number, offset: number): Promise<EditionTile[] | null> {
-  const { data, error } = await sb.rpc("get_pack_contents", {
-    p_collection_id: collectionId,
-    p_dist_id: distId,
-    p_limit: limit,
-    p_offset: offset,
-  })
-  if (error) { console.error("[pack-detail] get_pack_contents error", error.message); return null }
-  return Array.isArray(data) ? (data as EditionTile[]) : []
-}
 
 // PACKVIZ-GRID 2a — the top-5-by-FMV "hero strip". get_pack_contents orders by
 // EV-per-slot (FMV × drop_weight), so a high-FMV / low-weight chase card sorts
@@ -521,44 +126,6 @@ interface HeroEdition {
 // Hero editions (top-5 by FMV) now come from get_pack_detail_bundle in the shell
 // (P3) — the standalone fetch was retired to keep it on the single bundle RPC.
 
-// PACKVIZ-GRID 2b — total exhausted (drop_weight = 0) pool rows, for the
-// collapsed "Exhausted / pulled out" section header count.
-async function fetchExhaustedCount(collectionId: string, distId: string): Promise<number> {
-  const { count, error } = await sb
-    .from("pack_drop_pool")
-    .select("edition_id", { count: "exact", head: true })
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .eq("drop_weight", 0)
-  if (error) { console.error("[pack-detail] exhausted count error", error.message); return 0 }
-  return count ?? 0
-}
-
-// ── Sales history (Item 2 — traced via the pack_rips dist bridge) ────────────
-// get_pack_sales_history returns kind-tagged rows ('top' = highest price,
-// 'recent' = newest) for packs whose sold instances were later opened (the
-// bridge only links sales whose pack rip resolved a dist_id — partial coverage
-// that grows over time). Dist 901-class packs (sold, never re-opened) return
-// zero rows and render the empty state.
-interface PackSaleRow {
-  kind: "top" | "recent" | string
-  buyer_address: string | null
-  seller_address: string | null
-  sale_price: string | number | null
-  sale_currency: string | null
-  sealed_at: string | null
-  tx_hash: string | null
-}
-
-async function fetchPackSalesHistory(collectionId: string, distId: string, limit = 10): Promise<PackSaleRow[]> {
-  const { data, error } = await sb.rpc("get_pack_sales_history", {
-    p_collection_id: collectionId,
-    p_dist_id: distId,
-    p_limit: limit,
-  })
-  if (error) { console.error("[pack-detail] get_pack_sales_history error", error.message); return [] }
-  return Array.isArray(data) ? (data as PackSaleRow[]) : []
-}
 
 // editions.name is "Player Name — Set Name" (em-dash). Some rows are NULL.
 // Fall back gracefully so the table doesn't render literal "null —" cells.
@@ -577,8 +144,8 @@ export async function generateMetadata(
   const { collection, distId } = await props.params
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
-  const row = await fetchPackRow(coll.id, distId)
-  const fb = row ? null : await fetchDistFallback(coll.id, distId)
+  const { data: row } = await fetchPackRow(coll.id, distId)
+  const fb: DistFallbackRow | null = row ? null : (await fetchDistFallback(coll.id, distId)).data
   // metaField (2026-07-25): pack_distributions.title is raw catalog text and can
   // carry stray whitespace, which leaked ahead of the " — " / " | " separators in
   // the title and ahead of the "." in the description's first sentence.
@@ -588,7 +155,7 @@ export async function generateMetadata(
   const metaTitle = `${joinMetaParts([title, tierLabel], " — ")} | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
-  const correctedEv = await fetchAllDayCorrectedEv(collection, distId)
+  const { data: correctedEv } = await fetchAllDayCorrectedEv(collection, distId)
   const useCorrectedEv = correctedEv != null && correctedEv.corrected_gross_ev != null
   const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
@@ -818,10 +385,18 @@ export default async function PackDetailPage(
   // because React does not hydrate a dehydrated boundary's fallback). Both reads
   // are cheap and were MOVED off the streamed group, not added, so total DB work
   // per request is unchanged.
-  const [packContents, exhaustedCount] = await Promise.all([
+  const [packContentsRes, exhaustedRes] = await Promise.all([
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchExhaustedCount(coll.id, distId),
   ])
+  // `null` still means "the read failed" for PackContentsSection, which renders
+  // its own explanatory copy; `[]` still means a genuinely unindexed pool.
+  const packContents = packContentsRes.ok ? (packContentsRes.rows as EditionTile[]) : null
+  const exhaustedCount = exhaustedRes.count
+  // The exhausted count has no place of its own to say "unknown" — it renders as
+  // a bare number in a section header — so a failed count is surfaced through the
+  // shared degraded notice rather than published as a measured zero.
+  const shellDegraded = summarizeDegraded([boardStatus("Exhausted pool count", exhaustedRes.ok)])
 
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
@@ -1555,6 +1130,7 @@ export default async function PackDetailPage(
           the pre-P3 pool fan-out, because the same read simply moved off the
           streamed group rather than being added (shell 1→2 reads, streamed
           group 4→3). ── */}
+      <DegradedDataNotice summary={shellDegraded} />
       <PackContentsSection
         collection={collection}
         distId={distId}
@@ -2373,11 +1949,27 @@ async function PackStreamedTop({
   distId: string
   authoritativeDepletionPct: number | null
 }) {
-  const [lifecycle, realizedEv, evContributors, packMarket] = await Promise.all([
+  const [lifecycleRes, realizedEvRes, evContributorsRes, packMarketRes] = await Promise.all([
     fetchPackLifecycle(collection, distId),
     fetchPackRealizedEv(collection, distId),
     fetchEvContributors(collection, distId),
     fetchPackMarket(collection, distId),
+  ])
+  const lifecycle = lifecycleRes.data
+  const realizedEv = realizedEvRes.data
+  const evContributors = evContributorsRes.rows
+  const packMarket = packMarketRes.data
+  // Every panel in this group SELF-HIDES when its data is absent, so a failed
+  // read is indistinguishable from "this pack has no opens / no resale history"
+  // — the reader sees a shorter page and no reason for it. The notice is the
+  // only thing that separates those two. A section that does not apply to this
+  // collection reports ok:true (see the fetchers' module header), so this never
+  // fires merely because a Top-Shot-only panel is absent on an All Day pack.
+  const streamedTopDegraded = summarizeDegraded([
+    boardStatus("Observed lifecycle", lifecycleRes.ok),
+    boardStatus("EV reality check", realizedEvRes.ok),
+    boardStatus("What drives the remaining EV", evContributorsRes.ok),
+    boardStatus("Sealed-pack resale", packMarketRes.ok),
   ])
 
   // Observed lifecycle
@@ -2435,6 +2027,7 @@ async function PackStreamedTop({
 
   return (
     <>
+      <DegradedDataNotice summary={streamedTopDegraded} />
       {showLifecycle && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
@@ -2632,9 +2225,15 @@ async function PackStreamedBottom({
   slots: number | null
   snapshottedAt: string | null
 }) {
-  const [salesHistory, topPulls] = await Promise.all([
+  const [salesRes, topPullsRes] = await Promise.all([
     fetchPackSalesHistory(collectionId, distId, 10),
     fetchTopPulls(collectionId, distId, totalUnopened, slots),
+  ])
+  const salesHistory = salesRes.rows
+  const topPulls = topPullsRes.rows
+  const bottomDegraded = summarizeDegraded([
+    boardStatus("Sealed-pack sales history", salesRes.ok),
+    { label: "Top pulls by EV", ok: topPullsRes.ok, partial: topPullsRes.partial },
   ])
 
   const packSaleNames = await resolveUsernames(
@@ -2643,6 +2242,7 @@ async function PackStreamedBottom({
 
   return (
     <>
+      <DegradedDataNotice summary={bottomDegraded} />
       <PackSalesHistory rows={salesHistory} names={packSaleNames} />
 
       <section style={CARD_STYLE}>
@@ -2650,11 +2250,26 @@ async function PackStreamedBottom({
           <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
             Top pulls by EV
           </h2>
+          {/* ⚠ Both of these used to key on `topPulls.length === 0` alone, and
+              fetchTopPulls returned [] on a query error — so a statement timeout
+              rendered "aren't indexed for this distribution yet", a claim about
+              OUR INDEX manufactured from OUR outage, on a pack whose pool is in
+              fact fully indexed. Branch on `ok` first; an empty result is only
+              "unindexed" when we actually managed to ask. */}
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-            {topPulls.length === 0 ? "computing pack contents…" : `top ${topPulls.length} of ${editionCount ?? "?"}`}
+            {!topPullsRes.ok
+              ? "unavailable"
+              : topPulls.length === 0
+                ? "no pool rows"
+                : `top ${topPulls.length} of ${editionCount ?? "?"}`}
           </span>
         </div>
-        {topPulls.length === 0 ? (
+        {!topPullsRes.ok ? (
+          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+            Couldn&apos;t load this pack&apos;s drop pool. This says nothing about whether the pool is
+            indexed — only that the read failed. Reload to try again.
+          </div>
+        ) : topPulls.length === 0 ? (
           <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
             Drop-pool contents aren&apos;t indexed for this distribution yet. Older/depleted packs are re-pooled from Dapper Atlas remaining-count data as that harvest runs.
           </div>
