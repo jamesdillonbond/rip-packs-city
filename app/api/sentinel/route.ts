@@ -7,8 +7,18 @@ import { createClient } from "@supabase/supabase-js";
 // over an 8h window), so the sentinel was failing BLIND — no report, no digest,
 // no alerting — most of the day. The GHA caller waits up to 5 min (timeout-minutes:
 // 5) so 180s is safely inside it; Pro cap is 800s. A completing-but-slow sentinel
-// beats a 504. Proper cost reduction (drop the ingested_at seq-scan, per-check
-// timeouts) is a follow-up.
+// beats a 504.
+//
+// ⚠ The follow-up this note used to prescribe — "drop the ingested_at seq-scan" —
+// was HALF DONE on 2026-08-13, and the other half must not be done as written.
+// Dropping the check would delete the only sales-ingest tripwire that reads the
+// sales TABLE instead of pipeline_runs, and that independence is exactly what
+// matters: a 403'd edge fn writes no pipeline_runs row at all. It is also not
+// redundant with the per-collection arm, which keys on `sold_at` rather than
+// `ingested_at`. What was actually done is a partition-key bound that prunes 6
+// of 8 partitions on the healthy path (cost 212,454 -> 107,025), with the
+// unbounded scan kept for the one case that needs it. See the check itself.
+// Still open: per-check timeouts.
 export const maxDuration = 180;
 
 const supabase: any = createClient(
@@ -144,26 +154,95 @@ export async function POST(req: NextRequest) {
     return v === null || v === undefined ? fallback : v;
   };
 
+  // Sales Ingest (2h) — the one tripwire that reads the sales TABLE rather than
+  // pipeline_runs, which is exactly why it is worth keeping: a 403'd edge fn
+  // writes no pipeline_runs row at all, so a pipeline-log-based check is blind
+  // to the outage class this platform keeps hitting (2026-08-11, 24h silent).
+  // This check is independent of that log.
+  //
+  // ⚠ It is NOT superseded by the per-collection arm below, despite reading that
+  // way: `sentinel_sales_ingest_health()` keys entirely on `sold_at` (market
+  // time), while this keys on `ingested_at` (did we WRITE anything). A history
+  // backfill landing 485 rows dated four months ago is invisible to one and
+  // plainly visible to the other. Do not delete this as redundant.
+  //
+  // COST. There is no index on `sales.ingested_at`, so the predicate alone
+  // parallel-seq-scans all 8 partitions every run — measured 2026-08-13 at
+  // ~2.2 GB per call, 11.7% buffer hit, 28.3 GB over 39.7 h, the largest
+  // low-hit-ratio reader on the instance. On a disk-IO-throttled Small tier that
+  // is the sentinel's own 504 budget being spent on a check that only fires when
+  // EVERYTHING stops.
+  //
+  // So it runs in two phases:
+  //   1. Bound `sold_at` (the PARTITION KEY) to the current year, which lets the
+  //      planner prune 6 of 8 partitions — measured cost 212,454 -> 107,025.
+  //      This asks the STRICTER question, and deliberately so: "is FORWARD sales
+  //      ingest alive". Previously a lone history backfill ticking away satisfied
+  //      the check while every forward indexer was dead.
+  //   2. Only when phase 1 reads exactly zero — i.e. an incident is already
+  //      indicated — pay for the unbounded scan, to separate "forward ingest is
+  //      dead" from "everything is dead". That distinction is new; the old check
+  //      could not make it at all, and it is the difference between one broken
+  //      indexer and a total outage.
+  // The 45-day offset on the year floor avoids a New Year cliff: for the first
+  // weeks of January, sales sold in late December are still counted.
   try {
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+    const yearFloor = new Date(
+      Date.UTC(new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000).getUTCFullYear(), 0, 1)
+    ).toISOString();
+    const salesCrit = thr("Sales Ingest (2h)", "crit_at", 0);
+
     const { count, error } = await supabase
       .from("sales")
       .select("*", { count: "exact", head: true })
-      .gte("ingested_at", twoHoursAgo);
+      .gte("ingested_at", twoHoursAgo)
+      .gte("sold_at", yearFloor);
+
     if (error) {
       const sat = isSaturationError(error.message);
       checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
     } else {
-      const salesCount = count || 0;
-      const salesCrit = thr("Sales Ingest (2h)", "crit_at", 0);
-      checks.push({
-        name: "Sales Ingest (2h)",
-        status: salesCount > salesCrit ? "ok" : "critical",
-        detail: salesCount > salesCrit
-          ? `${salesCount} new sales in last 2 hours`
-          : "ZERO sales ingested in last 2 hours - pipeline may be down",
-        value: salesCount,
-      });
+      const forwardCount = count || 0;
+      if (forwardCount > salesCrit) {
+        checks.push({
+          name: "Sales Ingest (2h)",
+          status: "ok",
+          detail: `${forwardCount} new sales in last 2 hours`,
+          value: forwardCount,
+        });
+      } else if (forwardCount > 0) {
+        // Above zero but under a configured floor — a threshold breach, NOT an
+        // outage. Saying "ZERO" here would be a false statement about the data.
+        checks.push({
+          name: "Sales Ingest (2h)",
+          status: "critical",
+          detail: `${forwardCount} new sales in last 2 hours - below the configured floor of ${salesCrit}`,
+          value: forwardCount,
+        });
+      } else {
+        // Phase 2: genuinely zero forward ingest. Now the expensive scan earns
+        // its cost by naming WHICH failure this is.
+        let historical: number | null = null;
+        let historicalErr: string | null = null;
+        try {
+          const { count: allCount, error: allErr } = await supabase
+            .from("sales")
+            .select("*", { count: "exact", head: true })
+            .gte("ingested_at", twoHoursAgo);
+          if (allErr) historicalErr = allErr.message || "";
+          else historical = (allCount || 0) - forwardCount;
+        } catch (e2: any) {
+          historicalErr = e2?.message || "unknown";
+        }
+        const detail =
+          historicalErr !== null
+            ? `ZERO forward sales ingested in last 2 hours - pipeline may be down (historical-backfill probe failed: ${isSaturationError(historicalErr) ? "db saturated" : "error"})`
+            : historical && historical > 0
+              ? `ZERO forward sales ingested in last 2 hours - forward indexers appear DOWN (${historical} historical backfill rows still landing, so the writer itself is alive)`
+              : "ZERO sales ingested in last 2 hours - pipeline may be down";
+        checks.push({ name: "Sales Ingest (2h)", status: "critical", detail, value: 0 });
+      }
     }
   } catch (e: any) {
     const sat = isSaturationError(e?.message);

@@ -105,6 +105,39 @@ function install(fixtures: Fixtures) {
   return spy
 }
 
+/**
+ * install() plus a record of the FILTERS applied per table.
+ *
+ * The shared fixture's chainables discard their arguments, which is fine for
+ * almost every check — but the Sales Ingest (2h) fix IS a filter. `sales` has no
+ * index on `ingested_at`, so that predicate alone parallel-seq-scans all 8
+ * partitions; bounding `sold_at` (the partition key) is what lets the planner
+ * prune 6 of them. A test that only asserts the resulting status would pass just
+ * as happily with the bound deleted, i.e. it would assert nothing about the one
+ * thing this change is.
+ */
+function installRecordingFilters(fixtures: Fixtures) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  const f = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = f.from.bind(f)
+  const filters: Record<string, Array<{ op: string; col: string }>> = {}
+  const queryCount: Record<string, number> = {}
+  f.from = (table: string) => {
+    queryCount[table] = (queryCount[table] ?? 0) + 1
+    const b = baseFrom(table)
+    for (const op of ["gte", "lte", "gt", "lt", "eq"] as const) {
+      const base = b[op] as (...a: unknown[]) => unknown
+      b[op] = (...args: unknown[]) => {
+        ;(filters[table] ??= []).push({ op, col: String(args[0]) })
+        return base(...args)
+      }
+    }
+    return b
+  }
+  state.sb = f
+  return { ...spy, filters, queryCount }
+}
+
 const sniperOk = jsonRoute("/api/sniper-feed", {
   deals: [{ source: "topshot" }, { source: "allday" }],
 })
@@ -183,6 +216,99 @@ describe("POST /api/sentinel — full battery", () => {
     const sales = check(report, "Sales Ingest (2h)")
     expect(sales.status).toBe("warn")
     expect(report.status).not.toBe("CRITICAL")
+  })
+
+  // ── Sales Ingest (2h): partition pruning + the forward/total distinction ──
+  //
+  // Context: measured 2026-08-13, this check was the largest low-hit-ratio
+  // reader on the instance (~2.2 GB/call, 11.7% hit, 28.3 GB over 39.7 h),
+  // because `sales.ingested_at` has no index and the predicate alone scans all
+  // 8 partitions. It is NOT redundant with the per-collection arm — that keys on
+  // `sold_at` (market time), this on `ingested_at` (did we write anything) — so
+  // the fix had to make it cheaper WITHOUT deleting it.
+
+  it("bounds the partition key so the common path cannot scan every partition", async () => {
+    const f = greenFixtures()
+    f.sales = { count: 1500, error: null } as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest (2h)").status).toBe("ok")
+
+    const cols = (spy.filters.sales ?? []).map((x) => x.col)
+    // ingested_at is the QUESTION; sold_at is what makes it affordable. Both.
+    expect(cols).toContain("ingested_at")
+    expect(cols, "sold_at bound missing — the planner would scan all 8 partitions").toContain("sold_at")
+    // And the expensive unbounded probe must NOT run on the healthy path.
+    expect(spy.queryCount.sales).toBe(1)
+  })
+
+  it("does not pay for the unbounded scan when the count is merely below a floor", async () => {
+    // Below a configured floor is a THRESHOLD breach, not an outage — there is
+    // nothing for the second probe to disambiguate, so it must not run.
+    const f = greenFixtures()
+    f.sentinel_threshold_config = {
+      data: [{ check_name: "Sales Ingest (2h)", warn_at: null, crit_at: 2000, enabled: true }],
+      error: null,
+    }
+    f.sales = { count: 1500, error: null } as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    // Must NOT claim zero — 1500 rows did land.
+    expect(sales.detail).not.toContain("ZERO")
+    expect(sales.detail).toContain("below the configured floor of 2000")
+    expect(spy.queryCount.sales).toBe(1)
+  })
+
+  it("names the failure when forward ingest is dead but backfills are still landing", async () => {
+    // The distinction the old check could not make at all: a lone history
+    // backfill ticking away used to SATISFY it while every forward indexer was
+    // dead. Now zero-forward triggers the second probe, and 250 historical rows
+    // mean the writer is alive and the forward lane specifically is down.
+    const f = greenFixtures()
+    f.sales = [{ count: 0, error: null }, { count: 250, error: null }] as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("forward indexers appear DOWN")
+    expect(sales.detail).toContain("250 historical")
+    expect(spy.queryCount.sales).toBe(2)
+  })
+
+  it("keeps the plain total-outage wording when nothing at all was ingested", async () => {
+    const f = greenFixtures()
+    f.sales = [{ count: 0, error: null }, { count: 0, error: null }] as never
+    installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("ZERO sales ingested in last 2 hours")
+    expect(sales.detail).not.toContain("historical")
+  })
+
+  it("still pages, and says the probe was inconclusive, when the second scan errors", async () => {
+    // The second probe is the expensive one, so it is the one most likely to be
+    // killed by the saturation it is trying to describe. It must degrade the
+    // DETAIL, never downgrade a genuine zero-forward-ingest page.
+    const f = greenFixtures()
+    f.sales = [
+      { count: 0, error: null },
+      { data: null, error: { message: "canceling statement due to statement timeout" } },
+    ] as never
+    installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("ZERO forward sales")
+    expect(sales.detail).toContain("db saturated")
   })
 
   it("a GENUINE zero-sales window still pages CRITICAL and marks a dead Telegram channel as FAILED", async () => {
