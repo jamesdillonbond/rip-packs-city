@@ -9,8 +9,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // dropped (their /[collection]/... routes don't exist, so the links would
 // 404), and `meta` states the coverage gap rather than implying full coverage.
 
-const state: { rpc: { data: any; error: any }; calls: any[] } = {
+const state: {
+  rpc: { data: any; error: any }
+  coverage: { data: any; error: any }
+  calls: any[]
+} = {
   rpc: { data: [], error: null },
+  coverage: { data: [], error: null },
   calls: [],
 }
 
@@ -20,6 +25,8 @@ vi.mock("@/lib/supabase", () => ({
       state.calls.push({ fn, args })
       return state.rpc
     },
+    // edition_description_coverage — the LIVE prose-coverage read.
+    from: (_t: string) => ({ select: async (_c: string) => state.coverage }),
   },
 }))
 
@@ -46,6 +53,7 @@ const row = (over: Partial<any> = {}) => ({
 
 beforeEach(() => {
   state.rpc = { data: [], error: null }
+  state.coverage = { data: [], error: null }
   state.calls = []
 })
 
@@ -139,11 +147,44 @@ describe("GET /api/search", () => {
     expect(state.calls[0].args.p_q.length).toBe(80)
   })
 
-  it("states the coverage gap in meta instead of implying full coverage", async () => {
-    state.rpc = { data: [], error: null }
+  it("reports LIVE prose coverage in meta rather than a hardcoded percentage", async () => {
+    // The backfill moves this number on every run, so a fixed string would be
+    // stale the moment it ships (the Panini lesson).
+    state.coverage = {
+      data: [
+        { collection_slug: "nba_top_shot", searchable_editions: 13197, with_description: 5885, pct: 44.6 },
+        { collection_slug: "nfl_all_day", searchable_editions: 6190, with_description: 0, pct: 0 },
+      ],
+      error: null,
+    }
     const j = await (await GET(req("?q=game%20winner"))).json()
-    expect(j.meta.searches).toContain("player")
-    expect(j.meta.note).toMatch(/descriptions are not in the catalog/i)
+    expect(j.meta.searches).toContain("moment description")
+    expect(j.meta.note).toMatch(/nba_top_shot 44\.6% \(5885\/13197\)/)
+    // A collection with zero prose must not be advertised as covered.
+    expect(j.meta.note).not.toMatch(/nfl_all_day/)
+    expect(j.meta.note).toMatch(/may mean we have no description/i)
+  })
+
+  it("says plainly when NO descriptions are loaded", async () => {
+    state.coverage = {
+      data: [{ collection_slug: "nba_top_shot", searchable_editions: 13197, with_description: 0, pct: 0 }],
+      error: null,
+    }
+    const j = await (await GET(req("?q=game%20winner"))).json()
+    expect(j.meta.note).toMatch(/No moment descriptions are loaded yet/i)
+  })
+
+  it("still answers the search when the coverage read fails", async () => {
+    // A failed disclosure must degrade to omitting it — never fail the search,
+    // and never state a number it cannot substantiate.
+    state.coverage = { data: null, error: { message: "boom" } }
+    state.rpc = { data: [row()], error: null }
+    const res = await GET(req("?q=lillard"))
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.results).toHaveLength(1)
+    expect(j.meta.coverage).toBeNull()
+    expect(j.meta.note).not.toMatch(/%/)
   })
 
   it("tolerates a non-array RPC payload without throwing", async () => {

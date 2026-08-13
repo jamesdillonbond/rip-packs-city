@@ -12,12 +12,15 @@
 //    "Search is unavailable right now." — never as "No results", which would
 //    tell a user their moment doesn't exist because our database blinked.
 //
-//  · THE COVERAGE GAP IS STATED, NOT HIDDEN. The catalog holds no descriptive
-//    prose — no description column, `name` is just "<Player> — <Set>", and
-//    play_type is shot mechanics — so "buzzer beater" genuinely matches
-//    nothing. The empty state says what IS searchable instead of implying the
-//    moment is missing. Do not remove that line to make the UI tidier; it is
-//    the difference between a limitation and a lie.
+//  · THE COVERAGE GAP IS STATED, NOT HIDDEN. Moment descriptions ARE searched
+//    now (2026-08-13) — "lillard game winner" returns the For the Win moments.
+//    But the prose covers only part of the catalog and only Top Shot, so a
+//    narrative query matching nothing is ambiguous: it may mean "no such
+//    moment" or "no description for that moment". The empty state says which,
+//    using the LIVE figure the API measures (`meta.note`) rather than a
+//    hardcoded percentage that goes stale on the next backfill. Do not replace
+//    it with a tidier fixed sentence; that is the difference between a
+//    limitation and a lie.
 //
 //  · RESPONSES CAN ARRIVE OUT OF ORDER. Each request carries a sequence number
 //    and a stale response is dropped, so a slow "li" cannot overwrite a fast
@@ -40,6 +43,10 @@ interface Hit {
 
 type Status = "idle" | "loading" | "ok" | "error";
 
+interface Meta {
+  note?: string;
+}
+
 const monoFont = "var(--font-mono)";
 const DEBOUNCE_MS = 180;
 
@@ -48,6 +55,7 @@ export default function GlobalSearch() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState<Hit[]>([]);
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -73,12 +81,14 @@ export default function GlobalSearch() {
           // Drop a response that a newer keystroke has already superseded.
           if (seq !== seqRef.current) return;
           setHits(Array.isArray(j?.results) ? j.results : []);
+          setMeta(j?.meta ?? null);
           setStatus("ok");
           setActive(0);
         })
         .catch(() => {
           if (seq !== seqRef.current) return;
           setHits([]);
+          setMeta(null);
           setStatus("error");
         });
     }, DEBOUNCE_MS);
@@ -126,10 +136,9 @@ export default function GlobalSearch() {
             No matches for &ldquo;{trimmed}&rdquo;
           </div>
           <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 6, lineHeight: 1.6 }}>
-            Search covers players, sets, teams, play types and edition keys
-            (e.g. <span style={{ color: "var(--rpc-text-secondary)" }}>8:145</span>).
-            Moment descriptions aren&rsquo;t in the catalog yet, so phrases like
-            &ldquo;game winner&rdquo; won&rsquo;t match.
+            {/* Live, measured disclosure — never a hardcoded percentage. */}
+            {meta?.note ??
+              "Search covers players, sets, teams, play types, edition keys and moment descriptions."}
           </div>
         </div>
       );
@@ -180,7 +189,7 @@ export default function GlobalSearch() {
         ))}
       </ul>
     );
-  }, [status, hits, active, trimmed]);
+  }, [status, hits, active, trimmed, meta]);
 
   return (
     <div ref={boxRef} style={{ position: "relative", flex: "0 1 320px", minWidth: 110 }}>

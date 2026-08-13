@@ -80,14 +80,31 @@ describe("GlobalSearch", () => {
     expect(container.textContent).not.toMatch(/No matches/)
   })
 
-  it("explains what IS searchable when nothing matches", async () => {
-    response = { ok: true, body: { results: [], meta: {} } }
+  it("renders the API's LIVE coverage note when nothing matches", async () => {
+    // Descriptions ARE searched now, so the old hardcoded "descriptions aren't
+    // in the catalog" copy would be a FALSE statement. The disclosure has to
+    // come from the API's measured note, not a fixed string that goes stale on
+    // the next backfill.
+    response = {
+      ok: true,
+      body: {
+        results: [],
+        meta: { note: "Descriptions cover only part of the catalog — nba_top_shot 44.6% (5885/13197)" },
+      },
+    }
     const { container, findByText } = render(<GlobalSearch />)
     type(container.querySelector("input")!, "buzzer beater")
     expect(await findByText(/No matches for/)).toBeTruthy()
-    // The coverage disclosure is a launch requirement, not decoration.
-    expect(container.textContent).toMatch(/Moment descriptions aren/)
-    expect(container.textContent).toMatch(/players, sets, teams/)
+    await waitFor(() => expect(container.textContent).toMatch(/44\.6%/))
+    expect(container.textContent).toMatch(/only part of the catalog/)
+  })
+
+  it("falls back to a generic capability line when the API sends no note", async () => {
+    response = { ok: true, body: { results: [], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "zzzz")
+    expect(await findByText(/No matches for/)).toBeTruthy()
+    expect(container.textContent).toMatch(/moment descriptions/i)
   })
 
   it("navigates with arrow keys and Enter", async () => {

@@ -13,14 +13,21 @@
 // pages are in the sitemap). It exposes nothing new, it just makes what is
 // already public findable. Writes nothing.
 //
-// HONESTY: `meta.searches` states exactly which fields are covered, because
-// the obvious user expectation — "Damian Lillard game winners", YouTube-style
-// — is NOT satisfiable from our data and never silently will be. There is no
-// description column on `editions`; `editions.name` is just "<Player> — <Set>";
-// `badges`/`reward_indicators` are empty on every row; and play_type /
-// play_category are shot mechanics (Rim, 3 Pointer, Dunk), not narrative. A
-// query for a clutch/buzzer-beater concept correctly returns zero results, and
-// the client says why rather than implying the moment doesn't exist.
+// NARRATIVE SEARCH IS LIVE, AND PARTIAL — which is why coverage is reported.
+// As of 2026-08-13 `editions.description` carries the upstream prose the Top
+// Shot moment page renders, so "Damian Lillard game winner" now returns the
+// For the Win / Dame Time moments instead of nothing. But the prose exists for
+// only part of the catalog (measured, not guessed: see `meta.coverage`), and
+// ONLY for Top Shot — All Day's ingest is WAF-blocked, and no other collection
+// has a prose source at all.
+//
+// That partiality is the thing this route must not hide. A narrative query
+// that matches nothing could mean "no such moment" OR "we have no prose for
+// that slice of the catalog", and those are completely different statements to
+// make to a collector. `meta.coverage` is read LIVE from
+// edition_description_coverage — never hardcoded, because the backfill moves
+// the number every run and a hardcoded percentage is stale the moment it ships
+// (the Panini lesson).
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -32,6 +39,53 @@ export const dynamic = "force-dynamic"
 
 const MIN_Q = 2
 const MAX_Q = 80
+
+interface CoverageRow {
+  collection_slug: string
+  searchable_editions: number
+  with_description: number
+  pct: number | string | null
+}
+
+/**
+ * Live descriptive-prose coverage per collection. Returns null on any failure —
+ * the search still answers; it just omits a disclosure it cannot substantiate.
+ * Never hardcode these numbers: the backfill moves them on every run.
+ */
+async function fetchDescriptionCoverage(): Promise<CoverageRow[] | null> {
+  try {
+    const supa = supabaseAdmin as unknown as {
+      from: (t: string) => { select: (c: string) => Promise<{ data: unknown; error: unknown }> }
+    }
+    const { data, error } = await supa
+      .from("edition_description_coverage")
+      .select("collection_slug, searchable_editions, with_description, pct")
+    if (error || !Array.isArray(data)) return null
+    return data as CoverageRow[]
+  } catch {
+    return null
+  }
+}
+
+function coverageNote(coverage: CoverageRow[] | null): string {
+  const base =
+    "Searches player, set, team, play type, edition key, and moment descriptions."
+  if (!coverage || coverage.length === 0) return base
+  const withProse = coverage
+    .filter((c) => Number(c.with_description) > 0)
+    .sort((a, b) => Number(b.with_description) - Number(a.with_description))
+  if (withProse.length === 0) {
+    return base + " No moment descriptions are loaded yet, so narrative queries return nothing."
+  }
+  const parts = withProse.map(
+    (c) => `${c.collection_slug} ${c.pct ?? "?"}% (${c.with_description}/${c.searchable_editions})`
+  )
+  return (
+    base +
+    ` Descriptions cover only part of the catalog — ${parts.join(", ")} — so a narrative query` +
+    " that matches nothing may mean we have no description for that moment, not that it does not exist."
+  )
+}
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
@@ -65,11 +119,17 @@ export async function GET(req: NextRequest) {
     rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
   }
 
-  const { data, error } = await supa.rpc("rpc_search_catalog", {
-    p_q: q,
-    p_collection_id: collectionId,
-    p_limit: limit,
-  })
+  // Coverage is fetched alongside the search, not derived from it. A failed
+  // coverage read must NOT fail the search — it degrades to null and the
+  // client simply omits the disclosure rather than showing a wrong number.
+  const [{ data, error }, coverage] = await Promise.all([
+    supa.rpc("rpc_search_catalog", {
+      p_q: q,
+      p_collection_id: collectionId,
+      p_limit: limit,
+    }),
+    fetchDescriptionCoverage(),
+  ])
 
   if (error) {
     // 503, not a 200 with an empty `results` array. An empty array here would
@@ -112,9 +172,9 @@ export async function GET(req: NextRequest) {
         count: results.length,
         collection: collectionParam ?? null,
         // Stated, not implied — see the honesty note at the top of this file.
-        searches: ["player", "set", "team", "edition key", "play type"],
-        note:
-          "Searches names, teams and play types. Moment descriptions are not in the catalog, so narrative queries (\"game winner\", \"buzzer beater\") return nothing.",
+        searches: ["player", "set", "team", "edition key", "play type", "moment description"],
+        coverage,
+        note: coverageNote(coverage),
       },
     },
     // Short public cache: the catalog changes on a catalog-backfill cadence,
