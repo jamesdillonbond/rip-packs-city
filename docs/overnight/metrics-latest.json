@@ -1,62 +1,70 @@
 {
-  "captured_at_utc": "2026-08-13T14:49:00Z",
-  "run": "rpc-nightly-autonomous-pass (OFF-HOURS MONITOR-MODE + NO-PUSH)",
-  "mode": "OFF-HOURS: real local time 07:49 PT Thu Aug 13 (DB now() 14:49Z - 7h PDT; app rows bound real time - max sale ingest 14:43Z, max FMV 14:49Z, NO skew). Ran late (outside 00:00-06:00) -> MONITOR-MODE: queue, do not ship (auto-revert of a regression still allowed but none applicable). NO-PUSH: workspace shell down (mcp__workspace__bash failed identically on resume/create/re-resume: 'useradd ... cannot create directory /sessions/... no space left on device') -> no clone AND no git. Outputs written directly to mount via file tools (UNPUSHED). SCOPE: this blocker is specific to this cloud session; Trevor's machine + Claude Code push normally via the PAT in remote.origin.pushurl - commit these files as usual.",
-  "connectors": "Supabase MCP live (read+DDL); rpc_ops_snapshot() TIMED OUT (57014) on its sentinel_fmv_confidence_rows leg under DB-IO saturation - individual health fns run fine. Sentry live (0 new issues/48h). Vercel MCP not polled (no code shipped; runtime-log full-text search times out under saturation per prior nights). Cowork artifact tools available (not exercised - active saturation storm, nothing shipped, no schema break to repair). workspace bash DOWN.",
-  "origin_main": "unknown (no git this run). Mount tree reflects a current-with-origin state (ledger carries 08-11 CC entries; last metrics were 08-11 - the 08-12 night pass did not write, presumably shell down again).",
-  "prod_deploy": "not polled (no code shipped, NO-PUSH + OFF-HOURS).",
+  "captured_at_utc": "2026-08-13T17:40:00Z",
+  "run": "rpc-nightly-autonomous-pass (DAYTIME, operator-invoked, NO-PUSH)",
+  "mode": "DAYTIME pass, explicitly requested by Trevor ('work through everything you can'), not the scheduled overnight slot. Real local time 10:40 PT Thu Aug 13 (DB now() 17:40Z - 7h PDT, no skew). Standing autonomous authority applies; MONITOR-MODE not invoked because this was an interactive request. NO-PUSH: git proxy repo-set 403 ('jamesdillonbond/rip-packs-city is not in this session's authorized repository set') on `git push --dry-run` from a fresh anonymous clone. SCOPE: this blocker is specific to this cloud session; Trevor's machine + Claude Code push normally via the PAT in remote.origin.pushurl - commit these files as usual.",
+  "capabilities": {
+    "bash": "GREEN (cloud container, git 2.43.0, 30G free)",
+    "clone": "GREEN (anonymous https clone of origin/main succeeded, tip aafd014)",
+    "push": "BLOCKED - git-proxy repo-set 403 (operator-only; the mount-token trick cannot cross filesystems)",
+    "device_list_dir": "GREEN",
+    "device_bash": "DOWN (failed identically twice; fails independently of device_list_dir)",
+    "device_commit_files": "GREEN (5 files written to the mount)",
+    "supabase_mcp": "GREEN (read + apply_migration). NOTE: 60s client cap - three statements hit it this session",
+    "vercel_mcp": "GREEN (get_runtime_errors returned; full-text log search not attempted)",
+    "sentry_mcp": "not polled",
+    "project_memory": "GREEN (4 files written)"
+  },
+  "origin_main": "aafd014 fix(pack-listings): stop publishing Dapper Studio's error text to users",
+  "prod_deploy": "not polled (no code shipped)",
   "shipped_this_run": 0,
-  "shipped_detail": "None. OFF-HOURS MONITOR-MODE (queue not ship) AND NO-PUSH (no git). The two genuine NEW findings are both non-shippable here: (1) pg_net_http_403 recurrence = operator secret-rotation (OFF-LIMITS + can't attribute exact jobs from available instruments); (2) compute-pinnacle-pack-ev ON CONFLICT = pack-EV route/edge-fn code (OFF-LIMITS + needs deploy access).",
-  "auto_reverted_this_run": 0,
-  "auto_revert_note": "Nothing auto-reverted. compute-pinnacle-pack-ev regressed ~08-11 but is NOT auto-revertible from here: no git (NO-PUSH), can't attribute to a specific commit without git log, and it is pack-EV route logic (OFF-LIMITS surface). Queued for CC/operator.",
-  "repaired_this_run": 0,
-  "closed_this_run": [],
-  "post_ship_watch": "PREV PASS (08-11 night) carry item jobid 259 rpc-reconcile-saved-wallet-stats: NOW INTERMITTENT (improved from pure-timeout) - succeeds on quiet ticks (08-13 13:33Z 82.3s CALL ok, 08-11 110.8s ok), fails on saturated ticks (08-12 120.0s timeout, 08-10 300.4s timeout). Known display-only self-healing limitation (soft deadline can't preempt a single long wallet); CC left as-is; CARRY. Precompute per-leg split jobid 287 / D34: HEALTHY, trust_precompute_max_age_hours=7.95 (breach 13), so trust breaches are real not a refresher artifact.",
-  "top_finding": "Two NEW findings, both already independently caught by the live instruments and both non-shippable from a monitor/NO-PUSH pass. (A) pg_net_http_403 CRITICAL 24 calls/2h - a RECURRENCE of the gate-key half-rotation outage that CC fixed + verified [] on 08-12 03:38Z; the 08-11 real-loss ingest jobs (allday-pack-opens, pinnacle-mints, topshot-pack-opens-history) are confirmed HEALTHY now (writing pipeline_runs rows), so a DIFFERENT subset of the 14 gate-keyed pg_cron jobs (15/16/20/22/25/26/27/29/42/44/55/56/83/84) has re-403'd - the exact 'partial rotation reproduces this outage' the runbook warned of. Cannot attribute the exact jobs (net._http_response can't be joined to URL). Operator-owned: complete the rotation as ONE window (set 8 *_GATE_KEY secrets + deploy env-var fns + repoint pg_cron ?key=). (B) compute-pinnacle-pack-ev HIGH ~100% fail since 08-12 (deterministic ON CONFLICT batch self-collision, not saturation) - already the daytime monitor's Candidate 1; pack-EV code, needs a batch-dedup-before-upsert fix + edge deploy. Everything else known-class. Security clean. 0 new Sentry/48h.",
-  "trust_health_breaches": [
-    "panini_fmv_stale_hours=37.4 (breach_at 36; NEW arm crossing but same root cause as the panini dry-capture - residential home-box runner outage since ~07-29; operator-side)",
-    "panini_sale_price_capture_dry_days=15 (breach_at 3; was 14 on 08-11; +1/day expected; operator A/B on runner box)",
-    "public_board_slow_count=3 (breach_at 1; was 16 on 08-11; saturation collateral oscillating DOWN; public board snapshots stay fresh via caching so no user impact; real fix = deals precompute + CONCURRENTLY indexes, CC/operator)",
-    "unmapped_resolution_backlog_max=225 (breach_at 100; was 215; AllDay permanent floor; live inflow 210/24h vs outflow 223/24h net-draining; resolver-reason exclusion is the CC fix)"
+  "net_db_change": "ZERO - verified from outside after the fact: pack_rips back to 9 indexes, 0 leftover index rows, 0 zz-oneoff cron jobs, 85 active cron jobs, postgres.rolconfig back to search_path only.",
+  "migrations_applied": [
+    "20260813172005_audit_20260813_pack_rips_collection_block_height_index (DDL ROLLED BACK by the 60s cap - version row recorded anyway; see the drift hazard note)",
+    "20260813172135_audit_20260813_drop_invalid_pack_rips_block_height_index",
+    "20260813173127_audit_20260813_revert_pack_rips_block_height_index_regression"
   ],
-  "security": {"invariants": [], "note": "check_public_security_invariants() = [] clean. (secdef drift + rls-off not separately re-run this pass - snapshot leg timed out; invariants clean is the load-bearing check.)"},
-  "pipeline_alerts_notable": [
-    "CRITICAL pg_net_http_403: 24 edge-fn 403s in 2h (RECURRENCE - see top_finding A). Operator/CC.",
-    "HIGH compute-pinnacle-pack-ev: ~100% fail since 08-12 (2/2 today, 4/4 08-12, 2/4 08-11 onset; clean 08-04..08-10). Deterministic ON CONFLICT DO UPDATE cannot affect row a second time = pack_distributions upsert batch has >=2 rows collapsing to the same conflict key. Fix: dedup batch by conflict key before upsert (keep last) OR per-row upsert w/ 21000/23505 fallback. Pack-EV code + edge deploy -> CC/operator.",
-    "HIGH allday_sales_v1_backfill cursor_stalled ~2d @ block 137390146 (known floor; carried)",
-    "HIGH sync-nba-projections 100% all_upstreams_failed (NBA offseason + SPORTS_PROXY_SECRET/v9; operator; carried)",
-    "HIGH topshot-active-listings-ingest 68.4% egress_blocked (Atlas-WAF GHA runner IP; GHA :13 backstop; do-not-suppress; carried)",
-    "MEDIUM allday-unmapped-resolver-tail 33.3% + wallet-username-resolver 33.9% statement timeout (disk-IO saturation; carried)",
-    "INFO unmapped-sales-nfl_all_day 47461 actionable (net-draining; carried)",
-    "INFO topshot-moments-hydrator silent 52min vs 30 (documented 'remaining silence is signal' no-op-walk; borderline single over-threshold read; watch)"
+  "headline": "An unmistakable missing index (get_allday_unresolved_pulls: 2 seq scans + a 497k-row sort to return LIMIT 300; 984 MB and 11.2 s per call at a 0.5% buffer hit ratio) was built, measured, and REVERTED. Limit cost fell 237,181 -> 579 and the query got SLOWER: of the newest 20,000 AllDay pack_rips, ZERO have an unresolved pull, so the nested loop cannot stop early. The plan's own full-execution estimate (1,628,640 vs 294,269) said so on the same line I read the 579 from.",
+  "db_disk_reads": {
+    "window": "39.7h (pg_stat_statements reset 2026-08-12T01:34Z)",
+    "total_shared_blks_read_tb": 1.44,
+    "per_day_gb": 870,
+    "top_cold_readers": [
+      { "stmt": "fmv_recalc_edition_page", "gb": 58.0, "hit_pct": 23.0, "mb_per_call": 224 },
+      { "stmt": "refresh_wmc_fmv_drift_active", "gb": 55.7, "hit_pct": 42.6, "mb_per_call": 191 },
+      { "stmt": "raise_impossible_parallel_circ()", "gb": 45.4, "hit_pct": 6.5, "mb_per_call": 1223 },
+      { "stmt": "count_insider_detector_candidates", "gb": 44.7, "hit_pct": 65.8, "mb_per_call": 114 },
+      { "stmt": "get_allday_unresolved_pulls", "gb": 41.3, "hit_pct": 0.5, "mb_per_call": 984 },
+      { "stmt": "sales WHERE ingested_at >= $1", "gb": 28.3, "hit_pct": 11.7, "mb_per_call": 2229 }
+    ],
+    "warm_victims_do_not_optimise": [
+      { "stmt": "panini_squeeze_board", "hit_pct": 95.4 },
+      { "stmt": "candy_scarcity_board", "hit_pct": 98.7 },
+      { "stmt": "topshot_first_mint_trophy_stats", "hit_pct": 93.7 }
+    ]
+  },
+  "health": {
+    "detect_stalled_pipelines": "4 rows, all known/carried: candy-listings-indexer (info), allday-pack-opens-backfill (medium), refresh-pack-grail-metrics-mv (info), topshot-moments-hydrator (info)",
+    "check_pgcron_recent_failures": "3, all documented classes: rpc-refresh-mv-ts-set-play-catalog 'job startup timeout' (never ran - worker-slot exhaustion), rpc-refresh-misattrib-candidates + rpc-trust-health-precompute-refresh (midday-saturation statement timeout, recovers next tick)",
+    "new_classes": 0,
+    "new_trust_breaches": 0
+  },
+  "declined": [
+    "compute-pinnacle-pack-ev deploy - the code fix bd53bb3 IS in git (today 08:20 PT) but prod runs version 18 (2026-07-18). Deploying alone would turn a deterministic 21000 failure into a 403 every tick: jobid 42 is one of D2b's five un-rotated fns, PINNACLE_PACK_EV_GATE_KEY is not set, gate fails closed. Operator sets the secret first, then deploy.",
+    "raise_impossible_parallel_circ() bounding - writer on editions.circulation_count, FMV-adjacent path",
+    "sales(ingested_at) index - hot partitioned shared table; and apply the LIMIT/density lesson before assuming an index helps"
   ],
-  "sentry_note": "0 new issues first-seen in last 48h. (Prior 2 unresolved entity-page saturation-collateral issues were decaying at last read.)",
-  "db_size_mb": 12718,
-  "post_ship_watch_prev": {"reconcile_jobid_259": "intermittent - quiet ticks succeed, saturated ticks timeout; carry", "precompute_jobid_287_D34": "healthy, max_age 7.95h"},
-  "public_board_slow_count": 3,
-  "trust_precompute_max_age_hours": 7.95,
-  "unmapped_resolution_backlog_max": 225,
-  "inbox_status": "25 un-archived files in docs/overnight/inbox/ (dates 08-09 .. 08-13T1453Z). NOT archived this run - archival is a git mv and there is no git (shell down). Read the two most decisive: 08-13T1453Z daytime-monitor (Candidate 1 = compute-pinnacle-pack-ev, matches my finding) and 08-12T0330Z-edge-fn-403-outage-RESOLVED (establishes today's 403s are a recurrence). CC/operator should drain the backlog when git returns.",
-  "queued_new_this_run": [
-    "pg_net_http_403 RECURRENCE (24/2h) - operator complete the gate-key rotation as one window; the 08-11 real-loss ingest jobs are healthy, a different subset re-403'd since 08-12 03:38Z",
-    "compute-pinnacle-pack-ev deterministic ON CONFLICT ~100% since 08-12 - CC/operator dedup-batch-before-upsert + edge deploy (also daytime monitor Candidate 1)"
+  "needs_trevor": [
+    "Commit the 5 mount files (2 docs + 3 migrations) and paste the ledger entry",
+    "Set PINNACLE_PACK_EV_GATE_KEY, then deploy compute-pinnacle-pack-ev (unfreezes Pinnacle pack EV, dead since 2026-08-11 06:17Z)",
+    "Confirm 20260813150925_audit_20260813_reconcile_saved_wallet_stats_lower_soft_deadline has a repo file (applied by another session today)",
+    "Still open from prior passes: gate-key rotation 3/8, ALLDAY_PROXY_URL, two wrangler deploys, the /sessions volume"
   ],
-  "queued_carried": [
-    "DEALS/rookies public board + MV SATURATION cluster (deals precompute = CC code; CONCURRENTLY indexes = operator quiet-window)",
-    "RECONCILE-SAVED-WALLET jobid 259 saturation-dependent timeout (CC left as-is; display-only self-healing)",
-    "PANINI runner home-box dry-capture + FMV stale (operator A/B on box)",
-    "PINNACLE-SYNC external cron drop (operator)",
-    "SYNC-NBA-PROJECTIONS v9 + SPORTS_PROXY_SECRET (operator)",
-    "TOPSHOT-ACTIVE-LISTINGS egress_blocked (Atlas-WAF; do-not-suppress)",
-    "WALLET-USERNAME-RESOLVER + allday-unmapped-resolver-tail heavy under saturation (CC)",
-    "UNMAPPED-BACKLOG resolver-reason exclusion (CC)",
-    "allday_sales_v1_backfill cursor floor @137390146",
-    "standing queue (edge-orchestration drift, DUNE seller-recovery inert, chain-two gated, UFC-FMV retire/rebase confirm)"
-  ],
-  "operator_visibility_gaps": [
-    "ESCALATED (multi-night, ~6th): /sessions 'no space left on device' prevents the workspace shell from starting -> NO git -> no overnight push, and now the 08-12 night pass also silently did not write. Recovery is operator-only: delete old Cowork sessions to free /sessions (docs/handoff-2026-08-09-cowork-shell-recovery.md).",
-    "pg_net_http_403 gate-key rotation is OWED and has now recurred: partial rotation reproduces the outage - must be done as one atomic window (secrets + deploy + cron ?key=).",
-    "Panini runner box price-capture dry 15d + FMV stale 37.4h - interactive A/B on the box.",
-    "sync-nba-projections needs SPORTS_PROXY_SECRET<->worker reconcile + v9 (operator)."
+  "outputs": [
+    "docs/overnight/inbox/2026-08-13T1730Z-disk-read-ranking-and-the-pack-rips-plan-defect.md",
+    "docs/handoff-2026-08-13-edition-page-hang-CORRECTION.md",
+    "supabase/migrations/20260813172005_*.sql",
+    "supabase/migrations/20260813172135_*.sql",
+    "supabase/migrations/20260813173127_*.sql",
+    "memory: rank-db-by-disk-reads-not-total-time (new), pgcron-oneoff-runs-concurrently-ddl (corrected), rpc-suspense-page-browser-qa (extended), MEMORY.md (index)"
   ]
 }
