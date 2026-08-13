@@ -58,10 +58,56 @@ describe("GET /api/pack-listings", () => {
     expect(body.totalPacks).toBeUndefined()
   })
 
-  it("500s when the fetch helper throws", async () => {
+  // ── Failure path ──────────────────────────────────────────────────────────
+  //
+  // This block used to read `expect(body.error).toBe("dapper down")` — it
+  // asserted the LEAK, which made the defect look like the contract. The
+  // property that actually matters is the opposite one: whatever the upstream
+  // said must NOT reach the client. fetchLivePackListings rethrows Dapper
+  // Studio's own GraphQL message verbatim, so that string is third-party text.
+  it("does not publish the upstream message when the fetch helper throws", async () => {
+    state.throwErr = new Error("dapper down: internal schema field xyz missing")
+    const res = await GET(req("https://t/api/pack-listings"))
+    const body = await res.json()
+    expect(body.error).not.toContain("dapper down")
+    expect(body.error).not.toContain("internal schema field")
+    expect(body.error).toBe("Pack listings are unavailable right now.")
+    expect(body.code).toBe("internal")
+    expect(res.status).toBe(500)
+  })
+
+  it("does not edge-cache the failure", async () => {
+    // The failure must not be held at the CDN: pinning a momentary upstream
+    // blip into a sustained one is the exact hazard apiErrorResponse's
+    // no-store exists to prevent.
     state.throwErr = new Error("dapper down")
     const res = await GET(req("https://t/api/pack-listings"))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("dapper down")
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  it("reports a database-class timeout as a retryable 503, not a hard 500", async () => {
+    // A 500 puts transient capacity into the hard-5xx budget that pages on
+    // genuine breakage. safeApiError classifies on SQLSTATE first.
+    state.throwErr = Object.assign(new Error("canceling statement due to statement timeout"), {
+      code: "57014",
+    })
+    const res = await GET(req("https://t/api/pack-listings"))
+    const body = await res.json()
+    expect(res.status).toBe(503)
+    expect(body.code).toBe("timeout")
+    expect(body.retryable).toBe(true)
+    expect(res.headers.get("Retry-After")).toBe("30")
+    expect(body.error).not.toContain("canceling statement")
+  })
+
+  // The 400 is a CALLER error, not a driver message — its copy names the
+  // allowed collections and PackPageClient documents that branch as
+  // intentional. It must survive the failure-path change untouched.
+  it("keeps the actionable 400 copy for an unsupported collection", async () => {
+    const res = await GET(req("https://t/api/pack-listings?collection=disney-pinnacle"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("nba-top-shot")
+    expect(body.error).toContain("nfl-all-day")
   })
 })

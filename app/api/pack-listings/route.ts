@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error"
 import {
   fetchLivePackListings,
   isSupportedPackCollection,
@@ -33,9 +34,23 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ listings, cached: false, totalPacks: listings.length, collection })
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "pack-listings failed" },
-      { status: 500 },
-    )
+    // The thrown value here is UPSTREAM text, not ours: fetchLivePackListings
+    // rethrows Dapper Studio's internal GraphQL error verbatim
+    // (`throw new Error(json.errors[0]?.message)`), and a transport failure
+    // carries the raw fetch/undici message. Publishing either hands a signed-in
+    // visitor the internal wording of a third-party endpoint we do not control
+    // and cannot vouch for the contents of.
+    //
+    // This is the same inline-ternary spelling of the driver-message leak that
+    // lib/api-error.ts was written for. The anon guard
+    // (__tests__/anon-api-no-driver-message-leak-guard.test.ts) does not reach
+    // this route because /api/pack-listings is not in proxy.ts's
+    // PUBLIC_READ_APIS — the leak was to authenticated users, which is why it
+    // outlived the anon sweeps.
+    //
+    // The 400 above is deliberately left hand-rolled: it is a caller error whose
+    // copy names the allowed collections, not a driver message, and
+    // PackPageClient documents that branch as intentional.
+    return apiErrorResponse(e, "api/pack-listings", "Pack listings are unavailable right now.")
   }
 }
