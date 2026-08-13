@@ -59,24 +59,79 @@ function formatNumber(n: number | null | undefined): string {
   return n.toString()
 }
 
-async function loadSet(setId: string): Promise<SetsDetailResponse | null> {
-  if (!UUID_RE.test(setId)) return null
-  try {
-    const { data, error } = await rpcWithRetry<SetsDetailResponse>(
-      supabaseAdmin,
-      "analytics_sets_detail",
-      { p_set_id: setId }
-    )
-    if (error) {
-      const msg = (error.message || "").toLowerCase()
-      if (msg.includes("not found") || msg.includes("does not exist")) return null
-      console.log("[sets/detail/page] rpc_error", error.message)
-      return null
+/**
+ * Per-page budget for the detail read.
+ *
+ * ⚠ Next gives each page 60s to export and retries 3x before killing the WHOLE
+ * build. On 2026-08-13 a connection-pool saturation spell did exactly that here:
+ * `analytics_sets_detail` blocked on "Timed out acquiring connection from
+ * connection pool", rpcWithRetry (correctly) retried it as transient, and one of
+ * the 100 prerendered sets blew the budget -> "Export encountered an error ...
+ * exiting the build" -> `npm run build` exit 1, production deploy ERROR.
+ *
+ * This is the SECOND time a build-time DB read has taken the production build
+ * down (the first was /insights/first-mint, fixed with BOARD_LIVE_TIMEOUT_MS in
+ * lib/insights/board-cache.ts). Same shape, same remedy: bound it well under the
+ * budget so a throttled DB degrades this page to ISR instead of failing the
+ * deploy. `dynamicParams = true` already makes that fallback safe — an unbuilt
+ * set is simply rendered on first request.
+ */
+const SET_DETAIL_TIMEOUT_MS = 12_000
+
+/**
+ * Outcome of the detail read.
+ *
+ * ⚠ `ok` exists because the previous shape returned a bare `null` for BOTH "no
+ * such set" and "the read failed", and the caller answered `notFound()`. So a
+ * statement timeout told a visitor a real set does not exist — and at BUILD time
+ * it BAKES that 404 into a static page, which a crawler will believe. Same class
+ * the guard in __tests__/server-pages-error-vs-absent-guard.test.ts pins on
+ * /[collection]/pack/[id] and /analytics/wallets; this was a third instance.
+ */
+interface SetLoad {
+  data: SetsDetailResponse | null
+  ok: boolean
+}
+
+async function loadSet(setId: string): Promise<SetLoad> {
+  if (!UUID_RE.test(setId)) return { data: null, ok: true }
+  // Catch INSIDE the raced promise so an abandoned query that fails later cannot
+  // surface as an unhandled rejection after we have stopped listening.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const attempt = (async (): Promise<SetLoad> => {
+    try {
+      const { data, error } = await rpcWithRetry<SetsDetailResponse>(
+        supabaseAdmin,
+        "analytics_sets_detail",
+        { p_set_id: setId }
+      )
+      if (error) {
+        const msg = (error.message || "").toLowerCase()
+        // A genuine "no such set" IS an answer — ok stays true.
+        if (msg.includes("not found") || msg.includes("does not exist")) {
+          return { data: null, ok: true }
+        }
+        console.log("[sets/detail/page] rpc_error", error.message)
+        return { data: null, ok: false }
+      }
+      return { data: (data as SetsDetailResponse) ?? null, ok: true }
+    } catch (e: any) {
+      console.log("[sets/detail/page] error", e?.message || e)
+      return { data: null, ok: false }
     }
-    return (data as SetsDetailResponse) ?? null
-  } catch (e: any) {
-    console.log("[sets/detail/page] error", e?.message || e)
-    return null
+  })()
+  const timeout = new Promise<SetLoad>((resolve) => {
+    timer = setTimeout(() => {
+      console.log("[sets/detail/page] timeout", setId)
+      // A read that is merely SLOW is as unservable as one that errored, and
+      // before this only the errored one was modelled.
+      resolve({ data: null, ok: false })
+    }, SET_DETAIL_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([attempt, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -108,9 +163,10 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   if (!UUID_RE.test(set_id)) {
     return { title: "Set not found — Rip Packs City" }
   }
-  const data = await loadSet(set_id)
+  const { data, ok } = await loadSet(set_id)
+  // Only an ANSWERED read may claim the set does not exist.
   if (!data) {
-    return { title: "Set not found — Rip Packs City" }
+    return { title: ok ? "Set not found — Rip Packs City" : "Set unavailable — Rip Packs City" }
   }
 
   const collectionLabel = COLLECTION_LABEL[data.collection?.toLowerCase()] ?? data.collection
@@ -133,7 +189,9 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
 export default async function SetDetailPage({ params }: PageParams) {
   const { set_id } = await params
   if (!UUID_RE.test(set_id)) notFound()
-  const data = await loadSet(set_id)
+  const { data, ok } = await loadSet(set_id)
+  // A failed/slow read must NOT render as "no such set" — see loadSet.
+  if (!ok) return <SetUnavailableCard setId={set_id} />
   if (!data) notFound()
 
   const editions = data.editions ?? []
@@ -286,5 +344,32 @@ export default async function SetDetailPage({ params }: PageParams) {
         </footer>
       </div>
     </>
+  )
+}
+
+/**
+ * Shown when the set detail read FAILED or ran past its budget — never when the
+ * set genuinely does not exist (that is still `notFound()`).
+ *
+ * Deliberately NOT a 404: this page is prerendered, so answering "not found" for
+ * a real set during a saturation spell would bake a soft-404 that a crawler
+ * believes and that survives until the next revalidate.
+ */
+function SetUnavailableCard({ setId }: { setId: string }) {
+  return (
+    <main className="mx-auto max-w-3xl px-4 py-16">
+      <h1 className="text-xl font-semibold text-[var(--rpc-text-primary)]">
+        This set&apos;s rollup didn&apos;t load
+      </h1>
+      <p className="mt-3 text-sm leading-relaxed text-[var(--rpc-text-secondary)]">
+        The catalog is under heavy load right now. This says nothing about whether the set
+        exists — only that we couldn&apos;t read it. Reload in a moment, or browse the{" "}
+        <Link href="/analytics/sets" className="underline">
+          full set directory
+        </Link>
+        .
+      </p>
+      <p className="mt-6 font-mono text-xs text-[var(--rpc-text-secondary)]">{setId}</p>
+    </main>
   )
 }

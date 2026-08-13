@@ -70,4 +70,66 @@ describe("server pages distinguish a failed read from an absent record", () => {
       /\{ok\s*\n?\s*\?\s*"No wallet activity to display\./
     )
   })
+
+  // 3. /analytics/sets/[set_id] — a THIRD instance, and the one that proved the
+  //    class is not merely cosmetic: `loadSet` returned a bare `null` for both a
+  //    missing set and a failed RPC, and the page answered `notFound()`.
+  //
+  //    This page is PRERENDERED (top-100 sets via generateStaticParams), so the
+  //    conflation had two costs, not one. At request time a statement timeout
+  //    told a visitor a real set does not exist. At BUILD time it was worse: on
+  //    2026-08-13 a connection-pool saturation spell made the RPC block, and
+  //    since Next allows each page 60s to export and retries 3x before killing
+  //    the whole build, `npm run build` exited 1 and the production deploy went
+  //    to ERROR state — the second time a build-time DB read has taken the
+  //    production build down (the first was /insights/first-mint).
+  it("analytics/sets/[set_id] does not report a failed read as 'set not found'", () => {
+    const src = read("app", "(analytics)", "analytics", "sets", "[set_id]", "page.tsx")
+
+    // The read must carry the failure out rather than collapsing to null.
+    expect(src, "loadSet must report ok:false on RPC failure").toContain("return { data: null, ok: false }")
+    // ...and a genuine "no such set" must be a DIFFERENT value.
+    expect(src, "an absent set must be ok:true with null data").toContain("return { data: null, ok: true }")
+    expect(src, "page must destructure ok from loadSet").toMatch(
+      /const \{\s*data\s*,\s*ok\s*\}\s*=\s*await loadSet\(set_id\)/
+    )
+    // The failure branch must come BEFORE notFound(), or the fix is inert.
+    const okBranch = src.indexOf("if (!ok) return <SetUnavailableCard")
+    const notFoundBranch = src.indexOf("if (!data) notFound()")
+    expect(okBranch, "the !ok branch must exist").toBeGreaterThan(-1)
+    expect(okBranch, "the !ok branch must precede notFound()").toBeLessThan(notFoundBranch)
+    // The copy must not assert non-existence.
+    expect(src, "the unavailable card must not claim the set is absent").toContain(
+      "says nothing about whether the set"
+    )
+    // generateMetadata must not title a failed read "Set not found" either — the
+    // title is what a crawler and a shared link both read.
+    expect(src, "metadata must distinguish unavailable from not-found").toContain(
+      'ok ? "Set not found — Rip Packs City" : "Set unavailable — Rip Packs City"'
+    )
+  })
+
+  // The BUILD-safety half of the same fix. Without a bound, a throttled DB does
+  // not merely degrade this page — it fails the deploy, and an ERRORed deploy is
+  // easy to miss because the next push supersedes it.
+  it("analytics/sets/[set_id] bounds its build-time read below Next's export budget", () => {
+    const src = read("app", "(analytics)", "analytics", "sets", "[set_id]", "page.tsx")
+
+    const m = src.match(/const SET_DETAIL_TIMEOUT_MS = ([\d_]+)/)
+    expect(m, "the per-page read budget must exist").toBeTruthy()
+    const ms = Number(m![1].replace(/_/g, ""))
+    // Comfortably under the 60s Next allows per page, with room for the render
+    // itself. A budget at or above that bound protects nothing.
+    expect(ms).toBeGreaterThan(0)
+    expect(ms).toBeLessThanOrEqual(30_000)
+
+    // A timeout must resolve to the FAILED shape, never the absent one — the
+    // whole point is that a slow read and a broken read are equally unservable.
+    const timeoutBlock = src.slice(src.indexOf("const timeout = new Promise"))
+    expect(timeoutBlock).toContain("ok: false")
+
+    // dynamicParams must stay true, or a page dropped from the prerender set
+    // 404s instead of falling through to ISR.
+    expect(src).toContain("export const dynamicParams = true")
+  })
 })
