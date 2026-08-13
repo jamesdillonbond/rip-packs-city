@@ -246,14 +246,43 @@ export default function CollectionMomentTable(props: {
                       if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                       if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                       if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                      const basis = label === "Loan" ? cb.buyPrice : cb.buyPrice
-                      if (basis > 0 && row.fmv) {
+                      // ⚠ This used to be `label === "Loan" ? cb.buyPrice : cb.buyPrice`
+                      // — a ternary whose branches are identical, i.e. `cb.buyPrice`
+                      // unconditionally. That silently DIVERGED from the desktop P&L
+                      // column, which derives its basis through the shared, named
+                      // resolveMomentPnlBasis(): only a "Bought"/"Loan" cost-basis
+                      // amount is trusted as a purchase price, and anything else falls
+                      // back to lastPurchasePrice. So a row carrying a cost-basis
+                      // amount with NO label — the shape the `cb` fallback just above
+                      // constructs from row.costBasis when row.costBasisLabel is null —
+                      // produced one P&L on a phone and a different one on a desktop,
+                      // for the same moment. The helper was written for the desktop
+                      // column and never applied here.
+                      // Desktop splits these across TWO columns: a Cost cell that
+                      // shows any positive buyPrice, and a P&L cell whose basis comes
+                      // from resolveMomentPnlBasis (only "Bought"/"Loan" are trusted as
+                      // a purchase price, else lastPurchasePrice). The mobile card
+                      // renders both in one block, so it needs both numbers — deriving
+                      // one from the other is what made the two layouts disagree.
+                      const pnlBasis = resolveMomentPnlBasis(label, cb.buyPrice, row.lastPurchasePrice)
+                      if (pnlBasis > 0 && row.fmv) {
+                        const basis = pnlBasis
                         const { pl, plPct, positive } = computeMomentPnl(row.fmv, basis)
                         const color = pnlColorClass(positive)
                         return (
                           <div className="text-right">
                             <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
                             <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
+                          </div>
+                        )
+                      }
+                      // No trusted P&L basis, but there IS a cost figure. Desktop's Cost
+                      // cell still shows it, so the card does too — omitting it entirely
+                      // would hide a real number rather than avoid a fabricated one.
+                      if (cb.buyPrice > 0) {
+                        return (
+                          <div className="text-right">
+                            <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]">${cb.buyPrice.toFixed(2)}</div>
                           </div>
                         )
                       }

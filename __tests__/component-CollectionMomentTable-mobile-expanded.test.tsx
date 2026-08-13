@@ -47,8 +47,18 @@ const baseProps = (over: Record<string, any> = {}) => ({
   view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } as any,
   toggleExpanded: vi.fn(),
   batchEditionStats: new Map([["73:2785", { owned: 1, locked: 0 }]]),
+  // ⚠ This fixture used to pair acquisitionMethod "pack_pull" with
+  // costBasisLabel "Pack pull". That label does not exist: ACQUISITION_METHOD_LABEL
+  // in lib/analytics/shape.ts maps pack_pull -> "Pack", and the whole vocabulary is
+  // Bought | Pack | Loan | Gift | Reward | Airdrop | null. "Pack pull" therefore
+  // matched no chip branch and fell through to the generic cost path, so the test
+  // asserted a code path real data never reaches — the same
+  // passing-test-on-an-impossible-fixture shape deep-audit D9 recorded. A real
+  // "Pack" renders the PACK chip and NO cost figure (a pack pull has no purchase
+  // price). Switched to "Bought", which genuinely does show a cost figure, so the
+  // assertion below keeps its meaning.
   costBasis: new Map([
-    ["f1", { buyPrice: 10, acquiredDate: "2026-01-01", fmvAtAcquisition: 8, acquisitionMethod: "pack_pull", costBasisLabel: "Pack pull" }],
+    ["f1", { buyPrice: 10, acquiredDate: "2026-01-01", fmvAtAcquisition: 8, acquisitionMethod: "marketplace", costBasisLabel: "Bought" }],
   ]),
   collectionSeriesMap: new Map(),
   collectionSlug: "nba-top-shot",
