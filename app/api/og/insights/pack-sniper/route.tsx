@@ -8,6 +8,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -46,6 +47,8 @@ function fmtUsd(n: number | null): string {
 export async function GET(req: NextRequest) {
   let deals: Deal[] = []
   let total = 0
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     // Honest deals only (lottery packs hidden), matching the board's default
@@ -55,6 +58,7 @@ export async function GET(req: NextRequest) {
       { cache: "no-store" },
     )
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       if (Array.isArray(j?.deals)) deals = j.deals as Deal[]
       total = Number(j?.meta?.stats?.positiveEv ?? 0)
@@ -136,7 +140,7 @@ export async function GET(req: NextRequest) {
         >
           {deals.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Loading the live board…
+              {boardEmptyCopy(fetched, "board")}
             </div>
           ) : (
             deals.slice(0, 3).map((d, i) => {

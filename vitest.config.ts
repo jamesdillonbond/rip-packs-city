@@ -772,11 +772,31 @@ export default defineConfig({
       //     buffer is now ≥ +1.27. Actuals: 90.98 st / 77.59 br / 92.77 fn /
       //     93.14 ln; thresholds set ~0.5 under, the margin prior waves used
       //     successfully against concurrent-push churn (lesson 47f901a1).
+      //   2026-08-13 (test-coverage analysis → "do all you can"): the pack-dist
+      //     page's 11 fetchers extracted to lib/pack-dist/fetchers.ts (server
+      //     `page.tsx` is measured by NEITHER gate — 48,325 LOC, 79 of which
+      //     query Supabase directly), the three worst-covered files in this gate
+      //     given per-card data-branch tests (og/moment 21.4% br, og/edition
+      //     25.5%, og/pack 36.0%), the mount-time warming sequence in
+      //     lib/warmup/WarmupContext.tsx driven (37.6% br, the worst ratio here),
+      //     and the 15 insights OG cards' empty-vs-unavailable split pinned.
+      //     Live actual 91.50 st / 78.63 br / 93.30 fn / 93.65 ln.
+      //
+      //     ⚠ Thresholds set ~0.3 under actual, which is a RAISE OF ~0.9 on
+      //     branch rather than the usual increment. The old numbers had drifted
+      //     ~0.8–1.0 below actual because several waves added coverage additively
+      //     and left the ratchet where it was. That is defensible once and wrong
+      //     when repeated: a ratchet only protects the coverage it is actually
+      //     set to, and this repo has already paid for the compound version —
+      //     the component gate reached a ~13-POINT unguarded branch buffer before
+      //     anyone noticed (see vitest.components.config.ts, 2026-08-13). The
+      //     0.3 keeps the concurrent-push churn margin lesson 47f901a1 records
+      //     without leaving a point of coverage dark.
       thresholds: {
-        statements: 90.4,
-        branches: 77.0,
-        functions: 92.2,
-        lines: 92.6,
+        statements: 91.2,
+        branches: 78.3,
+        functions: 93.0,
+        lines: 93.35,
       },
     },
   },

@@ -8,6 +8,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -52,10 +53,13 @@ export async function GET(req: NextRequest) {
   type Head = { tier: string; median: number | null; change: number | null }
   let heads: Head[] = []
   let vol7d = 0
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     const r = await fetch(`${origin}/api/public/insights/market?days=120`, { cache: "no-store" })
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       const rows: Row[] = Array.isArray(j?.rows) ? j.rows : []
       // Per-tier latest median + value ~30d earlier.
@@ -139,7 +143,7 @@ export async function GET(req: NextRequest) {
 
         <div style={{ marginTop: 34, display: "flex", gap: 14 }}>
           {heads.every((h) => h.median == null) ? (
-            <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>Loading the live index…</div>
+            <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>{boardEmptyCopy(fetched, "index")}</div>
           ) : (
             heads.map((h) => {
               const up = (h.change ?? 0) >= 0

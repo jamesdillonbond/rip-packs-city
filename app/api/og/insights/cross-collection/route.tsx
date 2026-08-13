@@ -10,6 +10,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -46,12 +47,15 @@ function fmtInt(n: number | null | undefined): string {
 export async function GET(req: NextRequest) {
   let wallets: Wallet[] = []
   let stats: Stats = null
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     const r = await fetch(`${origin}/api/public/insights/cross-collection?sort=moments&limit=3`, {
       cache: "no-store",
     })
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       if (Array.isArray(j?.wallets)) wallets = j.wallets as Wallet[]
       stats = (j?.stats as Stats) ?? null
@@ -137,7 +141,7 @@ export async function GET(req: NextRequest) {
         >
           {wallets.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Loading the live cohort…
+              {boardEmptyCopy(fetched, "cohort")}
             </div>
           ) : (
             wallets.slice(0, 3).map((w, i) => {

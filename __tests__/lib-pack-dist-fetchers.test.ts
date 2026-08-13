@@ -24,6 +24,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // as loudly as the error cases.
 
 import {
+  fetchPackDetailBundle,
   fetchPackRow,
   fetchDistFallback,
   fetchPackLifecycle,
@@ -82,6 +83,47 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+// ── The shell bundle: the one deliberate exception to the contract ──────────
+
+describe("fetchPackDetailBundle keeps the error rather than flattening it to ok", () => {
+  it("returns the bundle and a null error on success", async () => {
+    const { db } = makeDb({
+      "rpc:get_pack_detail_bundle": {
+        data: { pack_row: { dist_id: "1" }, dist_fallback: null, has_pool: true },
+        error: null,
+      },
+    })
+    const res = await fetchPackDetailBundle("c", "1", "nba-top-shot", db)
+    expect(res.error).toBeNull()
+    expect(res.bundle.pack_row).toMatchObject({ dist_id: "1" })
+    expect(res.bundle.has_pool).toBe(true)
+  })
+
+  it("surfaces the error MESSAGE, because the caller puts it in the thrown error", async () => {
+    // This is why the bundle does not use `{ ok }` like its siblings. The page's
+    // gate is: no row AND no fallback AND an error → THROW (retryable boundary);
+    // no row AND no fallback AND no error → notFound(). Flattening to a boolean
+    // would still separate those two, but would discard the message — and that
+    // message is what tells an operator whether a wave of pack 404s was a
+    // statement timeout or a genuine catalogue gap.
+    const { db } = makeDb({
+      "rpc:get_pack_detail_bundle": { data: null, error: { message: "statement timeout" } },
+    })
+    const res = await fetchPackDetailBundle("c", "1", "nba-top-shot", db)
+    expect(res.error).toEqual({ message: "statement timeout" })
+    // An errored bundle must still be a safely-destructurable object, or the
+    // page's `bundle.pack_row` read throws before it can reach its own gate.
+    expect(res.bundle).toEqual({})
+  })
+
+  it("normalises a null payload to an empty object", async () => {
+    const { db } = makeDb({ "rpc:get_pack_detail_bundle": { data: null, error: null } })
+    const res = await fetchPackDetailBundle("c", "1", "nba-top-shot", db)
+    expect(res.bundle).toEqual({})
+    expect(res.error).toBeNull()
+  })
 })
 
 // ── The core contract, asserted uniformly ───────────────────────────────────

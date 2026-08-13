@@ -42,6 +42,7 @@
 // without a database — the same shape `lib/insights/candy-board.ts` uses.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,6 +195,64 @@ export interface PackSaleRow {
   sale_currency: string | null
   sealed_at: string | null
   tx_hash: string | null
+}
+
+export interface HeroEdition {
+  route_slug: string | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  thumbnail_url: string | null
+  rep_nft_id: string | null
+  fmv_usd: number | null
+  hit_probability: number | null
+}
+
+export interface PackDetailBundle {
+  pack_row: PackTableRow | null
+  dist_fallback: DistFallbackRow | null
+  corrected_ev: AllDayCorrectedEvRow | null
+  hero_editions: HeroEdition[] | null
+  has_pool: boolean | null
+}
+
+// ── Shell bundle ────────────────────────────────────────────────────────────
+
+/**
+ * The one-RPC shell bundle (P3): pack_row + dist_fallback + All Day corrected_ev
+ * + top-5 FMV hero editions + has_pool, on ONE connection. It replaced a 10-way
+ * per-request `Promise.all` fan-out that was saturating the pool (~58 statement
+ * timeouts/24h).
+ *
+ * ⚠ This one does NOT follow the `ok` convention, and the difference is
+ * deliberate rather than an oversight. Every other fetcher here feeds a panel
+ * that can degrade; this one is the page's **throw-or-404 gate**, and the caller
+ * must be able to tell a failed bundle from a genuinely-absent dist — collapsing
+ * them renders real packs as 404s under contention, which is a soft-404 a crawler
+ * will believe. So the raw error is returned for the caller to branch on and
+ * throw. Returning `ok:false` here would discard the message the caller puts in
+ * the thrown error.
+ *
+ * `rpcWithRetry` because a transient pool blip must not flip a real dist to the
+ * error boundary on the first miss — but note 57014 is deliberately NOT retried
+ * upstream (a statement that blew its timeout will blow it again).
+ */
+export async function fetchPackDetailBundle(
+  collectionId: string,
+  distId: string,
+  collectionSlug: string,
+  db: Db = supabaseAdmin,
+): Promise<{ bundle: PackDetailBundle; error: { message: string } | null }> {
+  const { data, error } = await rpcWithRetry(db, "get_pack_detail_bundle", {
+    p_collection_id: collectionId,
+    p_dist_id: distId,
+    p_collection_slug: collectionSlug,
+  })
+  if (error) console.error("[pack-detail] bundle error", error.message)
+  return {
+    bundle: (data ?? {}) as PackDetailBundle,
+    error: error ? { message: error.message } : null,
+  }
 }
 
 // ── Metadata-path reads ─────────────────────────────────────────────────────

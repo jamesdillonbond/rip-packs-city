@@ -5,6 +5,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -27,12 +28,15 @@ function fmtUsd(n: number | null): string {
 export async function GET(req: NextRequest) {
   let rows: Row[] = []
   let rookieCount = 0
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     const r = await fetch(`${origin}/api/public/insights/rookies?sort=gmv&limit=3`, {
       cache: "no-store",
     })
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       rows = Array.isArray(j?.rows) ? j.rows : []
       rookieCount = j?.cohort_stats?.rookie_count ?? 0
@@ -114,7 +118,7 @@ export async function GET(req: NextRequest) {
         >
           {rows.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Loading the live cohort…
+              {boardEmptyCopy(fetched, "cohort")}
             </div>
           ) : (
             rows.slice(0, 3).map((r, i) => (

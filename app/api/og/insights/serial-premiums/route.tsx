@@ -9,6 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -53,6 +54,8 @@ function fmtMultiple(n: number | null): string {
 export async function GET(req: NextRequest) {
   let rows: Row[] = []
   let total = 0
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     const r = await fetch(
@@ -60,6 +63,7 @@ export async function GET(req: NextRequest) {
       { cache: "no-store" }
     )
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       if (Array.isArray(j?.rows)) rows = j.rows as Row[]
       total = j?.meta?.total_rows ?? 0
@@ -111,7 +115,7 @@ export async function GET(req: NextRequest) {
         <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 12 }}>
           {rows.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Loading the live board…
+              {boardEmptyCopy(fetched, "board")}
             </div>
           ) : (
             rows.slice(0, 3).map((r, i) => (

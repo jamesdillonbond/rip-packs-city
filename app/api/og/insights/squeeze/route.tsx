@@ -9,6 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -47,6 +48,8 @@ function tierColor(tier: string): string {
 export async function GET(req: NextRequest) {
   let rows: Row[] = []
   let totalEditions = 0
+  // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
+  let fetched = false
   try {
     const origin = new URL(req.url).origin
     // Pull a small page sorted by squeeze%. Cache the OG result for 5 min
@@ -55,6 +58,7 @@ export async function GET(req: NextRequest) {
       cache: "no-store",
     })
     if (r.ok) {
+      fetched = true
       const j = await r.json()
       if (Array.isArray(j?.rows)) rows = j.rows as Row[]
       // Pull a second, count-only response so the header number reflects the
@@ -64,6 +68,7 @@ export async function GET(req: NextRequest) {
           cache: "no-store",
         })
         if (r2.ok) {
+          fetched = true
           const j2 = await r2.json()
           totalEditions = j2?.meta?.total_rows ?? 0
         }
@@ -148,7 +153,7 @@ export async function GET(req: NextRequest) {
         >
           {rows.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Loading the live board…
+              {boardEmptyCopy(fetched, "board")}
             </div>
           ) : (
             rows.slice(0, 3).map((r, i) => {

@@ -18,8 +18,6 @@ import { Suspense } from "react"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
-import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { resolveUsernames } from "@/lib/flowty-username"
 import PackHeroArt from "@/components/packs/PackHeroArt"
@@ -78,6 +76,8 @@ import {
   type DistFallbackRow,
   type PackSaleRow,
   type AllDayCorrectedEvRow,
+  type HeroEdition,
+  fetchPackDetailBundle,
 } from "@/lib/pack-dist/fetchers"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -95,8 +95,6 @@ const CARD_STYLE: React.CSSProperties = {
 }
 
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb: any = supabaseAdmin
 
 
 const PACK_CONTENTS_PAGE_SIZE = 24
@@ -112,16 +110,6 @@ const PACK_CONTENTS_PAGE_SIZE = 24
 // returns the single best URL.
 // tsTileImg extracted to @/lib/pack-dist-format (imported above).
 
-interface HeroEdition {
-  route_slug: string | null
-  player_name: string | null
-  set_name: string | null
-  tier: string | null
-  thumbnail_url: string | null
-  rep_nft_id: string | null
-  fmv_usd: number | null
-  hit_probability: number | null
-}
 
 // Hero editions (top-5 by FMV) now come from get_pack_detail_bundle in the shell
 // (P3) — the standalone fetch was retired to keep it on the single bundle RPC.
@@ -225,19 +213,7 @@ export default async function PackDetailPage(
   // connection-class errors (incl. "Timed out acquiring connection from
   // connection pool") in-process before surfacing — a transient pool blip no
   // longer flips a real dist to the retryable error boundary on the first miss.
-  const { data: bundleData, error: bundleErr } = await rpcWithRetry(sb, "get_pack_detail_bundle", {
-    p_collection_id: coll.id,
-    p_dist_id: distId,
-    p_collection_slug: collection,
-  })
-  if (bundleErr) console.error("[pack-detail] bundle error", bundleErr.message)
-  const bundle = (bundleData ?? {}) as {
-    pack_row: PackTableRow | null
-    dist_fallback: DistFallbackRow | null
-    corrected_ev: AllDayCorrectedEvRow | null
-    hero_editions: HeroEdition[] | null
-    has_pool: boolean | null
-  }
+  const { bundle, error: bundleErr } = await fetchPackDetailBundle(coll.id, distId, collection)
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) {
