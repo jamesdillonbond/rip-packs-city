@@ -105,3 +105,45 @@ Option 2 is preferable because **the partial-rotation state is what produced bot
 ```sql
 select count(*) from net._http_response where status_code = 403;
 ```
+
+---
+
+## Addendum — jobid 55 measured further; two theories KILLED, cause still open
+
+Same session, ~08:45 PT. The body above filed jobid 55 (`rpc-allday-pack-opens-backfill`,
+~92% tick loss) as characterised-but-unexplained. Four more measurements, three of which
+close off a lane so the next investigator does not spend time there:
+
+1. **Dispatch is fine.** `cron.job_run_details` for jobid 55 over 24h: **143 succeeded, 1
+   failed** (that one `job startup timeout`). So pg_cron is firing ~144/144 as scheduled,
+   while `pipeline_runs` holds only **11** rows. ~132 dispatches produced no row.
+2. **NOT a 403.** Job 55 fires on minutes 6/16/26/36/46/56, and by the minute-fingerprint
+   above those minutes carry **zero** 403s — all 72 belong to jobid 16.
+3. **NOT the exception path.** ⚠ I first read the `catch` as returning HTTP 200 without
+   logging and called that decisive. **That was wrong** — the catch DOES
+   `await logRun(..., ok:false, ...)` before returning. Corrected here so the mistake is not
+   inherited.
+4. **NOT simply pg_net timeouts.** The 215 NULL-status (timed-out) `net._http_response` rows
+   are ~6 per minute-slot fairly uniformly; minutes 6/16/26/36/46/56 read 11–13, but those
+   slots host **two** jobs (55 and 83), so per-job the rate is ordinary. Decisively: **jobid
+   83 shares those exact minutes and delivers 12/12 expected runs per 2h** while 55 delivers
+   1. Whatever it is, it is not the minute slot.
+
+### What WAS found, and fixed in the same session
+
+`ingest-allday-pack-opens` had one genuinely silent path: `const t = await tip(); if (!t)
+return … status 200` sits **outside** the `try`, so an unreachable tip produced **HTTP 200 +
+no `pipeline_runs` row + cron "succeeded"** — clean on every instrument while the walk did
+nothing. Now logs `ok:false` / `tip_unreachable`. ⚠ **This is NOT established as job 55's
+cause** — `tip()` is shared with mode=forward (jobid 20), which is healthy at 46/48, so a tip
+outage would have to be implausibly mode-correlated. It is fixed because it is a real
+instance of the invisible-failure class, not because it explains this.
+
+⚠ **NOT DEPLOYED** — `ingest-allday-pack-opens` is jobid 20/55, two of D2b's five un-rotated
+functions. Deploying the repo copy without `ALLDAY_PACK_OPENS_GATE_KEY` set would 403 both
+modes. It rides the rotation window with the `compute-pinnacle-pack-ev` fix.
+
+**Next probe for whoever picks this up:** once deployed, the new `tip_unreachable` rows will
+either appear (cause found) or not (cause elsewhere — then instrument the walk body, since
+the remaining candidates are an early return inside `mode=backfill` or the 90s pg_net timeout
+killing a long spork walk before its terminal `logRun`).

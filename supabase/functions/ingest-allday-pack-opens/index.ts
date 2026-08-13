@@ -428,7 +428,17 @@ Deno.serve(async (req) => {
   const maxBlocks = Number(url.searchParams.get("blocks") ?? MAX_BLOCKS)
   const startMs = Date.now()
   const t = await tip()
-  if (!t) return new Response(JSON.stringify({ error: "tip_unreachable" }), { status: 200, headers: { "content-type": "application/json" } })
+  if (!t) {
+    // ⚠ This return sits OUTSIDE the try, so it never reached the catch's
+    // logRun. Before 2026-08-13 an unreachable tip produced: HTTP 200 (not a
+    // 4xx/5xx, so invisible to check_edge_fn_http_failures), NO pipeline_runs
+    // row (so invisible to failure_rate), and cron.job_run_details "succeeded"
+    // (dispatch worked). Every instrument in the estate read clean while the
+    // walk did nothing — the exact shape that made the 2026-08-11 gate-key
+    // outage undetectable for a day. A failure must leave a trace somewhere.
+    await logRun(`allday-pack-opens-${mode}`, startMs, false, 0, 0, null, null, { tip_unreachable: true }, "tip_unreachable")
+    return new Response(JSON.stringify({ error: "tip_unreachable" }), { status: 200, headers: { "content-type": "application/json" } })
+  }
 
   try {
     if (mode === "probe") {
