@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 
 
+
+### 2026-08-13 · SHIPPED (Claude Code, docs) — CLAUDE.md's canonical sections updated for the three waves above, because a fact left only in a ledger entry stops being found
+
+- **Docs-only, direct to `main`. No code, no DB, no prod-state change.** Companion to the three shipping entries below, and the distinction is load-bearing: **dated entries are frozen history and roll off to `docs/sessions/` within ~3 days**, so a fact recorded only there stops reaching the canonical sections a future session actually reads. That is exactly how five figures drifted before the 08-13 morning pass.
+- **Corrected the one canonical fact my own work made stale:** primary coverage thresholds **90.4/77.0/92.2/92.6 → 91.2/78.3/93.0/93.35**, with the reason the raise was ~0.9 on branch rather than an increment (the old numbers had drifted ~0.8–1.0 below actual; a ratchet only protects the coverage it is set to).
+- **Added a FOURTH row to the "a failed read must not render as an answer" table** — the OG social-card layer (`lib/og/board-empty-copy.ts`). It is the layer where the copy could not possibly be true (a static, edge-cached PNG cannot be "Loading"), and the one that went unnoticed longest. Records that `fetched` must be set INSIDE the `if (res.ok)` branch, and that the helper deliberately contains no retry wording.
+- **Generalised the build-failure bullet from a first-mint quirk into a CLASS**, since it recurred on `/analytics/sets/[set_id]` the same day: any prerendered page reading the DB needs BOTH a bound well under Next's 60 s budget AND a failure value distinct from absence, with `dynamicParams: true` making the bound safe. Notes that `rpcWithRetry` correctly makes it worse (a pool timeout IS transient, so it retries, and the retries blow the budget).
+- **Recent sessions entry** covering the three waves, weighted toward what a future session cannot re-derive: the two things I deliberately did NOT do (the sales-indexer extraction, the `/analytics` loaders that were already correct), the test I deleted rather than tuned to green, the guard I repointed vs weakened, and the `ufc` slug.
+- **No tail roll due.** Zone read before converting (`date '+%Z'` → **PDT**; 15:1x PT), same PT calendar day — Recent sessions still spans Aug 13 · Aug 12 · Aug 11.
+- **Revert:** `git revert <sha>` — docs-only, nothing to unwind.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — my own push ERRORed the production deploy, and the cause was a THIRD instance of the error-vs-absent class that also happens to kill builds
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Third wave; the two below are the same session.
