@@ -24,6 +24,7 @@ import {
 } from "@/lib/dashboard-format";
 import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
+import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
@@ -276,6 +277,18 @@ function ProfilePageInner() {
       pushToast(err instanceof Error ? err.message : "Failed to remove trophy", "info");
     }
   }, [slabs, pushToast]);
+
+  // Reflect a saved caption into slab state. The editor has already persisted
+  // it and only calls this on a 2xx, so this is a local sync, not an optimistic
+  // write — there is nothing to roll back.
+  //
+  // ⚠ Matches on the slab's OWN `slot`, not on array position. Filled slabs
+  // pack to the front of `slabs` while `slot` is the persisted DB column, so
+  // after a reorder the two diverge and indexing by `slot - 1` would caption
+  // the wrong Moment.
+  const handleNoteSaved = useCallback((slot: number, note: string | null) => {
+    setSlabs((prev) => prev.map((s) => (s && s.slot === slot ? { ...s, note } : s)));
+  }, []);
 
   // Reorder the trophy case (Auto-Arrange + drag-to-reorder). `orderedIds` are
   // the currently-filled slab row ids in their desired slot order (index 0 ->
@@ -822,7 +835,7 @@ function ProfilePageInner() {
             onEdit={() => setHeroEditOpen(true)}
           />
         ) : filledSlabs.length > 0 ? (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} />
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
@@ -915,7 +928,7 @@ function ProfilePageInner() {
             below the stats only when the hero card occupied the top slot, so
             users still get the 6-grid pin UI without scrolling past it. */}
         {wallets.length > 0 && showHero && (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} />
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
         )}
 
         {/* ── Saved Wallets ── */}
@@ -1422,10 +1435,13 @@ function TrophyCaseSection({
   onPickSlot,
   onRemove,
   onReorder,
+  onNoteSaved,
 }: {
   slabs: (TrophySlabData | null)[];
   onPickSlot: (slot: number) => void;
   onRemove?: (slot: number) => void;
+  /** Reflect a saved caption into slab state so it renders without a refetch. */
+  onNoteSaved?: (slot: number, note: string | null) => void;
   // Persist a new order. `orderedIds` = filled slab row ids in desired slot
   // order (index 0 -> slot 1). Resolves to whether the save stuck.
   onReorder?: (orderedIds: number[]) => Promise<boolean>;
@@ -1675,14 +1691,27 @@ function TrophyCaseSection({
             );
           }
           return (
-            <TrophySlab
-              key={"slab-" + i}
-              slab={cell.slab}
-              slot={cell.slot}
-              mode="owner"
-              onEmptyClick={onPickSlot}
-              onRemove={onRemove}
-            />
+            <div key={"slab-" + i} style={{ display: "flex", flexDirection: "column" }}>
+              <TrophySlab
+                slab={cell.slab}
+                slot={cell.slot}
+                mode="owner"
+                onEmptyClick={onPickSlot}
+                onRemove={onRemove}
+              />
+              {/* Caption editor sits OUTSIDE the slab because the slab's body
+                  is one big <Link> to the moment page — an input nested in an
+                  anchor navigates away as you type. Only for filled slots: a
+                  caption needs a Moment to be about. Hidden in drag mode above,
+                  where a text field would fight the drag handle. */}
+              {cell.slab && (
+                <TrophyNoteEditor
+                  slot={cell.slot}
+                  note={cell.slab.note}
+                  onSaved={onNoteSaved}
+                />
+              )}
+            </div>
           );
         })}
         {Array.from({ length: trailingEmpty }).map((_, k) => (

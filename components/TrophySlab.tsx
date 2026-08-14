@@ -246,8 +246,63 @@ function FilledSlab({
 
         {/* Row 3 — footer stat strip */}
         <SlabFooter slab={slab} />
+
+        {/* Row 4 — the collector's own caption.
+            The ONE field on a trophy the owner writes themselves; everything
+            else on this slab is denormalized moment metadata. It has been
+            stored and PDF-rendered since the feature shipped while no surface
+            displayed it, so a caption someone wrote could only ever be seen by
+            exporting a PDF. Rendered in BOTH modes on purpose — the whole
+            point of a caption is that visitors read it. */}
+        {slab.note && <SlabNote note={slab.note} />}
       </div>
     </Link>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Caption
+// ────────────────────────────────────────────────────────────────────────────
+
+function SlabNote({ note }: { note: string }) {
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        paddingTop: 7,
+        borderTop: "1px solid var(--rpc-border)",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 5,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{ fontSize: 9, lineHeight: 1.35, color: "var(--rpc-text-ghost)", flexShrink: 0 }}
+      >
+        &ldquo;
+      </span>
+      <span
+        // Two lines max, then ellipsis. The API caps the caption at 90 chars,
+        // but the clamp is kept independently: a slab in a narrow column can
+        // run a legal caption past two lines, and an unbounded one would push
+        // the slabs in a grid row out of alignment with each other.
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 9,
+          lineHeight: 1.35,
+          color: "var(--rpc-text-secondary)",
+          letterSpacing: "0.02em",
+          fontStyle: "italic",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {note}
+      </span>
+    </div>
   );
 }
 
