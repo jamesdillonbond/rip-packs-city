@@ -346,18 +346,35 @@ export async function POST(req: NextRequest) {
   // and report which one answered so the fix is a config change, not a guess.
   const adEndpoints: Array<{ label: string; url: string | null }> = [
     { label: "ALLDAY_PROXY_URL (configured)", url: process.env.ALLDAY_PROXY_URL || null },
-    // ⚠ DELIBERATELY NOT PROBING `${TS_PROXY_URL}/allday` or /allday-consumer.
-    // V1 of this route posted All Day to a TS_PROXY_URL subpath and 404'd, and
-    // `api-admin-discover-moment-descriptors.test.ts` carries an explicit
-    // regression guard — "posts All Day to ALLDAY_PROXY_URL, not a TS_PROXY_URL
-    // subpath" — to stop it coming back. Adding those rungs re-derives a
-    // documented dead end AND defeats the guard that records it.
+    // ⚠ STILL NOT constructing `${TS_PROXY_URL}/allday` here — the regression
+    // guard forbids it and is right — but the reason is now understood, and it
+    // is NOT "the worker route is a dead end".
     //
-    // CLAUDE.md does state that topshot-proxy exposes /allday and
-    // /allday-consumer as the WAF workaround, which is in tension with that
-    // 404. That tension is real and unresolved, but it is an OPERATOR question
-    // (curl the worker route directly and see), not something this probe should
-    // settle by quietly reintroducing the shape a guard forbids.
+    // RESOLVED 2026-08-14 by reading workers/topshot-proxy/. Its README sets:
+    //     TS_PROXY_URL     = https://topshot-proxy.<sub>.workers.dev
+    //     ALLDAY_PROXY_URL = https://topshot-proxy.<sub>.workers.dev/allday
+    // So ALLDAY_PROXY_URL is ALREADY a worker subpath. The guard's rule is
+    // about WHERE THE URL COMES FROM (read the configured variable, do not
+    // rebuild it from TS_PROXY_URL and let the two drift), not about what it
+    // may point at. Constructing it here would duplicate config, which is
+    // exactly how V1 produced a wrong URL.
+    //
+    // ⚠ AND THE 403 IS NOT EVIDENCE THE WORKER WAS BYPASSED. The worker passes
+    // the upstream status and body through verbatim
+    // (`new Response(data, { status: upstreamRes.status })`), so a Cloudflare
+    // block page from the All Day origin arrives looking identical whether we
+    // called the origin directly or went through the worker. The one shape that
+    // WOULD prove the worker was reached is its own plain-text 401
+    // "Unauthorized" on a bad X-Proxy-Secret — and we did not get that.
+    //
+    // The actionable difference is the ROUTE, not the host: only
+    // `/allday-consumer` carries ROUTE_HEADERS (Origin: nflallday.com, Referer,
+    // a browser UA), which is precisely the fingerprint a WAF checks. `/allday`
+    // sends the bare `sports-collectible-tool/0.1` UA and no Origin. And
+    // `allEditions` — the query this arm and lib/editions-hydrate.ts both use —
+    // is served by the CONSUMER endpoint, which is that route's upstream and
+    // editions-hydrate's own default. So `/allday-consumer` is both the
+    // correctly-fingerprinted route AND the correct endpoint for this query.
     { label: "nflallday.com/consumer/graphql (direct)", url: "https://nflallday.com/consumer/graphql" },
   ]
 
