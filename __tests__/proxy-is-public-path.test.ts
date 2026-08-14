@@ -128,6 +128,20 @@ const TABLE: Row[] = [
   ["/api/profile/top-movers", "GET", true],
   ["/api/profile/tier-breakdown", "GET", true],
 
+  // ── Shareable profile surfaces ───────────────────────────────────────────────
+  // ⚠ These exist to be fetched by a CRAWLER with no session. If the wall ever
+  // swallows one, it does not 404 — `proxy.ts` 302s to /login, and the crawler
+  // follows it and gets an HTML login page at status 200. That is exactly how
+  // `/fonts/*.ttf` was broken for weeks: every check said "200, non-empty", and
+  // the only symptom was a broken artifact downstream. Here the symptom would
+  // be a collector's shared trophy case unfurling as the sign-in page.
+  ["/profile/trevor", "GET", true],
+  ["/profile/trevor/trophy-case", "GET", true, "the shareable trophy case must not need a session"],
+  ["/api/og/profile/trevor", "GET", true],
+  ["/api/og/trophy-case/trevor", "GET", true, "its card must be fetchable by an unauthenticated crawler"],
+  // ...while the editor stays gated, including anything under it.
+  ["/profile/edit", "GET", false, "the editor is not a public surface"],
+
   // ── Public wedge surfaces ────────────────────────────────────────────────────
   ["/nba/fast-break", "GET", true],
   ["/api/nba/fast-break/optimize", "GET", true],
