@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — quirky serials become PASSIVE discovery: chips on the moment modal, styled deliberately unlike money
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
+- **Why this and not another concierge feature:** after `find_quirky_serials` the quirks only reached a collector who thought to ASK the bot. Trevor's framing was *"part of the collecting experience"* — that is passive discovery, not a query. `MomentDetailModal` is where someone looks at ONE moment, it is small (468 lines), and `components/*.tsx` is already in the component gate, so it is the highest-delight-per-risk surface. No monolith page touched.
+- ⚠ **The styling decision is a correctness decision, not taste.** FMV renders `#22c55e` **a few lines below in the same modal**, so green reads as MONEY here — a chip in that colour would imply a premium the data does not support, on the exact surface where a collector is judging value. Chips use `--rpc-text-secondary` on `--rpc-surface-raised`: legible, and unmistakably not a price. Pinned by a test asserting the chips do NOT carry the FMV green, **mutation-proven** (recolouring them reds it).
+- **Every chip carries its `why` as a `title`** — "Palindrome" alone is unverifiable at a glance, and the reason ("1221 reads the same backwards") is what makes it land. Also mutation-proven: removing the tooltip reds.
+- **Renders nothing for an ordinary serial** rather than an empty chip row — the normal case should be silent, not decorated with absence.
+- **Tests:** 4 new cases in `component-MomentDetailModal.test.tsx` (18 total), incl. the last-mint arm only firing when `mintSize` is known (without circulation there is no way to know, so it must not guess).
+- **Verified:** `tsc` clean; component gate **1,634 green**; brand-token guard clean.
+- **Revert:** `git revert <sha>` — code + tests only, nothing to unwind in the DB.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — gave the quirky-serial classifier a consumer: concierge tool 31 → 32 (`find_quirky_serials`)
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
