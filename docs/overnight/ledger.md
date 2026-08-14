@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — a phone or a keyboard could not reorder a trophy case AT ALL
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
+- ⚠ **REORDERING WAS DESKTOP-MOUSE-ONLY, and silently so.** "Edit Layout" was `display: none` under 768px, and HTML5 `draggable` **never fires on touch** — so a mobile owner could not reorder their trophy case by any means, and a **keyboard user could not on any viewport**. Auto-Arrange (sort by a preset) was the entire story for both. The case is the thing the public profile and the social card lead with, so "which Moment is first" is the main compositional choice a collector has, and most of them could not make it. Added `←`/`→` controls per slab in edit mode and un-hid Edit Layout on mobile.
+- ⚠ **CLAMPED, NOT WRAPPED**, and that is the assertion worth keeping: a "move right" on the last slab wrapping to the front is a reorder the collector did not ask for, applied to the thing their profile leads with, with the undo bar as their only clue. The mutation that wraps reds 2 cases.
+- **Extracted the math to `lib/trophy/reorder.ts` rather than adding it inline.** `app/dashboard/page.tsx` is a `page.tsx` — measured by **NEITHER** coverage gate — and its drag/Auto-Arrange/undo logic has never had a test, so inline code here would have been the third untested reorder path. Both callers (arrows and drag) now share it, pinned by a case asserting they **agree** on an adjacent move; if they diverge, drag and the arrows would mean different things by "one to the left".
+- **Verified:** 13 new tests green, primary gate green (91.60/78.94/93.25/93.73), `tsc` clean, 1 mutation red (wrap instead of clamp).
+- **Revert:** `git revert <sha>`. No DB unwind.
+
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — surfaced the profile 20 collectors now have but none could find, and stopped the picker letting you pin one Moment twice
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
