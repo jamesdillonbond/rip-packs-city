@@ -1,19 +1,57 @@
 /**
  * app/api/og/profile/[username]/route.tsx
  *
- * Dynamic OG card for public profile pages (1200×630 PNG).
- * Fetches bio + saved-wallet aggregates + trophies directly via Supabase
- * PostgREST — avoids chaining through our own API on an edge function.
+ * The collector's social card (1200×630 PNG) — what X, Discord, Slack and
+ * iMessage render when someone shares their profile. Reads bio + saved-wallet
+ * aggregates + trophies + achievements straight off PostgREST rather than
+ * chaining through our own API.
+ *
+ * 2026-08-13 — three things this card was getting wrong, all in the "it should
+ * look beautiful when shared" direction:
+ *
+ * (1) IT WAS NOT BRANDED. Every string rendered in `sans-serif`, i.e. whatever
+ *     satori's bundled default is, even though Barlow Condensed Black and Share
+ *     Tech Mono have been vendored under `public/fonts` since the trophy-case
+ *     PDF shipped. The PDF — a file a handful of people download — was the only
+ *     surface using them, while the card seen by everyone was generic. Now
+ *     loaded here too, memoized across warm invocations and FAIL-SOFT: a font
+ *     fetch that fails drops the `fonts` option and the card still renders,
+ *     because an unbranded card beats no card.
+ *
+ * (2) IT IGNORED THE COLLECTOR'S ACTUAL FLAIR. `equipped_border` and
+ *     `equipped_banner` — the cosmetics people spend Status on — were not even
+ *     selected, so the one place that flair would be seen by other people
+ *     showed none of it. Both now render (ring + glow on the avatar, gradient
+ *     bar across the top), sharing `lib/cosmetics.ts` with the profile page so
+ *     the card and the page can't drift.
+ *
+ * (3) THE TROPHIES WERE ILLEGIBLE. Six 220px-wide cards were absolutely
+ *     positioned at 36px offsets inside a 420px box, so five of them showed a
+ *     36px sliver — the fan hid the exact thing the card is meant to show off.
+ *     Replaced with a real case: a grid that sizes itself to the number pinned,
+ *     so one trophy reads big and six read as a set. Art also goes through
+ *     `hiResThumb`, because Top Shot stills are stored at width=180 and were
+ *     being upscaled into a 220px slot.
+ *
+ * The `ok`-vs-empty discipline below predates this and is load-bearing; see
+ * `fetchJson`.
  */
 
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { ogImageDataUri } from "@/lib/og/img-data";
+import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 
 export const runtime = "edge";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.rippackscity.com";
+
+const DISPLAY_FONT = "Barlow Condensed";
+const MONO_FONT = "Share Tech Mono";
 
 interface BioRow {
   user_id: string | null;
@@ -22,6 +60,8 @@ interface BioRow {
   accent_color: string | null;
   avatar_url: string | null;
   favorite_team: string | null;
+  equipped_border: string | null;
+  equipped_banner: string | null;
 }
 
 interface WalletRow {
@@ -74,11 +114,44 @@ function fmtDollars(n: number): string {
   return "$" + n.toFixed(2);
 }
 
-function tierBorder(tier: string | null | undefined): string {
-  const t = (tier ?? "").toUpperCase();
-  if (t === "LEGENDARY") return "#F59E0B";
-  if (t === "RARE") return "#818CF8";
-  return "#6B7280";
+/**
+ * Brand fonts, vendored under `public/fonts` (OFL). Memoized at module scope so
+ * a warm edge invocation pays the fetch once.
+ *
+ * ⚠ Deliberately fail-soft, and deliberately NOT awaited inside the try that
+ * renders. A font CDN hiccup must degrade the card's typography, never its
+ * existence — an unfurl with the wrong typeface is a cosmetic problem, an
+ * unfurl that 500s is a blank grey box in someone's timeline.
+ */
+let fontsPromise: Promise<ArrayBuffer[] | null> | null = null;
+function loadBrandFonts(): Promise<ArrayBuffer[] | null> {
+  if (!fontsPromise) {
+    fontsPromise = (async () => {
+      try {
+        const files = [
+          `${BASE_URL}/fonts/BarlowCondensed-Black.ttf`,
+          `${BASE_URL}/fonts/ShareTechMono-Regular.ttf`,
+        ];
+        const res = await Promise.all(files.map((u) => fetch(u)));
+        if (res.some((r) => !r.ok)) return null;
+        const bufs = await Promise.all(res.map((r) => r.arrayBuffer()));
+        return bufs.every((b) => b.byteLength > 0) ? bufs : null;
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return fontsPromise;
+}
+
+async function fontOptions() {
+  const bufs = await loadBrandFonts();
+  if (!bufs) return undefined;
+  const [display, mono] = bufs;
+  return [
+    { name: DISPLAY_FONT, data: display, weight: 900 as const, style: "normal" as const },
+    { name: MONO_FONT, data: mono, weight: 400 as const, style: "normal" as const },
+  ];
 }
 
 /**
@@ -109,7 +182,21 @@ async function fetchJson<T>(url: string): Promise<{ rows: T[]; ok: boolean }> {
   }
 }
 
-function renderFallback() {
+/**
+ * Trophy-case geometry. A grid, not a fan — the previous layout stacked
+ * 220px-wide cards at 36px offsets, so all but the last showed a sliver.
+ *
+ * The card sizes itself to what is actually pinned so a single trophy reads as
+ * a hero rather than as a lonely thumbnail, and six read as a case. Widths are
+ * chosen to fill the 420px column exactly at each column count.
+ */
+export function trophyGrid(count: number): { cols: number; w: number; h: number } {
+  const cols = Math.min(3, Math.max(1, count));
+  const w = cols === 1 ? 240 : cols === 2 ? 195 : 130;
+  return { cols, w, h: Math.round(w * 1.32) };
+}
+
+function renderFallback(fonts?: Awaited<ReturnType<typeof fontOptions>>) {
   return new ImageResponse(
     (
       <div
@@ -122,7 +209,7 @@ function renderFallback() {
           justifyContent: "center",
           background:
             "linear-gradient(135deg, #080808 0%, #111116 60%, #0d0d12 100%)",
-          fontFamily: "sans-serif",
+          fontFamily: fonts ? DISPLAY_FONT : "sans-serif",
           gap: 20,
         }}
       >
@@ -130,7 +217,7 @@ function renderFallback() {
           style={{
             display: "flex",
             gap: 12,
-            fontSize: 48,
+            fontSize: 56,
             fontWeight: 900,
             letterSpacing: 6,
             textTransform: "uppercase",
@@ -145,6 +232,7 @@ function renderFallback() {
             fontSize: 18,
             letterSpacing: 2,
             textTransform: "uppercase",
+            fontFamily: fonts ? MONO_FONT : "sans-serif",
           }}
         >
           rippackscity.com
@@ -154,6 +242,7 @@ function renderFallback() {
     {
       width: 1200,
       height: 630,
+      ...(fonts ? { fonts } : {}),
       headers: {
         "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
       },
@@ -165,10 +254,16 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
+  // Resolved before the try so the fallback can be branded too; `fontOptions`
+  // never rejects.
+  const fonts = await fontOptions().catch(() => undefined);
+  const display = fonts ? DISPLAY_FONT : "sans-serif";
+  const mono = fonts ? MONO_FONT : "sans-serif";
+
   try {
     const { username: rawUsername } = await params;
     const username = decodeURIComponent(rawUsername ?? "").trim();
-    if (!username || !SUPABASE_URL || !SERVICE_KEY) return renderFallback();
+    if (!username || !SUPABASE_URL || !SERVICE_KEY) return renderFallback(fonts);
 
     const enc = encodeURIComponent(username);
 
@@ -176,8 +271,12 @@ export async function GET(
     // denormalized profile_bio.username cache), then wallets/trophies key on
     // user_id (their only canonical FK). profile_achievements is still keyed
     // by owner_key = username, so it stays on the username lookup.
+    //
+    // equipped_border/equipped_banner ride along on this SAME row — the flair
+    // costs no extra round trip, which is why there is no excuse for the card
+    // having ignored it.
     const bios = await fetchJson<BioRow>(
-      `${SUPABASE_URL}/rest/v1/profile_bio?username=ilike.${enc}&select=user_id,display_name,tagline,accent_color,avatar_url,favorite_team&limit=1`,
+      `${SUPABASE_URL}/rest/v1/profile_bio?username=ilike.${enc}&select=user_id,display_name,tagline,accent_color,avatar_url,favorite_team,equipped_border,equipped_banner&limit=1`,
     );
     const bio: BioRow | null = bios.rows[0] ?? null;
     const userId = bio?.user_id ?? null;
@@ -208,6 +307,12 @@ export async function GET(
     const trophiesOk = trophiesRes.ok;
 
     const accent = (bio?.accent_color || "#E03A2F").trim() || "#E03A2F";
+    const border = borderCosmetic(bio?.equipped_border);
+    const banner = bannerCosmetic(bio?.equipped_banner);
+    // An equipped border outranks the accent for the avatar ring — it is the
+    // thing the collector chose, and it is the same precedence the profile page
+    // applies (ProfileClient's Avatar).
+    const ringColor = border?.ring ?? accent;
 
     const totalFmv = wallets.reduce(
       (s, w) => s + (Number(w.cached_fmv_usd) || 0),
@@ -220,14 +325,17 @@ export async function GET(
 
     // Pre-fetch trophy art + avatar to data URIs (timeout/byte-capped,
     // failures dropped) so one dead upstream can never 500 the whole card.
+    // hiResThumb first: Top Shot stills are stored at width=180 and were being
+    // upscaled into the slot, which is most of why the old fan looked soft.
     const rawTrophies = trophies.filter((t) => !!t.thumbnail_url).slice(0, 6);
     const trophyDataUris = await Promise.all(
-      rawTrophies.map((t) => ogImageDataUri(t.thumbnail_url)),
+      rawTrophies.map((t) => ogImageDataUri(hiResThumb(t.thumbnail_url) ?? null)),
     );
     const thumbTrophies = rawTrophies
       .map((t, i) => ({ ...t, thumbnail_url: trophyDataUris[i] }))
       .filter((t) => !!t.thumbnail_url);
     const filledTrophyCount = trophies.length;
+    const grid = trophyGrid(thumbTrophies.length);
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
@@ -249,11 +357,28 @@ export async function GET(
             flexDirection: "column",
             background:
               "linear-gradient(135deg, #080808 0%, #111116 60%, #0d0d12 100%)",
-            fontFamily: "sans-serif",
+            fontFamily: display,
             position: "relative",
             padding: "40px 48px",
           }}
         >
+          {/* Equipped banner — a full-bleed gradient bar pinned to the very top
+              edge, so the cosmetic reads instantly at thumbnail size. Absolute
+              so it escapes the page padding. */}
+          {banner && (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 10,
+                display: "flex",
+                background: banner.background,
+              }}
+            />
+          )}
+
           {/* Header */}
           <div
             style={{
@@ -266,9 +391,9 @@ export async function GET(
             <span
               style={{
                 color: "#fff",
-                fontSize: 18,
-                fontWeight: 800,
-                letterSpacing: 3,
+                fontSize: 20,
+                fontWeight: 900,
+                letterSpacing: 4,
                 textTransform: "uppercase",
               }}
             >
@@ -277,9 +402,9 @@ export async function GET(
             <span
               style={{
                 color: accent,
-                fontSize: 18,
-                fontWeight: 800,
-                letterSpacing: 3,
+                fontSize: 20,
+                fontWeight: 900,
+                letterSpacing: 4,
                 textTransform: "uppercase",
               }}
             >
@@ -296,14 +421,14 @@ export async function GET(
             }}
           />
 
-          {/* Body row: left content + right trophy fan */}
+          {/* Body row: left content + right trophy case */}
           <div style={{ display: "flex", flex: 1 }}>
             {/* LEFT */}
             <div
               style={{
                 display: "flex",
                 flexDirection: "column",
-                width: 720,
+                width: 700,
                 gap: 18,
               }}
             >
@@ -318,7 +443,7 @@ export async function GET(
                       height: 80,
                       borderRadius: "50%",
                       objectFit: "cover",
-                      border: "2px solid " + accent,
+                      border: (border ? 3 : 2) + "px solid " + ringColor,
                     }}
                   />
                 ) : (
@@ -328,13 +453,13 @@ export async function GET(
                       height: 80,
                       borderRadius: "50%",
                       background: accent + "22",
-                      border: "1px solid " + accent,
+                      border: (border ? 3 : 1) + "px solid " + ringColor,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       color: accent,
-                      fontSize: 28,
-                      fontWeight: 800,
+                      fontSize: 30,
+                      fontWeight: 900,
                     }}
                   >
                     {initials}
@@ -345,13 +470,13 @@ export async function GET(
                     display: "flex",
                     flexDirection: "column",
                     gap: 4,
-                    maxWidth: 600,
+                    maxWidth: 580,
                   }}
                 >
                   <div
                     style={{
                       color: "#fff",
-                      fontSize: 48,
+                      fontSize: 52,
                       fontWeight: 900,
                       letterSpacing: 1,
                       textTransform: "uppercase",
@@ -364,9 +489,9 @@ export async function GET(
                   {tagline && (
                     <div
                       style={{
-                        color: "rgba(255,255,255,0.5)",
-                        fontSize: 18,
-                        fontStyle: "italic",
+                        color: "rgba(255,255,255,0.55)",
+                        fontSize: 17,
+                        fontFamily: mono,
                         display: "flex",
                       }}
                     >
@@ -380,8 +505,8 @@ export async function GET(
               <div
                 style={{
                   display: "flex",
-                  gap: 20,
-                  marginTop: 28,
+                  gap: 16,
+                  marginTop: 26,
                 }}
               >
                 {[
@@ -415,14 +540,14 @@ export async function GET(
                       background: "rgba(255,255,255,0.03)",
                       border: "1px solid rgba(255,255,255,0.07)",
                       borderRadius: 10,
-                      minWidth: 200,
+                      minWidth: 196,
                     }}
                   >
                     <div
                       style={{
                         color: "#fff",
-                        fontSize: 32,
-                        fontWeight: 800,
+                        fontSize: 36,
+                        fontWeight: 900,
                         lineHeight: 1,
                         display: "flex",
                       }}
@@ -433,10 +558,10 @@ export async function GET(
                       style={{
                         color: "rgba(255,255,255,0.4)",
                         fontSize: 11,
-                        fontWeight: 700,
+                        fontFamily: mono,
                         letterSpacing: 2,
                         textTransform: "uppercase",
-                        marginTop: 8,
+                        marginTop: 10,
                         display: "flex",
                       }}
                     >
@@ -494,46 +619,41 @@ export async function GET(
               )}
             </div>
 
-            {/* RIGHT: trophy fan */}
+            {/* RIGHT: the trophy case, as a case */}
             <div
               style={{
                 display: "flex",
-                position: "relative",
+                flexWrap: "wrap",
+                alignContent: "center",
+                justifyContent: "flex-end",
+                gap: 12,
                 width: 420,
                 height: 380,
               }}
             >
               {thumbTrophies.length > 0 ? (
-                thumbTrophies.map((t, i) => {
-                  const border = tierBorder(t.tier);
-                  const left = i * 36;
-                  const top = i * 12;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        position: "absolute",
-                        left,
-                        top,
-                        width: 220,
-                        height: 290,
-                        borderRadius: 8,
-                        overflow: "hidden",
-                        border: "2px solid " + border,
-                        display: "flex",
-                        background: "#111",
-                        boxShadow: "0 12px 28px rgba(0,0,0,0.5)",
-                      }}
-                    >
-                      <img
-                        src={t.thumbnail_url as string}
-                        width={220}
-                        height={290}
-                        style={{ width: 220, height: 290, objectFit: "cover" }}
-                      />
-                    </div>
-                  );
-                })
+                thumbTrophies.map((t, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: grid.w,
+                      height: grid.h,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      border: "2px solid " + tierAccent(t.tier),
+                      display: "flex",
+                      background: "#111",
+                      boxShadow: "0 10px 24px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    <img
+                      src={t.thumbnail_url as string}
+                      width={grid.w}
+                      height={grid.h}
+                      style={{ width: grid.w, height: grid.h, objectFit: "cover" }}
+                    />
+                  </div>
+                ))
               ) : (
                 <div
                   style={{
@@ -543,8 +663,8 @@ export async function GET(
                     alignItems: "center",
                     justifyContent: "center",
                     color: "rgba(255,255,255,0.2)",
-                    fontSize: 22,
-                    fontWeight: 800,
+                    fontSize: 20,
+                    fontFamily: mono,
                     letterSpacing: 3,
                     textTransform: "uppercase",
                     border: "1px dashed rgba(255,255,255,0.08)",
@@ -579,7 +699,7 @@ export async function GET(
               style={{
                 color: "rgba(255,255,255,0.4)",
                 fontSize: 11,
-                fontWeight: 700,
+                fontFamily: mono,
                 letterSpacing: 2,
                 textTransform: "uppercase",
                 display: "flex",
@@ -591,6 +711,7 @@ export async function GET(
               style={{
                 color: "rgba(255,255,255,0.5)",
                 fontSize: 14,
+                fontFamily: mono,
                 display: "flex",
               }}
             >
@@ -602,6 +723,7 @@ export async function GET(
       {
         width: 1200,
         height: 630,
+        ...(fonts ? { fonts } : {}),
         headers: {
           "Cache-Control":
             "public, s-maxage=3600, stale-while-revalidate=86400",
@@ -609,6 +731,15 @@ export async function GET(
       },
     );
   } catch {
-    return renderFallback();
+    // ⚠ The fallback must not inherit the failure. A font satori rejects THROWS
+    // out of ImageResponse rather than degrading, and the naive `catch {
+    // return renderFallback(fonts) }` hands the same suspect fonts to the same
+    // renderer — so the one input capable of breaking the card would break the
+    // safety net too, and a font problem would 500 instead of de-branding.
+    try {
+      return renderFallback(fonts);
+    } catch {
+      return renderFallback(undefined);
+    }
   }
 }
