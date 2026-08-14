@@ -538,9 +538,31 @@ export default function ProfileClient(props: {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, justifyContent: "center" }}>
             <span style={labelStyle}>🏆 TROPHY CASE</span>
             {username && !slabsLoading && slabs.some(Boolean) && (
+              <>
+              <Link
+                href={"/profile/" + encodeURIComponent(username) + "/trophy-case"}
+                title="Open the shareable trophy-case page"
+                style={{
+                  fontSize: 9,
+                  fontFamily: monoFont,
+                  letterSpacing: "0.1em",
+                  color: accentColor,
+                  border: "1px solid " + accentColor,
+                  borderRadius: 4,
+                  padding: "3px 8px",
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                SHARE CASE →
+              </Link>
+              {/* The PDF is a download, not a link preview — pasting one into X
+                  or Discord produces a file, not a picture. Kept beside the
+                  share page rather than replaced by it: they are different
+                  artifacts for different purposes. */}
               <a
                 href={"/api/profile/trophy-case/pdf?username=" + encodeURIComponent(username)}
-                title="Download this trophy case as a shareable PDF"
+                title="Download this trophy case as a PDF"
                 style={{
                   fontSize: 9,
                   fontFamily: monoFont,
@@ -555,6 +577,7 @@ export default function ProfileClient(props: {
               >
                 EXPORT PDF ↓
               </a>
+              </>
             )}
           </div>
           {slabsLoading ? (
