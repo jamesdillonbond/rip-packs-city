@@ -176,6 +176,21 @@ describe("isExternalHref", () => {
 // result — collector handles, set names, board rows, none of which RPC controls
 // — into markup. The tokenizer only helps while the renderer refuses to parse
 // HTML, so the refusal is pinned here rather than left to review.
+// The tokenizer ships to the browser verbatim -- `tsc` cannot transpile a
+// regex literal -- so ES2018-only syntax here is a PARSE-time SyntaxError on
+// an older engine, which would take out this module and the entire chat
+// component with it. Safari only gained lookbehind in 16.4, and this product
+// is mobile-heavy, so the pattern is banned rather than trusted.
+describe("source guard — no ES2018-only regex syntax", () => {
+  it("uses no lookbehind in the tokenizer", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("lib/concierge/rich-text.ts", "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "")
+    expect(src).not.toMatch(/\(\?<[=!]/)
+  })
+})
+
 describe("source guard — the chat path never renders HTML", () => {
   it("has no dangerouslySetInnerHTML in the concierge chat renderer", async () => {
     const { readFileSync } = await import("node:fs")
