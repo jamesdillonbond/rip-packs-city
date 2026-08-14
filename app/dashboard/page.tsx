@@ -1837,16 +1837,26 @@ function HeroEditModal({
   onPicked: () => void;
 }) {
   const [moments, setMoments] = useState<TopMoment[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const url = "/api/profile/top-moments?limit=24" + (ownerKey ? `&ownerKey=${encodeURIComponent(ownerKey)}` : "");
+    setLoadFailed(false);
     fetch(url, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled) setMoments(d?.moments ?? []); })
-      .catch(() => { if (!cancelled) setMoments([]); });
+      .then((d) => {
+        if (cancelled) return;
+        // ⚠ A non-2xx and a thrown fetch both arrive with no moments. Rendering
+        // that as the empty state tells a collector "No owned moments found." —
+        // a claim about THEIR OWN COLLECTION manufactured from our outage. An
+        // empty list is only true when we actually got an answer.
+        if (!d?.moments) { setLoadFailed(true); setMoments([]); return; }
+        setMoments(d.moments as TopMoment[]);
+      })
+      .catch(() => { if (!cancelled) { setLoadFailed(true); setMoments([]); } });
     return () => { cancelled = true; };
   }, [ownerKey]);
 
@@ -1895,6 +1905,11 @@ function HeroEditModal({
       </div>
       {moments == null ? (
         <div style={{ textAlign: "center", padding: 24 }}><span className="rpc-spinner" /></div>
+      ) : loadFailed ? (
+        <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", padding: 16, textAlign: "center" }}>
+          Couldn&apos;t load your moments. This says nothing about what you own — only that the
+          read failed. Close and reopen to try again.
+        </div>
       ) : moments.length === 0 ? (
         <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", padding: 16, textAlign: "center" }}>
           No owned moments found.

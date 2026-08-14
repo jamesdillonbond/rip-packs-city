@@ -200,6 +200,7 @@ function SniperMomentsBody() {
   const [relativeDeals, setRelativeDeals] = useState<RelativeDeal[] | null>(null);
   const [benchmarks, setBenchmarks] = useState<Record<string, TierBenchmark> | null>(null);
   const [relativeLoading, setRelativeLoading] = useState(false);
+  const [relativeFailed, setRelativeFailed] = useState(false);
 
   // Highlight detection on page load — supports two URL shapes:
   //   ?highlight={flowId}  (legacy share-link copy from this page)
@@ -427,6 +428,7 @@ function SniperMomentsBody() {
     }
     let cancelled = false;
     setRelativeLoading(true);
+    setRelativeFailed(false);
     (async () => {
       try {
         const [rel, bench] = await Promise.all([
@@ -434,10 +436,17 @@ function SniperMomentsBody() {
           fetch(`/api/tier-pricing-benchmarks?collection=${encodeURIComponent(collectionSlug)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (cancelled) return;
-        setRelativeDeals(Array.isArray(rel?.deals) ? rel.deals : []);
+        // ⚠ A non-2xx and a thrown fetch both arrive with no deals. Rendering
+        // that as the empty state prints "Benchmark data may be too thin." — a
+        // DIAGNOSIS of a cause that is not the cause, which is worse than a bare
+        // empty state because it sends the reader to fix the wrong thing (same
+        // shape as the "try a longer time range" copy fixed 2026-08-12).
+        if (!Array.isArray(rel?.deals)) { setRelativeFailed(true); setRelativeDeals([]); }
+        else setRelativeDeals(rel.deals);
         setBenchmarks(bench?.benchmarks && typeof bench.benchmarks === "object" ? bench.benchmarks : {});
       } catch {
         if (cancelled) return;
+        setRelativeFailed(true);
         setRelativeDeals([]);
         setBenchmarks({});
       } finally {
@@ -886,6 +895,11 @@ function SniperMomentsBody() {
                 <div className="rpc-label" style={{ marginBottom: 8 }}>RELATIVE DEALS · TIER MEDIAN</div>
                 {relativeLoading ? (
                   <div className="rpc-skeleton" style={{ width: "100%", height: 80 }} />
+                ) : relativeFailed ? (
+                  <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+                    Couldn&apos;t load relative deals. This says nothing about the benchmark data —
+                    only that the read failed.
+                  </p>
                 ) : relativeDeals.length === 0 ? (
                   <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
                     No relative deals right now. Benchmark data may be too thin.
