@@ -258,6 +258,31 @@ jobs:
           BEFORE=$(wc -l < /tmp/led_before | tr -d ' ')
           AFTER=$(wc -l < /tmp/led_after | tr -d ' ')
           echo "ledger entries: $BEFORE -> $AFTER"
+          # A heading can be DESTROYED rather than deleted, and the set comparison
+          # above is structurally blind to it. A write that splices on the substring
+          # "### " instead of a line-start "^### " lands MID-SENTENCE: the new entry's
+          # heading is swallowed into prose (so it is in neither /tmp/led_* list) and
+          # the host sentence's tail becomes a bogus heading. Nothing is removed and
+          # the COUNT GOES UP, so both existing checks pass while the file is damaged.
+          # Happened 2026-08-13 (697dd86b), which cut this file's own clock-trap header
+          # in half by splicing on the `### <date>` the header quotes as an example.
+          # Three earlier instances from 2026-08-11 are still live in the file and are
+          # NOT repaired here — hence a DELTA check, not an absolute one: pre-existing
+          # damage must not red every unrelated push, but a NEW one fails immediately.
+          # ⚠ The obvious spelling of this check does NOT work — see the header of
+          # scripts/find-swallowed-ledger-headings.awk, which holds the detector and
+          # the reason ("not preceded by a backtick" misses the very incident that
+          # motivated it).
+          SWALL=scripts/find-swallowed-ledger-headings.awk
+          SW_BEFORE=$(git show HEAD~1:"$LEDGER" 2>/dev/null | awk -f "$SWALL")
+          SW_AFTER=$(awk -f "$SWALL" "$LEDGER")
+          echo "swallowed headings: ${SW_BEFORE:-0} -> ${SW_AFTER:-0}"
+          if [ "${SW_AFTER:-0}" -gt "${SW_BEFORE:-0}" ]; then
+            echo "::error file=docs/overnight/ledger.md::A ledger heading was SWALLOWED INTO PROSE (${SW_BEFORE} -> ${SW_AFTER}). Your entry spliced on the substring '### ' and landed mid-sentence, so it has no '^### ' heading of its own and the host line was cut in half."
+            awk -v show=1 -f "$SWALL" "$LEDGER"
+            echo "::error::FIX: splice at the first line whose FIRST CHARACTERS are '### ' (a line-start anchor), never at a substring match. Re-read the file from disk, put your heading on its own line, re-push."
+            exit 1
+          fi
           if [ -n "$GONE" ]; then
             if git log -1 --pretty=%B | grep -qF '[ledger-roll]'; then
               echo "Removal allowed — commit tagged [ledger-roll] (archival roll)."
