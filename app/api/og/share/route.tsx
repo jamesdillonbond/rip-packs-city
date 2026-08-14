@@ -22,6 +22,19 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet") || ""
 
+  // ⚠ `fetched` answers "did the snapshot READ succeed", NOT "does this wallet
+  // hold anything". It must be set INSIDE the `res.ok` branch.
+  //
+  // This card is the one a collector POSTS to show off their collection, and
+  // before 2026-08-13 a failed read fell back to `totalFmv = 0` / `totalMoments
+  // = 0` and published "$0.00 / 0 moments" — a false FINANCIAL claim about a
+  // named person, baked into an edge-cached PNG and distributed on social. The
+  // old comment called that "a branded shell", but zeros are not a shell, they
+  // are a NUMBER, and a reader has no way to tell it from a real answer.
+  //
+  // A wallet that genuinely holds nothing is different and still renders $0.00 —
+  // that is a true statement about an empty wallet.
+  let fetched = false
   let totalFmv = 0
   let totalMoments = 0
   let topPlayers: string[] = []
@@ -32,12 +45,13 @@ export async function GET(req: NextRequest) {
     })
     if (res.ok) {
       const data = await res.json()
+      fetched = true
       totalFmv = data.totalFmv ?? 0
       totalMoments = data.totalMoments ?? 0
       topPlayers = (data.topMoments ?? []).slice(0, 3).map((m: { playerName: string }) => m.playerName)
     }
   } catch {
-    /* fall back to zeros — the card still renders a branded shell */
+    /* fetched stays false — the card withholds the figures rather than zeroing them */
   }
 
   return new ImageResponse(
@@ -66,15 +80,28 @@ export async function GET(req: NextRequest) {
 
         {/* Center */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-          <div style={{ fontSize: 20, color: "#666", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex" }}>
-            COLLECTION FMV
-          </div>
-          <div style={{ fontSize: 80, fontWeight: 900, color: "#E03A2F", display: "flex" }}>
-            ${totalFmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
-            {totalMoments} moments
-          </div>
+          {fetched ? (
+            <>
+              <div style={{ fontSize: 20, color: "#666", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex" }}>
+                COLLECTION FMV
+              </div>
+              <div style={{ fontSize: 80, fontWeight: 900, color: "#E03A2F", display: "flex" }}>
+                ${totalFmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
+                {totalMoments} moments
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 20, color: "#666", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex" }}>
+                COLLECTION SNAPSHOT
+              </div>
+              <div style={{ fontSize: 28, color: "#888", display: "flex", textAlign: "center", maxWidth: 800 }}>
+                Open the page for this wallet&apos;s current value
+              </div>
+            </>
+          )}
         </div>
 
         {/* Bottom */}

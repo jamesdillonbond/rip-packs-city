@@ -81,7 +81,18 @@ function tierBorder(tier: string | null | undefined): string {
   return "#6B7280";
 }
 
-async function fetchJson<T>(url: string): Promise<T[]> {
+/**
+ * ⚠ Returns `ok` alongside the rows, and the distinction is load-bearing.
+ *
+ * This card renders a PORTFOLIO FMV for a named collector. Before 2026-08-13 a
+ * failed `saved_wallets` read returned `[]`, `totalFmv` reduced to 0, and the
+ * card published "$0" as that person's portfolio — a false financial claim about
+ * an identifiable individual, baked into an edge-cached PNG and shared socially.
+ *
+ * THREE states, not two: a read that failed (`ok:false` — withhold the figure),
+ * a profile with no linked wallets (`ok:true`, empty — a real answer), and rows.
+ */
+async function fetchJson<T>(url: string): Promise<{ rows: T[]; ok: boolean }> {
   try {
     const r = await fetch(url, {
       headers: {
@@ -90,11 +101,11 @@ async function fetchJson<T>(url: string): Promise<T[]> {
       },
       cache: "no-store",
     });
-    if (!r.ok) return [];
+    if (!r.ok) return { rows: [], ok: false };
     const data = await r.json();
-    return Array.isArray(data) ? (data as T[]) : [];
+    return { rows: Array.isArray(data) ? (data as T[]) : [], ok: true };
   } catch {
-    return [];
+    return { rows: [], ok: false };
   }
 }
 
@@ -168,25 +179,33 @@ export async function GET(
     const bios = await fetchJson<BioRow>(
       `${SUPABASE_URL}/rest/v1/profile_bio?username=ilike.${enc}&select=user_id,display_name,tagline,accent_color,avatar_url,favorite_team&limit=1`,
     );
-    const bio: BioRow | null = bios[0] ?? null;
+    const bio: BioRow | null = bios.rows[0] ?? null;
     const userId = bio?.user_id ?? null;
     const uidEnc = userId ? encodeURIComponent(userId) : null;
 
-    const [wallets, trophies, achievements] = await Promise.all([
+    // ⚠ A profile with no resolvable user_id has no wallets to read — that is
+    // `ok: true` with no rows (a real answer), NOT a failure. Only a read that
+    // actually errored may suppress the figures below.
+    const [walletsRes, trophiesRes, achievementsRes] = await Promise.all([
       uidEnc
         ? fetchJson<WalletRow>(
             `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_moment_count,cached_badges&limit=25`,
           )
-        : Promise.resolve<WalletRow[]>([]),
+        : Promise.resolve({ rows: [] as WalletRow[], ok: true }),
       uidEnc
         ? fetchJson<TrophyRow>(
             `${SUPABASE_URL}/rest/v1/trophy_moments?user_id=eq.${uidEnc}&select=slot,player_name,thumbnail_url,tier&order=slot.asc&limit=6`,
           )
-        : Promise.resolve<TrophyRow[]>([]),
+        : Promise.resolve({ rows: [] as TrophyRow[], ok: true }),
       fetchJson<AchievementRow>(
         `${SUPABASE_URL}/rest/v1/profile_achievements?owner_key=eq.${enc}&select=achievement_key,tier&order=unlocked_at.asc`,
       ),
     ]);
+    const wallets = walletsRes.rows;
+    const trophies = trophiesRes.rows;
+    const achievements = achievementsRes.rows;
+    const walletsOk = walletsRes.ok;
+    const trophiesOk = trophiesRes.ok;
 
     const accent = (bio?.accent_color || "#E03A2F").trim() || "#E03A2F";
 
@@ -366,13 +385,26 @@ export async function GET(
                 }}
               >
                 {[
-                  { label: "PORTFOLIO FMV", value: fmtDollars(totalFmv) },
+                  // ⚠ "—" when the READ failed, not when the value is zero. A
+                  // collector with an empty wallet genuinely has $0; a collector
+                  // whose wallet row we could not read does not, and publishing
+                  // "$0" for them on a shareable card is a false claim about a
+                  // named person.
+                  {
+                    label: "PORTFOLIO FMV",
+                    value: walletsOk ? fmtDollars(totalFmv) : "—",
+                  },
                   {
                     label: "MOMENTS",
                     value:
-                      totalMoments > 0 ? totalMoments.toLocaleString() : "—",
+                      walletsOk && totalMoments > 0
+                        ? totalMoments.toLocaleString()
+                        : "—",
                   },
-                  { label: "TROPHY CASE", value: filledTrophyCount + " / 6" },
+                  {
+                    label: "TROPHY CASE",
+                    value: trophiesOk ? filledTrophyCount + " / 6" : "—",
+                  },
                 ].map((s) => (
                   <div
                     key={s.label}
