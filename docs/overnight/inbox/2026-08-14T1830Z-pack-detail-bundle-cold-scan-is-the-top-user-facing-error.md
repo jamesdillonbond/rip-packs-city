@@ -113,3 +113,82 @@ assumed.
    dists, including one with editions priced only in an older partition — that
    is the case where a partition-pruning change would silently lose a hero.
 4. Watch `JAVASCRIPT-NEXTJS-1Z` user count over the following days.
+
+---
+
+## ⚠ CORRECTION + PARTIAL SHIP, 2026-08-14 — the proposed fix was MEASURED AND REJECTED
+
+Taken up in a quiet window (1 long-running query, 0 idle-in-txn). The safety
+question this filing left open is now **closed exhaustively, not by sample** —
+and then the fix itself failed on its own merits.
+
+### The safety proof (closed)
+
+Scoped to the only rows the subquery can reach: all **14,167** distinct
+`pack_drop_pool` editions with `drop_weight > 0`, every one present in
+`editions`, and **zero** of them have any `fmv_snapshots` row whose
+`collection_id` differs from the pool's. That is the complete reachable set, and
+it completed inside the statement budget — the whole-table check this filing
+asked for is both unnecessary and (as noted) too heavy.
+
+### ❌ Why `fs.collection_id = p_collection_id` was rejected anyway
+
+The predicate does exactly what was predicted — the hot partition flips to an
+`Index Only Scan` on `fmv_snapshots_2026_coll_ed_ct_fmv_idx`, planner cost
+2906 → 1948. It is still the wrong change:
+
+| | `edition_id_computed_at_idx` (today) | `coll_ed_ct_fmv_idx` (proposed) |
+|---|---|---|
+| size | **61 MB** | **113 MB** |
+| lifetime scans | **38,906,280** | **15,621** |
+
+On a **2 GB** instance this redirects the single hottest lookup on the platform
+onto an index that is 1.85× larger and effectively cold. Measured cold it read
+**1,630 pages against 137**, and *cold is precisely the case that times out*.
+
+⚠ And **"Index Only Scan" is a misnomer here: `Heap Fetches: 1,292` of 1,531.**
+The delete-then-insert FMV write pattern keeps pages non-all-visible, so the
+visibility map cannot pay off. **The planner's estimate preferred this plan
+because it assumes index-only scans avoid the heap** — on this table that
+assumption is false, which is why the estimate and the measurement disagree.
+
+⚠ Also corrected: this filing said the predicate would "prune the other
+partitions". **It does not.** Pruning needs a predicate on the *partition key*.
+And the pool is **1,531** positive-weight rows on dist 4184, not 3,097 — that
+figure is the total pool including 1,566 zero-weight rows.
+
+### ✅ What DID ship — `audit_20260814_pack_detail_bundle_prune_future_fmv_partitions`
+
+`and fs.computed_at <= now()` in the hero-editions subquery.
+
+- `fmv_snapshots_2025` and `_2027` hold **0 rows / 0 bytes**, yet the 2027 index
+  root cost **2 buffers per probe = 3,062 buffers, ~33% of the leg**, for nothing.
+- The predicate hands the planner the partition key and it prunes at runtime
+  (`Subplans Removed: 1`). Buffers **9,131 → 6,308 (−31%)**, on the **same hot
+  index** — no residency regression.
+- Semantically a no-op: 0 future-dated rows table-wide, so the result cannot
+  change for any dist. Spot-checked byte-identical `hero_editions` on 4 dists
+  across 3 collections. ACL unchanged; committed migration body md5-identical to
+  live `prosrc`.
+- When 2027 begins the predicate simply stops pruning and cost returns to
+  today's. It degrades, it never breaks.
+
+### ⚠ This does NOT close `JAVASCRIPT-NEXTJS-1Z`
+
+A 31% buffer cut does not rescue a 19 s cold path. Repeated warm/cold runs
+showed the real mechanism: **shared-buffer thrash on a 2 GB instance.** The same
+query measured 30 ms warm, 5.1 s once evicted, and 12.9 s while FMV recalc was
+dirtying pages (`written=126` during a read-only query). Whichever index is
+resident wins; the predicate is not the lever.
+
+### The real fix (filed, not taken)
+
+**Stop doing 1,531 correlated probes per page view.** The page needs only the
+top five editions by FMV per `(collection_id, dist_id)` — **4,694 pairs, ~23k
+rows**. Precompute them on the FMV cadence and the leg becomes one indexed row
+read. Sizing measured: 124,303 positive-weight pool rows across all dists.
+
+⚠ Do NOT do it as a naive `DISTINCT ON` over `fmv_snapshots` filtered by the
+14,167 pool editions — that shape **timed out at 55 s** when tested here. It
+needs its own plan work, which is exactly why it is a project and not a
+one-liner.
