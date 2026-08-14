@@ -296,3 +296,137 @@ describe("concierge — get_price_history", () => {
     expect(f.calls.some((c) => c.url.includes("/api/entity/edition"))).toBe(false)
   })
 })
+
+// ── find_quirky_serials ──────────────────────────────────────────────────────
+// Novelty serial finds. The properties that matter are the two honesty ones:
+// the tool must never imply value (Trevor: "they're so niche they don't get a
+// value bump, but they're just fun if you find them"), and a wallet too large
+// to scan fully must report a LOWER BOUND rather than a confident total.
+
+function wmcPage(rows: unknown[]) {
+  // A chainable wmc query stub ending in .range().
+  const q: any = {}
+  for (const m of ["select", "eq", "not", "order"]) q[m] = () => q
+  q.range = (from: number) => Promise.resolve({ data: from === 0 ? rows : [], error: null })
+  return q
+}
+
+function installWmc(rows: unknown[], opts: { resolve?: unknown } = {}) {
+  A.sb = {
+    from: () => wmcPage(rows),
+    rpc: async () => ({ data: opts.resolve ?? { found: false }, error: null }),
+  }
+}
+
+describe("concierge — find_quirky_serials", () => {
+  it("returns quirky finds with their explanations and disclaims any price effect", async () => {
+    installWmc([
+      { serial_number: 1221, mint_count: 3000, player_name: "Damian Lillard", set_name: "Base Set", edition_key: "1:1" },
+      { serial_number: 420, mint_count: 3000, player_name: "Ja Morant", set_name: "Base Set", edition_key: "1:2" },
+      { serial_number: 4817, mint_count: 3000, player_name: "Ordinary Guy", set_name: "Base Set", edition_key: "1:3" },
+    ])
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+
+    expect(r.status).toBe("ok")
+    // The ordinary serial is excluded; only the two quirky ones come back.
+    expect(r.total_found).toBe(2)
+    const kinds = (r.findings as any[]).flatMap((f) => f.quirks.map((q: any) => q.kind))
+    expect(kinds).toContain("palindrome")
+    expect(kinds).toContain("meme")
+    // Every quirk explains itself — "you have a palindrome" is unverifiable.
+    for (const f of r.findings as any[]) {
+      for (const q of f.quirks) expect(q.why).toBeTruthy()
+    }
+    // The no-price-claim disclaimer must travel with the result.
+    expect(String(r.not_a_price_signal)).toMatch(/NO value premium/i)
+  })
+
+  it("reports a complete scan as complete", async () => {
+    installWmc([{ serial_number: 888, mint_count: 900, player_name: "P", set_name: "S", edition_key: "1:1" }])
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+    expect(r.scan_complete).toBe(true)
+    expect(r.count_is_lower_bound).toBe(false)
+  })
+
+  // ⚠ The count-honesty property. PostgREST caps a read at 1,000 rows, so a
+  // large wallet is paginated; when the page budget is exhausted the total is a
+  // LOWER BOUND and must be reported as one. A confident "you have N quirky
+  // serials" computed from a partial scan is the silently-sliced-ranking bug.
+  it("reports a partial scan as a lower bound, never as a complete total", async () => {
+    // Every page comes back FULL, so the pager never sees a short page and
+    // exhausts maxPages — the real truncation condition.
+    const fullPage = Array.from({ length: 1000 }, (_, i) => ({
+      serial_number: 121,
+      mint_count: 3000,
+      player_name: `P${i}`,
+      set_name: "S",
+      edition_key: `1:${i}`,
+    }))
+    A.sb = {
+      from: () => {
+        const q: any = {}
+        for (const m of ["select", "eq", "not", "order"]) q[m] = () => q
+        q.range = () => Promise.resolve({ data: fullPage, error: null })
+        return q
+      },
+      rpc: async () => ({ data: { found: false }, error: null }),
+    }
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.scan_complete).toBe(false)
+    expect(r.count_is_lower_bound).toBe(true)
+  })
+
+  it("treats a wallet with no quirks as a real answer, not a failure", async () => {
+    installWmc([{ serial_number: 4817, mint_count: 3000, player_name: "P", set_name: "S", edition_key: "1:1" }])
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+    expect(r.status).toBe("no_results")
+    expect(r.scan_complete).toBe(true)
+  })
+
+  // A failed read must never render as "you have no quirky serials".
+  it("reports a read failure as an error, not an empty wallet", async () => {
+    A.sb = {
+      from: () => {
+        const q: any = {}
+        for (const m of ["select", "eq", "not", "order"]) q[m] = () => q
+        q.range = () => Promise.resolve({ data: null, error: { message: "canceling statement due to statement timeout" } })
+        return q
+      },
+      rpc: async () => ({ data: { found: false }, error: null }),
+    }
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.status).not.toBe("no_results")
+    // Driver text must not reach the model verbatim.
+    expect(String(r.message)).not.toContain("canceling statement")
+  })
+
+  it("rejects an unknown collection and an empty wallet before querying", async () => {
+    installWmc([])
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef", collectionId: "not-a-collection" })
+    await POST(post("fun serials"))
+    expect(String(toolResult().message)).toContain("Unknown collection")
+
+    script("find_quirky_serials", { walletAddress: "" })
+    await POST(post("fun serials"))
+    expect(toolResult().status).toBe("error")
+  })
+
+  it("reports an unresolvable username rather than guessing a wallet", async () => {
+    installWmc([], { resolve: { found: false } })
+    script("find_quirky_serials", { walletAddress: "someuser" })
+    await POST(post("fun serials"))
+    expect(toolResult().status).toBe("username_not_resolved")
+  })
+})

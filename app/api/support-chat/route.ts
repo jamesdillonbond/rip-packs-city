@@ -39,6 +39,8 @@ import {
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
 import { safeApiError } from "@/lib/api-error";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
+import { classifySerial } from "@/lib/serials/fun-patterns";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -611,6 +613,20 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["editionSlug"],
     },
   },
+  {
+    name: "find_quirky_serials",
+    description:
+      "Find FUN serial numbers in a wallet — palindromes (121, 1221), repdigits (888), sequential runs (123), meme serials (69, 420, 1337), round numbers, #1 mints and last mints. Use when a collector asks what interesting / quirky / cool serials they own, or to surface a delight in their collection. ⚠ CRITICAL — these carry NO value premium and you must never imply one. They are novelty finds, part of the fun of collecting, NOT a price signal: do not call them valuable, rare, or worth more, and do not attach a number to them. RPC's real serial premiums (#1, jersey match, perfect mint) are a separate thing handled by other tools. Every finding comes with a plain-English reason it qualifies — relay that, because 'you have a palindrome' is unverifiable on its face. Read-only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "0x wallet address or a Top Shot username. Required." },
+        collectionId: { type: "string", description: "Collection slug (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Defaults to the page's active collection, else nba-top-shot." },
+        limit: { type: "number", description: "Max findings to return, 1..40, default 20." },
+      },
+      required: ["walletAddress"],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -698,7 +714,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -830,6 +846,13 @@ Say which one applies, quoting the coverage the tool returned. Never present a c
 **get_price_history** answers "has this gone up or down", "what has this done over the past year", "what did it sell for back then". It reads ACTUAL SALE PRINTS — low / median / high and a sale count per bucket — so it is the only way to answer beyond about four months: RPC's FMV snapshots only start 2026-03-31, while sale records run back to 2020. \`days: 0\` means all time.
 
 ⚠ **A sale-print median is NOT an FMV.** FMV is a model estimate; a print is what a buyer actually paid. Never merge, average, blend, or present them as one series, and never let a historical print stand in for a current FMV — if the user wants today's value, that is get_fmv. State the \`grain\` the tool returns (day / week / month): implying daily resolution on a multi-year chart overstates what the data says. Thin buckets are common in the tail — a bucket with \`sales_count\` of 1 is a single trade, not a market level, and you should say so rather than describing it as "the price". Describe the trend factually and make no buy/sell call.
+
+## Quirky serials (find_quirky_serials) — fun, and explicitly NOT a price signal
+**find_quirky_serials** surfaces novelty serial numbers in a wallet: palindromes (121, 1221), repdigits (888), sequential runs (123), meme serials (69, 420, 1337), round numbers, #1 mints and last mints. Reach for it when a collector asks what interesting or cool serials they own, or when they want something fun in their collection rather than a valuation.
+
+⚠ **These carry NO value premium and you must never imply one.** They are novelty finds — part of the fun of collecting, nothing more. Do not call them valuable, rare, a steal, or worth more; do not attach a price to them; do not suggest they affect FMV. RPC's REAL serial premiums (#1 serial, jersey match, perfect mint) are a different thing entirely, handled by the pricing tools — never blur the two. If the user asks what a quirky serial is worth, price the moment normally with get_fmv and say plainly that the quirk itself does not move the price.
+
+Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its face, and the reason is what makes it land ("1221 reads the same backwards"). If \`count_is_lower_bound\` is true the wallet was too large to scan fully: report the findings as "at least N", never as a complete total.
 
 ## Common Questions (no tools needed)
 - "What can you do / where do I start?" → one tight, human line, not a menu dump: you help with support and how-things-work Q&A, capture bugs / feature requests / feedback for the team, and — on request — pull deals, FMV, wallet analysis, and live market/ecosystem data (biggest sales, what's moving, rookies, premiums, squeeze/scarcity, set completion, pack value and pack-reality). Then offer 2-3 concrete example questions they could ask, tailored to the page they're on. Don't list every tool.
@@ -2710,6 +2733,123 @@ async function executeTool(
         status: "error",
         message: err?.name === "TimeoutError" ? "price history timed out" : "price history failed",
       });
+    }
+  }
+
+  // ── Quirky serials in a wallet ────────────────────────────────────────────
+  // Pure novelty, deliberately carrying no price claim — see the honesty note
+  // in lib/serials/fun-patterns.ts for why these must never reach the FMV
+  // premium path.
+  if (toolName === "find_quirky_serials") {
+    try {
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      if (!inputAddr) {
+        return JSON.stringify({ status: "error", message: "walletAddress is required" });
+      }
+      // Same username-resolution ladder as check_wallet / analyze_wallet_holdings,
+      // kept inline to match this file's convention.
+      const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      let resolvedAddr = inputAddr;
+      if (!isHex) {
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          return JSON.stringify({
+            status: "username_not_resolved",
+            message: `Could not resolve '${inputAddr}' to a wallet. Ask for the 0x address.`,
+          });
+        }
+      }
+      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+
+      const requestedCollection: string =
+        (typeof toolInput.collectionId === "string" && toolInput.collectionId) ||
+        effectiveCollectionId ||
+        "nba-top-shot";
+      const collectionUuid = COLLECTION_UUID_BY_SLUG[requestedCollection] ?? null;
+      if (!collectionUuid) {
+        return JSON.stringify({
+          status: "error",
+          message: `Unknown collection '${requestedCollection}'. Valid: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc.`,
+        });
+      }
+
+      const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 40);
+
+      // Paginate rather than .limit() — PostgREST silently CLAMPS a limit above
+      // 1000, and a wallet of 3,000 moments would yield a confidently wrong
+      // "you have N quirky serials" computed from the first third.
+      const { rows, truncated, error } = await fetchAllPaged<{
+        serial_number: number | null;
+        mint_count: number | null;
+        player_name: string | null;
+        set_name: string | null;
+        edition_key: string | null;
+      }>(
+        (from, to) =>
+          (supabase as any)
+            .from("wallet_moments_cache")
+            .select("serial_number, mint_count, player_name, set_name, edition_key")
+            .eq("wallet_address", walletKey)
+            .eq("collection_id", collectionUuid)
+            .not("serial_number", "is", null)
+            .order("serial_number", { ascending: true })
+            .range(from, to),
+        { pageSize: 1000, maxPages: 8, label: "concierge/find_quirky_serials" }
+      );
+
+      if (error) {
+        return JSON.stringify({ status: "error", message: safeApiError({ message: error }).error });
+      }
+
+      const findings = rows
+        .map((r) => {
+          const quirks = classifySerial(r.serial_number, { circulationCount: r.mint_count });
+          if (quirks.length === 0) return null;
+          return {
+            player: r.player_name,
+            set: r.set_name,
+            serial: r.serial_number,
+            mintCount: r.mint_count,
+            editionKey: r.edition_key,
+            quirks: quirks.map((q) => ({ kind: q.kind, label: q.label, why: q.why })),
+          };
+        })
+        .filter(Boolean) as Array<Record<string, unknown>>;
+
+      if (findings.length === 0) {
+        return JSON.stringify({
+          status: "no_results",
+          wallet: walletKey,
+          collection: requestedCollection,
+          moments_scanned: rows.length,
+          scan_complete: !truncated,
+          message: "No quirky serials in this wallet — an ordinary serial is the normal case.",
+        });
+      }
+
+      return JSON.stringify({
+        status: "ok",
+        wallet: walletKey,
+        collection: requestedCollection,
+        moments_scanned: rows.length,
+        // ⚠ A truncated scan makes the count a LOWER BOUND. Say so rather than
+        // reporting a partial total as if it were complete.
+        scan_complete: !truncated,
+        total_found: findings.length,
+        count_is_lower_bound: truncated,
+        returned: Math.min(findings.length, limit),
+        findings: findings.slice(0, limit),
+        not_a_price_signal:
+          "These are novelty finds only. They carry NO value premium — do not describe them as valuable, rare, or worth more.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
