@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — the site-wide card had no X byline, so most pages unfurled unattributed
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
+- ⚠ **`rootMetadata.twitter` had `creator` but NO `site`.** They are different fields — `site` attributes the CARD to the account and is what X shows in the byline, `creator` attributes the CONTENT — and 44 files define their own `twitter` block while **every other page on the site inherits this one verbatim**. So the majority of RPC's pages unfurled with no attribution at all. A gap here is a gap everywhere at once, and an invisible one: it shows up only in someone else's timeline.
+- **Also added `alt` to both default images and dimensions to the openGraph one**, for the same reason the `/moment` card needed them: without stated dimensions a crawler has to fetch and measure the PNG before committing to a large card, and several fall back to a thumbnail rather than wait.
+- **Pinned, including the property rather than the literal:** `site` and `creator` must AGREE, so the casing divergence fixed earlier today (`@rippackscity` vs `@RipPacksCity`) cannot reappear from the other direction.
+- **Verified:** 58 tests green (6 new), primary gate green (91.65/78.93/93.44/93.75), `tsc` clean, 2 mutations red (site dropped / alt dropped).
+- **Revert:** `git revert <sha>`. No DB unwind.
+
 ### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — figured out BOTH open items without an operator: the walker query was already proven, and the All Day 403 is a one-line env change
 
 - **Code comments + inbox filing, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Both open items from the previous wave resolved by reading evidence already in hand rather than asking for a curl.
