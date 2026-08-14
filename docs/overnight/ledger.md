@@ -20,6 +20,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 
 
+### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — a regex in code I shipped 20 minutes earlier would have thrown at PARSE time on older Safari, taking the whole chat down
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Follow-up to `7114dc9e`; found by reviewing my own diff after it deployed READY, not by a failure.
+- ⚠ **The bug: `SITE_PATH` used a LOOKBEHIND — `(?<=[\s(])` — which is ES2018.** Safari only gained lookbehind in **16.4** (March 2023), and an unsupported regex literal is a **`SyntaxError` at PARSE time**, not a caught runtime error: the module fails to evaluate, `SupportChat` fails to import, and **the entire concierge disappears** for that user. On a product whose own system prompt says "most users are on mobile", that is the worst possible blast radius for a cosmetic linkifier.
+- ⚠ **`tsc` cannot save you here and neither can the `target` setting.** `tsconfig.json` says `ES2017`, but TypeScript **does not transpile regex literals** — the pattern ships to the browser byte-for-byte. Every gate was green (tsc clean, 11,395 tests, both coverage ratchets) because **the whole toolchain runs on Node, which has supported lookbehind since v8.3**. There was no signal anywhere in CI; only reading the diff with a browser-support question in mind found it.
+- **Fix:** the leading context is now a **capture group** (`(^|[\s(])(\/[a-z]…)`) and the parser offsets by group 1's length. Same behaviour — the "and/or" / "8/13" false-positive guard still holds, all 33 prior tests unchanged and green — with no ES2018 syntax.
+- **Guard `source guard — no ES2018-only regex syntax`** asserts the tokenizer contains no `(?<=` / `(?<!`, comments stripped first (the trap hit twice already today). It is a *source* guard because a Node-based test suite is structurally incapable of catching this class: the engine running the tests supports the syntax the target engine does not.
+- **Verified:** `tsc` clean; primary gate **11,397 tests green, 91.57 st / 78.91 br**; the three chat suites (27) green. Deploy `dpl_6U2xcHfYvXURaaZWns9uqutCTztJ` (the parent commit) confirmed **READY** and aliased to www before this follow-up.
+- **Revert:** `git revert <sha>` — restores the lookbehind, so do not revert this one in isolation.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive) — the profile UNFURL was publishing "$0 FMV across 0 moments" about named collectors, and its guard could never have said so
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
