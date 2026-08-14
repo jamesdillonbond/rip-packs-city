@@ -583,6 +583,34 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["board"],
     },
   },
+  {
+    name: "search_catalog",
+    description:
+      "Find a moment, player, set, or team in RPC's catalog BY NAME OR BY WHAT HAPPENS IN IT. This is the only tool that can answer a NARRATIVE / descriptive question — 'the Lillard game winner', 'a buzzer beater', 'a poster dunk over someone' — because it searches the moment's written description, not just names. Also the right tool for 'do you have X', 'find me the ... moment', or when you need an edition's slug before calling get_price_history. Returns each hit's kind (player/set/team/edition), label, sublabel, collection, slug, and the site URL to link. CRITICAL — descriptive prose covers only PART of the catalog and the tool reports exactly how much in `coverage`/`coverage_note` (Top Shot only; every other collection is 0%). So a narrative query that returns nothing is AMBIGUOUS: it may mean we hold no description for that moment, NOT that the moment does not exist. You MUST say which when a narrative search comes back empty — never report it as 'that moment doesn't exist'. Read-only. Carries no prices: chain to get_fmv or get_price_history for value.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "What to search for — a name ('Damian Lillard'), a set, a team, or a description of the play ('game winner', 'buzzer beater'). Required, 2..80 chars." },
+        collection: { type: "string", description: "Optional collection URL slug to scope to (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Omit to search every published collection." },
+        limit: { type: "number", description: "Max hits, 1..30, default 12." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_price_history",
+    description:
+      "Long-horizon price history for ONE edition, built from ACTUAL SALE PRINTS — what the moment really traded at, bucketed by day/week/month with low / median / high and a sale count per bucket. Use for 'has this gone up or down', 'what has this done over the past year', 'what did this sell for back then', or any trend/history question. This is the ONLY way to answer beyond ~4.5 months: RPC's FMV snapshots only begin 2026-03-31, while sale records go back to 2020. CRITICAL — a sale-print median is NOT an FMV and the two must never be merged, averaged, or presented as one series; FMV is a model estimate, this is what buyers actually paid. Each row carries its own `grain` (day/week/month) — state it, never imply daily resolution on a multi-year window. Needs the edition's slug: get it from search_catalog (kind='edition') if you don't already have it. Read-only, no buy/sell calls.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        editionSlug: { type: "string", description: "The edition's route slug, e.g. '128:5147' for Top Shot. Obtain from search_catalog. Required." },
+        collection: { type: "string", description: "Collection URL slug (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Defaults to the page's active collection." },
+        days: { type: "number", description: "Lookback window in days. 365 = one year (default), 0 = all time back to 2020. Max 4000." },
+      },
+      required: ["editionSlug"],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -670,7 +698,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -722,7 +750,7 @@ Instead state the data factually: "This listing is at the median FMV for [player
 If asked "should I buy this?", respond with the data + an explicit "I don't make buy/sell calls — that's your decision."
 
 ## CRITICAL — FMV numbers must come from a tool call this turn
-Never quote FMV numbers, ranges, floors, percentiles, or distributions from memory. If you reference any price, FMV, floor, range, or "typical" figure, you must have called get_fmv, search_catalog_deals, or search_live_deals in this turn and be quoting from a tool result row. Soft directional claims ("typically command premium prices", "tend to hold value", "scarce serials carry a premium") count as price assertions — same rule applies. If the relevant tool returned no results, say so honestly; do not fall back to a remembered range.
+Never quote FMV numbers, ranges, floors, percentiles, or distributions from memory. If you reference any price, FMV, floor, range, or "typical" figure, you must have called get_fmv, search_catalog_deals, search_live_deals, or get_price_history in this turn and be quoting from a tool result row. Soft directional claims ("typically command premium prices", "tend to hold value", "scarce serials carry a premium") count as price assertions — same rule applies. If the relevant tool returned no results, say so honestly; do not fall back to a remembered range.
 
 ## CRITICAL — Tier filtering on FMV tools
 When a user mentions a tier — Common, Rare, Fandom, Legendary, Ultimate, or any Pinnacle variant_type — you MUST pass that tier into get_fmv or search_catalog_deals. Tier-stripped distributions mix tiers and the median is misleading.
@@ -783,6 +811,21 @@ When the user asks about market STATE rather than one specific price, reach for 
 - **get_premiums** — how much premium parallels (kind="parallel") or low serials (kind="serial") carry over base editions. For "do parallels carry a premium", "what's a low serial worth over floor". Top Shot.
 - **get_ecosystem_stat** — ecosystem boards by metric: new_collectors (newest active collectors), offer_spread (bid/ask spread), first_mint (first-mint scarcity), cross_collection (multi-collection overlap). For broad "state of the ecosystem" questions.
 - **get_insight_board** — reads any of the other shareable /insights boards by name: squeeze / set_squeeze (supply locked+burned), set_completers (closest to finishing sets), trophies (#1 / first-mint holders), pinnacle_scarcity, allday_scarcity, topshot_pack_market / allday_pack_market (pack prices), pack_reality / allday_pack_reality (what packs actually returned vs cost), market (Top Shot daily index). For board/ecosystem questions the tools above don't cover.
+
+## Finding a moment by DESCRIPTION (search_catalog) — and the coverage rule
+**search_catalog** is the only tool that can find a moment by what HAPPENS in it rather than by name. "The Lillard game winner", "a buzzer beater", "a poster dunk" — these are narrative queries, and before this tool existed they were unanswerable. Reach for it whenever the user describes a play, asks "do you have…", asks you to find a moment/player/set/team, or when you need an edition's slug to pass to get_price_history. It also handles plain name lookups and returns a linkable URL for every hit.
+
+⚠ **The coverage rule is non-negotiable, because an empty narrative result is AMBIGUOUS.** Moment descriptions exist for only part of the catalog — Top Shot partially, and **0% of All Day, Golazos, Pinnacle and UFC**. The tool reports the live figures in \`coverage\` / \`coverage_note\`. So when a descriptive search returns \`no_results\`, you MUST distinguish two very different statements:
+- "We have no description on file for that slice of the catalog, so I can't search it that way" — the honest answer for a collection at 0%, or a plausible one for Top Shot.
+- "That moment doesn't exist" — a claim you are almost never entitled to make from a narrative miss.
+Say which one applies, quoting the coverage the tool returned. Never present a coverage gap as an absence of the moment, and never quote a coverage percentage from memory — read it from the tool result, it changes every backfill. For a name-based search (a player, set or team) an empty result is a much safer "nothing matched".
+
+⚠ **Do not confuse search_catalog with search_catalog_deals.** They are different tools despite the similar names: **search_catalog** is the catalog INDEX — it finds and identifies things (and is the only one that reads descriptions), and carries no prices at all. **search_catalog_deals** is a PRICE tool — it answers "what is this worth / what's discounted". If the user asks "find me the Lillard game winner", that is search_catalog; "what's a Lillard Rare worth", that is search_catalog_deals or get_fmv. Chaining is normal and encouraged: search_catalog to identify the exact edition, then get_fmv for today's value or get_price_history for the trend.
+
+## Price HISTORY vs FMV (get_price_history) — never merge them
+**get_price_history** answers "has this gone up or down", "what has this done over the past year", "what did it sell for back then". It reads ACTUAL SALE PRINTS — low / median / high and a sale count per bucket — so it is the only way to answer beyond about four months: RPC's FMV snapshots only start 2026-03-31, while sale records run back to 2020. \`days: 0\` means all time.
+
+⚠ **A sale-print median is NOT an FMV.** FMV is a model estimate; a print is what a buyer actually paid. Never merge, average, blend, or present them as one series, and never let a historical print stand in for a current FMV — if the user wants today's value, that is get_fmv. State the \`grain\` the tool returns (day / week / month): implying daily resolution on a multi-year chart overstates what the data says. Thin buckets are common in the tail — a bucket with \`sales_count\` of 1 is a single trade, not a market level, and you should say so rather than describing it as "the price". Describe the trend factually and make no buy/sell call.
 
 ## Common Questions (no tools needed)
 - "What can you do / where do I start?" → one tight, human line, not a menu dump: you help with support and how-things-work Q&A, capture bugs / feature requests / feedback for the team, and — on request — pull deals, FMV, wallet analysis, and live market/ecosystem data (biggest sales, what's moving, rookies, premiums, squeeze/scarcity, set completion, pack value and pack-reality). Then offer 2-3 concrete example questions they could ask, tailored to the page they're on. Don't list every tool.
@@ -2507,6 +2550,163 @@ async function executeTool(
     if (!path) return JSON.stringify({ status: "error", message: "board must be one of: " + Object.keys(boardMap).join(", ") + "." });
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 50);
     return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
+  }
+
+  // ── Catalog search (names AND descriptive prose) ──────────────────────────
+  // The only tool that can answer a narrative question ("the Lillard game
+  // winner"). The coverage disclosure is NOT decoration: prose exists for part
+  // of Top Shot and for nothing else, so an empty narrative result is
+  // ambiguous between "no such moment" and "no description for that moment".
+  // We forward the LIVE coverage figures (never hardcode — the backfill moves
+  // them every run) and keep them attached to the no_results case too, which is
+  // exactly where the model needs them most.
+  if (toolName === "search_catalog") {
+    const query = String(toolInput.query ?? "").trim();
+    if (query.length < 2) {
+      return JSON.stringify({ status: "error", message: "query must be at least 2 characters" });
+    }
+    const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 12)) || 12, 1), 30);
+    const params = new URLSearchParams({ q: query.slice(0, 80), limit: String(limit) });
+    const scope = toolInput.collection ?? effectiveCollectionId;
+    if (scope) params.set("collection", String(scope));
+    try {
+      const res = await fetch(`${base}/api/search?${params.toString()}`, {
+        signal: AbortSignal.timeout(9000),
+      });
+      if (!res.ok) {
+        // 503 from the search route already carries OUR classified copy. A
+        // failed search must never degrade into "nothing matched" — that is a
+        // claim about the catalog manufactured from an outage.
+        let msg = `catalog search returned ${res.status}`;
+        try {
+          const body: any = await res.json();
+          if (body?.error) msg = String(body.error);
+        } catch {
+          /* keep the status-derived message */
+        }
+        return JSON.stringify({ status: "error", http_status: res.status, message: msg });
+      }
+      const json: any = await res.json();
+      const rows = Array.isArray(json?.results) ? json.results : [];
+      const coverage = json?.meta?.coverage ?? null;
+      const coverageNote = json?.meta?.note ?? null;
+      if (rows.length === 0) {
+        return JSON.stringify({
+          status: "no_results",
+          query,
+          coverage,
+          coverage_note: coverageNote,
+          message:
+            "Nothing in the catalog matched. If this was a descriptive/narrative query, check `coverage` before concluding the moment does not exist — descriptions cover only part of the catalog.",
+        });
+      }
+      return JSON.stringify({
+        status: "ok",
+        query,
+        count: rows.length,
+        results: rows.map((r: any) => ({
+          kind: r.kind,
+          label: r.label,
+          sublabel: r.sublabel,
+          collection: r.collection,
+          collectionName: r.collectionName,
+          // The slug the edition page routes on — feeds get_price_history.
+          slug: decodeURIComponent(String(r.href ?? "").split("/").pop() ?? ""),
+          url: r.href ? `${base}${r.href}` : null,
+          editionCount: r.editionCount,
+        })),
+        coverage,
+        coverage_note: coverageNote,
+      });
+    } catch (err: any) {
+      return JSON.stringify({
+        status: "error",
+        message: err?.name === "TimeoutError" ? "catalog search timed out" : "catalog search failed",
+      });
+    }
+  }
+
+  // ── Long-horizon sale-print history for one edition ───────────────────────
+  // Reads actual sales, NOT fmv_snapshots (which only begin 2026-03-31), so
+  // this is the only path to a multi-year answer. The response is labelled
+  // `basis: "actual_sale_prints"` and carries an explicit not_fmv note because
+  // merging a sale median into an FMV series conflates a model estimate with
+  // what buyers really paid.
+  if (toolName === "get_price_history") {
+    const slug = String(toolInput.editionSlug ?? "").trim();
+    if (!slug) {
+      return JSON.stringify({
+        status: "error",
+        message: "editionSlug is required — get it from search_catalog (kind='edition')",
+      });
+    }
+    const collection = String(toolInput.collection ?? effectiveCollectionId ?? "").trim();
+    if (!collection) {
+      return JSON.stringify({
+        status: "error",
+        message: "collection is required when the page has no active collection",
+      });
+    }
+    const daysRaw = Number(toolInput.days ?? 365);
+    const days = Math.min(Math.max(Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 365, 0), 4000);
+    const params = new URLSearchParams({
+      collection,
+      slug,
+      part: "sale-history",
+      days: String(days),
+    });
+    try {
+      const res = await fetch(`${base}/api/entity/edition?${params.toString()}`, {
+        signal: AbortSignal.timeout(9000),
+      });
+      if (!res.ok) {
+        let msg =
+          res.status === 404
+            ? `unknown collection '${collection}'`
+            : `price history returned ${res.status}`;
+        try {
+          const body: any = await res.json();
+          if (body?.error) msg = String(body.error);
+        } catch {
+          /* keep the status-derived message */
+        }
+        return JSON.stringify({ status: "error", http_status: res.status, message: msg });
+      }
+      const rows: any[] = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return JSON.stringify({
+          status: "no_results",
+          editionSlug: slug,
+          collection,
+          window_days: days,
+          message:
+            days === 0
+              ? "No recorded sales for this edition at all."
+              : `No recorded sales for this edition in the last ${days} days. Try days=0 for all time.`,
+        });
+      }
+      return JSON.stringify({
+        status: "ok",
+        editionSlug: slug,
+        collection,
+        window_days: days,
+        // The bucket width the RPC chose for this window. Say it out loud —
+        // never imply daily resolution on a multi-year series.
+        grain: rows[0]?.grain ?? null,
+        basis: "actual_sale_prints",
+        not_fmv:
+          "These are real sale prints (low/median/high per bucket), NOT FMV estimates. Do not merge or average them with FMV.",
+        buckets: rows.length,
+        first_bucket: rows[0]?.bucket ?? null,
+        last_bucket: rows[rows.length - 1]?.bucket ?? null,
+        rows,
+      });
+    } catch (err: any) {
+      return JSON.stringify({
+        status: "error",
+        message: err?.name === "TimeoutError" ? "price history timed out" : "price history failed",
+      });
+    }
   }
 
   return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
