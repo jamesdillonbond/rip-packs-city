@@ -70,6 +70,19 @@ export interface PickerMoment {
   serial_fmv?: SerialFmvData;
 }
 
+/**
+ * How many owned Moments the grid loads, highest FMV first.
+ *
+ * ⚠ THIS IS ALSO THE SEARCH SCOPE, which is the part that misleads. The search
+ * box says "Search by player, set, or team" and filters CLIENT-SIDE over
+ * whatever this loaded — so a collector with more than this many Moments who
+ * searches for one outside their top N gets "No moments match the current
+ * filter", a claim about THEIR COLLECTION manufactured from our page cap. The
+ * cap is the API's hard ceiling too (`/api/profile/top-moments` clamps above
+ * it), so raising it here alone does nothing.
+ */
+export const PICKER_LIMIT = 96;
+
 // Local aliases keep the in-file usages terse while the definitions live in
 // lib/trophy-picker-format.ts (measured by the coverage ratchet).
 type SortKey = TrophySortKey;
@@ -126,7 +139,7 @@ export default function TrophyPickerModal({
   useEffect(() => {
     let cancelled = false;
     setMoments(null);
-    const params = new URLSearchParams({ limit: "96" });
+    const params = new URLSearchParams({ limit: String(PICKER_LIMIT) });
     if (ownerKey) params.set("ownerKey", ownerKey);
     if (leagueFilter !== "all") params.set("league", leagueFilter);
     if (collectionFilter !== "all") params.set("collection", collectionFilter);
@@ -150,6 +163,10 @@ export default function TrophyPickerModal({
     () => new Set((pinnedMomentIds ?? []).filter(Boolean)),
     [pinnedMomentIds]
   );
+
+  // A full page back means the collection is at least this big — the grid, and
+  // therefore the search, is a slice rather than the whole collection.
+  const atCap = (moments?.length ?? 0) >= PICKER_LIMIT;
 
   const tiersPresent = useMemo<TierFilter[]>(() => presentTiers(moments), [moments]);
 
@@ -381,6 +398,25 @@ export default function TrophyPickerModal({
               }}
             />
 
+            {/* ⚠ Disclosed, not silently truncated. We cannot tell "owns exactly
+                96" from "owns 500 and we loaded 96", so the copy states what IS
+                true either way — these are the highest-value ones — rather than
+                asserting a truncation we have not measured. */}
+            {atCap && (
+              <div
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 10,
+                  color: "var(--rpc-text-muted)",
+                  marginTop: 6,
+                  letterSpacing: "0.04em",
+                }}
+              >
+                Showing your {PICKER_LIMIT} highest-value Moments. Search looks
+                inside this list only.
+              </div>
+            )}
+
             {moments == null ? (
               <div style={{ textAlign: "center", padding: 24 }}>
                 <span className="rpc-spinner" />
@@ -397,7 +433,9 @@ export default function TrophyPickerModal({
               >
                 {moments.length === 0
                   ? "No owned moments found yet — try the manual tab if you know the moment ID."
-                  : "No moments match the current filter."}
+                  : atCap
+                    ? `Nothing in your top ${PICKER_LIMIT} by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID.`
+                    : "No moments match the current filter."}
               </div>
             ) : (
               <div
