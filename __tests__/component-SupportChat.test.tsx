@@ -150,7 +150,9 @@ describe("SupportChat", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: false })
     await waitFor(() => expect(getByText("answered")).toBeTruthy())
     // close via the header ✕
-    fireEvent.click(getByLabelText("Close"))
+    // "Close chat" since 2026-08-13: the header ✕ and the launcher both
+    // announced themselves ambiguously, so they were given distinct names.
+    fireEvent.click(getByLabelText("Close chat"))
     await waitFor(() => expect(queryByLabelText("Send")).toBeNull())
   })
 
