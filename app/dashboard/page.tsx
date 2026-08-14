@@ -25,6 +25,7 @@ import {
 import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
+import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
@@ -835,6 +836,17 @@ function ProfilePageInner() {
           </div>
         </section>
 
+        {/* ── Your public profile ──
+            Every collector now HAS one (the handle defaults from their Dapper
+            username), and until this card none of them could tell: the only
+            mention was a toast that fires once, on the call that created it.
+            A profile nobody knows the URL of is a profile nobody shares — which
+            made every improvement to the page and its social card unreachable
+            for the people they were built for. */}
+        {bio?.username && (
+          <PublicProfileCard username={bio.username} userId={userId} />
+        )}
+
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {wallets.length === 0 ? (
           <SignInBanner
@@ -1151,6 +1163,7 @@ function ProfilePageInner() {
           ownerKey={userId ? null : (wallets[0]?.wallet_addr ?? null)}
           onClose={() => setPinSlot(null)}
           onPinned={async () => { setPinSlot(null); await refresh(); pushToast("Trophy pinned", "success"); }}
+          pinnedMomentIds={slabs.filter(Boolean).map((sl) => (sl as TrophySlabData).moment_id)}
         />
       )}
       {heroEditOpen && (
@@ -1732,6 +1745,108 @@ function TrophyCaseSection({
         {Array.from({ length: trailingEmpty }).map((_, k) => (
           <TrophySlab key={"slab-empty-" + k} slab={null} slot={filled.length + k + 1} mode="owner" />
         ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Your public profile ──────────────────────────────────────────────────────
+//
+// The collector's own shareable page, surfaced where they actually are. Their
+// handle now defaults from their Dapper username, so the page exists for
+// everyone — but until this card the only thing that ever mentioned it was a
+// one-shot toast on the call that created it, and a profile whose URL nobody
+// knows is a profile nobody shares.
+//
+// Reuses ShareProfileButtons rather than growing a second share path: that
+// component already carries the UTM tagging, the referral `&ref=`, and the
+// once-a-day +50 Status award, none of which a hand-rolled copy button here
+// would have.
+
+function PublicProfileCard({
+  username,
+  userId,
+}: {
+  username: string;
+  userId: string | null;
+}) {
+  const href = `/profile/${encodeURIComponent(username)}`;
+  return (
+    <section
+      className="rpc-section"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: 12,
+        border: `1px solid ${ACCENT_RED}44`,
+        borderRadius: 10,
+        padding: "14px 16px",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: monoFont,
+            fontSize: 9,
+            letterSpacing: "0.18em",
+            color: "var(--rpc-text-muted)",
+            textTransform: "uppercase",
+          }}
+        >
+          Your public profile
+        </div>
+        <Link
+          href={href}
+          style={{
+            fontFamily: condensedFont,
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.03em",
+            color: "var(--rpc-text-primary)",
+            textDecoration: "none",
+            display: "inline-block",
+            marginTop: 3,
+            wordBreak: "break-all",
+          }}
+        >
+          rippackscity.com{href}
+        </Link>
+        <div
+          style={{
+            fontFamily: monoFont,
+            fontSize: 10,
+            color: "var(--rpc-text-muted)",
+            marginTop: 4,
+          }}
+        >
+          Your trophy case, badges and portfolio — anyone can open this.{" "}
+          <Link href="/profile/edit" style={{ color: "var(--rpc-text-secondary)" }}>
+            Personalise it
+          </Link>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Link
+          href={href}
+          style={{
+            fontFamily: condensedFont,
+            fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--rpc-text-secondary)",
+            textDecoration: "none",
+            padding: "7px 12px",
+            border: `1px solid ${ACCENT_RED}66`,
+            borderRadius: 5,
+            whiteSpace: "nowrap",
+          }}
+        >
+          View
+        </Link>
+        <ShareProfileButtons username={username} referrerId={userId} compact />
       </div>
     </section>
   );

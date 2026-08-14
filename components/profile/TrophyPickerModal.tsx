@@ -80,9 +80,25 @@ interface Props {
   ownerKey: string | null;
   onClose: () => void;
   onPinned: () => void;
+  /**
+   * Moment ids already in the case, so the grid can show which ones are taken.
+   *
+   * ⚠ Without this a collector could pin the SAME Moment into two slots and see
+   * it twice in their own trophy case: the upsert conflicts on
+   * `(user_id, slot)`, not `(user_id, moment_id)`, so nothing downstream
+   * rejects it. Nothing in the UI said a Moment was already up, either — every
+   * row looked equally pinnable.
+   */
+  pinnedMomentIds?: string[];
 }
 
-export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }: Props) {
+export default function TrophyPickerModal({
+  slot,
+  ownerKey,
+  onClose,
+  onPinned,
+  pinnedMomentIds,
+}: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -126,6 +142,14 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
       cancelled = true;
     };
   }, [ownerKey, leagueFilter, collectionFilter]);
+
+  // Keyed on moment_id alone, matching the uniqueness a collector actually
+  // perceives ("that Moment is already up"), not the composite the grid uses
+  // for React keys.
+  const pinnedIds = useMemo(
+    () => new Set((pinnedMomentIds ?? []).filter(Boolean)),
+    [pinnedMomentIds]
+  );
 
   const tiersPresent = useMemo<TierFilter[]>(() => presentTiers(moments), [moments]);
 
@@ -392,6 +416,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                     key={`${m.collection_id}-${m.moment_id}`}
                     m={m}
                     disabled={saving}
+                    alreadyPinned={pinnedIds.has(m.moment_id)}
                     onClick={() => pin(m)}
                   />
                 ))}
@@ -529,10 +554,13 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 function MomentRow({
   m,
   disabled,
+  alreadyPinned,
   onClick,
 }: {
   m: PickerMoment;
   disabled: boolean;
+  /** Already in another slot — shown as taken, and not clickable. */
+  alreadyPinned?: boolean;
   onClick: () => void;
 }) {
   const tier = normalizeTier(m.tier);
@@ -551,10 +579,17 @@ function MomentRow({
       : baseSet
     : "—";
 
+  // An already-pinned Moment is inert AND dimmed. Disabling without dimming
+  // reads as a broken button; dimming without disabling still lets a fast click
+  // through, and the upsert conflicts on (user_id, slot) so nothing downstream
+  // would reject the duplicate.
+  const inert = disabled || !!alreadyPinned;
+
   return (
     <button
-      onClick={onClick}
-      disabled={disabled}
+      onClick={alreadyPinned ? undefined : onClick}
+      disabled={inert}
+      title={alreadyPinned ? "Already in your trophy case" : undefined}
       style={{
         display: "flex",
         alignItems: "stretch",
@@ -567,16 +602,36 @@ function MomentRow({
         borderRadius: 8,
         color: "var(--rpc-text-primary)",
         textAlign: "left",
-        cursor: disabled ? "wait" : "pointer",
-        opacity: disabled ? 0.6 : 1,
+        cursor: alreadyPinned ? "not-allowed" : disabled ? "wait" : "pointer",
+        opacity: inert ? 0.45 : 1,
+        position: "relative",
       }}
       onMouseEnter={(e) => {
-        if (!disabled) (e.currentTarget as HTMLButtonElement).style.borderColor = tc;
+        if (!inert) (e.currentTarget as HTMLButtonElement).style.borderColor = tc;
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rpc-border)";
       }}
     >
+      {alreadyPinned && (
+        <span
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 8,
+            fontFamily: monoFont,
+            fontSize: 8,
+            letterSpacing: "0.12em",
+            color: "var(--rpc-text-secondary)",
+            border: "1px solid var(--rpc-border)",
+            borderRadius: 999,
+            padding: "1px 6px",
+            background: "var(--rpc-black)",
+          }}
+        >
+          PINNED
+        </span>
+      )}
       {/* Thumbnail — pinned to the top so it aligns with the player name */}
       <div
         style={{
