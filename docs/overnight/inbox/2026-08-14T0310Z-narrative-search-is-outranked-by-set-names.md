@@ -94,3 +94,81 @@ That copy is defensible *if* the ranking is fixed shortly; if this sits, the wor
 describe what actually works (distinctive phrases), or the coverage note reframed. Left alone deliberately
 because it is another session's surface, shipped today, and the right fix is the ranking rather than more
 caveat copy.
+
+
+---
+
+# ⚠ CORRECTED 2026-08-14 — the diagnosis above is PARTLY WRONG. Measured mechanism below.
+
+I wrote above that "matches are ranked by trigram `similarity()`, which is length-normalized, so a long
+paragraph scores low". **That is not what happens.** I read the function this time instead of inferring
+from behaviour, and tested three hypotheses — two of which I had to reject, including my own.
+
+## What the function actually does
+
+The edition arm's similarity is computed against **names only**:
+
+    extensions.similarity(lower(coalesce(e.player_name,'') || ' ' || coalesce(e.set_name,'')), v_q)
+
+The description is **not in the similarity expression at all**. Its entire contribution is a FLAT boolean:
+
+    CASE WHEN via_prose THEN 0.12::real ELSE 0.00::real END
+
+So there is no "length-normalized paragraph score" to fix. There is a flag.
+
+## The measured numbers
+
+| row | why it matches | score |
+|---|---|---|
+| `121:4255` (Run It Back: Legacies) | description literally contains **"buzzer"** | **0.1404** |
+| Buddy Hield | *name* is trigram-similar to "buzzer" — no prose match whatsoever | **0.4676** |
+
+A **verbatim containment in the prose loses 3× to a fuzzy name resemblance**, because a player hit also
+collects the `0.35` kind-weight while a prose hit collects `0.12`.
+
+And because the prose boost is FLAT, every prose hit scores identically — so within them the effective
+ordering is the tiebreak, `u.n DESC, u.lbl ASC`, i.e. **alphabetical by player name**. That is why a
+specific moment is unreachable even at limit 50: it is not outranked by one thing, it is buried in a mass
+of equally-scored rows.
+
+## Two hypotheses I tested and REJECTED — do not re-derive them
+
+1. **Candidate truncation.** `edition_hits` ends `ORDER BY … circulation_count ASC LIMIT 200`, which looked
+   damning: a relevance-blind pre-filter. **Rejected by measurement** — 297 editions match "buzzer",
+   `121:4255` has circulation 28, and only **13** candidates sort ahead of it. It is comfortably inside the
+   200. The pre-filter is not the bug (though it remains a latent hazard for a query with >200 matches).
+2. **"Set names outrank prose."** Directionally true for `game winner`, but not the mechanism, and it hid
+   the real one. The problem is the flat flag, not set names specifically — a *player* name beat it here.
+
+## The separate, second defect: vocabulary
+
+`48:1652` is not ranked low for `game winner` — it is **excluded entirely**. `LIKE ALL` requires every
+token, its description says **"game-winning"**, and `'%winner%'` does not match that. So the two famous
+Lillard moments fail for **different reasons**: `121:4255` is buried by ranking, `48:1652` by tokenization.
+Any fix claiming to solve "narrative search" must address both, and must be verified against BOTH slugs.
+
+## Suggested fix, and the regression it must avoid
+
+Replace the flat flag with a **graded, exclusivity-gated** prose contribution:
+
+- `prose_phrase`: the full query string appears in `description` **and NOT in**
+  `player_name || set_name || team_name` → strong boost (~0.55).
+- `prose_tokens`: all tokens present in description but not as a phrase → moderate (~0.25).
+
+⚠ **The exclusivity gate is the load-bearing part.** A naive "+0.55 whenever the description matches"
+regresses ordinary name search: querying `lillard` would boost every edition whose *prose mentions* Lillard
+to ~0.85, level with the Lillard PLAYER hit (~0.85) — so searching a player could stop returning that
+player first. Gating on "the phrase is NOT in any name field" keeps the boost to genuinely narrative
+queries, which is the only case it is meant to serve.
+
+Stemming (`winner` → `game-winning`) is NOT solved by any of this and needs full-text search
+(`tsvector` + `websearch_to_tsquery` + `ts_rank`). `editions` is only ~27k rows, so a STORED generated
+column plus a GIN index is cheap — this is a small table, not a big migration.
+
+## Why I did not ship the fix
+
+It is a live ranking change behind BOTH the public header search and the concierge's `search_catalog`, and
+the regression it risks (a player search no longer returning that player first) is precisely the kind that
+looks fine in a spot check and is caught only by a broad before/after battery. That deserves its own
+window with the battery written first, not the tail of a long session. The diagnosis is now exact and the
+design is specified; the remaining work is verification breadth, not investigation.
