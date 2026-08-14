@@ -164,17 +164,24 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
 // or the 2019 37-footer (Run It Back: Legacies, `121:4255`) — even though BOTH
 // carry descriptions and one literally contains the word "game-winning".
 //
-// Root cause is in rpc_search_catalog, not here: prose IS searched (a
-// description-only phrase like "weber state" resolves correctly), but it is
-// scored with trigram similarity(), which is LENGTH-NORMALIZED — so a short set
-// name always outscores a 200-character paragraph that contains the phrase
-// verbatim. Generic narrative phrases lose to set names; only distinctive
-// proper nouns survive. Filed with the full repro in docs/overnight/inbox/.
+// ⚠ THE "LENGTH-NORMALIZED TRIGRAM RANKING" EXPLANATION THAT USED TO SIT HERE
+// WAS WRONG, and so was the fix built on it. Root cause, found on the third
+// attempt (2026-08-14): rpc_search_catalog required EVERY query token, so one
+// word the prose never uses annihilated the query. The prose says
+// "game-winning" and "buzzer"; it never says "winner" or "beater".
 //
-// Do not re-add a narrative pill until that ranking is fixed and the fix is
-// verified against those two slugs specifically. A pill that demos set-name
-// matching while claiming to demo narrative search teaches the user something
-// false about the product.
+// Fixed at the DB layer: a 3-or-more-token query may now miss one token, so
+// "lillard buzzer beater" reaches `121:4255` at rank 6 and "lillard game
+// winner" reaches `48:1652` at rank 20. A one- or two-word query still must
+// match every word — relaxing there would degrade "lillard buzzer" into every
+// Lillard moment.
+//
+// The pill STAYS OUT, because it would fire a bare two-word phrase and that is
+// exactly the shape still unreachable: `game winner` cannot reach a moment
+// whose prose says "game-winning", and there is no stemming to bridge it. The
+// honest discovery hint is "player name + a distinctive word", which lives in
+// the search empty-state copy and the concierge prompt instead. Re-add a
+// narrative pill only if a phrase query is verified against BOTH slugs.
 const PAGE_DEFAULTS: Record<string, string[]> = {
   "sniper (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Best deals right now", "Find me a LeBron deal"],
   "badges (nba-top-shot)": ["Bug on this page?", "How does X work?", "Most valuable badges?", "Check badges for Wembanyama"],

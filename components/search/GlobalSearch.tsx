@@ -13,8 +13,11 @@
 //    tell a user their moment doesn't exist because our database blinked.
 //
 //  · THE COVERAGE GAP IS STATED, NOT HIDDEN. Moment descriptions ARE searched
-//    now (2026-08-13) — "lillard game winner" returns the For the Win moments.
-//    But the prose covers only part of the catalog and only Top Shot, so a
+//    now (2026-08-13). ⚠ This comment used to cite "lillard game winner"
+//    returning the For the Win moments as proof — that was set-name matching
+//    misread as prose matching, and it is exactly the kind of claim to check
+//    the ROWS of before repeating.
+//    The prose covers only part of the catalog and only Top Shot, so a
 //    narrative query matching nothing is ambiguous: it may mean "no such
 //    moment" or "no description for that moment". The empty state says which,
 //    using the LIVE figure the API measures (`meta.note`) rather than a

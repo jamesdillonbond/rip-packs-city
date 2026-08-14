@@ -249,11 +249,16 @@ describe("SupportChat — no narrative-search discovery pill", () => {
   // (Run It Back: Legacies, 121:4255) — though both carry descriptions and one
   // contains "game-winning" verbatim.
   //
-  // The cause is in rpc_search_catalog's ranking (trigram similarity() is
-  // length-normalized, so short set names beat long paragraphs), not here. This
-  // test keeps the pill from being reinstated before that is fixed: a pill that
-  // demonstrates set-name matching while claiming to demonstrate narrative
-  // search teaches the user something false.
+  // ⚠ The "length-normalized trigram ranking" cause once written here was
+  // WRONG. Real cause (2026-08-14): rpc_search_catalog required EVERY query
+  // token, and the prose says "game-winning"/"buzzer", never "winner"/"beater".
+  // A 3+-token query may now miss one token, so "lillard buzzer beater" and
+  // "lillard game winner" both reach their moment.
+  //
+  // The pill still must NOT come back, and for a sharper reason than before: it
+  // fires a bare TWO-word phrase, which still has to match both words exactly,
+  // and there is no stemming to bridge "winner" to "game-winning". Re-add one
+  // only if a phrase query is verified against BOTH slugs above.
   it.each([
     ["overview (nba-top-shot)"],
     ["market (nba-top-shot)"],

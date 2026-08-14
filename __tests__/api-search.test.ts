@@ -165,6 +165,22 @@ describe("GET /api/search", () => {
     expect(j.meta.note).toMatch(/may mean we have no description/i)
   })
 
+  it("tells the user the search matches words, not concepts", async () => {
+    // The remaining narrative gap after the 2026-08-14 token-coverage fix is
+    // that there is NO STEMMING: prose saying "game-winning" is unreachable by
+    // the phrase "game winner". A user cannot guess that from an empty panel,
+    // and "no results" alone implies the moment does not exist. The note has to
+    // name the workaround, not just apologise.
+    state.coverage = {
+      data: [{ collection_slug: "nba_top_shot", searchable_editions: 13208, with_description: 9128, pct: 69.1 }],
+      error: null,
+    }
+    const j = await (await GET(req("?q=game%20winner"))).json()
+    expect(j.meta.note).toMatch(/matches words, not concepts/i)
+    expect(j.meta.note).toMatch(/game winning/i)
+    expect(j.meta.note).toMatch(/add the player's name/i)
+  })
+
   it("says plainly when NO descriptions are loaded", async () => {
     state.coverage = {
       data: [{ collection_slug: "nba_top_shot", searchable_editions: 13197, with_description: 0, pct: 0 }],

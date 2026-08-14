@@ -15,11 +15,26 @@
 //
 // NARRATIVE SEARCH IS LIVE, AND PARTIAL — which is why coverage is reported.
 // As of 2026-08-13 `editions.description` carries the upstream prose the Top
-// Shot moment page renders, so "Damian Lillard game winner" now returns the
-// For the Win / Dame Time moments instead of nothing. But the prose exists for
-// only part of the catalog (measured, not guessed: see `meta.coverage`), and
-// ONLY for Top Shot — All Day's ingest is WAF-blocked, and no other collection
-// has a prose source at all.
+// Shot moment page renders. The prose exists for only part of the catalog
+// (measured, not guessed: see `meta.coverage`), and ONLY for Top Shot — All
+// Day's ingest is WAF-blocked, and no other collection has a prose source.
+//
+// ⚠ This header used to cite "Damian Lillard game winner" returning the "For
+// the Win" moments as proof it worked. That was a FALSE POSITIVE: "For The
+// Win" is a SET NAME containing the query words, i.e. set-name matching read
+// as prose matching. A domain expert spotted it in one sentence. Do not
+// re-introduce a claim of this shape without checking the returned rows are
+// the RIGHT rows — a non-empty result is not a correct result.
+//
+// ⚠ And it matches WORDS, not concepts. There is no stemming: the two most
+// famous Blazers game winners say "game-winning" and "buzzer" in their prose
+// and never "winner" or "beater", so `game winner` cannot reach one and
+// `buzzer beater` cannot reach the other, while `game winning` reaches both.
+// (Measured: Postgres English stemming does NOT relate winner↔winning or
+// buzzer↔beater, so switching to `websearch_to_tsquery` would not fix this —
+// and it ANDs its terms by default too.) A 3-or-more-token query may miss ONE
+// token (rpc_search_catalog, 2026-08-14), which is what makes "lillard buzzer
+// beater" work; a 1- or 2-token query must still match every word.
 //
 // That partiality is the thing this route must not hide. A narrative query
 // that matches nothing could mean "no such moment" OR "we have no prose for
@@ -83,7 +98,12 @@ function coverageNote(coverage: CoverageRow[] | null): string {
   return (
     base +
     ` Descriptions cover only part of the catalog — ${parts.join(", ")} — so a narrative query` +
-    " that matches nothing may mean we have no description for that moment, not that it does not exist."
+    " that matches nothing may mean we have no description for that moment, not that it does not exist." +
+    // Word-matching, not concept-matching, and there is no stemming: the prose
+    // that says "game-winning" is unreachable by "game winner". Telling the
+    // user that is worth more than another apology for an empty result.
+    " It matches words, not concepts — if a phrase finds nothing, try the words the story would use" +
+    " (\"game winning\" rather than \"game winner\"), or add the player's name."
   )
 }
 
