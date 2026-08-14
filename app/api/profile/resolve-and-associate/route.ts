@@ -36,6 +36,7 @@ import { publishedCollections } from "@/lib/collections";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
+import { claimUsernameFromTopShot, type ClaimOutcome } from "@/lib/profile/claim-username";
 import { isCadenceAddress, normalizeAddress } from "@/lib/address";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
@@ -196,6 +197,27 @@ export async function POST(req: NextRequest) {
     return apiErrorResponse(error, "api/profile/resolve-and-associate");
   }
 
+  // Default the RPC public handle to the collector's Dapper/Top Shot username
+  // (Trevor, 2026-08-13). This is the only path on which we learn that name,
+  // and until now nothing but a manual visit to /profile/edit ever set
+  // profile_bio.username — so 16 of 20 signed-up collectors had no public
+  // profile at all: nothing to personalise, nothing to share, and every
+  // improvement to the profile page and its social card invisible to them.
+  //
+  // Runs INLINE rather than in after() because the handle is part of what the
+  // response tells the client — the dashboard shows the collector their live
+  // profile URL — and it is one indexed read plus one upsert. It cannot fail
+  // the request: every failure resolves to an outcome (see claim-username).
+  // Typed as ClaimOutcome so the address path (no Top Shot name to derive from)
+  // and the claim path share one shape — otherwise the literal narrows and the
+  // `handle` read below only compiles for one branch.
+  const claim: ClaimOutcome = username
+    ? await claimUsernameFromTopShot(supabase as any, user.id, username)
+    : { claimed: false, reason: "unusable" };
+  if (!claim.claimed && claim.reason === "error") {
+    console.warn("[resolve-and-associate] handle claim failed for", user.id);
+  }
+
   // after() runs the callback once the response is flushed, so the client gets
   // its 200 immediately.
   const userId = user.id;
@@ -257,5 +279,11 @@ export async function POST(req: NextRequest) {
     username,
     walletAddress,
     associatedCollections: targets.map((c) => ({ id: c.id, label: c.label })),
+    // The collector's public handle and whether THIS call created it, so the
+    // dashboard can show "your profile is live at /profile/<handle>" the first
+    // time and stay quiet on every later re-resolve. `profileHandle` is the
+    // handle they now have either way — a re-resolve reports the existing one.
+    profileHandle: claim.claimed ? claim.handle : (claim.handle ?? null),
+    profileHandleClaimed: claim.claimed,
   });
 }

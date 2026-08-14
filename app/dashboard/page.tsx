@@ -612,6 +612,14 @@ function ProfilePageInner() {
         `Indexing your moments across ${count} collections — this usually takes 30-60 seconds`,
         "info"
       );
+      // The handle is now defaulted from the Dapper username server-side, which
+      // is the moment a collector's public profile starts existing. Announce it
+      // ONLY on the call that created it — `profileHandleClaimed` is false on
+      // every re-resolve, so refreshing a collection doesn't re-announce a
+      // profile the collector has had for weeks.
+      if (data.profileHandleClaimed && typeof data.profileHandle === "string") {
+        pushToast(`Your profile is live at /profile/${data.profileHandle}`, "success");
+      }
       setUsernameInput("");
       // Collapse the add-wallet form — the user has now given us their wallet;
       // leaving the prompt open re-asks for something they just supplied.
