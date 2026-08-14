@@ -8,6 +8,26 @@ FOUND and NOT taken, with the measurement that motivates it.
 
 Read the ledger before acting: some of these may have been picked up.
 
+## ⚠ STATUS UPDATE — most of this was drained the same day
+
+After Trevor said "default the RPC username to the Top Shot username, keep
+going on the rest", the following were SHIPPED (see the ledger for each):
+
+| # | item | outcome |
+|---|---|---|
+| 1 | no public profile / no way to find it | **DONE** — handle defaults from the Dapper username, the 16 existing collectors were backfilled (**4/20 → 20/20**), and `PublicProfileCard` puts the live URL on the dashboard |
+| 3 | no unequip path | **DONE** — `DELETE /api/rewards/equip` + "Equipped · Take off" |
+| 7 | duplicate pin | **DONE** — picker marks already-pinned Moments `PINNED`, dimmed and inert. *(96-cap + no grid preview still open, below)* |
+| 8 | mobile/keyboard reorder | **DONE** — `←`/`→` controls in Edit Layout; math extracted to `lib/trophy/reorder.ts` and gate-measured |
+| 9 | hardcoded Top Shot on the profile | **DONE** — label derived from holdings |
+| 10 | no Cache-Control on OG cards | **DONE for 14 cards**; the 29 insights cards remain (#12) |
+| 11 | catchless OG routes | **DONE** — deal/collection/default |
+| 12 | unbranded OG cards | **DONE for 14**; 29 insights cards remain |
+| 14 | tweet hardcodes one collection | **DONE** — collection-agnostic, names the trophy case |
+| 15 | `twitter.site` casing | **DONE** — unified, test asserts agreement not a literal |
+
+**Still open: 2, 4, 5, 6, 13, 16, and the remainder of 7 and 12.**
+
 ---
 
 ## The measurement that frames all of it

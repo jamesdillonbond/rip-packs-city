@@ -25,6 +25,7 @@ import {
 import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
+import { reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -1532,6 +1533,27 @@ function TrophyCaseSection({
     setUndo(null);
   }, [onReorder, undo, busy]);
 
+  /**
+   * Move a slab one position left/right.
+   *
+   * ⚠ This is not a convenience — it is the ONLY reorder available on a phone
+   * or from a keyboard. `Edit Layout` is `display: none` under 768px, and HTML5
+   * `draggable` does not fire on touch at all, so mobile owners could not
+   * reorder their trophy case by any means; a keyboard user could not either,
+   * on any viewport. Auto-Arrange was the whole story for both.
+   */
+  const moveBy = useCallback(
+    async (id: number, delta: -1 | 1) => {
+      if (!onReorder || busy) return;
+      const next = reorderByDelta(filled.map((s) => s.id), id, delta);
+      if (!next) return;
+      setBusy(true);
+      await onReorder(next);
+      setBusy(false);
+    },
+    [onReorder, filled, busy]
+  );
+
   const handleDrop = useCallback(
     async (targetId: number) => {
       if (!onReorder || dragId === null || dragId === targetId) {
@@ -1539,15 +1561,10 @@ function TrophyCaseSection({
         setOverId(null);
         return;
       }
-      const ids = filled.map((s) => s.id);
-      const from = ids.indexOf(dragId);
-      const to = ids.indexOf(targetId);
+      const next = reorderByTarget(filled.map((s) => s.id), dragId, targetId);
       setDragId(null);
       setOverId(null);
-      if (from < 0 || to < 0 || from === to) return;
-      const next = ids.slice();
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
+      if (!next) return;
       await onReorder(next);
     },
     [onReorder, dragId, filled]
@@ -1582,7 +1599,9 @@ function TrophyCaseSection({
       <style>{`
         @media (max-width: 768px) {
           .rpc-trophy-slab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-          .rpc-trophy-editlayout { display: none !important; }
+          /* Edit Layout stays visible on mobile: it now exposes the
+             move-left/right controls, which are the only reorder a touch
+             device has (HTML5 drag never fires on touch). */
         }
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
@@ -1715,6 +1734,30 @@ function TrophyCaseSection({
                 }}
               >
                 <TrophySlab slab={s} slot={i + 1} mode="owner" />
+                <div style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => moveBy(s.id, -1)}
+                    disabled={busy || i === 0}
+                    aria-label={`Move ${s.player_name ?? "trophy"} left`}
+                    style={{ ...btnBase, padding: "4px 10px", opacity: i === 0 ? 0.35 : 1 }}
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveBy(s.id, 1)}
+                    disabled={busy || i === filled.length - 1}
+                    aria-label={`Move ${s.player_name ?? "trophy"} right`}
+                    style={{
+                      ...btnBase,
+                      padding: "4px 10px",
+                      opacity: i === filled.length - 1 ? 0.35 : 1,
+                    }}
+                  >
+                    →
+                  </button>
+                </div>
               </div>
             );
           }
