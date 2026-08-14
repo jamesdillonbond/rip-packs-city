@@ -74,9 +74,18 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
     .eq("dist_id", distId)
     .limit(1)
   if (collectionSlug) q = q.eq("collection_slug", collectionSlug)
-  const { data, error } = await q.maybeSingle()
-  if (error) return null
-  return (data as PackRow | null) ?? null
+  // ⚠ supabase-js RETURNS a Postgrest error but THROWS on a transport failure
+  // (socket hang-up, DNS, aborted fetch). An uncaught throw escapes GET and 500s
+  // the route, which for an OG card is an EMPTY unfurl — the exact failure the
+  // render sweep exists to catch. This file's own header promises "never 500";
+  // without the catch that held only for the error-return path.
+  try {
+    const { data, error } = await q.maybeSingle()
+    if (error) return null
+    return (data as PackRow | null) ?? null
+  } catch {
+    return null
+  }
 }
 
 async function fetchAllDayCorrectedOg(
@@ -89,13 +98,17 @@ async function fetchAllDayCorrectedOg(
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
   // Lean per-dist view (see migration 20260809170000): same values as
   // v_allday_pack_info without its 1.19M-cost pack_ev_latest join.
-  const { data, error } = await sb
-    .from("v_allday_pack_detail_ev")
-    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
-    .eq("dist_id", distId)
-    .maybeSingle()
-  if (error) return null
-  return data ?? null
+  try {
+    const { data, error } = await sb
+      .from("v_allday_pack_detail_ev")
+      .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
+      .eq("dist_id", distId)
+      .maybeSingle()
+    if (error) return null
+    return data ?? null
+  } catch {
+    return null
+  }
 }
 
 export async function GET(req: NextRequest) {

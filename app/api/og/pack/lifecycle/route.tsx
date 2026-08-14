@@ -80,9 +80,19 @@ async function fetchLifecycle(packNftId: string): Promise<Lifecycle | null> {
   if (!url || !key) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
-  const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
-  if (error || !data || typeof data !== "object") return null
-  return data as Lifecycle
+  // ⚠ The try/catch is load-bearing, not defensive habit. supabase-js RETURNS a
+  // Postgrest error but THROWS on a transport failure (socket hang-up, DNS,
+  // aborted fetch), and an uncaught throw here escapes GET and 500s the route —
+  // which for an OG card means an EMPTY unfurl, the exact failure the render
+  // sweep exists to prevent. This card's own contract is "fall back to a generic
+  // card, never 500"; without this it held only for the error-return path.
+  try {
+    const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
+    if (error || !data || typeof data !== "object") return null
+    return data as Lifecycle
+  } catch {
+    return null
+  }
 }
 
 export async function GET(req: NextRequest) {

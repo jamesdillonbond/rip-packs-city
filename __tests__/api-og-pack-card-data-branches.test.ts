@@ -30,7 +30,7 @@ const capture: { c: OgCapture | null } = { c: null }
 
 type Row = Record<string, unknown> | null
 
-function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; noEnv?: boolean }) {
+function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; noEnv?: boolean; throws?: boolean }) {
   if (opts.noEnv) {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "")
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -43,10 +43,14 @@ function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; noEnv?
       from: (table: string) => {
         const b: Record<string, unknown> = {}
         for (const m of ["select", "eq", "limit"]) b[m] = () => b
-        b.maybeSingle = async () =>
-          table === "v_allday_pack_detail_ev"
+        b.maybeSingle = async () => {
+          // supabase-js RETURNS Postgrest errors but THROWS on a transport
+          // failure; an uncaught throw 500s the card into an empty unfurl.
+          if (opts.throws) throw new Error("socket hang up")
+          return table === "v_allday_pack_detail_ev"
             ? { data: opts.corrected ?? null, error: null }
             : { data: opts.pack ?? null, error: opts.packError ? { message: "timeout" } : null }
+        }
         return b
       },
     }),
@@ -237,6 +241,9 @@ describe("/api/og/pack — the verdict", () => {
     ["a dist with no row", "?distId=9999", { pack: null }],
     ["a failed query", "?distId=9999", { packError: true }],
     ["missing service-role env", "?distId=9999", { noEnv: true, pack: HEALTHY }],
+    // ⚠ A THROWN client, not a returned error. Without a catch in fetchPack this
+    // escapes GET and 500s the route — no PNG at all, which is a blank unfurl.
+    ["a thrown transport failure", "?distId=9999", { throws: true }],
   ])("renders the generic Pack card for %s", async (_l, query, opts) => {
     mockDb(opts as never)
     const text = ogText(await render(query))
