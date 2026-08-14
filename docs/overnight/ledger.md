@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — pinned the shareable profile surfaces against the auth wall
+
+- **Tests only, direct to `main`. No product change.**
+- ⚠ **These four paths exist to be fetched by a CRAWLER WITH NO SESSION**, and if the wall ever swallows one it does **not 404** — `proxy.ts` 302s to `/login`, the crawler follows, and gets an HTML login page **at status 200**. Every naive check ("did it respond? was it non-empty?") passes. That is precisely how `/fonts/*.ttf` was broken for weeks and only surfaced as `Unsupported OpenType signature <!DO` from inside a renderer. Here the symptom would be a collector's shared trophy case unfurling as the sign-in page — silent, and only visible in someone else's timeline.
+- **Pinned:** `/profile/<u>`, `/profile/<u>/trophy-case`, `/api/og/profile/<u>`, `/api/og/trophy-case/<u>` public; `/profile/edit` still gated (the mirror, so the rule cannot be satisfied by opening everything).
+- **Mutation-proven:** excluding the trophy-case subtree from the profile bypass reds. The new surface shipped an hour ago with no such guard, so this closes the gap between "it works today" and "it cannot silently stop working".
+- **Verified:** 142 proxy tests green, primary gate green (91.64/78.92/93.44/93.74), `tsc` clean.
+- **Revert:** `git revert <sha>`.
+
 ### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — the site-wide card had no X byline, so most pages unfurled unattributed
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
