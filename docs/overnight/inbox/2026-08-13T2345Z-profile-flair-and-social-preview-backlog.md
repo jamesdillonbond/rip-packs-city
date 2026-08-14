@@ -30,10 +30,22 @@ going on the rest", the following were SHIPPED (see the ledger for each):
 | 2 | cosmetics on a separate page | **DONE** — `/profile/edit` previews the equipped border/banner and links to Rewards |
 | 4 | `/profile/edit` has no preview | **DONE** — `ProfileHeaderPreview`, live as you type, sharing `lib/cosmetics.ts` with the public page |
 
-**Still open: 5 (cosmetic catalogue is 4 borders + 2 banners, hardcoded — a
-product decision about whether it becomes data-driven before more SKUs are
-added), 6 (slab styles are tier-derived only; a per-slab frame the collector
-picks needs a `slab_style` column), and the grid-preview half of 7.**
+**2026-08-14 — 7 is now fully DONE and 5 is ASSESSED. Only 6 remains.**
+
+| # | item | outcome |
+|---|---|---|
+| 7 (rest) | grid tab pinned with no preview | **DONE** — a tap SELECTS, only the confirm button writes, and the confirm step **names the trophy it will replace**. The pin is an OVERWRITE with no undo, so a mis-tap on a 72px row silently destroyed a chosen Moment behind a "Trophy pinned" toast. `occupantOfSlot` extracted to `lib/trophy/reorder.ts` — resolving the occupant by array INDEX would have named the *wrong* trophy inside a destructive confirmation, which is worse than naming none. |
+| 5 | cosmetic catalogue hardcoded | **ASSESSED — the product decision is NOT taken (still Trevor's), but the latent defect under it is FIXED.** Measuring it first was the point: a cosmetic SKU is a `shop_items` row (a pure DB insert, no deploy) while its appearance ships in the bundle, **nothing joined the two, and both lookups fail soft** — so a SKU inserted ahead of its style was fully redeemable, took the credits, equipped, and rendered as nothing with no error anywhere. `hasCosmeticStyle()` now gates both the Redeem and the Equip button (and fails CLOSED on an unknown slot). Live check: all 6 SKUs have styles today, so it was latent, not live. **This makes going data-driven SAFER either way** — the ordering hazard it would have introduced is now closed. |
+
+**Still open: 6 only** — slab styles are tier-derived (`lib/trophy/slab-style.ts`
+maps everything from `tier`); a per-slab frame the collector picks needs a
+`slab_style` column on `trophy_moments`. That is a schema change plus a design
+decision about what the finishes are, so it wants Trevor rather than a
+self-directed pass.
+
+Noted separately while working #7: `tierAccent` has no case for Pinnacle's
+`STANDARD` tier, so those tiles fall back to grey — consistently, so it is a
+missing design decision rather than a bug.
 
 **One thing FOUND while building #13 and deliberately not taken:** the older
 `/api/og/profile/[username]` card reads `trophy_moments` DIRECTLY, whose rows
