@@ -204,3 +204,39 @@ describe("SupportChat — accessibility", () => {
     expect(container.querySelector('[role="dialog"]')).toBeTruthy()
   })
 })
+
+describe("SupportChat — quick-suggestion pills", () => {
+  // The context route returns a GENERIC list on every open. Assigning it over
+  // the page defaults made the 35-entry PAGE_DEFAULTS map dead code: a user on
+  // /packs never saw "Best value pack right now?" because it was replaced ~200ms
+  // after opening by the same four pills everyone else got.
+  it("keeps the page-specific pills and appends the server's, rather than being overwritten", async () => {
+    const serverPills = ["Report a bug", "Suggest a feature", "Something looks off", "How does X work?"]
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.includes("/api/support-chat/context"))
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            json: () => Promise.resolve({ pageSuggestions: serverPills }),
+          } as unknown as Response)
+        return streamRes("hi")
+      })
+    )
+    const { getByText, queryByText } = render(<SupportChat pageContext="packs (nba-top-shot)" />)
+    fireEvent.click(getByText("💬"))
+
+    // ⚠ Both must hold AT THE SAME TIME. Asserting them in sequence is
+    // vacuous: the page pill is set synchronously on open and the server pill
+    // arrives ~a tick later, so a plain overwrite satisfies two sequential
+    // waitFors — the first before the fetch lands, the second after. Waiting
+    // for the server pill FIRST and then checking the page pill in the same
+    // tick is what makes this catch a regression (mutation-verified).
+    await waitFor(() => expect(getByText("Something looks off")).toBeTruthy())
+    expect(getByText("Best value pack right now?")).toBeTruthy()
+    // No duplicates: "Suggest a feature" is in both lists and must appear once.
+    expect(queryByText("Suggest a feature")).toBeTruthy()
+  })
+})

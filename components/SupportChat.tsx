@@ -278,9 +278,12 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     const defaultSuggestions = PAGE_DEFAULTS[fullKey] || PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
     setQuickSuggestions(defaultSuggestions);
 
+    // The "describe a play" line is deliberate: narrative catalog search is the
+    // newest capability and the least guessable — nobody thinks to ask a
+    // support bot for "the Lillard game winner" unless told they can.
     const instantWelcome = ownerKey
-      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want.\n\nWhat's up?`
-      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more.\n\nWhat can I help with?`;
+      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want. You can describe a moment instead of naming it ("the Lillard game winner") or ask how one has priced over the past year.\n\nWhat's up?`
+      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more. You can describe a moment instead of naming it ("the Lillard game winner") or ask how one has priced over the past year.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
@@ -294,8 +297,21 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
         if (!res.ok) return;
         const ctx = await res.json();
 
+        // ⚠ The server's list is GENERIC ("Report a bug", "Suggest a feature",
+        // …) and it is returned on every open, so assigning it straight over
+        // the page defaults made the 35-entry PAGE_DEFAULTS map dead on every
+        // session: a user on /packs never saw "Best value pack right now?",
+        // they saw the same four pills as everyone else about 200ms after
+        // opening. Page-specific prompts lead — they are what this screen
+        // actually affords — and the server's contribution fills the tail.
         if (ctx.pageSuggestions && ctx.pageSuggestions.length > 0) {
-          setQuickSuggestions(ctx.pageSuggestions);
+          setQuickSuggestions((prev) => {
+            const merged = [...prev];
+            for (const s of ctx.pageSuggestions as string[]) {
+              if (!merged.includes(s)) merged.push(s);
+            }
+            return merged.slice(0, 6);
+          });
         }
 
         // Returning beta tester: rewrite the welcome with a warmer, status-aware message.
