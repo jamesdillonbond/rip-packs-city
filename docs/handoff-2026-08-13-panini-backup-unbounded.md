@@ -1,8 +1,12 @@
 # Panini backup file: unbounded growth + a recovery tool that can no longer read it (2026-08-13)
 
-**Status:** patch ready, verified, NOT pushed — both push routes were independently closed this
-session (see "Why this is a patch" below). Base commit `48369a4`; applies cleanly to a fresh
-clone of `main`.
+**Status: SHIPPED 2026-08-13** — ledger `6edea505`, code `d5815d66`, ledger correction `7278aa43`.
+Scripts on `main` are byte-identical to the delivered patch. 1,210 MiB reclaimed.
+Written from Cowork cloud where both push routes were closed (see "Why this is a patch" below);
+applied and pushed from the desktop. Base commit was `48369a4`.
+
+⚠ **One claim in the original text below was wrong and is corrected in "Outcome" — see item 3.**
+Left in place rather than edited out, because what disproved it is the point.
 
 **Files:** `scripts/ingest-panini-runner.mjs`, `scripts/panini-replay.mjs`. Local-only runner
 scripts on the residential box. No route, no DB, no migration, no cron, no prod state.
@@ -87,10 +91,10 @@ the batches you are trying to recover, reintroducing the same class of silent ga
 - Replay tested end-to-end against a local server: rotated-first ordering (`old-1, old-2, new-1,
   new-2`), blank lines skipped, CRLF handled, plus the 550 MB old-vs-new run above.
 
-## Operator actions (I cannot do either from here)
+## Operator actions (as written — both now COMPLETE)
 
 1. **Apply + push.** `git apply panini-backup-unbounded-2026-08-13.patch`, then commit the ledger
-   entry (below) **before** the code, per the CLAUDE.md ordering rule.
+   entry **before** the code, per the CLAUDE.md ordering rule.
 2. **Reclaim the 1.21 GiB.** Delete or truncate `C:\Users\TDill\rip-packs-city\panini-capture.jsonl`.
    Safe: it is gitignored (`.gitignore:125`, `panini*capture*.jsonl*` — so `git add -A` was never
    at risk), and its contents are already unrecoverable by the tool that consumes them. The
@@ -99,6 +103,38 @@ the batches you are trying to recover, reintroducing the same class of silent ga
 **This does not unblock the Cowork shell.** `panini-capture.jsonl` is on the Windows host disk;
 `/sessions` is the workspace VM's own disk. Freeing `/sessions` is still "delete old Cowork
 sessions in the desktop app" (`docs/handoff-2026-08-09-cowork-shell-recovery.md`, ~6 nights).
+
+---
+
+## Outcome (appended 2026-08-13, post-ship)
+
+**1. The fix validated itself in production before anyone could act on it.** The runner reads
+`scripts/` straight from the working tree, so its next 4-hourly walk picked up the patched code and
+the cap **fired on the real 1.21 GiB file**, rotating it to `.1`. Confirmation on the actual
+artifact, not a fixture. Verified on disk: `panini-capture.jsonl.1` = 0 B (truncated),
+`panini-capture.jsonl` growing normally under the cap.
+
+**2. Verification on the real file beat the fixture.** The handoff's evidence was a 550 MB
+synthetic; the desktop pass ran both paths against the **actual 1.21 GiB** artifact — old path
+throws `ERR_STRING_TOO_LONG`, new path streams **15,279 batches in 3.7 s**, zero parse failures.
+
+**3. ⚠ Operator action 2's stated safety reason above is WRONG, and this ship is what disproved
+it.** "Already unrecoverable by the tool that consumes it" was true only of the *pre-patch* world.
+The moment streaming replay landed — in the same ship — the file became perfectly readable, so the
+justification for deleting it evaporated at the instant the deletion was authorised. **The verdict
+was still right; the reason was not.** The honest reason is **already ingested**, verified by the
+file's 17:23 mtime matching the newest `panini_fmv_snapshots` row exactly.
+
+The general form, which is the reusable part: **when a fix and a destructive cleanup ship together,
+the fix can invalidate the cleanup's safety argument. Re-derive that argument against the
+post-patch world before acting, not the world that motivated it.**
+
+**4. The rotation moved the destructive target mid-plan.** Between measuring 1.21 GiB and acting,
+the cap rotated the blob to `.1` and a fresh live file took the old path — so the approved truncate
+hit the **live** file mid-walk. Nothing lost (the backup is written before the POST, and those
+POSTs were landing: 78 rows in the following 10 minutes), but by luck, not design. **Re-`stat` a
+destructive target after any pause — a live writer can rename it out from under a plan that was
+correct when it was made.**
 
 ## Why this is a patch and not a push
 
