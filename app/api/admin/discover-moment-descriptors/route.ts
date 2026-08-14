@@ -116,6 +116,11 @@ const TOPSHOT_STATS_CANDIDATES = [
   // to settle is whether college is available UPSTREAM as a real field.
   "college", "school", "collegeName", "schoolName", "university",
   "lastAffiliation", "fromSchool", "playerCollege",
+  // ⚠ `draftTeam` was volunteered by Top Shot itself: probing `draftPick`
+  // returned `Did you mean "draftYear" or "draftTeam"?`. GraphQL's suggestion
+  // list is free schema disclosure — always read the error text, not just the
+  // status. Nothing has captured this field yet.
+  "draftTeam",
 ]
 
 const TOPSHOT_PLAY_CANDIDATES = ["description", "headline", "title", "summary", "statsValues"]
@@ -323,15 +328,80 @@ export async function POST(req: NextRequest) {
     query { allEditions(first: 1) { edges { node { play { ${field} } } } } }`
   const adPluck = (f: string) => (d: any) => d?.allEditions?.edges?.[0]?.node?.play?.[f]
 
+  // ⚠ TRANSPORT LADDER. The 2026-08-13 run came back INCONCLUSIVE with
+  // `HTTP 403 <title>block</title>` on the CONTROL fields — the Cloudflare WAF,
+  // not a schema fact, and the probe correctly refused to report anything as
+  // absent. Headers were already identical to production
+  // (`X-Proxy-Secret` + the editions-hydrate User-Agent), so a single endpoint
+  // could not distinguish "this URL is blocked" from "All Day is unreachable".
+  //
+  // This matters beyond the probe: `ALLDAY_RELAY_QUERY` has selected
+  // `play { description }` since 2026-08-11 and All Day still holds ZERO
+  // descriptions, which is exactly what a blocked endpoint looks like. So the
+  // question "which All Day endpoint actually answers?" is the same question as
+  // "why did All Day description capture never land a row?".
+  //
+  // topshot-proxy exposes /allday (public-api) and /allday-consumer (consumer)
+  // precisely because these hostnames are WAF-blocked. Try each, cheapest first,
+  // and report which one answered so the fix is a config change, not a guess.
+  const adEndpoints: Array<{ label: string; url: string | null }> = [
+    { label: "ALLDAY_PROXY_URL (configured)", url: process.env.ALLDAY_PROXY_URL || null },
+    // ⚠ DELIBERATELY NOT PROBING `${TS_PROXY_URL}/allday` or /allday-consumer.
+    // V1 of this route posted All Day to a TS_PROXY_URL subpath and 404'd, and
+    // `api-admin-discover-moment-descriptors.test.ts` carries an explicit
+    // regression guard — "posts All Day to ALLDAY_PROXY_URL, not a TS_PROXY_URL
+    // subpath" — to stop it coming back. Adding those rungs re-derives a
+    // documented dead end AND defeats the guard that records it.
+    //
+    // CLAUDE.md does state that topshot-proxy exposes /allday and
+    // /allday-consumer as the WAF workaround, which is in tension with that
+    // 404. That tension is real and unresolved, but it is an OPERATOR question
+    // (curl the worker route directly and see), not something this probe should
+    // settle by quietly reintroducing the shape a guard forbids.
+    { label: "nflallday.com/consumer/graphql (direct)", url: "https://nflallday.com/consumer/graphql" },
+  ]
+
+  const adTransport: any[] = []
+  let adWorkingUrl: string | null = null
+  let adWorkingLabel: string | null = null
+  for (const ep of adEndpoints) {
+    if (!ep.url) {
+      adTransport.push({ endpoint: ep.label, url: null, status: "skipped", detail: "not configured" })
+      continue
+    }
+    // One CONTROL field is the whole test: it is a field production queries, so
+    // a `yes` proves the transport AND the query shape in one call.
+    const probe = await probeField(ep.url, adQuery, {}, ALLDAY_PLAY_CONTROLS[0], adPluck(ALLDAY_PLAY_CONTROLS[0]), true, "Play")
+    adTransport.push({
+      endpoint: ep.label,
+      url: ep.url,
+      status: probe.status,
+      detail: probe.status === "yes" ? undefined : probe.detail,
+      sample: probe.sample,
+    })
+    if (probe.status === "yes" && !adWorkingUrl) {
+      adWorkingUrl = ep.url
+      adWorkingLabel = ep.label
+    }
+  }
+
+  // Run the real probe against whichever endpoint answered. If none did, fall
+  // back to the configured one so the failure detail is still reported against
+  // the endpoint the app actually uses.
+  const adUrl = adWorkingUrl ?? alldayUrl()
+
   const adControls = await inBatches(ALLDAY_PLAY_CONTROLS, 2, (f) =>
-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
+    probeField(adUrl, adQuery, {}, f, adPluck(f), true, "Play")
   )
   const adProbe = await inBatches(ALLDAY_PLAY_CANDIDATES, 4, (f) =>
-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
+    probeField(adUrl, adQuery, {}, f, adPluck(f), true, "Play")
   )
 
   report.allday = {
     ...summarize(adControls, adProbe),
+    transport_ladder: adTransport,
+    working_endpoint: adWorkingLabel,
+    probed_url_was_working_endpoint: adWorkingUrl !== null,
     control_detail: adControls,
     play_probe: adProbe,
   }
@@ -353,6 +423,21 @@ export async function POST(req: NextRequest) {
           ? (typeof adDesc.sample === "string" && adDesc.sample.trim() ? "exists and populated" : "exists but empty")
           : "absent",
     allday_description_sample: ad.conclusive ? adDesc?.sample ?? null : null,
+    // Surfaced at the top level because it is the single most actionable fact
+    // when the All Day arm is inconclusive: if a DIFFERENT endpoint answered,
+    // the fix is one env-var change, not an investigation.
+    allday_working_endpoint: ad.working_endpoint ?? null,
+    allday_transport_summary: ad.working_endpoint
+      ? `All Day answers on: ${ad.working_endpoint}${ad.probed_url_was_working_endpoint ? "" : " (probe fell back)"}`
+      : "No All Day endpoint answered — see allday.transport_ladder for the per-endpoint failure detail.",
+    // Top Shot college is SETTLED as of the 2026-08-13 run: college / school /
+    // collegeName / schoolName / university / lastAffiliation / fromSchool /
+    // playerCollege ALL returned hard `Cannot query field` on PlayStats with
+    // every control passing. That is a real absence, not a transport artifact.
+    // `birthplace` IS available ("Havre De Grace, MD, USA") and is the nearest
+    // usable identity hook. GraphQL also volunteered `draftTeam` in a "Did you
+    // mean" hint — a field nothing has probed yet.
+    topshot_college: "absent (conclusive 2026-08-13) — use birthplace for an identity hook, or an external player→college mapping",
     next_step:
       "Trust ONLY arms marked conclusive. For each descriptive field found: capture it in the ingest, backfill, measure coverage, add a trigram index, THEN extend rpc_search_catalog's edition arm. Do not add the search predicate before the column is populated and indexed.",
   }
