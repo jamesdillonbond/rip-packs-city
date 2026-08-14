@@ -241,3 +241,45 @@ better description of the current capability than either of my previous two diag
 Each was caught only by going back to the primary source: reading the function, then measuring the fix,
 then testing what a user would really type. A diagnosis that has not been falsified by an attempted fix is
 a hypothesis.
+
+---
+
+## ✅ VALIDATED 2026-08-14 (same session) — prototyped as `rpc_search_catalog_v3`, measured, then dropped
+
+The token-coverage design above is no longer a proposal. It was implemented as a separate function
+(execute REVOKEd, live `rpc_search_catalog` untouched), measured side by side against v1, and dropped.
+
+| query | v1 | v3 |
+|---|---|---|
+| `lillard buzzer` | rank 6 | rank 6 — unchanged |
+| `lillard game-winning` | rank 2 | rank 2 — unchanged |
+| `lillard playoff` | rank 5 | rank 5 — unchanged |
+| `lillard buzzer beater` | **0 rows** | **rank 6** |
+| `damian lillard buzzer beater` | absent | **rank 6** |
+| `lillard game winner` | absent | **rank 20** |
+
+All three failures fixed; all three working cases returned at **identical** ranks.
+
+### The exact change (two halves, both load-bearing)
+
+    -- 1. replace `LIKE ALL (v_pats)` with a per-token count >= v_need
+    v_need := CASE WHEN v_n >= 3 THEN v_n - 1 ELSE v_n END;
+
+    -- 2. add token-coverage to the score so a FULL match still outranks a partial one
+    ... + (tok_hit::numeric / v_n) * 0.60
+
+⚠ The `v_n >= 3` guard is not a detail. A 2-token query must still match BOTH tokens — allowing a miss
+there degrades `lillard buzzer` into every Lillard moment. And without the coverage term, dropping the AND
+buys recall by trading away precision.
+
+⚠ **Testing the four already-working cases is the point, not politeness.** "Just stop ANDing" is a recall
+change that silently reorders everything that works today; the only reason this is shippable is that the
+known-good ranks came back identical. Repeat that check when porting.
+
+### Why it was dropped rather than shipped
+
+v3 implements the **edition arm only** — the player / set / team arms were stripped to prototype quickly.
+Leaving it in the schema would invite someone to swap it in and lose three quarters of search. Port the two
+changes into the real four-arm function instead, and re-run **both** batteries: the six narrative probes
+above AND entity probes (a player / set / team query must still resolve to its entity row). Note
+`rpc_search_catalog` is a concurrent session's function shipped 2026-08-13 — coordinate before editing.

@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-14 · QUEUED (Claude Code, interactive, cont.) — built a THIRD search prototype, and this one worked: token-coverage fixes all 3 narrative failures without moving any of the 3 working ranks. Validated, then dropped.
+
+- **DB: one prototype function created and DROPPED in the same session (`rpc_search_catalog_v3`, execute REVOKEd). No code. Direct to `main` for the docs.** ⚠ **The LIVE `rpc_search_catalog` is byte-unchanged and was never touched** — same discipline as the v2 prototype above: the public header search and the concierge `search_catalog` tool carried zero risk throughout. Verified after the drop: `pg_proc` holds exactly one `rpc_search_catalog%` function.
+- ✅ **The token-coverage design from the previous filing is CONFIRMED, measured side-by-side against v1 on a six-query battery:**
+
+  | query | v1 | v3 |
+  |---|---|---|
+  | `lillard buzzer` | rank 6 | rank 6 — unchanged |
+  | `lillard game-winning` | rank 2 | rank 2 — unchanged |
+  | `lillard playoff` | rank 5 | rank 5 — unchanged |
+  | `lillard buzzer beater` | **0 rows** | **rank 6** |
+  | `damian lillard buzzer beater` | absent | **rank 6** |
+  | `lillard game winner` | absent | **rank 20** |
+
+- **The change is two lines, and both halves are load-bearing.** (1) Replace the `LIKE ALL (v_pats)` AND-over-every-token with a per-token count `>= v_need`, where `v_need := CASE WHEN v_n >= 3 THEN v_n - 1 ELSE v_n END` — a 3+-token query may miss ONE word, a 2-token query must still match both (else `lillard buzzer` degrades into every Lillard moment). (2) Add `(tok_hit / v_n) * 0.60` to the score, so a FULL match still outranks a partial one; without it, dropping the AND buys recall by trading away precision.
+- ⚠ **Testing the four WORKING cases was the point, not politeness.** The obvious fix — just stop ANDing — is a recall change that silently reorders everything already working. The only reason this is shippable is that three known-good ranks came back **identical**, and that is the check to repeat when it is ported.
+- ⚠ **NOT SHIPPED, and the reason is specific: v3 implements the EDITION ARM ONLY.** I stripped the player / set / team arms to prototype fast. Leaving it in the schema would invite exactly the wrong move — someone swapping it in and losing three quarters of search — which is why it was dropped rather than parked (the `shared-deploy-probe` cruft lesson).
+- **To port:** apply the two changes above to the edition arm of the real four-arm `rpc_search_catalog`, then re-run **both** batteries — the six narrative probes here AND the entity probes (a player / set / team query must still resolve to its entity row, not a pile of editions). `rpc_search_catalog` is a concurrent session's function shipped 2026-08-13, so coordinate before editing it.
+- **Revert:** nothing to revert — the prototype is already dropped and the live function is byte-unchanged. `git revert <sha>` for the docs.
 ### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — built the narrative-search fix, MEASURED it, and it changed nothing: the defect is TOKEN HANDLING, not ranking. Both my prior diagnoses were wrong.
 
 - **DB: one prototype function created and DROPPED in the same session. Docs. Direct to `main`.** ⚠ **The LIVE `rpc_search_catalog` was never touched** — the prototype was deliberately a SEPARATE function (`rpc_search_catalog_v2`, execute REVOKEd) so the public header search and the concierge tool carried zero risk while it was measured.
