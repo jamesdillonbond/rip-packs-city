@@ -23,9 +23,16 @@ export async function GET() {
     return res as Response;
   }
 
+  // equipped_border/equipped_banner ride along so /profile/edit can PREVIEW the
+  // profile as it will actually look. They are equipped from /rewards, a
+  // different page, and without them the editor would render a preview missing
+  // the cosmetics the collector spent Status on — a preview that quietly
+  // disagrees with the page is worse than none.
   const { data, error } = await supabase
     .from("profile_bio")
-    .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color")
+    .select(
+      "username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color, equipped_border, equipped_banner"
+    )
     .eq("user_id", user.id)
     .maybeSingle();
 

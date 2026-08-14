@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/lib/teams";
+import ProfileHeaderPreview from "@/components/profile/ProfileHeaderPreview";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -16,6 +17,10 @@ type BioForm = {
   discord: string;
   avatar_url: string;
   accent_color: string;
+  /** Equipped at /rewards, read-only here — the preview needs them to be
+   *  truthful, and a preview that disagrees with the page is worse than none. */
+  equipped_border: string | null;
+  equipped_banner: string | null;
 };
 
 const EMPTY: BioForm = {
@@ -26,6 +31,8 @@ const EMPTY: BioForm = {
   discord: "",
   avatar_url: "",
   accent_color: ACCENT_RED,
+  equipped_border: null,
+  equipped_banner: null,
 };
 
 const USERNAME_RE = /^[a-z0-9_-]{3,32}$/;
@@ -73,6 +80,8 @@ export default function EditProfilePage() {
             discord: bio.discord ?? "",
             avatar_url: bio.avatar_url ?? "",
             accent_color: bio.accent_color ?? ACCENT_RED,
+            equipped_border: bio.equipped_border ?? null,
+            equipped_banner: bio.equipped_banner ?? null,
           });
         }
 
@@ -271,6 +280,31 @@ export default function EditProfilePage() {
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading…</div>
         ) : (
           <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "18px 18px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* ⚠ Every control on this page used to be set BLIND — accent
+                colour through a bare colour input, the avatar as a raw URL,
+                the tagline as a textarea — with nothing showing what any of it
+                would look like. The cosmetics were not even fetched here,
+                because they are equipped from /rewards. */}
+            <ProfileHeaderPreview
+              username={form.username}
+              displayName={form.display_name}
+              tagline={form.tagline}
+              avatarUrl={form.avatar_url}
+              accentColor={form.accent_color}
+              equippedBorder={form.equipped_border}
+              equippedBanner={form.equipped_banner}
+            />
+
+            <div className="hint" style={{ marginTop: -6 }}>
+              Borders and banners are equipped from{" "}
+              <Link href="/rewards" style={{ color: "var(--rpc-text-secondary)" }}>
+                Rewards
+              </Link>
+              {form.equipped_border || form.equipped_banner
+                ? " — they show in the preview above."
+                : " — you have none equipped yet."}
+            </div>
+
             <div className="field">
               <label htmlFor="username">Public username</label>
               <input

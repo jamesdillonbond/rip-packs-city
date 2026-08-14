@@ -1,0 +1,161 @@
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach } from "vitest"
+import { render, cleanup, screen } from "@testing-library/react"
+import ProfileHeaderPreview, {
+  hexToRgba,
+  initialsFor,
+} from "@/components/profile/ProfileHeaderPreview"
+import { BORDER_COSMETICS, BANNER_COSMETICS } from "@/lib/cosmetics"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The /profile/edit live preview.
+//
+// Every personalisation on that page was previously set BLIND: accent colour
+// through a bare `<input type="color">`, the avatar as a raw URL field, the
+// tagline as a textarea — and the equipped border/banner were not even fetched
+// there, because they are equipped from /rewards. The one screen called "edit
+// your profile" could not show you your profile.
+//
+// The assertions that matter are about TRUTHFULNESS, not layout: a preview that
+// disagrees with the public page is worse than no preview, because a collector
+// would trust it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const base = {
+  username: "trevor",
+  displayName: "Trevor",
+  tagline: "",
+  avatarUrl: "",
+  accentColor: "#E03A2F",
+}
+
+afterEach(cleanup)
+
+describe("ProfileHeaderPreview", () => {
+  it("renders the name, tagline and live profile URL", () => {
+    render(<ProfileHeaderPreview {...base} tagline="Blazers Team Captain" />)
+    const el = screen.getByTestId("profile-header-preview")
+    expect(el.textContent).toContain("Trevor")
+    expect(el.textContent).toContain("Blazers Team Captain")
+    expect(el.textContent).toContain("rippackscity.com/profile/trevor")
+  })
+
+  it("prompts for a username when there is none, instead of showing a broken URL", () => {
+    render(<ProfileHeaderPreview {...base} username="" displayName="" />)
+    const el = screen.getByTestId("profile-header-preview")
+    expect(el.textContent).toContain("SET A USERNAME")
+    expect(el.textContent).not.toContain("rippackscity.com/profile/")
+  })
+
+  it("holds the monogram until the avatar URL is plausibly a URL", () => {
+    // Typed a character at a time. Rendering `htt` as an <img> means a broken
+    // image icon on nearly every keystroke.
+    for (const partial of ["", "h", "htt", "https:/", "not-a-url"]) {
+      cleanup()
+      render(<ProfileHeaderPreview {...base} avatarUrl={partial} />)
+      expect(screen.queryByTestId("preview-avatar-image")).toBeNull()
+      expect(screen.getByTestId("preview-avatar-initials")).toBeTruthy()
+    }
+  })
+
+  it("switches to the image once the URL is complete", () => {
+    render(<ProfileHeaderPreview {...base} avatarUrl="https://example.com/a.png" />)
+    expect(screen.getByTestId("preview-avatar-image")).toBeTruthy()
+    expect(screen.queryByTestId("preview-avatar-initials")).toBeNull()
+  })
+
+  it("shows the equipped banner, and nothing when none is equipped", () => {
+    render(<ProfileHeaderPreview {...base} equippedBanner="ripcity" />)
+    expect(screen.getByTestId("preview-banner")).toBeTruthy()
+    cleanup()
+    render(<ProfileHeaderPreview {...base} equippedBanner={null} />)
+    expect(screen.queryByTestId("preview-banner")).toBeNull()
+  })
+
+  it("draws the border ring from the SHARED cosmetics map", () => {
+    // ⚠ The whole point. A preview with its own copy of the style map drifts
+    // the moment a SKU is added and confidently shows a collector something
+    // their visitors do not see.
+    //
+    // Compared in jsdom's own colour space — it normalises `#FF6A2C` to
+    // `rgb(255, 106, 44)`, so asserting the raw hex reds on correct code. The
+    // expected value is still DERIVED from the shared map rather than written
+    // out, so changing the map still moves this assertion.
+    const rgbOf = (hex: string) => {
+      const c = hex.replace("#", "")
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16))
+      return `rgb(${r}, ${g}, ${b})`
+    }
+    render(<ProfileHeaderPreview {...base} equippedBorder="flame" />)
+    const av = screen.getByTestId("preview-avatar-initials")
+    expect(av.style.border).toContain(rgbOf(BORDER_COSMETICS.flame.ring))
+  })
+
+  it("prefers the equipped border over the accent colour for the ring", () => {
+    // The precedence the public page applies (ProfileClient's Avatar). If the
+    // preview showed the accent instead, a collector would tune a colour that
+    // their visitors never see because a cosmetic is overriding it.
+    const rgbOf = (hex: string) => {
+      const c = hex.replace("#", "")
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16))
+      return `rgb(${r}, ${g}, ${b})`
+    }
+    render(<ProfileHeaderPreview {...base} accentColor="#34D399" equippedBorder="ice" />)
+    const av = screen.getByTestId("preview-avatar-initials")
+    expect(av.style.border).toContain(rgbOf(BORDER_COSMETICS.ice.ring))
+    expect(av.style.border).not.toContain(rgbOf("#34D399"))
+  })
+
+  it("renders every catalogued cosmetic without throwing", () => {
+    // Directory-driven over the real maps, so a new SKU is covered on arrival
+    // rather than when someone remembers to add a case.
+    for (const sku of Object.keys(BORDER_COSMETICS)) {
+      cleanup()
+      render(<ProfileHeaderPreview {...base} equippedBorder={sku} />)
+      expect(screen.getByTestId("profile-header-preview")).toBeTruthy()
+    }
+    for (const sku of Object.keys(BANNER_COSMETICS)) {
+      cleanup()
+      render(<ProfileHeaderPreview {...base} equippedBanner={sku} />)
+      expect(screen.getByTestId("preview-banner")).toBeTruthy()
+    }
+  })
+
+  it("ignores an unknown cosmetic value rather than rendering a phantom", () => {
+    render(<ProfileHeaderPreview {...base} equippedBorder="not-a-sku" equippedBanner="nope" />)
+    expect(screen.queryByTestId("preview-banner")).toBeNull()
+    expect(screen.getByTestId("preview-avatar-initials")).toBeTruthy()
+  })
+
+  it("falls back to the username when no display name is set", () => {
+    render(<ProfileHeaderPreview {...base} displayName="" />)
+    expect(screen.getByTestId("profile-header-preview").textContent).toContain("trevor")
+  })
+})
+
+describe("hexToRgba", () => {
+  it("converts a 6-digit hex", () => {
+    expect(hexToRgba("#34D399", 0.4)).toBe("rgba(52,211,153,0.4)")
+    expect(hexToRgba("34D399", 0.15)).toBe("rgba(52,211,153,0.15)")
+  })
+
+  it("falls back to brand red on anything malformed", () => {
+    // `accent_color` is a free-form column and the field is a live text/colour
+    // input, so a half-typed or hand-edited value reaches this every time.
+    for (const bad of ["", "#fff", "#GGGGGG", "nope", "#1234567"]) {
+      expect(hexToRgba(bad, 0.4)).toBe("rgba(224,58,47,0.4)")
+    }
+  })
+})
+
+describe("initialsFor", () => {
+  it("prefers the display name, falls back to the handle", () => {
+    expect(initialsFor("Trevor", "tdb")).toBe("TR")
+    expect(initialsFor("", "tdb")).toBe("TD")
+  })
+
+  it("never renders an empty monogram", () => {
+    expect(initialsFor("", "")).toBe("?")
+    expect(initialsFor("   ", "  ")).toBe("?")
+  })
+})
