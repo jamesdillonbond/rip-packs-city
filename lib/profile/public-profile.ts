@@ -27,6 +27,7 @@
 // trophies / saved_wallets to profile_bio.username directly — that column is a
 // cache, the source of truth is auth.users.id.
 
+import { cache } from "react"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 
 // These mirror the prop types ProfileClient declares (ProfileBio /
@@ -71,7 +72,21 @@ export type PublicProfileResult =
   | { ok: true; data: PublicProfilePayload }
   | { ok: false; status: 400 | 404 | 500; error: string; username?: string }
 
-export async function getPublicProfile(
+/**
+ * Request-scoped memo. `/profile/<username>` now has TWO server callers in the
+ * same render pass — the page shell and the layout's `generateMetadata` — and
+ * without this they would each run the resolve + 3-way fan-out, doubling the
+ * cost of the fix that removed the self-fetch in the first place. React's
+ * `cache()` is per-request, so this dedupes within one render and shares
+ * nothing between users.
+ *
+ * ⚠ It keys on the ARGUMENTS, so both server callers must pass the same
+ * `source`. They both pass "ssr"; a caller that invents its own label silently
+ * misses the memo and pays full price while every test still passes.
+ */
+export const getPublicProfile = cache(getPublicProfileUncached)
+
+async function getPublicProfileUncached(
   rawUsername: string,
   source = "api"
 ): Promise<PublicProfileResult> {

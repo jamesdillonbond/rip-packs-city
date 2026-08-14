@@ -25,8 +25,17 @@ import path from "node:path"
 // file than by trying to prove a negative through a mocked-fetch render.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠ 2026-08-13 — this guard's FILE SET was the hole in it.
+//
+// It enumerated `page.tsx` by hand, so when the same self-fetch survived in the
+// SIBLING `layout.tsx` (which is the CRAWLER path — it builds the unfurl) the
+// guard stayed green for six days while the anti-pattern it exists to forbid
+// was still shipping on every social preview. Running it more often could never
+// have found that; only widening the set could. Both server entry points for
+// this route are now covered, and a third would need adding here too.
 const ROOT = process.cwd()
 const PAGE = path.join(ROOT, "app", "profile", "[username]", "page.tsx")
+const LAYOUT = path.join(ROOT, "app", "profile", "[username]", "layout.tsx")
 const ROUTE = path.join(ROOT, "app", "api", "public", "profile", "[username]", "route.ts")
 const SHARED = path.join(ROOT, "lib", "profile", "public-profile.ts")
 
@@ -79,7 +88,45 @@ describe("/profile/[username] SSR shell", () => {
   })
 })
 
+describe("/profile/[username] metadata shell", () => {
+  // Same treatment as the page: comments stripped, because this file documents
+  // the removed self-fetch and names the very identifiers asserted against.
+  const src = codeOf(LAYOUT)
+
+  it("does not call fetch() at all", () => {
+    expect(/\bfetch\s*\(/.test(src)).toBe(false)
+  })
+
+  it("does not reference its own API path", () => {
+    expect(src).not.toMatch(/\/api\/public\/profile/)
+  })
+
+  it("sources its data from the shared module", () => {
+    expect(src).toMatch(/from\s+["']@\/lib\/profile\/public-profile["']/)
+    expect(src).toMatch(/getPublicProfile\s*\(/)
+  })
+
+  it("passes the same source label as the page, so both share one memoized read", () => {
+    // The memo keys on arguments. A different label here is a silent cache
+    // miss: correct output, double the DB work, every test still green.
+    const pageSrc = codeOf(PAGE)
+    const label = (s: string) => s.match(/getPublicProfile\(\s*[^,]+,\s*["']([^"']+)["']/)?.[1]
+    expect(label(src)).toBeDefined()
+    expect(label(src)).toBe(label(pageSrc))
+  })
+})
+
 describe("shared payload contract — one query, two callers", () => {
+  it("the shared module memoizes per request", () => {
+    // Two server callers now run in the same render pass. Without this the
+    // self-fetch removal is undone in cost terms — the hop is gone but the
+    // query runs twice.
+    const code = codeOf(SHARED)
+    expect(code).toMatch(/cache\s*\(\s*getPublicProfileUncached\s*\)/)
+    expect(code).toMatch(/from\s+["']react["']/)
+  })
+
+
   it("the API route delegates rather than re-querying", () => {
     const src = read(ROUTE)
     expect(src).toMatch(/getPublicProfile\s*\(/)
