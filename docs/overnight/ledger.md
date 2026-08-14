@@ -18,6 +18,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 
 
+
+### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — the two SHARE cards were publishing "$0.00" as a named collector's portfolio during an outage
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Ninth wave; the eight below are the same session.
+- ⚠ **The find, and it is the worst-consequence instance of the class in the session.** `/api/og/share` (a wallet's collection card) and `/api/og/profile/[username]` (a collector's public profile card) both defaulted their totals to **0** on a failed read and rendered **"$0.00 / 0 moments"** and **"PORTFOLIO FMV $0"**. Every other instance this session made a false claim about the market or our index; **these make a false FINANCIAL claim about an identifiable PERSON — on the cards a collector deliberately POSTS**, baked into an edge-cached PNG and distributed on social.
+- ⚠ **The share route's own comment called the zeros "a branded shell".** They are not a shell, they are a **NUMBER**, and a reader has no way to tell one from a real answer. That sentence is why the defect survived review: it describes the fallback as cosmetic when it is substantive.
+- **Fixes.** `og/share` gains `fetched` (set INSIDE the `res.ok` branch) and withholds the figures entirely, rendering "COLLECTION SNAPSHOT / Open the page for this wallet's current value" instead. `og/profile`'s `fetchJson` now returns `{ rows, ok }` so a failed leg is distinguishable, and PORTFOLIO FMV / MOMENTS / TROPHY CASE each fall back to **"—"** — the glyph that file already uses for "no value" — **per leg**, so a failed trophy read cannot blank the portfolio or vice versa.
+- ⚠ **THREE states, not two, and the third is what made this non-trivial.** A profile with no resolvable `user_id` has no wallets to read: that resolves to `ok: true` with no rows — a real answer — NOT a failure. And a wallet that genuinely holds nothing **IS** worth $0 and must still say so. Every failure case in the suite is paired with the empty-but-successful mirror, so "always withhold" cannot pass.
+- **10 tests, both fixes mutation-proven** (flipping `fetched` to true, and dropping the `walletsOk` gate, each reds exactly its cases).
+- ⚠ **A harness artefact worth recording so the next person does not read it as a bug.** The share card's JSX emits the currency symbol and the value as SEPARATE children (`${totalFmv.toLocaleString(...)}` is a literal `"$"` plus an interpolation), so `ogText` — which joins children with a space — yields `"$ 0.00"`. Satori lays the two runs out adjacently, so the render is correct. Normalised inside this suite with a `compact()` helper rather than changing `ogText`, which six other suites already depend on.
+- **Verified:** `tsc` clean; primary suite green at the raised thresholds (91.55 st / 78.91 br / 93.45 fn); brand-token guard clean.
+- **Revert:** `git revert <sha>` — code + tests only, nothing to unwind in the DB.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — the sharpest instance of the class yet: a failed read told a collector they own nothing
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Eighth wave; the seven below are the same session.
