@@ -128,8 +128,14 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
 // ── /api/og/profile/[username] ──────────────────────────────────────────────
 
 /**
- * PostgREST double for the profile card. `fail` names the table whose read
- * should fail, so a single failing leg can be isolated.
+ * PostgREST double for the profile card. `fail` names the read that should
+ * fail, so a single failing leg can be isolated.
+ *
+ * ⚠ The trophy leg is an RPC now, not a table read. It moved on 2026-08-14
+ * because `trophy_moments` holds PIN-TIME snapshots — 8 of 16 rows carried a
+ * NULL tier, so half the tiles on the card drew the default grey instead of
+ * their real tier colour. `get_trophy_slab_data_by_username` returns live
+ * values, and is the same source the profile PAGE and the trophy-case card use.
  */
 function mockPostgrest(opts: { fail?: string; wallets?: unknown[]; trophies?: unknown[] }) {
   globalThis.fetch = vi.fn(async (url: string) => {
@@ -139,7 +145,7 @@ function mockPostgrest(opts: { fail?: string; wallets?: unknown[]; trophies?: un
       ? [{ user_id: "u1", display_name: "Trevor", tagline: "", accent_color: "#E03A2F" }]
       : u.includes("saved_wallets")
         ? (opts.wallets ?? [{ cached_fmv_usd: 5000, cached_moment_count: 30 }])
-        : u.includes("trophy_moments")
+        : u.includes("get_trophy_slab_data_by_username")
           ? (opts.trophies ?? [])
           : []
     return new Response(JSON.stringify(body), {
@@ -191,7 +197,7 @@ describe("/api/og/profile — a failed wallets read must not publish PORTFOLIO F
   it("withholds the trophy count when only the trophy read fails", async () => {
     // Per-leg, not all-or-nothing: a failed trophy read must not blank the
     // portfolio, and vice versa.
-    mockPostgrest({ fail: "trophy_moments" })
+    mockPostgrest({ fail: "get_trophy_slab_data_by_username" })
     const text = await renderProfile()
     expect(text).toContain("$5.0K") // portfolio still shown
     expect(text).not.toContain("0 / 6") // trophy count withheld
@@ -200,5 +206,19 @@ describe("/api/og/profile — a failed wallets read must not publish PORTFOLIO F
   it("renders 0 / 6 for a profile with a genuinely empty trophy case", async () => {
     mockPostgrest({ trophies: [] })
     expect(await renderProfile()).toContain("0 / 6")
+  })
+
+  it("reads trophies from the LIVE rpc, never the pin-time table", async () => {
+    // The stub above would keep passing if the card went back to
+    // `trophy_moments` — it would just read an unstubbed URL and get []. So the
+    // source is asserted directly: half the stored rows carry a NULL tier, and
+    // a card drawing tier colours from those is wrong on every second tile.
+    mockPostgrest({ trophies: [] })
+    await renderProfile()
+    const urls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+      (c) => String(c[0]),
+    )
+    expect(urls.some((u) => u.includes("get_trophy_slab_data_by_username"))).toBe(true)
+    expect(urls.some((u) => u.includes("trophy_moments"))).toBe(false)
   })
 })

@@ -33,6 +33,16 @@
  *     `hiResThumb`, because Top Shot stills are stored at width=180 and were
  *     being upscaled into a 220px slot.
  *
+ * 2026-08-14 — a fourth, found while building the trophy-case card:
+ *
+ * (4) IT READ PIN-TIME TROPHY DATA. The trophies came from `trophy_moments`
+ *     directly, whose rows are snapshots taken at the moment of pinning —
+ *     measured, **8 of 16 carried a NULL tier**, so half the tiles drew the
+ *     default grey rather than their real tier colour, and (3) above made that
+ *     MORE visible by switching to `tierAccent`. Now read through
+ *     `get_trophy_slab_data_by_username`, the same RPC the profile page and the
+ *     trophy-case card use, which resolves live tier and art.
+ *
  * The `ok`-vs-empty discipline below predates this and is load-bearing; see
  * `fetchJson`.
  */
@@ -149,6 +159,33 @@ async function fetchJson<T>(url: string): Promise<{ rows: T[]; ok: boolean }> {
 }
 
 /**
+ * Call a Postgres function through PostgREST, same `{ rows, ok }` contract as
+ * `fetchJson` — a failed read must stay distinguishable from an empty answer.
+ *
+ * A `RETURNS jsonb` function returns the VALUE itself here, not a row set, so
+ * the body is the array rather than something wrapping it.
+ */
+async function fetchRpc<T>(fn: string, body: unknown): Promise<{ rows: T[]; ok: boolean }> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: "Bearer " + SERVICE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!r.ok) return { rows: [], ok: false };
+    const data = await r.json();
+    return { rows: Array.isArray(data) ? (data as T[]) : [], ok: true };
+  } catch {
+    return { rows: [], ok: false };
+  }
+}
+
+/**
  * Trophy-case geometry. A grid, not a fan — the previous layout stacked
  * 220px-wide cards at 36px offsets, so all but the last showed a sliver.
  *
@@ -254,11 +291,15 @@ export async function GET(
             `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_moment_count,cached_badges&limit=25`,
           )
         : Promise.resolve({ rows: [] as WalletRow[], ok: true }),
-      uidEnc
-        ? fetchJson<TrophyRow>(
-            `${SUPABASE_URL}/rest/v1/trophy_moments?user_id=eq.${uidEnc}&select=slot,player_name,thumbnail_url,tier&order=slot.asc&limit=6`,
-          )
-        : Promise.resolve({ rows: [] as TrophyRow[], ok: true }),
+      // ⚠ THE RPC, NOT `trophy_moments`. Those rows are PIN-TIME snapshots:
+      // measured 2026-08-14, **8 of 16** carried a NULL tier, so half the tiles
+      // on the most-shared card in the product drew the default grey instead of
+      // their real tier colour — and today's switch from a 3-case border map to
+      // `tierAccent` made that more visible, not less. The same RPC the profile
+      // PAGE and the trophy-case card already use returns live tier + art.
+      // Keyed on username because that is what the function takes; the wallets
+      // above still key on user_id.
+      fetchRpc<TrophyRow>("get_trophy_slab_data_by_username", { p_username: username }),
       fetchJson<AchievementRow>(
         `${SUPABASE_URL}/rest/v1/profile_achievements?owner_key=eq.${enc}&select=achievement_key,tier&order=unlocked_at.asc`,
       ),
