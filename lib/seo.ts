@@ -46,14 +46,26 @@ export const rootMetadata: Metadata = {
     siteName: 'Rip Packs City',
     title: ROOT_TITLE,
     description: ROOT_DESCRIPTION,
-    images: [{ url: '/api/og/default', width: 1200, height: 630 }],
+    images: [
+      {
+        url: '/api/og/default',
+        width: 1200,
+        height: 630,
+        alt: 'Rip Packs City — Flow collectibles intelligence',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
+    // `site` attributes the CARD to the account; `creator` attributes the
+    // CONTENT. X shows the site handle in the card byline, and it was missing
+    // at the root — so every page that does not define its own twitter block
+    // (the majority) unfurled with no attribution at all.
+    site: '@RipPacksCity',
     creator: '@RipPacksCity',
     title: ROOT_TITLE,
     description: ROOT_DESCRIPTION,
-    images: ['/api/og/default'],
+    images: [{ url: '/api/og/default', alt: 'Rip Packs City — Flow collectibles intelligence' }],
   },
   robots: {
     index: true,
