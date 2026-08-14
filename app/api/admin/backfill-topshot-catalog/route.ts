@@ -27,7 +27,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
-import { normalizePlayDescription } from "@/lib/topshot/play-description";
+import { normalizePlayDescription, isSentinel } from "@/lib/topshot/play-description";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -84,6 +84,9 @@ const SEARCH_EDITIONS_QUERY = `
                     playCategory
                     playType
                     dateOfMoment
+                    birthdate
+                    birthplace
+                    draftYear
                   }
                 }
               }
@@ -130,6 +133,15 @@ interface RawEdition {
       playCategory?: string | null;
       playType?: string | null;
       dateOfMoment?: string | null;
+      /**
+       * Player bio, confirmed live on PlayStats by the descriptor probe
+       * (2026-08-13). ⚠ These arrive as SENTINELS, not nulls, when unknown —
+       * draftYear 0, birthplace "N/A"/"" — so every one must go through
+       * isSentinel() before storage.
+       */
+      birthdate?: string | null;
+      birthplace?: string | null;
+      draftYear?: number | null;
     } | null;
   } | null;
 }
@@ -304,6 +316,9 @@ interface EditionUpsertRow {
   play_category: string | null;
   game_date: string | null;
   description: string | null;
+  player_birthdate: string | null;
+  player_birthplace: string | null;
+  player_draft_year: number | null;
   updated_at: string;
 }
 
@@ -358,6 +373,13 @@ function buildEditionRow(
     video_url: videoUrl,
     play_type: e.play?.stats?.playType ?? null,
     play_category: e.play?.stats?.playCategory ?? null,
+    // ⚠ Sentinel-normalized. Top Shot answers with 0 / "N/A" / "" rather than
+    // null for unknown bio, so a raw `?? null` would store draft_year 0 for
+    // every undrafted player and make "serial matches draft year" fire on
+    // garbage. isSentinel() is the same guard the description path uses.
+    player_birthdate: isSentinel(e.play?.stats?.birthdate) ? null : (e.play?.stats?.birthdate ?? null),
+    player_birthplace: isSentinel(e.play?.stats?.birthplace) ? null : (e.play?.stats?.birthplace ?? null),
+    player_draft_year: isSentinel(e.play?.stats?.draftYear) ? null : (e.play?.stats?.draftYear ?? null),
     game_date: gameDate,
     // Set unconditionally (null when absent), matching how every other field
     // in this row is treated: this route is the AUTHORITATIVE Top Shot catalog
