@@ -190,6 +190,25 @@ function isTransient(err: PostgrestError | null | undefined): boolean {
   // NEXTJS-20 (player), ~97 events in 7 days. All three already ran through
   // rpcWithRetry; none of the heuristics above matched the message, so a
   // self-declared-retryable failure was never retried once.
+  //
+  // ⚠ MEASURED AFTER THE FACT, AND IT LIMITS WHAT THIS CLAUSE BUYS. The cause
+  // is not random saturation: it is SELF-INFLICTED by our own migrations. Every
+  // schema-cache event in the trailing 24 h fell in ONE 11-second window —
+  // 17:20:15 / :21 / :23 / :26 Z across the pack, edition and player pages —
+  // and `audit_20260813_pack_rips_collection_block_height_index` was applied at
+  // **17:20:05 Z**. Applying a migration invalidates PostgREST's schema cache,
+  // and every request during the reload gets a user-facing 500.
+  //
+  // The reload window is therefore ~10-20 SECONDS, while this function's retry
+  // schedule is 3 attempts at 50 ms + 200 ms — about **250 ms of retrying**. So
+  // classifying it transient is correct in KIND but does NOT, on its own, absorb
+  // the dominant cause; all three attempts land inside the first quarter-second
+  // of a twenty-second outage. Do not read this clause as "NEXTJS-1Z is solved".
+  //
+  // Lengthening the backoff for THIS class specifically would cover it, and the
+  // 45 s budget has room — but it trades a 500 for a ~20 s page render that
+  // holds a lambda, so it is a product call rather than an obvious win, and it
+  // is filed rather than taken. See docs/overnight/inbox/2026-08-13T2320Z-*.
   if (msg.includes("in the schema cache")) return false
   if (msg.includes("could not query the database for the schema cache")) return true
   if (
