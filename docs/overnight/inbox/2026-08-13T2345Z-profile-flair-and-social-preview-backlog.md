@@ -17,16 +17,33 @@ going on the rest", the following were SHIPPED (see the ledger for each):
 |---|---|---|
 | 1 | no public profile / no way to find it | **DONE** — handle defaults from the Dapper username, the 16 existing collectors were backfilled (**4/20 → 20/20**), and `PublicProfileCard` puts the live URL on the dashboard |
 | 3 | no unequip path | **DONE** — `DELETE /api/rewards/equip` + "Equipped · Take off" |
-| 7 | duplicate pin | **DONE** — picker marks already-pinned Moments `PINNED`, dimmed and inert. *(96-cap + no grid preview still open, below)* |
+| 7 | duplicate pin + 96-cap | **DONE** — already-pinned Moments marked `PINNED`, dimmed and inert; the page cap is now disclosed instead of the search blaming the collection. *(no grid preview step still open)* |
 | 8 | mobile/keyboard reorder | **DONE** — `←`/`→` controls in Edit Layout; math extracted to `lib/trophy/reorder.ts` and gate-measured |
 | 9 | hardcoded Top Shot on the profile | **DONE** — label derived from holdings |
-| 10 | no Cache-Control on OG cards | **DONE for 14 cards**; the 29 insights cards remain (#12) |
+| 10 | no Cache-Control on OG cards | **DONE — all 43** |
 | 11 | catchless OG routes | **DONE** — deal/collection/default |
-| 12 | unbranded OG cards | **DONE for 14**; 29 insights cards remain |
+| 12 | unbranded OG cards | **DONE — all 43**, behind one shared loader, with a completeness guard (not a floor) |
+| 13 | no trophy-case share surface | **DONE** — `/profile/<u>/trophy-case` + `/api/og/trophy-case/<u>`, linked from the profile |
 | 14 | tweet hardcodes one collection | **DONE** — collection-agnostic, names the trophy case |
 | 15 | `twitter.site` casing | **DONE** — unified, test asserts agreement not a literal |
+| 16 | no metadata tests for /share and /moment | **DONE** — both now have contract tests; `/moment` also gained image dimensions + alt, `/share` a `twitter.description` |
+| 2 | cosmetics on a separate page | **DONE** — `/profile/edit` previews the equipped border/banner and links to Rewards |
+| 4 | `/profile/edit` has no preview | **DONE** — `ProfileHeaderPreview`, live as you type, sharing `lib/cosmetics.ts` with the public page |
 
-**Still open: 2, 4, 5, 6, 13, 16, and the remainder of 7 and 12.**
+**Still open: 5 (cosmetic catalogue is 4 borders + 2 banners, hardcoded — a
+product decision about whether it becomes data-driven before more SKUs are
+added), 6 (slab styles are tier-derived only; a per-slab frame the collector
+picks needs a `slab_style` column), and the grid-preview half of 7.**
+
+**One thing FOUND while building #13 and deliberately not taken:** the older
+`/api/og/profile/[username]` card reads `trophy_moments` DIRECTLY, whose rows
+are pin-time snapshots carrying null tiers and stale prices. The new
+trophy-case card reads through `getPublicProfile`, which resolves via
+`get_trophy_slab_data_by_username` for live values. So the profile card's tier
+borders are drawn from nulls more often than they should be — a small, real
+data-quality gap with an obvious fix (point it at the same module), left alone
+because it changes the runtime of a card that was already rewritten twice
+today.
 
 ---
 
