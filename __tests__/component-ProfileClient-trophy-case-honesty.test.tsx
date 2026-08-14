@@ -41,8 +41,15 @@ const SLAB = {
   note: null,
 }
 
+// Real collection UUIDs, so the registry lookup the label depends on resolves.
+const TOPSHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+
 /** Routes every profile fetch; only the trophy-slabs leg varies per case. */
-function installFetch(slabs: { status: number; body?: unknown } | "throw") {
+function installFetch(
+  slabs: { status: number; body?: unknown } | "throw",
+  wallets?: unknown[],
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: unknown) => {
@@ -53,6 +60,13 @@ function installFetch(slabs: { status: number; body?: unknown } | "throw") {
           ok: slabs.status < 400,
           status: slabs.status,
           json: async () => slabs.body ?? {},
+        } as never
+      }
+      if (url.includes("/api/public/profile/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ bio: null, wallets: wallets ?? [] }),
         } as never
       }
       return { ok: true, status: 200, json: async () => ({}) } as never
@@ -109,5 +123,49 @@ describe("public profile — trophy case", () => {
     installFetch({ status: 200, body: { slabs: [] } })
     const { container } = render(<ProfileClient />)
     await waitFor(() => expect(container.textContent).toMatch(/0 \/ 6 TROPHY MOMENTS/i))
+  })
+})
+
+describe("public profile — what kind of collector this is", () => {
+  const slabsOk = { status: 200, body: { slabs: [] } } as const
+
+  it("names the collection when they hold exactly one", async () => {
+    // It said "NBA TOP SHOT COLLECTOR" for everyone on a five-collection
+    // platform, so an All Day collector's own page misdescribed them.
+    installFetch(slabsOk, [{ collection_id: ALLDAY, cached_moment_count: 40, cached_fmv: 10 }])
+    const { container } = render(<ProfileClient />)
+    await waitFor(() => expect(container.textContent).toMatch(/COLLECTOR/i))
+    expect(container.textContent).toMatch(/ALL DAY COLLECTOR/i)
+    expect(container.textContent).not.toMatch(/NBA TOP SHOT COLLECTOR/i)
+  })
+
+  it("says MULTI-COLLECTION when they hold several", async () => {
+    installFetch(slabsOk, [
+      { collection_id: TOPSHOT, cached_moment_count: 10, cached_fmv: 5 },
+      { collection_id: ALLDAY, cached_moment_count: 40, cached_fmv: 10 },
+    ])
+    const { container } = render(<ProfileClient />)
+    await waitFor(() => expect(container.textContent).toMatch(/MULTI-COLLECTION COLLECTOR/i))
+  })
+
+  it("ignores wallet rows with no moments in them", async () => {
+    // ⚠ A single association writes a saved_wallets row for ALL FIVE published
+    // collections, so counting ROWS rather than HOLDINGS would label every
+    // collector on the platform "MULTI-COLLECTION" regardless of what they own.
+    installFetch(slabsOk, [
+      { collection_id: TOPSHOT, cached_moment_count: 12, cached_fmv: 5 },
+      { collection_id: ALLDAY, cached_moment_count: 0, cached_fmv: 0 },
+    ])
+    const { container } = render(<ProfileClient />)
+    await waitFor(() => expect(container.textContent).toMatch(/COLLECTOR/i))
+    expect(container.textContent).toMatch(/NBA TOP SHOT COLLECTOR/i)
+    expect(container.textContent).not.toMatch(/MULTI-COLLECTION/i)
+  })
+
+  it("claims nothing when no holdings are visible", async () => {
+    installFetch(slabsOk, [])
+    const { container } = render(<ProfileClient />)
+    await waitFor(() => expect(container.textContent).toMatch(/COLLECTOR/i))
+    expect(container.textContent).not.toMatch(/NBA TOP SHOT|MULTI-COLLECTION/i)
   })
 })

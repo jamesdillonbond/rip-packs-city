@@ -1,11 +1,22 @@
 // app/api/rewards/equip/route.ts
 //
-// POST { sku } — equip a cosmetic the user already OWNS into its slot.
+// POST   { sku }  — equip a cosmetic the user already OWNS into its slot.
+// DELETE { slot } — take it off again.
 //
 // SECURITY: the user id is session-resolved (requireUser → auth.uid()), never
 // from the body. The client names a sku, but ownership is re-verified against
 // user_cosmetics server-side, and the slot/value applied come from the OWNED
 // row — never from the client. A user can only equip what they've redeemed.
+//
+// ⚠ UNTIL 2026-08-13 EQUIPPING WAS ONE-WAY. This route only ever WROTE a value,
+// and no UI cleared one, so a collector who tried a border on could never take
+// it off — the single most basic expectation of a cosmetic, and the reason
+// trying one carried more risk than it should. DELETE closes it.
+//
+// The unequip path deliberately does NOT check ownership: it nulls a slot, and
+// requiring someone to still own a cosmetic in order to REMOVE it would trap a
+// collector whose entitlement was revoked wearing it forever. Equipping is the
+// privileged direction; taking something off is not.
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
@@ -70,4 +81,54 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, slot, value });
+}
+
+/** Slot name -> the profile_bio column it equips into. */
+const SLOT_COLUMN: Record<string, "equipped_border" | "equipped_banner"> = {
+  border: "equipped_border",
+  banner: "equipped_banner",
+};
+
+export async function DELETE(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
+  let body: { slot?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Own-property lookup: `slot` is client-supplied, and a bare `MAP[slot]` read
+  // matches inherited Object.prototype members, so "constructor" would resolve
+  // to a truthy function and be spliced into the update as a column name.
+  const slot = String(body?.slot ?? "");
+  const col = Object.prototype.hasOwnProperty.call(SLOT_COLUMN, slot)
+    ? SLOT_COLUMN[slot]
+    : null;
+  if (!col) {
+    return NextResponse.json({ error: "unequippable_slot" }, { status: 400 });
+  }
+
+  // UPDATE, not upsert. Unequipping is meaningful only for a collector who
+  // already has a profile_bio row; creating one to record the absence of a
+  // cosmetic writes a row to say nothing.
+  const { error } = await (supabase as any)
+    .from("profile_bio")
+    .update({ [col]: null, updated_at: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  if (error) {
+    return apiErrorResponse(error, "api/rewards/equip");
+  }
+
+  // Deliberately idempotent: taking off something you are not wearing is not an
+  // error, and a 404 here would make the button fail for the collector who
+  // double-clicked it.
+  return NextResponse.json({ ok: true, slot, value: null });
 }

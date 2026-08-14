@@ -298,6 +298,36 @@ export default function RewardsPage() {
     [load]
   );
 
+  // Take a cosmetic off. Until 2026-08-13 there was no way to: the route only
+  // ever wrote a value, so trying a border on was a one-way door. Keyed on the
+  // SKU for the busy state (matching equip) but sends the SLOT, because that is
+  // what the server nulls.
+  const unequip = useCallback(
+    async (sku: string, slot: string) => {
+      setEquipping(sku);
+      setFlash(null);
+      try {
+        const res = await fetch("/api/rewards/equip", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slot }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.ok) {
+          setFlash({ kind: "ok", msg: "Taken off. Your profile is back to default." });
+          await load();
+        } else {
+          setFlash({ kind: "err", msg: "Couldn't take that off. Try again." });
+        }
+      } catch {
+        setFlash({ kind: "err", msg: "Couldn't take that off. Try again." });
+      } finally {
+        setEquipping(null);
+      }
+    },
+    [load]
+  );
+
   const status = summary?.status ?? 0;
   const spendable = summary?.spendable ?? 0;
   const prog = useMemo(() => tierProgress(status), [status]);
@@ -565,15 +595,26 @@ export default function RewardsPage() {
                             </div>
                           </div>
                         </div>
+                        {/* An equipped cosmetic shows TAKE OFF rather than an
+                            inert "Equipped" chip. The old disabled chip was the
+                            whole dead end: it confirmed the state and offered no
+                            way out of it. */}
                         <button
                           type="button"
-                          disabled={equippedNow || equipping === c.sku}
-                          onClick={() => equip(c.sku)}
+                          disabled={equipping === c.sku}
+                          onClick={() =>
+                            equippedNow ? unequip(c.sku, c.slot) : equip(c.sku)
+                          }
+                          title={
+                            equippedNow
+                              ? "Remove this from your public profile"
+                              : "Show this on your public profile"
+                          }
                           style={{
                             padding: "7px 12px",
                             borderRadius: 8,
                             border: equippedNow ? "1px solid #2e7d32" : "none",
-                            cursor: equippedNow ? "default" : "pointer",
+                            cursor: "pointer",
                             background: equippedNow ? "transparent" : RED,
                             color: equippedNow ? "#5cc46a" : "#fff",
                             fontFamily: DISPLAY,
@@ -583,7 +624,11 @@ export default function RewardsPage() {
                             opacity: equipping === c.sku ? 0.6 : 1,
                           }}
                         >
-                          {equippedNow ? "Equipped" : equipping === c.sku ? "…" : "Equip"}
+                          {equipping === c.sku
+                            ? "…"
+                            : equippedNow
+                              ? "Equipped · Take off"
+                              : "Equip"}
                         </button>
                       </div>
                     );

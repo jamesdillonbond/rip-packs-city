@@ -49,12 +49,15 @@ export default function ShareProfileButtons({
   username,
   fmv,
   moments,
+  trophyCount,
   compact,
   referrerId,
 }: {
   username: string;
   fmv?: number | null;
   moments?: number | null;
+  /** Pinned trophies, so the tweet can name what the card leads with. */
+  trophyCount?: number | null;
   compact?: boolean;
   /** Sharer's auth user id — when set, the shared link carries &ref= so a
    *  verified-wallet signup credits the sharer. */
@@ -75,9 +78,18 @@ export default function ShareProfileButtons({
           : "";
       stat = ` — ${f}${m}`;
     }
+    // ⚠ Deliberately NOT "My NBA Top Shot collection". RPC covers five Flow
+    // collections, and a collector whose portfolio is All Day or Pinnacle was
+    // being handed a tweet that misdescribed their own holdings. "collection"
+    // is true for all of them, and naming the trophy case points at what the
+    // card actually leads with — the six Moments they chose to show off.
+    const trophies =
+      trophyCount && trophyCount > 0
+        ? ` My trophy case${trophyCount < 6 ? "" : " (all 6 slots)"} is up:`
+        : "";
     const cta = referrerId ? " See how yours stacks up 👇" : "";
-    return `My NBA Top Shot collection on @RipPacksCity${stat}.${cta}`;
-  }, [fmv, moments, referrerId]);
+    return `My collection on @RipPacksCity${stat}.${trophies}${cta}`;
+  }, [fmv, moments, referrerId, trophyCount]);
 
   // Fire-and-forget reward. The endpoint is session-resolved + DB-capped, so a
   // repeat same-day click is a harmless no-op ({ awarded:false }). 401 (anon)

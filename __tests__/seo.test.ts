@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  rootMetadata,
   entityUrl,
   collectionDisplayName,
   pageMetadata,
@@ -131,7 +132,14 @@ describe("collectionLayoutMetadata", () => {
       "https://www.rippackscity.com/api/og/collection?id=nba-top-shot"
     )
     expect(og.alt).toBe("NBA Top Shot")
-    expect((m.twitter as any).site).toBe("@rippackscity")
+    // ⚠ Asserted against the ROOT metadata's own handle rather than a literal.
+    // This case previously pinned `@rippackscity` while rootMetadata used
+    // `@RipPacksCity` — the only two places the handle appears, spelled
+    // differently, with a test holding the inconsistency in place. X resolves
+    // handles case-insensitively so neither was broken, which is exactly why it
+    // survived. Comparing the two makes the property "they agree", so the next
+    // divergence reds regardless of which spelling wins.
+    expect((m.twitter as any).site).toBe((rootMetadata.twitter as any).creator)
   })
 
   it("falls back to the generic title + 'Flow' keyword for unknown collections", () => {

@@ -288,6 +288,25 @@ export default function ProfileClient(props: {
     if (!w.collection_id) return "Multi";
     return getCollectionByUuid(w.collection_id)?.label ?? "Multi";
   }
+  // What kind of collector this actually is, from the collections they hold
+  // moments in. Wallets with a zero/absent moment count are excluded — a
+  // saved_wallets row exists for all five published collections after a single
+  // association, so counting rows rather than HOLDINGS would label every
+  // collector "MULTI-COLLECTION" regardless of what they own.
+  const collectorLabel = (function() {
+    const held = new Set<string>();
+    for (const w of wallets) {
+      if ((w.cached_moment_count ?? 0) <= 0) continue;
+      const label = w.collection_id ? getCollectionByUuid(w.collection_id)?.label : null;
+      if (label) held.add(label);
+    }
+    if (held.size === 1) return Array.from(held)[0].toUpperCase() + " COLLECTOR";
+    if (held.size > 1) return "MULTI-COLLECTION COLLECTOR";
+    // No holdings we can see — either the wallet list hasn't loaded or nothing
+    // is indexed yet. "COLLECTOR" claims nothing either way.
+    return "COLLECTOR";
+  })();
+
   const sortedWallets = wallets.slice().sort(function(a, b) {
     const la = walletCollectionLabel(a);
     const lb = walletCollectionLabel(b);
@@ -407,10 +426,16 @@ export default function ProfileClient(props: {
             </div>
           ) : null}
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
-            {/* The count is withheld while the case is loading or unreadable —
+            {/* ⚠ This said "NBA TOP SHOT COLLECTOR" for everyone, on a
+                five-collection platform — so an All Day or Pinnacle collector's
+                own public page misdescribed them. The label is now derived from
+                what they actually hold: one collection names it, several say
+                "MULTI-COLLECTION", and an unread wallet list says neither.
+
+                The count is withheld while the case is loading or unreadable —
                 "0 / 6 TROPHY MOMENTS" is a measurement, and printing it from a
                 read we never completed states something we do not know. */}
-            {"NBA TOP SHOT COLLECTOR" +
+            {collectorLabel +
               (slabsLoading || slabsError
                 ? ""
                 : " · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS")}
@@ -461,7 +486,7 @@ export default function ProfileClient(props: {
               Post your trophy case on X or Discord. Earn <strong style={{ color: accentColor }}>+50 Status</strong> once a day for sharing — and{" "}
               <strong style={{ color: accentColor }}>more Status</strong> when a friend joins through your link.
             </div>
-            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} referrerId={myUserId} />
+            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} />
           </section>
         )}
 
