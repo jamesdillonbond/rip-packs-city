@@ -15,6 +15,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 
 
+
+### 2026-08-13 · SHIPPED (Claude Code, docs) — CLAUDE.md's session entry extended from 3 waves to 6, because the two biggest lessons landed in waves 4–6
+
+- **Docs-only, direct to `main`. No code, no DB, no prod-state change.** Companion to the six shipping entries below.
+- **Why an EDIT rather than a second entry:** same session, same PT day. Splitting it would put the `/moment/[id]` 404 finding and the two-`ok` lesson in a different entry from the coverage program that found them, and dated entries roll off to `docs/sessions/` within ~3 days — so a reader would meet the conclusion without the method.
+- **Added the three things a future session cannot re-derive from the code alone:** the SECOND blind spot (33 ungated `"use client"` pages, 27,016 LOC) and **how it was found — by asking what a PASSING guard could not see**, which is now the third instance of that lesson in one session; the `/moment/[id]` two-`ok` rule with **both merge directions being defects**; and the supabase-js **returns-vs-throws** distinction that let two OG cards 500 into a blank unfurl.
+- **Also recorded the two "did not do"s that look like gaps in the numbers:** `pinnacle-listings-reconcile`'s 28.6% is unreachable rollback code behind `ASK_UNIFY_RETIRED`, and the `og/{set,team,series}` closed-market question is a product decision (their own pages don't suppress either). Without these the next reader re-derives both.
+- **Also recorded my own repeat error:** inferring `fmtUsd`'s threshold and the stat labels from the SIBLING OG card rather than reading the file — same class as the `ufc-strike` slug earlier the same day. **Reading the sibling is not reading the file.**
+- **Revert:** `git revert <sha>` — docs-only, nothing to unwind.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — two OG cards could 500 into a blank unfurl, and the test that found it was the one I wrote wrong twice first
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Sixth wave; the five below are the same session.
