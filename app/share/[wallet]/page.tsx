@@ -132,12 +132,20 @@ export async function generateMetadata(
       title: `Collection Card — ${params.wallet}`,
       description: `NBA Top Shot collection snapshot for ${params.wallet}`,
       type: "website",
+      url: `${siteUrl()}/share/${encodeURIComponent(params.wallet)}`,
+      siteName: "Rip Packs City",
       images: [{ url: ogImage, width: 1200, height: 630, alt: "Collection Card — Rip Packs City" }],
     },
     twitter: {
       card: "summary_large_image",
+      // Restated because Next REPLACES `twitter` wholesale when a route
+      // redefines it. `description` was simply absent here, so the X card had a
+      // title and a picture and no line of copy under it.
+      site: "@RipPacksCity",
+      creator: "@RipPacksCity",
       title: `Collection Card — ${params.wallet}`,
-      images: [ogImage],
+      description: `NBA Top Shot collection snapshot for ${params.wallet}`,
+      images: [{ url: ogImage, alt: "Collection Card — Rip Packs City" }],
     },
   }
 }

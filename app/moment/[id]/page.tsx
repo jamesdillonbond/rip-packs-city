@@ -361,6 +361,12 @@ export async function generateMetadata(
     externalId: e.external_id,
     momentUrlId: id,
   })
+  // Describes what is IN the card, for screen readers and the platforms that
+  // surface alt text. Deliberately free of prices: the card withholds figures
+  // on a failed read, and this string is built before we know whether the
+  // card's own reads succeeded.
+  const imageAlt = `${subject}${serialSuffix} on Rip Packs City`
+
   return {
     // `absolute` skips the site-wide "%s | Rip Packs City" title.template so the
     // document <title> isn't double-suffixed (the title string already carries
@@ -371,14 +377,27 @@ export async function generateMetadata(
     openGraph: {
       title,
       description,
-      images: [ogImage],
+      // ⚠ WIDTH/HEIGHT/ALT ARE NOT DECORATION ON THIS PAGE. /moment/<id> is the
+      // most-shared URL RPC has — it is where every link posted into a Discord
+      // or a DM lands — and the image was a bare relative string. Without
+      // explicit dimensions a crawler must fetch and measure the PNG before it
+      // will commit to a large card, and several will fall back to a small
+      // thumbnail rather than wait. Stated here, they are free.
+      images: [{ url: ogImage, width: 1200, height: 630, alt: imageAlt }],
+      url: canonicalPath,
+      siteName: "Rip Packs City",
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
+      // Restated because Next REPLACES `twitter` wholesale when a route
+      // redefines it rather than merging — the root's creator handle from
+      // lib/seo.ts does not survive otherwise.
+      site: "@RipPacksCity",
+      creator: "@RipPacksCity",
       title,
       description,
-      images: [ogImage],
+      images: [{ url: ogImage, alt: imageAlt }],
     },
   }
 }
