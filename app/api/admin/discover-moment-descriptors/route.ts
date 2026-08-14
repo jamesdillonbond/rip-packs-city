@@ -107,6 +107,15 @@ const TOPSHOT_STATS_CANDIDATES = [
   "nbaSeason", "quarter", "gameId", "gameDate",
   "height", "weight", "birthdate", "birthplace",
   "draftYear", "draftRound", "draftPick", "position", "jerseyNumber",
+  // College / school. Requested 2026-08-13: "show me players from my school" is
+  // a real collector hook (Trevor: Central Michigan), and RPC cannot answer it
+  // today — there is NO college column anywhere in the schema, and the only
+  // college text we hold is incidental prose in a handful of Top Shot bios
+  // ("Weber State" in a Lillard description). "Central Michigan" appears ZERO
+  // times in any description in any collection. So the question this probe has
+  // to settle is whether college is available UPSTREAM as a real field.
+  "college", "school", "collegeName", "schoolName", "university",
+  "lastAffiliation", "fromSchool", "playerCollege",
 ]
 
 const TOPSHOT_PLAY_CANDIDATES = ["description", "headline", "title", "summary", "statsValues"]
@@ -115,6 +124,15 @@ const ALLDAY_PLAY_CANDIDATES = [
   "description", "headline", "title", "playType", "gameDate",
   "homeTeamName", "awayTeamName", "homeTeamScore", "awayTeamScore",
   "week", "season", "quarter", "yards", "playerPosition", "stats",
+  // ⚠ The All Day arm probed NO player bio at all, which made it structurally
+  // unable to answer the college question — and All Day is where it matters
+  // most: 6,190 editions / 1,520 distinct players and ZERO description prose
+  // (the ingest is WAF-blocked), so there is no text to mine and a real field
+  // is the ONLY route. NFL player metadata commonly carries college, so this
+  // arm is the higher-value half of the probe.
+  "college", "school", "collegeName", "schoolName", "university",
+  "playerCollege", "height", "weight", "birthplace",
+  "draftYear", "draftRound", "draftPick", "jerseyNumber",
 ]
 
 /** Top Shot: the worker root IS the Top Shot endpoint (see editions-hydrate). */
