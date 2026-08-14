@@ -241,34 +241,32 @@ describe("SupportChat — quick-suggestion pills", () => {
   })
 })
 
-describe("SupportChat — narrative-search discovery pill", () => {
-  // Narrative search is the least guessable capability the concierge has, so it
-  // gets a pill rather than a line of welcome copy: no reading cost, one tap,
-  // and it demonstrates the feature by running it.
-  it("offers the game-winner pill on a Top Shot page", async () => {
-    vi.stubGlobal("fetch", routeFetch(() => streamRes("ok")))
-    const { getByText } = render(<SupportChat pageContext="market (nba-top-shot)" />)
-    fireEvent.click(getByText("💬"))
-    await waitFor(() => expect(getByText("Find a game winner")).toBeTruthy())
-  })
-
-  // ⚠ The scoping rule, and the reason this test exists. Descriptive prose
-  // covers part of Top Shot and 0% of every other collection, and the tool
-  // scopes to the active collection — so this pill on an All Day page would
-  // demonstrate a coverage gap rather than the feature. Copying it to the other
-  // collections is only safe once their prose coverage is non-zero.
+describe("SupportChat — no narrative-search discovery pill", () => {
+  // A "Find a game winner" pill shipped and was pulled the same night. Measured
+  // against production it returned a roster of the "For The Win" SET (Blocks
+  // included) and returned NEITHER of the two most famous Blazers game winners
+  // — Lillard's 2014 series winner (Archive, 48:1652) nor the 2019 37-footer
+  // (Run It Back: Legacies, 121:4255) — though both carry descriptions and one
+  // contains "game-winning" verbatim.
+  //
+  // The cause is in rpc_search_catalog's ranking (trigram similarity() is
+  // length-normalized, so short set names beat long paragraphs), not here. This
+  // test keeps the pill from being reinstated before that is fixed: a pill that
+  // demonstrates set-name matching while claiming to demonstrate narrative
+  // search teaches the user something false.
   it.each([
-    ["market (nfl-all-day)"],
-    ["sniper (laliga-golazos)"],
-    ["overview (disney-pinnacle)"],
-    ["overview (ufc)"],
-  ])("does not offer it on %s, where prose coverage is 0%%", async (page) => {
+    ["overview (nba-top-shot)"],
+    ["market (nba-top-shot)"],
+    ["collection (nba-top-shot)"],
+  ])("offers no narrative-search pill on %s", async (page) => {
     vi.stubGlobal("fetch", routeFetch(() => streamRes("ok")))
     const { getByText, queryByText } = render(<SupportChat pageContext={page} />)
     fireEvent.click(getByText("💬"))
-    // Wait for the panel to have painted its pills before asserting absence,
-    // else this passes simply because nothing has rendered yet.
-    await waitFor(() => expect(queryByText("Report a bug") ?? queryByText("Bug on this page?")).toBeTruthy())
+    // Wait for pills to paint before asserting absence, else this passes
+    // simply because nothing has rendered yet.
+    await waitFor(() =>
+      expect(queryByText("Report a bug") ?? queryByText("Bug on this page?") ?? queryByText("Bug with my collection view?")).toBeTruthy()
+    )
     expect(queryByText("Find a game winner")).toBeNull()
   })
 })

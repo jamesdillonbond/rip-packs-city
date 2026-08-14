@@ -153,27 +153,36 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
 // Beta-flavored quick-suggestion pills. The dominant feel is feedback intake;
 // one or two deal-flavored prompts remain so users can still escape into the
 // concierge when they need it.
-// ⚠ "Find a game winner" is the discovery route for NARRATIVE catalog search —
-// the newest and least guessable thing the concierge does, since nobody thinks
-// to ask a support bot to find a moment by what HAPPENS in it. It is a pill
-// rather than a line of welcome copy because a pill costs no reading and
-// demonstrates the capability by running it.
+// ⚠ NO NARRATIVE-SEARCH DISCOVERY PILL HERE — one was added and REMOVED the
+// same night, and the reason must not be re-discovered the hard way.
 //
-// ⚠ It is on TOP SHOT pages ONLY, deliberately. Descriptive prose covers ~45%
-// of Top Shot and 0% of All Day, Golazos, Pinnacle and UFC, and the tool scopes
-// to the active collection — so the same pill on an All Day page would demo a
-// coverage gap ("I have no descriptions for this collection") instead of the
-// feature. Verified live before shipping: `game winner` scoped to Top Shot
-// returns six For The Win moments. Do not copy it to the other collections
-// until their prose coverage is non-zero.
+// "Find a game winner" looked like the perfect demo of narrative catalog
+// search. It is the opposite: measured against production, the query returns a
+// roster of the "For The Win" SET (including Blocks, which are not game
+// winners) and does NOT return either of the two most famous Blazers game
+// winners — Lillard's 2014 0.9-second series winner (Archive Set, `48:1652`)
+// or the 2019 37-footer (Run It Back: Legacies, `121:4255`) — even though BOTH
+// carry descriptions and one literally contains the word "game-winning".
+//
+// Root cause is in rpc_search_catalog, not here: prose IS searched (a
+// description-only phrase like "weber state" resolves correctly), but it is
+// scored with trigram similarity(), which is LENGTH-NORMALIZED — so a short set
+// name always outscores a 200-character paragraph that contains the phrase
+// verbatim. Generic narrative phrases lose to set names; only distinctive
+// proper nouns survive. Filed with the full repro in docs/overnight/inbox/.
+//
+// Do not re-add a narrative pill until that ranking is fixed and the fix is
+// verified against those two slugs specifically. A pill that demos set-name
+// matching while claiming to demo narrative search teaches the user something
+// false about the product.
 const PAGE_DEFAULTS: Record<string, string[]> = {
   "sniper (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Best deals right now", "Find me a LeBron deal"],
   "badges (nba-top-shot)": ["Bug on this page?", "How does X work?", "Most valuable badges?", "Check badges for Wembanyama"],
-  "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Find a game winner", "Analyze my portfolio", "Sets I'm close to completing?"],
+  "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Sets I'm close to completing?"],
   "sets (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
   "packs (nba-top-shot)": ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
-  "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Find a game winner", "Top sales today", "Where do I start?"],
-  "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Find a game winner", "Show everything under $20", "Cheapest legendary right now"],
+  "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
+  "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
   "analytics (nba-top-shot)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
   "sniper (nfl-all-day)": ["Bug on this page?", "Suggest a feature", "Best All Day deals", "Find me a Mahomes deal"],
