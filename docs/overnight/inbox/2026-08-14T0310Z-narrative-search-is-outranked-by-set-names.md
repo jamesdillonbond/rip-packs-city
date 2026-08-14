@@ -172,3 +172,72 @@ the regression it risks (a player search no longer returning that player first) 
 looks fine in a spot check and is caught only by a broad before/after battery. That deserves its own
 window with the battery written first, not the tail of a long session. The diagnosis is now exact and the
 design is specified; the remaining work is verification breadth, not investigation.
+
+
+---
+
+# ✅ CORRECTED AGAIN 2026-08-14 — it is NOT a ranking bug. It is TOKEN HANDLING. Both prior diagnoses were wrong.
+
+I built the fix, measured it, and it changed nothing. That falsified the ranking theory outright. The
+prototype (`rpc_search_catalog_v2`) has been **dropped**; the live function was never touched.
+
+## The finding that reframes everything: BOTH moments are already findable
+
+| query | target | result |
+|---|---|---|
+| `lillard buzzer` | `121:4255` | **found, rank 6** ✅ |
+| `damian lillard buzzer` | `121:4255` | **found, rank 6** ✅ |
+| `lillard game-winning` | `48:1652` | **found, rank 2** ✅ |
+| `lillard playoff` | `48:1652` | **found, rank 5** ✅ |
+| `lillard buzzer beater` | `121:4255` | **0 rows** ❌ |
+| `lillard game winner` | `48:1652` | absent ❌ |
+
+Narrative search **works** when every word the user types happens to appear in the prose. It returns
+NOTHING the moment one word does not. `LIKE ALL (v_pats)` is an AND over every token, so "beater" —
+a word the description never uses — annihilates an otherwise perfect query.
+
+## Why the ranking theory was wrong, proven not argued
+
+I shipped a graded, exclusivity-gated prose boost (flat `0.12` → `0.55` phrase / `0.25` tokens). Result:
+**zero change**. The target scored 0.5706 against a returned band of 0.5765–0.6613 — I had replaced one
+flat constant with another, which is the exact failure I had written down one file earlier ("because the
+boost is FLAT, every prose hit ties") and then reproduced in my own fix.
+
+Then I measured `ts_rank`, the "proper" answer I had recommended: **0.07599 for nearly every row**. It does
+not discriminate either — and that is CORRECT behaviour, not a flaw. ~297 moments mention "buzzer" exactly
+once. They are genuinely equivalent. **There is no ranking signal to recover, because a one-word narrative
+query has ~297 equally-good answers.** Returning 50 of them is a right answer to a vague question.
+
+## The actual fix: stop requiring every token
+
+Replace the all-or-nothing `LIKE ALL` on the combined text with **token-coverage scoring**:
+
+- Keep the anchor predicate (index-backed) to build the candidate set.
+- Do NOT require every token. Count how many tokens match, and rank by that count, so a query with one
+  unmatched word degrades gracefully instead of returning nothing.
+- Optionally require the anchor plus ≥50% of tokens to avoid noise.
+
+`websearch_to_tsquery('english', …)` gives OR-semantics plus stemming in one step and would also close
+`winning`/`winner`, but note the earlier measurement: `ts_rank` will not meaningfully ORDER the survivors,
+so use FTS for MATCHING and keep the existing name/kind weights for ordering.
+
+⚠ **Verify against all six rows in the table above**, not just the two failures — four of them currently
+work and must keep working.
+
+## What this means for the product right now
+
+The honest user-facing guidance is: **combine a player name with a distinctive word** — `lillard buzzer`,
+`lillard playoff`. That works today. Pure narrative phrases (`game winner`) do not, and a stray word kills
+the query outright. That is worth saying in the search empty-state and the concierge prompt, and it is a
+better description of the current capability than either of my previous two diagnoses.
+
+## Three diagnoses, two of them mine and both wrong
+
+1. "Trigram similarity is length-normalized so long prose loses" — **wrong**, description is not in the
+   similarity expression at all.
+2. "The flat 0.12 prose boost buries prose hits" — **real but not the cause**; fixing it changed nothing.
+3. "`LIKE ALL` requires every token" — **the actual defect**, proven by six probes.
+
+Each was caught only by going back to the primary source: reading the function, then measuring the fix,
+then testing what a user would really type. A diagnosis that has not been falsified by an attempted fix is
+a hypothesis.
