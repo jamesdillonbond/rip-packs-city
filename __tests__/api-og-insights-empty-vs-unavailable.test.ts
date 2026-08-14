@@ -32,6 +32,34 @@ import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 //   fetch failed  → "couldn't load"      (a claim about US — also true)
 
 const INSIGHTS_OG = join(process.cwd(), "app", "api", "og", "insights")
+const ALL_OG = join(process.cwd(), "app", "api", "og")
+
+/**
+ * `//`-comment lines removed.
+ *
+ * ⚠ Required, not tidiness. This sweep's first run reported exactly one
+ * offender: the comment in `og/fast-break/route.tsx` DOCUMENTING the fix, which
+ * quotes the old copy verbatim. That is the THIRD time in this session a source
+ * check has read its own explanation as evidence (the analytics guard, an
+ * ad-hoc verification script, now this). Any check that greps source for user
+ * copy must strip comments — including the one you are about to write.
+ */
+function stripComments(src: string): string {
+  return src
+    .split("\n")
+    .filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*"))
+    .join("\n")
+}
+
+/** Every `route.tsx` under app/api/og, at any depth. */
+function allOgRoutes(dir: string = ALL_OG, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) allOgRoutes(full, out)
+    else if (entry === "route.tsx") out.push(full)
+  }
+  return out
+}
 
 /** Cards that render a board list and therefore carry the empty/failed states. */
 function boardCards(): string[] {
@@ -89,21 +117,32 @@ describe("insights OG cards distinguish an empty board from an unreadable one", 
     expect(cards.length).toBeGreaterThanOrEqual(15)
   })
 
-  it("no card still hardcodes the impossible 'Loading…' claim", () => {
-    // The literal, swept across the WHOLE directory rather than just the cards
-    // already converted — so reintroducing it anywhere reds this.
-    const offenders = readdirSync(INSIGHTS_OG)
-      .map((d) => ({ d, p: join(INSIGHTS_OG, d, "route.tsx") }))
-      .filter(({ p }) => {
-        try {
-          return statSync(p).isFile()
-        } catch {
-          return false
-        }
-      })
-      .filter(({ p }) => /Loading the live/.test(readFileSync(p, "utf8")))
-      .map(({ d }) => d)
-    expect(offenders).toEqual([])
+  it("NO card anywhere under app/api/og hardcodes an impossible 'loading' claim", () => {
+    // ⚠ SCOPE — this sweep walks the WHOLE og tree, not just og/insights, and
+    // that widening is itself a finding. The first version of this guard walked
+    // `INSIGHTS_OG`, so it was silent by construction about
+    // `app/api/og/fast-break`, which carried "Tonight's slate is still loading."
+    // for weeks after the 15 insights cards were fixed. Same lesson this repo
+    // keeps relearning (the anon driver-message guard, the server-page guard's
+    // 2-of-79 list, insights-gate-include-completeness) — a guard that derives
+    // its inputs from a narrow predicate is fixed to that predicate's scope.
+    // Here it was MY OWN guard.
+    //
+    // An OG card is a static, edge-cached PNG. By the time any string renders
+    // the fetch has finished, so no card may claim to be loading, whatever
+    // directory it lives in.
+    const offenders = allOgRoutes()
+      .filter((p) => /still loading|Loading the live|Loading…/i.test(stripComments(readFileSync(p, "utf8"))))
+      .map((p) => p.replace(process.cwd() + "/", ""))
+    expect(offenders, `cards claiming to be loading:\n${offenders.join("\n")}`).toEqual([])
+  })
+
+  it("the tree sweep is not vacuously passing", () => {
+    // If the walk ever returns nothing the assertion above passes for free.
+    const all = allOgRoutes()
+    expect(all.length).toBeGreaterThanOrEqual(40)
+    expect(all.some((p) => p.includes("/og/fast-break/"))).toBe(true)
+    expect(all.some((p) => p.includes("/og/insights/"))).toBe(true)
   })
 
   it.each(boardCards().map((c) => [c]))(

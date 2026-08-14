@@ -9,6 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,8 +36,13 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const date = url.searchParams.get("date") || todayEastern()
 
+  // ⚠ `fetched` answers "did the optimize READ succeed", NOT "is there a slate".
+  // Set INSIDE the `r.ok` branch. Without it a failed read rendered
+  // "Total projected: 0.0 FP" — a projection manufactured from an outage — and
+  // claimed the slate was "still loading" on a static, edge-cached PNG.
+  let fetched = false
   let lineup: LineupRow[] = []
-  let score = 0
+  let score: number | null = null
   let runName = "FAST BREAK"
   try {
     const origin = new URL(req.url).origin
@@ -46,12 +52,13 @@ export async function GET(req: NextRequest) {
     )
     if (r.ok) {
       const j = await r.json()
+      fetched = true
       if (Array.isArray(j?.lineup)) lineup = j.lineup as LineupRow[]
       if (typeof j?.recommended_score === "number") score = j.recommended_score
       if (typeof j?.meta?.run_name === "string") runName = String(j.meta.run_name).toUpperCase()
     }
   } catch {
-    // Generic card on fetch failure.
+    /* fetched stays false — the card withholds the projection rather than zeroing it */
   }
 
   return new ImageResponse(
@@ -123,7 +130,7 @@ export async function GET(req: NextRequest) {
         >
           {lineup.length === 0 ? (
             <div style={{ fontSize: 22, color: "rgba(255,255,255,0.45)", display: "flex" }}>
-              Tonight&rsquo;s slate is still loading.
+              {boardEmptyCopy(fetched, "slate")}
             </div>
           ) : (
             lineup.slice(0, 3).map((p, i) => (
@@ -176,10 +183,16 @@ export async function GET(req: NextRequest) {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>
-            <span>Total projected:&nbsp;</span>
-            <span style={{ color: "#E03A2F", fontWeight: 800 }}>{score.toFixed(1) + " FP"}</span>
-          </div>
+          {/* A projection is withheld, never zeroed — "0.0 FP" reads as a real
+              (terrible) slate rather than as a read we never completed. */}
+          {score !== null ? (
+            <div style={{ display: "flex" }}>
+              <span>Total projected:&nbsp;</span>
+              <span style={{ color: "#E03A2F", fontWeight: 800 }}>{score.toFixed(1) + " FP"}</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex" }} />
+          )}
           <div style={{ display: "flex" }}>rippackscity.com/nba/fast-break</div>
         </div>
       </div>
