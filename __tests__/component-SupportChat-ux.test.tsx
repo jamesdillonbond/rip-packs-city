@@ -240,3 +240,35 @@ describe("SupportChat — quick-suggestion pills", () => {
     expect(queryByText("Suggest a feature")).toBeTruthy()
   })
 })
+
+describe("SupportChat — narrative-search discovery pill", () => {
+  // Narrative search is the least guessable capability the concierge has, so it
+  // gets a pill rather than a line of welcome copy: no reading cost, one tap,
+  // and it demonstrates the feature by running it.
+  it("offers the game-winner pill on a Top Shot page", async () => {
+    vi.stubGlobal("fetch", routeFetch(() => streamRes("ok")))
+    const { getByText } = render(<SupportChat pageContext="market (nba-top-shot)" />)
+    fireEvent.click(getByText("💬"))
+    await waitFor(() => expect(getByText("Find a game winner")).toBeTruthy())
+  })
+
+  // ⚠ The scoping rule, and the reason this test exists. Descriptive prose
+  // covers part of Top Shot and 0% of every other collection, and the tool
+  // scopes to the active collection — so this pill on an All Day page would
+  // demonstrate a coverage gap rather than the feature. Copying it to the other
+  // collections is only safe once their prose coverage is non-zero.
+  it.each([
+    ["market (nfl-all-day)"],
+    ["sniper (laliga-golazos)"],
+    ["overview (disney-pinnacle)"],
+    ["overview (ufc)"],
+  ])("does not offer it on %s, where prose coverage is 0%%", async (page) => {
+    vi.stubGlobal("fetch", routeFetch(() => streamRes("ok")))
+    const { getByText, queryByText } = render(<SupportChat pageContext={page} />)
+    fireEvent.click(getByText("💬"))
+    // Wait for the panel to have painted its pills before asserting absence,
+    // else this passes simply because nothing has rendered yet.
+    await waitFor(() => expect(queryByText("Report a bug") ?? queryByText("Bug on this page?")).toBeTruthy())
+    expect(queryByText("Find a game winner")).toBeNull()
+  })
+})

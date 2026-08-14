@@ -153,14 +153,27 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
 // Beta-flavored quick-suggestion pills. The dominant feel is feedback intake;
 // one or two deal-flavored prompts remain so users can still escape into the
 // concierge when they need it.
+// ⚠ "Find a game winner" is the discovery route for NARRATIVE catalog search —
+// the newest and least guessable thing the concierge does, since nobody thinks
+// to ask a support bot to find a moment by what HAPPENS in it. It is a pill
+// rather than a line of welcome copy because a pill costs no reading and
+// demonstrates the capability by running it.
+//
+// ⚠ It is on TOP SHOT pages ONLY, deliberately. Descriptive prose covers ~45%
+// of Top Shot and 0% of All Day, Golazos, Pinnacle and UFC, and the tool scopes
+// to the active collection — so the same pill on an All Day page would demo a
+// coverage gap ("I have no descriptions for this collection") instead of the
+// feature. Verified live before shipping: `game winner` scoped to Top Shot
+// returns six For The Win moments. Do not copy it to the other collections
+// until their prose coverage is non-zero.
 const PAGE_DEFAULTS: Record<string, string[]> = {
   "sniper (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Best deals right now", "Find me a LeBron deal"],
   "badges (nba-top-shot)": ["Bug on this page?", "How does X work?", "Most valuable badges?", "Check badges for Wembanyama"],
-  "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Analyze my portfolio", "Sets I'm close to completing?"],
+  "collection (nba-top-shot)": ["Bug with my collection view?", "Suggest a feature", "Find a game winner", "Analyze my portfolio", "Sets I'm close to completing?"],
   "sets (nba-top-shot)": ["Bug on this page?", "Confusing on this page?", "Cheapest set to complete?", "Best investment sets?"],
   "packs (nba-top-shot)": ["Pack EV looks wrong?", "Suggest a feature", "Best value pack right now?", "How does Pack EV work?"],
-  "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
-  "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
+  "overview (nba-top-shot)": ["Report a bug", "Suggest a feature", "Find a game winner", "Top sales today", "Where do I start?"],
+  "market (nba-top-shot)": ["Bug on this page?", "Confusing filter?", "Find a game winner", "Show everything under $20", "Cheapest legendary right now"],
   "analytics (nba-top-shot)": ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
 
   "sniper (nfl-all-day)": ["Bug on this page?", "Suggest a feature", "Best All Day deals", "Find me a Mahomes deal"],
@@ -278,12 +291,17 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     const defaultSuggestions = PAGE_DEFAULTS[fullKey] || PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
     setQuickSuggestions(defaultSuggestions);
 
-    // The "describe a play" line is deliberate: narrative catalog search is the
-    // newest capability and the least guessable — nobody thinks to ask a
-    // support bot for "the Lillard game winner" unless told they can.
+    // ⚠ Discovery for narrative search lives in the PILLS, not here. An earlier
+    // pass added a sentence to both variants explaining that you can describe a
+    // moment rather than name it; it was the right instinct in the wrong place.
+    // This is the first thing a user reads, the prompt's own guidance is "one
+    // tight, human line, not a menu dump", and most users are on mobile — every
+    // clause added here is read by everyone and acted on by almost nobody. A
+    // pill costs no reading, is one tap, and DEMONSTRATES the capability by
+    // running it, which is strictly better teaching than describing it.
     const instantWelcome = ownerKey
-      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want. You can describe a moment instead of naming it ("the Lillard game winner") or ask how one has priced over the past year.\n\nWhat's up?`
-      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more. You can describe a moment instead of naming it ("the Lillard game winner") or ask how one has priced over the past year.\n\nWhat can I help with?`;
+      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want.\n\nWhat's up?`
+      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
