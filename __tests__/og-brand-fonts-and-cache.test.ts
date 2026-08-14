@@ -90,6 +90,19 @@ describe("brandFonts", () => {
     expect(await brandFonts()).toBeUndefined()
   })
 
+  it("NEVER rejects — 39 call sites rely on this instead of guarding it", async () => {
+    // Each of those call sites briefly carried `.catch(() => undefined)`. It was
+    // unreachable, and 39 dead arrow functions were enough to push the primary
+    // gate's FUNCTION coverage under threshold. Removing them is only safe while
+    // this holds, so it is asserted directly rather than left implied by the
+    // two cases above.
+    stubFetch("throw")
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+    // ...and the memo must not latch a rejected promise for every later caller.
+    await expect(brandFonts()).resolves.toBeUndefined()
+  })
+
   it("memoizes, so a warm invocation pays the fetch once", async () => {
     stubFetch("font")
     const { brandFonts } = await freshModule()
@@ -115,25 +128,34 @@ describe("OG card adoption ratchet", () => {
     expect(files.length).toBeGreaterThan(40)
   })
 
-  // A ratchet rather than a ban: 29 of these are insights boards that share no
-  // renderer, so converting them is its own pass. Freezing the count means a
-  // NEW card has to make a conscious choice, and a conversion that regresses
-  // reds — without pretending the family is finished.
   const branded = sources.filter((s) => s.src.includes("@/lib/og/brand-fonts"))
+  // The five entity cards import nothing themselves — they render through
+  // lib/og/entity-card.tsx, which is branded and asserted below.
+  const viaEntityCard = sources.filter((s) => s.src.includes("@/lib/og/entity-card"))
 
-  it("keeps at least the converted cards on the shared loader", () => {
-    // 9 ROUTE FILES, covering 14 cards — the five entity cards
-    // (edition/set/series/team/player) import nothing themselves because they
-    // render through lib/og/entity-card.tsx, which is asserted separately
-    // below. Counting route files and calling it "9 of 43 branded" would
-    // undercount the actual coverage; counting cards and asserting it here
-    // would make this walk lie about what it measured.
-    expect(branded.length).toBeGreaterThanOrEqual(9)
+  it("EVERY OG card is branded, directly or through the shared entity renderer", () => {
+    // ⚠ This started life as a floor ("at least N") while 29 insights cards
+    // were still unconverted. It is a COMPLETENESS check now that the family is
+    // finished, and the upgrade is the point: a floor cannot tell you a NEW
+    // card shipped unbranded, because adding one never lowers the count. Every
+    // social card RPC emits either loads the fonts or delegates to something
+    // that does — and a 44th route has to do one or the other to land.
+    const uncovered = sources
+      .filter((s) => !branded.includes(s) && !viaEntityCard.includes(s))
+      .map((s) => s.f.replace(process.cwd() + "/", ""))
+    expect(uncovered, `unbranded OG cards: ${uncovered.join(", ")}`).toEqual([])
   })
 
-  it("names the cards that must never regress", () => {
-    // The shared entity renderer covers edition/set/series/team/player, so it
-    // is listed instead of its five callers.
+  it("the shared entity renderer is itself branded", () => {
+    // Otherwise the exemption above is a hole five cards wide.
+    const entity = fs.readFileSync(path.join(process.cwd(), "lib", "og", "entity-card.tsx"), "utf8")
+    expect(entity).toContain("@/lib/og/brand-fonts")
+    expect(entity).toContain("OG_CACHE_HEADERS")
+  })
+
+  it("still covers the cards most likely to be shared", () => {
+    // Named explicitly as well as counted, so a refactor that "covers" the
+    // family by loosening the predicate above still has to keep these.
     const must = [
       "og/profile",
       "og/share",
@@ -144,6 +166,8 @@ describe("OG card adoption ratchet", () => {
       "og/pack/route",
       "og/pack/lifecycle",
       "og/fast-break",
+      "og/insights/deals",
+      "og/insights/top-sales",
     ]
     const brandedPaths = branded.map((s) => s.f.replace(/\\/g, "/"))
     for (const m of must) {
@@ -152,8 +176,6 @@ describe("OG card adoption ratchet", () => {
         `${m} lost its brand fonts`,
       ).toBe(true)
     }
-    const entity = fs.readFileSync(path.join(process.cwd(), "lib", "og", "entity-card.tsx"), "utf8")
-    expect(entity).toContain("@/lib/og/brand-fonts")
   })
 
   it("every branded card also sets a shared cache policy", () => {

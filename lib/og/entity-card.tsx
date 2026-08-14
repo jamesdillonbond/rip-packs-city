@@ -29,7 +29,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
   // behind every shared edition/set/player/team/series link. `brandFonts` never
   // rejects and validates the bytes before satori sees them, so an unreachable
   // or non-font response degrades to the generic face rather than a broken card.
-  const fonts = await brandFonts().catch(() => undefined)
+  const fonts = await brandFonts()
   const fam = brandFamilies(fonts)
   // Pre-fetch every image to a data URI (timeout + byte-cap, failures dropped)
   // so Satori does zero network I/O — a single dead/slow upstream (e.g. the

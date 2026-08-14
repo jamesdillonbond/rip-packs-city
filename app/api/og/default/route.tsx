@@ -26,7 +26,7 @@ const COLLECTIONS = [
 export async function GET(_req: NextRequest) {
   // Brand typography + a long shared cache. `brandFonts` never rejects and
   // validates the bytes before satori sees them, so this cannot break the card.
-  const fonts = await brandFonts().catch(() => undefined);
+  const fonts = await brandFonts();
   const fam = brandFamilies(fonts);
 
   const logoUrl = `${BASE_URL}/rip-packs-city-logo.png`;

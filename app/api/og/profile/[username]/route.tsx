@@ -220,7 +220,7 @@ export async function GET(
 ) {
   // Resolved before the try so the fallback can be branded too; `fontOptions`
   // never rejects.
-  const fonts = await brandFonts().catch(() => undefined);
+  const fonts = await brandFonts();
   const { display, mono } = brandFamilies(fonts);
 
   try {

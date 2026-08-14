@@ -9,6 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,6 +36,11 @@ function fmtMoneyCompact(n: number | null | undefined): string {
 }
 
 export async function GET(req: NextRequest) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts();
+  const fam = brandFamilies(fonts);
+
   let summary: SummaryRow | null = null
   let topPlayer: GatewayRow | null = null
   try {
@@ -69,7 +75,7 @@ export async function GET(req: NextRequest) {
           background: "#0D0D0D",
           color: "#F1F1F1",
           padding: 60,
-          fontFamily: "system-ui",
+          fontFamily: fam.display,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
@@ -142,6 +148,6 @@ export async function GET(req: NextRequest) {
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
   )
 }

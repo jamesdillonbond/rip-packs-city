@@ -8,6 +8,7 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,11 @@ const usd = (x: any) =>
   x == null || isNaN(Number(x)) ? "—" : "$" + Number(x).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 export async function GET(_req: NextRequest) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts();
+  const fam = brandFamilies(fonts);
+
   let rows: any[] = [];
   let sealed = 0;
   let editions = 0;
@@ -42,7 +48,7 @@ export async function GET(_req: NextRequest) {
 
   return new ImageResponse(
     (
-      <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column", background: BG, padding: "56px 64px", fontFamily: "sans-serif" }}>
+      <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column", background: BG, padding: "56px 64px", fontFamily: fam.display }}>
         <div style={{ display: "flex", color: MUTED, fontSize: 22, letterSpacing: 2, textTransform: "uppercase", fontWeight: 700 }}>
           Rip Packs City · Insights
         </div>
@@ -69,6 +75,6 @@ export async function GET(_req: NextRequest) {
         <div style={{ display: "flex", position: "absolute", bottom: 0, left: 0, height: 8, width: "100%", background: RED }} />
       </div>
     ),
-    { width: 1200, height: 630 }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
   );
 }

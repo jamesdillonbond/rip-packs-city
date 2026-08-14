@@ -91,6 +91,16 @@ function loadBrandFontBytes(): Promise<ArrayBuffer[] | null> {
  * Fonts for `new ImageResponse(..., { ...opts })`, or `undefined` when they
  * could not be fetched or did not validate. Memoized at module scope, so a warm
  * invocation pays the fetch once.
+ *
+ * ⚠ THIS NEVER REJECTS, and 39 call sites depend on that rather than guarding
+ * it. Every one of them briefly carried `.catch(() => undefined)`, which was
+ * unreachable — the fetch, the byte validation and the memo are all inside the
+ * try above — and 39 dead arrow functions were enough to push the primary
+ * gate's FUNCTION coverage under its threshold. Defensive ceremony is not free:
+ * it costs a reader the question "when does this fire?", and here the answer
+ * was never. The guarantee is pinned by the "degrades to undefined on
+ * throw/404" cases in __tests__/og-brand-fonts-and-cache, so if it is ever
+ * weakened those red rather than 39 silent call sites starting to matter.
  */
 export async function brandFonts(): Promise<OgFont[] | undefined> {
   const bufs = await loadBrandFontBytes();
