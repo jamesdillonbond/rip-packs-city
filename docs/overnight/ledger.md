@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-14 · SHIPPED (Claude Code, interactive, cont.) — the trophy picker's search blamed the collector's collection for our page cap
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
+- ⚠ **THE SEARCH BOX SAYS "Search by player, set, or team" AND FILTERS CLIENT-SIDE OVER 96 ROWS.** `/api/profile/top-moments` returns the top 96 by FMV (and clamps above it, so the cap is the API's ceiling too), and the picker searched only what it had loaded. A collector with more than 96 Moments searching for one outside their top 96 by value was told **"No moments match the current filter"** — a claim about **their collection**, manufactured from our page limit, on the exact screen where they choose what their public profile shows off.
+- ⚠ **DISCLOSED RATHER THAN ASSERTED, because we cannot measure the truncation.** A full page back means the collection is *at least* 96; it does **not** distinguish "owns exactly 96" from "owns 500". So the copy states what is true either way — *"Showing your 96 highest-value Moments. Search looks inside this list only."* — instead of claiming a truncation we have not established. Same discipline as the candy board's "Showing the top N of M", inverted: there the total was known, here it is not, and the wording has to reflect which.
+- **The no-match copy now names the cause:** *"Nothing in your top 96 by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID."* Both directions pinned: an uncapped list keeps the plain copy, and a small collection gets **no** notice at all — a permanent banner on a collector who owns 12 Moments is its own false claim.
+- ⚠ **The fetch hardcoded `limit: "96"` while nothing else knew the number**, so the disclosure and the request could drift apart silently. Now one exported `PICKER_LIMIT`, and a test asserts the request uses the same constant the UI reasons about.
+- **Verified:** 10 tests green in that file (5 new), component gate green (90.18/81.68/88.99/93.07), `tsc` clean, 2 mutations red (notice always on / no-match copy blames the collection).
+- **Revert:** `git revert <sha>`. No DB unwind.
+
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — completed the unfurl contract on the platform's most-shared URL, and gave both siblings the test the profile page only got after a two-month defect
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.**
