@@ -103,6 +103,21 @@ interface Props {
    * row looked equally pinnable.
    */
   pinnedMomentIds?: string[];
+  /**
+   * Display name of the Moment currently occupying THIS slot, if any.
+   *
+   * ⚠ Pinning is an OVERWRITE — the upsert conflicts on `(user_id, slot)` — and
+   * there is no undo. Until the confirm step existed, a mis-tap on a 72px row
+   * silently replaced a trophy the collector had chosen, and the only feedback
+   * was a "Trophy pinned" toast that read as success. The confirm step names
+   * whose slot is being taken.
+   *
+   * ⚠ The caller must resolve this by matching the slab's OWN `slot` column, NOT
+   * by array position: filled slabs pack to the front of the dashboard's `slabs`
+   * array while `slot` is the persisted value, so `slabs[slot - 1]` names the
+   * WRONG Moment whenever the case has a gap.
+   */
+  replacingName?: string | null;
 }
 
 export default function TrophyPickerModal({
@@ -111,11 +126,18 @@ export default function TrophyPickerModal({
   onClose,
   onPinned,
   pinnedMomentIds,
+  replacingName,
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // The grid's confirm step. A row click SELECTS; only the confirm button pins.
+  // The manual tab has always worked this way (look up → preview → Pin); the
+  // grid pinned on the first tap, which on a phone is a 72px target in a dense
+  // scrolling list, and the pin overwrites the slot with no undo.
+  const [pending, setPending] = useState<PickerMoment | null>(null);
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
   const [query, setQuery] = useState("");
@@ -345,7 +367,72 @@ export default function TrophyPickerModal({
           </TabBtn>
         </div>
 
-        {tab === "grid" && (
+        {tab === "grid" && pending && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+            <button
+              onClick={() => {
+                setPending(null);
+                setPickError(null);
+              }}
+              style={{
+                alignSelf: "flex-start",
+                background: "transparent",
+                border: "none",
+                color: "var(--rpc-text-muted)",
+                fontFamily: monoFont,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              ← Back to your Moments
+            </button>
+
+            <PickPreview m={pending}>
+              {/* ⚠ The verb names the consequence. An overwrite and a first
+                  pin are different acts, and labelling both "Pin" hides the
+                  destructive one behind the harmless one's wording. */}
+              <button onClick={() => pin(pending)} disabled={saving} style={primaryBtnStyle}>
+                {saving ? "Pinning…" : replacingName ? "Replace trophy" : "Pin trophy"}
+              </button>
+            </PickPreview>
+
+            {/* ⚠ The one thing the old one-tap flow could never say. Pinning
+                REPLACES whatever is in this slot and there is no undo, so the
+                collector is told whose trophy they are about to displace —
+                before the write, not in a toast after it. */}
+            {replacingName ? (
+              <div
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 11,
+                  color: "#F59E0B",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                This replaces {replacingName} in slot {slot}.
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 11,
+                  color: "var(--rpc-text-muted)",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                Slot {slot} is empty.
+              </div>
+            )}
+
+            {pickError && (
+              <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{pickError}</div>
+            )}
+          </div>
+        )}
+
+        {tab === "grid" && !pending && (
           <>
             <CollectionPicker
               value={collectionFilter}
@@ -455,7 +542,10 @@ export default function TrophyPickerModal({
                     m={m}
                     disabled={saving}
                     alreadyPinned={pinnedIds.has(m.moment_id)}
-                    onClick={() => pin(m)}
+                    onClick={() => {
+                      setPickError(null);
+                      setPending(m);
+                    }}
                   />
                 ))}
               </div>
@@ -502,75 +592,11 @@ export default function TrophyPickerModal({
               </button>
             </div>
             {manualPreview && (
-              <div
-                style={{
-                  background: "var(--rpc-surface-raised)",
-                  border: "1px solid var(--rpc-border)",
-                  borderRadius: 8,
-                  padding: 12,
-                  display: "flex",
-                  gap: 12,
-                  alignItems: "center",
-                }}
-              >
-                {manualPreview.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={manualPreview.image_url}
-                    alt=""
-                    style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: 80,
-                      height: 80,
-                      borderRadius: 6,
-                      background: "var(--rpc-surface-raised)",
-                      border: "1px solid var(--rpc-border)",
-                    }}
-                  />
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontFamily: condensedFont,
-                      fontWeight: 800,
-                      fontSize: 14,
-                      color: "var(--rpc-text-primary)",
-                    }}
-                  >
-                    {displayName(manualPreview)}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: monoFont,
-                      fontSize: 11,
-                      color: "var(--rpc-text-secondary)",
-                      marginTop: 4,
-                    }}
-                  >
-                    {manualPreview.set_name ?? "—"}
-                    {manualPreview.serial_number ? ` #${manualPreview.serial_number}` : ""}
-                    {manualPreview.mint_count ? `/${manualPreview.mint_count}` : ""}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontFamily: condensedFont,
-                      fontWeight: 800,
-                      color: "#34D399",
-                    }}
-                  >
-                    {manualPreview.fmv_usd != null
-                      ? fmtUsd(Number(manualPreview.fmv_usd))
-                      : "FMV unknown"}
-                  </div>
-                </div>
+              <PickPreview m={manualPreview}>
                 <button onClick={() => pin(manualPreview)} disabled={saving} style={primaryBtnStyle}>
                   {saving ? "Pinning…" : "Pin"}
                 </button>
-              </div>
+              </PickPreview>
             )}
             {manualError && (
               <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>
@@ -585,6 +611,90 @@ export default function TrophyPickerModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The "this is what you picked" card, shared by BOTH tabs.
+ *
+ * One renderer on purpose: the manual tab has shown a preview since it was
+ * written, and the grid's confirm step shows the same thing. Two copies would
+ * drift the first time either gained a field, and the two paths write the
+ * identical row — a collector who pins by ID and one who pins by tap should be
+ * looking at the same card before they commit.
+ *
+ * The action button is a child rather than a prop so the caller owns its label
+ * ("Pin" vs "Pin to slot 3") and its disabled state.
+ */
+function PickPreview({ m, children }: { m: PickerMoment; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        background: "var(--rpc-surface-raised)",
+        border: "1px solid var(--rpc-border)",
+        borderRadius: 8,
+        padding: 12,
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      {m.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={m.image_url}
+          alt=""
+          style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: 6,
+            background: "var(--rpc-surface-raised)",
+            border: "1px solid var(--rpc-border)",
+          }}
+        />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: condensedFont,
+            fontWeight: 800,
+            fontSize: 14,
+            color: "var(--rpc-text-primary)",
+          }}
+        >
+          {displayName(m)}
+        </div>
+        <div
+          style={{
+            fontFamily: monoFont,
+            fontSize: 11,
+            color: "var(--rpc-text-secondary)",
+            marginTop: 4,
+          }}
+        >
+          {m.set_name ?? "—"}
+          {m.serial_number ? ` #${m.serial_number}` : ""}
+          {m.mint_count ? `/${m.mint_count}` : ""}
+        </div>
+        {/* "FMV unknown" rather than a dash or a zero: an unpriced Moment is a
+            real state on this platform, and $0 would read as a valuation. */}
+        <div
+          style={{
+            marginTop: 6,
+            fontFamily: condensedFont,
+            fontWeight: 800,
+            color: "#34D399",
+          }}
+        >
+          {m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "FMV unknown"}
+        </div>
+      </div>
+      {children}
     </div>
   );
 }

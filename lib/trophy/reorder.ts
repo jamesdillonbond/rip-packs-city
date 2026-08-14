@@ -36,6 +36,30 @@ export function reorderByDelta(
 }
 
 /**
+ * Who currently occupies `slot`, for the picker's "this replaces …" notice.
+ *
+ * ⚠ Matches on the slab's OWN `slot`, never on array position — and that is the
+ * entire reason this is a named function rather than an index. Filled slabs pack
+ * to the FRONT of the dashboard's fixed-length array while `slot` is the
+ * persisted column, so `slabs[slot - 1]` names the wrong Moment the moment the
+ * case has a gap: pin into slot 3 of a case holding slots 1 and 5 and the
+ * confirm step would warn you about the slab in slot 5, which it is not about to
+ * touch. Naming the wrong trophy in a destructive confirmation is worse than
+ * naming none — the collector approves a replacement they did not agree to.
+ *
+ * Returns `null` for an empty slot, which the caller must render as "empty"
+ * rather than as silence (an absent notice is indistinguishable from an
+ * un-wired caller).
+ */
+export function occupantOfSlot<T extends { slot: number }>(
+  slabs: readonly (T | null | undefined)[],
+  slot: number | null | undefined,
+): T | null {
+  if (slot == null) return null
+  return slabs.find((s): s is T => !!s && s.slot === slot) ?? null
+}
+
+/**
  * Move `dragId` to `targetId`'s position (the drag-and-drop case).
  *
  * Returns `null` on a self-drop or an id that is not in the list — the same

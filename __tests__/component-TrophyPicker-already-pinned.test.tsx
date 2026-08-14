@@ -98,6 +98,7 @@ describe("TrophyPickerModal — already-pinned Moments", () => {
     open(["m-1"])
     await waitFor(() => expect(screen.getByText("Anfernee Simons")).toBeTruthy())
     fireEvent.click(rowFor("Anfernee Simons"))
+    fireEvent.click(await screen.findByText("Pin trophy"))
     await waitFor(() =>
       expect(
         (globalThis.fetch as any).mock.calls.some(

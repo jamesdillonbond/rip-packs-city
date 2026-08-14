@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder"
+import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trophy-case reorder math.
@@ -88,5 +88,44 @@ describe("reorderByTarget", () => {
     // arrows would disagree about what "one to the left" means.
     expect(reorderByTarget(IDS, 30, 20)).toEqual(reorderByDelta(IDS, 30, -1))
     expect(reorderByTarget(IDS, 20, 30)).toEqual(reorderByDelta(IDS, 20, 1))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// occupantOfSlot — who the picker's confirm step is about to overwrite.
+//
+// The whole point is that the array index is NOT the slot. Filled slabs pack to
+// the front of the dashboard's fixed-length array while `slot` is the persisted
+// column, so an index lookup names a different trophy as soon as the case has a
+// gap — and it names it inside a destructive confirmation, where the collector
+// approves a replacement they were never shown.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("occupantOfSlot", () => {
+  // Slots 1 and 5 are filled; they sit at indices 0 and 1 because filled slabs
+  // pack forward. Index-based lookup and slot-based lookup DISAGREE here, which
+  // is exactly the shape that makes this function necessary.
+  const packed = [{ slot: 1, player_name: "Lillard" }, { slot: 5, player_name: "Simons" }]
+
+  it("finds the slab whose own slot matches", () => {
+    expect(occupantOfSlot(packed, 5)?.player_name).toBe("Simons")
+  })
+
+  it("returns null for a slot nobody holds, even when that index is occupied", () => {
+    // `packed[1]` exists, so an index lookup would confidently answer "Simons"
+    // for slot 2 — a trophy in a completely different slot.
+    expect(occupantOfSlot(packed, 2)).toBeNull()
+  })
+
+  it("ignores the empty cells of a fixed-length case", () => {
+    const sparse = [null, { slot: 4, player_name: "Grant" }, undefined, null, null, null]
+    expect(occupantOfSlot(sparse, 4)?.player_name).toBe("Grant")
+    expect(occupantOfSlot(sparse, 1)).toBeNull()
+  })
+
+  it("returns null when no slot is being picked", () => {
+    // The dashboard passes the open-modal slot, which is null while closed.
+    expect(occupantOfSlot(packed, null)).toBeNull()
+    expect(occupantOfSlot(packed, undefined)).toBeNull()
   })
 })

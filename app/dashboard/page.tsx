@@ -25,7 +25,7 @@ import {
 import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
-import { reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
+import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -1165,6 +1165,9 @@ function ProfilePageInner() {
           onClose={() => setPinSlot(null)}
           onPinned={async () => { setPinSlot(null); await refresh(); pushToast("Trophy pinned", "success"); }}
           pinnedMomentIds={slabs.filter(Boolean).map((sl) => (sl as TrophySlabData).moment_id)}
+          // Resolved by the slab's OWN `slot`, never by array position — see
+          // occupantOfSlot for why the index form names the wrong trophy.
+          replacingName={occupantOfSlot(slabs, pinSlot)?.player_name ?? null}
         />
       )}
       {heroEditOpen && (

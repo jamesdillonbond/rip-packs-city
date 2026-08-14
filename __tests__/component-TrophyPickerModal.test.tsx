@@ -237,7 +237,11 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
   it("pins a grid moment via POST /api/profile/trophy and calls onPinned", async () => {
     const onPinned = vi.fn()
     const { findByText } = render(<TrophyPickerModal {...baseProps} onPinned={onPinned} />)
+    // Tapping a row SELECTS it; only the confirm button writes. A row tap that
+    // pinned straight away is the regression this two-step guards against.
     fireEvent.click(await findByText(/Victor Wembanyama/))
+    expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("/api/profile/trophy"))).toBe(false)
+    fireEvent.click(await findByText("Pin trophy"))
     await waitFor(() => expect(onPinned).toHaveBeenCalled())
     const call = (fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes("/api/profile/trophy"))
     expect(call).toBeTruthy()
@@ -258,7 +262,12 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     )
     const { findByText } = render(<TrophyPickerModal {...baseProps} />)
     fireEvent.click(await findByText(/Victor Wembanyama/))
+    fireEvent.click(await findByText("Pin trophy"))
+    // The failure must surface ON the confirm step, where the button that
+    // triggered it is — not by dropping the collector back to the list with no
+    // explanation of why nothing happened.
     expect(await findByText(/pin blew up/)).toBeTruthy()
+    expect(await findByText("Pin trophy")).toBeTruthy()
   })
 
   it("filters the grid to empty via the search box (filter-miss copy)", async () => {
