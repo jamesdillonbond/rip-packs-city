@@ -14,12 +14,18 @@
  */
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const runtime = "edge"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export async function GET(req: NextRequest) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts().catch(() => undefined);
+  const fam = brandFamilies(fonts);
+
   const wallet = req.nextUrl.searchParams.get("wallet") || ""
 
   // ⚠ `fetched` answers "did the snapshot READ succeed", NOT "does this wallet
@@ -65,7 +71,7 @@ export async function GET(req: NextRequest) {
           justifyContent: "space-between",
           background: "linear-gradient(180deg, #0A0A0A 0%, #111111 100%)",
           padding: "48px 56px",
-          fontFamily: "sans-serif",
+          fontFamily: fam.display,
         }}
       >
         {/* Top row */}
@@ -73,7 +79,7 @@ export async function GET(req: NextRequest) {
           <div style={{ fontSize: 36, fontWeight: 900, color: "#E03A2F", letterSpacing: "0.08em", display: "flex" }}>
             RIP PACKS CITY
           </div>
-          <div style={{ fontSize: 18, color: "#666", fontFamily: "monospace", display: "flex" }}>
+          <div style={{ fontSize: 18, color: "#666", fontFamily: fam.mono, display: "flex" }}>
             {wallet.length > 18 ? wallet.slice(0, 8) + "..." + wallet.slice(-6) : wallet}
           </div>
         </div>
@@ -108,17 +114,17 @@ export async function GET(req: NextRequest) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {topPlayers.map((name, i) => (
-              <div key={i} style={{ fontSize: 18, color: "#555", fontFamily: "monospace", display: "flex" }}>
+              <div key={i} style={{ fontSize: 18, color: "#555", fontFamily: fam.mono, display: "flex" }}>
                 {i + 1}. {name}
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 16, color: "#444", fontFamily: "monospace", letterSpacing: "0.1em", display: "flex" }}>
+          <div style={{ fontSize: 16, color: "#444", fontFamily: fam.mono, letterSpacing: "0.1em", display: "flex" }}>
             rippackscity.com
           </div>
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
   )
 }

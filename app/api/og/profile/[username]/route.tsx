@@ -40,9 +40,16 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { ogImageDataUri } from "@/lib/og/img-data";
-import { isSupportedFontBuffer } from "@/lib/og/font-bytes";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
+import {
+  brandFonts,
+  brandFamilies,
+  DISPLAY_FONT,
+  MONO_FONT,
+  OG_CACHE_HEADERS,
+  type OgFont,
+} from "@/lib/og/brand-fonts";
 
 export const runtime = "edge";
 
@@ -51,8 +58,6 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.rippackscity.com";
 
-const DISPLAY_FONT = "Barlow Condensed";
-const MONO_FONT = "Share Tech Mono";
 
 interface BioRow {
   user_id: string | null;
@@ -116,51 +121,6 @@ function fmtDollars(n: number): string {
 }
 
 /**
- * Brand fonts, vendored under `public/fonts` (OFL). Memoized at module scope so
- * a warm edge invocation pays the fetch once.
- *
- * ⚠ Deliberately fail-soft, and deliberately NOT awaited inside the try that
- * renders. A font CDN hiccup must degrade the card's typography, never its
- * existence — an unfurl with the wrong typeface is a cosmetic problem, an
- * unfurl that 500s is a blank grey box in someone's timeline.
- */
-let fontsPromise: Promise<ArrayBuffer[] | null> | null = null;
-function loadBrandFonts(): Promise<ArrayBuffer[] | null> {
-  if (!fontsPromise) {
-    fontsPromise = (async () => {
-      try {
-        const files = [
-          `${BASE_URL}/fonts/BarlowCondensed-Black.ttf`,
-          `${BASE_URL}/fonts/ShareTechMono-Regular.ttf`,
-        ];
-        const res = await Promise.all(files.map((u) => fetch(u)));
-        if (res.some((r) => !r.ok)) return null;
-        const bufs = await Promise.all(res.map((r) => r.arrayBuffer()));
-        // ⚠ A non-empty 200 is NOT evidence of a font. An HTML error page or an
-        // SSO interstitial satisfies `r.ok` and `byteLength > 0`, and satori
-        // then throws `Unsupported OpenType signature <!DO` — from inside the
-        // ImageResponse STREAM, after GET has returned, where the catch below
-        // cannot reach it. Validate the bytes, not the response.
-        return bufs.every(isSupportedFontBuffer) ? bufs : null;
-      } catch {
-        return null;
-      }
-    })();
-  }
-  return fontsPromise;
-}
-
-async function fontOptions() {
-  const bufs = await loadBrandFonts();
-  if (!bufs) return undefined;
-  const [display, mono] = bufs;
-  return [
-    { name: DISPLAY_FONT, data: display, weight: 900 as const, style: "normal" as const },
-    { name: MONO_FONT, data: mono, weight: 400 as const, style: "normal" as const },
-  ];
-}
-
-/**
  * ⚠ Returns `ok` alongside the rows, and the distinction is load-bearing.
  *
  * This card renders a PORTFOLIO FMV for a named collector. Before 2026-08-13 a
@@ -202,7 +162,7 @@ export function trophyGrid(count: number): { cols: number; w: number; h: number 
   return { cols, w, h: Math.round(w * 1.32) };
 }
 
-function renderFallback(fonts?: Awaited<ReturnType<typeof fontOptions>>) {
+function renderFallback(fonts?: OgFont[]) {
   return new ImageResponse(
     (
       <div
@@ -249,9 +209,7 @@ function renderFallback(fonts?: Awaited<ReturnType<typeof fontOptions>>) {
       width: 1200,
       height: 630,
       ...(fonts ? { fonts } : {}),
-      headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
-      },
+      headers: OG_CACHE_HEADERS,
     },
   );
 }
@@ -262,9 +220,8 @@ export async function GET(
 ) {
   // Resolved before the try so the fallback can be branded too; `fontOptions`
   // never rejects.
-  const fonts = await fontOptions().catch(() => undefined);
-  const display = fonts ? DISPLAY_FONT : "sans-serif";
-  const mono = fonts ? MONO_FONT : "sans-serif";
+  const fonts = await brandFonts().catch(() => undefined);
+  const { display, mono } = brandFamilies(fonts);
 
   try {
     const { username: rawUsername } = await params;
@@ -730,22 +687,20 @@ export async function GET(
         width: 1200,
         height: 630,
         ...(fonts ? { fonts } : {}),
-        headers: {
-          "Cache-Control":
-            "public, s-maxage=3600, stale-while-revalidate=86400",
-        },
+        headers: OG_CACHE_HEADERS,
       },
     );
   } catch {
-    // ⚠ The fallback must not inherit the failure. A font satori rejects THROWS
-    // out of ImageResponse rather than degrading, and the naive `catch {
-    // return renderFallback(fonts) }` hands the same suspect fonts to the same
-    // renderer — so the one input capable of breaking the card would break the
-    // safety net too, and a font problem would 500 instead of de-branding.
-    try {
-      return renderFallback(fonts);
-    } catch {
-      return renderFallback(undefined);
-    }
+    // ⚠ This catch covers the DATA path — a Supabase read that throws, a bad
+    // param — and nothing else. It does NOT and cannot cover a font satori
+    // rejects: `new ImageResponse(...)` returns a Response whose body is a
+    // STREAM, so satori runs when the body is consumed, after this handler has
+    // returned. An earlier version of this file wrapped the fallback in a
+    // second try/catch to "retry without fonts" on exactly that failure; it was
+    // inert, because the throw never passes through here. The real defence is
+    // `isSupportedFontBuffer` in lib/og/brand-fonts, which rejects non-font
+    // bytes BEFORE they reach the renderer — so by the time `fonts` is non-null
+    // it has already been validated, and passing it here is safe.
+    return renderFallback(fonts);
   }
 }

@@ -9,6 +9,7 @@ import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 // Pure static registry — safe on the edge runtime (no node APIs).
 import { publishedChainsBadge } from "@/lib/collections";
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
 
 export const runtime = "edge";
 
@@ -23,6 +24,11 @@ const COLLECTIONS = [
 ];
 
 export async function GET(_req: NextRequest) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts().catch(() => undefined);
+  const fam = brandFamilies(fonts);
+
   const logoUrl = `${BASE_URL}/rip-packs-city-logo.png`;
 
   return new ImageResponse(
@@ -35,7 +41,7 @@ export async function GET(_req: NextRequest) {
           flexDirection: "column",
           background: "linear-gradient(145deg, #080808 0%, #111128 50%, #0a0a1a 100%)",
           padding: "72px 80px",
-          fontFamily: "sans-serif",
+          fontFamily: fam.display,
           position: "relative",
           overflow: "hidden",
         }}
@@ -176,6 +182,8 @@ export async function GET(_req: NextRequest) {
     {
       width: 1200,
       height: 630,
+      ...(fonts ? { fonts } : {}),
+      headers: OG_CACHE_HEADERS,
     }
   );
 }

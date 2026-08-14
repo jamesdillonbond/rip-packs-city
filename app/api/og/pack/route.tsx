@@ -14,6 +14,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const runtime = "edge"
 
@@ -112,6 +113,11 @@ async function fetchAllDayCorrectedOg(
 }
 
 export async function GET(req: NextRequest) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts().catch(() => undefined);
+  const fam = brandFamilies(fonts);
+
   const sp = req.nextUrl.searchParams
   const distId = sp.get("distId") ?? ""
   const collection = sp.get("collection")
@@ -185,7 +191,7 @@ export async function GET(req: NextRequest) {
           flexDirection: "column",
           background: "linear-gradient(145deg, #0a0a1a 0%, #111128 50%, #0d0d20 100%)",
           padding: "48px 56px",
-          fontFamily: "sans-serif",
+          fontFamily: fam.display,
           position: "relative",
           overflow: "hidden",
         }}
@@ -345,6 +351,8 @@ export async function GET(req: NextRequest) {
     {
       width: 1200,
       height: 630,
+      ...(fonts ? { fonts } : {}),
+      headers: OG_CACHE_HEADERS,
     },
   )
 }

@@ -17,6 +17,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { ogImageDataUri } from "@/lib/og/img-data"
 import { isMarketClosed } from "@/lib/market-closed"
 import { urlSlugForCollection } from "@/lib/moment-detail-format"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -88,6 +89,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Brand typography + a long shared cache. `brandFonts` never rejects and
+  // validates the bytes before satori sees them, so this cannot break the card.
+  const fonts = await brandFonts().catch(() => undefined);
+  const fam = brandFamilies(fonts);
+
   const { id } = await params
 
   let detail: MomentDetail | null = null
@@ -103,7 +109,7 @@ export async function GET(
   }
 
   if (!detail || !detail.edition) {
-    return new ImageResponse(<DefaultCard />, { width: 1200, height: 630 })
+    return new ImageResponse(<DefaultCard family={fam.display} />, { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS })
   }
 
   const e = detail.edition
@@ -137,7 +143,7 @@ export async function GET(
           display: "flex",
           background: "#000",
           color: "#fff",
-          fontFamily: "sans-serif",
+          fontFamily: fam.display,
         }}
       >
         <div
@@ -272,11 +278,11 @@ export async function GET(
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
   )
 }
 
-function DefaultCard() {
+function DefaultCard({ family }: { family: string }) {
   return (
     <div
       style={{
@@ -287,7 +293,7 @@ function DefaultCard() {
         justifyContent: "center",
         background: "#000",
         color: FALLBACK_RED,
-        fontFamily: "sans-serif",
+        fontFamily: family,
         fontSize: 96,
         fontWeight: 900,
         letterSpacing: 4,

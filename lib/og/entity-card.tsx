@@ -9,6 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { ogImageDataUris } from "@/lib/og/img-data"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const FALLBACK_RED = "#E03A2F"
 
@@ -24,6 +25,12 @@ export interface EntityOgOpts {
 
 export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse> {
   const accent = opts.accent || FALLBACK_RED
+  // Brand typography for all five entity cards at once — these are the images
+  // behind every shared edition/set/player/team/series link. `brandFonts` never
+  // rejects and validates the bytes before satori sees them, so an unreachable
+  // or non-font response degrades to the generic face rather than a broken card.
+  const fonts = await brandFonts().catch(() => undefined)
+  const fam = brandFamilies(fonts)
   // Pre-fetch every image to a data URI (timeout + byte-cap, failures dropped)
   // so Satori does zero network I/O — a single dead/slow upstream (e.g. the
   // ipfs.dapperlabs.com art on pre-2022 Top Shot editions) used to 500 the
@@ -90,7 +97,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
 
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", background: "#000", color: "#fff", fontFamily: "sans-serif" }}>
+      <div style={{ width: "100%", height: "100%", display: "flex", background: "#000", color: "#fff", fontFamily: fam.display }}>
         {MediaPane}
         <div
           style={{
@@ -102,7 +109,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ fontSize: 18, letterSpacing: 4, textTransform: "uppercase", color: "#9CA3AF", display: "flex" }}>
+            <div style={{ fontSize: 18, letterSpacing: 4, textTransform: "uppercase", color: "#9CA3AF", display: "flex", fontFamily: fam.mono }}>
               {opts.eyebrow}
             </div>
             <div style={{ fontSize: 58, fontWeight: 900, lineHeight: 1.04, letterSpacing: 1, display: "flex" }}>
@@ -116,7 +123,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
             {opts.statLabel && opts.statValue ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 14, letterSpacing: 4, textTransform: "uppercase", color: "#9CA3AF", display: "flex" }}>
+                <div style={{ fontSize: 14, letterSpacing: 4, textTransform: "uppercase", color: "#9CA3AF", display: "flex", fontFamily: fam.mono }}>
                   {opts.statLabel}
                 </div>
                 <div style={{ fontSize: 56, fontWeight: 900, color: accent, display: "flex" }}>{opts.statValue}</div>
@@ -126,11 +133,16 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
                 RIP PACKS CITY
               </div>
             )}
-            <div style={{ fontSize: 14, color: "#6B7280", fontWeight: 600, display: "flex" }}>rippackscity.com</div>
+            <div style={{ fontSize: 14, color: "#6B7280", fontWeight: 600, display: "flex", fontFamily: fam.mono }}>rippackscity.com</div>
           </div>
         </div>
       </div>
     ),
-    { width: 1200, height: 630 },
+    {
+      width: 1200,
+      height: 630,
+      ...(fonts ? { fonts } : {}),
+      headers: OG_CACHE_HEADERS,
+    },
   )
 }
