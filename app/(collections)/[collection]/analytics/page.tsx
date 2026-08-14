@@ -431,13 +431,23 @@ function MarketplaceBreakdownCard({
 function OrderBookCard({ short }: { short: string }) {
   const [data, setData] = useState<ListingsSummaryResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setFailed(false)
     fetch(`/api/analytics/listings/summary?collections=${encodeURIComponent(short)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j) setData(j as ListingsSummaryResponse) })
-      .catch(() => {})
+      .then((j) => {
+        if (cancelled) return
+        // ⚠ A non-2xx (503 statement timeout under saturation) and a thrown
+        // fetch both land with no data. Rendering that as the empty state makes
+        // a positive claim about the MARKET out of OUR outage. Mirrors the
+        // marketFailed pattern already used further down this file.
+        if (j) setData(j as ListingsSummaryResponse)
+        else setFailed(true)
+      })
+      .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [short])
@@ -462,6 +472,8 @@ function OrderBookCard({ short }: { short: string }) {
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load the order book.</div>
       ) : count === 0 ? (
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No live listings.</div>
       ) : (
@@ -488,13 +500,23 @@ function OrderBookCard({ short }: { short: string }) {
 function FmvHealthCard({ short }: { short: string }) {
   const [rows, setRows] = useState<FmvTierRow[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setFailed(false)
     fetch(`/api/analytics/fmv/tier-pulse?collections=${encodeURIComponent(short)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j?.rows) setRows(j.rows as FmvTierRow[]) })
-      .catch(() => {})
+      .then((j) => {
+        if (cancelled) return
+        // ⚠ A non-2xx (503 statement timeout under saturation) and a thrown
+        // fetch both land with no data. Rendering that as the empty state makes
+        // a positive claim about the MARKET out of OUR outage. Mirrors the
+        // marketFailed pattern already used further down this file.
+        if (j?.rows) setRows(j.rows as FmvTierRow[])
+        else setFailed(true)
+      })
+      .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [short])
@@ -511,6 +533,8 @@ function FmvHealthCard({ short }: { short: string }) {
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load FMV health.</div>
       ) : total === 0 ? (
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No FMV coverage yet.</div>
       ) : (
@@ -542,13 +566,23 @@ function FmvHealthCard({ short }: { short: string }) {
 function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
   const [data, setData] = useState<PacksSummaryResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setFailed(false)
     fetch(`/api/analytics/packs/summary?collections=${encodeURIComponent(short)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j) setData(j as PacksSummaryResponse) })
-      .catch(() => {})
+      .then((j) => {
+        if (cancelled) return
+        // ⚠ A non-2xx (503 statement timeout under saturation) and a thrown
+        // fetch both land with no data. Rendering that as the empty state makes
+        // a positive claim about the MARKET out of OUR outage. Mirrors the
+        // marketFailed pattern already used further down this file.
+        if (j) setData(j as PacksSummaryResponse)
+        else setFailed(true)
+      })
+      .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [short])
@@ -565,6 +599,8 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load pack analytics.</div>
       ) : !stats || tracked === 0 ? (
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Pack analytics not yet available for this collection.</div>
       ) : (
@@ -603,17 +639,24 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
   }
   const [row, setRow] = useState<Row | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setFailed(false)
     fetch(`/api/analytics/fmv/liquidity-distribution?collections=${encodeURIComponent(short)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (cancelled || !j?.rows) return
+        if (cancelled) return
+        // ⚠ A non-2xx (503 statement timeout under saturation) and a thrown
+        // fetch both land with no data. Rendering that as the empty state makes
+        // a positive claim about the MARKET out of OUR outage. Mirrors the
+        // marketFailed pattern already used further down this file.
+        if (!j?.rows) { setFailed(true); return }
         const match = (j.rows as Row[]).find((r) => (r.collection || "").toLowerCase() === short)
         setRow(match ?? null)
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [short])
@@ -647,6 +690,8 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
 
       {loading && !row ? (
         <div className="h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load the liquidity heatmap.</div>
       ) : !row ? (
         <div className="text-sm text-[color:var(--rpc-text-muted)]">No liquidity data for this collection.</div>
       ) : tooThin ? (
@@ -698,9 +743,11 @@ function WhaleLeaderboard({ short }: { short: string }) {
   const [buyers, setBuyers] = useState<LeaderboardRow[] | null>(null)
   const [sellers, setSellers] = useState<LeaderboardRow[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setFailed(false)
     const qs = `collections=${encodeURIComponent(short)}&window=l30&min_volume=100&limit=10`
     Promise.all([
       fetch(`/api/analytics/sales/leaderboard?role=buyer&${qs}`).then((r) => (r.ok ? r.json() : null)),
@@ -708,10 +755,13 @@ function WhaleLeaderboard({ short }: { short: string }) {
     ])
       .then(([b, s]) => {
         if (cancelled) return
-        setBuyers((b?.rows as LeaderboardRow[]) ?? [])
-        setSellers((s?.rows as LeaderboardRow[]) ?? [])
+        // ⚠ Both legs must succeed. `?? []` on a failed leg renders "No data." —
+        // a claim that nobody traded, made out of a read we never completed.
+        if (!b?.rows || !s?.rows) { setFailed(true); return }
+        setBuyers(b.rows as LeaderboardRow[])
+        setSellers(s.rows as LeaderboardRow[])
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setFailed(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [short])
@@ -721,6 +771,8 @@ function WhaleLeaderboard({ short }: { short: string }) {
       <h3 className="mb-3 text-sm uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>{title}</h3>
       {loading && !rows ? (
         <div className="h-32 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load this leaderboard.</div>
       ) : !rows || rows.length === 0 ? (
         <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No data.</div>
       ) : (
