@@ -166,6 +166,32 @@ function isTransient(err: PostgrestError | null | undefined): boolean {
   // Guard the SQLSTATE-less form of the same thing: a 57014 that arrives with
   // no .code still must not be retried.
   if (msg.includes("canceling statement due to statement timeout")) return false
+
+  // ── PostgREST schema-cache errors: ONE of the two is retryable ────────────
+  //
+  // ⚠ These two messages look alike and mean opposite things. Match the exact
+  // wording, never a bare "schema cache".
+  //
+  //  • PGRST002 "Could not query the database for the schema cache. Retrying."
+  //    PostgREST could not INTROSPECT — it failed to reach the database to
+  //    rebuild its cache, typically while the pool is saturated or just after
+  //    DDL. It is transient by construction, and PostgREST says "Retrying."
+  //    itself. RETRY.
+  //
+  //  • PGRST205 "Could not find the table/function ... in the schema cache"
+  //    The cache loaded FINE and the object genuinely is not there — a deploy
+  //    or naming bug. Retrying just burns the budget to fail identically.
+  //    NEVER RETRY. It is excluded first so the broader test below cannot
+  //    swallow it.
+  //
+  // WHY THIS IS HERE (2026-08-13): this was the single largest real
+  // user-facing error on the platform — Sentry JAVASCRIPT-NEXTJS-1Z, **81
+  // users / 84 events since 2026-07-18**, plus NEXTJS-26 (edition) and
+  // NEXTJS-20 (player), ~97 events in 7 days. All three already ran through
+  // rpcWithRetry; none of the heuristics above matched the message, so a
+  // self-declared-retryable failure was never retried once.
+  if (msg.includes("in the schema cache")) return false
+  if (msg.includes("could not query the database for the schema cache")) return true
   if (
     msg.includes("fetch failed") ||
     msg.includes("network") ||

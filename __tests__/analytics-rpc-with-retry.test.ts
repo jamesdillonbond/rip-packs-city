@@ -75,6 +75,39 @@ describe("rpcWithRetry", () => {
     expect(rpc).toHaveBeenCalledTimes(2)
   })
 
+  // ── PostgREST schema-cache: two lookalike messages, opposite verdicts ─────
+  //
+  // Context (2026-08-13): PGRST002 was the single largest real user-facing error
+  // on the platform — Sentry JAVASCRIPT-NEXTJS-1Z, 81 users / 84 events since
+  // 2026-07-18, plus the edition and player detail pages (~97 events in 7 days).
+  // Every one of those paths ALREADY ran through rpcWithRetry; none of the
+  // heuristics matched the message, so a failure PostgREST itself labels
+  // "Retrying." was never retried once.
+  it.each([
+    "Could not query the database for the schema cache. Retrying.",
+    "could not query the database for the schema cache",
+  ])("retries the PGRST002 introspection failure %j", async (message) => {
+    const { client, rpc } = fakeClient([msgErr(message), ok("recovered")])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.data).toBe("recovered")
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  // ⚠ The lookalike that must NOT be retried. PGRST205 means the cache loaded
+  // fine and the object genuinely is not there — a deploy or naming bug.
+  // Retrying only burns the budget to fail identically, and a bare "schema
+  // cache" substring match would have swallowed exactly this case.
+  it.each([
+    "Could not find the table 'public.nope' in the schema cache",
+    "Could not find the function public.nope(x) in the schema cache",
+  ])("never retries the PGRST205 missing-object error %j", async (message) => {
+    const { client, rpc } = fakeClient([msgErr(message), ok("unreachable")])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.error?.message).toBe(message)
+    expect(res.data).toBeNull()
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
   it("never retries a logic-class (42xxx) error", async () => {
     const { client, rpc } = fakeClient([
       err("42883", "function does not exist"),
