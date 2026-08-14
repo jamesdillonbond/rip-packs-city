@@ -40,6 +40,7 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { ogImageDataUri } from "@/lib/og/img-data";
+import { isSupportedFontBuffer } from "@/lib/og/font-bytes";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 
@@ -135,7 +136,12 @@ function loadBrandFonts(): Promise<ArrayBuffer[] | null> {
         const res = await Promise.all(files.map((u) => fetch(u)));
         if (res.some((r) => !r.ok)) return null;
         const bufs = await Promise.all(res.map((r) => r.arrayBuffer()));
-        return bufs.every((b) => b.byteLength > 0) ? bufs : null;
+        // ⚠ A non-empty 200 is NOT evidence of a font. An HTML error page or an
+        // SSO interstitial satisfies `r.ok` and `byteLength > 0`, and satori
+        // then throws `Unsupported OpenType signature <!DO` — from inside the
+        // ImageResponse STREAM, after GET has returned, where the catch below
+        // cannot reach it. Validate the bytes, not the response.
+        return bufs.every(isSupportedFontBuffer) ? bufs : null;
       } catch {
         return null;
       }

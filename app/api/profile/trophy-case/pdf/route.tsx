@@ -37,6 +37,7 @@ import QRCode from "qrcode";
 import jpeg from "jpeg-js";
 import { PNG } from "pngjs";
 import { supabase as supabaseAnon } from "@/lib/supabase";
+import { isSupportedFontBuffer } from "@/lib/og/font-bytes";
 import {
   RPC_RED_HEX,
   GOLD_HEX,
@@ -334,9 +335,16 @@ async function fetchBytes(url: string, timeoutMs = 6000): Promise<Buffer | null>
 let fontsPromise: Promise<{ display: Buffer | null; mono: Buffer | null }> | null = null;
 function loadBrandFonts() {
   if (!fontsPromise) {
+    // ⚠ `fetchBytes` proves the request SUCCEEDED, not that a font came back —
+    // an HTML error page or a preview-deployment SSO interstitial is a non-empty
+    // 200. Handing those to fontkit throws inside `embedFont`, so the bytes are
+    // validated here and a non-font degrades to the standard face. Shared with
+    // the OG profile card, where the same input throws from inside a response
+    // STREAM and escapes that route's try/catch entirely — see lib/og/font-bytes.
+    const asFont = (b: Buffer | null) => (isSupportedFontBuffer(b) ? b : null);
     fontsPromise = (async () => ({
-      display: await fetchBytes(`${BASE_URL}/fonts/BarlowCondensed-Black.ttf`),
-      mono: await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`),
+      display: asFont(await fetchBytes(`${BASE_URL}/fonts/BarlowCondensed-Black.ttf`)),
+      mono: asFont(await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`)),
     }))();
   }
   return fontsPromise;

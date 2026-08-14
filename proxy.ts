@@ -46,6 +46,29 @@ const ALLOWLIST_TTL_SECONDS = 60
 // Static asset file extensions that bypass auth at the in-middleware level.
 const STATIC_EXT_RX = /\.(?:png|jpe?g|svg|webp|ico|css|js)$/i
 
+// The vendored brand fonts under `public/fonts`.
+//
+// ⚠ THIS WAS MISSING UNTIL 2026-08-13 AND IT WAS A LIVE PRODUCT BUG. The matcher
+// at the bottom of this file does not exclude `/fonts/`, and `ttf` is not a
+// STATIC_EXT_RX extension, so every request for a vendored font ran the auth
+// gate, failed `isPublicPath`, and was 302'd to /login. Two SERVER-SIDE
+// consumers fetch these files over HTTP with no session — the OG profile card
+// (`runtime = "edge"`, so it CANNOT read them off disk) and the trophy-case PDF
+// — and a followed redirect hands both an HTML document at status 200. satori
+// then throws `Unsupported OpenType signature <!DO` (the first four bytes of
+// `<!DOCTYPE`) from inside the ImageResponse STREAM, after GET has returned,
+// where that route's try/catch cannot reach it; that reddened CI on 2026-08-13,
+// and the PDF had been silently unbranded since it shipped.
+//
+// ⚠ DELIBERATELY NARROWER THAN ADDING THE EXTENSIONS TO STATIC_EXT_RX, which is
+// what the first version of this fix did. That regex matches ANY path ending in
+// the extension, so it would also have published a gated route whose trailing
+// dynamic segment a visitor controls (`/whatever/<user-supplied>.ttf`). The
+// existing entries carry that property for `js|css|png|…` already; there is no
+// reason to widen the class further when the only consumers are two fixed files
+// in one directory. Directory AND extension, both required, single level.
+const FONT_ASSET_RX = /^\/fonts\/[^/]+\.(?:ttf|otf|woff2?)$/i
+
 // ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
 // ⚠ These Maps are MODULE-SCOPE, i.e. PER-LAMBDA-INSTANCE on serverless. The
 // effective global ceiling is therefore (max × warm instances), not `max`.
@@ -213,6 +236,15 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/") return true
   if (pathname === "/favicon.ico") return true
   if (pathname === "/robots.txt") return true
+  // ⚠ `/llms.txt` (the AI-crawler sibling of robots.txt, shipped in `public/`)
+  // was 302'ing to /login — `.txt` is not a static-allowlist extension and there
+  // was no exact entry, so the one file whose entire purpose is to be fetched by
+  // an anonymous crawler was the one file they could not read. Found by sweeping
+  // `public/` for extensions the allowlist does not cover, after the same
+  // omission was traced as the cause of the /fonts/*.ttf outage. Kept as an
+  // EXACT path rather than allowlisting `.txt`, which would also publish the OFL
+  // license files by side effect rather than by decision.
+  if (pathname === "/llms.txt") return true
   if (pathname === "/sitemap.xml") return true
   // Segment children of the sitemap index (generateSitemaps, 2026-07-11):
   // /sitemap/0.xml … /sitemap/4.xml must be anon-fetchable or Googlebot gets
@@ -643,6 +675,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
   if (STATIC_EXT_RX.test(pathname)) return true
+  if (FONT_ASSET_RX.test(pathname)) return true
 
   return false
 }

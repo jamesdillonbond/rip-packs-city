@@ -36,6 +36,11 @@ const TABLE: Row[] = [
   ["/", "GET", true, "marketing landing / funnel front door"],
   ["/favicon.ico", "GET", true],
   ["/robots.txt", "GET", true],
+  // ⚠ /llms.txt is the AI-crawler sibling of robots.txt and shipped in public/,
+  // but `.txt` is not a static-allowlist extension — so the one file whose whole
+  // purpose is to be read by an anonymous crawler was 302'ing to /login.
+  ["/llms.txt", "GET", true, "AI-crawler descriptor, shipped in public/"],
+  ["/foo/llms.txt", "GET", false, "exact path only — not any .txt anywhere"],
   ["/sitemap.xml", "GET", true],
   ["/sitemap/0.xml", "GET", true, "generateSitemaps child"],
   ["/sitemap/4.xml", "GET", true],
@@ -43,6 +48,32 @@ const TABLE: Row[] = [
   ["/_next/static/chunk.js", "GET", true],
   ["/logo.png", "GET", true, "static asset extension"],
   ["/app.css", "GET", true],
+  // ⚠ Fonts were unreachable until 2026-08-13 — `.ttf` is not a STATIC_EXT_RX
+  // extension and nothing exempted /fonts/, so every request was 302'd to
+  // /login. Two server-side consumers fetch them over HTTP with no session: the
+  // OG profile card (edge runtime, cannot read disk) and the trophy-case PDF. A
+  // followed redirect handed both an HTML document at status 200, which satori
+  // rejects by THROWING out of the response stream.
+  ["/fonts/BarlowCondensed-Black.ttf", "GET", true, "the real vendored display font"],
+  ["/fonts/ShareTechMono-Regular.ttf", "GET", true, "the real vendored mono font"],
+  ["/fonts/x.otf", "GET", true],
+  ["/fonts/x.woff", "GET", true],
+  ["/fonts/x.woff2", "GET", true],
+  // ⚠ DIRECTORY **AND** EXTENSION, both required — deliberately narrower than
+  // adding the extensions to STATIC_EXT_RX, which matches any path ending in
+  // one and would therefore publish a gated route whose trailing dynamic
+  // segment a visitor controls.
+  ["/dashboard/report.ttf", "GET", false, "font extension outside /fonts stays gated"],
+  ["/api/profile/trophy.woff2", "GET", false, "a gated API path cannot be unlocked by its extension"],
+  // ⚠ NOT asserted here, and the omission is deliberate: `/profile/x.woff2` IS
+  // public — because `/profile/` is a public surface already, not because of
+  // anything below. A first draft used it as the negative case and the table
+  // correctly reddened. Pick a genuinely gated prefix, or the row proves the
+  // opposite of what it claims.
+  ["/fonts", "GET", false, "the directory itself is not public"],
+  ["/fonts/list", "GET", false, "no font extension — still gated"],
+  ["/fonts/a/b.ttf", "GET", false, "single level only — no nested traversal"],
+  ["/fonts/x.ttf.json", "GET", false, "the extension must END the path"],
 
   // ── Marketing / auth surface pages ─────────────────────────────────────────
   ["/login", "GET", true],

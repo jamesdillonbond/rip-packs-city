@@ -56,7 +56,7 @@ function supabaseRow(url: string, flair = true) {
   return []
 }
 
-function installFetch(opts: { fontsOk: boolean; flair?: boolean }) {
+function installFetch(opts: { fontsOk: boolean; flair?: boolean; fontsHtml?: boolean }) {
   const realFonts: Record<string, Buffer> = {
     "BarlowCondensed-Black.ttf": fs.readFileSync(DISPLAY_TTF),
     "ShareTechMono-Regular.ttf": fs.readFileSync(MONO_TTF),
@@ -67,6 +67,19 @@ function installFetch(opts: { fontsOk: boolean; flair?: boolean }) {
       const url = String(input)
       const fontKey = Object.keys(realFonts).find((k) => url.endsWith(k))
       if (fontKey) {
+        // ⚠ The production shape, and the one the `!ok` case below cannot stand
+        // in for: a 200 whose body is an HTML document. `/fonts/*.ttf` was not
+        // in proxy.ts's static-extension allowlist, so the request was 302'd to
+        // /login and the fetch followed it to a page.
+        if (opts.fontsHtml) {
+          const html = Buffer.from("<!DOCTYPE html><html><body>Sign in</body></html>")
+          return {
+            ok: true,
+            status: 200,
+            arrayBuffer: async () =>
+              html.buffer.slice(html.byteOffset, html.byteOffset + html.byteLength),
+          } as never
+        }
         if (!opts.fontsOk) return { ok: false, status: 503 } as never
         const buf = realFonts[fontKey]
         return {
@@ -136,6 +149,37 @@ describe("profile OG card — brand fonts", () => {
     expect(plain.bytes.subarray(0, 8).toString("hex")).toBe(PNG_MAGIC)
     expect(branded.bytes.byteLength).toBeGreaterThan(5_000)
     expect(branded.bytes.equals(plain.bytes)).toBe(false)
+  }, 60_000)
+
+  it("an HTML document served at 200 for the font URL DE-BRANDS instead of breaking the card", async () => {
+    // ⚠ THE REGRESSION THIS FILE WAS ONE CASE SHORT OF CATCHING, and it took
+    // production down for this card the day it shipped. The `fontsOk: false`
+    // case above stubs a 503 — a shape the old `res.ok` check already handled.
+    // What actually happened was a 200: `/fonts/*.ttf` was missing from
+    // proxy.ts's static-extension allowlist, so the request was 302'd to /login
+    // and the fetch followed it to a page. `r.ok` was true, the body was
+    // non-empty, both of the loader's checks passed, and satori threw
+    // `Unsupported OpenType signature <!DO`.
+    //
+    // ⚠ And the route's try/catch could not save it: `new ImageResponse(...)`
+    // returns a Response whose body is a STREAM, so satori runs when the body
+    // is CONSUMED — after GET has returned. That is why this test must read
+    // `arrayBuffer()`; asserting on the returned Response alone would pass
+    // while the card was broken. `renderCard` already does, which is the only
+    // reason the failure surfaced in CI at all.
+    installFetch({ fontsHtml: true, fontsOk: true })
+    const { res, bytes } = await renderCard()
+
+    expect(res.status).toBe(200)
+    expect(bytes.subarray(0, 8).toString("hex")).toBe(PNG_MAGIC)
+    expect(bytes.byteLength).toBeGreaterThan(5_000)
+
+    // ...and it degraded rather than silently accepting: the output must match
+    // the no-fonts render, not the branded one. Without this the card could
+    // "pass" by rendering HTML bytes as a typeface.
+    installFetch({ fontsOk: false })
+    const plain = await renderCard()
+    expect(bytes.equals(plain.bytes)).toBe(true)
   }, 60_000)
 
   it("degrades to an unbranded card rather than failing when the fonts 503", async () => {
