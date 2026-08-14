@@ -64,3 +64,33 @@ export function bannerCosmetic(value: string | null | undefined): BannerCosmetic
   if (!value) return null;
   return ownValue(BANNER_COSMETICS, value) ?? null;
 }
+
+/**
+ * Can this app actually DRAW the cosmetic identified by (slot, value)?
+ *
+ * ⚠ The catalogue has TWO halves that are joined by nothing. A cosmetic SKU is a
+ * row in `shop_items` (`metadata: {slot, value}`) — a pure DB insert, no deploy —
+ * while its appearance is the maps above, which ship with the bundle. Nothing
+ * checks that a sold SKU has a style, and the lookups above fail SOFT by design
+ * (an unknown value resolves to `null` rather than throwing), so the failure is
+ * silent all the way down: a collector spends credits, equips it, and their
+ * public profile is unchanged with no error anywhere. The owned-cosmetics tile
+ * even drew a grey placeholder that reads as a legitimately dark cosmetic.
+ *
+ * So the two surfaces ASK this before offering the SKU. It also makes the
+ * ordering safe in both directions — ship the row first and it is simply not for
+ * sale until the style lands, rather than being sellable and inert.
+ *
+ * Returns false for an unknown slot: a cosmetic we cannot classify is one we
+ * cannot render either, and defaulting to "sellable" is the wrong way to be
+ * wrong when credits change hands.
+ */
+export function hasCosmeticStyle(
+  slot: string | null | undefined,
+  value: string | null | undefined,
+): boolean {
+  if (!value) return false;
+  if (slot === "border") return borderCosmetic(value) !== null;
+  if (slot === "banner") return bannerCosmetic(value) !== null;
+  return false;
+}

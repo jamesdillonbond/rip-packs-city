@@ -13,7 +13,7 @@ import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
-import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { borderCosmetic, bannerCosmetic, hasCosmeticStyle } from "@/lib/cosmetics";
 import { tierProgress, tierNameForStatus } from "@/lib/rewards-tier";
 import { redeemSuccessMessage, redeemErrorReason } from "@/lib/rewards-redeem-message";
 
@@ -547,6 +547,11 @@ export default function RewardsPage() {
                     const bc = isBorder ? borderCosmetic(c.value) : null;
                     const bn = isBanner ? bannerCosmetic(c.value) : null;
                     const label = bc?.label ?? bn?.label ?? c.value ?? c.sku;
+                    // ⚠ Owned but undrawable. The swatch fell back to a grey
+                    // #333/#666, which reads as a legitimately dark cosmetic
+                    // rather than as an absence — so EQUIP wrote it, the public
+                    // profile rendered nothing, and no surface said why.
+                    const unrenderable = !hasCosmeticStyle(c.slot, c.value);
                     const equippedNow =
                       (isBorder && equipped.border === c.value) ||
                       (isBanner && equipped.banner === c.value);
@@ -599,14 +604,21 @@ export default function RewardsPage() {
                             inert "Equipped" chip. The old disabled chip was the
                             whole dead end: it confirmed the state and offered no
                             way out of it. */}
+                        {unrenderable && !equippedNow && (
+                          <div style={{ fontFamily: MONO, fontSize: 11, color: "#d6a13a" }}>
+                            This one can&rsquo;t be shown yet — it needs an app update.
+                          </div>
+                        )}
                         <button
                           type="button"
-                          disabled={equipping === c.sku}
+                          disabled={equipping === c.sku || (unrenderable && !equippedNow)}
                           onClick={() =>
                             equippedNow ? unequip(c.sku, c.slot) : equip(c.sku)
                           }
                           title={
-                            equippedNow
+                            unrenderable && !equippedNow
+                              ? "This cosmetic has no artwork in this version yet"
+                              : equippedNow
                               ? "Remove this from your public profile"
                               : "Show this on your public profile"
                           }
@@ -621,14 +633,17 @@ export default function RewardsPage() {
                             textTransform: "uppercase",
                             letterSpacing: "0.05em",
                             fontSize: 12,
-                            opacity: equipping === c.sku ? 0.6 : 1,
+                            opacity:
+                              equipping === c.sku || (unrenderable && !equippedNow) ? 0.6 : 1,
                           }}
                         >
                           {equipping === c.sku
                             ? "…"
                             : equippedNow
                               ? "Equipped · Take off"
-                              : "Equip"}
+                              : unrenderable
+                                ? "Unavailable"
+                                : "Equip"}
                         </button>
                       </div>
                     );
@@ -708,8 +723,19 @@ export default function RewardsPage() {
                 const tierLocked = status < (item.min_status ?? 0);
                 const affordable = spendable >= item.cost_credits;
                 const soldOut = item.stock !== null && item.stock <= 0;
+                // ⚠ A cosmetic SKU is a DB row; its appearance ships in the
+                // bundle. Sell one whose style has not landed and the collector
+                // pays credits for something that draws as nothing, silently —
+                // the lookups fail soft by design. Not for sale until we can
+                // draw it.
+                const unrenderable =
+                  item.type === "cosmetic" &&
+                  !hasCosmeticStyle(
+                    item.metadata?.slot as string | undefined,
+                    item.metadata?.value as string | undefined,
+                  );
                 const disabled =
-                  redeeming === item.id || !affordable || tierLocked || soldOut;
+                  redeeming === item.id || !affordable || tierLocked || soldOut || unrenderable;
                 return (
                   <div key={item.id} style={{ ...cardStyle, display: "flex", flexDirection: "column" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -772,9 +798,14 @@ export default function RewardsPage() {
                           fontSize: 13,
                         }}
                       >
-                        {redeeming === item.id ? "…" : "Redeem"}
+                        {redeeming === item.id ? "…" : unrenderable ? "Coming soon" : "Redeem"}
                       </button>
                     </div>
+                    {unrenderable && (
+                      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#d6a13a" }}>
+                        Not ready to wear yet — check back after the next update.
+                      </div>
+                    )}
                     {item.type === "moment" && (
                       <div
                         style={{
