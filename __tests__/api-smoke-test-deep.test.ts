@@ -503,6 +503,64 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     )
   })
 
+  // ── The Pinnacle FMV drift guard's COMPARISON fetch ───────────────────────
+  //
+  // Sentry JAVASCRIPT-NEXTJS-14: 54 occurrences since 2026-05-11, still firing.
+  // The guard read pinnacle_catalog to build the set of legitimately-priced
+  // (character, set, variant) triples — and did NOT destructure that read's
+  // error. A failed fetch left the set EMPTY, so every priced deal row failed
+  // the membership test and the guard published a fabricated FMV-drift incident
+  // built out of its own transient DB error. Verified false on 2026-08-13: the
+  // rows it named were all present in pinnacle_catalog with matching FMVs.
+  it("reports couldNotRun when the pinnacle_catalog comparison fetch FAILS, instead of calling every row a leak", async () => {
+    const f = greenFixtures()
+    state.pinnacleJson = JSON.stringify({
+      status: "ok",
+      results: [
+        { player: "Goofy", set: "Disney Holiday Vol.1", tier: "Colored Enamel", fmv: 0.77 },
+        { player: "Goofy", set: "Disney Holiday Vol.1", tier: "Color Splash", fmv: 5.66 },
+      ],
+    })
+    f["pinnacle_catalog"] = { data: null, error: { message: "Timed out acquiring connection from connection pool." } }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+
+    const guard = findResult(env, "Pinnacle FMV not borrowed across characters (drift guard)")
+    expect(guard.passed).toBe(false)
+    // The check never evaluated, so it must not restate the assertion.
+    expect(guard.couldNotRun).toBe(true)
+    expect(guard.detail).toContain("comparison fetch failed")
+    // ⚠ The load-bearing assertion: it must NOT claim a leak it never measured.
+    expect(guard.detail).not.toContain("FMV leaked")
+    expect(state.sentryMessages).not.toContain(
+      "smoke test failed: Pinnacle FMV not borrowed across characters (drift guard)",
+    )
+  })
+
+  it("still reports a REAL leak when the comparison fetch SUCCEEDS but the triple is absent", async () => {
+    // The contrast case, and the reason an empty-but-successful catalog read is
+    // deliberately NOT treated as inconclusive: if the catalog genuinely holds
+    // no priced row for the characters under test, a priced deal row really is
+    // unbacked — which is exactly what this guard exists to catch.
+    const f = greenFixtures()
+    state.pinnacleJson = JSON.stringify({
+      status: "ok",
+      results: [{ player: "Goofy", set: "Nonexistent Set", tier: "Standard", fmv: 42 }],
+    })
+    f["pinnacle_catalog"] = { data: [], error: null }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+
+    const guard = findResult(env, "Pinnacle FMV not borrowed across characters (drift guard)")
+    expect(guard.passed).toBe(false)
+    expect(guard.couldNotRun).toBeFalsy()
+    expect(guard.detail).toContain("FMV leaked")
+  })
+
   it("a guard that RUNS and finds a real violation keeps the assertion-style title (the contrast case)", async () => {
     const f = greenFixtures()
     // No RPC error — the guard evaluates and returns a genuine violation row.

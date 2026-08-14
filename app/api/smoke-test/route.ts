@@ -1624,11 +1624,39 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
             .filter((p): p is string => typeof p === "string" && p.length > 0)
         )
       );
-      const { data: catalogRows } = await (svc as any)
+      const { data: catalogRows, error: catalogErr } = await (svc as any)
         .from("pinnacle_catalog")
         .select("character_name, set_name, variant")
         .not("fmv_usd", "is", null)
         .in("character_name", distinctPlayers.length > 0 ? distinctPlayers : ["__none__"]);
+      // ⚠ The COMPARISON fetch must be checked, or its failure IS the verdict.
+      // This error was previously not destructured at all: a failed read left
+      // catalogRows null, catalogTriples empty, and then EVERY priced deal row
+      // "leaked" — the guard reporting a fabricated FMV-drift incident out of
+      // its own transient DB error, and hard-paging for it. Sentry
+      // JAVASCRIPT-NEXTJS-14: 54 occurrences since 2026-05-11, still firing,
+      // and the sample rows it named were all present in pinnacle_catalog with
+      // matching FMVs — i.e. every reported leak was false.
+      //
+      // The sibling TRANSIENT_RX branch above does NOT cover this: it guards the
+      // searchPinnacleDeals call, not this second read. Report couldNotRun so an
+      // unevaluated check is never published as a violated assertion.
+      //
+      // ⚠ An EMPTY-but-successful result is deliberately NOT treated this way.
+      // If the catalog genuinely holds no priced row for the characters under
+      // test, then a priced deal row really is unbacked — which is exactly the
+      // leak this guard exists to catch. Only a FAILED read is inconclusive.
+      if (catalogErr) {
+        return {
+          ...meta,
+          passed: false,
+          couldNotRun: true,
+          detail: `inconclusive: pinnacle_catalog comparison fetch failed (${catalogErr.message})`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { inconclusive: true, warn: "catalog_fetch_failed" },
+        };
+      }
       // Belt-and-braces: if the bounded fetch ever returns the clamp ceiling,
       // the set may be truncated — report inconclusive rather than false-fail.
       if ((catalogRows ?? []).length >= 1000) {
