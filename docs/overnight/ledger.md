@@ -19,6 +19,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 
 
+
+### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — my OWN directory-driven guard had the blind spot I'd spent the session criticising
+
+- **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Tenth wave; the nine below are the same session.
+- ⚠ **THE FINDING IS ABOUT THE GUARD, not the card.** Earlier today I fixed 15 `og/insights/*` cards that printed `Loading the live board…` into a static, edge-cached PNG, and wrote a **directory-driven** guard so a 16th would be covered automatically. That guard walks `app/api/og/insights`. So it was silent **by construction** about `app/api/og/fast-break`, which carried *"Tonight's slate is still loading."* the whole time. **Fourth instance of this exact lesson in one session** — after the anon driver-message guard, the server-page guard's hand-written 2-of-79 list, and `insights-gate-include-completeness` — and the first where the guard was **mine**. Directory-driven is not the same as complete: it is complete *for the directory you chose*.
+- **Widened the literal sweep to the WHOLE `app/api/og` tree** (recursive, 44+ routes), with a not-vacuous check naming both `fast-break` and `insights` so a broken walk cannot pass for free. The per-card behavioural cases stay scoped to the insights family, where they belong; only the impossible-claim sweep goes tree-wide.
+- **Two defects on the card itself**, both already-known classes: the loading copy (now `boardEmptyCopy(fetched, "slate")`, the helper built for exactly this) and **`Total projected: 0.0 FP`** — a projection manufactured from a failed read. The score is now `number | null` and the whole stat is **withheld** rather than zeroed, because "0.0 FP" reads as a real (terrible) slate, not as a read we never completed.
+- ⚠ **THIRD TIME TODAY I hit the comment-matching trap, in the very sweep written to catch this.** Its first run reported exactly one offender: **my own comment in `fast-break/route.tsx` documenting the fix**, which quotes the old copy. I had already written a `stripComments` helper for this twice (the analytics guard; and an ad-hoc script after the container restart). The recurrence is the point — **any check that greps source for user copy must strip comments, including the one you are about to write** — and it is now recorded in the sweep's own header rather than only in a ledger entry.
+- **Also verified clean, no work manufactured:** `og/player` (try/catch present, stat gated on a truthy count), `og/deal` / `og/collection` (param-only, no I/O), `og/default` (static). With this wave the OG family is **fully swept**: 9 cards have per-card data-branch suites, 15 have the empty-vs-unavailable contract, and every `route.tsx` under the tree is covered by the impossible-claim sweep + the byte-level render sweep.
+- **Verified:** `tsc` clean; full primary suite green at the raised thresholds (91.55 st / 78.91 br / 93.45 fn); mutation-proven (restoring the old copy reds the sweep).
+- **Revert:** `git revert <sha>` — code + tests only, nothing to unwind in the DB.
 ### 2026-08-13 · SHIPPED (Claude Code, interactive, cont.) — the two SHARE cards were publishing "$0.00" as a named collector's portfolio during an outage
 
 - **Code + tests, direct to `main`. No DB, no migration, no cron, no auth/`proxy.ts`, no hot-wallet, no FMV/pricing-MATH change.** Ninth wave; the eight below are the same session.
