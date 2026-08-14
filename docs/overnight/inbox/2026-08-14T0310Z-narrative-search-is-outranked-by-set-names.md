@@ -283,3 +283,59 @@ Leaving it in the schema would invite someone to swap it in and lose three quart
 changes into the real four-arm function instead, and re-run **both** batteries: the six narrative probes
 above AND entity probes (a player / set / team query must still resolve to its entity row). Note
 `rpc_search_catalog` is a concurrent session's function shipped 2026-08-13 — coordinate before editing.
+
+---
+
+## ✅ SHIPPED 2026-08-14 — `audit_20260814_rpc_search_catalog_token_coverage`
+
+Ported into the real four-arm `rpc_search_catalog` and verified live. Committed as
+`supabase/migrations/20260814214310_audit_20260814_rpc_search_catalog_token_coverage.sql`
+(body md5-identical to live `prosrc`). ACL unchanged — anon and authenticated still cannot
+EXECUTE; `service_role` can. The `_v4` prototype was dropped in the same migration.
+
+Live after the change, Top Shot scope:
+
+| query | before | after |
+|---|---|---|
+| `damian lillard` / `run it back` / `trail blazers` | player / set / team at rank 1 | unchanged |
+| `weber state` | 1 row, `201:7031` | unchanged |
+| `lillard buzzer` | `121:4255` rank 6 | unchanged |
+| `lillard game-winning` | `48:1652` rank 2 | unchanged |
+| `lillard playoff` | `48:1652` rank 5 | unchanged |
+| `lillard buzzer beater` | **0 rows** | 7 rows, `121:4255` rank 6 |
+| `damian lillard buzzer beater` | absent | 7 rows, `121:4255` rank 6 |
+| `lillard game winner` | absent | 25 rows, `48:1652` rank 20 |
+
+One second change shipped with it: a `u.sl ASC` final tiebreak. Editions of one player tie on
+score, `n` AND label, so the output order was whatever the plan happened to produce — it visibly
+reshuffled between two semantically identical versions of the function during verification. Only
+fully-tied rows are affected.
+
+Cost: `curry three pointer` is the slowest measured query at ~535 ms (anchor `pointer` → 1,989
+candidates → 3 LIKEs each). The anchor scan dominates and is unchanged from before; the added
+per-candidate token count is a few thousand LIKE ops. Its top 8 are all Steph Curry, i.e. the
+coverage term keeps full matches above partial ones.
+
+## ⚠ Two corrections to THIS FILE's own recommendation
+
+1. **`websearch_to_tsquery` does NOT give OR-semantics.** Measured: it emits `'game' & 'winner'`.
+   The recommendation above to use it "for MATCHING" would have kept the AND that was the defect.
+2. **English stemming would not have fixed either target moment.** `to_tsvector('english', 'a
+   game-winning shot at the buzzer')` yields `game-win / game / win / shot / buzzer` — it does not
+   relate **winner↔winning** or **buzzer↔beater**. So the "proper" answer recommended twice in
+   these filings would have failed on the exact two moments that motivated the work.
+
+## What is still open
+
+- **No stemming / synonyms.** A bare two-word phrase must match both words exactly, so
+  `game winner` still cannot reach `48:1652` (its prose says "game-winning") and `buzzer beater`
+  still cannot reach `121:4255` (its prose says "buzzer", never "beater"). `game winning` reaches
+  both. The honest product answer today is guidance, now shipped in `/api/search`'s `meta.note`
+  and the concierge prompt: **a name plus a distinctive word**. A real fix means a synonym /
+  lexeme layer, which is a bigger piece of work and should be measured before it is built.
+- **The concierge's narrative pill stays out.** It would fire a bare two-word phrase, which is
+  exactly the shape still unreachable.
+- ⚠ **Description coverage moved 44.6% → 69.1% between 2026-08-13 and 2026-08-14** (the daily
+  `topshot-catalog-backfill` cron). Any narrative measurement in these files older than a day is a
+  dated sample, and part of the apparent improvement in bare-phrase queries is coverage growth,
+  **not** this fix — the fix is a no-op for one- and two-token queries by construction.
