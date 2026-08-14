@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { fmvBasis } from "@/lib/fmv-basis";
+import { classifySerial } from "@/lib/serials/fun-patterns";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -270,6 +271,49 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               {moment.mintSize != null && <span style={{ color: "var(--rpc-text-muted)" }}> / {moment.mintSize}</span>}
             </div>
           )}
+
+          {/*
+            Quirky-serial chips — palindromes, repdigits, meme serials, first /
+            last mint. Passive discovery: the collector never has to ask, they
+            just notice it while looking at the moment.
+
+            ⚠ Styled NEUTRALLY on purpose. FMV renders green (#22c55e) a few
+            lines below, and green reads as MONEY in this UI — these carry no
+            value premium whatsoever (they are novelty, not a price signal, and
+            they are deliberately excluded from `specialSerialTraits`, which
+            feeds applySerialPremium). A chip that looks like the FMV colour
+            would imply a premium the data does not support. Muted surface +
+            secondary text keeps it legible without pricing it.
+
+            Each chip carries its own `why` as a title, because "palindrome" on
+            its own is unverifiable at a glance.
+          */}
+          {(() => {
+            const quirks = classifySerial(moment.serialNumber, { circulationCount: moment.mintSize });
+            if (quirks.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} aria-label="Serial number quirks">
+                {quirks.map((q) => (
+                  <span
+                    key={q.kind}
+                    title={q.why}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "var(--rpc-text-secondary)",
+                      background: "var(--rpc-surface-raised)",
+                      border: "1px solid var(--rpc-border)",
+                      padding: "2px 7px",
+                      borderRadius: 4,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {q.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
 
           {moment.fmv != null && (() => {
             // "from asks" plain-words marker for an ASK_ONLY FMV (0.9x a single

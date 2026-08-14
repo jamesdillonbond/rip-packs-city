@@ -174,3 +174,53 @@ describe("MomentDetailModal — financial cells + provenance branches", () => {
     expect(links).toContain("/analytics/wallets/0xbd94cade097e50ac")
   })
 })
+
+// Quirky-serial chips (2026-08-13). Passive discovery: a collector notices a
+// palindrome while looking at the moment, without having to ask the concierge.
+describe("MomentDetailModal — quirky-serial chips", () => {
+  it("shows a chip for a palindrome serial, with its reason as the tooltip", () => {
+    const { getByLabelText, getByText } = render(
+      <MomentDetailModal moment={moment({ serialNumber: 1221, mintSize: 3000 })} onClose={() => {}} />
+    )
+    expect(getByLabelText("Serial number quirks")).toBeTruthy()
+    const chip = getByText("Palindrome")
+    // The reason must ride along — "Palindrome" alone is unverifiable at a glance.
+    expect(chip.getAttribute("title")).toContain("reads the same backwards")
+  })
+
+  it("shows nothing at all for an ordinary serial", () => {
+    const { queryByLabelText } = render(
+      <MomentDetailModal moment={moment({ serialNumber: 4817, mintSize: 3000 })} onClose={() => {}} />
+    )
+    // An ordinary serial is the normal case; an empty chip row would be noise.
+    expect(queryByLabelText("Serial number quirks")).toBeNull()
+  })
+
+  it("flags the last mint only when the mint size is known", () => {
+    const { getByText } = render(
+      <MomentDetailModal moment={moment({ serialNumber: 749, mintSize: 749 })} onClose={() => {}} />
+    )
+    expect(getByText("Last mint")).toBeTruthy()
+
+    cleanup()
+    const { queryByText } = render(
+      <MomentDetailModal moment={moment({ serialNumber: 749, mintSize: null })} onClose={() => {}} />
+    )
+    expect(queryByText("Last mint")).toBeNull()
+  })
+
+  // ⚠ These carry NO value premium, and the styling has to say so. FMV renders
+  // in green (#22c55e) a few lines below in this same modal, and green reads as
+  // MONEY here — a chip in the FMV colour would imply a premium the data does
+  // not support. Neutral tokens only.
+  it("does not style the chips like a price", () => {
+    const { getByText } = render(
+      <MomentDetailModal moment={moment({ serialNumber: 420, mintSize: 3000 })} onClose={() => {}} />
+    )
+    const chip = getByText("420")
+    const style = chip.getAttribute("style") ?? ""
+    expect(style).not.toContain("#22c55e")
+    expect(style).toContain("--rpc-text-secondary")
+    expect(style).toContain("--rpc-surface-raised")
+  })
+})
