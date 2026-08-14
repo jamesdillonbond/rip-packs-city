@@ -8,10 +8,25 @@
 // Modes:
 //   GET ?username=<u>  → public read via get_trophy_slab_data_by_username
 //   GET ?mine=1         → owner read via get_trophy_slab_data(user.id)
+//
+// ⚠ A FAILED READ IS NOT AN EMPTY TROPHY CASE (fixed 2026-08-13). Both legs
+// used to swallow the RPC error into `{ slabs: [] }` at HTTP 200 — byte-
+// identical to a collector who has pinned nothing. Since /profile/<username>
+// renders an empty list as "No trophies pinned yet.", a momentary DB blip told
+// every visitor that a collector with a full case had an empty one: a claim
+// about that person, manufactured from our own outage, on the page they share.
+// The owner leg was worse — a dashboard showing six empty slots invites the
+// owner to re-pin trophies that were never gone.
+//
+// Now classified through `apiErrorResponse`, so a statement timeout is a
+// retryable 503 rather than a 200, no driver text reaches the body, and the
+// response is `no-store`. Callers must branch on `res.ok`; an empty `slabs`
+// array now means exactly one thing.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabase as supabaseAnon, supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +82,7 @@ export async function GET(req: NextRequest) {
     });
     if (error) {
       console.error("[trophy-slabs mine]", error);
-      return NextResponse.json({ slabs: [] });
+      return apiErrorResponse(error, "api/profile/trophy-slabs");
     }
     return NextResponse.json({ slabs: normalize(data) });
   }
@@ -80,7 +95,7 @@ export async function GET(req: NextRequest) {
   );
   if (error) {
     console.error("[trophy-slabs public]", error);
-    return NextResponse.json({ slabs: [] });
+    return apiErrorResponse(error, "api/profile/trophy-slabs");
   }
   return NextResponse.json({ slabs: normalize(data) });
 }

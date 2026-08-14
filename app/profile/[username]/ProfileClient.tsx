@@ -175,6 +175,9 @@ export default function ProfileClient(props: {
   // State (FMV hero + moment count seeded from the server fetch so they SSR).
   const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
   const [slabsLoading, setSlabsLoading] = useState(true);
+  // Distinguishes "this collector has pinned nothing" from "we could not read
+  // their case" — the two used to render identically.
+  const [slabsError, setSlabsError] = useState(false);
   const [bio, setBio] = useState<ProfileBio | null>(props.initialBio ?? null);
   const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>(props.initialWallets ?? []);
@@ -214,8 +217,18 @@ export default function ProfileClient(props: {
     // Trophy slabs come from the new enriched RPC, not the legacy
     // public-profile aggregation. The RPC returns play_description,
     // collection_display_name, acquired_price, etc. that the slab needs.
+    //
+    // ⚠ A FAILED READ IS NOT AN EMPTY TROPHY CASE. Both the non-ok branch and
+    // the .catch used to leave `slabs` all-null, which renders "No trophies
+    // pinned yet." — so a blip told visitors that a collector with a full case
+    // had pinned nothing, on the page that collector shares. `slabsError`
+    // carries the distinction through to the render.
+    setSlabsError(false);
     const slabsP = fetch("/api/profile/trophy-slabs?username=" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(r) {
+        if (!r.ok) throw new Error("trophy-slabs " + r.status);
+        return r.json();
+      })
       .then(function(data) {
         const slots: (TrophySlabData | null)[] = [null, null, null, null, null, null];
         const list: TrophySlabData[] = Array.isArray(data?.slabs) ? data.slabs : [];
@@ -224,7 +237,7 @@ export default function ProfileClient(props: {
         });
         setSlabs(slots);
       })
-      .catch(function() {})
+      .catch(function() { setSlabsError(true); })
       .finally(function() { setSlabsLoading(false); });
 
     // Fetch portfolio history for sparkline (public, ownerKey-driven endpoint).
@@ -394,7 +407,13 @@ export default function ProfileClient(props: {
             </div>
           ) : null}
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
-            {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
+            {/* The count is withheld while the case is loading or unreadable —
+                "0 / 6 TROPHY MOMENTS" is a measurement, and printing it from a
+                read we never completed states something we do not know. */}
+            {"NBA TOP SHOT COLLECTOR" +
+              (slabsLoading || slabsError
+                ? ""
+                : " · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS")}
           </div>
           {/* Follow — renders null on your own profile (server-decided). */}
           {username && (
@@ -518,6 +537,12 @@ export default function ProfileClient(props: {
               {[0, 1, 2].map(function(i) {
                 return <TrophySlab key={"slab-skel-" + i} slab={null} slot={i + 1} mode="public" loading />;
               })}
+            </div>
+          ) : slabsError ? (
+            // Says what is true — that WE could not read it — rather than
+            // making a claim about this collector's case out of our own outage.
+            <div style={{ textAlign: "center", fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", padding: "24px 0" }}>
+              Couldn&rsquo;t load this trophy case. Refresh to try again.
             </div>
           ) : publicSlabs.length === 0 ? (
             <div style={{ textAlign: "center", fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", padding: "24px 0" }}>

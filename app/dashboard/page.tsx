@@ -423,9 +423,16 @@ function ProfilePageInner() {
         });
         setSlabs(next);
       }
-      // Hero: only fetch when there are no trophies pinned. The card is gated
-      // by slabList.length === 0 below, so skipping the round-trip is safe.
-      if (slabList.length === 0) {
+      // Hero: only fetch when there are genuinely no trophies pinned.
+      //
+      // ⚠ `slabList` is empty in TWO cases — the owner has pinned nothing, and
+      // the read failed — and this branch used to treat them alike. On a failed
+      // read that meant an owner with a full case was shown the empty-state
+      // "pick a hero Moment" onboarding card instead of their trophies, which
+      // reads as "your trophy case is gone". Gate on the read having SUCCEEDED,
+      // so an outage leaves the case as it was rather than replacing it with an
+      // onboarding prompt.
+      if (slabsRes.ok && slabList.length === 0) {
         const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
         if (heroRes.ok) {
           const h = await heroRes.json();
