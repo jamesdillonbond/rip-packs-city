@@ -90,10 +90,63 @@ describe("a start marker must not publish its own insert latency as duration_ms"
 
     // Every call site must await it, or the update races the next step / the kill.
     const calls = code.match(/^\s*(await\s+)?mark\(/gm) ?? []
-    expect(calls.length).toBeGreaterThan(5)
+    expect(calls.length).toBeGreaterThan(0)
     for (const c of calls) {
       expect(c, `un-awaited mark() call: ${c.trim()}`).toMatch(/await/)
     }
+
+    // ⚠ REPOINTED 2026-08-15 (deep-audit R7). This used to require >5 literal
+    // `mark(` call sites — a proxy for "every step persists progress" that pinned
+    // the IMPLEMENTATION (one hand-written mark() per step) rather than the
+    // property. The R7 fix moved marking INSIDE a `step()` helper, which enforces
+    // the same property MORE strongly (a step can no longer forget to mark), and
+    // so reddened this guard on a correct refactor. Pin the property instead: the
+    // helper awaits mark(), and the route still drives many steps through it.
+    expect(code).toMatch(/const\s+step\s*=\s*async\s*\([\s\S]{0,400}?await\s+mark\(/)
+    const stepCalls = code.match(/await\s+step\(/g) ?? []
+    expect(stepCalls.length).toBeGreaterThan(5)
+  })
+
+  it("drains collision knots BEFORE the seeders that hit their own 120s ceiling", () => {
+    // THE REGRESSION THIS EXISTS TO PREVENT (deep-audit R7, measured 2026-08-15).
+    // Three seed steps carry `statement_timeout=120s` in their own proconfig and
+    // hit it on every tick — 120,310 / 120,326 / 120,393 ms — rolling back and
+    // producing nothing while consuming 361s of a 600s budget. Because they ran
+    // FIRST, the route was killed before reaching step 6, and
+    // `resolve_topshot_subedition_collision_knots` did not execute once between
+    // 2026-07-31 and 2026-08-15 while knots accrued at ~+8.3/night.
+    //
+    // Ordering is therefore load-bearing, not stylistic: the drain consumes what
+    // PRIOR ticks resolved and the seeds feed LATER ticks, so there is no
+    // intra-tick dependency forcing seeds first — only the starvation.
+    const src = readFileSync(
+      "app/api/admin/drain-conflated-subeditions/route.ts",
+      "utf8"
+    )
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+
+    const order = [...code.matchAll(/await\s+step\(\s*"([a-z_]+)"/g)].map((m) => m[1])
+    expect(order.length, "no step() call sites found — did the route change shape?")
+      .toBeGreaterThan(5)
+
+    const knotsAt = order.indexOf("knots")
+    expect(knotsAt, "the knot resolver must still run").toBeGreaterThanOrEqual(0)
+
+    const seedAt = order
+      .map((n, i) => (n.startsWith("seed_") ? i : -1))
+      .filter((i) => i >= 0)
+    expect(seedAt.length, "no seed steps found — did they get renamed?").toBeGreaterThan(2)
+
+    expect(
+      knotsAt,
+      `knots runs at position ${knotsAt}, after a seeder at ${Math.min(...seedAt)}. ` +
+        `The seeders time out at their own 120s ceiling; anything ordered behind ` +
+        `them can be starved for weeks while every instrument reads normal.`
+    ).toBeLessThan(Math.min(...seedAt))
+
+    // A budget guard must exist AND record what it declined, or a starved step is
+    // once again indistinguishable from a step that ran and found nothing.
+    expect(code).toMatch(/skipped_steps/)
   })
 
   it("the generated-column arithmetic makes the sentinel exactly 0", () => {

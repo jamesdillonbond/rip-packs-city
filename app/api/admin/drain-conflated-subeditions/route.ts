@@ -166,92 +166,97 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
   };
 
+  // ── Step ORDER and a wall-clock budget guard (deep-audit R7, 2026-08-15) ────
+  //
+  // MEASURED, not inferred. The 2026-08-15 20:30Z tick was the first to carry the
+  // progressive `mark()` from 80e99d4d, and it named the problem outright:
+  //
+  //   seed_conflated        16,946 ms
+  //   seed_miskeyed        120,310 ms
+  //   seed_recent          120,326 ms
+  //   seed_knot_occupants  120,393 ms   (p_limit 200 — a tiny cap)
+  //   onchain_resolve_trigger  430 ms
+  //   last_step = onchain_resolve_trigger
+  //
+  // Three steps at ~120,3xx ms is not work, it is a CEILING: every one of these
+  // functions carries `statement_timeout=120s` in its OWN proconfig (verified in
+  // pg_proc; service_role's role-level timeout is 30s, so the 120s is the
+  // function's). A statement that hits it ROLLS BACK — so those three steps burned
+  // 361s of a 600s budget and produced NOTHING, and the route was then killed
+  // before it ever reached the steps that do the work.
+  //
+  // The cost of that ordering was precise and large: `resolve_topshot_subedition_
+  // collision_knots` (step 6) has not executed ONCE since 2026-07-31 20:33:53Z —
+  // 76 resolutions ever, the newest stamped the exact minute of the last completed
+  // run. Knots are the transposed-pair class that split/realign structurally
+  // CANNOT fix, and they arrive at ~+8.3/night, so ~124 have accrued undrained.
+  //
+  // ⚠ The filed fix was "split the 6 steps so each writes its own row and commits
+  // per step". That is a large restructure of TopShot keying — the thing every
+  // edition-keyed FMV derives from — and it does not address the actual defect,
+  // which is that the three steps that time out run FIRST and starve the rest.
+  //
+  // So: DRAIN before SEED, plus a budget guard.
+  //   - The drain steps (3/4/4b/6/5) CONSUME what earlier ticks resolved; the
+  //     seeds FEED later ticks. The header has always said so ("Steps 3-4 process
+  //     what step 2 resolved on PRIOR ticks"), and step 6 "derives its own
+  //     candidates and does not read this queue" (see the 1d note). There is no
+  //     intra-tick seed -> drain dependency, so this reorder changes throughput,
+  //     never correctness. Every step is idempotent and cursor-driven.
+  //   - `knots` moves AHEAD of the conflation guard deliberately. The guard is a
+  //     pure re-measurement and so is the cheapest thing to drop under pressure;
+  //     leaving knots last is exactly what let 15 days of starvation read as
+  //     normal operation. The guard now also re-measures AFTER the knot moves.
+  //   - No step may START without room to hit its own 120s ceiling and still let
+  //     the completion row be written. A skipped step is recorded in
+  //     `extra.skipped_steps`, never dropped silently — this repo has paid for
+  //     silent caps before.
+  const BUDGET_MS = maxDuration * 1000;
+  const TAIL_RESERVE_MS = 8_000;   // completion write + response
+  const STEP_WORST_MS = 121_000;   // the functions' own statement_timeout + slack
+  const skippedSteps: string[] = [];
+  const elapsedMs = () => Date.now() - startedAt;
+  const budgetFor = (worstMs: number) => elapsedMs() + worstMs + TAIL_RESERVE_MS <= BUDGET_MS;
+  const step = async (name: string, worstMs: number, fn: () => Promise<void>): Promise<void> => {
+    if (!budgetFor(worstMs)) { skippedSteps.push(name); return; }
+    await fn();
+    await mark(name);
+  };
+
   try {
-    // 1. Seed conflated-edition moments as pending subedition targets (advance across editions).
-    let seeded = 0;
-    for (let i = 0; i < SEED_ROUNDS; i++) {
-      const { data, error } = await sb.rpc("seed_topshot_conflated_subedition_targets", {
-        p_max_editions: SEED_EDITIONS_PER_ROUND,
-      });
-      if (error) { out.seed_error = error.message; break; }
-      const got = typeof data === "number" ? data : 0;
-      seeded += got;
-      if (got === 0) break; // all editions seeded
-    }
-    out.seeded = seeded;
-    await mark("seed_conflated");
-
-    // 1b. Broaden coverage: also queue moments/sales already keyed to a ::N
-    // subedition that the on-chain table hasn't resolved yet (their base need not
-    // be in the conflation guard — the conflated-only seed above misses these).
-    // Without this, a moment mis-keyed onto a ::N on a non-conflated edition never
-    // gets on-chain-resolved and its wrong circulation never self-heals.
-    const { data: seededMis, error: smErr } = await sb.rpc("seed_topshot_miskeyed_subedition_targets", { p_limit: 5000 });
-    if (smErr) out.seed_miskeyed_error = smErr.message; else out.seeded_miskeyed = seededMis;
-    await mark("seed_miskeyed");
-
-    // 1c. Proactively queue unresolved base nfts in the CURRENT parallel era (auto: newest 2
-    // TS series). Closes the set-263 class of gap: a brand-new parallel set satisfies neither
-    // seed above (no sales collision surfaced yet + no ::N editions exist), so it would never
-    // get resolved on-chain and its parallels stay conflated onto base. This reaches every
-    // current/new set without waiting for a collision; bounded + self-terminating.
-    const { data: seededRecent, error: srErr } = await sb.rpc("seed_topshot_recent_base_subedition_targets", { p_limit: 15000 });
-    if (srErr) out.seed_recent_error = srErr.message; else out.seeded_recent = seededRecent;
-    await mark("seed_recent");
-
-    // 1d. Queue the OCCUPANTS of collision knots that aren't on-chain-resolved yet.
-    // A knot is two moments transposed onto each other's (edition,serial) slot; the
-    // realign/split (4b/4) SKIP them because the target slot is held by the other nft.
-    // Where the occupant's subedition is UNKNOWN, seed it so step 2 resolves it
-    // on-chain and step 6 can permute on a later tick.
-    //
-    // ⚠ This is NOT the throughput gate for step 6, despite the ordering. Measured
-    // 2026-07-31 over the 853 then-blocked nfts: the occupant already had a RESOLVED
-    // subedition row in 841 (98.6%), so this seeder correctly skips them via its
-    // NOT EXISTS gate and step 6 handles them directly — it derives its own
-    // candidates and does not read this queue. Only ~12 were the unknown-occupant
-    // case this seeder exists for. Its other two gates (occupant nft_id numeric,
-    // occupant base int-keyed) excluded ZERO. So widening this predicate does not
-    // move the blocked count; step 6's p_limit does.
-    const { data: seededKnots, error: skErr } = await sb.rpc("seed_topshot_collision_knot_targets", { p_limit: 200 });
-    if (skErr) out.seed_knot_error = skErr.message; else out.seeded_knot_occupants = seededKnots;
-    await mark("seed_knot_occupants");
-
-    // 2. Kick the on-chain subedition resolver for the pending queue.
-    out.subedition_backfill_trigger = await triggerSubeditionBackfill();
-    await mark("onchain_resolve_trigger");
+    // ── DRAIN ────────────────────────────────────────────────────────────────
+    // Consume what step 2 resolved on PRIOR ticks. First, because this is where
+    // every user-visible correction actually happens.
 
     // 3. Catalog base::subID editions for everything resolved so far.
-    const { data: cataloged, error: cErr } = await sb.rpc(
-      "catalog_topshot_subedition_editions_from_resolved", { p_limit: 1000 });
-    if (cErr) out.catalog_error = cErr.message; else out.cataloged = cataloged;
-    await mark("catalog");
+    await step("catalog", STEP_WORST_MS, async () => {
+      const { data: cataloged, error: cErr } = await sb.rpc(
+        "catalog_topshot_subedition_editions_from_resolved", { p_limit: 1000 });
+      if (cErr) out.catalog_error = cErr.message; else out.cataloged = cataloged;
+    });
 
     // 4. Split resolved parallels off the base onto their ::subID editions.
-    const { data: split, error: sErr } = await sb.rpc(
-      "remap_topshot_split_resolved_subeditions", { p_limit: 8000 });
-    if (sErr) out.split_error = sErr.message; else out.split = split;
-    await mark("split");
+    await step("split", STEP_WORST_MS, async () => {
+      const { data: split, error: sErr } = await sb.rpc(
+        "remap_topshot_split_resolved_subeditions", { p_limit: 8000 });
+      if (sErr) out.split_error = sErr.message; else out.split = split;
+    });
 
     // 4b. Inverse/cross realign — the direction the split can't do: re-key
     // moments/sales/wmc that are mis-keyed ONTO a ::N (on-chain says Standard or a
     // DIFFERENT parallel) back onto the correct edition. Collision-safe: a target
-    // serial already held by another nft is a conflation knot, left for the
-    // getMintedMoment path. Fixes the wrong-circulation moment-page display.
-    const { data: realign, error: rErr } = await sb.rpc(
-      "remap_topshot_realign_miskeyed_subeditions", { p_limit: 8000 });
-    if (rErr) out.realign_error = rErr.message; else out.realign = realign;
-    await mark("realign");
-
-    // 5. Re-measure the conflation guard.
-    const { data: guard, error: gErr } = await sb.rpc("refresh_topshot_conflated_editions_detector_only");
-    if (gErr) out.guard_error = gErr.message; else out.conflated_editions_remaining = guard;
-    await mark("conflation_guard");
+    // serial already held by another nft is a conflation knot, left for step 6.
+    // Fixes the wrong-circulation moment-page display.
+    await step("realign", STEP_WORST_MS, async () => {
+      const { data: realign, error: rErr } = await sb.rpc(
+        "remap_topshot_realign_miskeyed_subeditions", { p_limit: 8000 });
+      if (rErr) out.realign_error = rErr.message; else out.realign = realign;
+    });
 
     // 6. Resolve collision knots the realign/split can't (two moments transposed
     // onto each other's slot). Only acts on knots where BOTH nfts are
-    // on-chain-resolved and both target editions exist — everything else waits
-    // for a later tick. Serials preserved; every move logged to
+    // on-chain-resolved and both target editions exist — everything else waits for
+    // a later tick. Serials preserved; every move logged to
     // topshot_collision_knot_resolutions.
     //
     // p_limit was 5 from 2026-07-06 (deliberately conservative while the in-place
@@ -269,20 +274,101 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // resolve path; this step derives its own candidates from moments +
     // topshot_moment_subeditions directly, and is not gated by it).
     //
-    // Cost basis for 100 (this route runs near its 300s maxDuration — 313s/257s
-    // timeouts on 07-28/29, 171s/201s since): candidate selection is a FIXED ~1.83s
-    // regardless of p_limit (dominated by parallel seq scans over moments ~292k and
+    // Cost basis for 100: candidate selection is a FIXED ~1.83s regardless of
+    // p_limit (dominated by parallel seq scans over moments ~292k and
     // topshot_moment_subeditions ~352k), and each knot is ~15 indexed single-row
     // statements, so 100 adds only a few seconds. Raise further only after
-    // confirming duration_ms still has headroom.
-    const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 100 });
-    if (kErr) out.knot_resolve_error = kErr.message; else out.knots = knots;
-    await mark("knots");
+    // confirming there is still headroom in step_ms.
+    await step("knots", STEP_WORST_MS, async () => {
+      const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 100 });
+      if (kErr) out.knot_resolve_error = kErr.message; else out.knots = knots;
+    });
+
+    // 5. Re-measure the conflation guard, AFTER the remaps above so it reflects
+    // this tick's work rather than the previous one's.
+    await step("conflation_guard", STEP_WORST_MS, async () => {
+      const { data: guard, error: gErr } = await sb.rpc("refresh_topshot_conflated_editions_detector_only");
+      if (gErr) out.guard_error = gErr.message; else out.conflated_editions_remaining = guard;
+    });
+
+    // ── SEED ─────────────────────────────────────────────────────────────────
+    // Queue work for LATER ticks. Last, because these are the three that hit
+    // their 120s ceiling and roll back: placed first they starved the drain for
+    // 15 days; placed here, a seeder that times out costs only itself.
+
+    // 1. Seed conflated-edition moments as pending subedition targets (advance across editions).
+    await step("seed_conflated", STEP_WORST_MS, async () => {
+      let seeded = 0;
+      for (let i = 0; i < SEED_ROUNDS; i++) {
+        // Each round can burn the function's full 120s ceiling, so re-check
+        // between rounds — this loop's worst case is SEED_ROUNDS x 120s, which on
+        // its own exceeds the entire budget.
+        if (i > 0 && !budgetFor(STEP_WORST_MS)) { out.seed_rounds_short = i; break; }
+        const { data, error } = await sb.rpc("seed_topshot_conflated_subedition_targets", {
+          p_max_editions: SEED_EDITIONS_PER_ROUND,
+        });
+        if (error) { out.seed_error = error.message; break; }
+        const got = typeof data === "number" ? data : 0;
+        seeded += got;
+        if (got === 0) break; // all editions seeded
+      }
+      out.seeded = seeded;
+    });
+
+    // 1b. Broaden coverage: also queue moments/sales already keyed to a ::N
+    // subedition that the on-chain table hasn't resolved yet (their base need not
+    // be in the conflation guard — the conflated-only seed above misses these).
+    // Without this, a moment mis-keyed onto a ::N on a non-conflated edition never
+    // gets on-chain-resolved and its wrong circulation never self-heals.
+    await step("seed_miskeyed", STEP_WORST_MS, async () => {
+      const { data: seededMis, error: smErr } = await sb.rpc("seed_topshot_miskeyed_subedition_targets", { p_limit: 5000 });
+      if (smErr) out.seed_miskeyed_error = smErr.message; else out.seeded_miskeyed = seededMis;
+    });
+
+    // 1c. Proactively queue unresolved base nfts in the CURRENT parallel era (auto: newest 2
+    // TS series). Closes the set-263 class of gap: a brand-new parallel set satisfies neither
+    // seed above (no sales collision surfaced yet + no ::N editions exist), so it would never
+    // get resolved on-chain and its parallels stay conflated onto base. This reaches every
+    // current/new set without waiting for a collision; bounded + self-terminating.
+    await step("seed_recent", STEP_WORST_MS, async () => {
+      const { data: seededRecent, error: srErr } = await sb.rpc("seed_topshot_recent_base_subedition_targets", { p_limit: 15000 });
+      if (srErr) out.seed_recent_error = srErr.message; else out.seeded_recent = seededRecent;
+    });
+
+    // 1d. Queue the OCCUPANTS of collision knots that aren't on-chain-resolved yet.
+    // A knot is two moments transposed onto each other's (edition,serial) slot; the
+    // realign/split (4b/4) SKIP them because the target slot is held by the other nft.
+    // Where the occupant's subedition is UNKNOWN, seed it so step 2 resolves it
+    // on-chain and step 6 can permute on a later tick.
+    //
+    // ⚠ This is NOT the throughput gate for step 6, despite the numbering. Measured
+    // 2026-07-31 over the 853 then-blocked nfts: the occupant already had a RESOLVED
+    // subedition row in 841 (98.6%), so this seeder correctly skips them via its
+    // NOT EXISTS gate and step 6 handles them directly — it derives its own
+    // candidates and does not read this queue. Only ~12 were the unknown-occupant
+    // case this seeder exists for. Its other two gates (occupant nft_id numeric,
+    // occupant base int-keyed) excluded ZERO. So widening this predicate does not
+    // move the blocked count; step 6's p_limit does.
+    await step("seed_knot_occupants", STEP_WORST_MS, async () => {
+      const { data: seededKnots, error: skErr } = await sb.rpc("seed_topshot_collision_knot_targets", { p_limit: 200 });
+      if (skErr) out.seed_knot_error = skErr.message; else out.seeded_knot_occupants = seededKnots;
+    });
+
+    // 2. Kick the on-chain subedition resolver for the pending queue. Its own 20s
+    // abort bounds it, so it needs far less headroom than an RPC step.
+    await step("onchain_resolve_trigger", 25_000, async () => {
+      out.subedition_backfill_trigger = await triggerSubeditionBackfill();
+    });
   } catch (err) {
     out.fatal = err instanceof Error ? err.message : String(err);
   }
 
   out.step_ms = stepMs;
+  // A step the budget guard declined to start. NOT folded into `ok`: skipping is
+  // the guard working as designed, and a chronically-red pipeline trains the
+  // operator to skim past it (the cost already paid for with ufc_fmv_stale_hours).
+  // But it must be VISIBLE — a silent cap reads as "we did all the work".
+  out.skipped_steps = skippedSteps;
   const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.seed_knot_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error && !out.knot_resolve_error;
   out.duration_ms = Date.now() - startedAt;
 
