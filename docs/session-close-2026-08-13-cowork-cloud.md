@@ -2,29 +2,39 @@
 
 Started as `df -h /sessions`. Ended with a live production auth bypass closed on paper.
 
-## ⛔ OPEN — highest priority, unpushed
+## ✅ CLOSED — and my headline for it was FALSE (corrected 2026-08-15)
 
-**A static-extension suffix bypasses the entire auth wall. Verified live on production.**
+**The defect was real; the evidence I gave for it was not, and the ⛔ severity was inflated.**
 
-```
-GET https://www.rippackscity.com/topshot      → /login          (gated, correct)
-GET https://www.rippackscity.com/topshot.png  → the full page   (bypass, anonymous)
-```
+Real: the suffix reached past the wall — proven on evidence no redirect can fake,
+`/api/mcp/keys/<uuid>` → 307 `/login` (wall) vs `/api/mcp/keys/<uuid>.png` → **405** (handler; a
+wall cannot emit 405). Fixed by a concurrent session in **`89d3536a`**; all 11 probe paths now
+gated. **Class: defense-in-depth, not a breach.**
 
-On disk, ready to apply — patch re-verified against `main` @ `c8efe60`:
+False: *"`/topshot` → /login, `/topshot.png` → the full gated page."* There was **no differential**.
+`[collection]/page.tsx:6` redirects to `/<slug>/overview`, and a `proxy.ts` rule has opened
+`/^\/[^/]+\/overview$/` to anyone since 2026-05-31 — so `/topshot`, `/topshot.png` and
+`/totally-bogus-slug/overview` all render the same public page. The suffix reached *less* than what
+was already public.
 
-| file | path |
-|---|---|
-| patch | `rip-packs-city\proxy-static-ext-bypass-2026-08-13.patch` |
-| handoff | `rip-packs-city\docs\handoff-2026-08-13-static-ext-auth-bypass.md` |
-| ledger (paste-ready) | `rip-packs-city\ledger-entry-static-ext-bypass-PASTE-READY.md` |
+Three failures made it: a **followed redirect** (I attributed the destination's content to the
+source URL), **mismatched instruments** (predicate for the "gated" half, live fetch for the
+"bypassed" half, presented as a pair), and **treating a path predicate as a visibility claim**. My
+patch was correctly NOT applied — `proxy.ts` had been written 14 seconds earlier by a live
+concurrent session whose version was better. Correction filed at `5043f09f`.
 
-`STATIC_EXT_RX` → `STATIC_ROOT_ASSETS` (exact `Set`). **411** predicate-level bypasses closed, **0**
-still open, **0** asset regressions. ⛔ Anchoring the regex to one root segment closes only 384 and
-leaves `/topshot.png` — the confirmed case — open; the patch comment and the tests both block that
-weaker fix. ⚠ End-to-end anonymous data return was confirmed for exactly one route; treat the
-other 410 as "the wall does not stand", not "confirmed leaking". Re-check `/api/mcp/keys/[keyId]`
-(API key management, GET/POST/DELETE) by hand.
+## ✅ What the disproof uncovered (the real win)
+
+`/<any-bogus-slug>/overview` returned **200 with `canonical` = itself and `robots: index, follow`**
+— an unbounded set of indexable self-canonical duplicates on an SEO-dependent project. Fixed in
+**`99f245d0`**: `unknownCollectionMetadata()` across 8 layouts, noindex rather than a canonical
+naming a real page (the server can't tell which was meant; a guess published as a directive is
+worse), with the mirror assertion that a *resolved* collection must not be noindexed. Ledger
+`996f7051`.
+
+Also fixed there: two honesty guards that were green in CI and **dead on Windows** — one collected
+0 tests, 0 assertions (`execSync("grep…")` under `cmd.exe`), the other asserted a forward-slash
+path against `join()` backslashes. 0 → 4 and 51 → 52.
 
 ## ⛔ OPEN — operator only
 
@@ -46,8 +56,7 @@ corrected in place (§0) — it had prescribed the wrong action in its bottom li
 
 ## Corrections made to the record
 
-Three claims were wrong and were corrected on contact, each disproven by something in the same
-session:
+Four claims of mine were wrong. Each was disproven by evidence already available at the time.
 
 1. **"The ops-capture file is the 1.21 GiB leak."** It wasn't — that one is bounded and working.
    The always-on backup was.
@@ -56,6 +65,11 @@ session:
    the honest reason is *already ingested*.
 3. **"`/sessions` is Anthropic-hosted; delete old Cowork sessions."** Relayed from a handoff four
    times without checking memory, which held the verified local fix.
+4. **"⛔ LIVE auth bypass: `/topshot.png` serves a gated page."** The worst of the four, because I
+   escalated it. A followed redirect and a predicate-vs-fetch mismatch manufactured the evidence;
+   the rule that actually explained the behaviour was 213 lines above the one I was reading, in a
+   file I had open. **The pattern across all four: I stopped measuring at the point the answer
+   looked right.** Corrections 1, 2 and 4 were each caught by someone else re-deriving them.
 
 ## Memory written
 

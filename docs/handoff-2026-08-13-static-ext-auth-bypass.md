@@ -1,40 +1,75 @@
-# The auth wall does not stand for a static-extension suffix (2026-08-13)
+# The static-extension suffix reached past the auth wall (2026-08-13) — ⛔ HEADLINE CORRECTED 08-15
 
-> ⛔ **SEVERITY CORRECTED 2026-08-15 — READ THIS BEFORE THE BODY.** The heading below said
-> "**LIVE AUTH BYPASS**" and "**Severity: live on production**". The *bypass* is real and confirmed
-> (`/api/mcp/keys/<uuid>` → 307, `…<uuid>.png` → **405**, a status the wall cannot produce). The
-> *severity* is not: this is **defense-in-depth, with no confirmed data exposure**. Every
-> "reproduce" block below reproduces **without the vulnerability**, because the pages it reaches
-> are public by design. See `docs/overnight/inbox/2026-08-15T1838Z-static-ext-bypass-is-real-but-its-headline-proof-is-not.md`
-> for the control tests. Kept unedited below as the incident record.
+> ## ⛔ CORRECTION — READ THIS FIRST (2026-08-15)
+>
+> **The defect below is real and has been fixed (`89d3536a`). The headline evidence for it was
+> WRONG, and the severity I assigned was inflated. Both were mine.**
+>
+> **There was no differential.** `app/(collections)/[collection]/page.tsx:6` is
+> `redirect(`/${params.collection}/overview`)`, and a `proxy.ts` rule — present since **2026-05-31** —
+> opens `/^\/[^/]+\/overview$/` to anonymous visitors for **any** segment, by design. So:
+>
+> | request | what actually happened |
+> |---|---|
+> | `/topshot` | → redirect → `/topshot/overview` → **public** |
+> | `/topshot.png` | → redirect → `/topshot.png/overview` → **public by the same rule** |
+> | `/totally-bogus-slug/overview` | **the identical page** — the control I never ran |
+> | `/nba-top-shot/overview` | anonymous since the 2026-07-17 un-gate |
+>
+> The suffix reached *less* than what was already public. My "gated vs bypassed" pair was two
+> measurements of the same public surface.
+>
+> **Three method failures produced it:**
+> 1. **A followed redirect.** The fetcher followed a 307 to `/topshot.png/overview`; I reported the
+>    destination's content as a property of the source URL.
+> 2. **Mismatched instruments.** "`/topshot` is gated" came from `isPublicPath()` returning false;
+>    "`/topshot.png` is public" came from a live fetch. Presented as a matched pair. **A control
+>    measured with a different instrument is not a control.**
+> 3. **Predicate ≠ visibility.** `isPublicPath(p) === false` gates *that exact path*. When `p`
+>    redirects, the target's rule governs what a visitor sees.
+>
+> ⚠ I had the warning and talked past it: the fetcher returned `ROBOTS_DISALLOWED` for the control
+> while allowing the suffixed path. Unable to measure the control with the same instrument, I
+> reasoned about the mechanism instead — and then wrote a ⛔ banner. The `/overview` rule was at
+> line 464 of a file I had cloned and was reading at line 677 — it is line 534 today, which is why
+> the citation above names the rule rather than a line.
+>
+> **What was actually true, proven properly** (by the reviewing session, on evidence no redirect
+> can fake):
+> ```
+> /api/mcp/keys/<uuid>      → 307 /login   (the WALL answers)
+> /api/mcp/keys/<uuid>.png  → 405          (the HANDLER answers — the request got through)
+> ```
+> **A 405 cannot come from the auth wall.** That is the clean proof. No exposure on the other named
+> routes: `/analytics/wallets/<addr>.png` → 404; `/api/mcp/keys/[keyId]` exports only DELETE and
+> calls `getCurrentUser()` itself. **Class: defense-in-depth, not a breach.** The "411" was
+> predicate-level throughout — I said so in the scope note and then contradicted it in the headline.
+>
+> **Disposition:** this patch was NOT applied. The reviewing session found `proxy.ts` written 14
+> seconds earlier by a live concurrent session whose version was better — it caught that two
+> existing test rows were pinning the vulnerability as the contract, and researched the `/_vercel/*`
+> narrowing risk. `89d3536a` landed instead; production now gates all 11 probe paths. The
+> correction is filed at `5043f09f`.
+>
+> Everything below is the original text, left intact. The mechanism section is accurate; the
+> reproduce section is not.
 
-**Severity as originally filed (OVERSTATED — see above): live on production, anonymous, no
-credentials, trivially reproducible.**
+---
+
+**Original text follows (2026-08-13).**
+
+**Severity: live on production, anonymous, no credentials, trivially reproducible.**
 Found while auditing the latent `STATIC_EXT_RX` exposure that `6eb7b0e5` correctly declined to
 widen. It is not latent. It is exploitable now.
 
-> ✅ **CLOSED 2026-08-15 — the fix is on `main`.** This document is kept as the incident record;
-> the canonical account is the `2026-08-15` ledger entry. Read the rest in the past tense.
->
-> ⚠ **It sat here for two days, and that is the transferable part.** The patch below was correct
-> and complete on 2026-08-13, but `*.patch` is gitignored, so the only trace in `git status` was
-> two stray untracked `.md` files — and all three documents describe the fix in a tone that reads
-> as *done*. **A fix that cannot be pushed is not a fix.** When a session ends unable to push a
-> SECURITY change, the status belongs where someone will trip over it (the ledger, `CLAUDE.md`),
-> not only in a handoff that has to be found first.
->
-> ⚠ Re-verified live on 2026-08-15 before shipping — the wall was still bypassed. My own first
-> "second confirmed path" (`/profile/edit` → 307 vs `/profile/edit.css` → 200, 29,789 B) was
-> **WRONG in the identical way**: that path routes to the public `/profile/[username]`, and the
-> no-bypass control `/profile/zzz-no-such-user-9931` returns *more* bytes. **The missing step, both
-> times, was one request without the vulnerability.**
-
-**Status (2026-08-13, historical):** patch ready and verified, NOT pushed (cloud proxy 403 +
-device shell down). Applies cleanly to a fresh clone of `main`.
+**Status:** patch ready and verified, NOT pushed (cloud proxy 403 + device shell down).
+Applies cleanly to a fresh clone of `main`.
 
 ---
 
 ## Reproduce
+
+⛔ **This section is the part that was wrong — see the correction above.**
 
 ```
 GET https://www.rippackscity.com/topshot      → redirects to /login   (gated, correct)
