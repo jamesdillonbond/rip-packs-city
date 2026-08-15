@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
-import { pageMetadata } from "@/lib/seo"
+import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 import PopularOnCollection from "@/components/entity/PopularOnCollection"
 
 // ISR-cache the segment hourly so the server-rendered public fan-out
@@ -13,7 +13,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { collection: id } = await props.params
   const collection = getCollection(id)
-  if (!collection) return pageMetadata("overview", "Flow", id)
+  if (!collection) return unknownCollectionMetadata("overview", id)
   return pageMetadata("overview", collection.label, collection.id)
 }
 

@@ -192,6 +192,34 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
   }
 }
 
+// The `[collection]` route segment is unvalidated user input, and every
+// `[collection]/*/layout.tsx` falls back to generic "Flow" metadata when it does
+// not resolve to a registry entry. `pageMetadata` builds `canonical` from that
+// raw segment, so the fallback used to emit a SELF-canonical page that inherited
+// the root `index, follow` — an unbounded set of indexable URLs each claiming to
+// be the canonical copy of one page.
+//
+// Measured live 2026-08-15: `/totally-bogus-slug/overview` returned 200 with
+// `canonical=/totally-bogus-slug/overview` and `robots=index, follow`, rendering
+// the same Top Shot page as `/topshot/overview` and `/nba-top-shot/overview`.
+// Only `/overview` is anonymously reachable with an arbitrary segment — the proxy
+// opens /^\/[^/]+\/overview$/ for ANY segment, while the other tabs are opened only
+// for the 5 published slugs. The other seven layouts are gated today and share
+// this helper anyway, so the hole does not reopen the next time a tab is
+// un-gated, which is exactly how /overview became reachable (2026-07-17 launch).
+//
+// noindex rather than a canonical pointing at the real page: the SERVER cannot
+// tell which collection was meant (resolution fails here; the CLIENT falls back
+// to the last-visited collection), so naming one would be a guess published as a
+// directive. `follow` stays true — the links out are real pages.
+//
+// This is the honest floor, not the end state: a slug people actually link to
+// (e.g. `topshot`) should 301 to /nba-top-shot/..., a routing decision not a
+// metadata one.
+export function unknownCollectionMetadata(page: string, id: string): Metadata {
+  return { ...pageMetadata(page, "Flow", id), robots: { index: false, follow: true } }
+}
+
 // Own-property guard for the collection lookup maps below. All are keyed by the
 // route's `[collection]` segment (collectionId / collectionUrlSlug), which is
 // unvalidated user input — a bare `MAP[key]` read matches inherited

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
-import { pageMetadata } from "@/lib/seo"
+import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 import FeatureTabGate from "@/components/collection/FeatureTabGate"
 
 export async function generateMetadata(
@@ -9,7 +9,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { collection: id } = await props.params
   const collection = getCollection(id)
-  if (!collection) return pageMetadata("market", "Flow", id)
+  if (!collection) return unknownCollectionMetadata("market", id)
   return pageMetadata("market", collection.label, collection.id)
 }
 

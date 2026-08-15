@@ -1,6 +1,42 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { readFileSync, readdirSync, existsSync } from "node:fs"
+import { join } from "node:path"
+
+// PORTABLE ON PURPOSE. This guard used to shell out to a recursive grep through
+// child_process. On Windows that runs under cmd.exe, which has no grep and
+// parses the single-quoted pattern itself, so it died with "'export' is not
+// recognized" and the whole SUITE failed to collect: 0 tests, 0 assertions, on
+// the primary dev machine. A guard that cannot run where the code is written
+// protects CI only -- and this one covers the metadata honesty layer, which is
+// invisible in a browser and seen only in someone else's timeline. The sibling
+// og sweep had the same class from the other direction: it built paths with
+// join() and compared them to forward-slash literals, so its own not-vacuous
+// check failed on Windows.
+const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "coverage"])
+
+function walkTs(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) {
+      if (!SKIP_DIRS.has(e.name)) walkTs(join(dir, e.name), out)
+    } else if (/.tsx?$/.test(e.name)) {
+      out.push(join(dir, e.name))
+    }
+  }
+  return out
+}
+
+/** Same contract as the recursive file-list grep it replaces. */
+function filesMatching(re: RegExp, dirs: string[]): string[] {
+  const out: string[] = []
+  for (const d of dirs) {
+    const root = join(process.cwd(), d)
+    if (!existsSync(root)) continue
+    for (const f of walkTs(root)) {
+      if (re.test(readFileSync(f, "utf8"))) out.push(f)
+    }
+  }
+  return out
+}
 
 // The FIFTH honesty layer — link-preview metadata — and the only one of the five
 // that had no directory-driven guard.
@@ -29,12 +65,7 @@ function okCarryingTypeNames(): Set<string> {
   // Derived, not hand-listed: any interface/type in the repo whose body declares
   // `ok: boolean` makes every function returning it an ok-carrying fetcher.
   const out = new Set<string>(["RowResult", "RowsResult"])
-  const files = execSync(
-    "grep -rl 'ok: boolean' lib app --include=*.ts --include=*.tsx || true",
-    { encoding: "utf8" },
-  )
-    .split("\n")
-    .filter(Boolean)
+  const files = filesMatching(/ok: boolean/, ["lib", "app"])
   for (const f of files) {
     const src = readFileSync(f, "utf8")
     for (const m of src.matchAll(/(?:interface|type)\s+(\w+)(?:<[^>]*>)?\s*=?\s*\{([^}]*)\}/g)) {
@@ -47,12 +78,7 @@ function okCarryingTypeNames(): Set<string> {
 /** Every function name whose declared return type carries an `ok` flag. */
 function okCarryingFetchers(okTypes: Set<string>): Set<string> {
   const names = new Set<string>()
-  const files = execSync(
-    "grep -rl 'function ' lib app --include=*.ts --include=*.tsx || true",
-    { encoding: "utf8" },
-  )
-    .split("\n")
-    .filter(Boolean)
+  const files = filesMatching(/function /, ["lib", "app"])
   const typeAlt = Array.from(okTypes).join("|")
   // ⚠ Scanned in a BOUNDED WINDOW per declaration, not with one whole-file
   // regex. A `\([\s\S]*?\)` for the parameter list backtracks ACROSS function
@@ -110,12 +136,10 @@ function stripComments(s: string): string {
   return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 }
 
-const metadataFiles = execSync(
-  "grep -rl 'export async function generateMetadata\\|export function generateMetadata' app --include=*.tsx --include=*.ts || true",
-  { encoding: "utf8" },
+const metadataFiles = filesMatching(
+  /export (?:async )?function generateMetadata/,
+  ["app"],
 )
-  .split("\n")
-  .filter(Boolean)
 
 describe("generateMetadata — a failed read must not be published as absence", () => {
   const okTypes = okCarryingTypeNames()

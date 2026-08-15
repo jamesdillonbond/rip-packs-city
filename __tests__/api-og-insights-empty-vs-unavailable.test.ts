@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import { NextRequest } from "next/server"
 import { installOgCapture, resetOgCapture, ogText, type OgCapture } from "./helpers/og-capture"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
@@ -56,7 +56,14 @@ function allOgRoutes(dir: string = ALL_OG, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
     if (statSync(full).isDirectory()) allOgRoutes(full, out)
-    else if (entry === "route.tsx") out.push(full)
+    // Normalised to forward slashes: every consumer below matches on "/og/..."
+    // literals, and join() yields backslashes on Windows -- which made the
+    // not-vacuous check unsatisfiable there (guard green in CI, dead locally).
+    // Normalised to forward slashes via path.sep: every consumer below matches
+    // on "/og/..." literals, while join() yields backslashes on Windows -- which
+    // made the not-vacuous check below unsatisfiable there, so this guard was
+    // green in CI and structurally dead on the primary dev machine.
+    else if (entry === "route.tsx") out.push(full.split(sep).join("/"))
   }
   return out
 }
@@ -133,7 +140,7 @@ describe("insights OG cards distinguish an empty board from an unreadable one", 
     // directory it lives in.
     const offenders = allOgRoutes()
       .filter((p) => /still loading|Loading the live|Loading…/i.test(stripComments(readFileSync(p, "utf8"))))
-      .map((p) => p.replace(process.cwd() + "/", ""))
+      .map((p) => p.replace(process.cwd().split(sep).join("/") + "/", ""))
     expect(offenders, `cards claiming to be loading:\n${offenders.join("\n")}`).toEqual([])
   })
 

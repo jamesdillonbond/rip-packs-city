@@ -2,14 +2,14 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { collectionHasPage, getCollection } from "@/lib/collections"
-import { pageMetadata } from "@/lib/seo"
+import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
 ): Promise<Metadata> {
   const { collection: id } = await props.params
   const collection = getCollection(id)
-  if (!collection) return pageMetadata("packs", "Flow", id)
+  if (!collection) return unknownCollectionMetadata("packs", id)
   return pageMetadata("packs", collection.label, collection.id)
 }
 
