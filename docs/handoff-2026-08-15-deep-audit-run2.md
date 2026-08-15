@@ -1,5 +1,11 @@
 # Handoff — monthly deep audit run 2 (2026-08-15)
 
+> **UPDATED ~16:10 PT.** Since the first version: R1/R2/R3/R10/R12/R13 + the script-secret item shipped
+> (Claude Code); R7's ordering fix shipped as `3a172b6b`; the Panini gate shipped as `2deeb8b4`; and
+> this Cowork session drained **D8** (§9) and re-derived **R4** (§4, materially corrected). The items
+> below are what is genuinely still open. **§4, §8 and §9 changed most — re-read those even if you
+> skimmed the first version.**
+
 Everything below was found by the 2026-08-15 deep audit and **could not be shipped from that session** because the Cowork shell sandbox was down (`useradd` / `/sessions` disk-full class, ~8th occurrence) — so there was no git and no push. DB-side work WAS shipped; see `docs/overnight/ledger.md` 2026-08-15.
 
 Ordered by blast radius. Each item carries what is VERIFIED vs INFERRED, the fix, and the revert.
@@ -69,7 +75,38 @@ Same shape, **P3**, lower stakes: `supabase/functions/scan-ufc-wallet/index.ts:2
 
 ---
 
-## 4 · P1 — INGEST — Pinnacle sales stopped resolving `edition_id` on 2026-08-14, and it is escalating
+## 4 · ⚠ SUPERSEDED — "Pinnacle sales stopped resolving" is NOT a regression. Read this before acting on the section below.
+
+**Re-derived independently 2026-08-15 ~15:50 PT, and it converges with the re-diagnosis already in
+CLAUDE.md ("a CATALOG-COVERAGE gap, not an indexer regression"). Nothing regressed.**
+
+Measured over 48 h: **0 null-but-mapped** vs **641 null-and-unmapped**. So the resolver is 100%
+effective on everything it can see — every unresolved sale is one whose `nft_id` simply is not in
+`pinnacle_nft_map`. The map is healthy and current (63,083 rows, **270 new in 24 h**, newest
+15:26 PT), and the mint pipelines are green (`ingest-pinnacle-mints-backfill` 514 runs / 100% ok /
+81,996 rows today; `-forward` 103 / 100% / 9,677).
+
+⚠ **What the existing write-ups do NOT explain is the timing, and that is the part worth adding: the
+08-14 onset is a 4.5× VOLUME JUMP, not a break.** Daily Pinnacle sales went 203 (08-13) → **911**
+(08-14) → 652 (08-15 partial), and nulls appeared in the same hour. A much wider set of NFTs started
+trading, including many outside the mint map's coverage. Confirmed single `source = 'on-chain'`
+throughout, so this is not a new ingest lane. Unmapped `nft_id`s span the **same full range** as
+mapped ones (1.35e9 → 2.8e14), so it is not an unwalked new drop either — the coverage gap is
+scattered and pre-existing; the volume increase merely made it visible.
+
+Secondary, and real: **the resolver is falling behind on throughput** — 08-11 attempted 235/235 of
+that day's sales; 08-15 only **159 of 652**.
+
+**So the work is NOT "fix the resolver."** It is (a) mint-map coverage for already-traded NFTs, and
+(b) resolver batch throughput against the higher volume. ⚠ And the "obvious heal" is still a trap:
+`pinnacle_mint_events.edition_id` is a **numeric** Pinnacle id while `pinnacle_sales.edition_id` is
+the **text `edition_key`** — two vocabularies under one column name, caught only by an FK. Do not
+relax it.
+
+The page half stands and is independent: the empty-state guard must run on the **post-filter** array
+so an unresolvable top-5 renders honest copy instead of a blank box.
+
+## 4b · (original filing, kept for the record — its diagnosis was wrong)
 
 **VERIFIED, with a clean onset.** Hourly `edition_id IS NULL` rate on `pinnacle_sales`:
 
@@ -147,6 +184,36 @@ Shipped 2026-08-15: `AND computed_at <= now()` on both LATERALs (`Subplans Remov
 - **`scripts/local-cost-basis-backfill.mjs:137-138`** ships `PASTE_FRESH_COOKIES_HERE` / `PASTE_FRESH_X_ID_TOKEN_HERE` as committed constants — the exact paste-in-place workflow whose leak caused the 2026-08-03 history rewrite. Read from `process.env` instead.
 
 ---
+
+## 9 · ✅ D8 — DRAINED this session, and its recorded root cause was WRONG
+
+**Shipped (data only, no DDL): ~2,290 wmc rows COALESCE-filled from `editions`. Fill-only and
+idempotent, so there is nothing to revert.**
+
+- **Top Shot healable → 0** (was 1,956, re-counted after the final pass). **UFC `set_name` 329 → 2**,
+  and those 2 have no `editions` row at all — an honest gap, correctly left.
+- ⚠ **The register's blocker is not the real one.** It records D8 as needing an operator
+  `CREATE INDEX CONCURRENTLY` on `created_at` because "finding NULL rows needs a wmc SCAN." The
+  **per-wallet path is already indexed** — `EXPLAIN` gives a Bitmap Index Scan on
+  `idx_wmc_lock_wallet_coll`, cost **40,837**, not a seq scan.
+- ⚠ **The real blocker is ROW-LOCK CONTENTION and Postgres says so outright:**
+  `57014 … while locking tuple (84543,6) in relation "wallet_moments_cache"`. It collides with the two
+  wmc FMV writers — jobid **302** (every 5 min) and **303** (every 10 min). I had inferred "write
+  amplification, not a held lock" one step earlier; the error context corrected it, not reasoning.
+- ✅ **Workaround needs no index and no operator: chunk it.** 50 rows instant · 400 reliable · 800
+  succeeded once then collided · whole-collection always dies. Use bounded `ctid`-keyed passes.
+  ⚠ **`FOR UPDATE SKIP LOCKED` was tried and did NOT help** — it still locks each candidate. Chunk
+  size is the lever, not lock mode.
+- ⚠ **AllDay's residual is NOT D8 and should stop being filed as it.** Sampled the worst wallet
+  (50 nulls): **0 lack an `editions` row; only 1 is healable.** The other 49 point at editions whose
+  `player_name` AND `team_name` are both NULL — i.e. **the R8 class one layer up**, which no wmc
+  backfill can fix. Fixing R8 is what moves AllDay.
+- ⚠ **Honest gap in my own verification:** the AllDay-scoped *count* still times out (449k rows, no
+  index on the NULL columns), so AllDay's total remainder is **unverified** — only the sampled wallet
+  is. That is the one place the `created_at` index would still genuinely help: **measurement, not the
+  write.**
+- **Standing recommendation:** schedule the heal as a chunked loop (≤400/pass) rather than one
+  statement, and it no longer needs the operator step it has been queued behind for 5 days.
 
 ## Method notes worth keeping
 
