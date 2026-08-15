@@ -24,7 +24,7 @@ Measured cost of that ordering: `resolve_topshot_subedition_collision_knots` (st
 
 **Verified.** `tsc` clean · full primary suite **12,003 passed / 1,215 files**; the 4 failing files (7 tests: `api-ingest-backfill`, `metadata-catch-branch-is-not-a-404`, `worker-moments-hydrator-handler`, `worker-pack-events-ingest`) reproduce **identically at HEAD with these changes stashed**, so they are the documented local-env class, not this change. ⚠ Not verified by a live tick — the next 20:30Z run is the proof, and what to read is `extra.step_ms` plus a non-zero `knots` and a shrinking gap in `topshot_collision_knot_resolutions`.
 
-**Revert:** `git revert <code-sha>` (route + guard; read the sha AFTER the push — a rebase rewrites it). No DB, migration, cron, auth, secret, hot-wallet or FMV/pricing-math change.
+**Revert:** `git revert 3a172b6b` (route + guard). No DB, migration, cron, auth, secret, hot-wallet or FMV/pricing-math change.
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "do everything mentioned") — wave 2 of 5: 7 DB pins on SCHEDULED WRITERS, chosen by measuring which prod-writing functions had no pin at all
 
