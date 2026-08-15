@@ -5,14 +5,15 @@ import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 // harness shape, different scenarios — this file is about the checks that guard
 // DATA-CORRECTNESS rather than reachability:
 //
-//   - the two Pinnacle probes. `searchPinnacleDeals` is the concierge's Pinnacle
-//     lane, and the failure it exists to catch is silent: a filter regression
-//     returns the WRONG CHARACTER's pins, and an FMV-join regression prices a
-//     Goofy pin off a Mickey render. Both must hard-fail on a leak, but must
-//     degrade to SOFT inconclusive on a transient pool/timeout error (Sentry
-//     NEXTJS-13's cry-wolf class), and must refuse to judge at all when the
-//     comparison fetch hits PostgREST's 1,000-row clamp — a truncated
-//     comparison set would false-flag every row in the dropped tail.
+//   - the Pinnacle character probe. `searchPinnacleDeals` is the concierge's
+//     Pinnacle lane, and the failure it exists to catch is silent: a filter
+//     regression returns the WRONG CHARACTER's pins. It must hard-fail on a leak
+//     but degrade to SOFT inconclusive on a transient pool/timeout error (Sentry
+//     NEXTJS-13's cry-wolf class).
+//     ⚠ Its former sibling — the FMV cross-character drift guard — was RETIRED
+//     2026-08-14 as a tautology (it compared the deal rows to the table they came
+//     from) after 54 false hard pages. The invariant it was meant to protect is
+//     now pinned statically in pinnacle-router-fmv-same-row-guard.test.ts.
 //   - the two SMOKE_TEST_SESSION_TOKEN opt-in probes, which self-skip as PASS
 //     when the token is unset (so an unconfigured environment can't red the
 //     gate) but become real assertions the moment it is set.
@@ -164,7 +165,6 @@ function find(env: Envelope, name: string): SmokeResult {
 }
 
 const CHAR_PROBE = "Pinnacle searchPinnacleDeals filters character_name correctly"
-const FMV_PROBE = "Pinnacle FMV not borrowed across characters (drift guard)"
 const AUTHED_PAGE = "authed /nba-top-shot/collection renders (opt-in via SMOKE_TEST_SESSION_TOKEN)"
 const HERO = "/api/profile/hero-moment returns populated hero (opt-in via SMOKE_TEST_SESSION_TOKEN)"
 
@@ -183,17 +183,25 @@ afterEach(() => {
   delete process.env.SMOKE_TEST_SESSION_TOKEN
 })
 
-describe("smoke-test — Pinnacle character + FMV probes", () => {
+// ⚠ The sibling "Pinnacle FMV not borrowed across characters (drift guard)" was
+// RETIRED 2026-08-14 and its cases removed from this file. It compared the deal
+// rows to pinnacle_catalog — which is where the deal rows came from — so it was
+// guaranteed to pass and still hard-paged 54 times. The invariant that makes the
+// leak impossible is pinned statically instead, in
+// __tests__/pinnacle-router-fmv-same-row-guard.test.ts. Do not re-add a runtime
+// probe here without first re-reading that file's header: the obvious
+// cross-source (pinnacle_fmv_history) is a trigger-written copy of the same
+// table, not an independent one.
+describe("smoke-test — Pinnacle character probe", () => {
   const goofyRow = { player: "Goofy", set: "Hero Set", tier: "Standard", fmv: 12 }
 
-  it("passes both probes when every row is the requested character and its FMV triple is in the catalog", async () => {
+  it("passes when every row is the requested character", async () => {
     state.pinnacleJson = JSON.stringify({ status: "ok", results: [goofyRow] })
     install(greenFixtures({ pinnacle_catalog: { data: [{ character_name: "Goofy", set_name: " Hero Set ", variant: "STANDARD" }], error: null } }))
     installSmokeFetch(greenStubs())
 
     const env = await run()
     expect(find(env, CHAR_PROBE)).toMatchObject({ passed: true, detail: "1 rows, all goofy" })
-    expect(find(env, FMV_PROBE)).toMatchObject({ passed: true, detail: "1 rows, no FMV leaks" })
   })
 
   it("hard-fails the character probe when a foreign character leaks into the results", async () => {
@@ -208,58 +216,30 @@ describe("smoke-test — Pinnacle character + FMV probes", () => {
     expect(r.detail).toContain("Mickey")
   })
 
-  it("hard-fails the FMV probe when a priced row has no matching catalog triple", async () => {
-    state.pinnacleJson = JSON.stringify({ status: "ok", results: [goofyRow] })
-    // Catalog has Goofy, but in a different set -> the triple key misses.
-    install(greenFixtures({ pinnacle_catalog: { data: [{ character_name: "Goofy", set_name: "Another Set", variant: "Standard" }], error: null } }))
-    installSmokeFetch(greenStubs())
-
-    const r = find(await run(), FMV_PROBE)
-    expect(r.passed).toBe(false)
-    expect(r.detail).toContain("FMV leaked on 1 row(s)")
-  })
-
-  it("refuses to judge the FMV probe when the catalog fetch hits the 1,000-row clamp", async () => {
-    state.pinnacleJson = JSON.stringify({ status: "ok", results: [goofyRow] })
-    const clamped = Array.from({ length: 1000 }, () => ({ character_name: "Goofy", set_name: "X", variant: "Y" }))
-    install(greenFixtures({ pinnacle_catalog: { data: clamped, error: null } }))
-    installSmokeFetch(greenStubs())
-
-    const r = find(await run(), FMV_PROBE)
-    // A truncated comparison set would false-flag the dropped tail, so the
-    // probe passes-with-inconclusive rather than judging on partial data.
-    expect(r.passed).toBe(true)
-    expect(r.notes?.inconclusive).toBe(true)
-  })
-
-  it("degrades BOTH probes to soft inconclusive on a transient pool error", async () => {
+  it("degrades to soft inconclusive on a transient pool error", async () => {
     state.pinnacleJson = JSON.stringify({ status: "error", message: "Timed out acquiring connection from connection pool" })
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run()
-    for (const name of [CHAR_PROBE, FMV_PROBE]) {
-      const r = find(env, name)
-      expect(r.passed).toBe(false)
-      expect(r.soft).toBe(true)
-      expect(r.notes?.warn).toBe("pinnacle_transient")
-    }
+    const r = find(env, CHAR_PROBE)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBe(true)
+    expect(r.notes?.warn).toBe("pinnacle_transient")
     // Soft failures never page.
     expect(state.opsAlerts).toHaveLength(0)
   })
 
-  it("hard-fails both probes on a non-transient unexpected status", async () => {
+  it("hard-fails on a non-transient unexpected status", async () => {
     state.pinnacleJson = JSON.stringify({ status: "error", message: "column does not exist" })
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run()
-    for (const name of [CHAR_PROBE, FMV_PROBE]) {
-      const r = find(env, name)
-      expect(r.passed).toBe(false)
-      expect(r.soft).toBeFalsy()
-      expect(r.detail).toContain("unexpected status: error")
-    }
+    const r = find(env, CHAR_PROBE)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBeFalsy()
+    expect(r.detail).toContain("unexpected status: error")
   })
 })
 

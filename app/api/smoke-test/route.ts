@@ -1576,134 +1576,34 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "all-rows-match-character",
     }),
 
-    // Pinnacle FMV cross-character leak detector
-    time(async () => {
-      const meta = {
-        name: "Pinnacle FMV not borrowed across characters (drift guard)",
-        endpoint: "lib:searchPinnacleDeals",
-        expected: "no-fmv-leak",
-      };
-      const json = await searchPinnacleDeals(
-        svc,
-        { player: "Goofy", maxPrice: 100, limit: 20 },
-        { source: "live" }
-      );
-      const parsed = JSON.parse(json);
-      if (parsed.status === "no_results") {
-        return { ...meta, passed: true, detail: "no rows to check", statusCode: null, bodyExcerpt: null, notes: null };
-      }
-      // Same transient-db guard as the sibling character_name check: a
-      // connection-pool/statement-timeout error is infra load, not an FMV-leak
-      // regression — report SOFT inconclusive instead of paging. (Sentry NEXTJS-13.)
-      if (parsed.status === "error" && TRANSIENT_RX.test(parsed.message ?? "")) {
-        return { ...meta, passed: false, soft: true, detail: `inconclusive: transient db error (${parsed.message})`, statusCode: null, bodyExcerpt: null, notes: { inconclusive: true, warn: "pinnacle_transient" } };
-      }
-      if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
-        return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
-      }
-      // Validate each priced row against pinnacle_catalog (the per-render FMV
-      // source since a9f86af) using a trimmed + lowercased (character, set,
-      // variant) triple key — mirrors the router's tripleKey. pinnacle_editions
-      // is no longer the FMV source, and catalog set_name values can carry a
-      // leading space, so an exact PostgREST .eq() against either column
-      // false-positives this guard on every smoke tick. NOTE: the catalog column
-      // is `variant`, not `variant_type`.
-      const tripleKey = (c: string | null, s: string | null, v: string | null) =>
-        `${(c ?? "").toLowerCase().trim()}||${(s ?? "").toLowerCase().trim()}||${(v ?? "").toLowerCase().trim()}`;
-      // Bound the comparison fetch to the characters actually under test. A
-      // global .limit(5000) is silently clamped to PostgREST's 1,000-row server
-      // max, so once pinnacle_catalog exceeds 1,000 priced renders (1,806 as of
-      // 2026-06-10) ~806 renders fall out of catalogTriples — the same ones every
-      // tick (stable scan order) — and any deal whose render sits in the dropped
-      // tail false-flags as a leak. Each character has far fewer than 1,000
-      // renders, so .in(character_name) can never be truncated.
-      const distinctPlayers = Array.from(
-        new Set(
-          (parsed.results as Array<{ player: string | null }>)
-            .map((r) => r.player)
-            .filter((p): p is string => typeof p === "string" && p.length > 0)
-        )
-      );
-      const { data: catalogRows, error: catalogErr } = await (svc as any)
-        .from("pinnacle_catalog")
-        .select("character_name, set_name, variant")
-        .not("fmv_usd", "is", null)
-        .in("character_name", distinctPlayers.length > 0 ? distinctPlayers : ["__none__"]);
-      // ⚠ The COMPARISON fetch must be checked, or its failure IS the verdict.
-      // This error was previously not destructured at all: a failed read left
-      // catalogRows null, catalogTriples empty, and then EVERY priced deal row
-      // "leaked" — the guard reporting a fabricated FMV-drift incident out of
-      // its own transient DB error, and hard-paging for it. Sentry
-      // JAVASCRIPT-NEXTJS-14: 54 occurrences since 2026-05-11, still firing,
-      // and the sample rows it named were all present in pinnacle_catalog with
-      // matching FMVs — i.e. every reported leak was false.
-      //
-      // The sibling TRANSIENT_RX branch above does NOT cover this: it guards the
-      // searchPinnacleDeals call, not this second read. Report couldNotRun so an
-      // unevaluated check is never published as a violated assertion.
-      //
-      // ⚠ An EMPTY-but-successful result is deliberately NOT treated this way.
-      // If the catalog genuinely holds no priced row for the characters under
-      // test, then a priced deal row really is unbacked — which is exactly the
-      // leak this guard exists to catch. Only a FAILED read is inconclusive.
-      if (catalogErr) {
-        return {
-          ...meta,
-          passed: false,
-          couldNotRun: true,
-          detail: `inconclusive: pinnacle_catalog comparison fetch failed (${catalogErr.message})`,
-          statusCode: null,
-          bodyExcerpt: null,
-          notes: { inconclusive: true, warn: "catalog_fetch_failed" },
-        };
-      }
-      // Belt-and-braces: if the bounded fetch ever returns the clamp ceiling,
-      // the set may be truncated — report inconclusive rather than false-fail.
-      if ((catalogRows ?? []).length >= 1000) {
-        return {
-          ...meta,
-          passed: true,
-          detail: `inconclusive: catalog fetch hit the ${1000}-row clamp (${(catalogRows ?? []).length}); skipping leak check`,
-          statusCode: null,
-          bodyExcerpt: null,
-          notes: { inconclusive: true, fetched: (catalogRows ?? []).length },
-        };
-      }
-      const catalogTriples = new Set<string>(
-        (catalogRows ?? []).map((row: any) => tripleKey(row.character_name, row.set_name, row.variant))
-      );
-      const leaks: string[] = [];
-      for (const r of parsed.results as Array<{
-        player: string | null; set: string | null; tier: string | null; fmv: number | null;
-      }>) {
-        if (r.fmv == null) continue;
-        if (!catalogTriples.has(tripleKey(r.player, r.set, r.tier))) {
-          leaks.push(`${r.player}/${r.set}/${r.tier} fmv=$${r.fmv}`);
-        }
-      }
-      if (leaks.length > 0) {
-        return {
-          ...meta,
-          passed: false,
-          detail: `FMV leaked on ${leaks.length} row(s): ${leaks[0]}`,
-          statusCode: null,
-          bodyExcerpt: leaks.slice(0, 5).join("; ").slice(0, 500),
-          notes: { leak_count: leaks.length, total: parsed.results.length },
-        };
-      }
-      return {
-        ...meta,
-        passed: true,
-        detail: `${parsed.results.length} rows, no FMV leaks`,
-        statusCode: null,
-        bodyExcerpt: null,
-        notes: { result_count: parsed.results.length },
-      };
-    }, {
-      name: "Pinnacle FMV not borrowed across characters (drift guard)",
-      endpoint: "lib:searchPinnacleDeals",
-      expected: "no-fmv-leak",
-    }),
+    // RETIRED 2026-08-14: "Pinnacle FMV not borrowed across characters (drift
+    // guard)". It asserted that every priced row searchPinnacleDeals returns has
+    // a matching (character, set, variant) triple in pinnacle_catalog — but the
+    // deals rows ARE pinnacle_catalog rows, mapped straight through, so the
+    // triple was guaranteed present and the check could not fail for its stated
+    // reason. It went tautological when a9f86af moved the Pinnacle FMV source
+    // off pinnacle_editions onto the catalog; nothing failed, so nothing said so.
+    // Cost while it lived: Sentry JAVASCRIPT-NEXTJS-14, 54 hard pages since
+    // 2026-05-11, every one verified false — the ufc_fmv_stale_hours failure
+    // exactly, an arm that trains the operator to skim past the board.
+    //
+    // The filed recommendation was to RE-POINT it at pinnacle_fmv_history by
+    // render_id. That was measured and REJECTED: pinnacle_fmv_history is not an
+    // independent source, it is written by an AFTER INSERT/UPDATE TRIGGER on
+    // pinnacle_catalog, so the comparison is the same tautology one hop removed —
+    // except where the trigger drops a row, which it does for 776 renders (see
+    // docs/overnight/inbox/2026-08-15T0620Z-pinnacle-fmv-history-silently-drops-the-ask-only-revision.md).
+    // Re-pointing would have shipped a guard that pages immediately on a
+    // history-capture bug while still saying nothing about FMV drift.
+    //
+    // Nothing replaces it at RUNTIME because the property is now enforced by
+    // CONSTRUCTION: searchPinnacleDeals reads ask and FMV from the SAME catalog
+    // row, so there is no join across which a character's FMV could leak. That
+    // is what the retired guard was really protecting, and it is pinned
+    // statically instead by __tests__/pinnacle-router-fmv-same-row-guard.test.ts,
+    // which fails if anyone reintroduces a cross-table FMV read into the router.
+    // The sibling "filters character_name correctly" probe above still covers the
+    // query-shape risk at runtime.
 
     // Concierge name-filter regression — Pinnacle Goofy — LIVE LLM call, gated.
     ...(liveConcierge ? [ time(async () => {

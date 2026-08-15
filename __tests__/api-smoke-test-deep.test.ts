@@ -264,7 +264,7 @@ afterEach(() => {
 })
 
 describe("GET /api/smoke-test — deep drive of the full battery", () => {
-  it("fully-green run: 55/55 (hard 43/43), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
+  it("fully-green run: 54/54 (hard 42/42), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
     const spy = install(greenFixtures())
     const { calls } = installSmokeFetch(greenStubs())
 
@@ -274,12 +274,13 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // (55 = 54 historical + /insights/candy-mlb (2026-07-31 Candy go-live) +
     // /insights/panini-squeeze (2026-08-01 Panini go-live) — each a hard
     // 200-status public-page check — MINUS the /api/cart/validate probe, dropped
-    // 2026-08-01 with the read-only cart/gift/trade teardown.)
-    expect(env.total).toBe(55)
-    expect(env.passed).toBe(55)
+    // 2026-08-01 with the read-only cart/gift/trade teardown, MINUS the Pinnacle
+    // FMV drift guard, retired 2026-08-14 as a tautology that could not fail.)
+    expect(env.total).toBe(54)
+    expect(env.passed).toBe(54)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(43) // 12 checks are soft-flagged in a green run
-    expect(env.hardPassed).toBe(43)
+    expect(env.hardTotal).toBe(42) // 12 checks are soft-flagged in a green run
+    expect(env.hardPassed).toBe(42)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -301,7 +302,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of all structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(55)
+    expect(writes[0].rows).toHaveLength(54)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -512,54 +513,21 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
   // the membership test and the guard published a fabricated FMV-drift incident
   // built out of its own transient DB error. Verified false on 2026-08-13: the
   // rows it named were all present in pinnacle_catalog with matching FMVs.
-  it("reports couldNotRun when the pinnacle_catalog comparison fetch FAILS, instead of calling every row a leak", async () => {
-    const f = greenFixtures()
-    state.pinnacleJson = JSON.stringify({
-      status: "ok",
-      results: [
-        { player: "Goofy", set: "Disney Holiday Vol.1", tier: "Colored Enamel", fmv: 0.77 },
-        { player: "Goofy", set: "Disney Holiday Vol.1", tier: "Color Splash", fmv: 5.66 },
-      ],
-    })
-    f["pinnacle_catalog"] = { data: null, error: { message: "Timed out acquiring connection from connection pool." } }
-    install(f)
-    installSmokeFetch(greenStubs())
-
-    const env = await run()
-
-    const guard = findResult(env, "Pinnacle FMV not borrowed across characters (drift guard)")
-    expect(guard.passed).toBe(false)
-    // The check never evaluated, so it must not restate the assertion.
-    expect(guard.couldNotRun).toBe(true)
-    expect(guard.detail).toContain("comparison fetch failed")
-    // ⚠ The load-bearing assertion: it must NOT claim a leak it never measured.
-    expect(guard.detail).not.toContain("FMV leaked")
-    expect(state.sentryMessages).not.toContain(
-      "smoke test failed: Pinnacle FMV not borrowed across characters (drift guard)",
-    )
-  })
-
-  it("still reports a REAL leak when the comparison fetch SUCCEEDS but the triple is absent", async () => {
-    // The contrast case, and the reason an empty-but-successful catalog read is
-    // deliberately NOT treated as inconclusive: if the catalog genuinely holds
-    // no priced row for the characters under test, a priced deal row really is
-    // unbacked — which is exactly what this guard exists to catch.
-    const f = greenFixtures()
-    state.pinnacleJson = JSON.stringify({
-      status: "ok",
-      results: [{ player: "Goofy", set: "Nonexistent Set", tier: "Standard", fmv: 42 }],
-    })
-    f["pinnacle_catalog"] = { data: [], error: null }
-    install(f)
-    installSmokeFetch(greenStubs())
-
-    const env = await run()
-
-    const guard = findResult(env, "Pinnacle FMV not borrowed across characters (drift guard)")
-    expect(guard.passed).toBe(false)
-    expect(guard.couldNotRun).toBeFalsy()
-    expect(guard.detail).toContain("FMV leaked")
-  })
+  // ⚠ REMOVED 2026-08-14 with the guard they covered: "reports couldNotRun when
+  // the pinnacle_catalog comparison fetch FAILS" and "still reports a REAL leak
+  // when the comparison fetch SUCCEEDS but the triple is absent".
+  //
+  // The couldNotRun fix those pinned was correct and is NOT what was wrong. The
+  // guard itself could not fail for its stated reason: searchPinnacleDeals maps
+  // pinnacle_catalog rows straight through, and the guard then re-read
+  // pinnacle_catalog to check the triple was present — so the second test's
+  // scenario (a priced deal row whose triple is absent) is one production could
+  // never produce. A green test over an impossible fixture asserts nothing, and
+  // it made a defect read like a contract for three months / 54 false pages.
+  //
+  // The couldNotRun BEHAVIOUR is still exercised generally by the
+  // "a guard that could not RUN must not publish an assertion-style title" case
+  // above; only the Pinnacle-specific instances went with the guard.
 
   it("a guard that RUNS and finds a real violation keeps the assertion-style title (the contrast case)", async () => {
     const f = greenFixtures()
@@ -632,14 +600,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 3 live-LLM probes (58 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 3 live-LLM probes (57 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(58)
+    expect(env.total).toBe(57)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",
