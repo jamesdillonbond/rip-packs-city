@@ -38,8 +38,49 @@ whenever cron has not been repointed yet.
 
 ## 2. Restoring a 403ing function — prefer the unconditional instruction
 
-**Set `<NAME>_GATE_KEY` to the value cron already sends.** Works whether or not the deployed
-build carries the dual-accept code, needs no cron repoint and no redeploy.
+### ⛔ PRECONDITION — validate the cron's key STRUCTURALLY before copying it anywhere
+
+The instruction below copies a value **out of a cron command**. That value is not guaranteed
+to be a key. On 2026-08-15, jobs 15 + 16 were found sending the literal
+`<TOPSHOT_PACK_SUPPLY_KEY>` — an unsubstituted template placeholder pasted during the 08-11
+repoint, angle brackets and all. **Following §2 verbatim would have installed a trivially
+guessable literal as the production gate key, and the 403s would have stopped, so it would
+have looked correct.**
+
+```sql
+select length(substring(command from 'key=([^&'']+)'))       as key_len,
+       substring(command from 'key=([^&'']+)') ~ '^rpc_pls_' as looks_real,
+       substring(command from 'key=([^&'']+)') ~ '^<|^PASTE' as looks_like_placeholder
+from cron.job where jobid = <id>;
+```
+
+**`looks_real` must be true before you copy anything.** If it is not, do NOT set the secret
+from cron — instead generate a fresh key **inside the DB** and write it into the cron command
+without ever selecting it, then have the operator copy it *out* of `cron.job` into the
+dashboard (this inverts the copy direction so there is no template left to substitute):
+
+```sql
+do $$
+declare v text := 'rpc_pls_' || replace(gen_random_uuid()::text, '-', '');
+        j int;
+begin
+  foreach j in array array[<jobids>] loop
+    perform cron.alter_job(j, command := (select regexp_replace(command,'key=[^&'']+','key='||v)
+                                          from cron.job where jobid = j));
+  end loop;
+end $$;
+```
+
+⚠ **md5 comparison alone cannot catch this.** A digest tells you cron ≠ secret; it cannot tell
+you *why*, and two days were lost to that. **Structural validation is not value disclosure** —
+length, prefix and character class are safe to read and are exactly what catches placeholders,
+truncation and trailing whitespace.
+
+### The instruction itself
+
+**Set `<NAME>_GATE_KEY` to the value cron already sends** (once the precondition passes).
+Works whether or not the deployed build carries the dual-accept code, needs no cron repoint and
+no redeploy.
 
 The `_OLD` route (§3) is correct *only if* the deployed build postdates the dual-accept
 change — a fact you have to go check. Prefer the instruction that holds under both
@@ -104,6 +145,12 @@ npx supabase@latest functions deploy <name> \
 3. If `projects list` works but every project-scoped call 401s, it is org-level authz
    (member role or enforced MFA) — not fixable by retrying.
 
+⚠ **Confirmed 2026-08-15: traps 1 AND 2 are both live on Trevor's box, and clearing the env
+var does not rescue the CLI.** The deploy uploaded all four assets correctly and then 401'd —
+and still 401'd with the persistent `SUPABASE_ACCESS_TOKEN` (len 44) cleared via `env -u`.
+**Treat the CLI as unavailable and go straight to the MCP fallback**; do not spend a session
+re-litigating the credential path.
+
 ### MCP fallback (`deploy_edge_function`)
 Works when the CLI does not — different credential path.
 `verify_jwt:false`, `import_map_path:"deno.json"`, files `[{deno.json},{index.ts}]`.
@@ -156,6 +203,20 @@ documented cron-job.org incident is the other half of this class: job-edit pages
 In order: a literal `<PLACEHOLDER>` sent as the key; an empty variable (`Read-Host` does not
 accept Ctrl+V in Windows PowerShell — it captures `^V` as one character); a 370-character
 clipboard holding unrelated text; a clipboard still holding the *previous* key.
+
+⚠ **The placeholder failure is not confined to probes — the CRON ITSELF held one for 86 hours**
+(§2 precondition). And any snippet you hand an operator can reproduce it: three separate
+placeholder values were pasted unsubstituted into `cron.job` during the 08-15 repair
+(`<TOPSHOT_PACK_SUPPLY_KEY>`, then `PASTE_SECRET_VALUE`, then `PASTE_THE_REAL_KEY_HERE`).
+**Every snippet containing a placeholder must refuse to run unsubstituted:**
+
+```sql
+if v !~ '^rpc_pls_' then raise exception 'Not substituted (len %, prefix %)', length(v), left(v,8); end if;
+```
+
+⚠ **And make the diagnostic a `SELECT`, not a `RAISE NOTICE`.** A `DO $$ … $$` block's notices
+**do not surface in the Supabase SQL editor** — it reports "Success. No rows returned" and the
+answer is silently lost.
 
 ```powershell
 $k = (Get-Clipboard -Raw).Trim()
