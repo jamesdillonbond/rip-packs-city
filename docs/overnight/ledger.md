@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive) — the static-ext correction cited a line number it never measured, and one figure was arithmetic on the wrong one
+
+Docs-only. The 08-13 static-ext correction banner cited `proxy.ts:432` for the `/overview` rule in
+three places across `docs/handoff-2026-08-13-static-ext-auth-bypass.md` and
+`docs/session-close-2026-08-13-cowork-cloud.md`. Measured: the rule sat at **464** on the tip the
+incident was worked from (`6eb7b0e5`) and is at **534** today — line 432 is an unrelated Fast Break
+comment. The companion "line 677" was correct; that is exactly the pre-fix `STATIC_EXT_RX` call
+site. The session-close's "245 lines above the one I was reading" is literally `677 - 432`, so the
+derived figure inherited the bad input — the true gap is **213**. In a doc whose stated lesson is
+"I stopped measuring at the point the answer looked right", an unmeasured citation and a number
+derived from it are the same class. Both citations now name the rule rather than a line, since it
+has already moved twice in two days.
+
+Verified against source rather than restated: `[collection]/page.tsx:6` is the redirect, the
+`/^\/[^/]+\/overview$/` rule dates to `78fd7de0` (2026-05-31) exactly as the banner claims, and
+`STATIC_ROOT_ASSETS` is live in `proxy.ts`. Also removed the orphaned root scratch file
+`ledger-entry-static-ext-bypass-PASTE-READY.md` — never committed, zero references anywhere in the
+tree, and every fact in it already lives in the handoff's correction banner.
+
+No code, DB, migration, cron, auth or prod change. Docs-only, so `vercel.json`'s `ignoreCommand`
+correctly fires no deploy — nothing here needs deploying.
+
+Revert: `git revert fc9333d8` restores the stale citations and the wrong 245. ⚠ It does NOT restore
+the deleted scratch file — that was untracked, so it has no git history; a copy is in this
+session's scratchpad only.
+
 ### 2026-08-15 · SHIPPED (Claude Code, docs — thread close-out) — committed the session's lessons to CLAUDE.md and recorded what stays open
 
 - **Docs only** — `CLAUDE.md` + this entry. No code, no DB, no prod state.
