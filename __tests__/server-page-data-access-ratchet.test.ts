@@ -48,9 +48,17 @@ const APP_DIR = join(process.cwd(), "app")
  * The ceiling. Lower it when you extract a page's reads into `lib/`; NEVER raise
  * it to make a build pass — raising it re-opens the exact hole this exists to
  * hold shut. It was 37 when this landed, became 36 when the pack-dist page was
- * converted in the same wave, and 35 when app/moment/[id] followed.
+ * converted in the same wave, 35 when app/moment/[id] followed, and 34 when the
+ * edition page's last two direct readers (market bundle + insight links) moved
+ * to lib/entity/edition-market-fetchers.ts.
+ *
+ * ⚠ That last one is the cheap-conversion pattern worth copying: the edition page
+ * is 1,131 LOC but only TWO of its fetchers still held a client — every other
+ * section had already been routed through lib/entity-section-rpc.ts. Grep a
+ * candidate for `supabaseAdmin` before assuming a big page is a big job; the
+ * count that matters is call sites, not lines.
  */
-const BUDGET = 35
+const BUDGET = 34
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]

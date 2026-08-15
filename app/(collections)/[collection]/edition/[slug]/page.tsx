@@ -14,7 +14,16 @@ import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows } from "@/lib/entity-section-rpc"
-import { supabaseAdmin } from "@/lib/supabase"
+import {
+  fetchMarketBundle,
+  fetchInsightLinks,
+  type HighOffer,
+  type IpfsAsset,
+  type SubeditionSibling,
+  type MarketBundle,
+  type InsightLinks,
+  EMPTY_INSIGHT_LINKS,
+} from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
@@ -130,16 +139,6 @@ interface PackRow {
   depletion_pct: number | null
 }
 
-interface HighOffer {
-  highest_offer: number | null
-  low_ask: number | null
-  updated_at: string | null
-  // 'parallel' = the offer applies to THIS printing (subedition-scoped or the
-  // printing's own marketplace top offer); 'edition' = an edition-wide offer
-  // fillable by any printing. Drives the Best-offer cell label on :: pages.
-  offer_scope?: string | null
-}
-
 interface ParallelEdition {
   id: string
   external_id: string | null
@@ -152,20 +151,12 @@ interface ParallelEdition {
   player_name: string | null
 }
 
-// Subedition (parallel) sibling — same setID:playID base, different printing
-// (Standard / Hexwave / Jukebox / …). Each is its OWN edition with its own
-// circulation + per-parallel FMV. Distinct from ParallelEdition above (which is
-// same-play / DIFFERENT-set). Powers the "Parallel Printings" ladder.
-interface SubeditionSibling {
-  external_id: string
-  subedition_id: number | null
-  subedition_name: string | null
-  circulation_count: number | null
-  thumbnail_url: string | null
-  fmv_usd: number | null
-  confidence: string | null
-  is_self: boolean
-}
+// NOTE: SubeditionSibling — same setID:playID base, different printing
+// (Standard / Hexwave / Jukebox / …), each its OWN edition with its own
+// circulation and per-parallel FMV — now lives in
+// lib/entity/edition-market-fetchers.ts alongside the bundle that returns it.
+// It is DISTINCT from ParallelEdition above (same-play / DIFFERENT-set); the two
+// are easy to confuse and drive different sections.
 
 const SALES_PAGE_SIZE = 30
 
@@ -289,16 +280,6 @@ async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
 // easing the PostgREST connection-pool pressure that dominates edition-page
 // errors. (2026-07-01 fan-out reduction — continues the get_edition_insight_links
 // bundling.) high_offer.low_ask now carries the live NFL All Day floor ask.
-interface MarketBundle {
-  high_offer: HighOffer | null
-  ipfs_assets: IpfsAsset | null
-  subedition_siblings: SubeditionSibling[]
-  // Count of open market listings for this edition (Feature 1, "% Listed").
-  // null = no fresh listing source for the collection (Top Shot's ts_listings
-  // feed is dead; UFC/Pinnacle have none) → render em-dash, never a fake 0%.
-  // 0 = a live source with nothing currently listed (honest "0.0% listed").
-  active_listings: number | null
-}
 // The seven list-shaped section fetchers above go through
 // lib/entity-section-rpc.ts: connection-class errors retry before surfacing, and
 // a failure that survives them logs under a greppable `[entity-section]` prefix
@@ -319,19 +300,6 @@ interface MarketBundle {
 // (and the retry the rest of the page had). market_bundle is the single most
 // frequent edition error in production, so leaving it unbounded would have left
 // the hang in place on the exact page that reported it.
-const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [], active_listings: null }
-
-async function fetchMarketBundle(editionId: string, externalId: string | null): Promise<MarketBundle> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await rpcWithRetry<any>(supabaseAdmin as never, "get_edition_market_bundle", { p_edition_id: editionId, p_external_id: externalId })
-  if (error) { console.error("[edition] market_bundle", error.message); return EMPTY_MARKET_BUNDLE }
-  return {
-    high_offer: (data?.high_offer ?? null) as HighOffer | null,
-    ipfs_assets: (data?.ipfs_assets ?? null) as IpfsAsset | null,
-    subedition_siblings: Array.isArray(data?.subedition_siblings) ? (data.subedition_siblings as SubeditionSibling[]) : [],
-    active_listings: typeof data?.active_listings === "number" ? data.active_listings : null,
-  }
-}
 
 async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   return sectionRows<ParallelEdition>("edition parallels", "get_edition_parallels", { p_edition_id: editionId })
@@ -342,40 +310,12 @@ async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
 // squeeze_pct (topshot_squeeze_board), discount_pct (topshot_deals_vs_fmv,
 // keyed on external_id), and the first-mint multiplier
 // (topshot_first_mint_trophies). Closes the entity → insights link direction.
-interface InsightLinks {
-  squeeze_pct: number | null
-  deal_pct: number | null
-  first_mint_x: number | null
-}
 
-const EMPTY_INSIGHT_LINKS: InsightLinks = { squeeze_pct: null, deal_pct: null, first_mint_x: null }
-
-async function fetchInsightLinks(editionId: string, externalId: string | null): Promise<InsightLinks> {
-  try {
-    // Bundled into ONE RPC (get_edition_insight_links) so the edition page holds a
-    // single pooled connection here instead of three separate view reads.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await rpcWithRetry<any>(supabaseAdmin as never, "get_edition_insight_links", { p_edition_id: editionId, p_external_id: externalId })
-    if (error) { console.error("[edition] insight_links", error.message); return EMPTY_INSIGHT_LINKS }
-    return {
-      squeeze_pct: data?.squeeze_pct ?? null,
-      deal_pct: data?.deal_pct ?? null,
-      first_mint_x: data?.first_mint_x ?? null,
-    }
-  } catch (e) {
-    console.error("[edition] insight_links", e instanceof Error ? e.message : String(e))
-    return EMPTY_INSIGHT_LINKS
-  }
-}
 
 // IPFS CID data still arrives on the market bundle (topshot_ipfs_assets) but
 // is no longer rendered — the "Media Verified on IPFS" section was removed
 // 2026-07-11 (Trevor: build-time plumbing, not front-end content). The type
 // stays so the bundle shape remains documented.
-interface IpfsAsset {
-  video_cid: string | null
-  hero_cid: string | null
-}
 
 const INSIGHT_CHIP_STYLE: React.CSSProperties = {
   display: "inline-flex",
@@ -436,13 +376,17 @@ export default async function EditionPage(
   // headline FMV paints after ~1 RPC instead of waiting on the full fan-out. The
   // route loading.tsx ("SCANNING THE MARKETPLACE…") now only covers this shell.
   // (2026-06-23 — decouple FMV display from the slower market fetches.)
-  const [history, bundle, insightLinks, badgeArt, repSales] = await Promise.all([
+  const [history, bundleRes, insightRes, badgeArt, repSales] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
     collection === "nba-top-shot"
       ? fetchInsightLinks(detail.id, detail.external_id)
-      : Promise.resolve(EMPTY_INSIGHT_LINKS),
+      // ⚠ `ok: true` on the skip, deliberately. Insight links are Top Shot only,
+      // so NOT APPLICABLE is not a failure — marking it `ok: false` would put
+      // every non-Top-Shot edition page into a permanent degraded state, the
+      // cry-wolf outcome lib/insights/board-status.ts warns about.
+      : Promise.resolve({ data: EMPTY_INSIGHT_LINKS, ok: true }),
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
     // back to the existing text pill. (2026-06-15)
     fetchBadgeArt(detail.badges ?? [], coll.id),
@@ -451,6 +395,13 @@ export default async function EditionPage(
     // sales page is fetched in the streamed bottom block.
     fetchSales(coll.id, slug, 1, 0),
   ])
+  // `.data` only — see lib/entity/edition-market-fetchers.ts on why `ok` is not
+  // consumed here: every render site below gates on `!= null` / `length >= 2`,
+  // so a failed read degrades to an em-dash or a hidden section rather than a
+  // fabricated 0. `ok` exists for the first consumer that wants to render a
+  // figure unconditionally.
+  const bundle = bundleRes.data
+  const insightLinks = insightRes.data
   const highOffer = bundle.high_offer
   // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
   const subSiblings = bundle.subedition_siblings

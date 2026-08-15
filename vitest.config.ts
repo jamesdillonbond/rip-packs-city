@@ -792,11 +792,19 @@ export default defineConfig({
       //     anyone noticed (see vitest.components.config.ts, 2026-08-13). The
       //     0.3 keeps the concurrent-push churn margin lesson 47f901a1 records
       //     without leaving a point of coverage dark.
+      //   2026-08-15 (test-coverage "do all of these" pass): re-seated against
+      //     measured actuals of 91.69 / 79.00 / 93.46 / 93.78. Branch slack had
+      //     drifted to 0.70 as this pass added tests (7 DB-pin suites, the OG
+      //     headline-count guard, the AllDay buyer-recovery cases, the extracted
+      //     edition market fetchers) without moving the gate. That is the exact
+      //     drift the component gate's history records compounding into ~13
+      //     points, so it is re-seated in the SAME pass that measured it, back to
+      //     the documented ~0.4 margin.
       thresholds: {
-        statements: 91.2,
-        branches: 78.3,
-        functions: 93.0,
-        lines: 93.35,
+        statements: 91.3,
+        branches: 78.6,
+        functions: 93.1,
+        lines: 93.4,
       },
     },
   },
