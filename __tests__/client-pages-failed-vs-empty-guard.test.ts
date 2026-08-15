@@ -85,6 +85,85 @@ describe("client pages — a failed read is not an empty result", () => {
     ).toBeLessThan(src.indexOf("Benchmark data may be too thin."))
   })
 
+  // ── SITE 3: /alerts (added 2026-08-15) ────────────────────────────────────
+  //
+  // Found by sweeping client-page empty-state copy rather than by a report. Its
+  // `load()` ran three fetches under one Promise.all, guarded each with
+  // `if (res.ok)`, and on a !ok response simply left state at its initial `[]` —
+  // with a bare `catch { /* ignore */ }` swallowing a thrown fetch entirely.
+  //
+  // EVERY claim on this page is about the reader's OWN account, which makes it
+  // the sharpest instance of this class after the dashboard hero-picker:
+  //
+  //   • "No alerts yet. Create one above."  — invites a DUPLICATE of an alert
+  //     the collector already has.
+  //   • "No watched editions yet."
+  //   • the channel list rendered every channel as "not linked" with a Link
+  //     button, telling someone whose Telegram IS linked that it is not.
+  //
+  // Per-leg rather than one flag on purpose: the three endpoints fail
+  // independently, and a single flag would blank all three sections whenever any
+  // one of them broke.
+  describe("/alerts — three independent legs, three independent failures", () => {
+    const src = stripComments(read("app", "alerts", "page.tsx"))
+
+    it("tracks failure per leg and clears it on re-fetch", () => {
+      expect(src).toContain(
+        "const [failed, setFailed] = useState({ channels: false, subs: false, fmv: false })",
+      )
+      // Reset at the top of load(), or a recovered page stays stuck on the
+      // failure copy.
+      expect(src).toContain("setFailed({ channels: false, subs: false, fmv: false })")
+    })
+
+    it("sets the flag on every !ok leg", () => {
+      expect(src).toContain('setFailed((f) => ({ ...f, channels: true }))')
+      expect(src).toContain('setFailed((f) => ({ ...f, subs: true }))')
+      expect(src).toContain('setFailed((f) => ({ ...f, fmv: true }))')
+    })
+
+    it("a thrown fetch fails ALL three legs", () => {
+      // One Promise.all — if it throws, no leg's state was populated, so trusting
+      // any of them would be inventing an answer for two sections as well as one.
+      expect(src).toContain("setFailed({ channels: true, subs: true, fmv: true })")
+      expect(src, "the catch must not silently swallow").not.toMatch(
+        /catch \{\s*\/\* ignore \*\/\s*\}/,
+      )
+    })
+
+    it("the empty-state copy SURVIVES — owning nothing is still a real answer", () => {
+      expect(src).toContain("No alerts yet. Create one above.")
+      expect(src).toContain("No watched editions yet.")
+    })
+
+    it("the failure branch precedes the empty branch in both lists", () => {
+      // Ordering is what makes the fix non-inert.
+      expect(src.indexOf("failed.subs ?")).toBeGreaterThan(-1)
+      expect(src.indexOf("failed.subs ?")).toBeLessThan(src.indexOf("No alerts yet."))
+      expect(src.indexOf("failed.fmv ?")).toBeGreaterThan(-1)
+      expect(src.indexOf("failed.fmv ?")).toBeLessThan(src.indexOf("No watched editions yet."))
+    })
+
+    it("the channel list carries a notice, since 'not linked' is itself the false claim", () => {
+      // This leg has no empty state to guard — the false claim IS the per-channel
+      // status, so the disclaimer has to sit above the list.
+      expect(src).toContain("failed.channels &&")
+      expect(src.indexOf("failed.channels &&")).toBeLessThan(src.indexOf("not linked"))
+    })
+
+    it("no failure message diagnoses a cause it cannot know", () => {
+      for (const marker of [
+        "Couldn&apos;t load your alerts just now",
+        "Couldn&apos;t load your watched editions just now",
+        "Couldn&apos;t load your channel status just now",
+      ]) {
+        const i = src.indexOf(marker)
+        expect(i, `${marker} must exist`).toBeGreaterThan(-1)
+        expect(src.slice(i, i + 240)).toMatch(/says nothing about/)
+      }
+    })
+  })
+
   it("neither failure message diagnoses a cause it cannot know", () => {
     // The defect these replaced was not just silence — it was a CONFIDENT WRONG
     // EXPLANATION. A replacement that guesses a different wrong cause would be

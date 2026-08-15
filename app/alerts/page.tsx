@@ -163,23 +163,42 @@ export default function AlertsPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [linkInfo, setLinkInfo] = useState<Record<string, string>>({});
+  // Per-leg read failure. Every empty state on this page is a claim about the
+  // READER'S OWN account ("No alerts yet", "not linked"), so a failed read must
+  // never be allowed to render as one of them.
+  const [failed, setFailed] = useState({ channels: false, subs: false, fmv: false });
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Reset per-leg failure before each run, or a recovered page stays stuck on
+    // the failure copy after the read starts working again.
+    setFailed({ channels: false, subs: false, fmv: false });
     try {
       const [chRes, subRes, fmvRes] = await Promise.all([
         fetch("/api/alerts/channels"),
         fetch("/api/alerts/subscriptions"),
         fetch("/api/alerts"),
       ]);
+      // ⚠ Each leg tracks its own failure. Leaving state at its initial [] on a
+      // !ok response is what made an OUTAGE indistinguishable from "you have
+      // none" — and every claim on this page is about the reader's OWN account,
+      // which is the worst case for that conflation.
       if (chRes.ok) setChannels((await chRes.json()).channels ?? []);
+      else setFailed((f) => ({ ...f, channels: true }));
+
       if (subRes.ok) setSubs((await subRes.json()).subscriptions ?? []);
+      else setFailed((f) => ({ ...f, subs: true }));
+
       if (fmvRes.ok) {
         const j = await fmvRes.json();
         setFmvAlerts(Array.isArray(j) ? j : []);
+      } else {
+        setFailed((f) => ({ ...f, fmv: true }));
       }
     } catch {
-      /* ignore */
+      // A thrown fetch takes down all three legs of the Promise.all, so none of
+      // the state below can be trusted.
+      setFailed({ channels: true, subs: true, fmv: true });
     } finally {
       setLoading(false);
     }
@@ -344,6 +363,15 @@ export default function AlertsPage() {
         {/* ── Delivery channels ─────────────────────────────────────────── */}
         <section style={cardStyle}>
           <h2 style={h2Style}>Delivery channels</h2>
+          {failed.channels && (
+            // Without this the list below renders every channel as "not linked"
+            // with a Link button — telling a collector whose Telegram IS linked
+            // that it is not, and inviting them to re-link it.
+            <p style={{ color: "#d6a13a", fontSize: 12, marginBottom: 10 }}>
+              Couldn&apos;t load your channel status just now — this says nothing about what you have
+              linked. Reload to try again.
+            </p>
+          )}
           <div style={{ display: "grid", gap: 10 }}>
             {CHANNEL_META.map(({ name, label }) => {
               const st = channelStatus(name);
@@ -494,6 +522,14 @@ export default function AlertsPage() {
           <h2 style={h2Style}>Your alerts</h2>
           {loading ? (
             <p style={{ color: "rgba(255,255,255,0.5)" }}>Loading…</p>
+          ) : failed.subs ? (
+            // Ordering is what makes this non-inert: the failure branch must
+            // precede the empty branch, or a failed read still renders "No
+            // alerts yet" and invites a duplicate of an alert that already exists.
+            <p style={{ color: "#d6a13a" }}>
+              Couldn&apos;t load your alerts just now — this says nothing about what you have set up.
+              Reload before creating a new one.
+            </p>
           ) : subs.length === 0 ? (
             <p style={{ color: "rgba(255,255,255,0.5)" }}>No alerts yet. Create one above.</p>
           ) : (
@@ -529,6 +565,11 @@ export default function AlertsPage() {
           </p>
           {loading ? (
             <p style={{ color: "rgba(255,255,255,0.5)" }}>Loading…</p>
+          ) : failed.fmv ? (
+            <p style={{ color: "#d6a13a" }}>
+              Couldn&apos;t load your watched editions just now — this says nothing about what you are
+              watching. Reload to try again.
+            </p>
           ) : fmvAlerts.length === 0 ? (
             <p style={{ color: "rgba(255,255,255,0.5)" }}>No watched editions yet.</p>
           ) : (

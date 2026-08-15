@@ -552,11 +552,22 @@ export default defineConfig({
       //     (tc-report + pack-reality were the two weakest gated files at 55.1%
       //     and 51.7% branches — both PUBLIC wallet-paste tools whose money/
       //     date formatter ladders were entirely dark).
+      //   2026-08-15 (test-coverage "do all of these" pass): tightened the
+      //     margin. Measured actuals 90.21 st / 81.74 br / 89.00 fn / 93.10 ln
+      //     against 88.5/79.4/88.2/91.6 — a 2.34pt branch buffer, drifting the
+      //     same direction as the ~13pt incident above rather than being a
+      //     regression in its own right. No coverage was ADDED to this gate by
+      //     that pass; this is purely re-seating the ratchet under the actuals
+      //     it is meant to protect. New margins are ~0.4-0.5pt, matching the
+      //     primary gate's, which is enough for concurrent-push churn (lesson
+      //     47f901a1) without leaving points unguarded. The rule this encodes:
+      //     re-seat the ratchet in the SAME pass that measures a drift, because
+      //     "keep the buffer" is exactly how the 13pt version accumulated.
       thresholds: {
-        statements: 88.5,
-        branches: 79.4,
-        functions: 88.2,
-        lines: 91.6,
+        statements: 89.8,
+        branches: 81.3,
+        functions: 88.6,
+        lines: 92.7,
       },
     },
   },
