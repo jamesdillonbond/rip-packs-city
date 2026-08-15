@@ -93,11 +93,57 @@ Five views need to come under 30 s: `cross_collection_deals_board`,
 `topshot_2025_rookie_cohort_stats`, `topshot_2025_rookie_index`, `topshot_first_mint_trophy_stats`,
 `topshot_first_mint_trophies`, `panini_squeeze_board`, plus the three Candy views above.
 
-⚠ **One tempting code-side "fix" is NOT recommended without measurement.** The cron warms all five
-boards in a single `Promise.all`, i.e. five heavy queries hitting a 2 GB instance simultaneously
-every 5 minutes, evicting each other's buffers — plausibly self-inflicted contention. But
-serializing them costs up to 5 × 30 s = 150 s against a `maxDuration` of **60 s**, so a naive
-change would warm *fewer* boards, not more. Any concurrency change here must be measured against
-the current 59.5%/54.2%/51.0% failure rates, not reasoned about. Related: the entity-page timeout
-filing (`2026-08-15T0450Z`) reaches the same conclusion from the other direction — the platform's
-bottleneck is concurrent connections against a small instance, not individual query plans.
+### Measured 2026-08-15 (addendum) — three facts that change what to try
+
+From `pg_stat_statements` (3 d 09 h window), per backing view:
+
+| view | calls | mean | max |
+|---|---|---|---|
+| cross_collection_deals_board | 430 | 12,100 ms | 29,782 ms |
+| topshot_first_mint_trophies | 485 | 11,873 ms | 29,977 ms |
+| topshot_first_mint_trophy_stats | 484 | 11,840 ms | 29,837 ms |
+| topshot_2025_rookie_index | 836 | 10,629 ms | 29,446 ms |
+| topshot_2025_rookie_cohort_stats | 851 | 10,137 ms | 29,264 ms |
+| panini_squeeze_board | 2,559 | **3,381 ms** | 29,718 ms |
+
+**1. Serialization is arithmetically impossible — that sub-question is now CLOSED.** The sum of
+the six means is **59,960 ms ≈ 60.0 s**, which is exactly the route's `maxDuration`. So a serial
+warm would consume the entire lambda budget on an *average* tick with zero headroom, and any
+worse-than-average tick would be killed mid-run. Do not propose it again.
+
+**2. These are not slow queries — they are starved ones.** Every max is ~29.x s, i.e. the 30 s
+`statement_timeout` ceiling rather than a natural cost, while every mean is 10–12 s. The clincher
+is `panini_squeeze_board`: a **3.4 s mean** query that fails **51%** of ticks. A query that
+typically finishes in under four seconds does not fail half the time because it is expensive. It
+fails because four siblings are running against the same 2-core / 2 GB instance at that moment.
+
+**3. The starvation is DETERMINISTIC, not random — and it is self-reinforcing.** The same three
+boards lose every time (59.5 / 54.2 / 51.0%) because they are the heaviest; `candy-mlb` wins 95.6%
+because it is cheap. `Promise.all` gives no board a head start, so the ordering is decided purely
+by cost. ⚠ And each failure burns a **full 30 s of database time to produce nothing** — on a
+typical tick three boards fail, so the warm cron spends **~90 s of DB work per 5-minute tick
+generating zero rows**, on the instance whose only problem is contention. The refresher is a
+meaningful contributor to the saturation it exists to survive.
+
+### What to try, and what NOT to
+
+⚠ **Both obvious fixes are gambles and neither should be shipped on reasoning alone.**
+
+- **Bounded concurrency (2 at a time)** fits the arithmetic — 3 waves × ~12 s ≈ 36 s — and halves
+  the contention. But if a wave hits the 30 s ceiling the waves serialize to 90 s, past
+  `maxDuration`, and the last wave is never attempted: strictly worse than today for those boards.
+- **A sub-timeout warm bound** (abort at ~15 s instead of letting Postgres kill at 30 s) would cut
+  the wasted DB time in fact 2 identifies, and `.abortSignal()` genuinely cancels the statement.
+  ⚠ But with a 12 s mean, an unknown share of *successful* warms take longer than 15 s, so this
+  could convert successes into failures. It needs the per-call latency DISTRIBUTION, which
+  `pg_stat_statements` does not retain — only mean and max.
+- **Rotating a subset per tick** (candy + one heavy board) would give each heavy board a nearly
+  uncontended run, at the cost of moving its refresh interval from 5 min to ~20 min. Today those
+  boards refresh every ~10–12 min at best and up to **2h50m** at worst, so a guaranteed 20 min is
+  better than the status quo's worst case and worse than its best. **That is a product trade-off
+  (freshness vs. reliability), not an engineering one** — Trevor's call.
+
+The durable fix underneath all three is making the six views cheaper, which is the migration work
+at the top of this section. Related: the entity-page timeout filing (`2026-08-15T0450Z`) reaches
+the same conclusion from the other direction — the platform's bottleneck is concurrent connections
+against a small instance, not individual query plans.
