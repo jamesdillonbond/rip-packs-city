@@ -147,7 +147,14 @@ export async function GET() {
     rules: rules.data ?? [],
     shop: shop.data ?? [],
     redemptions: redemptions.data ?? [],
-    referralCount: referrals.count ?? 0,
+    // ⚠ NULL means "we could not read it", 0 means "you genuinely have none" —
+    // and they must stay distinct all the way to the render. supabase-js RETURNS
+    // errors rather than throwing, so a failed count (a statement timeout under
+    // saturation is the realistic case) leaves `count` null; `?? 0` turned that
+    // into a hard 0 at HTTP 200, and /rewards renders 0 as "No referrals yet —
+    // be the first to share." That is a claim about the reader's OWN account,
+    // shown to someone who may have referred friends and earned the credits.
+    referralCount: referrals.error ? null : (referrals.count ?? 0),
     cosmetics: cosmetics.data ?? [],
     equipped: {
       border: (bio.data as { equipped_border?: string | null } | null)?.equipped_border ?? null,

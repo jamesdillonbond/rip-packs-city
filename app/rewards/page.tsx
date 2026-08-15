@@ -110,7 +110,9 @@ export default function RewardsPage() {
   const [shop, setShop] = useState<ShopItem[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const [referralCount, setReferralCount] = useState(0);
+  // null = the read failed (see /api/rewards/summary). Coercing it to 0 here
+  // would undo the server-side distinction and re-render "No referrals yet".
+  const [referralCount, setReferralCount] = useState<number | null>(0);
   const [cosmetics, setCosmetics] = useState<Cosmetic[]>([]);
   const [equipped, setEquipped] = useState<Equipped>({ border: null, banner: null });
   const [pro, setPro] = useState<ProStatus>({ isPro: false, plan: null, expiresAt: null });
@@ -141,7 +143,7 @@ export default function RewardsPage() {
       setShop(data.shop ?? []);
       setRedemptions(data.redemptions ?? []);
       setUserId(data.userId ?? null);
-      setReferralCount(data.referralCount ?? 0);
+      setReferralCount(data.referralCount ?? null);
       setCosmetics(data.cosmetics ?? []);
       setEquipped(data.equipped ?? { border: null, banner: null });
       setPro(data.pro ?? { isPro: false, plan: null, expiresAt: null });
@@ -976,7 +978,15 @@ const kickerStyle: React.CSSProperties = {
 // `referral_verified` seed (300); display-only — the server is authoritative.
 const REFERRAL_CREDITS = 300;
 
-function InviteBlock({ userId, referralCount }: { userId: string; referralCount: number }) {
+function InviteBlock({
+  userId,
+  referralCount,
+}: {
+  userId: string;
+  // null = unread. Typed nullable deliberately so a caller cannot pass a
+  // failed read as a zero without the type system objecting.
+  referralCount: number | null;
+}) {
   const [copied, setCopied] = useState(false);
   const link = useMemo(() => {
     const origin =
@@ -1038,11 +1048,13 @@ function InviteBlock({ userId, referralCount }: { userId: string; referralCount:
         </button>
       </div>
       <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
-        {referralCount > 0
-          ? `${num(referralCount)} ${referralCount === 1 ? "friend" : "friends"} joined · earned ${num(
-              referralCount * REFERRAL_CREDITS
-            )} credits`
-          : "No referrals yet — be the first to share."}
+        {referralCount == null
+          ? "Referral count unavailable — reload to try again."
+          : referralCount > 0
+            ? `${num(referralCount)} ${referralCount === 1 ? "friend" : "friends"} joined · earned ${num(
+                referralCount * REFERRAL_CREDITS
+              )} credits`
+            : "No referrals yet — be the first to share."}
       </div>
     </div>
   );
