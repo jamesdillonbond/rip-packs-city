@@ -2811,9 +2811,48 @@ async function executeTool(
         return JSON.stringify({ status: "error", message: safeApiError({ message: error }).error });
       }
 
+      // Jersey / birthday / draft-year quirks live on `editions`, not on wmc —
+      // without this lookup THREE of the eleven quirk kinds are structurally
+      // unreachable, which is how this tool shipped (the data landed later the
+      // same day and nothing was wired to it). Chunked at 500 because a bare
+      // `.in()` over a whole wallet's keys blows PostgREST's URL cap.
+      //
+      // ⚠ FAIL-SOFT BY DESIGN: a failed bio read degrades to the serial-only
+      // quirks a moment always has (palindrome, repdigit, #1, last mint). It
+      // must never fail the tool — the answer is smaller, never wrong.
+      const bio = new Map<string, { jersey: number | null; birthdate: string | null; draftYear: number | null }>();
+      const editionKeys = Array.from(
+        new Set(rows.map((r) => r.edition_key).filter((k): k is string => typeof k === "string" && k.length > 0))
+      );
+      for (let i = 0; i < editionKeys.length; i += 500) {
+        try {
+          const { data: eds } = await (supabase as any)
+            .from("editions")
+            .select("external_id, jersey_number, player_birthdate, player_draft_year")
+            .eq("collection_id", collectionUuid)
+            .in("external_id", editionKeys.slice(i, i + 500));
+          for (const e of (eds ?? []) as Array<Record<string, unknown>>) {
+            if (typeof e.external_id !== "string") continue;
+            bio.set(e.external_id, {
+              jersey: e.jersey_number == null ? null : Number(e.jersey_number),
+              birthdate: typeof e.player_birthdate === "string" ? e.player_birthdate : null,
+              draftYear: e.player_draft_year == null ? null : Number(e.player_draft_year),
+            });
+          }
+        } catch {
+          // Degrade, never throw — see the fail-soft note above.
+        }
+      }
+
       const findings = rows
         .map((r) => {
-          const quirks = classifySerial(r.serial_number, { circulationCount: r.mint_count });
+          const b = r.edition_key ? bio.get(r.edition_key) : undefined;
+          const quirks = classifySerial(r.serial_number, {
+            circulationCount: r.mint_count,
+            jerseyNumber: b?.jersey ?? null,
+            birthdate: b?.birthdate ?? null,
+            draftYear: b?.draftYear ?? null,
+          });
           if (quirks.length === 0) return null;
           return {
             player: r.player_name,

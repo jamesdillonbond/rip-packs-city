@@ -392,6 +392,71 @@ describe("concierge — find_quirky_serials", () => {
     expect(r.scan_complete).toBe(true)
   })
 
+  // ⚠ THREE of the eleven quirk kinds — jersey / birthday / draft year — live on
+  // `editions`, not on wallet_moments_cache. This tool originally read only wmc,
+  // so those kinds were structurally UNREACHABLE in production however correct
+  // lib/serials/fun-patterns.ts was: the columns landed later the same day and
+  // nothing was wired to them. These two tests pin both halves of the wiring.
+  function installWmcWithEditions(wmcRows: unknown[], edRows: unknown[] | "throw") {
+    A.sb = {
+      from: (table: string) => {
+        if (table === "editions") {
+          const q: any = {}
+          q.select = () => q
+          q.eq = () => q
+          q.in = () =>
+            edRows === "throw"
+              ? Promise.reject(new Error("boom"))
+              : Promise.resolve({ data: edRows, error: null })
+          return q
+        }
+        return wmcPage(wmcRows)
+      },
+      rpc: async () => ({ data: { found: false }, error: null }),
+    }
+  }
+
+  it("reaches the edition-backed quirks — jersey, birthday and draft year", async () => {
+    installWmcWithEditions(
+      [
+        { serial_number: 30, mint_count: 3000, player_name: "Stephen Curry", set_name: "Base Set", edition_key: "1:1" },
+        { serial_number: 706, mint_count: 3000, player_name: "Birthday Guy", set_name: "Base Set", edition_key: "1:2" },
+        { serial_number: 2012, mint_count: 3000, player_name: "Drafted Guy", set_name: "Base Set", edition_key: "1:3" },
+      ],
+      [
+        { external_id: "1:1", jersey_number: 30, player_birthdate: null, player_draft_year: null },
+        { external_id: "1:2", jersey_number: null, player_birthdate: "1990-07-06", player_draft_year: null },
+        { external_id: "1:3", jersey_number: null, player_birthdate: null, player_draft_year: 2012 },
+      ]
+    )
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+
+    expect(r.status).toBe("ok")
+    const kinds = (r.findings as any[]).flatMap((f) => f.quirks.map((q: any) => q.kind))
+    expect(kinds).toContain("jersey_match")
+    expect(kinds).toContain("birthday_match")
+    expect(kinds).toContain("draft_year_match")
+  })
+
+  // The bio lookup is a SECOND query, so it is a second thing that can fail. It
+  // must degrade to the serial-only quirks a moment always has, never take the
+  // tool down — the answer gets smaller, it never gets wrong.
+  it("degrades to serial-only quirks when the bio lookup fails", async () => {
+    installWmcWithEditions(
+      [{ serial_number: 1221, mint_count: 3000, player_name: "P", set_name: "S", edition_key: "1:1" }],
+      "throw"
+    )
+    script("find_quirky_serials", { walletAddress: "0x1234567890abcdef" })
+    await POST(post("fun serials"))
+    const r = toolResult()
+
+    expect(r.status).toBe("ok")
+    const kinds = (r.findings as any[]).flatMap((f) => f.quirks.map((q: any) => q.kind))
+    expect(kinds).toContain("palindrome")
+  })
+
   // A failed read must never render as "you have no quirky serials".
   it("reports a read failure as an error, not an empty wallet", async () => {
     A.sb = {
