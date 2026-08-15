@@ -50,24 +50,26 @@ const APP_DIR = join(process.cwd(), "app")
  * hold shut. It was 37 when this landed, became 36 when the pack-dist page was
  * converted in the same wave, 35 when app/moment/[id] followed, and 34 when the
  * edition page's last two direct readers (market bundle + insight links) moved
- * to lib/entity/edition-market-fetchers.ts, and 26 when EIGHT /insights board
- * pages moved to lib/insights/board-page-fetch.ts in one shared helper.
+ * to lib/entity/edition-market-fetchers.ts, 26 when EIGHT /insights board pages
+ * moved to lib/insights/board-page-fetch.ts in one shared helper, and 25 when a
+ * DEAD import was deleted from app/(analytics)/analytics/page.tsx.
  *
- * ⚠ That last drop is the pattern to look for FIRST on any remaining page: those
- * eight did not query anything themselves — they imported `supabaseAdmin` purely
- * to hand it to a fetcher that ALREADY lived in `lib/`, wrapped in eight
- * byte-identical copies of the same try/catch. Injecting the client inside the
- * helper removed the import, the duplication and the ratchet entry at once. A
- * page whose only Supabase reference is an argument is a five-minute conversion;
- * a page holding its own `.from(...).select(...)` is a real one.
+ * ⚠ RANK CANDIDATES BY CALL SITES, NOT LOC. Both cheap wins above looked
+ * expensive and were not. The edition page is 1,131 LOC but only TWO of its
+ * fetchers still held a client — every other section already routed through
+ * lib/entity-section-rpc.ts. The eight insights pages did not query anything at
+ * all: they imported `supabaseAdmin` purely to hand it to a fetcher that ALREADY
+ * lived in `lib/`, wrapped in eight byte-identical copies of one try/catch, so
+ * injecting the client inside a shared helper removed the import, the
+ * duplication and the ratchet entry at once.
  *
- * ⚠ That last one is the cheap-conversion pattern worth copying: the edition page
- * is 1,131 LOC but only TWO of its fetchers still held a client — every other
- * section had already been routed through lib/entity-section-rpc.ts. Grep a
- * candidate for `supabaseAdmin` before assuming a big page is a big job; the
- * count that matters is call sites, not lines.
+ * So: grep a candidate for `supabaseAdmin` first. A page whose only reference is
+ * an ARGUMENT is a five-minute conversion; a page holding its own
+ * `.from(...).select(...)` is a real one. ⚠ Beware the spelling — a naive
+ * `\.rpc\(` grep misses `(supabaseAdmin.rpc as any)(`, which mis-sorted two
+ * analytics pages into the cheap bucket during the 08-15 sweep.
  */
-const BUDGET = 26
+const BUDGET = 25
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
@@ -116,6 +118,32 @@ describe("server-page data-access ratchet", () => {
 
   it("does not measure app/api — that tree is already gated", () => {
     expect(pages.filter((p) => p.startsWith("app/api/"))).toEqual([])
+  })
+
+  it("no page is counted for a Supabase import it never uses", () => {
+    // ⚠ This ratchet detects an IMPORT, not actual data access, so a DEAD import
+    // inflates it — the page reads nothing yet occupies a slot, and the next
+    // person to look sees a number that overstates the real work left.
+    // `app/(analytics)/analytics/page.tsx` sat here exactly that way (found
+    // 2026-08-15; `tsc` was clean without the import, so nothing else caught it —
+    // an unused import is not a type error).
+    //
+    // The over-count is the SAFE direction, which is why this is an assertion
+    // rather than a change to the enumerator: a page holding a live client must
+    // always be counted, even if this heuristic cannot see the call.
+    const deadImports = pages.filter((rel) => {
+      const src = readFileSync(join(process.cwd(), ...rel.split("/")), "utf8")
+      // Strip the import statements themselves, then look for any remaining
+      // mention of a client binding.
+      const body = src.replace(/^\s*import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm, "")
+      return !/\bsupabaseAdmin\b|\bcreateClient\b|\bsupabase\b/.test(body)
+    })
+    expect(
+      deadImports,
+      `These pages import a Supabase client but never use it — delete the import ` +
+        `and lower BUDGET, rather than leaving the ratchet overstating the work left:\n` +
+        deadImports.map((p) => `  - ${p}`).join("\n"),
+    ).toEqual([])
   })
 
   it(`no more than ${BUDGET} server pages query the database inline`, () => {

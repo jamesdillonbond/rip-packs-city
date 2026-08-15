@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
-import { supabaseAdmin } from "@/lib/supabase"
 import PipelineHealthBadge from "@/components/analytics/PipelineHealthBadge"
 import InsiderSignals from "@/components/analytics/InsiderSignals"
 import RecentWhaleTrades from "@/components/analytics/RecentWhaleTrades"
