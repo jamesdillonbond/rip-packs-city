@@ -1032,4 +1032,72 @@ describe("allday-sales-indexer — on-chain edition metadata fallback (buildOnCh
       game_date: null,
     })
   })
+  // ── The cursor must NEVER leapfrog a chunk that failed to scan ────────────
+  //
+  // This is the same permanent-loss class as the batch-insert 23505 defect: if a
+  // chunk's fetch fails and the cursor still advances to targetHeight, every sale
+  // in that block range is skipped FOREVER — the next tick starts after it.
+  // Nothing errors, nothing retries, the rows simply never exist.
+  //
+  // Driven with a two-chunk scan (CHUNK_SIZE 250, cursor at 750, sealed 1250) so
+  // the FIRST chunk succeeds and the SECOND throws. A single-chunk fixture cannot
+  // distinguish "held the cursor" from "never advanced it at all", which is why
+  // the range is widened rather than reusing the default one-chunk setup.
+  it("caps the cursor below the FIRST failed chunk and records the partial scan", async () => {
+    const tx1 = "e".repeat(64)
+    state.decodeByTx[tx1] = { buyer: "0x1111111111111111", seller: "0x2222222222222222" }
+    fetchMock = installFetchMock([
+      // Sealed at 1500 with the cursor at 750 gives THREE chunks (751-1000,
+      // 1001-1250, 1251-1500). Listed before flowRestStubs so this height wins.
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1500" } }]),
+      // ⚠ TWO chunks fail, not one. With a single failure the first and last
+      // failed chunk are the same block, so a mutation that records the LAST
+      // one is indistinguishable — verified, it SURVIVED a one-chunk fixture.
+      // Two failures are what make `if (first === null)` load-bearing.
+      {
+        match: (u: string) =>
+          (u.includes("start_height=1001") || u.includes("start_height=1251")) &&
+          u.includes(encodeURIComponent(V2_DAPPER_TYPE)),
+        respond: () => {
+          throw new Error("ECONNRESET")
+        },
+      },
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 900, txId: tx1, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("555", "12.34000000") }),
+        ],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 750 }, error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "555", edition_key: "789", serial_number: 33 }],
+        error: null,
+      },
+      editions: { data: [{ id: "uuid-789", external_id: "789" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    // The first chunk's sale still lands — a partial scan keeps what it read.
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({ nft_id: "555", block_height: 900 })
+
+    // ⚠ THE ASSERTION THAT MATTERS. 1000 = FIRST failed chunk (1001) - 1, NOT
+    // targetHeight (1500) and NOT the last failed chunk (1251) - 1. Either wrong
+    // answer silently skips real blocks on every future tick.
+    const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
+    expect(cursorUpdate?.rows[0]).toMatchObject({ last_processed_block: 1000 })
+
+    // And the run says so, rather than reporting a clean full scan.
+    const log = terminalLog(spy.rpcCalls, "allday-sales-indexer")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra?.partial_scan).toBe(true)
+    expect(extra?.first_failed_chunk).toBe(1001)
+    expect(extra?.cursor_held_from).toBe(1500)
+  })
 })
