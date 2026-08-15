@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
   // `serials_with_recorded_price` was named `real_sales` until 2026-07-28. It has always
   // counted serial-level PRICE COVERAGE (serials carrying a last_sale_usd), never market
@@ -131,7 +132,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: "panini_squeeze_board",
       set: "2026 Prizm World Cup Soccer",
-      total_rows: data?.length ?? 0,
+      ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - t0,
       coverage,
       sale_price_feed: salePriceFeed,

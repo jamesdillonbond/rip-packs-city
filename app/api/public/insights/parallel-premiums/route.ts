@@ -24,6 +24,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
 import { fetchParallelPremiums, type ParallelSortKey } from "@/lib/parallel-premiums-board"
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "v_topshot_parallel_premiums",
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { parallel: parallelName, min_premium: minPremium, conf, sort, limit },
     },

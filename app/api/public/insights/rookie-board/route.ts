@@ -17,6 +17,7 @@ import {
   type RookieSortKey,
 } from "@/lib/rookie-edition-board"
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
 const VALID_SORTS = new Set<RookieSortKey>(["fmv", "burned", "burn_rate", "circulation", "lock_rate"])
 
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: "topshot_rookie_edition_board",
       mode,
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { mode, tier, parallel_id: parallelId, player, set, sort, limit },
     },

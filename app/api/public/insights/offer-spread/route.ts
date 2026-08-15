@@ -34,6 +34,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
 const VALID_SORTS = new Set(["par", "spread", "offer", "ask", "pct"]);
 
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "topshot_offer_ask_spread",
-      total_rows: data?.length ?? 0,
+      ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,
       filters: { tier, min_ask: minAsk, bid_meets_ask: bidMeetsAsk, set: setFilter, player: playerFilter, sort, limit },
     },

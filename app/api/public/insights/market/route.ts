@@ -39,6 +39,7 @@ import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 
+import { boardRowMetaComplete } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set([
   "ALL",
   "COMMON",
@@ -102,7 +103,8 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "topshot_market_index_daily",
-      total_rows: data?.length ?? 0,
+      // Paged read (fetchAllPaged walks every row), so this really is a total.
+      ...boardRowMetaComplete(data?.length ?? 0),
       elapsed_ms: elapsedMs,
       filters: { tier, days },
     },

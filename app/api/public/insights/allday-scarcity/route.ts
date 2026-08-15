@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_SORTS = new Set(["scarcity", "mint", "fmv"]);
 
 const SELECT_COLS =
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: "allday_scarcity_board",
       elapsed_ms: elapsedMs,
-      total_rows: data?.length ?? 0,
+      ...boardRowMeta(data?.length ?? 0, limit),
       filters: { tier, set, max_mint: maxMint, min_family_size: minFamilySize, min_scarcity: minScarcity, sort, limit },
     },
     rows: data ?? [],

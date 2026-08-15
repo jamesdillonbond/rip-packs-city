@@ -40,6 +40,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day"]);
 const VALID_TYPES = new Set(["one_of_one", "ultimate", "all"]);
 const VALID_SORTS = new Set(["fmv", "circulation"]);
@@ -111,7 +112,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "v_insights_trophies",
-      total_rows: data?.length ?? 0,
+      ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: elapsedMs,
       filters: { collection, type, sort, limit },
     },

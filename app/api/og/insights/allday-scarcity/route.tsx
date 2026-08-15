@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   const fam = brandFamilies(fonts);
 
   let rows: Row[] = []
-  let total = 0
+
   // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
   let fetched = false
   try {
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       fetched = true
       const j = await r.json()
       rows = Array.isArray(j?.rows) ? j.rows : []
-      total = j?.meta?.total_rows ?? 0
+
     }
   } catch {
     /* fallback */
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
             RIP PACKS CITY · INSIGHTS
           </div>
           <div style={{ fontSize: 18, color: "rgba(255,255,255,0.55)", display: "flex" }}>
-            {total > 0 ? `All Day · live` : "Public · No signup"}
+            {rows.length > 0 ? `All Day · live` : "Public · No signup"}
           </div>
         </div>
 

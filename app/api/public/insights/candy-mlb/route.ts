@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
   // `confidence` is deliberately NOT selected. FMV confidence tiers are a
   // build-time signal that must never reach a user surface (site-wide policy,
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: "candy_secondary_board",
       set: "2026 MLB Base Series ICONs · Candy Digital (Solana)",
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: Date.now() - t0,
       coverage: {
         total_editions: rows.length,

@@ -40,6 +40,7 @@ import {
   type SerialSortKey,
 } from "@/lib/serial-premiums-board"
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
 const WINDOW_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 }
 
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: BOARDS[headline].table,
       headline,
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { headline, tier, window: windowKey, min_premium: minPremium, sort, limit },
     },

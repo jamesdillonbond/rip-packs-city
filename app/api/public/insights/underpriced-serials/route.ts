@@ -40,6 +40,7 @@ import {
   parseSort,
 } from "@/lib/underpriced-serials-board"
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
 const SOURCE = "topshot_underpriced_serials_board"
 
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: SOURCE,
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { headline, quality, tier, min_discount: minDiscount, sort, limit },
     },

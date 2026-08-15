@@ -12,6 +12,7 @@ import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
+import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -68,11 +69,15 @@ export async function GET(req: NextRequest) {
   const fam = brandFamilies(fonts);
 
   let rows: Row[] = []
-  let total = 0
+  // Headline count: ONE request at the route's own max limit, reading the
+  // honest returned_rows/truncated pair. Never derived from the top-3 page —
+  // that is what published "3 sales this week" for a 30,592-sale market.
+  let count: BoardCount | null = null
   // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
   let fetched = false
   try {
     const origin = new URL(req.url).origin
+    count = await fetchBoardCount(origin, "/api/public/insights/underpriced-serials?sort=discount", 100)
     // Lead the card with the most trustworthy deals.
     const r = await fetch(
       `${origin}/api/public/insights/underpriced-serials?quality=tight&sort=discount&limit=3`,
@@ -82,7 +87,6 @@ export async function GET(req: NextRequest) {
       fetched = true
       const j = await r.json()
       if (Array.isArray(j?.rows)) rows = j.rows as Row[]
-      total = j?.meta?.total_rows ?? 0
     }
     // If no tight deals right now, fall back to all rows so the card isn't empty.
     if (rows.length === 0) {
@@ -94,7 +98,7 @@ export async function GET(req: NextRequest) {
         fetched = true
         const j2 = await r2.json()
         if (Array.isArray(j2?.rows)) rows = j2.rows as Row[]
-        total = j2?.meta?.total_rows ?? total
+
       }
     }
   } catch {
@@ -120,7 +124,7 @@ export async function GET(req: NextRequest) {
             RIP PACKS CITY · INSIGHTS
           </div>
           <div style={{ fontSize: 18, color: "rgba(255,255,255,0.55)", display: "flex" }}>
-            {total > 0 ? `${total} live deals` : "Public · No signup"}
+            {boardCountLabel(count, 'live deals')}
           </div>
         </div>
 

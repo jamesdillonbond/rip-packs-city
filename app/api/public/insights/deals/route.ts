@@ -60,6 +60,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 // Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
 // nfl_all_day was missing until 2026-07-28 even though the view has always
 // served it — and it is the board's LARGEST leg (47% of rows at the default
@@ -126,7 +127,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "cross_collection_deals_board",
-      total_rows: data?.length ?? 0,
+      ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,
       filters: { collection, tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit },
     },

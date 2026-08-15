@@ -37,6 +37,7 @@ import {
   TOP_SALES_VALID_COLLECTIONS,
 } from "@/lib/insights/top-sales"
 
+import { boardRowMeta } from "@/lib/insights/board-meta"
 export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: fetchedAt,
       source: "v_insights_top_sales",
-      total_rows: rows.length,
+      ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { collection, window, sort, limit },
     },
