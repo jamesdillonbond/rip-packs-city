@@ -4,9 +4,74 @@ Written 2026-08-09 (Claude Code, interactive, from Trevor's Windows box) in resp
 "explore how we can re-enable shell in Cowork". Read-only investigation; nothing here
 was executed against Cowork.
 
+> ⛔ **CORRECTED 2026-08-13 — READ §0 FIRST. The bottom line immediately below is WRONG on the
+> two things that matter: `/sessions` is NOT Anthropic-hosted, and it CAN be fixed from Trevor's
+> machine. Following §4 Step 1 as written cost roughly six nights of blocked overnight passes.
+> The rest of the document (§1–§3, §5) is accurate and worth keeping.**
+
 **Bottom line: this is a disk-capacity failure on the Anthropic-hosted sandbox volume
 `/sessions`, and it cannot be fixed from this repo or from Trevor's machine. The one
 operator action with a real chance of clearing it is deleting old Cowork sessions.**
+
+---
+
+## 0. CORRECTION (2026-08-13) — what actually clears it
+
+**`/sessions` is a virtual disk inside the local Hyper-V VM the desktop app runs.** It is not
+Anthropic-hosted. The fix is renaming one file on Trevor's Windows disk and relaunching.
+
+This was already known and empirically verified on **2026-07-13** — that session located the
+`.vhdx`, renamed it, and measured `df -h /sessions` go from **~97% used to 1%**, with bash, git and
+clone all restored. This handoff was written 2026-08-09, four weeks later, without that finding.
+
+**Why the original conclusion was wrong, in a way worth generalising:** this document says up
+front that it is a read-only investigation and *"nothing here was executed against Cowork."* The
+"Anthropic-hosted" claim is therefore an **inference**, and it was placed in the bottom line with
+the same confidence as the measured parts (§3's `git ls-files` numbers, which are solid). An
+inference and a measurement got the same typographic weight, and the inference was the load-bearing
+one. See the memory note `audit-claims-record-vs-generated`.
+
+### The procedure
+
+Locate the disk — package directory names change with app versions, so search rather than assume:
+
+```powershell
+gci $env:LOCALAPPDATA\Packages -Recurse -Include *.vhdx -EA SilentlyContinue |
+  select FullName, @{n='GB';e={[math]::Round($_.Length/1GB,2)}}
+```
+
+Expected under `...\Packages\Claude_<hash>\LocalCache\Roaming\Claude\vm_bundles\claudevm.bundle\`:
+
+| file | role |
+|---|---|
+| **`sessiondata.vhdx`** | **this is `/sessions`** — ~9.8 GB cap, the one that fills |
+| `rootfs.vhdx` | base Linux — leave alone |
+| `smol-bin.vhdx` | helper — leave alone |
+
+1. Quit Claude fully **from the tray**, not just the window.
+2. Confirm it is down: `Get-Process claude,vmmem -EA SilentlyContinue` returns nothing.
+3. `Rename-Item <path>\sessiondata.vhdx sessiondata.vhdx.bak` — reversible; rename back if the app
+   won't start.
+4. Relaunch. The app recreates an empty disk.
+5. Verify in a new session: `df -h /sessions` should read ~1%.
+6. Delete the `.bak` to reclaim ~9.5 GB.
+
+### Two things that do NOT work
+
+- ⛔ **Deleting old Cowork sessions in the UI** — §4 Step 1 below. Untested when written, and six
+  nights of blocked passes are the evidence against it.
+- ⛔ **Rebooting.** The `.vhdx` survives reboots. A full Windows restart on 07-13 returned the
+  identical `useradd` error; only the rename cleared it. Do not prescribe "just restart".
+
+### Root cause and recurrence
+
+Known upstream bug — per-session disk leak, no garbage collection of `/sessions/<name>/` dirs
+(anthropics/claude-code #59856, closed as duplicate, no fix shipped). §3's inference that the dirs
+are not garbage collected was **correct**; only the location was wrong. The fresh disk refills
+over many sessions — overnight passes are the heavy consumers — and the same rename clears it each
+time. Consider a periodic reset.
+
+---
 
 ---
 
@@ -86,10 +151,13 @@ the volume would never creep.
 
 ## 4. What to actually do
 
-**Step 1 — operator, unblocks everything (highest probability, do this first).**
-In the Cowork UI, delete or archive old/finished sessions, especially any that ran builds or
-tests against this repo. Each one plausibly reclaims ~0.9 GB. This is the only step that can
-break the deadlock, because nothing inside the sandbox can run until space exists.
+**Step 1 — ⛔ SUPERSEDED BY §0. Do the `sessiondata.vhdx` rename instead.** Kept as written so the
+correction has something to point at.
+
+> ~~**Step 1 — operator, unblocks everything (highest probability, do this first).**
+> In the Cowork UI, delete or archive old/finished sessions, especially any that ran builds or
+> tests against this repo. Each one plausibly reclaims ~0.9 GB. This is the only step that can
+> break the deadlock, because nothing inside the sandbox can run until space exists.~~
 
 **Step 2 — verify the fix took.** Start any Cowork session and run `df -h /sessions` plus
 `du -sh /sessions/* | sort -h`. That single command pair confirms both that the shell is back and

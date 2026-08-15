@@ -43,14 +43,80 @@ const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
 const ALLOWLIST_COOKIE = "rpc_al_check"
 const ALLOWLIST_TTL_SECONDS = 60
 
-// Static asset file extensions that bypass auth at the in-middleware level.
-const STATIC_EXT_RX = /\.(?:png|jpe?g|svg|webp|ico|css|js)$/i
+// Static assets that bypass auth at the in-middleware level.
+//
+// ⚠ AN EXACT SET, NOT A PATTERN, AND THAT IS THE WHOLE POINT. Until 2026-08-13
+// this was an unanchored suffix test — `/\.(?:png|jpe?g|svg|webp|ico|css|js)$/i`
+// — which matched ANY path ending in one of those extensions, including a gated
+// route whose trailing segment a visitor controls.
+//
+// ✅ CONFIRMED LIVE, on evidence that survives a control: anonymously,
+// `GET /api/mcp/keys/<uuid>` answers 307 → /login, while the same path with a
+// `.png` suffix answers **405 Method Not Allowed**. A 405 cannot come from this
+// wall — the wall's answer is the 307 — so the suffixed request reached the
+// handler. That is the whole finding, and it is enough to justify the fix.
+//
+// ⛔ IT IS DEFENSE-IN-DEPTH, NOT A CONFIRMED BREACH, and two separate sessions
+// first recorded it as a breach off the same bad inference. Both reported that
+// `GET /topshot.png` (and later `/profile/edit.css`) "served a gated page to an
+// anonymous visitor". Neither did. The bypass buys the next hop, and the next hop
+// was already public BY DESIGN — `/[collection]/overview` since the 2026-07-17
+// un-gate, `/profile/[username]` always. The controls settle it: with NO
+// extension and NO bypass, `/totally-bogus-slug/overview` returns the same page,
+// and `/profile/zzz-no-such-user-9931` returns MORE bytes than the "leak" did.
+// **A 200 next to a 307 proves nothing until you show the 200 needed the bypass.**
+// Every gated dynamic route the suffix currently reaches carries its own auth
+// check — good habits plus luck, not architecture. Fix the wall anyway; that is
+// what defense in depth means.
+//
+// ⛔ DO NOT "fix" this by anchoring the regex to a single root segment
+// (`/^\/[^/]+\.(?:png|...)$/`). That was tried first and it is NOT sufficient:
+// the collection pages live at the URL ROOT (`/[collection]`), the same
+// namespace as the root static assets, so `/topshot.png` still matches. Only an
+// exact allowlist separates the two, because nothing about the SHAPE of the path
+// distinguishes an asset from a collection slug.
+//
+// Cost of this design: a new file dropped into `public/` root is gated until it
+// is added here. That is the correct trade for a namespace shared with a dynamic
+// route — prefer putting new assets under `/img/`, which the matcher at the
+// bottom of this file already excludes from the proxy entirely.
+//
+// ⚠ NARROWING THIS FROM A SUFFIX TEST TO A SET REMOVES `.js`/`.css` FROM THE
+// PUBLIC SET, so the question "what else did the regex keep reachable?" has to be
+// answered before shipping, not after. Measured 2026-08-15, and the one real
+// candidate came back CLEAR: `@vercel/analytics` and `@vercel/speed-insights` are
+// both mounted in `app/layout.tsx` and load `/_vercel/{insights,speed-insights}/
+// script.js` — paths that match neither the `/_next/` check below nor the
+// matcher's exclusions, and which the old regex published by side effect. They
+// are NOT affected, because Vercel serves them at the platform edge and this
+// proxy never runs on them. The discriminator is `applySecurityHeaders`: live,
+// `/window.svg` and `/login` come back with `X-Frame-Options: DENY` +
+// `X-Content-Type-Options: nosniff` while both `/_vercel/*` scripts carry
+// NEITHER header — proof of non-interception, where a 200 alone proves nothing
+// (a 302 to /login also answers 200). No allowlist entry is added for them on
+// purpose: a line that never executes reads as protection and is not.
+//
+// Everything else in `public/` is already accounted for: `*.json`, `offline.html`
+// and the `fonts/OFL-*.txt` licenses do not match the old regex either, so they
+// were gated before this change and stay gated after it. Sweep with
+// `find public -type f | sed 's/.*\.//' | sort -u` when adding an asset type.
+const STATIC_ROOT_ASSETS = new Set([
+  "/rip-packs-city-logo.png",
+  "/file.svg",
+  "/globe.svg",
+  "/next.svg",
+  "/vercel.svg",
+  "/window.svg",
+  "/favicon.ico",
+])
 
 // The vendored brand fonts under `public/fonts`.
 //
 // ⚠ THIS WAS MISSING UNTIL 2026-08-13 AND IT WAS A LIVE PRODUCT BUG. The matcher
-// at the bottom of this file does not exclude `/fonts/`, and `ttf` is not a
-// STATIC_EXT_RX extension, so every request for a vendored font ran the auth
+// at the bottom of this file does not exclude `/fonts/`, and `ttf` was not one of
+// the extensions in `STATIC_EXT_RX` (the suffix test that preceded
+// `STATIC_ROOT_ASSETS` above — the name is kept here only as history; do not go
+// looking for it), so every request for a vendored font ran the auth
 // gate, failed `isPublicPath`, and was 302'd to /login. Two SERVER-SIDE
 // consumers fetch these files over HTTP with no session — the OG profile card
 // (`runtime = "edge"`, so it CANNOT read them off disk) and the trophy-case PDF
@@ -60,13 +126,17 @@ const STATIC_EXT_RX = /\.(?:png|jpe?g|svg|webp|ico|css|js)$/i
 // where that route's try/catch cannot reach it; that reddened CI on 2026-08-13,
 // and the PDF had been silently unbranded since it shipped.
 //
-// ⚠ DELIBERATELY NARROWER THAN ADDING THE EXTENSIONS TO STATIC_EXT_RX, which is
-// what the first version of this fix did. That regex matches ANY path ending in
-// the extension, so it would also have published a gated route whose trailing
-// dynamic segment a visitor controls (`/whatever/<user-supplied>.ttf`). The
-// existing entries carry that property for `js|css|png|…` already; there is no
-// reason to widen the class further when the only consumers are two fixed files
-// in one directory. Directory AND extension, both required, single level.
+// ⚠ DELIBERATELY NARROWER THAN ADDING THE EXTENSIONS TO THE OLD `STATIC_EXT_RX`,
+// which is what the first version of this fix did. That regex matched ANY path
+// ending in the extension, so it would also have published a gated route whose
+// trailing dynamic segment a visitor controls (`/whatever/<user-supplied>.ttf`).
+// ⚠ THE ORIGINAL VERSION OF THIS NOTE THEN SAID "the existing entries carry that
+// property for `js|css|png|…` already; there is no reason to widen the class
+// further" — TRUE WHEN WRITTEN, AND IT WAS DESCRIBING A HOLE IN THE AUTH WALL AS
+// AN ACCEPTED COST. Two days later that hole was confirmed reachable (the 405
+// above). The precedent was the bug. Reasoning
+// "the neighbouring rule is already this loose" argues for fixing the neighbour,
+// never for matching it. Directory AND extension, both required, single level.
 const FONT_ASSET_RX = /^\/fonts\/[^/]+\.(?:ttf|otf|woff2?)$/i
 
 // ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
@@ -683,7 +753,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
 
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
-  if (STATIC_EXT_RX.test(pathname)) return true
+  if (STATIC_ROOT_ASSETS.has(pathname)) return true
   if (FONT_ASSET_RX.test(pathname)) return true
 
   return false

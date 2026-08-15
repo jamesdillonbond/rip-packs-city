@@ -46,8 +46,17 @@ const TABLE: Row[] = [
   ["/sitemap/4.xml", "GET", true],
   ["/sitemap/x.xml", "GET", false, "non-numeric child is NOT the sitemap regex"],
   ["/_next/static/chunk.js", "GET", true],
-  ["/logo.png", "GET", true, "static asset extension"],
-  ["/app.css", "GET", true],
+  // ⚠ THESE TWO ROWS ASSERTED THE VULNERABILITY AS THE CONTRACT until 2026-08-15.
+  // They read as "static asset extension" but neither file exists: the real logo
+  // is /rip-packs-city-logo.png and the app ships no root /app.css. What they
+  // actually pinned was the unanchored suffix test that let ANY path ending in
+  // one of those extensions skip the auth wall. A row whose stated reason
+  // ("static asset extension") differs from what it proves ("any path ending in
+  // .png is public") is how a hole in the wall survives review.
+  ["/logo.png", "GET", false, "not a real asset — an exact allowlist, not a suffix"],
+  ["/app.css", "GET", false, "not a real asset — see /topshot.png below"],
+  ["/rip-packs-city-logo.png", "GET", true, "the real logo, fetched server-side with no session"],
+  ["/window.svg", "GET", true, "real public/ root asset"],
   // ⚠ Fonts were unreachable until 2026-08-13 — `.ttf` is not a STATIC_EXT_RX
   // extension and nothing exempted /fonts/, so every request was 302'd to
   // /login. Two server-side consumers fetch them over HTTP with no session: the
@@ -287,4 +296,82 @@ describe("launch-flag flip actually un-gates the routing decision (not just sour
     expect(freshIsPublic("/insights/candy-mlb", "GET")).toBe(true)
     expect(freshIsPublic("/insights/panini-squeeze", "GET")).toBe(false)
   })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSION: the static-extension suffix bypass (2026-08-13, closed 2026-08-15).
+//
+// `STATIC_EXT_RX` was an UNANCHORED suffix test, so any path ending in
+// `.png|.jpg|.svg|.webp|.ico|.css|.js` was public — including a gated route
+// whose trailing segment a visitor controls.
+//
+// ✅ Confirmed live, on evidence that survives a control: `/api/mcp/keys/<uuid>`
+// answers 307 → /login anonymously, while `…<uuid>.png` answers 405. A 405 cannot
+// come from the wall, so the suffixed request reached the handler.
+//
+// ⛔ Defense-in-depth, NOT a confirmed breach — and this block previously said
+// otherwise. Two sessions independently reported that `/topshot.png` (and
+// `/profile/edit.css`) "rendered a gated page for an anonymous visitor". Both
+// were wrong the same way: the next hop was already public by design, and the
+// no-bypass controls (`/totally-bogus-slug/overview`, `/profile/zzz-no-such-user`)
+// return the same page or more of it. A 200 beside a 307 is not evidence until
+// you show the 200 required the bypass. The rows below pin the PREDICATE, which
+// is the part that was genuinely broken and the only part a unit test can see.
+//
+// ⚠ Anchoring to a single root segment does NOT fix this — collections share the
+// root namespace with the static assets. Only an exact allowlist does. These
+// rows fail against the anchored-regex "fix" as well as the original, which is
+// the point of keeping them.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("static-extension suffix must not bypass the gate", () => {
+  const SUFFIXES = ["png", "jpg", "jpeg", "svg", "webp", "ico", "css", "js"] as const
+
+  // (path, why) — each is gated in its bare form; adding any suffix must not flip it.
+  const GATED: ReadonlyArray<readonly [string, string]> = [
+    ["/topshot", "collection root — the confirmed live exposure"],
+    ["/allday", "collection root"],
+    ["/analytics/wallets/0x1234567890abcdef", "wallet analytics"],
+    ["/analytics/sets/12345", "set analytics"],
+    ["/api/mcp/keys/3f8b2c1a-1111-4222-8333-444455556666", "MCP API key management"],
+    // ⚠ This row was `/api/analytics/sets/12345` and it was WRONG — that path is
+    // PUBLIC in its bare form (the 2026-07-17 soft launch un-gated the whole
+    // `/api/analytics` subtree), so it would have asserted the opposite of what
+    // it claimed and passed for the wrong reason. The bare-path positive control
+    // on the line below is the only thing that caught it. Second time this exact
+    // mistake has been made in this file (see the /profile/someone.woff2 note
+    // above): when writing a negative row, VERIFY the bare path is gated first.
+    ["/api/profile/trophy/reorder", "collector's own trophy case — a real write surface"],
+    ["/edition/12345", "edition detail"],
+  ]
+
+  for (const [path, why] of GATED) {
+    it(`${path} stays gated with any static suffix (${why})`, () => {
+      expect(isPublicPath(path, "GET")).toBe(false) // positive control: gated bare
+      for (const ext of SUFFIXES) {
+        expect(isPublicPath(`${path}.${ext}`, "GET")).toBe(false)
+        expect(isPublicPath(`${path}.${ext.toUpperCase()}`, "GET")).toBe(false)
+      }
+    })
+  }
+
+  // The other half of the contract: real assets must stay reachable.
+  const ASSETS = [
+    "/rip-packs-city-logo.png",
+    "/file.svg",
+    "/globe.svg",
+    "/next.svg",
+    "/vercel.svg",
+    "/window.svg",
+    // The REAL vendored fonts, not a plausible-looking name: these two are the
+    // files the OG card and the trophy-case PDF actually fetch over HTTP.
+    "/fonts/BarlowCondensed-Black.ttf",
+    "/fonts/ShareTechMono-Regular.ttf",
+    "/favicon.ico",
+    "/_next/static/chunks/main.js",
+  ]
+  for (const path of ASSETS) {
+    it(`${path} stays public`, () => {
+      expect(isPublicPath(path, "GET")).toBe(true)
+    })
+  }
 })
