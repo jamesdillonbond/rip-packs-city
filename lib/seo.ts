@@ -148,6 +148,24 @@ const PAGE_META: Record<string, PageMeta> = {
 // Per-collection overrides keyed by `${page}:${collectionId}`.
 const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
 
+// ── The openGraph / twitter shallow-merge trap (deep-audit R10) ─────────────
+// Next merges page metadata into the root export at the TOP-LEVEL key only.
+// Defining `openGraph` (or `twitter`) in a child REPLACES the root's block
+// outright rather than merging into it — so every field the child omits is
+// simply gone from the rendered tags. The root defines siteName / type / locale
+// and the twitter site+creator handles, and all three shared helpers below were
+// dropping some of them across ~40 tab URLs, the whole entity corpus (~23.5k
+// editions) and the 5 collection roots. The visible symptom: the public boards
+// the concierge calls "the most shareable thing RPC has" unfurled with NO X
+// byline at all.
+//
+// `app/profile/[username]/layout.tsx` documents the same trap and gets it right;
+// the fix was never generalised to here. Spread these into every block rather
+// than restating the literals, so a future field added at the root only has to
+// be added in one more place.
+const OG_INHERITED = { type: 'website', locale: 'en_US', siteName: 'Rip Packs City' } as const
+const TWITTER_INHERITED = { card: 'summary_large_image', site: '@RipPacksCity', creator: '@RipPacksCity' } as const
+
 export function pageMetadata(page: string, collectionLabel: string, collectionId: string): Metadata {
   const override = PAGE_META_OVERRIDES[`${page}:${collectionId}`]
   const base = PAGE_META[page]
@@ -161,12 +179,13 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
     description,
     alternates: { canonical },
     openGraph: {
+      ...OG_INHERITED,
       title: `${title} | Rip Packs City`,
       description,
       url: canonical,
     },
     twitter: {
-      card: 'summary_large_image',
+      ...TWITTER_INHERITED,
       title,
       description,
     },
@@ -239,18 +258,16 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
     alternates: { canonical },
     keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', 'Flow blockchain'],
     openGraph: {
+      ...OG_INHERITED,
       title: meta.title,
       description: meta.description,
       url: canonical,
-      siteName: 'Rip Packs City',
-      type: 'website',
       images: [{ url: ogImage, width: 1200, height: 630, alt: label }],
     },
     twitter: {
-      card: 'summary_large_image',
+      ...TWITTER_INHERITED,
       title: meta.title,
       description: meta.description,
-      site: '@RipPacksCity',
       images: [ogImage],
     },
   }
@@ -381,15 +398,14 @@ function buildMeta(opts: {
     description: opts.description,
     alternates: { canonical: opts.canonical },
     openGraph: {
+      ...OG_INHERITED,
       title: opts.title,
       description: opts.description,
       url: opts.canonical,
-      siteName: "Rip Packs City",
-      type: "website",
       images: [{ url: image, width: 1200, height: 630 }],
     },
     twitter: {
-      card: "summary_large_image",
+      ...TWITTER_INHERITED,
       title: opts.title,
       description: opts.description,
       images: image ? [image] : undefined,

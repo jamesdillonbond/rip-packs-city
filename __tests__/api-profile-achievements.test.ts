@@ -27,6 +27,17 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
+// POST is now ownership-gated (deep-audit R13): it used to take `ownerKey` from
+// the BODY and call the edge function with the server's INGEST_SECRET_TOKEN, so
+// any caller could make RPC recompute and WRITE achievements for an arbitrary
+// owner_key using our own operator credential. `ownedKeyGate` lets each case
+// choose whether the caller owns the key.
+const ownedKeyGate: { deny: Response | null } = { deny: null }
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async () =>
+    ownedKeyGate.deny ?? { user: { id: "user-1" } },
+}))
+
 import { GET, POST } from "@/app/api/profile/achievements/route"
 
 const greq = (url: string) => ({ nextUrl: new URL(url) }) as any
@@ -53,19 +64,39 @@ describe("GET /api/profile/achievements", () => {
     expect((await res.json()).achievements).toHaveLength(1)
   })
 
-  it("swallows a DB error into { achievements: [] }", async () => {
+  // ⚠ These two cases used to be titled "swallows a DB error into
+  // { achievements: [] }" and asserted a 200 with an empty array — pinning the
+  // defect as the contract (deep-audit R13). An empty array at 200 is
+  // byte-identical to "you have unlocked nothing", so an outage silently erased
+  // a collector's achievements from their own profile. Rewritten to assert the
+  // property that matters: a failed read is reported as a failure, and the
+  // driver's own message never reaches the body.
+  it("reports a DB error as a failure, not as zero achievements", async () => {
     state.tables.profile_achievements = { data: null, error: { message: "db down" } }
     const res = await GET(greq("https://t/api/profile/achievements?ownerKey=trevor"))
-    expect(res.status).toBe(200)
-    expect((await res.json()).achievements).toEqual([])
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.achievements).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("db down")
   })
 
-  it("swallows a thrown query into { achievements: [] } (outer catch)", async () => {
+  it("reports a thrown query as a failure (outer catch)", async () => {
     state.tables.profile_achievements = new Proxy({}, {
       get() {
         throw new Error("boom")
       },
     })
+    const res = await GET(greq("https://t/api/profile/achievements?ownerKey=trevor"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.achievements).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("boom")
+  })
+
+  it("a genuinely empty set is still an honest 200 with []", async () => {
+    // The opposite direction: the fix must not turn "no achievements yet" into
+    // an error, or it trades one false claim for another.
+    state.tables.profile_achievements = { data: [], error: null }
     const res = await GET(greq("https://t/api/profile/achievements?ownerKey=trevor"))
     expect(res.status).toBe(200)
     expect((await res.json()).achievements).toEqual([])
@@ -74,9 +105,35 @@ describe("GET /api/profile/achievements", () => {
 
 describe("POST /api/profile/achievements (guards only — happy path fans to an edge fetch)", () => {
   const prev = process.env.INGEST_SECRET_TOKEN
+  beforeEach(() => {
+    ownedKeyGate.deny = null
+  })
   afterEach(() => {
     if (prev === undefined) delete process.env.INGEST_SECRET_TOKEN
     else process.env.INGEST_SECRET_TOKEN = prev
+  })
+
+  it("refuses an ownerKey the caller does not own, and never reaches the edge fn", async () => {
+    process.env.INGEST_SECRET_TOKEN = "x"
+    ownedKeyGate.deny = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock as any)
+    const res = await POST(preq({ ownerKey: "someone-elses-key" }))
+    expect(res.status).toBe(403)
+    // The operator credential must never be spent on an unowned key.
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it("refuses an unauthenticated caller", async () => {
+    process.env.INGEST_SECRET_TOKEN = "x"
+    ownedKeyGate.deny = new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 })
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock as any)
+    const res = await POST(preq({ ownerKey: "trevor" }))
+    expect(res.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it("500s when INGEST_SECRET_TOKEN is not set", async () => {

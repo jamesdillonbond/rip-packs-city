@@ -134,8 +134,23 @@ const SEARCH_MINTED_MOMENTS = `
 
 // ── Fetch one page (via curl.exe — Cloudflare blocks Node fetch) ─────────────
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
-const COOKIE = "PASTE_FRESH_COOKIES_HERE";
-const X_ID_TOKEN = "PASTE_FRESH_X_ID_TOKEN_HERE";
+// ⚠ Read from the environment, NEVER pasted in here (deep-audit R16).
+// These were committed as `PASTE_FRESH_COOKIES_HERE` / `PASTE_FRESH_X_ID_TOKEN_HERE`
+// — placeholders whose whole workflow is "edit these two constants in place" on
+// a TRACKED file. That is precisely the workflow that leaked live Dapper session
+// cookies and forced the 2026-08-03 `git filter-repo` + force-push, which
+// rewrote every pre-purge commit sha in the repo's history.
+// Usage (PowerShell):  $env:DAPPER_COOKIE='…'; $env:DAPPER_X_ID_TOKEN='…'; node scripts/local-cost-basis-backfill.mjs
+const COOKIE = process.env.DAPPER_COOKIE ?? "";
+const X_ID_TOKEN = process.env.DAPPER_X_ID_TOKEN ?? "";
+
+if (!COOKIE || !X_ID_TOKEN) {
+  console.error(
+    "Missing credentials. Set DAPPER_COOKIE and DAPPER_X_ID_TOKEN in the environment.\n" +
+    "Do NOT edit them into this file — it is tracked by git."
+  );
+  process.exit(1);
+}
 
 async function fetchPage(cursor) {
   const body = JSON.stringify({

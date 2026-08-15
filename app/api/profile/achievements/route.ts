@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const supabase = supabaseAdmin as any;
 
@@ -14,16 +16,25 @@ export async function GET(req: NextRequest) {
       .select("achievement_key, tier, progress, unlocked_at")
       .eq("owner_key", ownerKey)
       .order("unlocked_at", { ascending: true });
+    // ⚠ A failed read must NOT return `{achievements: []}` at 200 (deep-audit
+    // R13). That is byte-identical to "you have unlocked nothing", so a
+    // database outage silently erased a collector's achievements from their own
+    // profile — and it was invisible to BOTH driver-message leak guards,
+    // because swallowing the message entirely leaks nothing to find.
     if (error) {
-      console.error("[achievements GET]", error.message);
-      return NextResponse.json({ achievements: [] });
+      return apiErrorResponse(error, "api/profile/achievements GET");
     }
     return NextResponse.json({ achievements: data ?? [] });
   } catch (err: any) {
-    console.error("[achievements GET]", err?.message);
-    return NextResponse.json({ achievements: [] });
+    return apiErrorResponse(err, "api/profile/achievements GET");
   }
 }
+
+// NOTE: this GET deliberately has NO ownership check. `profile_achievements`
+// carries an explicit `"public read achievements"` RLS policy
+// (roles={public}, qual=true), so these rows are already anon-readable
+// directly — adding a gate here would imply a privacy property the table does
+// not have. The WRITE path below is the one that needed fixing.
 
 export async function POST(req: NextRequest) {
   const token = process.env.INGEST_SECRET_TOKEN;
@@ -39,6 +50,15 @@ export async function POST(req: NextRequest) {
     if (!ownerKey) {
       return NextResponse.json({ triggered: false, error: "ownerKey required" }, { status: 400 });
     }
+
+    // ⚠ CONFUSED DEPUTY, fixed (deep-audit R13). This handler took `ownerKey`
+    // straight from the request BODY and then called the edge function with the
+    // SERVER's INGEST_SECRET_TOKEN — so any caller could make RPC recompute (and
+    // write) achievements for an arbitrary owner_key using our own operator
+    // credential. Every sibling /api/profile/** writer carries this guard; this
+    // one was missed. It fails closed on 401 / 403 / any resolution error.
+    const gate = await requireOwnedKey(ownerKey);
+    if (gate instanceof Response) return gate;
     const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
     const r = await fetch(`${url}/functions/v1/compute-achievements`, {
       method: "POST",

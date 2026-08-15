@@ -50,7 +50,15 @@ function siteUrl() {
   )
 }
 
-async function fetchSnapshot(wallet: string): Promise<SnapshotData | null> {
+// ⚠ Returns `ok` alongside the data (deep-audit R12). This used to return a
+// bare `null` for BOTH "the read failed" and "this wallet holds nothing", and
+// the caller rendered the second: *"We haven't indexed this wallet yet"* — a
+// claim about OUR INDEX manufactured from a transient failure, on the page a
+// collector deliberately shares. Worse, that empty state QUEUES the wallet for
+// indexing and polls, so an outage spent real ingest work re-indexing wallets
+// that were already fine. `ok` answers "did the READ succeed", never "were
+// there moments" — see the honesty table in CLAUDE.md.
+async function fetchSnapshot(wallet: string): Promise<{ data: SnapshotData | null; ok: boolean }> {
   try {
     // no-store (not ISR): collection-snapshot returns 200 with totalMoments=0
     // for an un-indexed wallet, and the empty-state queues + polls for indexing
@@ -60,10 +68,10 @@ async function fetchSnapshot(wallet: string): Promise<SnapshotData | null> {
     const res = await fetch(`${siteUrl()}/api/collection-snapshot?wallet=${encodeURIComponent(wallet)}`, {
       cache: "no-store",
     })
-    if (!res.ok) return null
-    return await res.json()
+    if (!res.ok) return { data: null, ok: false }
+    return { data: await res.json(), ok: true }
   } catch {
-    return null
+    return { data: null, ok: false }
   }
 }
 
@@ -125,8 +133,14 @@ export async function generateMetadata(
   // opengraph-image.tsx file convention, which renders 0 bytes on edge / 500 on
   // node in this Next 16 setup (see app/api/og/share/route.tsx header).
   const ogImage = `${siteUrl()}/api/og/share?wallet=${encodeURIComponent(params.wallet)}`
+  // Flow addresses are hex and case-insensitive in practice, so /share/0xABC
+  // and /share/0xabc are the SAME card at two indexable URLs (deep-audit R12).
+  // Canonicalise on the lowercase form so the duplicate does not split ranking
+  // signals — this page is shared by hand, so both spellings really do occur.
+  const canonical = `${siteUrl()}/share/${encodeURIComponent(params.wallet.toLowerCase())}`
   return {
     title: `Collection Card — ${params.wallet} — Rip Packs City`,
+    alternates: { canonical },
     description: `View the NBA Top Shot collection for wallet ${params.wallet} on Rip Packs City.`,
     openGraph: {
       title: `Collection Card — ${params.wallet}`,
@@ -162,13 +176,39 @@ const TIER_COLORS: Record<string, string> = {
   ultimate: "var(--tier-ultimate)",
 }
 
+// Shown when the snapshot READ failed — distinct from ShareEmptyState, which
+// makes a claim about our index and starts a queue+poll cycle. This one claims
+// only that we couldn't load it, and offers a reload rather than re-indexing.
+function ShareUnavailable({ wallet }: { wallet: string }) {
+  return (
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px", textAlign: "center" }}>
+      <h1 style={{ fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
+        {"Couldn’t load this collection card"}
+      </h1>
+      <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)", marginTop: 12 }}>
+        {"Something went wrong on our side — this wallet may well be indexed. Reload in a moment."}
+      </p>
+      <p className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", fontSize: "var(--text-xs)", marginTop: 16 }}>{wallet}</p>
+    </main>
+  )
+}
+
 export default async function SharePage(props: { params: Promise<{ wallet: string }> }) {
   const params = await props.params
   const wallet = params.wallet
-  const [data, intel] = await Promise.all([
+  const [snapshot, intel] = await Promise.all([
     fetchSnapshot(wallet),
     fetchWalletIntel(wallet),
   ])
+  const data = snapshot.data
+
+  // A FAILED READ is not an unindexed wallet (deep-audit R12). Say so, and do
+  // NOT fall through to ShareEmptyState — that component queues the wallet for
+  // indexing and polls, which on an outage burns ingest work re-indexing
+  // wallets that were never the problem.
+  if (!snapshot.ok) {
+    return <ShareUnavailable wallet={wallet} />
+  }
 
   // Treat "no snapshot" AND "indexed but zero moments" the same: the wallet
   // isn't ready yet (or holds nothing). ShareEmptyState queues it for indexing
