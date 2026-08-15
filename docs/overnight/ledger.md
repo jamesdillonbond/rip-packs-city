@@ -104,6 +104,19 @@ backstops shipped) plus the handoff doc that scoped this work. The 2140Z filing 
 ⚠ Also repaired this file's own line 14, where the SKILL.md revert path had its backslashes stripped
 (`C:UsersTDill…`, backslashes gone) and was therefore unusable as written.
 
+3. Addendum on the handoff doc recording what item 3 (the cardset filter) now needs. The capture
+confirms the filter param is NOT derivable from it, and parsing it properly narrows the operator step
+to two fields: the grid request carries `applied_filters` (literally the page URL query string) and
+`attribute_code` (a structured array, **empty on all 180 grid requests — never once exercised**).
+The 2,429 `cardset` hits are response FIELD SELECTIONS, not filter args. Still not guessed.
+⚠ **This sandbox strips backslashes even inside a quoted heredoc** — it silently ate the separators in
+a Windows path and turned an escaped regex into a syntax error, twice this session. Parse with
+`indexOf` + `String.fromCharCode(92)`; the ledger path repair above uses forward slashes for the same reason.
+
+⚠ **Open, unchanged:** `panini-ingest-enum` still holds ONLY the two probe rows. The 14:00 PT walk was
+the one whose genuine enum row the pre-deploy route destroyed, so **the 18:00 PT walk is the first that
+can prove the runner→route path** (`grid_pages` vs 82, `wc_pskus` vs 536 — both floors twice over).
+
 **Revert:** `cp SKILL.md.bak2 SKILL.md` in that directory (fresh pre-edit backup, 18,990 bytes).
 ⚠ **Do NOT use `SKILL.md.bak`** — that is the 15,253-byte pre-Query-4b copy and restoring it would also
 roll back the entry below. `git revert <sha>` for the docs half.

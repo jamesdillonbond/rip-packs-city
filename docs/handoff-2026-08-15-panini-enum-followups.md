@@ -135,3 +135,25 @@ Then `panini_fmv_snapshots` editions/day over the following day or two — read 
 ## Expected end state
 
 Line 118 of `SKILL.md` no longer contradicts line 144; both inbox filings committed on `main` with a spliced ledger entry and an unchanged swallowed-heading count of 3; the cardset filter either parked or shipped from a **captured** `applied_filters` value rather than a guessed one; and the first genuine `panini-ingest-enum` row confirming `grid_pages` ≥ 82 with `panini_fmv_snapshots` editions/day climbing back off 153.
+
+---
+
+## Addendum (Claude Code, 2026-08-15 16:20 PT) — items 1 and 2 are done; item 3's *shape* is now established
+
+**Item 1 — DONE.** `SKILL.md` line 118 replaced. `grep -n 800 SKILL.md` now returns **zero** hits, so that was the last instruction-bearing instance. Fresh backup at `SKILL.md.bak2` (18,990 bytes) — ⚠ **do not revert via `SKILL.md.bak`**, which is the 15,253-byte pre-Query-4b copy and would also roll back the Query 4b block.
+
+**Item 2 — DONE, and the state was not what this handoff assumed.** The 2140Z filing was **already committed and clean**; only the 1830Z filing had uncommitted changes, and its §9 STATUS section was **present in the working tree, not reverted** — its header already read *"At filing time nothing had been changed"* rather than the false *"Nothing was changed."* The 2140Z cross-reference to `…1830Z…§9` resolves correctly (§9 is STATUS, §10 is the kept-for-the-record original). All committed with a spliced ledger entry; heading count 1423 → 1424 locally, 1426 → 1427 after rebasing onto three concurrent-session commits, swallowed-heading count unchanged at **3** throughout. Ledger line 14's backslash-stripped path is repaired — to **forward-slash** form (`C:/Users/TDill/…`), which cannot be mangled again.
+
+**Item 3 — still correctly BLOCKED, but the read target is now exact.** The handoff's negative result is confirmed, and parsing the capture properly gives the filter *vocabulary*, which is more than "not recoverable":
+
+| `applied_filters` value | count | what it is |
+|---|---|---|
+| `marketplace-nfts?sport=Soccer&p=N` | 180 | the grid scrape — `applied_filters` is **the page URL's query string, verbatim** |
+| `?&minBuynow=&maxBuynow=&minSerial=&maxSerial=&card_type=&owner=&listType=all_cards&sortBy=new` | 759 | the per-psku detail query's full filter set — **no cardset param in it** |
+| `owner=&order_type=ASC&pack_id=NNNN` | 12 | pack contents |
+
+So the grid request carries **two** filter slots: `applied_filters` (the URL query string) and `attribute_code` (a structured array, **empty on all 180 grid requests — never once exercised**). When Trevor applies the cardset filter in the CDP Chrome, read **those two fields on a `marketplace-nfts` request** — the value lands in one or both. Everything else in the payload is noise.
+
+⚠ Two mechanical notes for whoever does this. The 2,429 `cardset` hits are all **response field selections** (`cardset\n athlete\n start_seq`), not filter arguments — do not mistake one for the other. And **this sandbox's Bash layer strips backslashes** even inside a quoted heredoc, so a regex with `\"` becomes a syntax error and a Windows path silently loses its separators (it did, twice, in this very session — hence the forward-slash repair above). Parse the capture with `indexOf` + `String.fromCharCode(92)`, not an escaped regex.
+
+**Item 4 / the open verification — NOT yet available, and this is the honest state.** `panini-ingest-enum` still holds **only the two probe rows** (`probe` 14:39, `postdeploy-probe` 14:42 PT). The 14:00 PT walk's genuine enum row was the one destroyed by the pre-deploy route, exactly as §9 of the 1830Z filing records. **The next scheduled walk, 18:00 PT, is the first that can produce a genuine row** — read `grid_pages` against 82 and `wc_pskus` against 536, remembering both are floors twice over (that walk stopped on a clock, and on a 6-minute one). Do not recalibrate Escalation 2 until several such rows exist.
