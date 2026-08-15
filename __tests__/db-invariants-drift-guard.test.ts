@@ -507,6 +507,92 @@ const PINS = [
     test: "supabase/tests/remap_topshot_base_keyed_parallel_sales.sql",
     migration: "supabase/migrations/20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql",
   },
+  // ── Added 2026-08-15 (test-coverage pass) ─────────────────────────────────
+  // The TopShot remap/conflation family was 2-of-9 pinned. Every member mutates
+  // the sales/wmc/editions keying that all edition-keyed FMV derives from, so
+  // pinning two of them and leaving seven was an arbitrary line — the two that
+  // were pinned are simply the two someone happened to write a snapshot for.
+  // These close the family. Each was validated on a local postgres:16 and
+  // mutation-proven (every assertion demonstrably reddens on a one-token change).
+  {
+    // The only member that DELETES. Pins the int-key gate (refuses to remap onto
+    // a UUID-keyed target, keeping the two key conventions apart), the
+    // slot-scoped collision split between UPDATE and DELETE, and the
+    // `edition_id <> v_canon` guard that stops a half-migrated row satisfying
+    // its own EXISTS subquery and deleting itself.
+    fn: "remap_pack_pool_uuid_key",
+    test: "supabase/tests/remap_pack_pool_uuid_key.sql",
+    migration: "supabase/migrations/20260815160000_audit_20260815_snapshot_remap_pack_pool_uuid_key.sql",
+  },
+  {
+    // Widest blast radius in the family — rewrites edition_id AND serial_number
+    // on `sales`. Pins the slice rotation (a sale in the gap between the fresh
+    // window and the current slice is legitimately skipped), the ambiguity guard
+    // that drops moments whose wmc rows disagree rather than guessing (without it
+    // they are re-keyed on every run, oscillating forever without ever erroring),
+    // and the dup_pairs serial-collision guard.
+    fn: "remap_misattributed_topshot_sales",
+    test: "supabase/tests/remap_misattributed_topshot_sales.sql",
+    migration: "supabase/migrations/20260815161000_audit_20260815_snapshot_remap_misattributed_topshot_sales.sql",
+  },
+  {
+    // Re-keys FOSSIL wmc rows (edition_key not in canonical setID:playID[::subID]
+    // form). wmc is the portfolio store and its UUID fossils render as real
+    // moments on /share, so a bad re-key is user-visible. Pins the
+    // COALESCE(parallel, base) precedence — collapsing it is the conflation
+    // defect itself and is invisible in the return value — plus the fact that an
+    // unresolvable row is COUNTED rather than written to a fallback, and that the
+    // audit table's predicate matches the UPDATE's (it is the revert path).
+    fn: "remap_topshot_wmc_from_onchain_map",
+    test: "supabase/tests/remap_topshot_wmc_from_onchain_map.sql",
+    migration: "supabase/migrations/20260815162000_audit_20260815_snapshot_remap_topshot_wmc_from_onchain_map.sql",
+  },
+  {
+    // Re-keys sales AND moments from the on-chain map. Pins the deliberate
+    // asymmetry: sales move unconditionally, moments move FREE-SLOT ONLY and a
+    // blocked one is reported as `moments_deferred_conflict` rather than forced
+    // (which would corrupt moment identity) or dropped silently (which would make
+    // the return value lie).
+    fn: "remap_topshot_from_onchain_map",
+    test: "supabase/tests/remap_topshot_from_onchain_map.sql",
+    migration: "supabase/migrations/20260815163000_audit_20260815_snapshot_remap_topshot_from_onchain_map.sql",
+  },
+  {
+    // Splits base-keyed rows onto their resolved ::N parallel across sales, wmc
+    // AND moments. Its migration was already committed and was verified
+    // byte-identical to LIVE on 2026-08-15, so no snapshot was needed — only the
+    // test was missing. Pins the LIMIT-binds-on-actionable clause (without it the
+    // drain samples an arbitrary slice of a ~99%-already-split 673k-row table and
+    // reports success while making no progress) and the knot skip holding across
+    // all three tables at once.
+    fn: "remap_topshot_split_resolved_subeditions",
+    test: "supabase/tests/remap_topshot_split_resolved_subeditions.sql",
+    migration:
+      "supabase/migrations/20260729030000_audit_20260729_split_resolved_subeditions_limit_binds_on_actionable.sql",
+  },
+  {
+    // Realigns rows already carrying a ::N suffix onto the RIGHT parallel (or
+    // back to the base). Pins the `LIKE base || '::%'` confinement, which is the
+    // only thing stopping a realign dragging a row across bases.
+    fn: "remap_topshot_realign_miskeyed_subeditions",
+    test: "supabase/tests/remap_topshot_realign_miskeyed_subeditions.sql",
+    migration:
+      "supabase/migrations/20260815164000_audit_20260815_snapshot_remap_topshot_realign_miskeyed_subeditions.sql",
+  },
+  {
+    // The function the rest of the family defers TO: every other remapper detects
+    // a knot and skips it, this is the only thing that unties one. Pins the
+    // 2-move permutation's DISTINCT transient serial parks (+3M/+4M — parking
+    // both at the same offset makes them collide with each other mid-swap, which
+    // the test's real UNIQUE(edition_id, serial_number) index makes observable)
+    // and the defensive re-check that refuses to apply a stale candidate.
+    // Its migration was already committed and verified byte-identical to LIVE on
+    // 2026-08-15, so only the test was missing.
+    fn: "resolve_topshot_subedition_collision_knots",
+    test: "supabase/tests/resolve_topshot_subedition_collision_knots.sql",
+    migration:
+      "supabase/migrations/20260705223000_audit_20260705_collision_knot_resolver_orchestrator_step.sql",
+  },
   {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",

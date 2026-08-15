@@ -11,6 +11,18 @@
 # including the GitHub Actions `postgres` service container.
 set -uo pipefail
 
+# ⚠ Pin the SESSION time zone. Several tests assert a rendered `timestamptz`
+# (psql prints it in the session zone), so on a non-UTC machine they fail on the
+# OFFSET while describing the same instant — e.g.
+#   got [2026-06-30 17:00:00-07] want [2026-07-01 00:00:00+00]
+# which reads like a logic bug and is not one. CI containers happen to be UTC, so
+# this was invisible there while failing for anyone running the suite locally —
+# and Trevor's box is PT, which is exactly where it bites. Prod Postgres is UTC,
+# so pinning here makes the suite match production rather than the developer.
+# Do NOT "fix" a future instance of this by editing the expected string to the
+# local offset; that just moves the breakage to the next machine.
+export PGTZ=UTC
+
 PGURL="${DATABASE_URL:-postgres://postgres@localhost:5432/postgres}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/supabase/tests"
 HELPERS="$DIR/_helpers.sql"
