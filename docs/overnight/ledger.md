@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive) — the Panini enum marker had TWO homes, so one payload shape would have split the same telemetry across two pipelines
+
+- **Code only** (`d5919b6b`). No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+- **Context:** `75647b8e` got the load-bearing part right — the per-walk enumeration marker logs under **`panini-ingest-enum`**, never `panini-ingest`, because `detect_stalled_pipelines()` keys on `max(started_at) WHERE pipeline = w.pipeline` and `panini-ingest` is on the 360-min watchlist; a marker under the watched name refreshes `last_run` at the START of every walk and silences that arm on exactly the outage it exists to expose.
+- ⚠ **THE GAP: that separation held only on the no-rows path.** The success path ALSO spread `enum` into the `panini-ingest` ingest row, so a payload carrying rows *and* the marker filed the same telemetry under the watched pipeline instead — two homes for one signal, decided by whatever happened to be batched with it, and a later reader would have to know to union them. **Latent, not live:** the runner posts the marker standalone, so the spread was dead code and this is behaviour-identical today.
+- **Fix:** the marker lands under `PIPELINE_ENUM` unconditionally, ahead of the rows branch; the spread is deleted. Rows still ingest normally under `panini-ingest`.
+- **Guard:** new case in `__tests__/api-cron-panini-ingest.test.ts` asserting a bundled payload still files the marker off the watched pipeline while the ingest row keeps its own `rows_found` and carries no `enum`. Stated as a PROPERTY (`not.toBe(WATCHED_PIPELINE)`), not a literal name, so renaming the marker pipeline cannot quietly satisfy it. **Mutation-proven** — pointing the marker back at `panini-ingest` reds it.
+- **Verified:** `tsc` clean (exit 0, read WITHOUT a pipe — `| tail` returns tail's status, which reported a passing 0 over a genuinely failing run earlier in this session) · 23 tests green across the enum guard + the route suite · `node --check` clean on both .mjs files.
+- **Revert:** `git revert d5919b6b` — restores the spread and the nested marker. No DB unwind; `panini-ingest-enum` rows are inert telemetry.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "bound the remaining insights pages") — every prerendered `/insights` server page now bounds its read; the count went to ZERO, so the guard is a BAN with no allowlist
 
 - **Code + tests.** 12 pages bounded, 2 shared primitives, 1 honesty fix, 1 new ban-guard. No DB, no migration, no cron, no auth, no pricing change.
