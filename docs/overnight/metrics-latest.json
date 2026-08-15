@@ -1,70 +1,46 @@
 {
-  "captured_at_utc": "2026-08-13T17:40:00Z",
-  "run": "rpc-nightly-autonomous-pass (DAYTIME, operator-invoked, NO-PUSH)",
-  "mode": "DAYTIME pass, explicitly requested by Trevor ('work through everything you can'), not the scheduled overnight slot. Real local time 10:40 PT Thu Aug 13 (DB now() 17:40Z - 7h PDT, no skew). Standing autonomous authority applies; MONITOR-MODE not invoked because this was an interactive request. NO-PUSH: git proxy repo-set 403 ('jamesdillonbond/rip-packs-city is not in this session's authorized repository set') on `git push --dry-run` from a fresh anonymous clone. SCOPE: this blocker is specific to this cloud session; Trevor's machine + Claude Code push normally via the PAT in remote.origin.pushurl - commit these files as usual.",
+  "captured_at_utc": "2026-08-15T05:18:00Z",
+  "run": "rpc-nightly-autonomous-pass (OFF-HOURS 22:16 PT Aug 14; MONITOR-MODE + NO-PUSH)",
+  "mode": "Real local time 22:16 PT Thu Aug 14 (DB now() 2026-08-15 05:16Z, confirmed by fresh app rows: max sales.ingested_at 05:12Z, max fmv computed_at 05:15Z -> no clock skew). 22:16 PT is OUTSIDE 00:00-06:00 -> MONITOR-MODE: queue, do not ship. Also NO-PUSH: sandbox shell down (/sessions no-space, useradd exit 12) ~7th consecutive night, so git is unavailable; DB + Supabase MCP + Vercel MCP + Sentry MCP + cowork artifacts + direct mount file access all GREEN. Outputs written to the MOUNT, UNPUSHED. Shipped 0 / reverted 0 / repaired 0.",
   "capabilities": {
-    "bash": "GREEN (cloud container, git 2.43.0, 30G free)",
-    "clone": "GREEN (anonymous https clone of origin/main succeeded, tip aafd014)",
-    "push": "BLOCKED - git-proxy repo-set 403 (operator-only; the mount-token trick cannot cross filesystems)",
-    "device_list_dir": "GREEN",
-    "device_bash": "DOWN (failed identically twice; fails independently of device_list_dir)",
-    "device_commit_files": "GREEN (5 files written to the mount)",
-    "supabase_mcp": "GREEN (read + apply_migration). NOTE: 60s client cap - three statements hit it this session",
-    "vercel_mcp": "GREEN (get_runtime_errors returned; full-text log search not attempted)",
-    "sentry_mcp": "not polled",
-    "project_memory": "GREEN (4 files written)"
+    "device_bash": "DOWN (useradd exit 12, /sessions no-space; failed identically twice)",
+    "git": "UNAVAILABLE (no shell -> no clone, no push)",
+    "supabase_mcp": "GREEN (read; no writes this run)",
+    "vercel_mcp": "GREEN (list_deployments)",
+    "sentry_mcp": "GREEN (0 new / 0 regressed / 48h)",
+    "cowork_artifacts": "GREEN (list_artifacts; 11 artifacts, none flagged broken)",
+    "mount_file_access": "GREEN (Read/Write/Glob against C:\\Users\\TDill\\rip-packs-city)"
   },
-  "origin_main": "aafd014 fix(pack-listings): stop publishing Dapper Studio's error text to users",
-  "prod_deploy": "not polled (no code shipped)",
+  "prod_deploy": "fda4ccf4 (fix(concierge): wire find_quirky_serials to bio columns) READY = current production; the two newest commits ac15a9a6 + b16c9f0d are docs-only and CANCELED = the expected vercel.json ignoreCommand skip for a docs-only diff, NOT a build failure. Last CODE deploy already shipped READY.",
   "shipped_this_run": 0,
-  "net_db_change": "ZERO - verified from outside after the fact: pack_rips back to 9 indexes, 0 leftover index rows, 0 zz-oneoff cron jobs, 85 active cron jobs, postgres.rolconfig back to search_path only.",
-  "migrations_applied": [
-    "20260813172005_audit_20260813_pack_rips_collection_block_height_index (DDL ROLLED BACK by the 60s cap - version row recorded anyway; see the drift hazard note)",
-    "20260813172135_audit_20260813_drop_invalid_pack_rips_block_height_index",
-    "20260813173127_audit_20260813_revert_pack_rips_block_height_index_regression"
-  ],
-  "headline": "An unmistakable missing index (get_allday_unresolved_pulls: 2 seq scans + a 497k-row sort to return LIMIT 300; 984 MB and 11.2 s per call at a 0.5% buffer hit ratio) was built, measured, and REVERTED. Limit cost fell 237,181 -> 579 and the query got SLOWER: of the newest 20,000 AllDay pack_rips, ZERO have an unresolved pull, so the nested loop cannot stop early. The plan's own full-execution estimate (1,628,640 vs 294,269) said so on the same line I read the 579 from.",
-  "db_disk_reads": {
-    "window": "39.7h (pg_stat_statements reset 2026-08-12T01:34Z)",
-    "total_shared_blks_read_tb": 1.44,
-    "per_day_gb": 870,
-    "top_cold_readers": [
-      { "stmt": "fmv_recalc_edition_page", "gb": 58.0, "hit_pct": 23.0, "mb_per_call": 224 },
-      { "stmt": "refresh_wmc_fmv_drift_active", "gb": 55.7, "hit_pct": 42.6, "mb_per_call": 191 },
-      { "stmt": "raise_impossible_parallel_circ()", "gb": 45.4, "hit_pct": 6.5, "mb_per_call": 1223 },
-      { "stmt": "count_insider_detector_candidates", "gb": 44.7, "hit_pct": 65.8, "mb_per_call": 114 },
-      { "stmt": "get_allday_unresolved_pulls", "gb": 41.3, "hit_pct": 0.5, "mb_per_call": 984 },
-      { "stmt": "sales WHERE ingested_at >= $1", "gb": 28.3, "hit_pct": 11.7, "mb_per_call": 2229 }
-    ],
-    "warm_victims_do_not_optimise": [
-      { "stmt": "panini_squeeze_board", "hit_pct": 95.4 },
-      { "stmt": "candy_scarcity_board", "hit_pct": 98.7 },
-      { "stmt": "topshot_first_mint_trophy_stats", "hit_pct": 93.7 }
-    ]
+  "reverted_this_run": 0,
+  "repaired_this_run": 0,
+  "security": { "invariants": [], "anon_write_holes": [], "rls_off_base_tables": [], "secdef_anon_violations": [] },
+  "db_size_mb": 12917,
+  "sentinel_ts_uuid_editions_48h": 0,
+  "sentry_new_or_regressed_48h": 0,
+  "trust_health_breaches": {
+    "panini_sale_price_capture_dry_days": { "value": 17, "breach_at": 3, "class": "KNOWN - home-box Panini runner outage; operator-owned. panini_fmv_stale_hours 0.2 ok, panini_coverage_pct_drop 2 ok -> FMV fresh, only new-price CAPTURE is dry." },
+    "public_board_slow_count": { "value": 6, "breach_at": 1, "class": "KNOWN - saturation collateral, oscillating (16 on 08-11, 1 on 08-14 03:12Z, 6 now). public_board_empty_count 0 -> no board broken/empty." },
+    "unmapped_resolution_backlog_max": { "value": 254, "breach_at": 100, "class": "KNOWN - AllDay permanent-class floor; net-draining (inflow 127/24h < outflow 159/24h)." }
   },
-  "health": {
-    "detect_stalled_pipelines": "4 rows, all known/carried: candy-listings-indexer (info), allday-pack-opens-backfill (medium), refresh-pack-grail-metrics-mv (info), topshot-moments-hydrator (info)",
-    "check_pgcron_recent_failures": "3, all documented classes: rpc-refresh-mv-ts-set-play-catalog 'job startup timeout' (never ran - worker-slot exhaustion), rpc-refresh-misattrib-candidates + rpc-trust-health-precompute-refresh (midday-saturation statement timeout, recovers next tick)",
-    "new_classes": 0,
-    "new_trust_breaches": 0
+  "pipeline_alerts": {
+    "pg_net_http_403": "CRITICAL 23/2h - recurring gate-key half-rotation outage (operator: complete rotation as ONE window per inbox 2026-08-11T0300Z runbook).",
+    "compute-pinnacle-pack-ev": "HIGH 8/8 fail since 08-12, deterministic 'ON CONFLICT DO UPDATE cannot affect row a second time'. Last OK 2026-08-11 06:17Z. Fix bd53bb3a is NOT in the last ~20 Vercel deploys -> either undeployed or ineffective; do NOT mark resolved. Operator/CC (pack-EV route + edge deploy is off-limits; also blocked by unset PINNACLE_PACK_EV_GATE_KEY).",
+    "08-14_saturation_spell": "lock-check-batch, wallet-username-resolver, compute-topshot-pack-ev all SPIKED on 08-14 (conn-pool / statement-timeout) and RECOVERED on 08-15 (today). Documented disk-IO saturation class, self-healed. NOT the ON CONFLICT class, NOT a logic defect, NOT traced to a ship.",
+    "candy-listings-indexer": "cron_silent 463m (info) - known no-op under ME quest-hold; candy_mlb board reads directly, not user-facing."
   },
-  "declined": [
-    "compute-pinnacle-pack-ev deploy - the code fix bd53bb3 IS in git (today 08:20 PT) but prod runs version 18 (2026-07-18). Deploying alone would turn a deterministic 21000 failure into a 403 every tick: jobid 42 is one of D2b's five un-rotated fns, PINNACLE_PACK_EV_GATE_KEY is not set, gate fails closed. Operator sets the secret first, then deploy.",
-    "raise_impossible_parallel_circ() bounding - writer on editions.circulation_count, FMV-adjacent path",
-    "sales(ingested_at) index - hot partitioned shared table; and apply the LIMIT/density lesson before assuming an index helps"
-  ],
-  "needs_trevor": [
-    "Commit the 5 mount files (2 docs + 3 migrations) and paste the ledger entry",
-    "Set PINNACLE_PACK_EV_GATE_KEY, then deploy compute-pinnacle-pack-ev (unfreezes Pinnacle pack EV, dead since 2026-08-11 06:17Z)",
-    "Confirm 20260813150925_audit_20260813_reconcile_saved_wallet_stats_lower_soft_deadline has a repo file (applied by another session today)",
-    "Still open from prior passes: gate-key rotation 3/8, ALLDAY_PROXY_URL, two wrangler deploys, the /sessions volume"
-  ],
+  "fmv_high_med_by_collection": {
+    "nba_top_shot": { "HIGH": 1588, "MEDIUM": 5822, "total_editions": 19634, "high_med_pct_all": 37.7 },
+    "nfl_all_day": { "HIGH": 142, "MEDIUM": 1583, "total_editions": 6190, "high_med_pct_all": 27.9 },
+    "laliga_golazos": { "HIGH": 0, "MEDIUM": 4, "total_editions": 575, "high_med_pct_all": 0.7 },
+    "note": "disney_pinnacle FMV lives in pinnacle_fmv_history (shows {} here by design); candy_mlb not in fmv_by_collection. Shares stable vs recent nights - no notable move."
+  },
+  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19769, "laliga_golazos": 575 },
+  "post_ship_watch": "PASS - 0 reverts. Recent-24-48h ships were CC interactive code work (trophy-pin confirm, cosmetic-render gate, seo byline, proxy public-path pins, search token-coverage, concierge quirky-serials wiring, pack-detail partition prune, unused-index drop). Sentry 0 new/0 regressed over 48h; production READY; 08-14 pipeline spike self-recovered. Nothing attributable to a ship, nothing to revert.",
+  "escalation": "Sandbox shell down ~7th consecutive night blocks all overnight git push (and daytime-monitor inbox archival). Operator: free /sessions volume (delete old Cowork sessions) per docs/handoff-2026-08-09-cowork-shell-recovery.md.",
   "outputs": [
-    "docs/overnight/inbox/2026-08-13T1730Z-disk-read-ranking-and-the-pack-rips-plan-defect.md",
-    "docs/handoff-2026-08-13-edition-page-hang-CORRECTION.md",
-    "supabase/migrations/20260813172005_*.sql",
-    "supabase/migrations/20260813172135_*.sql",
-    "supabase/migrations/20260813173127_*.sql",
-    "memory: rank-db-by-disk-reads-not-total-time (new), pgcron-oneoff-runs-concurrently-ddl (corrected), rpc-suspense-page-browser-qa (extended), MEMORY.md (index)"
+    "docs/handoff-2026-08-14-overnight-pass.md (mount, unpushed)",
+    "docs/overnight/metrics-latest.json (mount, unpushed)"
   ]
 }
