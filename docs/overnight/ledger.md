@@ -14481,7 +14481,19 @@ Trevor (mobile) couldn't find the parallel toggler while viewing his Donovan Cli
 - **Verified live post-deploy:** the Clingan moment page serves "Parallel printing — Standard /4,000 · Club Collection /99 · 3.6×" with working links to both printings.
 - **Revert:** `git revert 3dfb152`.
 
-## Queued — awaiting a clean window or operator decision
+## Queued — ARCHIVE (frozen 2026-07-01; do NOT read this as the live queue)
+
+> ⚠ **This section has been dead since 2026-07-01 and is kept only as history** (deep-audit R15, retitled
+> 2026-08-15). Its newest entry is six weeks old and several items beneath it are marked RESOLVED elsewhere in
+> this same file (e.g. `UFC-EDITIONS-SEED-GAP`, `REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT`). A reader
+> following the documented "skim the ledger before a session" instruction was landing here and treating a
+> stale, mostly-closed list as the current queue — this audit's own brief did exactly that.
+>
+> **The live queue is the dated `### ` entries at the TOP of this file**, plus `docs/overnight/inbox/` for
+> anything filed and not yet drained. Nothing was deleted: the ledger guard compares heading SETS, and these
+> entries carry revert paths for work that really shipped.
+
+
 ### 2026-07-01 (overnight pass — GENUINE OVERNIGHT) — NEW queued 1
 - **CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT · 2026-07-01 (night pass, NEW) · [LOW-MED · CC route change / operator — NOT a clean DB-only ship] (night-count 1; monitor-escalated across 3 ticks tonight).** `classify-acquisitions-multicollection` (hourly :06) — `nfl_all_day` leg fails `canceling statement due to statement timeout` ~40% of ticks (00/01/02/06:06Z ~95s; 22:06Z 185s) at the SECDEF fn `backfill_acquisitions_for_collection(uuid,int)`'s own `statement_timeout=90s`; flaps not stalls (`detect_stalled []`). Mechanism (measured): Merge Anti Join of ~246k priced AllDay `sales` (collection_id filtered inline off `sales_YYYY_nft_id_idx`) × 582k `moment_acquisitions`, semi-join wmc, LIMIT 300 → anti-join+LIMIT-scans-deep (planner cost ~21k vs real ~90s). Stepped ~20s→80s at 06-30T17:06Z; AllDay `sales`=256,788 priced (226,165 `allday_studio_history_v1`, still filling 06:52Z), only 28,762 classified, backlog ~228k & growing (AllDay wmc 325,981 > sales ⇒ EXISTS(wmc) not selective). **Impact LOW** (moment_acquisitions enrichment; NOT FMV/deal-boards/pack-EV/user-facing). **Route last touched 06-09 (not hot).** **Why NOT auto-shipped:** the monitor's suggested pure `statement_timeout` ALTER is UNSAFE — route runs all work in `after()` under `maxDuration=120`, AllDay already eats ~95s of it, so raising the fn cap risks silently killing the lambda before `log_pipeline_run` (visible flap → invisible failure; the 06-20 special-serial-MV anti-pattern); a "safe" ~100-105s bump buys ~10s and still fails spikes. No missing index (all present). A `sales(collection_id,nft_id)` composite would likely help the merge but taxes the hot sales-ingest path + needs multi-partition CONCURRENTLY + EXPLAIN-ANALYZE validation. **Recommended fix (CC, ranked):** (1) reduce AllDay `p_limit` 300→120–150 in the route `TARGETS` (fits under 90s, likely RAISES net throughput since ~40% of ticks currently classify 0; revert: restore 300); (2) coordinated fn `statement_timeout` 90→150s + route `maxDuration` 120→200 (≤800) together; (3) product call on whether to backfill acquisitions for ~228k historical studio sales at all, else `sales(collection_id,nft_id)` index or wmc-driven candidate query, EXPLAIN-validated. Re-measure 24h; if contention-only, downgrade/close. Detail: [docs/handoff-2026-07-01-overnight-pass.md](../handoff-2026-07-01-overnight-pass.md).
 
