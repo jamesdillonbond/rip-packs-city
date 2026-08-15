@@ -8,6 +8,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of these", cont.) — ⚠ USER-FACING: /alerts told a collector "No alerts yet" and "not linked" off a FAILED read; + re-seated the component ratchet
+
+- **The defect.** `app/alerts/page.tsx` ran three fetches under one `Promise.all`, guarded each with `if (res.ok)`, and on a `!ok` response simply **left state at its initial `[]`** — with a bare `catch { /* ignore */ }` swallowing a thrown fetch outright. Every claim on that page is about the reader's **OWN account**, which makes it the sharpest instance of this class after the dashboard hero-picker:
+  - **"No alerts yet. Create one above."** — actively invites a **DUPLICATE** of an alert the collector already has.
+  - **"No watched editions yet."**
+  - the channel list rendered every channel **"not linked"** with a Link button — telling someone whose Telegram IS linked that it is not, and inviting a re-link.
+- **Found by sweeping client-page empty-state copy**, not from a report. `app/**/page.tsx` is measured by NEITHER coverage gate (44,413 LOC), so nothing was ever going to surface this automatically.
+- **Fix.** Per-leg failure tracking (`{channels, subs, fmv}`) rather than one flag — the three endpoints fail independently and a single flag would blank all three sections whenever any one broke. Failure branch **precedes** the empty branch (ordering is what makes it non-inert); the empty-state copy is **KEPT**, because owning nothing is still a real answer; the thrown-fetch path fails **all three** legs, since one `Promise.all` means no leg's state can be trusted. The channels leg gets a notice above the list instead — there is no empty state there, the false claim IS the per-channel status.
+- **Guard:** extended `__tests__/client-pages-failed-vs-empty-guard.test.ts` (2 sites → 3), 5 mutations, all killed. No failure message diagnoses a cause it cannot know — the defect these replace was a confident wrong explanation, and new copy that guesses differently would be the same mistake in new words.
+- **Also: component-gate ratchet re-seated** 88.5/79.4/88.2/91.6 → **89.8/81.3/88.6/92.7** against actuals 90.21/81.74/89.00/93.10. The branch buffer had drifted to **2.34pt**, the same direction as the ~13pt incident this file records — no coverage was added by this pass, it is purely putting the ratchet back under the actuals it exists to protect. Margins now ~0.4–0.5pt, matching the primary gate.
+- **Verified:** `tsc` clean; guard 10/10; component gate green at the RAISED thresholds (1,680 tests).
+- **Revert:** `git revert <sha>`. No DB change.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of these") — ⚠ USER-FACING: six public OG cards published a CAPPED PAGE LENGTH as a board total; top-sales said "3 sales this week" against 30,592
 
 - **The defect.** Every `/api/public/insights/**` route published `meta.total_rows: data?.length ?? 0` — the length of the CAPPED page (each route clamps `limit` via `Math.min`), under a name that means the opposite. Six OG cards read it as a board total, and **three read it off the same `limit=3` request they used to render their top-3 rows**. Measured live 2026-08-15:
