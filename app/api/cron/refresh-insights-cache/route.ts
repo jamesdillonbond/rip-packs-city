@@ -16,7 +16,14 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { WARM_BOARDS, warmBoard, type BoardCacheKey } from "@/lib/insights/board-cache"
+import {
+  WARM_BOARDS,
+  warmBoard,
+  readBoardSnapshotAges,
+  stalestBoards,
+  BOARD_SNAPSHOT_STALE_CEILING_MS,
+  type BoardCacheKey,
+} from "@/lib/insights/board-cache"
 import {
   fetchDealsDefault,
   fetchRookiesDefault,
@@ -65,12 +72,39 @@ async function run(request: NextRequest) {
   const okCount = results.filter((r) => r.ok).length
   const rowsWritten = okCount
   const failed = results.filter((r) => !r.ok)
+
+  // ── Per-tick outcome ──────────────────────────────────────────────────────
   // A single board timing out under disk-IO saturation is EXPECTED (that is the
   // condition this cache exists to survive) — the unwarmed board just serves
   // live/stale, non-regressive. So the run is ok as long as it warmed at least one
   // board; only a total failure (0 warmed) is a real signal. Per-board outcomes go
   // in `extra` so a partial warm is still visible without reading as a red pipeline.
-  const ok = okCount > 0
+  const warmedSomething = okCount > 0
+
+  // ── Cumulative outcome (2026-08-15) ───────────────────────────────────────
+  // ⚠ The per-tick rule above is sound and MEASUREMENT SHOWED IT IS NOT ENOUGH.
+  // Over 869 ticks / 3.2 days, `deals` failed 59.5% of ticks and once went 34
+  // consecutive ticks (~2h50m) without a refresh — and every one of those runs
+  // logged `ok: true`, because `okCount > 0` was satisfied by candy-mlb, which
+  // succeeds 95.6% of the time. So the pipeline reported perfect health while the
+  // flagship public board served hours-old data. The reasoning was right; its
+  // premise (that failures are occasional and rotate) was not.
+  //
+  // A tick's outcome cannot express that, because the quantity that matters is
+  // cumulative: how long has this board actually gone unrefreshed. So read it.
+  const ages = await readBoardSnapshotAges()
+  const stale = stalestBoards(ages)
+  const neverWarmed = ages.filter((a) => a.ageMs == null)
+
+  // ⚠ `ok` now also fails on a board past the 2h ceiling — measured at ~1.2
+  // occurrences/day, i.e. rare enough to mean something. NOTE FOR WHOEVER WIRES
+  // AN ALARM: nothing currently consumes pipeline_runs.ok for this pipeline
+  // (get_pipeline_alerts_core reads silent_indexer_failures + event_cursor;
+  // detect_stalled_pipelines watches CADENCE, and the cadence here is perfect —
+  // the cron ticks reliably, it is the work inside that fails). So this makes the
+  // row honest and greppable; it does not yet page anyone. Adding a
+  // pipeline_cadence_watchlist entry would NOT help for the same reason.
+  const ok = warmedSomething && stale.length === 0
 
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -80,14 +114,33 @@ async function run(request: NextRequest) {
       p_rows_written: rowsWritten,
       p_rows_skipped: results.length - rowsWritten,
       p_ok: ok,
-      p_error: failed.length
-        ? failed.map((r) => `${r.key}${r.error ? `: ${r.error}` : ""}`).join("; ")
-        : null,
+      // The staleness verdict leads, because it is the one an operator can act
+      // on; the per-tick reasons follow, since a single failed warm is routine.
+      p_error:
+        stale.length || failed.length
+          ? [
+              ...stale.map(
+                (a) => `STALE ${a.key}: snapshot ${Math.round((a.ageMs ?? 0) / 60000)}min old`
+              ),
+              ...failed.map((r) => `${r.key}${r.error ? `: ${r.error}` : ""}`),
+            ].join("; ")
+          : null,
       p_extra: {
         duration_ms: Date.now() - startedMs,
         warmed: okCount,
         total: results.length,
         boards: results.map((r) => ({ key: r.key, ok: r.ok, row_count: r.rowCount })),
+        // Cumulative view — queryable per board, so a streak is visible without
+        // reconstructing it from per-tick rows (which prune at ~73h).
+        stale_ceiling_min: Math.round(BOARD_SNAPSHOT_STALE_CEILING_MS / 60000),
+        stale_boards: stale.map((a) => ({
+          key: a.key,
+          age_min: Math.round((a.ageMs ?? 0) / 60000),
+        })),
+        never_warmed: neverWarmed.map((a) => a.key),
+        snapshot_age_min: Object.fromEntries(
+          ages.map((a) => [a.key, a.ageMs == null ? null : Math.round(a.ageMs / 60000)])
+        ),
       },
     })
   } catch (logErr) {
@@ -102,6 +155,8 @@ async function run(request: NextRequest) {
     warmed: okCount,
     total: results.length,
     boards: results,
+    stale_boards: stale.map((a) => ({ key: a.key, age_min: Math.round((a.ageMs ?? 0) / 60000) })),
+    never_warmed: neverWarmed.map((a) => a.key),
   })
 }
 

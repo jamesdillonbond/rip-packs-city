@@ -166,6 +166,96 @@ export async function readBoardSnapshot(
 }
 
 /**
+ * Age ceiling past which a board's snapshot is a REPORTABLE problem rather than a
+ * dropped tick. Distinct from BOARD_CACHE_FRESH_MS, which decides what the READER
+ * does; this decides what the WRITER admits to.
+ *
+ * ⚠ CHOSEN FROM THE MEASURED DISTRIBUTION, not from taste (2026-08-15, 869 cron
+ * ticks / 3.2 days of pipeline_runs). Per-tick warm failure is not rare and not a
+ * defect — it is the saturation condition this cache exists to survive:
+ *
+ *     deals 59.5% of ticks failed · first-mint 54.2% · panini-squeeze 51.0%
+ *     rookies 15.1% · candy-mlb 4.4%
+ *
+ * so any threshold near one tick would be red most of the time — the cry-wolf
+ * outcome ufc_fmv_stale_hours already cost this repo. Consecutive-failure streaks:
+ *
+ *     414 streaks total · >=30 min: 75 · >=1 h: 34 · >=2 h: 4 · longest 34 ticks
+ *
+ * 2 h therefore fires ~1.2x/day on the genuinely exceptional case (a PUBLIC board
+ * serving two-hour-old data) and stays quiet through ordinary rotation. Move it
+ * with a fresh measurement, not a hunch.
+ */
+export const BOARD_SNAPSHOT_STALE_CEILING_MS = 2 * 60 * 60 * 1000
+
+/** One board's snapshot age, for the cron's own honesty check. */
+export interface BoardSnapshotAge {
+  key: BoardCacheKey
+  ageMs: number | null
+  refreshedAt: string | null
+}
+
+/**
+ * Ages of every warmed board's snapshot, in ONE read.
+ *
+ * WHY THIS EXISTS: the warm cron reports `ok` from the outcome of the tick it just
+ * ran, and a tick's outcome says nothing about how long a board has actually gone
+ * unrefreshed. Measured, those diverge hard — `deals` reached 34 consecutive failed
+ * ticks (~2h50m) while every one of those runs logged `ok: true`, because
+ * `okCount > 0` was satisfied by candy-mlb succeeding 95.6% of the time. The
+ * per-tick rule is defensible; being unable to SEE the streak is not.
+ *
+ * Selects only the timestamp — never `payload`, which is multi-MB for panini.
+ * Fail-open: an unreadable row reports `ageMs: null` (unknown), which callers must
+ * treat as "cannot conclude", never as "fresh".
+ */
+export async function readBoardSnapshotAges(): Promise<BoardSnapshotAge[]> {
+  const unknown = WARM_BOARDS.map(({ key }) => ({ key, ageMs: null, refreshedAt: null }))
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("public_board_snapshots")
+      .select("board_key, refreshed_at")
+    if (error || !Array.isArray(data)) return unknown
+    const byKey = new Map<string, string>()
+    for (const row of data) {
+      if (typeof row?.board_key === "string" && typeof row?.refreshed_at === "string") {
+        byKey.set(row.board_key, row.refreshed_at)
+      }
+    }
+    const now = Date.now()
+    return WARM_BOARDS.map(({ key }) => {
+      const refreshedAt = byKey.get(key) ?? null
+      const ms = refreshedAt ? new Date(refreshedAt).getTime() : NaN
+      return {
+        key,
+        ageMs: Number.isFinite(ms) ? now - ms : null,
+        refreshedAt,
+      }
+    })
+  } catch {
+    return unknown
+  }
+}
+
+/**
+ * The boards whose snapshot has aged past the reportable ceiling.
+ *
+ * ⚠ An UNKNOWN age (`null`) is deliberately NOT reported as stale. A board that has
+ * never been warmed has no snapshot row at all, and a failed read is not evidence of
+ * staleness — calling either one "stale" would manufacture the finding out of our own
+ * missing data, which is the failure this repo keeps paying for. It is a real absence
+ * worth seeing, so it is counted separately by the caller rather than folded in here.
+ */
+export function stalestBoards(
+  ages: BoardSnapshotAge[],
+  ceilingMs: number = BOARD_SNAPSHOT_STALE_CEILING_MS
+): BoardSnapshotAge[] {
+  return ages
+    .filter((a) => a.ageMs != null && a.ageMs > ceilingMs)
+    .sort((a, b) => (b.ageMs ?? 0) - (a.ageMs ?? 0))
+}
+
+/**
  * Write (upsert) a board's payload. Best-effort — swallows every error so a cache
  * write can never fail the caller. Only the cron calls this (single-writer model).
  */
