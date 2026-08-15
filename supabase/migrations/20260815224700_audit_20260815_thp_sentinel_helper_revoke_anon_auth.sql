@@ -1,0 +1,24 @@
+-- audit_20260815_thp_sentinel_helper_revoke_anon_auth
+--
+-- Corrective, same session as audit_20260815_thp_legs_catch_query_canceled.
+-- (That migration and this one were both reverted minutes later by
+--  audit_20260815_revert_thp_legs_catch_query_canceled -- kept here so the
+--  committed migrations match what prod actually applied, and because the
+--  LESSON below is durable regardless of the revert.)
+--
+-- The forward migration revoked EXECUTE FROM PUBLIC on the new SECDEF helper,
+-- which is the rule CLAUDE.md records -- and it was NOT ENOUGH. Supabase also
+-- carries ALTER DEFAULT PRIVILEGES granting EXECUTE to anon + authenticated on
+-- new functions in `public`, so those arrive as EXPLICIT acl rows that a PUBLIC
+-- revoke does not touch. Measured immediately after apply:
+--   has_function_privilege('anon',          ...) = true
+--   has_function_privilege('authenticated', ...) = true
+--   check_secdef_anon_exec_drift() length    = 1   (it had been 0)
+--
+-- Durable rule: revoke BOTH halves -- FROM PUBLIC *and* FROM anon, authenticated.
+-- Neither alone is sufficient for a newly created function in this database.
+-- And verify with has_function_privilege(), never by reading the acl text: the
+-- PUBLIC row was gone from proacl while the function was still anon-executable,
+-- so the acl text would have shown a clean-looking result.
+REVOKE EXECUTE ON FUNCTION public.rpc_thp_sentinel_failures_since(timestamptz)
+  FROM PUBLIC, anon, authenticated;

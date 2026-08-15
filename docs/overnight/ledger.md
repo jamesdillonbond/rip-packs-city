@@ -8,6 +8,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED then REVERTED same session (Claude Code, interactive — followed the docs pass into the precompute defect) — the trust board's 999 failure sentinel is UNREACHABLE on a timeout; the obvious fix trades a bounded failure for an unbounded one
+
+**What (net prod change: ZERO — applied, measured, reverted, verified):** three migrations,
+`audit_20260815_thp_legs_catch_query_canceled` → `audit_20260815_thp_sentinel_helper_revoke_anon_auth`
+→ `audit_20260815_revert_thp_legs_catch_query_canceled`. All eight `rpc_thp_leg_*` functions are back
+on `EXCEPTION WHEN OTHERS`, the helper `rpc_thp_sentinel_failures_since` is dropped, and
+`rpc_trust_health_precompute_refresh_p()` is byte-restored. Verified after revert: 8/8 legs restored,
+0 still carrying the change, 8/8 still SECURITY DEFINER, helper gone, procedure no longer references
+it, `check_secdef_anon_exec_drift()` **0**, `check_public_security_invariants()` **0 rows**,
+`check_anon_write_surface()` **0 rows**.
+
+⚠ **The DEFECT is real and is now deliberately unfixed.** Every leg carries an `EXCEPTION WHEN OTHERS`
+handler that exists to write the **999 sentinel**, and PostgreSQL excludes `QUERY_CANCELED` from
+`OTHERS`, which is exactly what `statement_timeout` raises (57014). Verified: `WHEN OTHERS` did NOT
+catch a raised 57014; `WHEN query_canceled OR OTHERS` did; and `where value = 999` returns **zero rows,
+ever**. So a timed-out leg writes neither its value nor its sentinel — it keeps the OLD value AND the
+OLD `computed_at`, and aborts the CALL, skipping every downstream leg. `v_rpc_trust_health` shows no
+per-metric age, so the board publishes a stale number as current. Only `trust_precompute_max_age_hours`
+(breach 13, read 15.14) noticed.
+
+⚠ **Why the fix was reverted — three measurements I did not have before applying:** (1) a
+function-level `SET statement_timeout` does NOT bind statements inside it (300 ms declared,
+`pg_sleep(5)` completed), so the legs' declared 60–480 s budgets are **all inert** — **second instance
+of that trap today**, after `8918307c` on the drain seeders; (2) the real budget is `cron_heavy`'s
+role-level **600 s shared by the whole CALL** — legs 1–7 burned **517 s**, leg 8 needed ~78 s and got
+~83 s, so it is stalest **by position** and optimizing its query fixes nothing; (3) decisively, **after
+a cancel is caught the timer is NOT re-armed** — probe at 500 ms, second `pg_sleep(3)` ran to
+completion (`TAIL_UNBOUNDED ran_for=3.50s`). So catching buys a reachable sentinel at the price of
+running every remaining leg **unbounded**, holding a connection on the 2 GB instance whose saturation
+caused the timeout. plpgsql cannot re-arm mid-statement, so no in-procedure variant is safe.
+
+⚠ **Security lesson, and it is the CONVERSE of the one already in CLAUDE.md:** `REVOKE EXECUTE … FROM
+PUBLIC` alone was **not sufficient** — Supabase's `ALTER DEFAULT PRIVILEGES` grants EXECUTE to `anon` +
+`authenticated` as explicit acl rows, so the new helper measured `has_function_privilege('anon', …) =
+true` and drift went **0 → 1**. Fixed within minutes by revoking both halves. **The `proacl` text looked
+clean** (the PUBLIC row really was gone) — which is why the rule is to verify with
+`has_function_privilege()`.
+
+⚠ **A name-trap nearly produced the opposite mechanism:** `rpc_trust_health_precompute_refresh` (FUNCTION,
+13,009 chars, **zero callers anywhere**, `impossible_parallel` = leg **1**) vs
+`rpc_trust_health_precompute_refresh_p` (PROCEDURE, 492 chars, the scheduled one, same leg = **8**).
+**Read `cron.job.command`, not the name.**
+
+**Real fix FILED, not taken** — 8 pg_cron entries instead of one orchestrator, so each leg gets its own
+top-level statement and fresh budget:
+`docs/overnight/inbox/2026-08-15T2240Z-the-999-sentinel-is-unreachable-on-a-timeout.md`.
+
+**Revert:** already applied (`audit_20260815_revert_thp_legs_catch_query_canceled`). To re-apply the
+forward change, re-run the first migration — but read measurement (3) first.
+
 ### 2026-08-15 · SHIPPED (Claude Code, docs — "analyze repo → update CLAUDE.md to current state", THIRD docs pass of the day) — one commit had landed since the last pass and every repo-side count held, so the whole yield was live-side: a FIFTH trust arm breaching for the first time, on the instrument that watches the board itself
 
 - **Docs only** — `CLAUDE.md` + this ledger entry. No code, no DB, no migration, no cron, no prod state.
