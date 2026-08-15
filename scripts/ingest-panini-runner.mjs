@@ -52,6 +52,9 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import readline from "node:readline";
+// Pure enumeration-progress helpers, extracted so the stop decision is unit-testable without a
+// browser (this file calls main() at import). See panini-enum-progress.mjs for the full why.
+import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progress.mjs";
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -128,7 +131,11 @@ function appendBackup(line) {
 }
 async function post(payload) {
   const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0) + (payload.sales?.length || 0);
-  if (!n) return;
+  // An enum-only payload carries no rows but IS worth posting: it is the only record of how much
+  // of the grid this walk actually enumerated, and that number previously existed nowhere except
+  // a console line nobody reads and a size-capped local JSONL that rotates. A walk that enumerates
+  // far less than usual is otherwise indistinguishable from a walk that ran normally.
+  if (!n && !payload.enum) return;
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
   appendBackup(JSON.stringify(payload) + "\n");
@@ -190,6 +197,14 @@ async function main() {
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
   let salesRecords = 0, salesPages = 0, salesTabMissed = 0;
+  // Grid-enumeration progress (2026-08-15). Counts EVERY product the grid returns, not just the
+  // WC-Prizm subset, because the stability heuristic below has to be able to tell "the grid is
+  // exhausted" apart from "this stretch of the grid happens to be other soccer product". The
+  // marketplace grid the walk scrolls is filtered ONLY by sport=Soccer (confirmed live: the
+  // products op sends applied_filters:"marketplace-nfts?sport=Soccer&p=N"), and it mixes >=5
+  // products — so WC cards arrive in clumps and a WC-only progress signal reads a run of
+  // non-WC pages as "no new cards" and stops the walk while the server is still serving.
+  let gridSeen = 0, gridPages = 0;
   const DEBUG = process.env.PANINI_DEBUG === "1";
   // Recursively find every realized-sale record in an nftSalesData payload. Keyed on the FIELDS
   // that were verified live (url_key + txn_amount) rather than a nesting path, because the op was
@@ -273,6 +288,11 @@ async function main() {
     if (Array.isArray(prods)) serials.push(...prods);
     const saleRecs = []; findSaleRecords(d, 0, saleRecs);
     if (saleRecs.length) { sales.push(...saleRecs); salesRecords += saleRecs.length; }
+    // Grid page accounting, read from the products op SPECIFICALLY (not findItems, which
+    // recurses into every {items:[]} in any payload and would count menu/category noise as
+    // enumeration progress). This is the denominator for the WC-share diagnostic below.
+    const gridItems = d.products?.items;
+    if (Array.isArray(gridItems)) { gridSeen += gridItems.length; gridPages++; }
     const items = []; findItems(d, 0, items);
     for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
@@ -376,16 +396,46 @@ async function main() {
   // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
   await page.goto(`${BASE}/marketplace/nfts.html?sport=Soccer`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(2500);
-  let last = -1, stable = 0, domAdded = 0;
-  for (let i = 0; i < 80 && stable < 5; i++) {
+  // Stop when the GRID stops yielding, not when the WC subset stops yielding. Progress is the
+  // composite (WC pskus found + total products the grid has served): a stretch of non-WC soccer
+  // still advances it, so dilution can no longer end the walk early, while a genuinely exhausted
+  // grid stops advancing both terms and the run ends as before.
+  //
+  // Why this changed (2026-08-15): measured over 5 consecutive walks, the grid returned pages
+  // 1..N sequentially, EVERY page exactly 30 items — never a short final page — and the walk
+  // quit at 41, 11, 12, 18 and 15 pages. A grid that had run out of cards would stop at roughly
+  // the same depth each time and end on a partial page. Arbitrary depths against full pages mean
+  // the runner was quitting while inventory remained, which is why editions/day fell ~800 -> 153
+  // with per-batch capture completely unchanged (2.16-3.11 editions/batch, zero failed batches).
+  //
+  // Bounded three ways so enumeration can never eat the walk budget it feeds: an iteration cap,
+  // a wall-clock budget, and the stability counter. All three are env-overridable for a probe.
+  const ENUM_STABLE = Number(process.env.PANINI_ENUM_STABLE || 8);
+  const ENUM_MAX_ITERS = Number(process.env.PANINI_ENUM_MAX_ITERS || 200);
+  const ENUM_BUDGET_MS = Number(process.env.PANINI_ENUM_BUDGET_MIN || 10) * 60000;
+  const tEnum = Date.now();
+  let last = -1, stable = 0, domAdded = 0, enumIters = 0, enumBudgetHit = false;
+  for (let i = 0; i < ENUM_MAX_ITERS && stable < ENUM_STABLE; i++) {
+    if (Date.now() - tEnum > ENUM_BUDGET_MS) { enumBudgetHit = true; break; }
+    enumIters++;
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
     await page.waitForTimeout(1200);
     domAdded += await harvestDomPskus(); // (b) merge DOM-visible pskus before the stability check
-    const n = enumPskus.size;
-    if (n === last) stable++; else stable = 0;
-    last = n;
+    const st = stepStability({ last, stable }, enumProgress(enumPskus.size, gridSeen));
+    last = st.last; stable = st.stable;
   }
   domAdded += await harvestDomPskus(); // final sweep for the last-rendered rows
+  const enumStop = enumStopReason({ budgetHit: enumBudgetHit, stable, stableThreshold: ENUM_STABLE });
+  // wc_share closes the one question the 2026-08-15 filing could not measure: what fraction of the
+  // grid AT DEPTH is WC-Prizm. A static scan of page 1 read 48%; if the walk-wide share is far
+  // lower, scoping the grid to the cardset (rather than scrolling the mixed grid) is the next fix.
+  const wcShare = gridSeen ? ((enumPskus.size / gridSeen) * 100).toFixed(1) : null;
+  const enumStats = {
+    enum_stop: enumStop, enum_iters: enumIters, enum_ms: Date.now() - tEnum,
+    grid_pages: gridPages, grid_items: gridSeen, wc_pskus: enumPskus.size,
+    wc_share_pct: wcShare === null ? null : Number(wcShare), dom_added: domAdded,
+  };
+  console.log(`[panini-runner][diag] enum_stop=${enumStop} iters=${enumIters} grid_pages=${gridPages} grid_items=${gridSeen} wc_pskus=${enumPskus.size} wc_share=${wcShare ?? "-"}% in ${Math.round((Date.now()-tEnum)/1000)}s`);
   // diagnostics: what did the grid actually return?
   let domCards = -1, curUrl = "?";
   try { curUrl = page.url(); domCards = await page.evaluate(() => document.querySelectorAll('img[src*="packcard-"]').length); } catch {}
@@ -398,6 +448,10 @@ async function main() {
   // whole set stays fresh over a few runs. Editions/serials post incrementally, so partial runs still land.
   for (let i = pskus.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pskus[i], pskus[j]] = [pskus[j], pskus[i]]; }
   console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (${domAdded} via DOM img fallback; file fallback had ${fileList.length}); walking ${pskus.length}`);
+  // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
+  // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
+  // swallows its own failures, and telemetry must never break the ingest it measures.
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length } });
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)

@@ -88,6 +88,64 @@ describe("panini-ingest — auth + empty", () => {
   })
 })
 
+/**
+ * The per-walk enumeration marker (2026-08-15).
+ *
+ * The runner posts `{ enum: {...} }` once per walk, BEFORE the long per-card walk, because how
+ * much of the grid was enumerated previously existed nowhere in the DB — only a console line and
+ * a size-capped local JSONL — which is why a ~6x throughput collapse went unnoticed for days.
+ *
+ * ⚠ THE PROPERTY THAT MATTERS: this marker carries no rows, so it must NOT be logged under the
+ * `panini-ingest` pipeline name. `detect_stalled_pipelines()` keys on
+ * `max(started_at) WHERE pipeline = w.pipeline`, and `panini-ingest` is on
+ * `pipeline_cadence_watchlist` (360 min, calibrated for the home box going dark). A marker under
+ * the watched name would refresh `last_run` at the start of every walk and silence that arm on
+ * precisely the failure it exists to expose — a walk that enumerates and then dies having
+ * captured nothing would still read as alive.
+ */
+describe("panini-ingest — the enumeration marker must not silence the stall arm", () => {
+  const WATCHED_PIPELINE = "panini-ingest" // the name on pipeline_cadence_watchlist
+  const enumBody = { enum: { enum_stop: "stable", grid_pages: 41, grid_items: 1230, wc_pskus: 392 } }
+
+  it("logs the marker under a DIFFERENT pipeline than the watched one", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: enumBody }))
+    expect(res.status).toBe(202)
+    expect(st.runs).toHaveLength(1)
+    expect(st.runs[0].p_pipeline).not.toBe(WATCHED_PIPELINE)
+    // …and it is still attributed to Panini, so the row is findable.
+    expect(st.runs[0].p_pipeline).toContain("panini")
+    expect(st.runs[0].p_extra.enum.grid_pages).toBe(41)
+  })
+
+  it("does not count the marker as ingested rows", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: enumBody }))
+    // A marker describes the walk; counting it would inflate rows_found on a payload that
+    // wrote nothing, making a dead walk look productive in exactly the rollup used to spot this.
+    expect(st.runs[0].p_rows_found).toBe(0)
+    expect(st.runs[0].p_rows_written).toBe(0)
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
+  it("a genuinely empty body still logs under the watched pipeline (marker did not move it)", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: {} }))
+    expect(st.runs[0].p_pipeline).toBe(WATCHED_PIPELINE)
+    expect(st.runs[0].p_extra.skip).toBe("empty")
+  })
+
+  it.each([
+    ["an array", [1, 2, 3]],
+    ["a string", "41 pages"],
+    ["null", null],
+  ])("treats %s as no marker and falls back to the empty no-op", async (_label, value) => {
+    // The marker is spread into `extra` as an object; a non-object would produce a row whose
+    // `extra.enum` cannot be read by the queries this telemetry exists to serve.
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { enum: value } }))
+    expect((await res.json()).accepted).toBe(false)
+    expect(st.runs[0].p_pipeline).toBe(WATCHED_PIPELINE)
+    expect(st.runs[0].p_extra.skip).toBe("empty")
+  })
+})
+
 describe("panini-ingest — the after() walk", () => {
   async function accept(body: any) {
     const res = await POST(makeReq({ url, auth: "Bearer ingest", body }))

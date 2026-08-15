@@ -25,15 +25,26 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const PIPELINE = "panini-ingest";
+// The per-walk enumeration marker is logged under its OWN pipeline name, NEVER under PIPELINE.
+// `detect_stalled_pipelines()` keys on `max(started_at) WHERE pipeline = w.pipeline`, and
+// `panini-ingest` is on `pipeline_cadence_watchlist` (360 min, calibrated for the home box going
+// dark). A marker written under the pipeline's own name refreshes `last_run` at the START of every
+// walk, which would silence that arm on exactly the outage it exists to expose — a walk that
+// enumerates and then dies captures nothing, yet would still look alive. Separating the names
+// keeps the arm honest and gives a truth table: enum row + batch rows = healthy walk; enum row
+// alone = enumerated then died; neither = the box never woke.
+// Deliberately NOT added to the watchlist itself — it can only fire when the box is awake, so
+// `panini-ingest` already covers the box-dark case and a second arm would double-page on it.
+const PIPELINE_ENUM = "panini-ingest-enum";
 const CHUNK = 500;
 // Sale writes are per-sku UPDATEs (no batch form exists for row-varying values), so they run a
 // few at a time — enough to keep the after() short, low enough not to crowd the pooler.
 const SALES_CONCURRENCY = 8;
 
-async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any) {
+async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any, pipeline: string = PIPELINE) {
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE, p_started_at: startedAtIso, p_rows_found: found, p_rows_written: written, p_rows_skipped: 0,
+      p_pipeline: pipeline, p_started_at: startedAtIso, p_rows_found: found, p_rows_written: written, p_rows_skipped: 0,
       p_ok: ok, p_error: error, p_collection_slug: "panini_blockchain", p_cursor_before: null, p_cursor_after: null, p_extra: extra,
     });
   } catch (e) { console.log(`[${PIPELINE}] log failed: ${e instanceof Error ? e.message : String(e)}`); }
@@ -55,7 +66,21 @@ export async function POST(req: NextRequest) {
   const serials: any[] = Array.isArray(body.serials) ? body.serials : [];
   const sales: any[] = Array.isArray(body.sales) ? body.sales : [];
   const found = cards.length + packs.length + serials.length + sales.length;
-  if (!found) { await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" }); return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 }); }
+  // Per-walk enumeration telemetry (2026-08-15). The runner posts this ONCE per walk, before the
+  // per-card walk, and it is the only DB-visible record of how much of the grid was enumerated.
+  // Kept out of `found` deliberately: it describes the walk, it is not a row that was ingested,
+  // and counting it would inflate rows_found on a payload that wrote nothing.
+  const enumStats = body.enum && typeof body.enum === "object" && !Array.isArray(body.enum) ? body.enum : null;
+  if (!found) {
+    if (enumStats) {
+      // Enumeration marker → its own pipeline name (see PIPELINE_ENUM above). It must not
+      // refresh `panini-ingest`'s last_run, or the stall arm goes quiet on the walk that died.
+      await logRun(startedAtIso, 0, 0, true, null, { enum: enumStats }, PIPELINE_ENUM);
+      return NextResponse.json({ accepted: true, logged: "enum" }, { status: 202 });
+    }
+    await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
+    return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
+  }
 
   after(async () => {
     let written = 0;
@@ -118,6 +143,7 @@ export async function POST(req: NextRequest) {
       await logRun(startedAtIso, found, written, true, null, {
         editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied, sales_missed: salesMissed,
+        ...(enumStats ? { enum: enumStats } : {}),
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
