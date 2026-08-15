@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · VERIFICATION (Claude Code, interactive) — the market-index cut shows NO improvement yet, and my "after" sample was structurally incapable of showing one
+
+- **No change shipped. This entry exists because I promised a verification in the entry below and the answer is negative** — recording it is the point; a prediction that only gets revisited when it looks good is not a measurement.
+- **Measured at 17:50Z, 45 min after the 17:05Z cut, per board from `pipeline_runs.extra->boards` (11 post-cut ticks vs 313 before):**
+
+  | board | before | after |
+  |---|---|---|
+  | deals | 75.7% fail | **100.0%** |
+  | panini-squeeze | 75.4% | **100.0%** |
+  | first-mint | 55.6% | **81.8%** |
+  | candy-mlb | 6.4% | 9.1% |
+  | rookies | 33.9% | **0.0%** (the only one that improved) |
+
+- ⚠ **THE READING THAT MATTERS, and it is sharper than "the sample is small": the post-cut window contains ZERO differential.** Job 235 last ran **16:07Z**; under the OLD `7 */2` its next run was **18:07Z**, under the NEW `7 */6` it is **19:07Z**. So between 17:05Z and 17:50Z the job would not have run under **either** schedule — **the "after" sample cannot contain the effect being tested by construction.** The first differential moment is **18:07Z** (old: runs, new: does not). Re-measure after a full day, not before.
+- ⚠ **The trailing baseline had ALSO moved, so a naive before/after here compares two different instances.** The 3-day figures quoted in the entry below (deals 59.5% / first-mint 54.2% / panini 51.0%) are already stale against the last 30 h (75.7 / 55.6 / 75.4), and the hourly trend degrades steadily through the day independent of any change: **04:00Z all-boards 0.0% fail → 16:00Z 78.3%**. **A change applied into a degrading trend cannot be evaluated against a fixed baseline.**
+- ⚠ **My own heavy `EXPLAIN (ANALYZE)` profiling ran inside this window** (single statements at 42 s / 30 s / 7 s on the same starved instance) and contributed to it. Stated because it is a confound in my own measurement, not a footnote.
+- ✅ **What IS confirmed working: the insights-cache honesty fix shipped earlier today.** The 17:50Z tick reports `ok: false` with `stale_boards: [{deals, 176}, {panini-squeeze, 145}]` against `stale_ceiling_min: 120` and `never_warmed: []`. Before today that same tick reported `ok: true` — 869 consecutive ticks of perfect health while `deals` failed 59.5% of them. **The instrument is now telling the truth about the outage it previously concealed**, which is why the negative result above is visible at all.
+- **Nothing to revert** (this entry ships no change). The two changes it evaluates carry their own revert paths in the entries below.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going on the page.tsx extraction") — server-page ratchet 35 → 34; both coverage ratchets re-seated; CLAUDE.md memory updated
 
 - **Extraction.** `fetchMarketBundle` + `fetchInsightLinks` moved out of `app/(collections)/[collection]/edition/[slug]/page.tsx` into **`lib/entity/edition-market-fetchers.ts`** (`{ data, ok }`, injectable client). They were that page's LAST direct `supabaseAdmin` users — every other section already routed through `entity-section-rpc` — so the page drops out of `server-page-data-access-ratchet`: **35 → 34**, lowered in the same commit, per the rule.
