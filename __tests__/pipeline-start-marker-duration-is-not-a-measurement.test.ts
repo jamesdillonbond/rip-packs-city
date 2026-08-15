@@ -66,6 +66,36 @@ describe("a start marker must not publish its own insert latency as duration_ms"
     ).toBe(true)
   })
 
+  it("drain-conflated-subeditions persists step progress DURING the run", () => {
+    // Its header instructs: "If a tick nears the ceiling, read step_ms and bound
+    // THAT step." That was self-defeating — step_ms was written only by the
+    // completion update, so on the one outcome it was built for (a maxDuration
+    // kill) it was never persisted at all. The route has been killed on every
+    // tick since 2026-07-31 and has therefore never named the step that overran.
+    const src = readFileSync(
+      "app/api/admin/drain-conflated-subeditions/route.ts",
+      "utf8"
+    )
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+
+    // mark() must be async and write to pipeline_runs, not just mutate a local.
+    expect(code).toMatch(/const\s+mark\s*=\s*async\s*\(/)
+    const markBody = code.slice(code.indexOf("const mark = async ("))
+    expect(markBody.slice(0, 600)).toMatch(/from\("pipeline_runs"\)[\s\S]{0,120}\.update\(/)
+    expect(markBody.slice(0, 600)).toMatch(/last_step/)
+
+    // ⚠ and it must NOT set finished_at, or every persisted step would convert
+    // the marker's 0 sentinel back into a fake duration — the defect above.
+    expect(markBody.slice(0, 600)).not.toMatch(/finished_at/)
+
+    // Every call site must await it, or the update races the next step / the kill.
+    const calls = code.match(/^\s*(await\s+)?mark\(/gm) ?? []
+    expect(calls.length).toBeGreaterThan(5)
+    for (const c of calls) {
+      expect(c, `un-awaited mark() call: ${c.trim()}`).toMatch(/await/)
+    }
+  })
+
   it("the generated-column arithmetic makes the sentinel exactly 0", () => {
     // Mirrors the DDL: GREATEST(0, (epoch(finished_at - started_at) * 1000)::int).
     const durationMs = (startedAt: number, finishedAt: number) =>
