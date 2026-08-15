@@ -265,12 +265,37 @@ export default function OverviewPage() {
   // run on the POST-filter array. It used to test the raw array: when every
   // row resolved to a dash the guard saw length 5, skipped the empty state,
   // and the filter then stripped all 5 — a blank panel with no copy at all.
-  // Live today on /disney-pinnacle/overview, where a Pinnacle ingest
-  // regression left every top sale with a NULL edition_id (deep-audit R4).
+  //
+  // ⚠ THAT FIX WAS NECESSARY AND NOT SUFFICIENT, and the residue is a THIRD
+  // claim this panel can make (deep-audit R4, finished 2026-08-15). The filter
+  // drops rows the read SUCCEEDED on — we have the sale, we cannot name it —
+  // so routing them into the existing empty state publishes "No sales in the
+  // last 24h", a claim about the MARKET manufactured from a gap in OUR
+  // catalog. Measured live the same day: Disney Pinnacle did 960 sales in 24h
+  // with 60% carrying a NULL edition_id, and 2 of the top 5 by price were
+  // unnameable — so the panel was silently serving a 3-row "Top 5" and was one
+  // unlucky draw away from asserting a busy market had gone silent.
+  //
+  // ⚠ The earlier note calling this "a Pinnacle ingest regression" was wrong
+  // and is corrected here: nothing regressed. It is a catalog-coverage gap
+  // (`pinnacle_nft_map` does not cover every traded NFT) that a 4.5× volume
+  // jump on 08-14 made visible. The distinction matters because a coverage gap
+  // is PERMANENT-ish and will keep producing unnameable rows, so the copy has
+  // to survive it rather than wait for a fix.
+  //
+  // Three distinct states, three distinct sentences — never share a branch:
+  //   read failed        → statsUnavailable  ("couldn't load")
+  //   read ok, 0 rows    → rawTopSales empty ("no sales") — an honest market claim
+  //   read ok, 0 nameable→ every row dropped ("N not matched yet") — about US
   const sniperDeals = stats?.sniper_deals ?? []
-  const topSales = (stats?.top_sales ?? []).filter(
+  const rawTopSales = stats?.top_sales ?? []
+  const topSales = rawTopSales.filter(
     (s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH,
   )
+  // Successfully-read sales we could not put a name to. Disclosed rather than
+  // dropped: a "Top 5" quietly rendering 3 rows is a truncated ranking served
+  // as the complete one.
+  const unnamedTopSales = rawTopSales.length - topSales.length
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -469,9 +494,16 @@ export default function OverviewPage() {
             <SkeletonRows />
           ) : statsUnavailable ? (
             <PanelUnavailable />
-          ) : topSales.length === 0 ? (
+          ) : rawTopSales.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
               No sales in the last 24h
+            </div>
+          ) : topSales.length === 0 ? (
+            // Read succeeded and the market traded — we just can't name any of
+            // it. Saying "no sales" here would be a false claim about the
+            // market; this says the true thing, which is about our catalog.
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+              {rawTopSales.length} recent {rawTopSales.length === 1 ? "sale" : "sales"} not yet matched to a moment
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -500,6 +532,11 @@ export default function OverviewPage() {
                   </div>
                 )
               })}
+              {unnamedTopSales > 0 && (
+                <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", paddingTop: 2 }}>
+                  {unnamedTopSales} more {unnamedTopSales === 1 ? "sale" : "sales"} in this window not yet matched to a moment
+                </div>
+              )}
             </div>
           )}
         </section>

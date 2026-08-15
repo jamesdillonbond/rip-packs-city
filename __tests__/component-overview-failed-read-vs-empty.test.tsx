@@ -98,12 +98,21 @@ describe("overview panels: a failed read must not render as a market fact", () =
     expect(screen.queryByText(/Couldn.t load this right now/i)).toBeNull()
   })
 
-  it("top sales that all fail the name filter render the empty state, not a blank panel", async () => {
-    // Deep-audit R4: the guard used to test the RAW array. When every row
-    // resolved to a dash it saw length 5, skipped the empty state, and the
-    // name filter then stripped all 5 — a blank panel with no copy at all.
-    // Live on /disney-pinnacle/overview, where a Pinnacle ingest regression
-    // left every top sale with a NULL edition_id.
+  it("top sales that all fail the name filter say so — they must NOT read as 'no sales'", async () => {
+    // Deep-audit R4, in two stages. The guard used to test the RAW array: when
+    // every row resolved to a dash it saw length 5, skipped the empty state,
+    // and the filter then stripped all 5 — a blank panel with no copy at all.
+    //
+    // ⚠ Moving the guard to the post-filter array fixed the blank box and
+    // introduced a THIRD false claim, which THIS TEST USED TO PIN: it asserted
+    // "No sales in the last 24h" was the correct output here. It is not. These
+    // rows were READ SUCCESSFULLY — the market traded and we cannot name it —
+    // so that sentence is a claim about the MARKET manufactured from a gap in
+    // OUR catalog. Measured live 2026-08-15: Disney Pinnacle did 960 sales in
+    // 24h with 60% carrying a NULL edition_id.
+    //
+    // Recorded because the failure mode is worth more than the fix: the case
+    // was correctly named and correctly reasoned, and asserted the defect.
     mockFetch(() =>
       jsonResponse(
         {
@@ -122,9 +131,73 @@ describe("overview panels: a failed read must not render as a market fact", () =
     render(<OverviewPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/No sales in the last 24h/i)).toBeTruthy()
+      expect(screen.getByText(/5 recent sales not yet matched to a moment/i)).toBeTruthy()
     })
-    // And it must not have claimed an outage — the read succeeded.
+    // The two claims it must never make: that the market was quiet, and that
+    // we had an outage. Neither is true — we read 5 sales and named none.
+    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
     expect(screen.queryByText(/Couldn.t load this right now/i)).toBeNull()
+  })
+
+  it("a PARTIALLY nameable top 5 discloses the omission instead of serving 3 rows as a Top 5", async () => {
+    // The silently-sliced-ranking class. Live on Pinnacle the same day: 2 of
+    // the top 5 sales by price were unnameable, so the panel rendered 3 rows
+    // under a "Recent Top Sales" heading with nothing saying 2 were dropped.
+    const nameable = (n: number) => ({
+      edition_name: `Moment ${n}`,
+      player_name: null,
+      character_name: null,
+      price_usd: 100 + n,
+      sold_at: new Date().toISOString(),
+    })
+    const unnameable = () => ({
+      edition_name: null,
+      player_name: null,
+      character_name: null,
+      price_usd: 500,
+      sold_at: new Date().toISOString(),
+    })
+    mockFetch(() =>
+      jsonResponse(
+        { ...EMPTY_BUT_SUCCESSFUL, top_sales: [nameable(1), unnameable(), nameable(2), unnameable(), nameable(3)] },
+        200,
+      ),
+    )
+    render(<OverviewPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Moment 1/)).toBeTruthy()
+    })
+    expect(screen.getByText(/2 more sales in this window not yet matched to a moment/i)).toBeTruthy()
+    // Still a real board — the rows it CAN name must render, not be suppressed.
+    expect(screen.getByText(/Moment 3/)).toBeTruthy()
+    expect(screen.queryByText(/No sales in the last 24h/i)).toBeNull()
+  })
+
+  it("a fully nameable top 5 stays silent — no disclosure when nothing was dropped", async () => {
+    // Guards the other direction: a permanent "some were dropped" note on a
+    // complete board is its own false claim, and the cry-wolf outcome
+    // board-status.ts documents.
+    mockFetch(() =>
+      jsonResponse(
+        {
+          ...EMPTY_BUT_SUCCESSFUL,
+          top_sales: Array.from({ length: 5 }, (_, n) => ({
+            edition_name: `Moment ${n}`,
+            player_name: null,
+            character_name: null,
+            price_usd: 100,
+            sold_at: new Date().toISOString(),
+          })),
+        },
+        200,
+      ),
+    )
+    render(<OverviewPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Moment 0/)).toBeTruthy()
+    })
+    expect(screen.queryByText(/not yet matched to a moment/i)).toBeNull()
   })
 })
