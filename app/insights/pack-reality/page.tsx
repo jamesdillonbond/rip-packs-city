@@ -163,6 +163,24 @@ export default function PackRealityPage() {
     return (data?.meta?.errors ?? []).map((e) => LABELS[e.source] ?? e.source)
   }, [data])
 
+  // ⚠ `error` means THE READ FAILED — a claim about US, never about the market.
+  // It is deliberately separate from "the read succeeded and returned nothing",
+  // which is an honest market answer and must keep rendering as one.
+  //
+  // This existed and was consulted by exactly ONE of five claim sites (the
+  // pull-value distribution), so a 503 rendered "Failed to load" in that section
+  // while "No +EV packs right now." and "No qualifying packs yet." sat directly
+  // below it — the page contradicting itself on a PUBLIC board, and the +EV
+  // ranker is a buy/no-buy input. Same shape as the /overview panels D11 missed:
+  // fixing the component that failed does not make the page honest; every panel
+  // consuming the same failed read needs the same branch.
+  const loadFailed = error != null
+
+  // A count is a MEASUREMENT only when the read that produced it succeeded.
+  // `data?.top_ev?.length ?? 0` published a hard "0" both while loading and on
+  // failure — a manufactured number in a sentence that reads as a finding.
+  const evCount = !loadFailed && data != null ? (data.top_ev?.length ?? 0) : null
+
   const tweetIntent = useMemo(() => {
     const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n145,000+ rips. Median pull value under $2. ~41% deliver nothing.\n\nHonest pack ranker:`
     const url = `${SITE_URL}/insights/pack-reality`
@@ -195,7 +213,12 @@ export default function PackRealityPage() {
       {/* A partial backend failure used to 500 the whole route; it now degrades
           per surface. Say so out loud — an em-dash board with no explanation is
           indistinguishable from "there is no data". */}
-      {degraded.length > 0 ? (
+      {loadFailed ? (
+        <div className="rpc-pr-degraded" role="alert">
+          This board couldn&rsquo;t be loaded ({error}). The figures below are
+          unavailable — they are not a reading of the market. Reload to try again.
+        </div>
+      ) : degraded.length > 0 ? (
         <div className="rpc-pr-degraded" role="alert">
           Part of this board is temporarily unavailable ({degraded.join(", ")}).
           The remaining sections are live.
@@ -256,13 +279,17 @@ export default function PackRealityPage() {
         )}
       </section>
 
-      <ModelVsRealitySection mvr={data?.model_vs_reality} loading={loading} />
+      <ModelVsRealitySection
+        mvr={data?.model_vs_reality}
+        loading={loading}
+        unavailable={loadFailed}
+      />
 
       <section className="rpc-pr-ranker" aria-label="Top +EV packs">
         <h2 className="rpc-pr-h2">Honest +EV ranker</h2>
         <p className="rpc-pr-sub">
-          {data?.top_ev?.length ?? 0} positive-EV TS packs you can actually rip
-          right now — filtered to packs under 90% sold out, priced in the last
+          {evCount != null ? `${evCount} positive-EV` : "Positive-EV"} TS packs
+          you can actually rip right now — filtered to packs under 90% sold out, priced in the last
           48h, with FMV coverage of 40%+. <strong>High-variance</strong> = FMV
           coverage below 80%, so the EV rests on a small fraction of priced
           editions; we cap its value ratio and treat the dollar figure as an
@@ -271,7 +298,13 @@ export default function PackRealityPage() {
           we&rsquo;d rather show three honest packs than eighty fossils.
         </p>
         {(data?.top_ev ?? []).length === 0 ? (
-          <div className="rpc-pr-state">{loading ? "Loading…" : "No +EV packs right now."}</div>
+          <div className="rpc-pr-state">
+            {loadFailed
+              ? "The +EV ranker is temporarily unavailable — reload to try again."
+              : loading
+                ? "Loading…"
+                : "No +EV packs right now."}
+          </div>
         ) : (
           <div className="rpc-scroll-x">
           <table className="rpc-pr-table">
@@ -466,9 +499,15 @@ function MvrTable({
 function ModelVsRealitySection({
   mvr,
   loading,
+  // ⚠ Required, not optional: this section renders a MARKET claim on an empty
+  // list, so it cannot tell "nothing qualified" from "we could not read" unless
+  // the caller says which it is. Making it optional would let a future caller
+  // silently reopen the defect by forgetting to pass it.
+  unavailable,
 }: {
   mvr: ModelVsReality | undefined
   loading: boolean
+  unavailable: boolean
 }) {
   const over = mvr?.over_modeled ?? []
   const under = mvr?.under_modeled ?? []
@@ -489,7 +528,13 @@ function ModelVsRealitySection({
       </p>
 
       {!hasAny ? (
-        <div className="rpc-pr-state">{loading ? "Loading…" : "No qualifying packs yet."}</div>
+        <div className="rpc-pr-state">
+          {unavailable
+            ? "Model vs reality is temporarily unavailable — reload to try again."
+            : loading
+              ? "Loading…"
+              : "No qualifying packs yet."}
+        </div>
       ) : (
         <div className="rpc-pr-mvr-grid">
           <div className="rpc-pr-mvr-card">

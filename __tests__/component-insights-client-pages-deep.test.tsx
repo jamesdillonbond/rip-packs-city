@@ -333,6 +333,46 @@ describe("PackRealityPage — board formatting + degraded states", () => {
     // The distinction that matters: an outage must not render as "no
     // positive-EV packs exist right now", which is a claim about the market.
     await waitFor(() => expect(document.body.textContent).toMatch(/HTTP 500|error|failed/i))
+
+    // ⚠ THIS ASSERTION IS THE POINT, AND IT WAS MISSING UNTIL 2026-08-15.
+    // The comment above stated the contract correctly from the day it was
+    // written; the assertion only proved an error string appeared SOMEWHERE on
+    // the page. Both can be true at once, and were: `error` was consulted by
+    // exactly ONE of five claim sites (the pull-value distribution), so a 503
+    // rendered "Failed to load: HTTP 500" in that section while "No +EV packs
+    // right now." and "No qualifying packs yet." sat directly below it. Assert
+    // what the READER SEES, not merely that a failure was mentioned.
+    const text = document.body.textContent ?? ""
+    expect(text).not.toContain("No +EV packs right now.")
+    expect(text).not.toContain("No qualifying packs yet.")
+    // The prose count is a measurement only when the read succeeded; a hard
+    // "0 positive-EV TS packs" reads as a finding.
+    expect(text).not.toContain("0 positive-EV")
+  })
+
+  it("an empty-but-successful board still reads as empty, not as an outage", async () => {
+    // ⚠ THE OTHER DIRECTION, and it is load-bearing. An empty board is an
+    // HONEST market answer and must keep saying so — a fix that blanks every
+    // empty state into "unavailable" cries wolf on the board working as
+    // designed, which is the cost `board-status.ts` already warns about.
+    vi.stubGlobal(
+      "fetch",
+      jsonOnce({
+        meta: { fetched_at: "2026-08-15T00:00:00Z", errors: [] },
+        stats: {},
+        distribution: [],
+        top_ev: [],
+      })
+    )
+    render(<PackRealityPage />)
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("No +EV packs right now.")
+    )
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("No qualifying packs yet.")
+    // ...and the read DID succeed, so the count is a real measurement.
+    expect(text).toContain("0 positive-EV")
+    expect(text).not.toContain("not a reading of the market")
   })
 
   it("names the degraded upstreams when meta.errors is populated", async () => {
