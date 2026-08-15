@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, docs — thread close-out) — committed the session's lessons to CLAUDE.md and recorded what stays open
+
+- **Docs only** — `CLAUDE.md` + this entry. No code, no DB, no prod state.
+- **Promoted to canonical rather than left in a dated entry** (those roll off to `docs/sessions/` within ~3 days, which is how five figures drifted before): the empty-state COPY sweep is now the standing method with its second run's results attached; **"a test can state the contract in a comment and enforce something weaker"** — assert the ABSENCE of the false claim, not the PRESENCE of an error message; **`?? 0` on a supabase `count`** turns a failed read into a measured zero at HTTP 200, and the null must survive to the render; and **a shared mutable supabase builder cannot model per-table behaviour under `Promise.all`** (it fails by making a correct route look broken).
+- **Negative results recorded so they are not re-derived:** `[collection]/market` and `[collection]/sets` are CLEAN, and `allday-pack-reality` does not carry pack-reality's copy.
+- **Open items carried with the lane each needs**, in the session entry: the knot drain (needs tonight's 20:30Z tick before anyone guesses which step overruns), the two serial-multiplier pricing questions (Trevor), the `pinnacle_fmv_history` ASK_ONLY drop (migration), the `:13` pg_cron collision behind the saturation, the unswept client-page tail, and the note that R4 is a catalog-coverage gap and must not be re-opened as an indexer bug.
+- **Revert:** `git revert <sha>` — docs only.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive) — a PUBLIC board told collectors "No +EV packs right now." out of its own 503, and a rewards read published "No referrals yet" from a failed count
 
 - **Two code fixes + two tests.** No DB, no migration, no cron, no auth/`proxy.ts`, no FMV/pricing math.
