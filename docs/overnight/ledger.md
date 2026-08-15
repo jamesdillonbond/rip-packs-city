@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — worked the 21:40Z Panini filing) — the throughput gate would have gone SILENT on 08-19 while the collapse continued; added two backstops, one of which cannot self-silence by construction
+
+**What:** `panini-freshness-check` (scheduled task prompt, NOT in this repo —
+`C:UsersTDillClaudeScheduledpanini-freshness-checkSKILL.md`). Escalation 2 gated only on
+`pct_of_trailing7 < 55`, and a persistent collapse drags that trailing-7 window down to meet itself.
+Projected from today's flat 154/day: the gate **stops firing PT 08-19 (four days) and reads a clean
+100% by 08-22** with nothing repaired. Added **Query 4b**: `pct_of_catalogue` (yesterday's editions
+over `panini_editions` count — a denominator the outage cannot depress, so it never self-silences;
+healthy era 13.2–21.0%, collapse 3.4–6.5%, gate at 8%) and `pct_of_baseline` (yesterday vs days 8–28
+back, buys ~18 extra days, gate at 55). Escalation 2 now fires on any of the three. Replaced the
+line-109 prose note, which told the reader to "compare against the ~800 healthy-era figure" —
+a hardcoded absolute the same prompt forbids nine lines earlier.
+
+⚠ **The filing's own proposed SQL did not run** (`round(avg(x)) FILTER` → `42809`); corrected before
+shipping. The file's copy was extracted back out and executed against prod: `yesterday 223 ·
+pct_of_catalogue 4.9 · baseline_8_28d 901 · pct_of_baseline 25`. No code, DB, migration, cron or
+prod-data change — a scheduled-task prompt and one inbox doc.
+
+**Revert:** `cp SKILL.md.bak SKILL.md` in that directory (backup taken pre-edit, 15,253 bytes), and
+`git revert <sha>` for the inbox doc.
 ### 2026-08-15 · SHIPPED (Claude Code, docs — session wrap-up) — promoted this session's durable lessons into the CANONICAL sections, because a fact left in a dated entry stops being read within ~3 days
 
 - **Docs only** — `CLAUDE.md` + this ledger entry. No code, no DB, no migration, no cron, no prod state.
