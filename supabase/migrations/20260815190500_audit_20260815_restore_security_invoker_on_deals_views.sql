@@ -1,0 +1,58 @@
+-- Restore security_invoker=on to the two public deals views.
+--
+-- Applied to prod 2026-08-15 via MCP apply_migration as
+-- `audit_20260815_restore_security_invoker_on_deals_views`; committed here so the
+-- repo carries the DDL (MCP applies bypass the repo, and migration-parity.yml
+-- reports prod-applied migrations that have no committed file).
+--
+-- WHAT HAPPENED: migration 20260815153324 (deals-board partition pruning) recreated
+-- both views with `CREATE OR REPLACE VIEW ... AS` and no WITH clause. That is a
+-- correct, carefully verified performance change -- it checked output md5, row count,
+-- buffers and `Subplans Removed` -- but `CREATE OR REPLACE VIEW` WITHOUT a WITH
+-- clause RESETS reloptions, so `security_invoker=on` was silently dropped from both.
+--
+-- ⚠ VERIFIED EMPIRICALLY RATHER THAN ASSUMED, on this instance:
+--     create view pg_temp.zz with (security_invoker=on) as select 1;  -- security_invoker=on
+--     create or replace view pg_temp.zz as select 1;                  -- options GONE
+--
+-- ⚠ WHY NOTHING IN THE AUTHORING LOOP COULD CATCH IT: a view's security mode does not
+-- appear in its output. Every correctness check that migration ran -- and it ran good
+-- ones -- passes identically whether the view is invoker or definer. The timeline
+-- confirms the cause: night pass logged security 4/4 clean 08:11Z, that migration
+-- applied 15:33Z, the daytime monitor flagged exactly these two at 18:10Z.
+-- The repo-side guard for this class is
+-- `__tests__/migration-view-security-invoker-guard.test.ts`.
+--
+-- WHY INVOKER AND NOT THE ALLOWLIST: check_public_security_invariants()'s own comment
+-- on arm (b) says it exists to catch "a hardened (invoker) view silently reverting to
+-- definer (RLS-bypass read)". Putting these in security_definer_view_allowlist would
+-- accept the exact regression the arm was built to detect.
+--
+-- ⚠ NOTHING LEAKED, and the distinction matters for how alarmed to be. Both views are
+-- anon+authenticated SELECT BY DESIGN (they back the public /insights/deals board and
+-- the concierge), and every base table is catalog/market data with no user-scoped
+-- rows -- so there was no per-user RLS for definer mode to bypass. The defect is the
+-- lost hardening, not an exposure. Verified safe for anon under invoker mode before
+-- applying: anon holds SELECT on all base tables and every policy admits it --
+--   edition_offers / fmv_snapshots / pinnacle_catalog /
+--   topshot_thin_fmv_editions / topshot_conflated_editions : USING (true)
+--   editions    : collection_id IN (active collections)  -- TopShot + Pinnacle active
+--   collections : is_active IS TRUE
+--
+-- ⚠ ALTER VIEW rather than CREATE OR REPLACE, deliberately: it touches only the
+-- catalog entry, so this fix cannot drift the query definition as a side effect --
+-- which is the failure being repaired.
+--
+-- VERIFIED AFTER APPLY: check_public_security_invariants() 2 rows -> 0;
+-- check_anon_write_surface() 0; both views read `security_invoker=on`; and the public
+-- board was re-fetched ANONYMOUSLY end-to-end -- HTTP 200, 30,856 bytes (byte-identical
+-- to the pre-change baseline), 50/50 rows, identical row set, all three collection
+-- legs still present (nba_top_shot, nfl_all_day, disney_pinnacle). That last check is
+-- the one that matters: a broken invoker view regresses by returning NOTHING.
+--
+-- REVERT: ALTER VIEW public.topshot_deals_vs_fmv SET (security_invoker = off);
+--         ALTER VIEW public.cross_collection_deals_board SET (security_invoker = off);
+--         -- which re-opens the invariant breach; prefer fixing forward.
+
+ALTER VIEW public.topshot_deals_vs_fmv SET (security_invoker = on);
+ALTER VIEW public.cross_collection_deals_board SET (security_invoker = on);
