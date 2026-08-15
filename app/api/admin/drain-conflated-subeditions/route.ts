@@ -236,9 +236,30 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     });
 
     // 4. Split resolved parallels off the base onto their ::subID editions.
+    //
+    // p_limit 8000 -> 1000 (2026-08-15), and the number is MEASURED, not picked.
+    // At 8000 this step ran 125,250 ms on the 08-15 tick and was killed at the
+    // ceiling, so it ROLLED BACK and did nothing — it had been doing nothing
+    // every night while looking like a step that ran. Timed against live data
+    // (each probe rolled back so nothing committed):
+    //     p_limit  100 -> 13,946 ms
+    //     p_limit  500 -> 27,930 ms
+    // which fits t(n) ~= 10,450 ms fixed + 34.96 ms/row, i.e. 8000 predicts
+    // ~290 s — comfortably past the ceiling, exactly as observed. 1000 predicts
+    // ~45 s, ~38% of the 120 s bound, leaving real headroom for the load swings
+    // this instance has all day.
+    //
+    // ⚠ The ceiling is the GLOBAL statement_timeout (120,000 ms, source =
+    // configuration file), NOT this function's own declaration. It declares
+    // `statement_timeout=300s` in proconfig and died at ~125 s regardless —
+    // one more confirmation that a function-level SET cannot raise the calling
+    // statement's budget. Do not "fix" a future overrun by raising the proconfig.
+    //
+    // Walk this up from the observed `extra.step_ms.split`, never by guess, and
+    // only with headroom — the same discipline the knots comment below states.
     await step("split", STEP_WORST_MS, async () => {
       const { data: split, error: sErr } = await sb.rpc(
-        "remap_topshot_split_resolved_subeditions", { p_limit: 8000 });
+        "remap_topshot_split_resolved_subeditions", { p_limit: 1000 });
       if (sErr) out.split_error = sErr.message; else out.split = split;
     });
 
@@ -247,6 +268,33 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // DIFFERENT parallel) back onto the correct edition. Collision-safe: a target
     // serial already held by another nft is a conflation knot, left for step 6.
     // Fixes the wrong-circulation moment-page display.
+    //
+    // ⚠ p_limit STAYS 8000 HERE, AND LOWERING IT WOULD BE THE WRONG DIRECTION.
+    // The filed remedy was "drop split and realign 8000 -> ~1000". That is right
+    // for split (measured above) and a no-op for this one — measured 2026-08-15:
+    // this function TIMES OUT AT p_limit=100, never even building its candidate
+    // set. The cancel names the statement, and the shape explains it: the
+    // `LIMIT greatest(1, p_limit)` sits AFTER a `SELECT DISTINCT` over a
+    // three-way UNION of full TopShot scans (moments ~292k + sales + wmc), so
+    // the limit cannot bound the scan — it only trims an already-materialized
+    // result. This step is SCAN-dominated, not row-dominated.
+    //
+    // Which means a smaller p_limit buys the identical cost and LESS work done.
+    // Same tell was already visible in the 08-15 payload and was read past:
+    // `seed_knot_occupants` hit the same ceiling at a p_limit of 200.
+    //
+    // ⚠ So do not read a future "realign missing from step_ms" as this fix
+    // having failed — split and realign fail for different reasons and only
+    // split's is a tuning problem. The real repair is to bound the DRIVING side
+    // (drive from topshot_moment_subeditions with the LIMIT applied before the
+    // union/joins) — a migration on TopShot keying, which every edition-keyed
+    // FMV derives from, so it is deliberately NOT taken here. Filed:
+    // docs/overnight/inbox/2026-08-15T2350Z-realign-is-scan-bound-not-row-bound.md
+    //
+    // It is left in place rather than skipped because it is not permanently
+    // broken — it completed on 2026-07-31 with all four keys present, so it
+    // succeeds in a quiet window and skipping it would delete a real correction
+    // path to save time it only sometimes spends.
     await step("realign", STEP_WORST_MS, async () => {
       const { data: realign, error: rErr } = await sb.rpc(
         "remap_topshot_realign_miskeyed_subeditions", { p_limit: 8000 });
