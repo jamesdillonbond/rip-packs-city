@@ -30,9 +30,13 @@ tree, and every fact in it already lives in the handoff's correction banner.
 No code, DB, migration, cron, auth or prod change. Docs-only, so `vercel.json`'s `ignoreCommand`
 correctly fires no deploy — nothing here needs deploying.
 
-Revert: `git revert fc9333d8` restores the stale citations and the wrong 245. ⚠ It does NOT restore
+Revert: `git revert b3667be5` restores the stale citations and the wrong 245. ⚠ It does NOT restore
 the deleted scratch file — that was untracked, so it has no git history; a copy is in this
-session's scratchpad only.
+session's scratchpad only. ⚠ That sha was read AFTER the push, not off the local commit: this entry
+first cited `fc9333d8`, which the `git pull --rebase` before the push had already rewritten. It
+still resolves in this clone as a dangling object and is on NO branch, so it would have looked
+correct here and been a dead path for everyone else. On this repo, where a concurrent session
+forces a rebase on most pushes, read the revert sha from `git log` after pushing.
 
 ### 2026-08-15 · SHIPPED (Claude Code, docs — thread close-out) — committed the session's lessons to CLAUDE.md and recorded what stays open
 
