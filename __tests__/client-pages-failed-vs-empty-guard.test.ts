@@ -164,6 +164,100 @@ describe("client pages — a failed read is not an empty result", () => {
     })
   })
 
+  // ── SITE 4: /panini-blockchain/sniper (added 2026-08-15) ──────────────────
+  //
+  // Found by the same empty-state-copy sweep, and it is the first site in this
+  // family whose render ladder was ALREADY correct: `loading : error : empty` in
+  // the right order, with a real error card. What made it dishonest is the panel
+  // ABOVE that ladder.
+  //
+  // `data` holds the PREVIOUS payload after a failed refresh (the route serves a
+  // stale in-process cache on upstream failure, so the client's `error` fires only
+  // when there is no cache at all — a fresh lambda plus an OpenSea outage). The
+  // header consulted `data` and not `error`, so it published:
+  //
+  //   • a live GREEN PULSING dot, and
+  //   • "Floor: 0.0500 ETH · 12 listings"
+  //
+  // directly above a card reading "Failed to load listings." On a SNIPER page the
+  // floor is the number a collector buys against, which makes this the same defect
+  // as /insights/pack-reality — the error state consulted at one of several claim
+  // sites — on the panel where it costs the most.
+  //
+  // ⚠ The fix is per PANEL, not per page. A page with an honest error branch
+  // somewhere is not an honest page.
+  describe("/panini-blockchain/sniper — the header is a claim site too", () => {
+    const path = ["app", "(collections)", "panini-blockchain", "sniper", "page.tsx"] as const
+
+    // ⚠ Block comments are stripped HERE rather than in the shared `stripComments`
+    // above, and the distinction is load-bearing in both directions.
+    //
+    // Needed here: this page documents the fix by quoting the copy it replaced, so
+    // a scan that reads `{/* … */}` finds the decaying string it exists to forbid
+    // and reds on the explanation. That is the recurring repo trap — a guard that
+    // greps source for user copy must strip comments, including the one you are
+    // writing — met for the third time.
+    //
+    // NOT hoisted into `stripComments`: the /alerts site asserts
+    // `not.toMatch(/catch \{\s*\/\* ignore \*\/\s*\}/)`, which needs the block
+    // comment PRESENT to be meaningful. Stripping it globally would leave that
+    // assertion passing for the wrong reason — vacuous, and silently so.
+    const src = stripComments(read(...path)).replace(/\/\*[\s\S]*?\*\//g, "")
+
+    it("the liveness dot knows about the error state", () => {
+      // A green pulsing dot asserts "this feed is live". During an outage it is
+      // the most confident thing on the page and it was the least informed.
+      expect(src).toMatch(/background:\s*error\s*\n?\s*\?\s*"var\(--rpc-danger\)"/)
+      expect(src).toContain('animation: error || paused ? "none" : "pulse 2s infinite"')
+    })
+
+    it("the floor/count panel branches on error BEFORE it branches on data", () => {
+      const errBranch = src.indexOf("{error ? (")
+      const dataBranch = src.indexOf(") : data ? (")
+      expect(errBranch, "the header must consult `error`").toBeGreaterThan(-1)
+      expect(dataBranch).toBeGreaterThan(errBranch)
+      // Ordering is what makes the fix non-inert: `data &&` first would render the
+      // stale numbers again regardless of what the error arm says.
+      expect(errBranch).toBeLessThan(src.indexOf("Floor: <span"))
+    })
+
+    it("the failure copy withholds the figure instead of restating a stale one", () => {
+      const i = src.indexOf("Floor unavailable")
+      expect(i, "failure copy must exist").toBeGreaterThan(-1)
+      const copy = src.slice(i, i + 200)
+      // It must not diagnose a cause it cannot know — the /[collection]/sniper
+      // lesson, where the replacement copy blamed the benchmark data.
+      expect(copy).not.toMatch(/too thin|not indexed|no coverage|try a (longer|different)|lower your/i)
+      // ...and must not quietly publish a number anyway.
+      expect(copy).not.toMatch(/ETH|\d+ listing/)
+    })
+
+    it("the count renders through the floor helper, by CALL form", () => {
+      // Matching the call form rather than the bare identifier on purpose: a page
+      // that keeps the import while hand-rolling `{data.count} listings` satisfies
+      // a plain `includes("boardCountFloor")` and slips straight through.
+      expect(src).toContain("boardCountFloor(data.count, data.truncated)")
+      // The raw page length must not be interpolated as a total anywhere.
+      expect(src).not.toMatch(/\{data\.count\} listing/)
+    })
+
+    it("the empty state SURVIVES — an empty book is a real answer", () => {
+      // Reachable only when the read succeeded, so it is allowed to make a claim
+      // about the market.
+      expect(src).toContain("No bridged Panini cards are listed on OpenSea right now.")
+      expect(src).toContain("No listings match your current filters.")
+    })
+
+    it("the empty state no longer dates itself", () => {
+      // The old copy read "The Ethereum bridge just opened on March 30, 2026" —
+      // written at launch, and describing a months-old event as breaking news ever
+      // since. Same class as the hardcoded coverage percentages CLAUDE.md warns
+      // about, in prose rather than in a number.
+      expect(src).not.toMatch(/just opened on/i)
+      expect(src).not.toMatch(/March 30, 2026/)
+    })
+  })
+
   it("neither failure message diagnoses a cause it cannot know", () => {
     // The defect these replaced was not just silence — it was a CONFIDENT WRONG
     // EXPLANATION. A replacement that guesses a different wrong cause would be

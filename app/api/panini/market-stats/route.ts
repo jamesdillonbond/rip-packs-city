@@ -62,10 +62,16 @@ export async function GET() {
       })
     }
 
-    const message = err instanceof Error ? err.message : "Unknown error"
+    // Upstream text is logged, never published — see the sibling listings route
+    // for the reasoning, including why this stays a 502 rather than going through
+    // `apiErrorResponse`.
+    console.log(
+      "[panini/market-stats] upstream failure:",
+      err instanceof Error ? err.message : String(err)
+    )
     return NextResponse.json(
-      { error: "Failed to fetch market stats", detail: message },
-      { status: 502 }
+      { error: "Failed to fetch market stats", code: "upstream_unavailable", retryable: true },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
     )
   }
 }

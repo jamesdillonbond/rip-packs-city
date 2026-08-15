@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { boardRowMeta } from "@/lib/insights/board-meta"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,8 +15,20 @@ interface ListingOut {
   buy_url: string
 }
 
+interface ListingsPayload {
+  listings: ListingOut[]
+  floor_eth: number | null
+  /** @deprecated Misnamed: the length of the capped page, not the book size.
+   *  Kept so existing consumers do not break. Read `returned_rows` + `truncated`. */
+  count: number
+  returned_rows: number
+  /** True when the page filled `LISTINGS_LIMIT` — `count` is then a FLOOR. */
+  truncated: boolean
+  updated_at: string
+}
+
 interface CachedListings {
-  data: { listings: ListingOut[]; floor_eth: number | null; count: number; updated_at: string }
+  data: ListingsPayload
   ts: number
 }
 
@@ -23,6 +36,12 @@ interface CachedListings {
 
 let cache: CachedListings | null = null
 const CACHE_TTL = 60 * 1000 // 60 seconds
+
+// How many OpenSea listings one request asks for. Named because the number is
+// load-bearing twice over: it is the page cap, and it is therefore also the
+// value `truncated` compares against. Changing the URL without changing this
+// makes `truncated` read false on exactly the requests that were truncated.
+const LISTINGS_LIMIT = 50
 
 // ── Trait key normalization ───────────────────────────────────────────────────
 
@@ -54,7 +73,7 @@ export async function GET() {
 
     // Fetch listings
     const listingsRes = await fetch(
-      "https://api.opensea.io/api/v2/listings/collection/paniniblockchain/best?limit=50",
+      `https://api.opensea.io/api/v2/listings/collection/paniniblockchain/best?limit=${LISTINGS_LIMIT}`,
       { headers }
     )
 
@@ -164,10 +183,28 @@ export async function GET() {
       })
     }
 
-    const result = {
+    // ⚠ `count` is the length of a CAPPED page, not the size of the book. The
+    // sniper header published it as "N listings", so on any collection with more
+    // than LISTINGS_LIMIT live asks the page stated the cap as a census — the
+    // row-count failure family documented in lib/insights/board-meta.ts.
+    //
+    // `floor_eth` is NOT affected and is deliberately still published unhedged:
+    // the upstream endpoint is `/best`, which orders by lowest price, so the
+    // minimum over the returned page is the collection floor even when the page
+    // is truncated. Only the COUNT becomes a floor.
+    //
+    // The shared helper is used rather than an inline `>= LISTINGS_LIMIT` so the
+    // truncation rule stays one decision in one place (it deliberately uses `>=`,
+    // not `===`: treating an over-length page as complete is the wrong way to be
+    // wrong). Its `total_rows` is remapped onto this route's pre-existing `count`
+    // key — the field name here predates the helper and the sniper page reads it.
+    const rowMeta = boardRowMeta(listings.length, LISTINGS_LIMIT)
+    const result: ListingsPayload = {
       listings,
       floor_eth: minPrice === Infinity ? null : minPrice,
-      count: listings.length,
+      count: rowMeta.total_rows,
+      returned_rows: rowMeta.returned_rows,
+      truncated: rowMeta.truncated,
       updated_at: new Date().toISOString(),
     }
 
@@ -184,10 +221,22 @@ export async function GET() {
       })
     }
 
-    const message = err instanceof Error ? err.message : "Unknown error"
+    // ⚠ The upstream message is LOGGED, never published. It used to ride out in a
+    // `detail` field, which put third-party text (OpenSea's own `401`/rate-limit
+    // wording, or a raw Node fetch failure) in front of a user. Same class as the
+    // `/api/pack-listings` leak that was publishing Dapper Studio's phrasing — the
+    // leaked text is not always ours or Postgres's.
+    //
+    // NOT routed through `apiErrorResponse` on purpose: that classifier would
+    // flatten this to a 500, and the 502 is load-bearing — it says the failure is
+    // UPSTREAM, which is what tells an operator whether WE broke.
+    console.log(
+      "[panini/listings] upstream failure:",
+      err instanceof Error ? err.message : String(err)
+    )
     return NextResponse.json(
-      { error: "Failed to fetch listings", detail: message },
-      { status: 502 }
+      { error: "Failed to fetch listings", code: "upstream_unavailable", retryable: true },
+      { status: 502, headers: { "Cache-Control": "no-store" } }
     )
   }
 }

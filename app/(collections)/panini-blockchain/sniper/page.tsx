@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
+import { boardCountFloor } from "@/lib/insights/board-meta"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ interface ListingsResponse {
   listings: Listing[]
   floor_eth: number | null
   count: number
+  /** True when the upstream page filled its cap — `count` is then a FLOOR. */
+  truncated: boolean
   updated_at: string
 }
 
@@ -167,18 +170,38 @@ export default function PaniniSniperPage() {
       <section className="rpc-card" style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* The dot is a LIVENESS claim, so it must know about `error` too. It
+                stayed green-and-pulsing through an outage, directly above a card
+                reading "Failed to load listings". */}
             <div
               style={{
                 width: 8,
                 height: 8,
                 borderRadius: "50%",
-                background: paused ? "var(--rpc-text-ghost)" : "var(--rpc-success)",
-                animation: paused ? "none" : "pulse 2s infinite",
+                background: error
+                  ? "var(--rpc-danger)"
+                  : paused
+                    ? "var(--rpc-text-ghost)"
+                    : "var(--rpc-success)",
+                animation: error || paused ? "none" : "pulse 2s infinite",
               }}
             />
             <span className="rpc-label">OpenSea Listings</span>
           </div>
-          {data && (
+          {/* ⚠ Gated on `!error`. `data` holds the PREVIOUS payload after a failed
+              refresh, so this panel used to publish a stale floor and count beside
+              the error card below — the page contradicting itself on a number a
+              collector buys against. Consulting the error state at only one of the
+              claim sites is the /insights/pack-reality defect; every panel reading
+              the same failed read needs its own branch. */}
+          {error ? (
+            <span
+              className="rpc-mono"
+              style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }}
+            >
+              Floor unavailable — the last read failed
+            </span>
+          ) : data ? (
             <span
               className="rpc-mono"
               style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}
@@ -186,9 +209,12 @@ export default function PaniniSniperPage() {
               {data.floor_eth != null && (
                 <>Floor: <span style={{ color: ACCENT, fontWeight: 700 }}>{data.floor_eth.toFixed(4)} ETH</span> · </>
               )}
-              {data.count} listing{data.count !== 1 ? "s" : ""}
+              {/* Renders "50+" when the upstream page filled its cap. The floor
+                  itself needs no hedge: OpenSea's `/best` orders by lowest price,
+                  so the minimum over a truncated page is still the floor. */}
+              {boardCountFloor(data.count, data.truncated)} listing{data.count !== 1 ? "s" : ""}
             </span>
-          )}
+          ) : null}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span
               className="rpc-mono"
@@ -332,8 +358,14 @@ export default function PaniniSniperPage() {
             {listings.length === 0 ? "No Listings Found" : "No Matches"}
           </div>
           <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", lineHeight: 1.6, maxWidth: 480, margin: "0 auto" }}>
+            {/* This branch is only reachable when the read SUCCEEDED, so an empty
+                book is a real answer and still says so. The copy no longer dates
+                itself: it used to read "The Ethereum bridge just opened on March
+                30, 2026", which was written at launch and has been describing a
+                months-old event as breaking news ever since — the hardcoded-figure
+                class, in prose. */}
             {listings.length === 0
-              ? "The Ethereum bridge just opened on March 30, 2026. Listings may take some time to appear as collectors bridge their cards. Check back soon!"
+              ? "No bridged Panini cards are listed on OpenSea right now. Only cards bridged to Ethereum trade here — unbridged cards trade on nft.paniniamerica.net."
               : "No listings match your current filters. Try adjusting your search or max price."}
           </div>
         </div>
