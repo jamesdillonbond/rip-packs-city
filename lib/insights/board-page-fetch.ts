@@ -40,6 +40,7 @@
 // claim this module exists to prevent.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { BOARD_LIVE_TIMEOUT_MS } from "@/lib/insights/board-cache"
 
 export interface BoardPageFetch<T> {
   /** The fetched payload, or the caller's `fallback` when the read failed. */
@@ -71,12 +72,39 @@ export async function fetchBoardForPage<T>(
   fallback: T,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fetcher: (db: any) => Promise<T>,
+  timeoutMs: number = BOARD_LIVE_TIMEOUT_MS,
 ): Promise<BoardPageFetch<T>> {
   // Stamped BEFORE the read so it reflects when we asked, matching what these
   // pages did individually.
   const fetchedAt = new Date().toISOString()
   try {
-    const data = await fetcher(supabaseAdmin)
+    // ⚠ BOUNDED, and the bound is what keeps the PRODUCTION BUILD deterministic.
+    // These pages are PRERENDERED, and Next gives each page 60s to export, then
+    // retries 3× and kills the whole build. Two production deploys ERRORed on
+    // 2026-08-15 within ten minutes of each other — `/insights/market` and
+    // `/insights/market-pulse`, a different page each time — with
+    // "Timed out acquiring connection from connection pool" during a DB
+    // saturation spell. Neither commit had touched those pages; they simply drew
+    // the short straw.
+    //
+    // This is the SAME defect `BOARD_LIVE_TIMEOUT_MS` was created for on
+    // first-mint, and the same one `SET_DETAIL_TIMEOUT_MS` fixed on
+    // /analytics/sets — met a third time on the pages that route through here.
+    // The lesson those carry applies unchanged: **the fallback only ran when the
+    // query ERRORED, and a query that is merely SLOW errors nowhere.** Racing it
+    // collapses slow and broken into the one branch that already renders the
+    // degraded notice.
+    //
+    // ⚠ The abandoned query keeps running server-side — supabase-js has no
+    // cancel. We stop WAITING on it; we do not stop it. That is the intended
+    // trade: the page (or the build) proceeds on an honest degraded notice
+    // instead of blocking on a throttled DB.
+    const data = await Promise.race([
+      fetcher(supabaseAdmin),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`board fetch exceeded ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ])
     return { data, fetchedAt, ok: true }
   } catch (e) {
     console.error(`[insights/${label}] initial fetch`, e instanceof Error ? e.message : e)

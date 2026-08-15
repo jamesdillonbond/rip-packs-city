@@ -13,10 +13,39 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
+import { BOARD_LIVE_TIMEOUT_MS } from "@/lib/insights/board-cache"
 import MarketIndexClient, { type Row } from "./MarketIndexClient"
 
 // Match the API route's 15-minute edge cache (daily-granularity data).
 export const revalidate = 900
+
+/**
+ * Race a board read against the export budget, reporting a timeout the same way
+ * a query error is reported so the page's existing honest-degraded path handles
+ * both. `slow` and `broken` are equally unservable here; only `broken` was
+ * modelled before.
+ *
+ * The abandoned query keeps running server-side (supabase-js has no cancel) —
+ * we stop WAITING on it, we do not stop it.
+ */
+async function withBoardBudget<T>(
+  p: Promise<{ rows: T[]; error: string | null }>,
+): Promise<{ rows: T[]; error: string | null }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      p,
+      new Promise<{ rows: T[]; error: string | null }>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ rows: [], error: `market index read exceeded ${BOARD_LIVE_TIMEOUT_MS}ms` }),
+          BOARD_LIVE_TIMEOUT_MS,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | null }> {
   // Trailing 120-day cutoff (inclusive), same as the route default.
@@ -26,7 +55,16 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | nu
   // clamped to 1,000 — is not truncating yet. It is still wrong to leave: the sort
   // is d ASCENDING, so the first overflow would drop the NEWEST days off a market
   // index chart while leaving stale history in place. Paged instead.
-  const { rows: data, error } = await fetchAllPaged<Row>(
+  // ⚠ BOUNDED — this page is PRERENDERED, and an unbounded read here failed a
+  // PRODUCTION BUILD on 2026-08-15 (dpl_ARp2A4jk83FEpcs7FxBpbx6YMAJV:
+  // "Export encountered an error on /insights/market/page … exiting the build",
+  // after "Timed out acquiring connection from connection pool"). Next gives
+  // each page 60s to export and then kills the whole build — and a PAGED read
+  // is the worst shape for that, because it multiplies one slow round trip by
+  // the page count. Same class as BOARD_LIVE_TIMEOUT_MS on first-mint and
+  // SET_DETAIL_TIMEOUT_MS on /analytics/sets; the honest degraded path below
+  // already exists, it simply was not reachable from SLOW, only from BROKEN.
+  const { rows: data, error } = await withBoardBudget(fetchAllPaged<Row>(
     (from, to) =>
       (supabaseAdmin as any)
         .from("topshot_market_index_daily")
@@ -36,7 +74,7 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | nu
         .order("tier", { ascending: true })
         .range(from, to),
     { label: "insights/market" },
-  )
+  ))
   if (error) {
     // HONESTY: a failed read is NOT "no data". Returning [] here rendered
     // "No market data in range." on a healthy market — exactly what the
