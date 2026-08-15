@@ -17,33 +17,27 @@
 import UnderpricedSerialsBoardClient from "./UnderpricedSerialsBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchUnderpricedSerials, type UnderpricedRow } from "@/lib/underpriced-serials-board"
 
 // The backing view reads the serial-FMV estimate live; 15-min ISR matches the
 // route's edge cache. The listings spine refreshes on the ingest's cadence.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: UnderpricedRow[]; fetchedAt: string; ok: boolean }> {
-  const fetchedAt = new Date().toISOString()
-  try {
-    const rows = await fetchUnderpricedSerials(supabaseAdmin, {
+
+export default async function UnderpricedSerialsPage() {
+  const { data: rows, fetchedAt, ok } = await fetchBoardForPage<UnderpricedRow[]>(
+    "Underpriced serials",
+    [],
+    (db) => fetchUnderpricedSerials(db, {
       headline: "all",
       tier: null,
       quality: "all",
       minDiscount: 0,
       sort: "discount",
       limit: 100,
-    })
-    return { rows, fetchedAt, ok: true }
-  } catch (e) {
-    console.error("[insights/underpriced-serials] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt, ok: false }
-  }
-}
-
-export default async function UnderpricedSerialsPage() {
-  const { rows, fetchedAt, ok } = await fetchInitialRows()
+    }),
+  )
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Underpriced serials", ok)])} />

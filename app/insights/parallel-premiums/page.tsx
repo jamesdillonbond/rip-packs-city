@@ -11,31 +11,25 @@
 import ParallelPremiumsBoardClient from "./ParallelPremiumsBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchParallelPremiums, type ParallelRow } from "@/lib/parallel-premiums-board"
 
 // The backing view reads FMV live; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: ParallelRow[]; fetchedAt: string; ok: boolean }> {
-  const fetchedAt = new Date().toISOString()
-  try {
-    const rows = await fetchParallelPremiums(supabaseAdmin, {
+
+export default async function ParallelPremiumsPage() {
+  const { data: rows, fetchedAt, ok } = await fetchBoardForPage<ParallelRow[]>(
+    "Parallel premiums",
+    [],
+    (db) => fetchParallelPremiums(db, {
       parallelName: null,
       minPremium: 1.5,
       highConfOnly: true,
       sort: "premium",
       limit: 100,
-    })
-    return { rows, fetchedAt, ok: true }
-  } catch (e) {
-    console.error("[insights/parallel-premiums] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt, ok: false }
-  }
-}
-
-export default async function ParallelPremiumsPage() {
-  const { rows, fetchedAt, ok } = await fetchInitialRows()
+    }),
+  )
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Parallel premiums", ok)])} />

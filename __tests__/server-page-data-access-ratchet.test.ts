@@ -50,7 +50,16 @@ const APP_DIR = join(process.cwd(), "app")
  * hold shut. It was 37 when this landed, became 36 when the pack-dist page was
  * converted in the same wave, 35 when app/moment/[id] followed, and 34 when the
  * edition page's last two direct readers (market bundle + insight links) moved
- * to lib/entity/edition-market-fetchers.ts.
+ * to lib/entity/edition-market-fetchers.ts, and 26 when EIGHT /insights board
+ * pages moved to lib/insights/board-page-fetch.ts in one shared helper.
+ *
+ * ⚠ That last drop is the pattern to look for FIRST on any remaining page: those
+ * eight did not query anything themselves — they imported `supabaseAdmin` purely
+ * to hand it to a fetcher that ALREADY lived in `lib/`, wrapped in eight
+ * byte-identical copies of the same try/catch. Injecting the client inside the
+ * helper removed the import, the duplication and the ratchet entry at once. A
+ * page whose only Supabase reference is an argument is a five-minute conversion;
+ * a page holding its own `.from(...).select(...)` is a real one.
  *
  * ⚠ That last one is the cheap-conversion pattern worth copying: the edition page
  * is 1,131 LOC but only TWO of its fetchers still held a client — every other
@@ -58,7 +67,7 @@ const APP_DIR = join(process.cwd(), "app")
  * candidate for `supabaseAdmin` before assuming a big page is a big job; the
  * count that matters is call sites, not lines.
  */
-const BUDGET = 34
+const BUDGET = 26
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]

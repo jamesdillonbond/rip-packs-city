@@ -12,26 +12,20 @@
 import PackDropsBoardClient from "./PackDropsBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchScoredDrops, type ScoredDrop } from "@/lib/pack-drops-board"
 
 // Vaultopolis composition/odds are fixed at publication; 15-min ISR matches the
 // route's edge cache.
 export const revalidate = 900
 
-async function fetchInitial(): Promise<{ drops: ScoredDrop[]; fetchedAt: string; ok: boolean }> {
-  const fetchedAt = new Date().toISOString()
-  try {
-    const drops = await fetchScoredDrops(supabaseAdmin)
-    return { drops, fetchedAt, ok: true }
-  } catch (e) {
-    console.error("[insights/pack-drops] initial fetch", e instanceof Error ? e.message : e)
-    return { drops: [], fetchedAt, ok: false }
-  }
-}
 
 export default async function PackDropsPage() {
-  const { drops, fetchedAt, ok } = await fetchInitial()
+  const { data: drops, fetchedAt, ok } = await fetchBoardForPage<ScoredDrop[]>(
+    "Pack drops",
+    [],
+    (db) => fetchScoredDrops(db),
+  )
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack drops", ok)])} />

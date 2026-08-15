@@ -14,15 +14,17 @@
 import RookieBoardClient from "./RookieBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchRookieEditionBoard, type RookieEditionRow } from "@/lib/rookie-edition-board"
 
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: RookieEditionRow[]; fetchedAt: string; ok: boolean }> {
-  const fetchedAt = new Date().toISOString()
-  try {
-    const rows = await fetchRookieEditionBoard(supabaseAdmin, {
+
+export default async function RookieBoardPage() {
+  const { data: rows, fetchedAt, ok } = await fetchBoardForPage<RookieEditionRow[]>(
+    "Rookie board",
+    [],
+    (db) => fetchRookieEditionBoard(db, {
       mode: "board",
       tier: null,
       parallelId: null,
@@ -30,16 +32,8 @@ async function fetchInitialRows(): Promise<{ rows: RookieEditionRow[]; fetchedAt
       set: null,
       sort: "fmv",
       limit: 500,
-    })
-    return { rows, fetchedAt, ok: true }
-  } catch (e) {
-    console.error("[insights/rookie-board] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt, ok: false }
-  }
-}
-
-export default async function RookieBoardPage() {
-  const { rows, fetchedAt, ok } = await fetchInitialRows()
+    }),
+  )
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Rookie board", ok)])} />
