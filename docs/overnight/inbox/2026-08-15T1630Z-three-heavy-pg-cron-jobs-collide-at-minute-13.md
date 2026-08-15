@@ -77,6 +77,82 @@ overlaps and a two-way one most hours.
   the board-warm failure rate over the following day, which is already queryable per board from
   `pipeline_runs.extra->boards` and, since 2026-08-15, per board from `extra.snapshot_age_min`.
 
+## ⚠ UPDATE — the ":13 collision" is REAL but it is an INSTANCE, not the problem. The schedule is oversubscribed.
+
+Measured every active job's real duration over 7 days. **14 jobs peak between 600 s and 966 s**, and
+several of them run **hourly or every 30 minutes**:
+
+| jobid | job | schedule | avg | max | runs 7 d |
+|---|---|---|---|---|---|
+| 218 | backfill-pinnacle-mint-acquisitions | `19 * * * *` | 119 s | **966 s** | 167 |
+| 210 | refresh-allday-pack-sales-agg | `20 */6 * * *` | 237 s | 906 s | 28 |
+| 288 | **public-board-liveness-sweep** | `28 */6 * * *` | **358 s** | 848 s | 19 |
+| 215 | allday-nem-from-sales-backfill | **`*/30 * * * *`** | 190 s | 808 s | 334 |
+| 236 | refresh-perfect-mint-premiums | `0 */2 * * *` | 134 s | 776 s | 94 |
+| 62 | remap-misattributed-sales | `23 */6 * * *` | 205 s | 725 s | 28 |
+| 75 | sync-allday-pack-dist-totals | `24 * * * *` | 49 s | 636 s | 168 |
+| 235 | refresh-market-index-daily | `7 */2 * * *` | 204 s | 624 s | 94 |
+| 73 | refresh-mv-pack-ev-latest | `3,33 * * * *` | 46 s | 623 s | 334 |
+| 67 | allday-cross-source-sales-dedup | `40 * * * *` | 87 s | 618 s | 168 |
+| 245 | refresh-pack-realized-ev | `42 * * * *` | 57 s | 616 s | 168 |
+| 240 | refresh-pack-reality-stats | `30 */2 * * *` | 146 s | 608 s | 93 |
+| 287 | trust-health-precompute-refresh | `58 */6 * * *` | **385 s** | 608 s | 19 |
+| 217 | atlas-pack-ev | `25 * * * *` | 177 s | 606 s | 168 |
+
+**The hourly jobs alone average ~16 minutes of heavy DB work per hour** (218+75+73×2+67+245+217
+≈ 581 s, plus 215 twice an hour ≈ 380 s), before the `*/2` and `*/6` jobs. There is **no 11-minute
+gap anywhere in the hour** — 85 active jobs. ⚠ **So moving one job's minute is rearranging deck
+chairs**, and the earlier "two `cron.alter_job` calls" recommendation below should be read as a
+small improvement, not a fix. **The schedule is oversubscribed for a 2-core / 2 GB instance**, and
+the real lever is running less, not running it later.
+
+## ⚠ THE PERMISSION DEAD END — why `cron.alter_job(71, …)` fails, and the trap in the workaround
+
+`ERROR: XX000: Job 71 does not exist or you don't own it` is an **ownership** error, not a missing
+job. Measured:
+
+| jobid | owner (`cron.job.username`) |
+|---|---|
+| 71, 109 | **`cron_heavy`** |
+| 235 | `postgres` |
+
+- The MCP/dashboard connects as **`postgres`** (non-superuser). It **has EXECUTE on
+  `cron.alter_job`** but does **not own** 71/109.
+- `SET ROLE cron_heavy` then altering fails the other way: `ERROR: 42501: permission denied for
+  function alter_job` — **`cron_heavy` owns the jobs but has no EXECUTE on `alter_job`.**
+- Neither role can `UPDATE cron.job` directly (`has_table_privilege` false for both).
+
+⚠ **DO NOT "fix" this with `cron.schedule()` using the same job name.** It would succeed — and it
+would **re-own the job as `postgres`**, which silently changes its behaviour: **`cron_heavy` carries
+`statement_timeout=600s`** in its `rolconfig`, which is precisely why these long jobs run as that
+role. Re-owning them drops them to the default timeout and they would start being killed mid-run.
+
+**So rescheduling 71/109 requires a superuser or the Supabase dashboard** — it cannot be done from
+the MCP/SQL editor as `postgres`.
+
+## The one change that is BOTH permitted and a real volume cut
+
+`rpc-refresh-market-index-daily` (jobid **235**, owned by `postgres`, so alterable) is named
+`_daily` and refreshes `mv_topshot_market_index_daily` **every two hours** — 94 runs/week, avg
+**204 s**, max 624 s.
+
+**The MV's own grain is daily**: its columns are `d date, tier text, sales, volume_usd, median_px,
+avg_px, max_px`, and its only consumer is the public `/insights/market` board, which reads a
+**~121-day daily series** (`gte("d", cutoff)`, `days` default 121). So 12 refreshes a day only ever
+move **today's single partial point on a four-month daily chart**.
+
+```sql
+SELECT cron.alter_job(235, schedule => '7 */6 * * *');   -- every 2h -> every 6h
+```
+
+- **Saves ~3.7 hours of heavy DB time per week** (94 → ~28 runs × 204 s avg).
+- Cost: the newest point of a **daily-grain** chart is at most 6 h behind instead of 2 h.
+- **REVERT:** `SELECT cron.alter_job(235, schedule => '7 */2 * * *');`
+- Deliberately changes **only the cadence, not the minute**, so the effect is attributable.
+
+⚠ Going all the way to daily (`7 5 * * *`) would save ~4.9 h/week but leaves today's point up to 24 h
+stale — that IS a product/data-freshness call. `*/6` is the version that needs no product decision.
+
 ## Also worth considering separately
 
 `mv_topshot_market_index_daily` is named **`_daily`** but is scheduled **`7 */2 * * *` — every two
