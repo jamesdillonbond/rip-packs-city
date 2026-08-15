@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchPinnacleScarcityBoard } from "@/lib/insights/pinnacle-scarcity-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_SORTS = new Set(["scarcity", "mint", "fmv"]);
@@ -46,27 +47,13 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from("pinnacle_scarcity_board")
-    .select(
-      "render_id, edition_id, character_name, franchise, set_name, variant_type, mint_count, is_chaser, floor_ask, variant_avg_mint, scarcity_vs_variant_pct, fmv_usd, fmv_confidence, image_url"
-    );
-
-  if (variant) q = q.ilike("variant_type", `%${variant}%`);
-  if (franchise) q = q.ilike("franchise", `%${franchise}%`);
-  if (maxMint != null && Number.isFinite(maxMint)) q = q.lte("mint_count", maxMint);
-  if (chasersOnly) q = q.eq("is_chaser", true);
-
-  if (sort === "scarcity") {
-    q = q.order("scarcity_vs_variant_pct", { ascending: false, nullsFirst: false });
-  } else if (sort === "mint") {
-    q = q.order("mint_count", { ascending: true });
-  } else if (sort === "fmv") {
-    q = q.order("fmv_usd", { ascending: false, nullsFirst: false });
-  }
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  // The QUERY lives in lib/insights/pinnacle-scarcity-board.ts, shared with the server page
+  // so the crawlable board and this route cannot drift. This route keeps its
+  // own failure policy (boardUnavailable).
+  const { data, error } = await fetchPinnacleScarcityBoard(
+    { variant, franchise, maxMint, chasersOnly, sort, limit },
+    supabase,
+  );
   if (error) {
     return boardUnavailable(error, "insights/pinnacle-scarcity");
   }

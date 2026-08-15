@@ -18,28 +18,21 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchTrophiesBoard } from "@/lib/insights/trophies-board"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import TrophiesBoardClient, { type Row } from "./TrophiesBoardClient"
 
 // FMV recomputes on its own cron and trophies move slowly; 1-hour ISR.
 export const revalidate = 3600
 
-const SELECT_COLS =
-  "edition_id, external_id, collection, collection_id, name, player_name, set_name, team_name, tier, series, circulation_count, thumbnail_url, video_url, is_one_of_one, is_ultimate, fmv_usd, confidence, fmv_computed_at"
-
 // Returns `ok:false` on a failed read so the page can say so. Before this the
 // error path returned [] and the grid rendered EMPTY at HTTP 200 — byte-identical
 // to "no trophies exist", i.e. a statement timeout rendered as a measurement.
 // See lib/insights/board-status.ts.
 async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabaseAdmin as any)
-    .from("v_insights_trophies")
-    .select(SELECT_COLS)
-    .order("fmv_usd", { ascending: false, nullsFirst: false })
-    .order("circulation_count", { ascending: true, nullsFirst: false })
-    .limit(200)
+  // The QUERY is shared with the API route via lib/insights/trophies-board.ts so
+  // the two cannot drift; the limit is the page's own default view.
+  const { data, error } = await fetchTrophiesBoard({ limit: 200 })
   if (error) {
     console.error("[insights/trophies] initial fetch", error.message)
     return { rows: [], ok: false }

@@ -68,8 +68,31 @@ const APP_DIR = join(process.cwd(), "app")
  * `.from(...).select(...)` is a real one. ⚠ Beware the spelling — a naive
  * `\.rpc\(` grep misses `(supabaseAdmin.rpc as any)(`, which mis-sorted two
  * analytics pages into the cheap bucket during the 08-15 sweep.
+ *
+ * ── THE NEXT-CHEAPEST TIER, NOW ALSO EXHAUSTED ─────────────────────────────
+ * 23 -> 18 (2026-08-15, second pass): five `/insights` board pages —
+ * squeeze, trophies, set-squeeze, offer-spread, pinnacle-scarcity — each held
+ * ONE query that DUPLICATED its own `/api/public/insights/<board>` route's
+ * query, while the page's comment claimed it read the view "exactly as the API
+ * route does". Nothing enforced that claim. Each now shares one
+ * `lib/insights/<board>-board.ts` with its route, which removes the drift AND
+ * the ratchet entry in one move — the same shape as allday-scarcity.
+ *
+ * ⚠ Share the QUERY, not the POLICY. The module returns supabase-js's
+ * `{ data, error }` untouched, because the two consumers legitimately differ:
+ * the route needs `boardUnavailable()` (a 503 with no driver message), the page
+ * needs `ok:false` (the degraded notice). Their `limit` defaults differ too,
+ * deliberately. Normalising either would force one surface to re-derive what it
+ * lost.
+ *
+ * ⚠ And copy the route's ordering EXACTLY, including secondary sorts. The
+ * squeeze route tiebreaks every sort on `squeeze_pct`; a first draft of the
+ * shared module dropped those, which would have silently changed the route's
+ * row order for equal-valued rows.
+ *
+ * The 18 that remain all hold REAL queries — there is no cheap tier left.
  */
-const BUDGET = 23
+const BUDGET = 18
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]

@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchSetSqueezeBoard } from "@/lib/insights/set-squeeze-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
@@ -53,23 +54,13 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from("topshot_set_squeeze_board")
-    .select(
-      "set_id, set_name, series, set_tier, editions_covered, avg_squeeze_pct, median_squeeze_pct, max_squeeze_pct, min_squeeze_pct, total_circ, total_locked, total_burned, total_buyable, avg_fmv_usd, fmv_covered_editions"
-    );
-
-  if (series != null) q = q.eq("series", series);
-  if (setTier) q = q.eq("set_tier", setTier);
-
-  if (sort === "squeeze") {
-    q = q.order("avg_squeeze_pct", { ascending: false, nullsFirst: false });
-  } else {
-    q = q.order("total_buyable", { ascending: true });
-  }
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  // The QUERY lives in lib/insights/set-squeeze-board.ts, shared with the server page
+  // so the crawlable board and this route cannot drift. This route keeps its
+  // own failure policy (boardUnavailable).
+  const { data, error } = await fetchSetSqueezeBoard(
+    { series, setTier, sort, limit },
+    supabase,
+  );
   if (error) {
     return boardUnavailable(error, "insights/set-squeeze");
   }

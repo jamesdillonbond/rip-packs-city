@@ -39,6 +39,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchTrophiesBoard } from "@/lib/insights/trophies-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day"]);
@@ -77,28 +78,13 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any).from("v_insights_trophies").select(SELECT_COLS);
-
-  if (collection) q = q.eq("collection", collection);
-  if (type === "one_of_one") q = q.eq("is_one_of_one", true);
-  else if (type === "ultimate") q = q.eq("is_ultimate", true);
-
-  // FMV-desc (nulls last) is the canonical "headline grails first" ranking so
-  // the priced trophies lead and the never-traded grails follow. Circulation
-  // sort surfaces the 1-of-1s first.
-  if (sort === "circulation") {
-    q = q
-      .order("circulation_count", { ascending: true, nullsFirst: false })
-      .order("fmv_usd", { ascending: false, nullsFirst: false });
-  } else {
-    q = q
-      .order("fmv_usd", { ascending: false, nullsFirst: false })
-      .order("circulation_count", { ascending: true, nullsFirst: false });
-  }
-
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  // The QUERY lives in lib/insights/trophies-board.ts, shared with the server page
+  // so the crawlable board and this route cannot drift. This route keeps its
+  // own failure policy (boardUnavailable).
+  const { data, error } = await fetchTrophiesBoard(
+    { collection, type, sort, limit },
+    supabase,
+  );
   if (error) {
     return boardUnavailable(error, "insights/trophies");
   }

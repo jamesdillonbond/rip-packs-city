@@ -41,6 +41,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchSqueezeBoard } from "@/lib/insights/squeeze-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
@@ -78,39 +79,13 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let q = (supabase as any)
-    .from("topshot_squeeze_board")
-    .select(
-      "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url"
-    )
-    .gte("squeeze_pct", minSqueeze);
-
-  if (tier) q = q.eq("tier", tier);
-  if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
-  if (playerFilter) q = q.ilike("player_name", `%${playerFilter}%`);
-  if (maxBuyable != null && Number.isFinite(maxBuyable)) {
-    q = q.lte("effectively_buyable", maxBuyable);
-  }
-  if (maxCirculation != null && Number.isFinite(maxCirculation)) {
-    q = q.lte("circulation", maxCirculation);
-  }
-
-  // Sort: squeeze_pct DESC is the canonical "most squeezed first" ranking.
-  // Secondary by ASC circulation so trophy-circ editions surface above
-  // commons at the same squeeze pct.
-  if (sort === "squeeze") {
-    q = q.order("squeeze_pct", { ascending: false }).order("circulation", { ascending: true });
-  } else if (sort === "circulation") {
-    q = q.order("circulation", { ascending: true }).order("squeeze_pct", { ascending: false });
-  } else if (sort === "fmv") {
-    q = q.order("fmv_usd", { ascending: false, nullsFirst: false }).order("squeeze_pct", { ascending: false });
-  } else if (sort === "buyable") {
-    q = q.order("effectively_buyable", { ascending: true }).order("squeeze_pct", { ascending: false });
-  }
-
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  // The QUERY lives in lib/insights/squeeze-board.ts, shared with
+  // app/insights/squeeze/page.tsx so the server-rendered board and this route
+  // cannot drift. This route keeps its own failure policy (boardUnavailable).
+  const { data, error } = await fetchSqueezeBoard(
+    { tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, sort, limit },
+    supabase,
+  );
   if (error) {
     return boardUnavailable(error, "insights/squeeze");
   }

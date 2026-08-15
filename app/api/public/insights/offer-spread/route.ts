@@ -33,6 +33,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchOfferSpreadBoard } from "@/lib/insights/offer-spread-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
@@ -62,25 +63,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `sort must be one of ${[...VALID_SORTS].join(",")}` }, { status: 400 });
   }
 
-  let q = (supabase as any)
-    .from("topshot_offer_ask_spread")
-    .select("external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at")
-    .gte("low_ask", minAsk);
-
-  if (tier) q = q.eq("tier", tier);
-  if (bidMeetsAsk) q = q.eq("bid_meets_ask", true);
-  if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
-  if (playerFilter) q = q.ilike("player_name", `%${playerFilter}%`);
-
-  if (sort === "par") q = q.order("par_distance", { ascending: true });
-  else if (sort === "spread") q = q.order("spread_usd", { ascending: true });
-  else if (sort === "offer") q = q.order("highest_offer", { ascending: false });
-  else if (sort === "ask") q = q.order("low_ask", { ascending: false });
-  else if (sort === "pct") q = q.order("offer_pct_of_ask", { ascending: false });
-
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  // The QUERY lives in lib/insights/offer-spread-board.ts, shared with the server page
+  // so the crawlable board and this route cannot drift. This route keeps its
+  // own failure policy (boardUnavailable).
+  const { data, error } = await fetchOfferSpreadBoard(
+    { tier, set: setFilter, player: playerFilter, bidMeetsAsk, minAsk, sort, limit },
+    supabase,
+  );
   if (error) {
     return boardUnavailable(error, "insights/offer-spread");
   }

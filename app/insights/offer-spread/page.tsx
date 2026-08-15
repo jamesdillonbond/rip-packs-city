@@ -12,28 +12,22 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchOfferSpreadBoard } from "@/lib/insights/offer-spread-board"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import OfferSpreadBoardClient, { type Row } from "./OfferSpreadBoardClient"
 
 // Match the API route's 5-minute edge cache; edition_offers refreshes continuously.
 export const revalidate = 300
 
-const SELECT_COLS =
-  "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at"
-
 // Returns `ok:false` on a failed read so the page can say so. Before this the
 // error path returned [] and the table rendered EMPTY at HTTP 200 — byte-identical
 // to "no edition has a bid near its floor", i.e. a statement timeout rendered as a
 // measurement. See lib/insights/board-status.ts.
 async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabaseAdmin as any)
-    .from("topshot_offer_ask_spread")
-    .select(SELECT_COLS)
-    .gte("low_ask", 5)
-    .order("par_distance", { ascending: true })
-    .limit(200)
+  // The QUERY is shared with the API route via lib/insights/offer-spread-board.ts
+  // so the two cannot drift; the limit and the $5 dust floor are the page's own
+  // default view.
+  const { data, error } = await fetchOfferSpreadBoard({ limit: 200, minAsk: 5 })
   if (error) {
     console.error("[insights/offer-spread] initial fetch", error.message)
     return { rows: [], ok: false }

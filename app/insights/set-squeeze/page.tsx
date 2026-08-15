@@ -11,27 +11,21 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchSetSqueezeBoard } from "@/lib/insights/set-squeeze-board"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import SetSqueezeBoardClient, { type Row } from "./SetSqueezeBoardClient"
 
 // Match the API route's 5-minute edge cache; badge data refreshes hourly.
 export const revalidate = 300
 
-const SELECT_COLS =
-  "set_id, set_name, series, set_tier, editions_covered, avg_squeeze_pct, median_squeeze_pct, max_squeeze_pct, min_squeeze_pct, total_circ, total_locked, total_burned, total_buyable, avg_fmv_usd, fmv_covered_editions"
-
 // Returns `ok:false` on a failed read so the page can say so. Before this the
 // error path returned [] and the leaderboard rendered EMPTY at HTTP 200 —
 // byte-identical to "no set qualifies", i.e. a statement timeout rendered as a
 // measurement. See lib/insights/board-status.ts.
 async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabaseAdmin as any)
-    .from("topshot_set_squeeze_board")
-    .select(SELECT_COLS)
-    .order("avg_squeeze_pct", { ascending: false, nullsFirst: false })
-    .limit(100)
+  // The QUERY is shared with the API route via lib/insights/set-squeeze-board.ts
+  // so the two cannot drift; the limit is the page's own default view.
+  const { data, error } = await fetchSetSqueezeBoard({ limit: 100 })
   if (error) {
     console.error("[insights/set-squeeze] initial fetch", error.message)
     return { rows: [], ok: false }
