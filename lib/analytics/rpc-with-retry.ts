@@ -102,6 +102,21 @@ function timeoutError(ms: number, fn: string): PostgrestError {
 }
 
 /**
+ * True for the DOMException an aborted fetch produces, in either spelling.
+ *
+ * `AbortSignal.timeout()` raises `TimeoutError`; an explicit `.abort()` raises
+ * `AbortError`. supabase-js may surface either as a returned `error` OR as a
+ * rejection depending on version and where the abort lands, so both shapes are
+ * normalized at the two exits below.
+ */
+function isAbortShaped(e: unknown): boolean {
+  const name = (e as { name?: unknown } | null)?.name
+  if (name === "TimeoutError" || name === "AbortError") return true
+  const msg = String((e as { message?: unknown } | null)?.message ?? "").toLowerCase()
+  return msg.includes("the operation was aborted")
+}
+
+/**
  * Bound one attempt.
  *
  * Two mechanisms on purpose, because they buy different things:
@@ -112,6 +127,28 @@ function timeoutError(ms: number, fn: string): PostgrestError {
  *    cast and every test in this repo mocks `.rpc` as a bare async function
  *    with no `.abortSignal`, so the signal cannot be relied on to exist. The
  *    race is what makes the contract true for real clients and mocks alike.
+ *
+ * ⚠ THOSE TWO MECHANISMS USED TO PRODUCE TWO DIFFERENT ERRORS, and only one of
+ * them was ever exercised by a test (2026-08-15). The guard resolves
+ * `timeoutError()` — code `RPC_TIMEOUT`, the value this module exports
+ * precisely so "a bound we imposed is greppable in logs and never mistaken for
+ * something the server reported". The abort path resolved whatever supabase-js
+ * made of the DOMException: `TimeoutError: The operation was aborted due to
+ * timeout`, with no SQLSTATE and no `RPC_TIMEOUT`. In production the abort wins
+ * the race, so the shape that actually escaped was the one with none of the
+ * properties this module advertises — that string is the Sentry TITLE of
+ * JAVASCRIPT-NEXTJS-1Z (86 users), NEXTJS-26, -23, -22 and -20.
+ *
+ * ⚠ No test could have caught it: the mocks have no `.abortSignal`, so every
+ * test in the repo takes the guard branch by construction. Same shape as the
+ * other blind spots in this repo — a mechanism's own derivation deciding what
+ * it is able to observe. Hence `__tests__/rpc-with-retry-abort-shape.test.ts`,
+ * which supplies a mock that DOES implement `.abortSignal`.
+ *
+ * Both exits are normalized below, so exactly one timeout shape leaves this
+ * function no matter which mechanism fires. A rejection that is NOT abort-shaped
+ * is deliberately re-thrown rather than folded into `error` — that would swallow
+ * genuine programming faults behind a plausible "timed out" story.
  */
 function withDeadline<T>(
   builder: unknown,
@@ -139,11 +176,31 @@ function withDeadline<T>(
   return Promise.race([
     pending as Promise<{ data: T | null; error: PostgrestError | null }>,
     guard,
+  ])
+    .then((settled) => {
+      // The abort landed as a RETURNED error (the usual supabase-js shape).
+      if (settled?.error && isAbortShaped(settled.error)) {
+        return { data: null, error: timeoutError(ms, fn) }
+      }
+      return settled
+    })
+    .catch((thrown: unknown) => {
+      // The abort landed as a REJECTION. Without this the throw escapes
+      // rpcWithRetry entirely, past every caller that destructures
+      // `{ data, error }` — a contract break, not just a wording difference.
+      if (isAbortShaped(thrown)) {
+        return { data: null, error: timeoutError(ms, fn) } as {
+          data: T | null
+          error: PostgrestError | null
+        }
+      }
+      throw thrown
+    })
     // Always clear the timer. A dangling one holds the event loop open, which
     // on a serverless invocation delays teardown and in vitest leaks handles.
-  ]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer)
-  })
+    .finally(() => {
+      if (timer !== undefined) clearTimeout(timer)
+    })
 }
 
 function isTransient(err: PostgrestError | null | undefined): boolean {
