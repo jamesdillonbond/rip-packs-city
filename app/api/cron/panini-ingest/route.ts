@@ -71,13 +71,13 @@ export async function POST(req: NextRequest) {
   // Kept out of `found` deliberately: it describes the walk, it is not a row that was ingested,
   // and counting it would inflate rows_found on a payload that wrote nothing.
   const enumStats = body.enum && typeof body.enum === "object" && !Array.isArray(body.enum) ? body.enum : null;
+  // The marker lands under PIPELINE_ENUM whether or not this payload also carries rows, so there
+  // is exactly ONE place to query walk enumeration. Attaching it to the ingest row instead when
+  // rows happen to be present would split the same telemetry across two pipelines, and a later
+  // reader would have to know to union them.
+  if (enumStats) await logRun(startedAtIso, 0, 0, true, null, { enum: enumStats }, PIPELINE_ENUM);
   if (!found) {
-    if (enumStats) {
-      // Enumeration marker → its own pipeline name (see PIPELINE_ENUM above). It must not
-      // refresh `panini-ingest`'s last_run, or the stall arm goes quiet on the walk that died.
-      await logRun(startedAtIso, 0, 0, true, null, { enum: enumStats }, PIPELINE_ENUM);
-      return NextResponse.json({ accepted: true, logged: "enum" }, { status: 202 });
-    }
+    if (enumStats) return NextResponse.json({ accepted: true, logged: "enum" }, { status: 202 });
     await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
     return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
   }
@@ -143,7 +143,6 @@ export async function POST(req: NextRequest) {
       await logRun(startedAtIso, found, written, true, null, {
         editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied, sales_missed: salesMissed,
-        ...(enumStats ? { enum: enumStats } : {}),
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});

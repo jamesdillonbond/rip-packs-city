@@ -132,6 +132,28 @@ describe("panini-ingest — the enumeration marker must not silence the stall ar
     expect(st.runs[0].p_extra.skip).toBe("empty")
   })
 
+  it("keeps ONE home for the marker even when rows ride along in the same payload", async () => {
+    // The runner posts the marker standalone today, so this is the forward-compatible case: if a
+    // payload ever carries both, the marker must still land under the marker pipeline rather than
+    // being attached to the ingest row — otherwise the same telemetry lives in two pipelines and
+    // any later reader has to know to union them.
+    const res = await POST(makeReq({
+      url, auth: "Bearer ingest", body: { ...enumBody, cards: [{ sku: "c1", fmv: 5 }] },
+    }))
+    expect(res.status).toBe(202)
+    await st.captured!()
+
+    const markerRuns = st.runs.filter((r: any) => r.p_extra?.enum)
+    expect(markerRuns).toHaveLength(1)
+    expect(markerRuns[0].p_pipeline).not.toBe(WATCHED_PIPELINE)
+
+    // The rows are still ingested normally, under the watched pipeline.
+    const ingestRuns = st.runs.filter((r: any) => r.p_pipeline === WATCHED_PIPELINE)
+    expect(ingestRuns).toHaveLength(1)
+    expect(ingestRuns[0].p_rows_found).toBe(1)
+    expect(ingestRuns[0].p_extra.enum).toBeUndefined()
+  })
+
   it.each([
     ["an array", [1, 2, 3]],
     ["a string", "41 pages"],
