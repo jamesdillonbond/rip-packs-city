@@ -164,6 +164,56 @@ async function handleSweep(req: NextRequest) {
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()
 
+  // Invocation heartbeat (deep-audit R11, added 2026-08-15). The real work runs
+  // inside `after()` and logs ONLY on completion, so a dropped or killed
+  // invocation wrote nothing at all — indistinguishable from the cron never
+  // firing. That ambiguity was not theoretical: on 2026-08-15 this pipeline read
+  // 1,151 min silent against a 400 min ceiling while `candy_listings.last_seen_at`
+  // showed a sweep HAD run at 06:40Z, and the two facts could not be reconciled
+  // from any available signal. ⚠ It also produced a wrong operator note — "it
+  // runs and writes but does not log", which invites dismissing the alarm —
+  // whereas re-measured the data was ALSO 10 h stale, i.e. later ticks did no
+  // work either. Both readings needed the same missing evidence.
+  //
+  // With this marker the states separate, exactly as for candy-offers-indexer:
+  //   heartbeat + candy-listings-indexer row -> ran to completion
+  //   heartbeat only                          -> after() dropped / killed at 300s
+  //   neither                                 -> route never reached (cron / auth)
+  //
+  // ⚠ SEPARATE pipeline name, not an extra `candy-listings-indexer` row — this
+  // pipeline is on pipeline_cadence_watchlist (400 min), so a marker under its
+  // own name would refresh `last_run` every tick and silence
+  // detect_stalled_pipelines() on the very outage this exists to expose.
+  // ⚠ `duration_ms` on these heartbeat rows is MEANINGLESS — read `extra`/`ok`,
+  // never the duration. `log_pipeline_run` has no `p_finished_at` parameter
+  // (verified against pg_proc: 11 args, no finished_at), so the row takes
+  // `finished_at DEFAULT now()` and the GENERATED `duration_ms` becomes this
+  // insert's own latency. That is the same defect fixed today on
+  // drain-conflated-subeditions and fmv-recalc-heartbeat by pinning
+  // finished_at = started_at; it cannot be pinned through this RPC without a
+  // migration, and the sibling candy-offers-indexer heartbeat has the identical
+  // property. Filed rather than diverging from the established call here.
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: `${PIPELINE_NAME}-heartbeat`,
+      p_started_at: startedAtIso,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: true,
+      p_error: null,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { phase: "invoked" },
+    })
+  } catch (e) {
+    // Non-fatal: the heartbeat is diagnostic. Never let it break the sweep.
+    console.log(
+      `[${PIPELINE_NAME}] heartbeat log failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+
   if (!candyMeSymbolReady()) {
     await logRun(startedAtIso, 0, 0, 0, true, null, { skip_reason: "discovery_pending" })
     return NextResponse.json(

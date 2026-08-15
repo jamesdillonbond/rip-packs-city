@@ -94,14 +94,34 @@ export async function GET(request: NextRequest) {
   const startedMs = Date.now();
   async function logRun(ok: boolean, extra: Record<string, unknown>, errorMsg: string | null) {
     try {
+      // ⚠ This call used to pass `p_duration_ms`, which is NOT a parameter of
+      // log_pipeline_run (verified against pg_proc: 11 args, and `duration_ms`
+      // is a GENERATED column that cannot be written at all). PostgREST resolves
+      // an overload by its argument-NAME set, so the call matched no overload and
+      // failed on every invocation — and because the catch below is deliberately
+      // non-fatal, it failed SILENTLY. This was the file's only call site, so
+      // `stale-fmv-monitor` had never written a single pipeline_runs row despite
+      // running on schedule via .github/workflows/ops-monitor.yml: 0 rows, ever.
+      // A monitor whose own run history is invisible cannot be checked for having
+      // run, which is the one thing you need from a monitor.
+      //
+      // Passing `p_started_at` is what makes the duration correct anyway —
+      // `duration_ms` generates from (finished_at - started_at) and `finished_at`
+      // defaults to now(), so a terminal log gets a real elapsed for free. The
+      // full 11-argument shape is passed deliberately, matching every other call
+      // site, so overload resolution cannot depend on which optional args exist.
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: "stale-fmv-monitor",
-        p_ok: ok,
+        p_started_at: new Date(startedMs).toISOString(),
         p_rows_found: 0,
         p_rows_written: 0,
-        p_duration_ms: Date.now() - startedMs,
+        p_rows_skipped: 0,
+        p_ok: ok,
         p_error: errorMsg,
-        p_extra: extra,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { ...extra, duration_ms: Date.now() - startedMs },
       });
     } catch (e) {
       // Never let telemetry break the check it is measuring.
