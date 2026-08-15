@@ -13,13 +13,18 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import CrossCollectionBoardClient, { type ApiResponse } from "./CrossCollectionBoardClient"
 
 // Match the API route's 30-minute edge cache (cohort tables refresh daily/manual).
 export const revalidate = 1800
 
-async function fetchInitial(): Promise<ApiResponse> {
-  const [statsRes, cohortRes, setOverlapRes] = await Promise.all([
+async function fetchInitial(): Promise<{ initial: ApiResponse; ok: boolean }> {
+  try {
+    const [statsRes, cohortRes, setOverlapRes] = await withBoardBudget(
+      Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabaseAdmin as any).from("cross_collection_cohort_stats").select("*").limit(1),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,19 +41,51 @@ async function fetchInitial(): Promise<ApiResponse> {
       .select("set_id, set_name, cohort_holders, moments_in_cohort")
       .order("cohort_holders", { ascending: false })
       .limit(30),
-  ])
-  if (statsRes.error) console.error("[insights/cross-collection] stats", statsRes.error.message)
-  if (cohortRes.error) console.error("[insights/cross-collection] cohort", cohortRes.error.message)
-  if (setOverlapRes.error) console.error("[insights/cross-collection] overlap", setOverlapRes.error.message)
-  return {
-    meta: { fetched_at: new Date().toISOString() },
-    stats: statsRes.data?.[0] ?? null,
-    wallets: cohortRes.data ?? [],
-    ts_set_overlap: setOverlapRes.data ?? [],
+      ]),
+      "cross-collection",
+    )
+    // ⚠ EVERY leg's error is load-bearing. This page used to LOG all three and
+    // then return `[]` / `null` regardless, so a failed read rendered an empty
+    // whale map at HTTP 200 — byte-identical to "no wallet holds across
+    // collections", which on this surface is a market claim. It was the only
+    // /insights board with no `ok` at all.
+    const errors = [statsRes.error, cohortRes.error, setOverlapRes.error].filter(Boolean)
+    if (statsRes.error) console.error("[insights/cross-collection] stats", statsRes.error.message)
+    if (cohortRes.error) console.error("[insights/cross-collection] cohort", cohortRes.error.message)
+    if (setOverlapRes.error) console.error("[insights/cross-collection] overlap", setOverlapRes.error.message)
+    return {
+      initial: {
+        meta: { fetched_at: new Date().toISOString() },
+        stats: statsRes.data?.[0] ?? null,
+        wallets: cohortRes.data ?? [],
+        ts_set_overlap: setOverlapRes.data ?? [],
+      },
+      // ANY failed leg degrades the board: the three tables are one story, and a
+      // partial answer presented whole is the thing being avoided.
+      ok: errors.length === 0,
+    }
+  } catch (e) {
+    // A BUDGET OVERRUN lands here — withBoardBudget rejects, which is how a
+    // merely-SLOW read reaches the same degraded outcome a failed one now has.
+    console.error("[insights/cross-collection] initial fetch", e instanceof Error ? e.message : e)
+    return {
+      initial: {
+        meta: { fetched_at: new Date().toISOString() },
+        stats: null,
+        wallets: [],
+        ts_set_overlap: [],
+      },
+      ok: false,
+    }
   }
 }
 
 export default async function CrossCollectionPage() {
-  const initial = await fetchInitial()
-  return <CrossCollectionBoardClient initial={initial} />
+  const { initial, ok } = await fetchInitial()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Whale map", ok)])} />
+      <CrossCollectionBoardClient initial={initial} />
+    </>
+  )
 }

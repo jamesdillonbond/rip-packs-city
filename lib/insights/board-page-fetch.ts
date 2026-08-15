@@ -78,36 +78,102 @@ export async function fetchBoardForPage<T>(
   // pages did individually.
   const fetchedAt = new Date().toISOString()
   try {
-    // ⚠ BOUNDED, and the bound is what keeps the PRODUCTION BUILD deterministic.
-    // These pages are PRERENDERED, and Next gives each page 60s to export, then
-    // retries 3× and kills the whole build. Two production deploys ERRORed on
-    // 2026-08-15 within ten minutes of each other — `/insights/market` and
-    // `/insights/market-pulse`, a different page each time — with
-    // "Timed out acquiring connection from connection pool" during a DB
-    // saturation spell. Neither commit had touched those pages; they simply drew
-    // the short straw.
-    //
-    // This is the SAME defect `BOARD_LIVE_TIMEOUT_MS` was created for on
-    // first-mint, and the same one `SET_DETAIL_TIMEOUT_MS` fixed on
-    // /analytics/sets — met a third time on the pages that route through here.
-    // The lesson those carry applies unchanged: **the fallback only ran when the
-    // query ERRORED, and a query that is merely SLOW errors nowhere.** Racing it
-    // collapses slow and broken into the one branch that already renders the
-    // degraded notice.
-    //
-    // ⚠ The abandoned query keeps running server-side — supabase-js has no
-    // cancel. We stop WAITING on it; we do not stop it. That is the intended
-    // trade: the page (or the build) proceeds on an honest degraded notice
-    // instead of blocking on a throttled DB.
-    const data = await Promise.race([
-      fetcher(supabaseAdmin),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`board fetch exceeded ${timeoutMs}ms`)), timeoutMs),
-      ),
-    ])
+    const data = await withBoardBudget(fetcher(supabaseAdmin), label, timeoutMs)
     return { data, fetchedAt, ok: true }
   } catch (e) {
     console.error(`[insights/${label}] initial fetch`, e instanceof Error ? e.message : e)
     return { data: fallback, fetchedAt, ok: false }
+  }
+}
+
+/**
+ * Bound a board page's server-side read, REJECTING when it overruns.
+ *
+ * ── WHY THIS EXISTS, AND WHY IT REJECTS RATHER THAN RETURNING A FLAG ───────
+ * Every `/insights` server page already has an honest-degraded path — a
+ * try/catch that sets `ok:false` and renders `DegradedDataNotice`. What twelve
+ * of them lacked was any way to REACH it from a slow read, because
+ * **a query that is merely SLOW errors nowhere.** Rejecting on the budget feeds
+ * the branch each page already has, so bounding a page is a one-line change and
+ * cannot accidentally introduce a second, divergent failure policy.
+ *
+ * ── THE BOUND IS A BUILD-INTEGRITY PROPERTY, NOT JUST A UX ONE ─────────────
+ * These pages are PRERENDERED. Next gives each page 60s to export, retries 3×,
+ * then kills the whole build. Two production deploys ERRORed on 2026-08-15
+ * within ten minutes — `/insights/market` and `/insights/market-pulse`, a
+ * DIFFERENT page each time, neither touched by the commit that failed (one was
+ * tests-only) — both on "Timed out acquiring connection from connection pool"
+ * during a DB saturation spell. With reads unbounded, every deploy is a coin
+ * flip on whichever board the saturation lands on.
+ *
+ * Third instance of one class: `BOARD_LIVE_TIMEOUT_MS` was created for it on
+ * first-mint and `SET_DETAIL_TIMEOUT_MS` fixed it on `/analytics/sets`. Both
+ * prior fixes were applied to the ONE page that failed rather than to the shape,
+ * which is why it came back twice.
+ *
+ * ⚠ The abandoned query keeps running server-side — supabase-js has no cancel.
+ * We stop WAITING on it; we do not stop it. That is the intended trade: the page
+ * (or the build) proceeds on an honest degraded notice instead of blocking on a
+ * throttled DB.
+ *
+ * ⚠ The timer is CLEARED in a `finally`. Without that, a fast read still leaves
+ * a pending 8s timer, and during a static export that keeps the event loop
+ * alive — turning a bound meant to speed the build up into a source of delay.
+ */
+export async function withBoardBudget<T>(
+  p: Promise<T>,
+  label: string,
+  timeoutMs: number = BOARD_LIVE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`[insights/${label}] read exceeded ${timeoutMs}ms`)),
+          timeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * The `fetchAllPaged` flavour of the same bound: RESOLVES with an `error` string
+ * instead of rejecting.
+ *
+ * ⚠ WHY A SECOND FUNCTION RATHER THAN REUSING THE REJECTING ONE. The pages that
+ * page their reads (`market`, both `*-pack-market` boards, `allday-pack-reality`)
+ * have an `if (error)` degraded branch and NO try/catch. Handing them a rejection
+ * would escape the function and throw during the static export — which fails the
+ * build just as surely as the hang it was meant to prevent, only faster and with
+ * a more confusing message. Matching `fetchAllPaged`'s own `{ rows, error }`
+ * contract routes a timeout into the branch each page already has.
+ *
+ * ⚠ A PAGED read is the worst shape for an export budget: it multiplies one slow
+ * round trip by the page count, so these are the pages most likely to blow it —
+ * `/insights/market` is one of the two that actually did.
+ */
+export async function withPagedBoardBudget<T>(
+  p: Promise<{ rows: T[]; error: string | null }>,
+  label: string,
+  timeoutMs: number = BOARD_LIVE_TIMEOUT_MS,
+): Promise<{ rows: T[]; error: string | null }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      p,
+      new Promise<{ rows: T[]; error: string | null }>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ rows: [], error: `[insights/${label}] read exceeded ${timeoutMs}ms` }),
+          timeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }

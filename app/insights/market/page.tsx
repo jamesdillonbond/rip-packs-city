@@ -13,39 +13,11 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
-import { BOARD_LIVE_TIMEOUT_MS } from "@/lib/insights/board-cache"
+import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
 import MarketIndexClient, { type Row } from "./MarketIndexClient"
 
 // Match the API route's 15-minute edge cache (daily-granularity data).
 export const revalidate = 900
-
-/**
- * Race a board read against the export budget, reporting a timeout the same way
- * a query error is reported so the page's existing honest-degraded path handles
- * both. `slow` and `broken` are equally unservable here; only `broken` was
- * modelled before.
- *
- * The abandoned query keeps running server-side (supabase-js has no cancel) —
- * we stop WAITING on it, we do not stop it.
- */
-async function withBoardBudget<T>(
-  p: Promise<{ rows: T[]; error: string | null }>,
-): Promise<{ rows: T[]; error: string | null }> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      p,
-      new Promise<{ rows: T[]; error: string | null }>((resolve) => {
-        timer = setTimeout(
-          () => resolve({ rows: [], error: `market index read exceeded ${BOARD_LIVE_TIMEOUT_MS}ms` }),
-          BOARD_LIVE_TIMEOUT_MS,
-        )
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
 
 async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | null }> {
   // Trailing 120-day cutoff (inclusive), same as the route default.
@@ -64,7 +36,8 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | nu
   // the page count. Same class as BOARD_LIVE_TIMEOUT_MS on first-mint and
   // SET_DETAIL_TIMEOUT_MS on /analytics/sets; the honest degraded path below
   // already exists, it simply was not reachable from SLOW, only from BROKEN.
-  const { rows: data, error } = await withBoardBudget(fetchAllPaged<Row>(
+  const { rows: data, error } = await withPagedBoardBudget(
+    fetchAllPaged<Row>(
     (from, to) =>
       (supabaseAdmin as any)
         .from("topshot_market_index_daily")
@@ -73,8 +46,10 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | nu
         .order("d", { ascending: true })
         .order("tier", { ascending: true })
         .range(from, to),
-    { label: "insights/market" },
-  ))
+      { label: "insights/market" },
+    ),
+    "market",
+  )
   if (error) {
     // HONESTY: a failed read is NOT "no data". Returning [] here rendered
     // "No market data in range." on a healthy market — exactly what the

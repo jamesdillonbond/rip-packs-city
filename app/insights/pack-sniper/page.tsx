@@ -14,6 +14,7 @@
 import { getPackDeals, type PackDeal } from "@/lib/packs/pack-deals"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import PackSniperClient from "./PackSniperClient"
 
 // Live Dapper Studio fetch is memoized 2m; the API CDN-caches 5m. Match here.
@@ -22,7 +23,10 @@ export const revalidate = 300
 async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string; ok: boolean }> {
   try {
     // Default crawlable view: Top Shot, honest deals only (lottery packs hidden).
-    const res = await getPackDeals("nba-top-shot", { limit: 200, includeHighVariance: false })
+    const res = await withBoardBudget(
+      getPackDeals("nba-top-shot", { limit: 200, includeHighVariance: false }),
+      "pack-sniper",
+    )
     return { deals: res.deals, fetchedAt: new Date().toISOString(), ok: true }
   } catch (e) {
     console.error("[insights/pack-sniper] initial fetch", e instanceof Error ? e.message : e)

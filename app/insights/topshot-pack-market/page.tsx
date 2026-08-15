@@ -16,6 +16,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
+import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export const revalidate = 600
 
@@ -72,7 +73,8 @@ async function fetchBuckets(): Promise<Buckets> {
   // old .limit(1000) dropped ~233 of them — and with no .order() the survivors
   // were arbitrary, so the "biggest discount" top-15 below could miss real
   // top-15 packs. Page the full set, ordered, before ranking.
-  const { rows: data, error } = await fetchAllPaged<MarketRow>(
+  const { rows: data, error } = await withPagedBoardBudget(
+    fetchAllPaged<MarketRow>(
     (from, to) =>
       sb
         .from("v_topshot_pack_market")
@@ -83,6 +85,8 @@ async function fetchBuckets(): Promise<Buckets> {
         .order("dist_id", { ascending: true })
         .range(from, to),
     { label: "insights/topshot-pack-market" },
+  ),
+    "topshot-pack-market",
   )
   if (error) {
     console.error("[insights/topshot-pack-market] market", error)

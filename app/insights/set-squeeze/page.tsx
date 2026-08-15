@@ -13,6 +13,7 @@
 
 import { fetchSetSqueezeBoard } from "@/lib/insights/set-squeeze-board"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import SetSqueezeBoardClient, { type Row } from "./SetSqueezeBoardClient"
 
 // Match the API route's 5-minute edge cache; badge data refreshes hourly.
@@ -23,14 +24,22 @@ export const revalidate = 300
 // byte-identical to "no set qualifies", i.e. a statement timeout rendered as a
 // measurement. See lib/insights/board-status.ts.
 async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
-  // The QUERY is shared with the API route via lib/insights/set-squeeze-board.ts
-  // so the two cannot drift; the limit is the page's own default view.
-  const { data, error } = await fetchSetSqueezeBoard({ limit: 100 })
-  if (error) {
-    console.error("[insights/set-squeeze] initial fetch", error.message)
+  try {
+    // The QUERY is shared with the API route via lib/insights/set-squeeze-board.ts
+    // so the two cannot drift; the limit is the page's own default view.
+    const { data, error } = await withBoardBudget(fetchSetSqueezeBoard({ limit: 100 }), "set-squeeze")
+    if (error) {
+      console.error("[insights/set-squeeze] initial fetch", error.message)
+      return { rows: [], ok: false }
+    }
+    return { rows: (data ?? []) as Row[], ok: true }
+  } catch (e) {
+    // A BUDGET OVERRUN lands here, not in the `error` branch above:
+    // withBoardBudget REJECTS, which is how a merely-SLOW read reaches the
+    // same honest-degraded outcome a failed one already had.
+    console.error("[insights/set-squeeze] initial fetch", e instanceof Error ? e.message : e)
     return { rows: [], ok: false }
   }
-  return { rows: (data ?? []) as Row[], ok: true }
 }
 
 export default async function SetSqueezePage() {

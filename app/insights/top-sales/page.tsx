@@ -18,18 +18,17 @@ import TopSalesBoardClient, { type Row } from "./TopSalesBoardClient"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { fetchTopSales } from "@/lib/insights/top-sales"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 // Sales move faster than trophies; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
 async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string; ok: boolean }> {
   try {
-    const { rows, fetchedAt } = await fetchTopSales({
-      collection: null,
-      window: "7d",
-      sort: "price",
-      limit: 100,
-    })
+    const { rows, fetchedAt } = await withBoardBudget(
+      fetchTopSales({ collection: null, window: "7d", sort: "price", limit: 100 }),
+      "top-sales",
+    )
     return { rows: rows as Row[], fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/top-sales] initial fetch", e instanceof Error ? e.message : e)

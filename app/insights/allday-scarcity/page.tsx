@@ -15,6 +15,7 @@
 
 import { fetchAllDayScarcityBoard } from "@/lib/insights/allday-scarcity-board"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import AllDayScarcityBoardClient, { type Row } from "./AllDayScarcityBoardClient"
 
 // Match the API route's 30-minute edge cache (editions change slowly).
@@ -32,12 +33,20 @@ export const revalidate = 1800
 // to "no edition is scarcer than its family", i.e. a statement timeout rendered as a
 // measurement. See lib/insights/board-status.ts.
 async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
-  const { data, error } = await fetchAllDayScarcityBoard({ limit: 100 })
-  if (error) {
-    console.error("[insights/allday-scarcity] initial fetch", error.message)
+  try {
+    const { data, error } = await withBoardBudget(fetchAllDayScarcityBoard({ limit: 100 }), "allday-scarcity")
+    if (error) {
+      console.error("[insights/allday-scarcity] initial fetch", error.message)
+      return { rows: [], ok: false }
+    }
+    return { rows: (data ?? []) as Row[], ok: true }
+  } catch (e) {
+    // A BUDGET OVERRUN lands here, not in the `error` branch above:
+    // withBoardBudget REJECTS, which is how a merely-SLOW read reaches the
+    // same honest-degraded outcome a failed one already had.
+    console.error("[insights/allday-scarcity] initial fetch", e instanceof Error ? e.message : e)
     return { rows: [], ok: false }
   }
-  return { rows: (data ?? []) as Row[], ok: true }
 }
 
 export default async function AllDayScarcityPage() {

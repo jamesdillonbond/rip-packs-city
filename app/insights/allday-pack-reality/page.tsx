@@ -17,6 +17,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
+import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export const revalidate = 600
 
@@ -67,7 +68,8 @@ async function fetchBuckets(): Promise<Buckets> {
   // 1,559 rows qualify against the 1,000-row cap — the worst truncation of the
   // three pack boards: ~559 rows were being dropped, arbitrarily (no .order()),
   // before the over/under/on-model buckets were computed from them.
-  const { rows: data, error } = await fetchAllPaged<RealizedRow>(
+  const { rows: data, error } = await withPagedBoardBudget(
+    fetchAllPaged<RealizedRow>(
     (from, to) =>
       sb
         .from("v_allday_pack_realized_ev")
@@ -86,6 +88,8 @@ async function fetchBuckets(): Promise<Buckets> {
         .order("dist_id", { ascending: true })
         .range(from, to),
     { label: "insights/allday-pack-reality" },
+  ),
+    "allday-pack-reality",
   )
   const fetchedAt = new Date().toISOString()
   if (error) {

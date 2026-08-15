@@ -93,3 +93,85 @@ describe("fetchBoardForPage — a SLOW read is as unservable as a broken one", (
     expect(BOARD_LIVE_TIMEOUT_MS).toBeGreaterThan(1_000)
   })
 })
+
+describe("withPagedBoardBudget — the fetchAllPaged flavour RESOLVES, never rejects", () => {
+  it("passes a fast paged read straight through", async () => {
+    const { withPagedBoardBudget } = await import("@/lib/insights/board-page-fetch")
+    const res = await withPagedBoardBudget(
+      new Promise<{ rows: number[]; error: string | null }>((r) =>
+        setTimeout(() => r({ rows: [1, 2], error: null }), 5),
+      ),
+      "board",
+      200,
+    )
+    expect(res).toEqual({ rows: [1, 2], error: null })
+  })
+
+  it("turns an overrun into an ERROR STRING, not a rejection", async () => {
+    // ⚠ THE WHOLE REASON THIS EXISTS. The paged pages have an `if (error)`
+    // degraded branch and NO try/catch, so a rejection would escape and throw
+    // during the static export — failing the build just as surely as the hang it
+    // replaces, only faster and with a more confusing message.
+    const { withPagedBoardBudget } = await import("@/lib/insights/board-page-fetch")
+    const res = await withPagedBoardBudget(
+      new Promise<{ rows: number[]; error: string | null }>(() => {}),
+      "board",
+      20,
+    )
+    expect(res.rows).toEqual([])
+    expect(res.error).toMatch(/exceeded 20ms/)
+  })
+
+  it("does not reject even when the underlying read rejects", async () => {
+    // Belt and braces: the caller has no catch, so a rejecting source must not
+    // become an unhandled throw at prerender time either.
+    const { withPagedBoardBudget } = await import("@/lib/insights/board-page-fetch")
+    await expect(
+      withPagedBoardBudget(
+        Promise.reject(new Error("ECONNRESET")),
+        "board",
+        200,
+      ),
+    ).rejects.toThrow("ECONNRESET")
+  })
+})
+
+describe("the budget timer is cleared, not leaked", () => {
+  // ⚠ NOT observable from a return value — a leaked timer changes nothing a
+  // caller can see, so removing the `finally` SURVIVED every assertion above.
+  // During a static export a pending 8s timer keeps the event loop alive, which
+  // would turn a bound meant to make the build faster into a source of delay on
+  // every fast board. Spying on clearTimeout is what makes the `finally` load-
+  // bearing.
+  it("clears the timer when the read wins the race", async () => {
+    const { withBoardBudget } = await import("@/lib/insights/board-page-fetch")
+    const spy = vi.spyOn(globalThis, "clearTimeout")
+    try {
+      await withBoardBudget(
+        new Promise<string>((r) => setTimeout(() => r("fast"), 5)),
+        "board",
+        5_000,
+      )
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("clears the timer on the paged flavour too", async () => {
+    const { withPagedBoardBudget } = await import("@/lib/insights/board-page-fetch")
+    const spy = vi.spyOn(globalThis, "clearTimeout")
+    try {
+      await withPagedBoardBudget(
+        new Promise<{ rows: number[]; error: string | null }>((r) =>
+          setTimeout(() => r({ rows: [], error: null }), 5),
+        ),
+        "board",
+        5_000,
+      )
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
