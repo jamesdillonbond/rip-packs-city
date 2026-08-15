@@ -546,6 +546,148 @@ describe("allday-sales-indexer — V1 reduced-payload enrichment", () => {
 })
 
 describe("allday-sales-indexer — degradation + control flow", () => {
+  // ── fetchTxBuyers: buyer recovery when the sale carries no buyer ──────────
+  //
+  // The Cadence fallback resolver borrows the moment FROM A CANDIDATE WALLET to
+  // learn its edition + serial, so it needs an address. When the sale itself has
+  // no buyer it recovers candidates from the transaction's proposer /
+  // authorizers / payer — and must drop the three INFRASTRUCTURE addresses,
+  // because a Flowty-fork sale names the fee router rather than the collector
+  // (CLAUDE.md, per-collection Cadence gotchas).
+  //
+  // Two things go wrong if EXCLUDED_ADDRESSES stops applying, and only the first
+  // is loud: the borrow is attempted against a wallet that does not hold the
+  // moment (wasted Cadence calls), and — the real cost — an infrastructure
+  // address becomes a plausible "buyer" for downstream attribution.
+  //
+  // This path was entirely uncovered: every existing resolver case supplies a
+  // decoded buyer, so `candidates.length === 0` was never reached.
+  it("recovers buyer candidates from the tx when the sale has none, and drops the infrastructure addresses", async () => {
+    const tx1 = "f".repeat(64)
+    // No buyer from the V1 decode -> candidates start empty -> fetchTxBuyers runs.
+    state.decodeByTx[tx1] = { buyer: null, seller: null }
+    state.hydrateResults = [{ ok: true, external_id: "902" }]
+
+    // Every Address argument the borrow script was called with.
+    const borrowAddresses: string[] = []
+
+    fetchMock = installFetchMock([
+      // Must precede flowRestStubs' catch-all, which answers this route empty.
+      {
+        match: (url) => url.includes("/v1/transactions/"),
+        respond: () => ({
+          json: {
+            // Flowty fee payer — excluded.
+            proposal_key: { address: "0x18eb4ee6b3c026d2" },
+            // Flowty storefront escrow (excluded) + the real collector.
+            authorizers: ["0x3cdbb3d569211ff3", "0x9999999999999999"],
+            // Dapper DUC co-signer — excluded.
+            payer: "0xead892083b3e2c6c",
+          },
+        }),
+      },
+      {
+        match: (url) => url.includes("/v1/scripts"),
+        respond: (_url, init) => {
+          const body = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}"))
+          for (const a of (body.arguments ?? []) as string[]) {
+            const arg = JSON.parse(Buffer.from(a, "base64").toString("utf8"))
+            if (arg?.type === "Address") borrowAddresses.push(String(arg.value))
+          }
+          return {
+            json: scriptResult({
+              id: "607",
+              editionID: "902",
+              serialNumber: "11",
+              mintingDate: "1700000000.0",
+            }),
+          }
+        },
+      },
+      ...flowRestStubs({
+        v1: [eventBlock({ height: 1103, txId: tx1, eventType: V1_TYPE, payload: v1SalePayload("607", "778") })],
+      }),
+    ])
+
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: {
+        data: [{ listing_resource_id: "778", price_usd: 30, seller_address: "0x4444444444444444" }],
+        error: null,
+      },
+      wallet_moments_cache: { data: [], error: null },
+      editions: [
+        { data: [], error: null },
+        { data: [{ id: "uuid-902", external_id: "902" }], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // THE ASSERTION: the borrow used the collector, never an infrastructure wallet.
+    expect(borrowAddresses).toContain("0x9999999999999999")
+    for (const infra of ["0x18eb4ee6b3c026d2", "0x3cdbb3d569211ff3", "0xead892083b3e2c6c"]) {
+      expect(borrowAddresses, `${infra} is infrastructure and must never be borrowed against`).not.toContain(infra)
+    }
+
+    // Recovery actually produced a resolution rather than merely not crashing.
+    const mapUpsert = spy.writes.nft_edition_map?.find((w) => w.method === "upsert")
+    expect(mapUpsert?.rows[0]).toMatchObject({
+      nft_id: "607",
+      edition_external_id: "902",
+      serial_number: 11,
+    })
+  })
+
+  // The mirror case: when the tx yields ONLY infrastructure addresses there is no
+  // candidate at all, and the resolver must SKIP rather than borrow against one.
+  it("skips the resolve when the tx yields only infrastructure addresses", async () => {
+    const tx1 = "c".repeat(63) + "d"
+    state.decodeByTx[tx1] = { buyer: null, seller: null }
+    let borrowCalls = 0
+
+    fetchMock = installFetchMock([
+      {
+        match: (url) => url.includes("/v1/transactions/"),
+        respond: () => ({
+          json: {
+            proposal_key: { address: "0x18eb4ee6b3c026d2" },
+            authorizers: ["0x3cdbb3d569211ff3"],
+            payer: "0xead892083b3e2c6c",
+          },
+        }),
+      },
+      {
+        match: (url) => url.includes("/v1/scripts"),
+        respond: () => {
+          borrowCalls++
+          return { json: scriptResult(null) }
+        },
+      },
+      ...flowRestStubs({
+        v1: [eventBlock({ height: 1103, txId: tx1, eventType: V1_TYPE, payload: v1SalePayload("609", "779") })],
+      }),
+    ])
+
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: {
+        data: [{ listing_resource_id: "779", price_usd: 12, seller_address: "0x4444444444444444" }],
+        error: null,
+      },
+      wallet_moments_cache: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(borrowCalls, "no candidate survives the filter, so nothing is borrowed").toBe(0)
+    // The sale is not silently dropped — it lands in unmapped for a later pass.
+    expect((spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+  })
+
   it("an unresolvable sale (wmc miss, borrow nil) lands in unmapped_sales with its hint", async () => {
     const tx1 = "a".repeat(63) + "b"
     state.decodeByTx[tx1] = { buyer: "0x7777777777777777" }

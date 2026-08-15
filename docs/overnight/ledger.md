@@ -8,6 +8,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+<<<<<<< Updated upstream
 ### 2026-08-15 · SHIPPED (Claude Code, interactive) — a live monitor had never written a single `pipeline_runs` row, and Candy's listings sweep could not be told apart from a dead cron
 
 - **Code + tests, direct to `main`: `app/api/cron/stale-fmv-monitor`, `app/api/candy-listings-indexer`, +1 guard (5 tests). No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing change.** Revert: `git revert <sha>`. Drains deep-audit **R11**.
@@ -18,6 +19,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - ⚠ **METHOD, paid for twice in one pass.** A sweep for invalid params first reported **9 broken pipelines**; the live data contradicted it (`topshot-listing-cache` was flagged "cannot log" while logging 228 rows minutes earlier), and the cause was my own parser counting snake_case keys nested inside `p_extra`. A depth-1 rewrite reduced 9 → 1 real defect. **When a guard and a measurement disagree, believe the measurement.** The guard now carries a guards-the-guard case pinning the depth-1 rule.
 - **Guard** (`log-pipeline-run-args-match-the-function.test.ts`): every call site's top-level args must be a subset of the live signature, must carry `p_pipeline`, and must never pass `p_duration_ms`. Mutation-proven — restoring `p_duration_ms` reds 3 of 5.
 - **Verified:** `tsc` clean; primary **11,847 passed / 1,205 files / 0 failures**.
+=======
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of these", cont.) — drove the AllDay buyer-recovery path that every existing ingest test structurally could not reach
+
+- **What.** `fetchTxBuyers` in `app/api/allday-sales-indexer/route.ts` recovers buyer candidates from a transaction's proposer / authorizers / payer when the sale itself carries no buyer, then borrows the moment from a candidate wallet to learn its edition + serial. It was **entirely uncovered** — and not by oversight: every existing resolver case supplies a decoded buyer, so the `candidates.length === 0` branch that calls it was **unreachable by construction** in the whole suite. Same shape as the `withDeadline` abort path this file records (a mechanism's own derivation deciding what it can observe).
+- **Why it matters.** A Flowty-fork sale names the **fee router**, not the collector, so `EXCLUDED_ADDRESSES` (Flowty escrow `0x3cdbb3d569211ff3`, Flowty fee payer `0x18eb4ee6b3c026d2`, Dapper DUC co-signer `0xead892083b3e2c6c`) is what stops an infrastructure wallet becoming a plausible buyer for downstream attribution. Nothing tested that.
+- **Added** two cases to `__tests__/api-allday-sales-indexer-deep.test.ts` (test-only — the route is byte-unchanged): one asserting the borrow is attempted against the real collector and **never** against any of the three infrastructure addresses (captured by decoding the base64 Cadence `Address` args off the script POST body), and the mirror case asserting that a tx yielding ONLY infrastructure addresses results in **zero borrow calls** and the sale landing in `unmapped_sales` rather than being silently dropped.
+- **Coverage on that route: 85.49 → 89.07 st · 65.53 → 67.47 br · 93.1 → 100 fn · 89.38 → 92.35 ln.** 3 mutations, all killed (filter removed / authorizers dropped / `fetchTxBuyers` never called).
+- ⚠ **The rest of that cluster's ~940 uncovered branches is mostly NOT drivable this way** — it is Flow REST and Cadence network surface, which is the exception `vitest.config.ts` already documents. The pure helpers (`unwrapCdc` array arms, timestamp normalisation, the first-run cursor bootstrap at `currentHeight - 1000`) are module-private and reachable only through the route; worth doing, not done here.
+- **Revert:** `git revert <sha>`. Test-only, no DB or route change.
+>>>>>>> Stashed changes
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of these", cont.) — ⚠ USER-FACING: /alerts told a collector "No alerts yet" and "not linked" off a FAILED read; + re-seated the component ratchet
 
