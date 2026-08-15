@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, docs — thread wrap-up) — recorded the ship→measure→revert arc in the session entry, and verified the deploy for the migration commit
+
+- **Docs only** — `CLAUDE.md`. No code, no DB, no migration, no cron, no prod state.
+- **Deploy verified for `255e7d24`** (the migration commit, which touches `supabase/migrations/*.sql` and so is NOT excluded by `vercel.json`'s `ignoreCommand`): `dpl_9ZKBBru1inV7TkozG9aQa6CAZee2` **READY**, target production, `lambdaRuntimeStats` present. The docs-only `a2cbf388` shows CANCELED — superseded by the next push, which is the expected outcome for a docs commit, not a failure.
+- **Session entry now covers the whole thread**, not just the docs half: the 999-sentinel defect, the three measurements that killed the obvious fix, the two traps caught mid-flight (an unannounced `SECURITY DEFINER` on a procedure that had none; `cron_heavy` lacking SELECT so the tail check would have failed every tick), and the grant drift I caused and fixed.
+- ⚠ **Corrected a phrasing in my own entry from earlier today:** it read "eight `PERFORM`/`COMMIT` lines with ZERO exception handlers", which is true of the ORCHESTRATOR and misleading about the LEGS — each leg has a handler, and the point is that those handlers are structurally unreachable on a timeout. A reader acting on the original phrasing would have gone to add handlers that already exist.
+- ⚠ **Also recorded a verification bug of mine:** `cmd | tail -5 && echo "EXIT=$?"` reports `tail`'s status, not the command's — it printed `TSC_EXIT=0` from a sandbox with no `node_modules`. Read `${PIPESTATUS[0]}` or run bare.
+
+**Open, carried forward (nothing silently dropped):** the precompute structural fix (8 pg_cron entries, one per leg) is FILED not taken — `docs/overnight/inbox/2026-08-15T2240Z-…`; the legacy zero-caller monolith `rpc_trust_health_precompute_refresh` is a deletion candidate in the same window; `trust_precompute_max_age_hours` stays breached until a tick reaches leg 8; and `fmv_sweep_wedge_hours` (7.40) plus `public_board_slow_count` (14) remain views of the one saturation root cause, already filed by a concurrent session.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-15 · SHIPPED then REVERTED same session (Claude Code, interactive — followed the docs pass into the precompute defect) — the trust board's 999 failure sentinel is UNREACHABLE on a timeout; the obvious fix trades a bounded failure for an unbounded one
 
 **What (net prod change: ZERO — applied, measured, reverted, verified):** three migrations,
