@@ -563,11 +563,26 @@ export default defineConfig({
       //     47f901a1) without leaving points unguarded. The rule this encodes:
       //     re-seat the ratchet in the SAME pass that measures a drift, because
       //     "keep the buffer" is exactly how the 13pt version accumulated.
+      //   2026-08-15 (0%-coverage component wave, SAME DAY as the re-seat
+      //     above): raised again because this wave really did ADD coverage —
+      //     six gated components were sitting at 0% STATEMENTS, i.e. never
+      //     rendered by any test while still counting against this gate:
+      //     ProBadge, GlobalSiteHeader, SiteFooter, TeamLogo, ExploreSection
+      //     and SniperThumbnailPreview. Actuals moved 90.21/81.74/89.00/93.10
+      //     -> 90.72/82.08/89.55/93.68. Same ~0.4pt margin held.
+      //     ⚠ ProBadge is the one worth remembering: it carries an 11-line
+      //     comment describing the site-wide silent failure it narrowly avoided
+      //     (keyed on fcl.currentUser, permanently signed-out since the
+      //     2026-08-08 wallet-connect removal => every Pro and Founding badge
+      //     renders null, tsc green). Nothing pinned that fix. Verified by
+      //     mutation: re-keying it onto a null identity passed tsc AND the full
+      //     11,958-test suite. A near-miss earning a comment instead of a test
+      //     is the shape to watch for.
       thresholds: {
-        statements: 89.8,
-        branches: 81.3,
-        functions: 88.6,
-        lines: 92.7,
+        statements: 90.3,
+        branches: 81.6,
+        functions: 89.1,
+        lines: 93.2,
       },
     },
   },
