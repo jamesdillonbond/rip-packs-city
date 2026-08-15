@@ -218,6 +218,16 @@ export async function POST(req: NextRequest) {
         .insert({
           pipeline: "fmv-recalc-heartbeat",
           started_at: new Date(startTime).toISOString(),
+          // ⚠ finished_at pinned to started_at (2026-08-15) — telemetry only, no
+          // behaviour change. `duration_ms` is GENERATED ALWAYS AS
+          // (finished_at - started_at) and `finished_at` DEFAULTS TO now(), so
+          // omitting it made these marker rows publish the latency of their own
+          // INSERT as though it were the run's duration: measured live, 514 rows
+          // spanning 42ms-56s of pure insert cost, indistinguishable from a real
+          // reading. A hard 0 is an obvious sentinel instead. This does NOT touch
+          // the kill-detection correlation below, which keys on started_at and a
+          // NOT EXISTS against the terminal fmv-recalc row.
+          finished_at: new Date(startTime).toISOString(),
           ok: true,
           cursor_before: String(offset),
           cursor_after: String(offset),

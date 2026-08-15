@@ -108,6 +108,20 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         pipeline: PIPELINE,
         collection_slug: COLLECTION_SLUG,
         started_at: new Date(startedAt).toISOString(),
+        // ⚠ finished_at MUST be set explicitly here, to started_at (2026-08-15).
+        // `pipeline_runs.duration_ms` is GENERATED ALWAYS AS
+        // (finished_at - started_at) and `finished_at` DEFAULTS TO now(), so a
+        // marker that omits it publishes the latency of its OWN INSERT as the
+        // run's duration. These rows read 147/176/185 ms — and a deep audit
+        // took exactly that at face value, concluding the route "writes only
+        // the start marker (duration_ms 147-176 ms)" and was dying instantly.
+        // It is not: the route runs to its 300s maxDuration and is killed, the
+        // pre-existing failure mode (313s/257s kills on 2026-07-28/29). Pinning
+        // finished_at = started_at makes duration_ms 0 — an obvious sentinel
+        // that cannot be mistaken for a measurement of the run, which is the
+        // whole point of the marker. The real elapsed is written by the
+        // completion update below, and only a run that COMPLETED has one.
+        finished_at: new Date(startedAt).toISOString(),
         ok: false,
         error: "started (no completion recorded — killed at maxDuration?)",
         extra: { phase: "started" },
