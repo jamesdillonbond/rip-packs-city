@@ -143,6 +143,33 @@ meaningful contributor to the saturation it exists to survive.
   better than the status quo's worst case and worse than its best. **That is a product trade-off
   (freshness vs. reliability), not an engineering one** — Trevor's call.
 
+### UPDATE 2026-08-15 — the first view fix SHIPPED (`audit_20260815_deals_board_prune_empty_fmv_partitions`)
+
+Profiled the arms of `cross_collection_deals_board` individually. **`topshot_deals_vs_fmv` alone
+measured 42,333 ms** — past the 30 s `statement_timeout`, which is the whole reason `deals` fails
+59.5% of ticks. Its correlated LATERAL runs **6,246 times**, and the **empty `fmv_snapshots_2027`
+partition was probed on every one** at 2 buffers each: **12,492 buffers, 30% of the query's entire
+buffer traffic, for zero rows.** The AllDay arm did the same 2,229 times (4,458 buffers, 18.6%).
+
+Shipped `AND fs.computed_at <= now()` into both LATERALs in ONE migration (one schema-cache burst
+instead of two). **Verified after apply: output byte-identical** — md5
+`5c1d65ba581f8544a8647a85477b6766`, 18 rows, unchanged — with `Subplans Removed: 1` confirming
+runtime pruning. **Buffers 41,044 → 28,566 (−30.4%)**, exactly the predicted saving.
+
+⚠ **It is an IMPROVEMENT, NOT A FIX, and the board will still fail some ticks.** Post-change the
+query still measures ~30.5 s under load, because the remaining cost is 6,246 correlated probes into
+`fmv_snapshots_2026` at ~4.8 ms each — IO-bound on a 2 GB instance, not a plan defect. Time on this
+instance is too noisy to quote as a speedup; **the buffer reduction is the deterministic result.**
+
+⚠ **The obvious next step was TESTED AND IS WORSE.** Replacing the LATERAL with a
+`DISTINCT ON (edition_id)` CTE over the Top Shot partition **timed out at 60 s**. The correlated
+probe is the right shape here — do not "fix" it that way.
+
+⚠ **DO NOT blanket-apply the predicate.** **101 objects** (83 functions + 18 views) match a loose
+"correlated `fmv_snapshots` + `ORDER BY computed_at DESC`" scan, but the empty-partition waste only
+matters where the lookup is executed **per row**; in a once-per-query CTE it costs 2 buffers total.
+Each candidate needs its own measurement, and 101 redefinitions in one migration would be reckless.
+
 The durable fix underneath all three is making the six views cheaper, which is the migration work
 at the top of this section. Related: the entity-page timeout filing (`2026-08-15T0450Z`) reaches
 the same conclusion from the other direction — the platform's bottleneck is concurrent connections
