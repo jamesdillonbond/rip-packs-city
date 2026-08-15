@@ -817,6 +817,101 @@ const PINS = [
     migration:
       "supabase/migrations/20260804220000_audit_20260804_unmapped_sales_onchain_attempts_counter.sql",
   },
+  // ── Added 2026-08-15: the SCHEDULED DELETERS ───────────────────────────────
+  // Measured on the live instance that day: 183 SECDEF functions in `public`
+  // WRITE (insert/update/delete), 66 were pinned, 117 were not — and 25 of the
+  // unpinned ones run on an ACTIVE pg_cron schedule. These three are the
+  // deleters in that set, chosen first because a delete is the failure mode
+  // this layer cannot recover from: over-deletion produces an ABSENCE, not an
+  // error, so nothing downstream reports it.
+  {
+    // pg_cron `41 */6 * * *`. Deletes from pipeline_runs — the only record that
+    // a run happened. A row pruned early is indistinguishable from "the
+    // pipeline never ran", which CLAUDE.md records two sessions independently
+    // mis-reading. Pins the retention BOUNDARY in both directions (the fixture
+    // sits exactly ON the cutoff, because a boundary test that is merely NEAR
+    // the boundary passes under both `<` and `<=`), and that a NULL started_at
+    // is never age-pruned.
+    fn: "prune_pipeline_runs",
+    test: "supabase/tests/prune_pipeline_runs.sql",
+    migration:
+      "supabase/migrations/20260815203500_audit_20260815_snapshot_prune_pipeline_runs.sql",
+  },
+  {
+    // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
+    // destructive-op circuit breaker, so this pin is the ONLY remaining check
+    // on what it deletes from wallet_moments_cache. Pins that the SURVIVOR is
+    // the newest row per moment_id — inverting the ORDER BY keeps the ghost and
+    // deletes the live owner, with an identical row count either way — and that
+    // the collection scope holds (moment_id is not unique across collections).
+    fn: "purge_candy_wmc_ghost_rows",
+    test: "supabase/tests/purge_candy_wmc_ghost_rows.sql",
+    migration:
+      "supabase/migrations/20260815203600_audit_20260815_snapshot_purge_candy_wmc_ghost_rows.sql",
+  },
+  {
+    // pg_cron `20 10 * * 0`. A WEEKLY delete against the ~2.2M-row portfolio
+    // store. The 14-day bound appears TWICE and the copy inside the per-wallet
+    // DELETE is load-bearing: without it, a wallet that qualifies on one stale
+    // row loses its ENTIRE cache including moments seen minutes ago. Also pins
+    // the seeded exemption in BOTH directions (active exempt, inactive not).
+    fn: "prune_stale_wmc",
+    test: "supabase/tests/prune_stale_wmc.sql",
+    migration:
+      "supabase/migrations/20260815203700_audit_20260815_snapshot_prune_stale_wmc.sql",
+  },
+  // ── Added 2026-08-15: scheduled writers that already had a matching
+  // committed migration, so they needed only a test. Worth checking for before
+  // authoring a snapshot — all four were verified byte-identical to live prosrc
+  // and cost nothing but the test file.
+  {
+    // pg_cron `11 */6 * * *`. Writes pipeline_runs_daily, the INDEFINITE archive
+    // and the only place pipeline history older than ~73h exists. The MONOTONE
+    // GUARD (`WHERE EXCLUDED.runs >= d.runs`) is the invariant: the oldest day in
+    // the re-aggregation window is being concurrently half-deleted by the pruner,
+    // so without it a pass overwrites a complete day with a truncated count — a
+    // plausible smaller number that nothing downstream flags.
+    fn: "rollup_pipeline_runs",
+    test: "supabase/tests/rollup_pipeline_runs.sql",
+    migration:
+      "supabase/migrations/20260806034500_audit_20260806_rollup_pipeline_runs_shape_defensive_extra.sql",
+  },
+  {
+    // pg_cron `7-57/10 * * * *` (jobid 303), and the platform's #2 disk reader
+    // (112 GB). Propagates fmv_snapshots into wmc.fmv_usd, the column ~34 DB
+    // functions sum for a collector's portfolio total. Pins the latest-snapshot
+    // selection, the (collection_id, edition_key) join — external_id is NOT
+    // unique across collections — and the IS DISTINCT FROM churn guard, which is
+    // an IO-budget property on a disk-throttled instance rather than a
+    // micro-optimisation.
+    fn: "refresh_wmc_fmv_changed",
+    test: "supabase/tests/refresh_wmc_fmv_changed.sql",
+    migration:
+      "supabase/migrations/20260813143704_audit_20260813_wmc_changed_chunk_is_not_budget_scaled.sql",
+  },
+  {
+    // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
+    // `public_board_slow_count` trust arm, which is breached and being acted on.
+    // Pins the SLOW-vs-EMPTY split: a 57014 means the board renders too slowly
+    // (a perf signal), any other error means it renders BLANK (a correctness
+    // signal), and the operator's next action differs completely.
+    fn: "public_board_liveness_sweep",
+    test: "supabase/tests/public_board_liveness_sweep.sql",
+    migration:
+      "supabase/migrations/20260810233442_audit_20260810_board_liveness_honest_sweep_decoupled.sql",
+  },
+  {
+    // pg_cron `29 * * * *`. Feeds `unmapped_resolution_backlog_max`, also
+    // breached. Pins `open_gross_unsplittable_rows` (rows in a multi-NFT tx
+    // cannot be priced per-NFT, so they are permanently undrainable — which is
+    // precisely the "exclude on a REASON" the arm's own text asks for), and that
+    // `days_to_drain` stays NULL unless the backlog is genuinely draining rather
+    // than publishing a negative ETA.
+    fn: "refresh_unmapped_backlog_growth",
+    test: "supabase/tests/refresh_unmapped_backlog_growth.sql",
+    migration:
+      "supabase/migrations/20260810030734_audit_20260809_unmapped_backlog_growth_precompute_cache.sql",
+  },
 ]
 
 /**
