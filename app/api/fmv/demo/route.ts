@@ -2,14 +2,23 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { apiErrorResponse } from "@/lib/api-error";
+import { fmvSerialMultiplier as sm } from "@/lib/fmv/serial-multiplier";
 
-function sm(serial: number, circ: number): number {
-  if (serial === 1) return 12.0;
-  if (serial <= 10) return 4.5;
-  if (serial <= 23) return 2.8;
-  if (serial === circ) return 3.0;
-  return Math.max(1.0, Math.pow(circ / 2 / serial, 0.4));
-}
+// ⚠ This route used to carry its OWN COPY of the serial multiplier, and the copy
+// had DRIFTED from the real one — its ordinary-serial tail was
+// `max(1, (circ/2/serial)^0.4)` where `/api/fmv` computes
+// `1 + 0.08·max(0, 1 - serial/circ)`. Those are not near each other: for serial
+// 100 of a /1000 edition the fork returned 1.90x and the real endpoint returns
+// 1.07x, so this demo — the public, no-auth, 1h-cached surface whose ENTIRE
+// PURPOSE is to show a developer what the API does — overstated the serial
+// premium by 77% and published a formula string to match.
+//
+// A demo that does not call the real code path is a second implementation, and
+// it will drift again. It now imports the shared module (which exists so "the
+// pure multiplier can be unit-tested and its constants pinned"), and
+// `__tests__/api-fmv-demo-docs-match-implementation.test.ts` derives the
+// documented breakpoints FROM that module so the published spec cannot diverge
+// from the code again.
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
 export async function GET() {
@@ -69,8 +78,8 @@ export async function GET() {
       updatedAt: row.computed_at,
       note: "Serial-adjusted examples use default circ=1000; pass ?serial=N to the single endpoint for precise adjustment",
       exampleAdjustments: {
-        serial1:   { serial: 1,   serialMult: 12.0,              adjustedFmv: r2(base * 12.0) },
-        serial23:  { serial: 23,  serialMult: 2.8,               adjustedFmv: r2(base * 2.8) },
+        serial1:   { serial: 1,   serialMult: r2(sm(1, defaultCirc)),   adjustedFmv: r2(base * sm(1, defaultCirc)) },
+        serial23:  { serial: 23,  serialMult: r2(sm(23, defaultCirc)),  adjustedFmv: r2(base * sm(23, defaultCirc)) },
         serial100: { serial: 100, serialMult: r2(sm(100, defaultCirc)), adjustedFmv: r2(base * sm(100, defaultCirc)) },
       },
     });
@@ -88,7 +97,17 @@ export async function GET() {
     },
     editionKeyFormat: "setUUID:playUUID — from Top Shot's edition system",
     confidenceLevels: { high: "5+ sales/7d", medium: "2–4 sales/7d", low: "0–1 sales/7d" },
-    serialMultipliers: { "1": "12x", "2–10": "4.5x", "11–23": "2.8x", lastMint: "3x", other: "max(1, (circ/2/serial)^0.4)" },
+    // Derived from lib/fmv/serial-multiplier so this published spec cannot
+    // drift from the code again (circ=2000 is a probe value picked only so the
+    // banded branches, not the `serial === circ` one, decide each entry).
+    serialMultipliers: {
+      "1": `${sm(1, 2000)}x`,
+      "2–10": `${sm(10, 2000)}x`,
+      "11–23": `${sm(23, 2000)}x`,
+      lastMint: `${sm(2000, 2000)}x (applies only when serial === circulation)`,
+      other: "1 + 0.08 * max(0, 1 - serial/circ)",
+      note: "The single endpoint currently evaluates the curve at a default circ=1000 because it does not read circulation; the banded entries above (serial 1, <=10, <=23) are unaffected by that, the others are approximate.",
+    },
     sampleCount: samples.length,
     samples,
   }, { headers: { "Cache-Control": "public, max-age=3600" } });
