@@ -1701,7 +1701,9 @@ function SniperMomentsBody() {
           officialBadges: [],
           imageUrlPrefix: null,
           buyUrl: resolveViewUrl(selectedDeal, feedCollection) ?? selectedDeal.buyUrl,
+          editionKey: selectedDeal.editionKey ?? null,
         } : null}
+        collectionUrlSlug={collectionSlug}
         marketplaceSource={selectedDeal?.source === "flowty" ? "flowty" : "topshot"}
         dapperUrl={selectedDeal ? resolveDapperUrl(selectedDeal, feedCollection) : null}
         onClose={() => setSelectedDeal(null)}

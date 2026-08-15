@@ -224,3 +224,111 @@ describe("MomentDetailModal — quirky-serial chips", () => {
     expect(style).toContain("--rpc-surface-raised")
   })
 })
+
+// The bio-dependent quirk kinds (2026-08-15). `classifySerial` has always been
+// able to emit jersey_match / birthday_match / draft_year_match, but BOTH of
+// its production callers passed only `circulationCount`, so three of its eleven
+// kinds were structurally unreachable however correct the pure function was.
+// The modal now looks the bio up lazily; these pin that it reaches the
+// classifier AND that every failure mode degrades instead of breaking.
+describe("MomentDetailModal — player-bio quirk chips", () => {
+  const KEY = { editionKey: "5:145" }
+
+  function stubBio(body: unknown, ok = true) {
+    const fetchMock = vi.fn(async (_url: string) => ({ ok, json: async () => body }))
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("shows a jersey-match chip once the bio lookup lands", async () => {
+    stubBio({ jerseyNumber: 7, birthdate: null, draftYear: null })
+    const { findByText } = render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: 7, mintSize: 3000, ...KEY })}
+        collectionUrlSlug="nba-top-shot"
+        onClose={() => {}}
+      />
+    )
+    // Serial 7 is also a meme serial, so assert the chip that can ONLY come
+    // from the bio — otherwise this passes with the wiring removed.
+    const chip = await findByText("Jersey match")
+    expect(chip.getAttribute("title")).toContain("7")
+  })
+
+  it("queries the bio arm for this edition, scoped to the collection", async () => {
+    const fetchMock = stubBio({ jerseyNumber: 7, birthdate: null, draftYear: null })
+    render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: 7, mintSize: 3000, ...KEY })}
+        collectionUrlSlug="nba-top-shot"
+        onClose={() => {}}
+      />
+    )
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain("part=bio")
+    expect(url).toContain("editionKey=5%3A145")
+    // The bio lives on `editions` scoped by collection_id — an unscoped
+    // external_id is not unique across collections.
+    expect(url).toContain("collection=nba-top-shot")
+  })
+
+  it("shows a draft-year chip and a birthday chip from the same lookup", async () => {
+    stubBio({ jerseyNumber: null, birthdate: "1990-07-06", draftYear: 2012 })
+    const { findByText } = render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: 2012, mintSize: 3000, ...KEY })}
+        collectionUrlSlug="nba-top-shot"
+        onClose={() => {}}
+      />
+    )
+    expect(await findByText("Draft year")).toBeTruthy()
+
+    cleanup()
+    stubBio({ jerseyNumber: null, birthdate: "1990-07-06", draftYear: 2012 })
+    const second = render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: 706, mintSize: 3000, ...KEY })}
+        collectionUrlSlug="nba-top-shot"
+        onClose={() => {}}
+      />
+    )
+    expect(await second.findByText("Birthday")).toBeTruthy()
+  })
+
+  it("degrades to the serial-intrinsic chips when the bio read fails", async () => {
+    // ⚠ FAIL-SOFT: a 503 must leave the palindrome chip standing, not blank the
+    // row and not throw. A missing chip understates; that is the safe direction.
+    stubBio({ error: "unavailable" }, false)
+    const { findByText, queryByText } = render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: 1221, mintSize: 3000, ...KEY })}
+        collectionUrlSlug="nba-top-shot"
+        onClose={() => {}}
+      />
+    )
+    expect(await findByText("Palindrome")).toBeTruthy()
+    expect(queryByText("Jersey match")).toBeNull()
+  })
+
+  it("does not fetch at all when the caller supplies no editionKey", () => {
+    // Every caller that has not been wired up must keep working untouched.
+    const fetchMock = stubBio({ jerseyNumber: 7, birthdate: null, draftYear: null })
+    render(
+      <MomentDetailModal moment={moment({ serialNumber: 7, mintSize: 3000 })} onClose={() => {}} />
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("does not fetch when the collection slug is missing", () => {
+    // An unscoped external_id would resolve the wrong collection's edition.
+    const fetchMock = stubBio({ jerseyNumber: 7, birthdate: null, draftYear: null })
+    render(
+      <MomentDetailModal moment={moment({ serialNumber: 7, mintSize: 3000, ...KEY })} onClose={() => {}} />
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

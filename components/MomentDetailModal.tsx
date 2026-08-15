@@ -55,7 +55,21 @@ export interface MomentDetailModalProps {
     acquisitionMethod?: string | null;
     sourceAddress?: string | null;
     loanPrincipal?: number | null;
+    /**
+     * `editions.external_id` for this moment. Optional, and used for ONE thing:
+     * looking up the player bio that unlocks the jersey / birthday / draft-year
+     * quirk chips. A caller that omits it still gets every serial-intrinsic
+     * quirk (palindrome, repdigit, meme, first / last mint).
+     */
+    editionKey?: string | null;
   } | null;
+  /**
+   * URL slug of the active collection (`nba-top-shot`, `nfl-all-day`, …).
+   * Required alongside `moment.editionKey` for the bio lookup — the bio lives
+   * on `editions` scoped by `collection_id`, and an unscoped `external_id` is
+   * not unique across collections.
+   */
+  collectionUrlSlug?: string | null;
   /**
    * Where buyUrl originates. When 'flowty' the Buy CTA is hidden (that
    * marketplace shut down May 2026).
@@ -91,13 +105,56 @@ function getVideoUrl(prefix: string | null | undefined): string | null {
   return `${prefix}Animated_1080_1080_Black.mp4`;
 }
 
-export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl, onClose }: MomentDetailModalProps) {
+interface SerialBio {
+  jerseyNumber: number | null;
+  birthdate: string | null;
+  draftYear: number | null;
+}
+
+export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl, collectionUrlSlug, onClose }: MomentDetailModalProps) {
   const [hovered, setHovered] = useState(false);
+  const [bio, setBio] = useState<SerialBio | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Modal a11y: escape-to-close, focus trap, restore focus on close (Moment V3).
   // Attach modalRef to the dialog content container below.
   const modalRef = useModalA11y<HTMLDivElement>(!!moment, onClose);
+
+  const editionKey = moment?.editionKey ?? null;
+
+  // Player bio for the three CONTEXT-dependent quirk kinds (jersey_match,
+  // birthday_match, draft_year_match). Without it those three are structurally
+  // unreachable here however correct `classifySerial` is — the pure function
+  // and the columns that feed it shipped a day apart and nothing joined them.
+  //
+  // Fetched lazily on open rather than threaded through the wallet-moments and
+  // sniper-feed queries: the collection table routinely holds hundreds of rows
+  // and a collector opens one, so a per-row join would pay for bio nobody sees.
+  //
+  // ⚠ FAIL-SOFT BY DESIGN. Any failure leaves `bio` null and the chips degrade
+  // to the serial-intrinsic set. The answer is smaller, never wrong — and a
+  // missing chip understates, which is the safe direction for a claim like
+  // "this serial is their jersey number".
+  useEffect(() => {
+    setBio(null);
+    if (!editionKey || !collectionUrlSlug) return;
+    let cancelled = false;
+    const qs = `collection=${encodeURIComponent(collectionUrlSlug)}&part=bio&editionKey=${encodeURIComponent(editionKey)}`;
+    fetch(`/api/entity/edition?${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j || typeof j !== "object") return;
+        setBio({
+          jerseyNumber: typeof j.jerseyNumber === "number" ? j.jerseyNumber : null,
+          birthdate: typeof j.birthdate === "string" ? j.birthdate : null,
+          draftYear: typeof j.draftYear === "number" ? j.draftYear : null,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [editionKey, collectionUrlSlug]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -289,7 +346,15 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             its own is unverifiable at a glance.
           */}
           {(() => {
-            const quirks = classifySerial(moment.serialNumber, { circulationCount: moment.mintSize });
+            const quirks = classifySerial(moment.serialNumber, {
+              circulationCount: moment.mintSize,
+              // Null until the bio lookup lands (or forever, if it fails or the
+              // collection has no bio source) — every one of these is optional
+              // in SerialContext, so the chip set simply grows when it arrives.
+              jerseyNumber: bio?.jerseyNumber ?? null,
+              birthdate: bio?.birthdate ?? null,
+              draftYear: bio?.draftYear ?? null,
+            });
             if (quirks.length === 0) return null;
             return (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} aria-label="Serial number quirks">

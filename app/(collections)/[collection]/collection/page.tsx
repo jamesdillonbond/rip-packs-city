@@ -1225,7 +1225,9 @@ function WalletMomentsBody() {
           acquisitionMethod: view.selectedMoment.acquisitionMethod ?? null,
           sourceAddress: view.selectedMoment.sourceAddress ?? null,
           loanPrincipal: view.selectedMoment.loanPrincipal ?? null,
+          editionKey: view.selectedMoment.editionKey ?? null,
         } : null}
+        collectionUrlSlug={collectionSlug}
         onClose={function() { dispatchView({ type: "SELECT_MOMENT", moment: null }) }}
       />
     </div>
