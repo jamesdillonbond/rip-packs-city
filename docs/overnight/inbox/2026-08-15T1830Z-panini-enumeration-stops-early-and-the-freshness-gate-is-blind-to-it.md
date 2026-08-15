@@ -1,7 +1,9 @@
 # Panini ingest: enumeration stops early, throughput down ~6×, and the freshness check is blind to it
 
 **Filed** 2026-08-15 ~11:30 PT (18:30Z) from the scheduled `panini-freshness-check`.
-**Nothing was changed.** No code, no DB, no cron. This is a filing, not a ship.
+**At filing time nothing had been changed** — no code, no DB, no cron.
+
+**STATUS UPDATE 2026-08-15 ~15:00 PT — partially resolved. See §9 before reading §6.**
 
 ---
 
@@ -90,6 +92,43 @@ So the stability heuristic is evaluated against a stream that is roughly half no
 
 **c. Rotation starvation.** `panini_coverage_summary.oldest_family_refresh_h` = **689.6 h (28.7 days)** vs newest 1.2 h. The public board's ≥48 h banner is disclosing honestly, but this worsens as throughput falls.
 
-## 9. Why nothing was shipped
+## 9. STATUS — what has since shipped (2026-08-15 ~15:00 PT)
+
+**Telemetry (§6, third bullet) — SHIPPED by a separate session, refactor `d5919b6b`.** Both halves are in place, verified by reading the current file rather than trusting the handoff:
+
+- Runner computes `enumStats` (`enum_stop`, `enum_iters`, `enum_ms`, `grid_pages`, `grid_items`, `wc_pskus`, `wc_share_pct`, `dom_added`) and posts it *before* the card walk, so it lands even if the walk is later killed.
+- ⚠ The load-bearing detail: `post()` previously opened with `n` summed from cards/packs/serials/sales and `if (!n) return;`, which would have **silently dropped every enum-only payload** — leaving exactly the symptom of a working route with no real rows, indefinitely. The guard was correctly widened to `if (!n && !payload.enum) return;`. Anyone touching `post()` must preserve that.
+- Route side is proven by two direct probes (`enum_stop` = `probe` / `postdeploy-probe`). ⚠ **Those probes exercise the route only** — the runner→route path had not executed in a real walk as of this writing.
+
+Also taken: the §6 interim band-aid, bounded — `PANINI_ENUM_STABLE` 5→8, `PANINI_ENUM_MAX_ITERS` 80→200, plus a new `PANINI_ENUM_BUDGET_MIN` (default 10 min). ⚠ That budget is 20% of the 50 min walk budget; raising it trades directly against card-walking time, so past a point the answer is the §6 preferred fix, not more patience.
+
+**The §5 gap is now instrumented.** `wc_share_pct` measures walk-wide WC share, which is the depth measurement §7 says I could not take. Compare it against the 48% page-1 static scan: materially lower means dilution deepens with depth and the cardset filter is justified on evidence rather than guessed at. The cardset filter itself was deliberately NOT taken — the URL param name is unestablished and guessing it in production ingest is the risk that made this filing hold off in the first place.
+
+**The gate (§1) — FIXED in the `panini-freshness-check` scheduled task.** Added:
+
+- **Escalation 2, a relative throughput check** on `panini_fmv_snapshots`, comparing each complete day against its trailing-7 average. ⚠ It judges **yesterday, never today**: the check runs at 11am PT with only the 02/06/10 walks in, so grading a partial day against full-day averages would fire every morning. Back-tested — healthy days read 84–138% of trailing-7 and the collapse days 35 / 28 / 22%, so the 55% threshold separates them with a wide margin and **would have fired on the morning of 08-14, two days before this was actually caught.** Deliberately relative, not absolute, because the catalogue grows and any fixed target goes stale (the mistake the previous gate made in the other direction).
+- ⚠ A caveat that a sustained collapse **depresses its own baseline** — `trailing7` has already decayed 877 → 710 — so a long outage eventually looks normal. Compare against the ~800 healthy-era figure too.
+- **Query 3 replaced**: zero-day detection now uses inter-walk gaps from `pipeline_runs_daily` (indefinite retention) instead of grouping `last_seen_at`, with the last-write-wins trap written out.
+- **Query 5 added** to read the new enum telemetry, with the three readings (`budget` / `stable`+low `wc_pskus` / no rows at all) mapped to their causes, and probe rows excluded.
+- **Case E re-worded** — it no longer asserts "died at the CDP step". That was wrong on 08-13: the PT 08-13 22:00 walk matched the signature having already enumerated 42 grid pages.
+- **Case A annotated** so a `✅` can never stand alone through a throughput collapse again.
+
+Both new queries were executed against prod before shipping, not just written.
+
+**Still open:** the §6 preferred fix (cardset filter) — now justified on evidence, see below.
+
+⚠ **CORRECTION (2026-08-15 ~14:50 PT): the first genuine enum row ALREADY EXISTS, and the read instructions this paragraph used to carry would have missed it three ways over.**
+
+- **It is not in the DB.** The runner generated it and wrote it to the local backup (`panini-capture.jsonl`, line 435 of 438) at ~14:29:28 PT — but the route deploy had not landed yet, so the old route saw a payload with no cards/packs/serials/sales and logged it as `skip:"empty"` under `panini-ingest`, **discarding the enum payload**. `panini-ingest-enum` holds only the two manual probes. So one of the five `skip:"empty"` rows previously read as "preflight" is in fact the enum row being destroyed — and `post()` returns early on a genuinely empty payload, which is the tell that those rows are not what they look like.
+- **The read path is wrong.** The pipeline is **`panini-ingest-enum`**, not `panini-ingest`, and the fields nest one level down: **`extra->'enum'->>'enum_stop'`**, not `extra->>'enum_stop'`. A top-level read returns NULL on every row and reads exactly like "the telemetry never shipped."
+- **The walk was NOT broken.** It enumerated 82 grid pages / 2,460 items / 536 WC pskus and captured cards normally. The 5 editions is the per-batch write, not the walk's reach — so the "if 18:00 also shows preflight rows with no cards, the refactor broke the walk" test would have raised a false alarm.
+
+⚠ **The §5/§7 gap is CLOSED, and it supports the cardset filter.** Measured walk-wide: `wc_share_pct` **21.8%** against the 48% page-1 static scan — **WC share less than halves with depth**, which is the dilution §5 predicted and the depth measurement §7 said it could not take. `dom_added: 0` on a real headful walk, so the DOM fallback genuinely contributes nothing (§7 was right to refuse that conclusion from the backgrounded tab; it is now measured).
+
+⚠ **`enum_stop` does not agree with its own constant — do not trust it as the primary diagnostic until reconciled.** The row reads `enum_stop:"budget"` with `enum_ms: 360553` (6.0 min), but the committed default is `PANINI_ENUM_BUDGET_MIN || 10` and no override exists in `.env`, `.env.local` or `panini-schedule.bat`. 360,553 ms fits a **6-minute** budget to within 553 ms, so a 6-min value was in force at walk time (an uncommitted probe value, or a Task Scheduler env). **A stop reason that disagrees with its own budget is the instrument-lies class this filing is about** — reconcile before reading `budget` as meaningful.
+
+**Full row, for the record:** `enum_stop:"budget" enum_iters:129 enum_ms:360553 grid_pages:82 grid_items:2460 wc_pskus:536 wc_share_pct:21.8 dom_added:0 walking:536 file_fallback:1`. Against the pre-fix 11–42 page range the band-aid is working, and because it stopped on **time** rather than on stability, **536 is a floor, not the full set**.
+
+## 10. Why the runner fix was not shipped at filing time (kept for the record)
 
 The sandbox is down with the documented `/sessions` disk-full (failed identically twice, so I stopped retrying per its own guidance). No `node --check`, no test walk. Current state is degraded-but-working; a syntax error in `ingest-panini-runner.mjs` is total Panini ingest loss. Shipping an unmeasured fix for a mechanism I have not fully confirmed is the exact failure this repo keeps paying for. Next walk is 14:00 PT.

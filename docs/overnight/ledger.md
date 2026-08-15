@@ -82,11 +82,36 @@ forward change, re-run the first migration — but read measurement (3) first.
 - **Verified CURRENT:** 38 Vercel crons · 8 CI jobs · 20 workflows (17 scheduled) · 17 worker dirs · 139 pins / 138 fns / 137 `.sql` · 32 concierge tools · 8 collections / 5 published · 44 OG cards · ratchets 18/33/35 · primary 91.3/78.6/93.1/93.4 · component 90.3/81.6/89.1/93.2 · 38 trust arms · pg_cron 85/85 · 367 tables / 134 views / 0 RLS-off · description coverage 9,128/13,211 (69.1%).
 
 **Revert:** `git revert <sha>` (docs only; nothing to unwind in the DB).
+### 2026-08-15 · SHIPPED (Claude Code, interactive — Panini enum handoff residue) — the entry below fixed ONE of two contradicting lines in the same file; the survivor instructed the reader to do exactly what that file forbids 26 lines later
+
+**What:** docs-only. No code, DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV/pricing change.
+
+1. `panini-freshness-check/SKILL.md` **line 118** (scheduled-task prompt, NOT in this repo —
+`C:/Users/TDill/Claude/Scheduled/panini-freshness-check/SKILL.md`). The entry below replaced the **line-109**
+instance of the hardcoded `~800` and left this one, which read *"Treat ~800 as the healthy-era figure
+and the trailing-7 in Query 4 as the live one"* — instructing precisely what **line 144** forbids
+(*"Never quote a healthy-era figure from memory or from this file. Take it from `baseline_8_28d`"*) and
+what line 69 bans as a hardcoded absolute. Replaced with the dated 629–965 → 299/224/153 series
+labelled explicitly as a SHAPE, not a target, pointing at `baseline_8_28d` (Query 4b).
+⚠ **A same-file contradiction survives its own fix because the fixer greps for the instance they already
+found, not for the class.** `grep -n 800 SKILL.md` now returns **zero** hits — that one command would
+have caught it at the time. Impact was low in practice (line 144 sits at the point of use, so a reader
+following the reporting block got it right), so this is documentation correctness, not a live misread.
+
+2. Committed the 1830Z inbox filing's uncommitted §9 STATUS section (its header no longer claims
+*"Nothing was changed"*, which had gone false once the enum telemetry, composite progress fix and gate
+backstops shipped) plus the handoff doc that scoped this work. The 2140Z filing was already committed.
+⚠ Also repaired this file's own line 14, where the SKILL.md revert path had its backslashes stripped
+(`C:UsersTDill…`, backslashes gone) and was therefore unusable as written.
+
+**Revert:** `cp SKILL.md.bak2 SKILL.md` in that directory (fresh pre-edit backup, 18,990 bytes).
+⚠ **Do NOT use `SKILL.md.bak`** — that is the 15,253-byte pre-Query-4b copy and restoring it would also
+roll back the entry below. `git revert <sha>` for the docs half.
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — worked the 21:40Z Panini filing) — the throughput gate would have gone SILENT on 08-19 while the collapse continued; added two backstops, one of which cannot self-silence by construction
 
 **What:** `panini-freshness-check` (scheduled task prompt, NOT in this repo —
-`C:UsersTDillClaudeScheduledpanini-freshness-checkSKILL.md`). Escalation 2 gated only on
+`C:/Users/TDill/Claude/Scheduled/panini-freshness-check/SKILL.md`). Escalation 2 gated only on
 `pct_of_trailing7 < 55`, and a persistent collapse drags that trailing-7 window down to meet itself.
 Projected from today's flat 154/day: the gate **stops firing PT 08-19 (four days) and reads a clean
 100% by 08-22** with nothing repaired. Added **Query 4b**: `pct_of_catalogue` (yesterday's editions
