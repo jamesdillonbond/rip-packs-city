@@ -24,14 +24,11 @@
 // CACHE: 30-min s-maxage (editions + circulation change slowly, fmv hourly).
 
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { fetchAllDayScarcityBoard } from "@/lib/insights/allday-scarcity-board"
 const VALID_SORTS = new Set(["scarcity", "mint", "fmv"]);
-
-const SELECT_COLS =
-  "external_id, player_name, set_name, tier, team_name, series, mint_count, family_avg_mint, family_size, scarcity_vs_family_pct, fmv_usd, fmv_confidence, thumbnail_url";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -52,30 +49,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from("allday_scarcity_board")
-    .select(SELECT_COLS);
-
-  // Cohort gate: only families with enough members to make the average mean
-  // anything, and (by default) only editions actually scarcer than their family.
-  if (Number.isFinite(minFamilySize)) q = q.gte("family_size", minFamilySize);
-  if (Number.isFinite(minScarcity)) q = q.gt("scarcity_vs_family_pct", minScarcity);
-
-  if (tier) q = q.eq("tier", tier.toUpperCase());
-  if (set) q = q.ilike("set_name", `%${set}%`);
-  if (maxMint != null && Number.isFinite(maxMint)) q = q.lte("mint_count", maxMint);
-
-  if (sort === "scarcity") {
-    q = q.order("scarcity_vs_family_pct", { ascending: false, nullsFirst: false });
-  } else if (sort === "mint") {
-    q = q.order("mint_count", { ascending: true });
-  } else if (sort === "fmv") {
-    q = q.order("fmv_usd", { ascending: false, nullsFirst: false });
-  }
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  const { data, error } = await fetchAllDayScarcityBoard({
+    tier,
+    set,
+    maxMint,
+    minFamilySize,
+    minScarcity,
+    sort,
+    limit,
+  });
   if (error) {
     return boardUnavailable(error, "insights/allday-scarcity");
   }

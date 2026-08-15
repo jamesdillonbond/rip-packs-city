@@ -69,7 +69,7 @@ const APP_DIR = join(process.cwd(), "app")
  * `\.rpc\(` grep misses `(supabaseAdmin.rpc as any)(`, which mis-sorted two
  * analytics pages into the cheap bucket during the 08-15 sweep.
  */
-const BUDGET = 24
+const BUDGET = 23
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
