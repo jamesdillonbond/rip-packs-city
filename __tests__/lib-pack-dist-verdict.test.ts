@@ -14,6 +14,8 @@ import {
   showCalibrated,
   evContributorsLowConfShare,
   deriveGrailPremium,
+  isEvSnapshotStale,
+  EV_SNAPSHOT_MAX_AGE_HOURS,
 } from "@/lib/pack-dist-verdict"
 
 describe("isSentinelPrice", () => {
@@ -314,5 +316,54 @@ describe("deriveGrailPremium", () => {
     expect(deriveGrailPremium(20, 26, true, true).grailPremium).toBeNull()
     expect(deriveGrailPremium(null, 26, true, true).grailPremium).toBeNull()
     expect(deriveGrailPremium(86, null, true, true).grailPremium).toBeNull()
+  })
+})
+
+// ── EV snapshot staleness (2026-08-15) ──────────────────────────────────────
+//
+// `+EV` is an affirmative buy signal. The pack detail page published it from
+// whatever pack_ev_history last held, however old — the age reachable only as a
+// raw timestamp in a methodology footnote — while the DEALS surface already
+// excluded the same rows on a 72h bar. Measured that day: Pinnacle's EV was
+// 105.9h stale with 42 of 87 dists still flagged is_positive_ev, because
+// compute-pinnacle-pack-ev had failed every tick since 08-11.
+describe("isEvSnapshotStale", () => {
+  const H = 3_600_000
+  const now = Date.parse("2026-08-15T16:00:00.000Z")
+  const at = (hoursAgo: number) => new Date(now - hoursAgo * H).toISOString()
+
+  it("is false for a fresh snapshot", () => {
+    expect(isEvSnapshotStale({ snapshottedAt: at(0.2), now })).toBe(false)
+    expect(isEvSnapshotStale({ snapshottedAt: at(71), now })).toBe(false)
+  })
+
+  it("is true past the 72h bar", () => {
+    expect(isEvSnapshotStale({ snapshottedAt: at(73), now })).toBe(true)
+    // The live Pinnacle case that motivated this.
+    expect(isEvSnapshotStale({ snapshottedAt: at(105.9), now })).toBe(true)
+  })
+
+  it("does not fire exactly AT the bar", () => {
+    expect(isEvSnapshotStale({ snapshottedAt: at(72), now })).toBe(false)
+  })
+
+  it("⚠ an UNKNOWN timestamp is NOT stale", () => {
+    // Reporting an unread/absent timestamp as stale would manufacture the
+    // finding out of our own missing data — the rule the board-cache staleness
+    // check follows. Suppressing on unknown must be an explicit caller choice.
+    expect(isEvSnapshotStale({ snapshottedAt: null, now })).toBe(false)
+    expect(isEvSnapshotStale({ snapshottedAt: undefined, now })).toBe(false)
+    expect(isEvSnapshotStale({ snapshottedAt: "not-a-date", now })).toBe(false)
+  })
+
+  it("honours an explicit override", () => {
+    expect(isEvSnapshotStale({ snapshottedAt: at(5), now, maxAgeHours: 1 })).toBe(true)
+  })
+
+  it("the bar is shared, not duplicated", () => {
+    // pack-deals.ts imports this rather than keeping its own `= 72`; two
+    // constants under one meaning is the drift that let the same stale row be
+    // suppressed on one surface and headlined on another.
+    expect(EV_SNAPSHOT_MAX_AGE_HOURS).toBe(72)
   })
 })

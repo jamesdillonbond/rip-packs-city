@@ -84,6 +84,47 @@ export function deriveEvVerdict(
   return { packEv, valueRatio, evMargin, isPositive }
 }
 
+/**
+ * How old a `pack_ev_history` snapshot may be before its EV stops being a
+ * statement about the market NOW.
+ *
+ * ⚠ THIS IS THE PLATFORM'S SINGLE FRESHNESS BAR FOR PACK EV — `lib/packs/pack-deals.ts`
+ * imports it rather than keeping its own copy. It had one (`EV_FRESH_HOURS = 72`),
+ * and two constants under one meaning is the drift this repo keeps paying for.
+ *
+ * WHY IT MATTERS (measured 2026-08-15): `compute-pinnacle-pack-ev` has failed
+ * every tick since 2026-08-11 (deterministic `ON CONFLICT ... cannot affect row a
+ * second time`; the fix is committed but undeployed, blocked on an operator
+ * secret). Disney Pinnacle's pack EV is **105.9 h stale** against Top Shot's 0.2 h,
+ * and **42 of 87** distributions still carry `is_positive_ev = true`. The deals
+ * surface already excluded them via this 72 h bar; the pack DETAIL page did not,
+ * so it kept publishing a `+EV` headline — an affirmative buy signal — computed
+ * from four-day-old FMV, with the age visible only as a raw timestamp in a
+ * methodology footnote.
+ */
+export const EV_SNAPSHOT_MAX_AGE_HOURS = 72
+
+/**
+ * True when an EV snapshot is too old to headline.
+ *
+ * ⚠ An UNKNOWN timestamp is deliberately NOT stale. A missing `snapshotted_at`
+ * means we cannot tell how old it is, and reporting that as stale would
+ * manufacture the finding from our own missing data — the same rule the insights
+ * board-cache staleness check follows. Callers that want to suppress on unknown
+ * must say so explicitly.
+ */
+export function isEvSnapshotStale(input: {
+  snapshottedAt: string | null | undefined
+  now?: number
+  maxAgeHours?: number
+}): boolean {
+  if (!input.snapshottedAt) return false
+  const t = Date.parse(input.snapshottedAt)
+  if (!Number.isFinite(t)) return false
+  const maxAge = (input.maxAgeHours ?? EV_SNAPSHOT_MAX_AGE_HOURS) * 3600 * 1000
+  return (input.now ?? Date.now()) - t > maxAge
+}
+
 // A pack freely listed on secondary for $X can't contain 3×$X of pulls — when it
 // appears to, the pull-value EV is survivor-biased (cheap commons exhausted, the
 // surviving chases inflate the mean).

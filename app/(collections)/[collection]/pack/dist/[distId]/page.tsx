@@ -50,6 +50,7 @@ import {
   deriveEvVerdict,
   isEvInflatedVsAsk,
   isSurvivorBiased,
+  isEvSnapshotStale,
   deriveRealizedVsModeledVerdict,
   deriveSealedResaleVerdict,
   showCalibrated as computeShowCalibrated,
@@ -192,10 +193,15 @@ export async function generateMetadata(
     secondaryAsk: secAsk,
     grossEv,
   })
+  // ⚠ The unfurl must not publish a stale EV either. Same 72h bar as the page
+  // body and the deals surface — a figure four days old is not a claim about the
+  // market now, and metadata is the one surface where nobody can see the
+  // methodology footnote that carries the timestamp.
+  const seoEvStale = isEvSnapshotStale({ snapshottedAt: row?.ev_snapshotted_at ?? null })
   const descParts = [
     `${title} on ${coll.displayName}.`,
     !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
-    !isHoldingPack && !seoSurvivorBiased && grossEv !== null ? `Value still sealed ≈ ${fmtUsd(grossEv)}.` : null,
+    !isHoldingPack && !seoSurvivorBiased && !seoEvStale && grossEv !== null ? `Value still sealed ≈ ${fmtUsd(grossEv)}.` : null,
     "Pack EV vs live secondary ask, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
@@ -545,7 +551,17 @@ export default async function PackDetailPage(
   // neutral and surface the secondary ask as the honest value estimate.
   const evInflatedVsAsk = isEvInflatedVsAsk({ secondaryAvailable, secondaryAsk, grossEv })
   const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60
-  const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened)
+  // ⚠ A stale snapshot is a THIRD reason the EV must not headline, added
+  // 2026-08-15. `+EV` is an affirmative buy signal, and this page published it
+  // from whatever `pack_ev_history` last held, however old — the age appeared
+  // only as a raw timestamp in the methodology footnote. Measured that day:
+  // `compute-pinnacle-pack-ev` had failed every tick since 08-11 (fix committed,
+  // undeployed, blocked on an operator secret), leaving Disney Pinnacle's EV
+  // 105.9h stale with 42 of 87 dists still flagged `is_positive_ev`. The DEALS
+  // surface already excluded them on this same 72h bar; this page did not, so the
+  // same stale number was suppressed in one place and headlined in another.
+  const evSnapshotStale = isEvSnapshotStale({ snapshottedAt })
+  const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened || evSnapshotStale)
 
   const showColoredVerdict = showPriceVerdict && coverageOk && !evUnreliable
   // Egregious survivor bias — the pull-value EV is not merely uncertain but
@@ -568,6 +584,15 @@ export default async function PackDetailPage(
     grossEv,
   })
   const coverageCaveat: string | null = (() => {
+    // Staleness is checked FIRST: when the snapshot is days old, "survivor bias"
+    // is the wrong explanation to give the reader even if that gate also trips.
+    // The age is stated rather than implied — a reader can only judge a stale
+    // number if they are told how stale.
+    if (showPriceVerdict && evSnapshotStale && snapshottedAt) {
+      const hours = Math.floor((Date.now() - Date.parse(snapshottedAt)) / 3_600_000)
+      const age = hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours} hours`
+      return `EV last computed ${age} ago — not a current read; treat it as historical`
+    }
     if (evUnreliable) {
       const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
         ? ` honest value ≈ secondary ask ${fmtUsd(secondaryAsk)}`

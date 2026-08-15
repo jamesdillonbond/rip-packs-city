@@ -33,6 +33,7 @@ import {
   type PackCollectionSlug,
 } from "@/lib/packs/live-pack-listings"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
+import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
 
 export type PackDeal = {
   distId: string
@@ -92,7 +93,12 @@ export type PackDealsResult = {
 }
 
 const MIN_FMV_COVERAGE = 80
-const EV_FRESH_HOURS = 72
+// ⚠ Imported, not redeclared: this is the platform's single pack-EV freshness
+// bar, shared with the pack DETAIL page's staleness suppression. It used to be a
+// local `= 72` here while the detail page had no bar at all, which is how a
+// 105.9h-stale Pinnacle EV stayed excluded from deals and still headlined "+EV"
+// on the pack page.
+const EV_FRESH_HOURS = EV_SNAPSHOT_MAX_AGE_HOURS
 const MAX_DEPLETION_PCT = 90
 
 const HIGH_VARIANCE_RATIO = 3
