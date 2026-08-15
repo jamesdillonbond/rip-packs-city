@@ -248,6 +248,30 @@ export default function OverviewPage() {
   const frozenMarket = collection === "ufc"
   const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket)
 
+  // ── Failed read vs empty result (deep-audit R1) ──────────────────────────
+  // The KPI band above already distinguishes these correctly (D11), but the
+  // two list panels below did not: they applied `?? 0` to the SAME null
+  // `stats` and rendered "No deals ≥15% off right now" / "No sales in the
+  // last 24h" — a claim about the MARKET manufactured from an outage of OURS.
+  // Measured 2026-08-15 while `/api/collection-stats` was honestly 503ing:
+  // Top Shot had done 8,332 sales and All Day 240 in the window both pages
+  // called empty, and this page contradicted itself on screen (its own
+  // Insider Signals panel listed 269- and 171-moment sweeps from 1–2h prior).
+  // `statsUnavailable` is the answer to "did the READ succeed", never "were
+  // there rows" — the two are different claims and must not share a branch.
+  const statsUnavailable = !loading && (error != null || stats == null)
+
+  // Top sales are name-filtered before render, so the empty-state guard MUST
+  // run on the POST-filter array. It used to test the raw array: when every
+  // row resolved to a dash the guard saw length 5, skipped the empty state,
+  // and the filter then stripped all 5 — a blank panel with no copy at all.
+  // Live today on /disney-pinnacle/overview, where a Pinnacle ingest
+  // regression left every top sale with a NULL edition_id (deep-audit R4).
+  const sniperDeals = stats?.sniper_deals ?? []
+  const topSales = (stats?.top_sales ?? []).filter(
+    (s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH,
+  )
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -328,7 +352,9 @@ export default function OverviewPage() {
           </div>
           {loading ? (
             <SkeletonRows />
-          ) : (stats?.sniper_deals?.length ?? 0) === 0 ? (
+          ) : statsUnavailable ? (
+            <PanelUnavailable />
+          ) : sniperDeals.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
               {collection === "disney-pinnacle"
                 ? "No active listings right now"
@@ -336,7 +362,7 @@ export default function OverviewPage() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(stats?.sniper_deals ?? []).slice(0, 5).map((deal, i) => {
+              {sniperDeals.slice(0, 5).map((deal, i) => {
                 const name = nameOrDash(deal.player_name, deal.character_name)
                 // Sub-$1 commons render as "$0" via fmtPrice (Math.round) and pair with an
                 // FMV-inflated discount %, which reads as a broken deal. Relabel the ask as
@@ -441,14 +467,15 @@ export default function OverviewPage() {
           </div>
           {loading ? (
             <SkeletonRows />
-          ) : (stats?.top_sales?.length ?? 0) === 0 ? (
+          ) : statsUnavailable ? (
+            <PanelUnavailable />
+          ) : topSales.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
               No sales in the last 24h
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(stats?.top_sales ?? [])
-                .filter((s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH)
+              {topSales
                 .slice(0, 5)
                 .map((sale, i) => {
                 const name = nameOrDash(sale.edition_name, sale.player_name, sale.character_name)
@@ -637,6 +664,20 @@ function KpiCard({
         </div>
       )}
     </section>
+  )
+}
+
+// Rendered when the collection-stats READ failed, in place of an empty state.
+// "We couldn't load this" is a claim about US; "there are none" is a claim
+// about the MARKET. Collapsing them is the failure-renders-as-data class the
+// honesty table in CLAUDE.md exists to prevent — and the wording here must not
+// imply the market is quiet. The page-level amber banner carries the retry
+// guidance, so this stays a short, non-duplicating line.
+function PanelUnavailable() {
+  return (
+    <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+      {"Couldn’t load this right now"}
+    </div>
   )
 }
 

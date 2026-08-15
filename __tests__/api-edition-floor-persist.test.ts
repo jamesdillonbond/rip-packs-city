@@ -2,6 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { installFetchMock, jsonRoute, type InstalledFetchMock } from "./helpers/route-harness"
 
+// `persist` requires the operator bearer secret as of deep-audit R2 — it runs a
+// SERVICE_ROLE delete-then-insert on fmv_snapshots and the route is anon-
+// reachable, so an unauthenticated caller could destroy live pricing data.
+// These cases drive the WRITE path and therefore authenticate; the unauthorized
+// direction is pinned separately in
+// __tests__/api-edition-floor-persist-requires-operator-secret.test.ts.
+const OPERATOR_SECRET = "test-ingest-secret"
+const OPERATOR_HEADERS = { authorization: `Bearer ${OPERATOR_SECRET}` }
+
 // The `persist` half of /api/edition-floor — `?persist=1` on GET and
 // `{persist:true}` on POST — which writes the resolved cross-market floor back
 // into fmv_snapshots. The read half already has an integration test; this one is
@@ -83,6 +92,7 @@ const insertedRows = () => state.inserted.flat() as Array<Record<string, unknown
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co"
   process.env.SUPABASE_SERVICE_ROLE_KEY = "svc"
+  process.env.INGEST_SECRET_TOKEN = OPERATOR_SECRET
   state.editionRows = []
   state.existingSnapshots = []
   state.inserted = []
@@ -105,7 +115,7 @@ describe("edition-floor persist — the write path", () => {
     ]
     stubVenues(12)
 
-    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
+    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
     expect(res.status).toBe(200)
     await flush()
 
@@ -130,7 +140,7 @@ describe("edition-floor persist — the write path", () => {
     ]
     stubVenues(12)
 
-    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
     await flush()
 
     expect(insertedRows()).toHaveLength(0)
@@ -149,7 +159,7 @@ describe("edition-floor persist — the write path", () => {
     // db-test flake): the route ran between these two observations, so its computed
     // day must be one of them.
     const dayBefore = new Date().toISOString().slice(0, 10)
-    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
     await flush()
     const dayAfter = new Date().toISOString().slice(0, 10)
 
@@ -164,7 +174,7 @@ describe("edition-floor persist — the write path", () => {
     state.editionRows = [{ id: "ed-uuid", collection_id: "c", external_id: "1:2", tier: "COMMON" }]
     stubVenues(null) // no Top Shot ask, no Flowty listings -> crossMarketFloor null
 
-    const body = await (await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))).json()
+    const body = await (await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))).json()
     await flush()
 
     expect(body.crossMarketFloor).toBeNull()
@@ -175,7 +185,7 @@ describe("edition-floor persist — the write path", () => {
   it("writes nothing when the edition key resolves to no editions row", async () => {
     state.editionRows = []
     stubVenues(12)
-    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
     await flush()
     expect(insertedRows()).toHaveLength(0)
     expect(state.deletes).toHaveLength(0)
@@ -192,7 +202,7 @@ describe("edition-floor persist — the write path", () => {
   it("still answers 200 when the persist throws (fire-and-forget, non-fatal)", async () => {
     state.throwOn = "editions"
     stubVenues(12)
-    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
+    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
     expect(res.status).toBe(200)
     expect((await res.json()).crossMarketFloor).toBe(12)
     await flush()
@@ -226,6 +236,7 @@ describe("edition-floor POST — batch persist + body guards", () => {
     stubVenues(12)
     const req = {
       json: async () => ({ editionKeys: ["1:2", "3:4"], persist: true }),
+      headers: new Headers(OPERATOR_HEADERS),
       nextUrl: new URL("https://t/api/edition-floor"),
     } as unknown as NextRequest
 

@@ -6,6 +6,12 @@
 //
 // GET  /api/edition-floor?editionKey=setUUID:playUUID[&persist=1]
 // POST /api/edition-floor  { editionKeys: string[], persist?: boolean }
+//
+// The READ is anonymous (proxy.ts opens this path). `persist` additionally
+// requires `Authorization: Bearer $CRON_SECRET` or `$INGEST_SECRET_TOKEN` —
+// it performs a service-role DELETE on fmv_snapshots. An unauthorized caller
+// is not rejected; the flag is simply ignored, so the existing read contract
+// is unchanged for every current caller (deep-audit R2).
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
@@ -259,9 +265,37 @@ async function persistFloorToSnapshot(
   }
 }
 
+// ── `persist` is OPERATOR-ONLY (deep-audit R2, P0-latent) ───────────────────
+// `proxy.ts` opens this route to anonymous GET/POST as a "stateless read-
+// compute". That was true of the read and false of `persist`: both handlers
+// took the flag straight from the caller and ran `persistFloorToSnapshot`,
+// which builds a SERVICE_ROLE client and DELETEs today's `fmv_snapshots` rows
+// for up to 50 editions before re-inserting. So an unauthenticated request
+// could destroy live pricing data — and if the re-insert then failed (the
+// re-insert is built from the prior row, `confidence` is NOT NULL, and the
+// read it depends on is 1000-row capped) the delete had already committed,
+// inside a catch that logs "persist failed (non-fatal)".
+//
+// ⚠ `check_anon_write_surface()` is blind to this BY CONSTRUCTION: it tests the
+// anon DB ROLE, and this route holds the service-role key. The guard-scope
+// class again — the probe's own derivation fixed what it could ever see.
+//
+// Gated rather than deleted: writing floor data into snapshots is legitimate
+// work for an authenticated caller, and removing the capability is a product
+// call. The READ path is untouched and stays anonymous.
+function persistAuthorized(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization") ?? "";
+  const cronSecret = process.env.CRON_SECRET;
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  return (
+    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
+    (!!ingest && auth === `Bearer ${ingest}`)
+  );
+}
+
 export async function GET(req: NextRequest) {
   const editionKey = req.nextUrl.searchParams.get("editionKey");
-  const persist = req.nextUrl.searchParams.get("persist") === "1";
+  const persist = req.nextUrl.searchParams.get("persist") === "1" && persistAuthorized(req);
 
   if (!editionKey) {
     return NextResponse.json({ error: "editionKey required" }, { status: 400 });
@@ -287,7 +321,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     editionKeys = Array.isArray(body.editionKeys) ? body.editionKeys.slice(0, 50) : [];
-    persist = body.persist === true;
+    persist = body.persist === true && persistAuthorized(req);
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }

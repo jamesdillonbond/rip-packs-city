@@ -52,14 +52,32 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
 
   const internalIds = Array.from(extToId.values());
 
-  // Step 2: fetch FMV snapshots
+  // Step 2: fetch FMV — from fmv_current (DISTINCT ON latest-per-edition),
+  // NOT raw fmv_snapshots.
+  //
+  // ⚠ deep-audit R3. The previous shape was the D27 anti-pattern this repo has
+  // already fixed twice elsewhere (app/api/alerts/route.ts, allday-pack-ev):
+  // select raw fmv_snapshots ordered by computed_at DESC and dedupe first-wins
+  // in JS. fmv_snapshots keeps daily history — measured 40.7 rows per Top Shot
+  // edition, max 209 — and PostgREST caps ANY read at 1000 rows, including an
+  // unbounded one. On a realistic 100-edition batch the query yields ~3,702
+  // rows, so the window covered 50 of 100 and the other 50 were reported as
+  // `"No FMV data yet"` — a false claim about our own coverage, manufactured
+  // from a row cap, on the DOCUMENTED PRODUCT API (and the public /api/fmv/demo).
+  //
+  // One row per edition means the chunking below bounds the IN-list, not the
+  // result set. The JS first-wins dedup is kept and is now a harmless no-op.
+  //
+  // ⚠ Column note: fmv_current exposes `wap_usd` directly and has NO `asp_usd`,
+  // so the old `wap_usd:asp_usd` alias must NOT be carried over — it would 400.
   const fmvMap = new Map<string, FmvSnapshotRow>();
-  if (internalIds.length) {
+  const FMV_CHUNK = 500;
+  for (let i = 0; i < internalIds.length; i += FMV_CHUNK) {
+    const chunk = internalIds.slice(i, i + FMV_CHUNK);
     const { data: fmvRows } = await supabase
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd:asp_usd")
-      .in("edition_id", internalIds)
-      .order("computed_at", { ascending: false });
+      .from("fmv_current")
+      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd")
+      .in("edition_id", chunk);
 
     for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
       if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);

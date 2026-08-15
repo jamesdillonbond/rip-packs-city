@@ -661,7 +661,16 @@ export function isPublicPath(pathname: string, method: string): boolean {
   }
   // Batch read-compute endpoints that use POST purely to carry a request body
   // (stateless reads — FMV lookup, best-offers, edition-floor, pack-EV compute).
-  // No writes, no user data; the 60/min/IP limiter still applies to anon.
+  // No user data; the 60/min/IP limiter still applies to anon.
+  //
+  // ⚠ This comment used to assert "No writes" outright, and that was FALSE for
+  // /api/edition-floor: its caller-controlled `?persist=1` / `{persist:true}`
+  // ran a SERVICE_ROLE delete-then-insert over today's `fmv_snapshots` rows for
+  // up to 50 editions, reachable with no auth at all (deep-audit R2). The flag
+  // now requires the operator bearer secret; the read path is genuinely
+  // read-only. Opening a route here does NOT make its handler read-only —
+  // verify every write path in the handler before adding a path to this list,
+  // because a confident safety comment is what kept this one from being read.
   if (
     (pathname === "/api/fmv" ||
       pathname === "/api/best-offers" ||
