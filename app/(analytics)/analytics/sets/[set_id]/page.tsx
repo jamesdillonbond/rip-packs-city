@@ -9,8 +9,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { supabaseAdmin } from "@/lib/supabase"
-import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
+import { loadSet } from "@/lib/analytics/sets/detail-fetchers"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { seriesLabel } from "@/lib/analytics/series-labels"
 import { COLLECTION_LABEL } from "@/lib/analytics-sets-dashboard-compute"
@@ -59,104 +58,7 @@ function formatNumber(n: number | null | undefined): string {
   return n.toString()
 }
 
-/**
- * Per-page budget for the detail read.
- *
- * ⚠ Next gives each page 60s to export and retries 3x before killing the WHOLE
- * build. On 2026-08-13 a connection-pool saturation spell did exactly that here:
- * `analytics_sets_detail` blocked on "Timed out acquiring connection from
- * connection pool", rpcWithRetry (correctly) retried it as transient, and one of
- * the 100 prerendered sets blew the budget -> "Export encountered an error ...
- * exiting the build" -> `npm run build` exit 1, production deploy ERROR.
- *
- * This is the SECOND time a build-time DB read has taken the production build
- * down (the first was /insights/first-mint, fixed with BOARD_LIVE_TIMEOUT_MS in
- * lib/insights/board-cache.ts). Same shape, same remedy: bound it well under the
- * budget so a throttled DB degrades this page to ISR instead of failing the
- * deploy. `dynamicParams = true` already makes that fallback safe — an unbuilt
- * set is simply rendered on first request.
- */
-const SET_DETAIL_TIMEOUT_MS = 12_000
-
-/**
- * Outcome of the detail read.
- *
- * ⚠ `ok` exists because the previous shape returned a bare `null` for BOTH "no
- * such set" and "the read failed", and the caller answered `notFound()`. So a
- * statement timeout told a visitor a real set does not exist — and at BUILD time
- * it BAKES that 404 into a static page, which a crawler will believe. Same class
- * the guard in __tests__/server-pages-error-vs-absent-guard.test.ts pins on
- * /[collection]/pack/[id] and /analytics/wallets; this was a third instance.
- */
-interface SetLoad {
-  data: SetsDetailResponse | null
-  ok: boolean
-}
-
-async function loadSet(setId: string): Promise<SetLoad> {
-  if (!UUID_RE.test(setId)) return { data: null, ok: true }
-  // Catch INSIDE the raced promise so an abandoned query that fails later cannot
-  // surface as an unhandled rejection after we have stopped listening.
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const attempt = (async (): Promise<SetLoad> => {
-    try {
-      const { data, error } = await rpcWithRetry<SetsDetailResponse>(
-        supabaseAdmin,
-        "analytics_sets_detail",
-        { p_set_id: setId }
-      )
-      if (error) {
-        const msg = (error.message || "").toLowerCase()
-        // A genuine "no such set" IS an answer — ok stays true.
-        if (msg.includes("not found") || msg.includes("does not exist")) {
-          return { data: null, ok: true }
-        }
-        console.log("[sets/detail/page] rpc_error", error.message)
-        return { data: null, ok: false }
-      }
-      return { data: (data as SetsDetailResponse) ?? null, ok: true }
-    } catch (e: any) {
-      console.log("[sets/detail/page] error", e?.message || e)
-      return { data: null, ok: false }
-    }
-  })()
-  const timeout = new Promise<SetLoad>((resolve) => {
-    timer = setTimeout(() => {
-      console.log("[sets/detail/page] timeout", setId)
-      // A read that is merely SLOW is as unservable as one that errored, and
-      // before this only the errored one was modelled.
-      resolve({ data: null, ok: false })
-    }, SET_DETAIL_TIMEOUT_MS)
-  })
-  try {
-    return await Promise.race([attempt, timeout])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
-export async function generateStaticParams() {
-  // Pre-render the top-100 highest-value sets so the most-trafficked detail
-  // pages are pre-built. The rest fall through to ISR on first request.
-  try {
-    const { data, error } = await rpcWithRetry<SetsDirectoryRow[]>(
-      supabaseAdmin,
-      "analytics_sets_directory",
-      {
-        p_collections: null,
-        p_sort: "value_desc",
-        p_min_coverage: 0,
-        p_limit: 100,
-      }
-    )
-    if (error || !Array.isArray(data)) return []
-    return data
-      .filter((r) => UUID_RE.test(r.set_id))
-      .map((r) => ({ set_id: r.set_id }))
-  } catch {
-    return []
-  }
-}
+export { setDetailStaticParams as generateStaticParams } from "@/lib/analytics/sets/detail-fetchers"
 
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const { set_id } = await params

@@ -85,11 +85,19 @@ describe("server pages distinguish a failed read from an absent record", () => {
   //    production build down (the first was /insights/first-mint).
   it("analytics/sets/[set_id] does not report a failed read as 'set not found'", () => {
     const src = read("app", "(analytics)", "analytics", "sets", "[set_id]", "page.tsx")
+    // ⚠ loadSet moved to lib/analytics/sets/detail-fetchers.ts on 2026-08-15, so
+    // the FETCHER-side assertions read that file while the PAGE-side ones stay
+    // here. Re-pointing rather than deleting: the page-side properties (which
+    // branch wins, what the copy says, what the title says) are still page
+    // properties, and the extraction is exactly the outcome this guard wanted —
+    // the fetcher is now under the primary coverage gate too, with real
+    // behavioural tests in __tests__/lib-analytics-sets-detail-fetchers.test.ts.
+    const fetcherSrc = read("lib", "analytics", "sets", "detail-fetchers.ts")
 
     // The read must carry the failure out rather than collapsing to null.
-    expect(src, "loadSet must report ok:false on RPC failure").toContain("return { data: null, ok: false }")
+    expect(fetcherSrc, "loadSet must report ok:false on RPC failure").toContain("return { data: null, ok: false }")
     // ...and a genuine "no such set" must be a DIFFERENT value.
-    expect(src, "an absent set must be ok:true with null data").toContain("return { data: null, ok: true }")
+    expect(fetcherSrc, "an absent set must be ok:true with null data").toContain("return { data: null, ok: true }")
     expect(src, "page must destructure ok from loadSet").toMatch(
       /const \{\s*data\s*,\s*ok\s*\}\s*=\s*await loadSet\(set_id\)/
     )
@@ -113,7 +121,8 @@ describe("server pages distinguish a failed read from an absent record", () => {
   // not merely degrade this page — it fails the deploy, and an ERRORed deploy is
   // easy to miss because the next push supersedes it.
   it("analytics/sets/[set_id] bounds its build-time read below Next's export budget", () => {
-    const src = read("app", "(analytics)", "analytics", "sets", "[set_id]", "page.tsx")
+    // Fetcher-side property — see the re-pointing note above.
+    const src = read("lib", "analytics", "sets", "detail-fetchers.ts")
 
     const m = src.match(/const SET_DETAIL_TIMEOUT_MS = ([\d_]+)/)
     expect(m, "the per-page read budget must exist").toBeTruthy()
@@ -128,9 +137,13 @@ describe("server pages distinguish a failed read from an absent record", () => {
     const timeoutBlock = src.slice(src.indexOf("const timeout = new Promise"))
     expect(timeoutBlock).toContain("ok: false")
 
-    // dynamicParams must stay true, or a page dropped from the prerender set
-    // 404s instead of falling through to ISR.
-    expect(src).toContain("export const dynamicParams = true")
+    // ⚠ dynamicParams is a PAGE property, not a fetcher one, so it is read from
+    // the page even though the bound above lives in lib/. It is what makes the
+    // bound safe at all: a page dropped from the prerender set must fall through
+    // to ISR, not 404. Bounding the read WITHOUT this would trade a failed build
+    // for a baked 404 — a worse outcome, quietly.
+    const pageSrc = read("app", "(analytics)", "analytics", "sets", "[set_id]", "page.tsx")
+    expect(pageSrc).toContain("export const dynamicParams = true")
   })
 
   // 4. /moment/[id] — the FOURTH instance, and the highest-stakes one, because
