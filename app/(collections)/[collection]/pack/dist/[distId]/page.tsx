@@ -132,13 +132,39 @@ export async function generateMetadata(
   const { collection, distId } = await props.params
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
-  const { data: row } = await fetchPackRow(coll.id, distId)
-  const fb: DistFallbackRow | null = row ? null : (await fetchDistFallback(coll.id, distId)).data
+  // ⚠ BOTH `ok` flags are load-bearing. The page body a few hundred lines below
+  // already distinguishes "this dist does not exist" from "the read failed" —
+  // that fix exists because timeouts were rendering real packs as 404s — but
+  // this function used to drop both flags and treat a failed read as absence.
+  // It is the same page, the same distinction, and it was fixed in one function
+  // and not the other. This surface carries the platform's highest timeout count
+  // (Sentry NEXTJS-1Z, 86 users), and metadata reads its OWN rows rather than the
+  // body's bundle, so a metadata read can fail while the page renders perfectly:
+  // a real, working pack page with no title, no description, no canonical and no
+  // OG image, still indexable. Metadata output is invisible in the browser and
+  // only ever seen in someone else's timeline, which is why nobody noticed.
+  const { data: row, ok: rowOk } = await fetchPackRow(coll.id, distId)
+  const fbRes = row ? null : await fetchDistFallback(coll.id, distId)
+  const fb: DistFallbackRow | null = fbRes?.data ?? null
+  const readOk = rowOk && (fbRes ? fbRes.ok : true)
   // metaField (2026-07-25): pack_distributions.title is raw catalog text and can
   // carry stray whitespace, which leaked ahead of the " — " / " | " separators in
   // the title and ahead of the "." in the description's first sentence.
   const title = metaField(row?.title) ?? metaField(fb?.title) ?? "Pack"
-  if (!row && !fb) return {}
+  if (!row && !fb) {
+    // Only an ANSWERED read may let this page fall back to the site's generic
+    // metadata, which is what an empty object means. A FAILED read says so and
+    // withholds indexing for this fetch — `follow: true` keeps the link equity,
+    // and the next crawl of a recovered page indexes normally. Mirrors the
+    // /moment/[id] branch, which is the canonical shape for this.
+    return readOk
+      ? {}
+      : {
+          title: "Pack Unavailable — Rip Packs City",
+          description: "We couldn't load this pack right now. Try again in a moment.",
+          robots: { index: false, follow: true },
+        }
+  }
   const tierLabel = row?.tier ? humanizeLabel(String(row.tier)) : ""
   const metaTitle = `${joinMetaParts([title, tierLabel], " — ")} | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so

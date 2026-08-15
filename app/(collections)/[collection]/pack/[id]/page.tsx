@@ -132,7 +132,21 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const { collection: routeSlug, id } = await props.params
   const coll = getCollectionByUrlSlug(routeSlug)
   const collectionName = coll?.displayName ?? "Rip Packs City"
-  const lifecycle = coll ? (await fetchLifecycle(id)).lifecycle : null
+  // ⚠ `ok` is load-bearing and used to be dropped here. The page body below
+  // destructures it (line ~207) precisely because a failed read and an unknown
+  // pack are different answers; this function treated both as "no lifecycle" and
+  // published the generic fallback description for a real pack whose read merely
+  // timed out — indexable, with no indication anything went wrong.
+  const lifecycleRes = coll ? await fetchLifecycle(id) : null
+  const lifecycle = lifecycleRes?.lifecycle ?? null
+  const readOk = lifecycleRes ? lifecycleRes.ok : true
+  if (coll && !lifecycle && !readOk) {
+    return {
+      title: `Pack #${id} — Unavailable | Rip Packs City`,
+      description: "We couldn't load this pack right now. Try again in a moment.",
+      robots: { index: false, follow: true },
+    }
+  }
 
   // metaField (2026-07-25): both are raw catalog text, and all four description
   // branches below plus metaTitle interpolate them next to a separator or a "(",
