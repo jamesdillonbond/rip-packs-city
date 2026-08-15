@@ -170,6 +170,59 @@ probe is the right shape here — do not "fix" it that way.
 matters where the lookup is executed **per row**; in a once-per-query CTE it costs 2 buffers total.
 Each candidate needs its own measurement, and 101 redefinitions in one migration would be reckless.
 
+### UPDATE 2026-08-15 (later) — the remaining views were profiled and MOST OF THIS LIST IS ONE ROOT CAUSE
+
+Worked the rest of the failing views. **Two of the three came back as "do not optimize".**
+
+**`topshot_first_mint_trophies` — no win available, do not spend a session on it.** Measured
+**7,187 ms**, i.e. comfortably under the 30 s ceiling; it fails only under contention. Its
+`other_serial_avg` CTE aggregates **668,750 rows into 11,306 groups** and the join then discards
+94% of them (only ~693 editions have a mint-one sale), which looks like an obvious win. It is not:
+restricting the CTE to `edition_id IN (SELECT … FROM mint_one_sales)` was tested and moved buffers
+**68,479 → 68,693 — slightly WORSE**. The predicate does not push into the index scan
+(`edition_id` is an INCLUDE column, not a key), so it still reads all 668,770 rows and merely
+hash-filters afterwards. The apparent 7.2 s → 4.7 s was noise plus a smaller hash. A real fix needs
+a new index on `sales_2026`, a huge hot table — not worth it for a view that is already under
+budget.
+
+**The Candy views are NOT slow queries and there is NOTHING TO FIX in them.** `candy_pack_market`
+reads `candy_packs` (2,501 rows), `candy_pack_sales` (387), `candy_pack_listings` (332) and
+`candy_pack_ev_model` (planner cost **292**) — a **~2.5 MB total working set**. It measured
+**128.8 s**. No plan defect can explain that ratio. Anyone sent to "optimize the Candy views" by
+the `public_board_slow_count` breach will find nothing, which is why this is written down.
+
+### ⚠ ROOT CAUSE, OBSERVED LIVE — the instance is out of disk-IO budget
+
+While profiling, ordinary queries began timing out — a `LIMIT 5` against an **empty** table
+exceeded 60 s. `pg_stat_activity` at that moment:
+
+```
+state   wait_event_type  wait_event      n   oldest_s
+active  IO               DataFileRead    9   361
+active  IO               DataFileWrite   2   85
+active  Lock             transactionid   1   2
+idle    Client           ClientRead      23  (pooler, normal)
+```
+
+**Every active backend was blocked on `DataFileRead`**, the oldest for six minutes. That is the
+documented burst-credit model at depletion: the instance throttles to its ~22 MB/s baseline and all
+reads queue. It is disk-IO-bound, not compute-bound — *"fix expensive queries, don't upgrade the
+tier (Medium is the same 2 cores for 4×)."*
+
+**So this list is not N independent fixes; it is one root cause and a set of contributors.** The
+board timeouts, the entity-page pool-acquire family (`2026-08-15T0450Z`), the `fmv-recalc` kill
+rate and the Candy 128 s are all the same condition seen from different surfaces. The only lever
+that works is **reducing total disk-read volume**, which is what actually moved things this week:
+the `deals` partition pruning (−30.4% buffers), the 113 GB backfill re-scoping, the 27 GB/day
+insider telemetry sampling, and the 72 MB unused-index drop. Per-query plan tuning on already-cheap
+views does not.
+
+⚠ **METHOD NOTE, because I was part of the problem.** Diagnosing this cost several
+`EXPLAIN (ANALYZE)` runs at 42 s, 30 s, 7 s and 4.7 s against the same starved instance. On a
+burst-credit database, profiling is itself load — batch the measurements, prefer `EXPLAIN` without
+`ANALYZE` and `pg_class.reltuples` over `count(*)`, and stop when the instance starts refusing
+trivial queries rather than pressing on.
+
 The durable fix underneath all three is making the six views cheaper, which is the migration work
 at the top of this section. Related: the entity-page timeout filing (`2026-08-15T0450Z`) reaches
 the same conclusion from the other direction — the platform's bottleneck is concurrent connections
