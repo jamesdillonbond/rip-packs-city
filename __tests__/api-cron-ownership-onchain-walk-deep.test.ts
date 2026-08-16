@@ -206,6 +206,74 @@ describe("ownership-onchain-walk — verification walk", () => {
     expect(String(log?.p_error)).toContain("stale-wallets:")
   })
 
+  // Regression pins for the 2026-08-15/16 outage: two consecutive daily ticks died
+  // at ~72s with "Timed out acquiring connection from connection pool" on the
+  // get_stale_ownership_wallets call, walking ZERO wallets and never touching the
+  // route's own 720s budget. The gating read now goes through rpcWithRetry with a
+  // batch-sized backoff (not the page-render default).
+  //
+  // Both directions matter. Retrying too EAGERLY is its own defect — a genuine
+  // logic error must still fail fast instead of stalling a cron for five minutes —
+  // so the non-transient case is pinned right alongside the transient one.
+  it("retries a pool-acquire timeout on the gating read and recovers (wallets still get walked)", async () => {
+    vi.useFakeTimers()
+    try {
+      const W = "0xwallet0000000002"
+      state.heldByWallet = { [W]: ["100"] }
+      const spy = install({
+        "rpc:get_stale_ownership_wallets": [
+          // Attempt 1 — the exact shape observed in prod on 08-15 and 08-16.
+          {
+            data: null,
+            error: { message: "Timed out acquiring connection from connection pool." },
+          },
+          // Attempt 2 — the pool frees up.
+          { data: [{ owner_address: W }], error: null },
+        ],
+        topshot_ownership: [
+          { data: [{ nft_id: "100", edition_external_id: "3:45", serial_number: 12 }], error: null },
+          { data: null, error: null },
+        ],
+      })
+
+      await POST(req())
+      const drained = runDeferred()
+      // Drive the 20s backoff without sleeping for real.
+      await vi.runAllTimersAsync()
+      await drained
+
+      const staleCalls = spy.rpcCalls.filter((c) => c.name === "get_stale_ownership_wallets")
+      expect(staleCalls).toHaveLength(2) // retried, not fatal on the first error
+
+      const log = logRun(spy.rpcCalls)
+      expect(log?.p_ok).toBe(true)
+      // The whole point: the run recovered and did real work rather than logging
+      // wallets_walked: 0 like the two failed prod ticks.
+      expect(Number((log?.p_extra as Record<string, unknown>)?.wallets_walked)).toBe(1)
+      expect(String(log?.p_error ?? "")).not.toContain("stale-wallets:")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does NOT retry a non-transient gating-read error — it still fails fast", async () => {
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": [
+        { data: null, error: { message: "relation does not exist" } },
+        { data: [{ owner_address: "0xshould_never_be_reached" }], error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const staleCalls = spy.rpcCalls.filter((c) => c.name === "get_stale_ownership_wallets")
+    expect(staleCalls).toHaveLength(1)
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("stale-wallets:")
+  })
+
   it("GET alias reaches the same 202 accept when authed", async () => {
     install({ "rpc:get_stale_ownership_wallets": { data: [], error: null } })
     const res = await GET(req({ authorization: "Bearer walk-cron" }))

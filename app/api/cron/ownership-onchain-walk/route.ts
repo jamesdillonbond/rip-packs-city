@@ -25,6 +25,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 800
@@ -34,6 +35,31 @@ const WALLETS_PER_RUN = 800; // stalest-verified holder wallets per run (cycles 
 const CONCURRENCY = 6; // parallel Flow REST reads — modest, to stay under public-node rate limits
 const UPSERT_CHUNK = 500;
 const BUDGET_MS = 720_000; // stop before the 800s lambda ceiling
+
+// Retry budget for the ONE query that gates the whole run (get_stale_ownership_wallets).
+//
+// Why this is deliberately far longer than rpc-with-retry's page-render default
+// (3 attempts / ~250ms of backoff): that default is tuned for a request a human is
+// waiting on, where a long retry trades a 500 for a 20s hang. Nobody is waiting on
+// a daily cron. On 2026-08-15 and 08-16 this route died at ~72s with
+// "Timed out acquiring connection from connection pool" on this exact call —
+// wallets_walked 0, rows_written 0, budget_hit false — so it burned a whole day's
+// tick without touching its own 720s budget. Retrying costs one cheap read; NOT
+// retrying costs a day of ownership freshness.
+//
+// Sized to stay well inside BUDGET_MS: worst case ~5 min here still leaves ~7 min
+// to walk, and the walk loop's own `Date.now() - startedMs > BUDGET_MS` check already
+// accounts for time spent here, so a slow fetch degrades to PARTIAL progress rather
+// than an overrun. Partial is real progress — the queue is oldest-observed_at-first
+// and resumable, so the next tick picks up where this one stopped.
+//
+// ⚠ This is a mitigation, NOT a proven fix: if the pool is saturated for longer than
+// WALLET_FETCH_BUDGET_MS the run still fails, exactly as before. It converts a
+// guaranteed total loss into a likely recovery. Judge it by wallets_walked on the
+// next few ticks, not by this comment.
+const WALLET_FETCH_ATTEMPTS = 3;
+const WALLET_FETCH_BASE_DELAY_MS = 20_000;
+const WALLET_FETCH_BUDGET_MS = 300_000;
 
 type OwnershipRow = {
   nft_id: string;
@@ -116,9 +142,17 @@ async function run(req: NextRequest) {
     let budgetHit = false;
 
     try {
-      const { data: walletRows, error: wErr } = await supabaseAdmin.rpc(
+      const { data: walletRows, error: wErr } = await rpcWithRetry<
+        Array<{ owner_address: string }>
+      >(
+        supabaseAdmin as never,
         "get_stale_ownership_wallets",
-        { p_limit: WALLETS_PER_RUN }
+        { p_limit: WALLETS_PER_RUN },
+        {
+          attempts: WALLET_FETCH_ATTEMPTS,
+          baseDelayMs: WALLET_FETCH_BASE_DELAY_MS,
+          timeoutMs: WALLET_FETCH_BUDGET_MS,
+        }
       );
       if (wErr) throw new Error(`stale-wallets: ${wErr.message}`);
       const wallets = ((walletRows ?? []) as Array<{ owner_address: string }>).map(
