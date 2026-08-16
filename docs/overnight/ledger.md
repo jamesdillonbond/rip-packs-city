@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — drove the worst file in `workers/**` from 26.3% to 90.6%, and the gate moved with it
+
+**What shipped.** `__tests__/worker-moments-hydrator-deep.test.ts` (15 cases) + worker-gate thresholds re-seated **68.2/59.0/72.6/70.7 → 73.3/62.3/75.9/75.9**. Test-only; the worker source is untouched.
+
+**The hole was a comment.** The existing handler suite states plainly that *"the deep GraphQL/edition-resolve/write path (env.TOPSHOT_PROXY fan-out) is intentionally out of scope here"* — an honest exclusion, and exactly the 73% that was dark. `topshot-moments-hydrator/index.ts` **26.31 st / 29.89 br → 90.64 / 80.41**; the gate aggregate 68.71 → **73.79 st / 62.79 br**. Re-seated in the SAME pass that measured the gain, because "keep the buffer" is how the component gate reached a ~13-point unguarded margin.
+
+⚠ **Worth driving because every failure mode here is SILENT.** The worker maps a raw on-chain `nft_id` to `(edition_id, serial_number)` — the join every edition-keyed FMV, badge, special-serial and portfolio figure downstream depends on. A stalled tick writes fewer rows; it does not error. Pinned: a **partial** GQL error must not discard the chunk (the source records that the previous version did, and that permanently-unresolvable ids at the head of the queue **STARVED** it); a hard failure is tracked separately from a partial one and is the only thing that reddens `ok`; the `ensure_topshot_edition_stub` self-heal is **de-duplicated per (set, play)** — 300 candidates routinely span 10–20 editions; a NULL stub result is a real catalog gap that must be counted, not dropped; and a **non-numeric** RPC return is reported as a shape probe rather than coerced to 0, which would make a broken write path indistinguishable from an empty batch.
+
+⚠ **The stub keys on table AND terminal method, and that is not fussiness.** `readCandidates` ends on `.limit()` against `v_moments_needing_hydration`; `resolveEditions` ends on `.or()` against `editions`. A single shared builder — correct for the sibling file's narrower scope — resolves every chain as whichever table was configured last. Same trap CLAUDE.md records from the `/api/rewards/summary` side.
+
+⚠ **Two defects of my own, both caught by a tool rather than by review.** I left an `expect(true).toBe(true)` placeholder — a literally vacuous test — and removed it. And `tsc` rejected `proxy.fetch.mock.calls[0][0]`: `vi.fn(async () => …)` types its calls as `[]`, so the mock had to DECLARE the parameter it ignores. **A stub that cannot be inspected cannot pin a contract**, and the assertion reading that argument is the one proving the worker hits `/topshot` with the proxy secret.
+
+**Verified:** 348 worker tests green at the new thresholds; `tsc` clean; 5 mutations each reddening only their own assertion — including restoring the documented starve-the-queue regression, removing the dedupe cache, coercing NaN to 0, accepting a zero serial, and dropping the catalog-gap count.
+
+**Remaining in that gate, stated plainly:** `pack-events-ingest/index.ts` is still **46.9 st / 34.1 br** and is now the only file holding the aggregate down. It owns `event_kind`, which the `pack_purchases_set_is_primary_drop` trigger reads — so it is worth the same treatment, and the hydrator just proved the approach works.
+
+**Revert:** `git revert <sha>` — removes the test file and restores the previous thresholds. No source, DB or prod change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "concierge should pull cheapest listing / special-serial links" + "the discord bot didn't respond") — the concierge could not answer "is this one listed?" for ANY edition, and `/api/edition-floor` was answering with another edition's price
 
 **Trigger.** A real Telegram reply: *"The live sniper feed doesn't filter by set name directly … it's not showing a current listing in the live feed — meaning nothing may be listed right now, or it's priced above the feed's current snapshot."* That is our indexing narrated back at a collector instead of an answer, and every clause of it turned out to be covering a different real defect.
