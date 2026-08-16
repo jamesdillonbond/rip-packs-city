@@ -13,6 +13,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import { getCollection } from "@/lib/collections";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -592,6 +593,14 @@ export default function ProfilePageV6() {
     : null;
 
   const basePath = "/" + collection;
+  // Registry-derived, never hardcoded. `getCollection` returns undefined for an
+  // unrecognised slug, and a bare "COLLECTOR" is the honest answer there — the
+  // alternative is naming a collection this profile may not be about.
+  // The outer trim matters: an unknown slug would otherwise render " COLLECTOR"
+  // with a leading space.
+  const collectorLabel = (
+    (getCollection(collection)?.label ?? "").toUpperCase().trim() + " COLLECTOR"
+  ).trim();
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto", animation: "fadeIn 0.4s ease both" }}>
@@ -618,10 +627,16 @@ export default function ProfilePageV6() {
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
           {/* The trophy count is withheld when the read failed \u2014 publishing
               "0 / 3" would state that this collector has curated nothing. The
-              COLLECTOR label still stands: it does not depend on that read. */}
+              COLLECTOR label still stands: it does not depend on that read.
+
+              \u26a0 The label was the hardcoded literal "NBA TOP SHOT COLLECTOR" on a
+              route that serves all five published collections, so every All Day,
+              Golazos, UFC and Pinnacle profile announced the wrong game. It is
+              derived from the registry now, and falls back to a bare "COLLECTOR"
+              rather than guessing when the slug is unknown. */}
           {failed.trophies
-            ? "NBA TOP SHOT COLLECTOR"
-            : "NBA TOP SHOT COLLECTOR \u00b7 " + filledCount + " / 3 TROPHY MOMENTS"}
+            ? collectorLabel
+            : collectorLabel + " \u00b7 " + filledCount + " / 3 TROPHY MOMENTS"}
         </div>
         {(bio?.twitter || bio?.discord) && (
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>

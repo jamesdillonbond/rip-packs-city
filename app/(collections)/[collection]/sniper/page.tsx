@@ -169,6 +169,13 @@ function SniperMomentsBody() {
     livetokenFmv: number | null;
   } | null>(null);
   const [depthFloorError, setDepthFloorError] = useState<string | null>(null);
+  // ⚠ The depth panel has TWO legs and only the floor one reported failure. The
+  // listings leg swallowed both its exits, so a failed read rendered "No other
+  // listings for this edition." — on the surface a collector uses to decide
+  // whether the listing in front of them is the cheapest one. The panel was
+  // half-honest: an explicit floor error sat directly above a fabricated
+  // statement about supply.
+  const [depthListingsError, setDepthListingsError] = useState<string | null>(null);
 
   // ── Task 5: Save search ─────────────────────────────────────────────────────
   const [saveSearchMsg, setSaveSearchMsg] = useState<string | null>(null);
@@ -535,6 +542,7 @@ function SniperMomentsBody() {
     setDepthDeals([]);
     setDepthFloor(null);
     setDepthFloorError(null);
+    setDepthListingsError(null);
 
     // Fetch edition floor data and other listings in parallel
     const floorPromise = deal.editionKey
@@ -549,7 +557,10 @@ function SniperMomentsBody() {
 
     const listingsPromise = fetch(`${feedEndpoint}?collection=${feedCollection}&editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
       .then(async (res) => {
-        if (!res.ok) return;
+        // ⚠ This was a bare `return`, which is the likelier failure of the two
+        // (a 5xx response, not a thrown fetch) and left depthDeals at [] — read
+        // by the panel below as "none exist".
+        if (!res.ok) { setDepthListingsError("Could not load other listings"); return; }
         const json = await res.json();
         const groupKey = `${deal.playerName}|${deal.setName}|${deal.seriesName}|${deal.parallelId}`;
         setDepthDeals(
@@ -560,7 +571,7 @@ function SniperMomentsBody() {
           )
         );
       })
-      .catch(() => {});
+      .catch(() => setDepthListingsError("Could not load other listings"));
 
     try { await Promise.all([floorPromise, listingsPromise]); } catch {}
     setDepthLoading(false);
@@ -1577,7 +1588,12 @@ function SniperMomentsBody() {
                             ) : null}
 
                             {/* Other listings */}
-                            {depthDeals.length === 0 ? (
+                            {depthListingsError ? (
+                              // Must precede the length check: a failed read
+                              // leaves the list empty, so testing emptiness
+                              // first swallows the failure silently.
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>{depthListingsError}</div>
+                            ) : depthDeals.length === 0 ? (
                               <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>No other listings for this edition.</div>
                             ) : (
                               <>

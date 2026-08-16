@@ -333,9 +333,20 @@ describe("client pages — a failed read is not an empty result", () => {
     })
 
     it("withholds the trophy count on failure instead of publishing 0 / 3", () => {
-      expect(src).toContain('failed.trophies\n            ? "NBA TOP SHOT COLLECTOR"')
+      expect(src).toContain("failed.trophies\n            ? collectorLabel")
       // ...and still publishes it on the healthy path.
       expect(src).toContain('" / 3 TROPHY MOMENTS"')
+    })
+
+    it("names the collection from the registry, not a hardcoded literal", () => {
+      // Separate class from the honesty sweep, found alongside it: the label was
+      // the literal "NBA TOP SHOT COLLECTOR" on a route that serves all five
+      // published collections, so every All Day / Golazos / UFC / Pinnacle
+      // profile announced the wrong game.
+      expect(src).toContain("getCollection(collection)?.label")
+      expect(src, "the hardcoded literal must not come back").not.toContain(
+        '"NBA TOP SHOT COLLECTOR"',
+      )
     })
 
     it("the wallet-derived stats stay gated on > 0, so a failed read cannot print $0", () => {
@@ -361,6 +372,63 @@ describe("client pages — a failed read is not an empty result", () => {
           /too thin|not indexed|no coverage|try a (longer|different)|lower your/i,
         )
       }
+    })
+  })
+
+  // ── SITE 6: /[collection]/sniper depth panel (added 2026-08-15) ───────────
+  //
+  // The same page as site 2, a DIFFERENT panel — which is the point. Fixing the
+  // relative-deals panel did not make the page honest, and the census still
+  // ranked this file top by bare-swallow density afterwards.
+  //
+  // The expand-a-deal depth panel has TWO legs and only ONE reported failure.
+  // The floor leg already rendered "Could not load floor data"; the listings leg
+  // swallowed both of its exits — a bare `return` on `!res.ok` (the LIKELIER
+  // failure: a 5xx response, not a thrown fetch) and a bare `.catch(() => {})` —
+  // leaving depthDeals at [] so the panel rendered "No other listings for this
+  // edition."
+  //
+  // So the panel was HALF-HONEST: an explicit floor error sat directly above a
+  // fabricated statement about supply, which reads as verified precisely because
+  // the neighbouring error proves the panel *can* report failure. On the sniper
+  // surface that claim is what tells a collector the listing in front of them is
+  // the only one.
+  describe("/[collection]/sniper depth panel — both legs report failure", () => {
+    const src = stripComments(
+      read("app", "(collections)", "[collection]", "sniper", "page.tsx"),
+    ).replace(/\/\*[\s\S]*?\*\//g, "")
+
+    it("tracks the listings leg's failure and clears it per expand", () => {
+      expect(src).toContain(
+        "const [depthListingsError, setDepthListingsError] = useState<string | null>(null)",
+      )
+      expect(src).toContain("setDepthListingsError(null)")
+    })
+
+    it("sets it on BOTH exits — the !res.ok return and the catch", () => {
+      expect(src).toContain(
+        'if (!res.ok) { setDepthListingsError("Could not load other listings"); return; }',
+      )
+      expect(src).toContain('.catch(() => setDepthListingsError("Could not load other listings"))')
+    })
+
+    it("the failure branch precedes the empty branch", () => {
+      const fail = src.indexOf("depthListingsError ? (")
+      const empty = src.indexOf("depthDeals.length === 0 ? (")
+      expect(fail).toBeGreaterThan(-1)
+      expect(fail).toBeLessThan(empty)
+    })
+
+    it("the empty-state copy SURVIVES — a sole listing is a real answer", () => {
+      expect(src).toContain("No other listings for this edition.")
+    })
+
+    it("the sibling floor leg still reports its own failure", () => {
+      // Guards the guard against a 'simplification' that unifies the two legs
+      // onto one flag: they fail independently, and a floor outage must not
+      // suppress listings that loaded fine.
+      expect(src).toContain('setDepthFloorError("Could not load floor data")')
+      expect(src).toContain("depthFloorError ? (")
     })
   })
 
