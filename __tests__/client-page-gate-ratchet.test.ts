@@ -128,7 +128,25 @@ const APP_DIR = join(process.cwd(), "app")
  * The remaining five admin pages still hold their own copy of the shell; they are the
  * cheapest conversions left, and each is now a rewire rather than a rewrite.
  */
-const BUDGET = 25
+/*
+ * 25 -> 24: `disney-pinnacle/collection` — the THIRD page in this sweep carrying the same
+ * defect, and the sharpest form of it: the manufactured figure was a claim about the
+ * READER'S OWN HOLDINGS. "Total Pins: 0" rendered under the error banner that said the read
+ * had failed.
+ *
+ * ⚠ What marks it as an oversight rather than a decision is that every SIBLING field was
+ * already nulled on that same catch — totalFmv, unlockedFmv, unlockedCount, bestOfferTotal,
+ * spreadGap — and this one alone was set to 0. One zeroed figure beside five withheld ones.
+ *
+ * ⚠ And the test written for that site found a SECOND: the table's "No Pinnacle pins found
+ * for this wallet" empty state also fires on a failed read, because the catch empties
+ * `rows`. Every conversion in this sweep has produced the same lesson — sweep every site
+ * consuming the failed read, not the one you noticed.
+ *
+ * Its Suspense boundary is HOISTED to the server page (the body calls useSearchParams);
+ * leaving it inside would move the file into the gate without making it renderable.
+ */
+const BUDGET = 24
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
