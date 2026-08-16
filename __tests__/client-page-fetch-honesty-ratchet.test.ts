@@ -67,7 +67,7 @@ const USE_CLIENT = /^\s*["']use client["']/
  * theirs" are silently wrong — the only correct value is the one the failing assertion
  * names. (That collision has already happened once on the sibling client-page ratchet,
  * where two sessions each subtracted only their own conversions.) */
-const BUDGET = 32
+const BUDGET = 31
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

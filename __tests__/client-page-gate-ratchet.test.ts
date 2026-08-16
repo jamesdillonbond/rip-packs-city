@@ -101,7 +101,18 @@ const APP_DIR = join(process.cwd(), "app")
  * hand-picked list of sniper pages ([collection], panini-blockchain) and this was not on
  * it — the guard-scope class, met on an allowlist this time.
  */
-const BUDGET = 29
+/*
+ * 29 -> 28: `special-serial-owners` split into `SpecialSerialOwnersClient.tsx` — and it
+ * carried the SAME defect as the Pinnacle sniper conversion one commit earlier, which is
+ * the reason to keep going: a summary band rendered ABOVE a section whose own failure
+ * ladder was already correct, so the KPIs said "0 special serials / 0 distinct holders"
+ * while the list directly below said "Failed to load".
+ *
+ * ⚠ Its guard is on `error`, NOT on `rows.length`: a refresh failure KEEPS the previous
+ * rows, so a value-based guard would publish stale figures as current. That distinction is
+ * itself a killed mutation.
+ */
+const BUDGET = 28
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
