@@ -91,6 +91,38 @@ run still fails. It converts a guaranteed total loss into a likely recovery, and
 succeeding fetch degrades to PARTIAL progress (the queue is resumable) rather than an overrun.
 **Judge it by `wallets_walked` on the next few ticks.**
 
+## Scale check — this is ~2 of ~1,050 pool-acquire failures in 72 h, and the rate is what matters
+
+Swept `pipeline_runs` for the whole class rather than assuming this route was special.
+**~50 pipelines** logged a pool-acquire failure in the trailing 72 h, ~1,050 in total. The
+volume is overwhelmingly the wallet-backfill family:
+
+| pipeline | runs/72h | fail % | pool-acquire fails |
+|---|---|---|---|
+| `wallet-backfill-allday` | 2,717 | 21.1% | **534** |
+| `wallet-backfill-pinnacle` | 2,648 | 14.5% | 273 |
+| `wallet-backfill` | 1,045 | 9.0% | 68 |
+| `wallet-backfill-ufc` | 1,467 | 2.9% | 40 |
+| `ownership-onchain-walk` | **3** | **66.7%** | 2 |
+
+⚠ **Read the RATE, not the count — they rank these in opposite orders, and the count is the
+misleading one.** By volume this route is a rounding error. By rate it is the worst pipeline on
+the board, and the denominator is why: **it runs once a day, so one lost run is a lost day.**
+
+**The durable rule: the value of a retry scales inversely with cadence.** A `*/20` pipeline
+self-heals — the next tick is 20 minutes away and re-queues the same work — so wrapping
+`wallet-backfill-allday` in a retry would mostly add load to the saturated pool it is already
+losing to, for work that gets redone anyway. A daily batch has **no natural retry at all**. That
+is the discriminator for which of the ~50 deserve this treatment, and it is not "how many
+failures does it log".
+
+⚠ **Corollary — do NOT sweep the other ~49.** `ownership-onchain-walk` is now the only cron route
+using `rpcWithRetry`; every other one calls `supabaseAdmin.rpc()` bare. That looks like a
+copy-pasted gap and mostly is not: in most of those the RPC **is the work** (a `refresh_*` /
+drain call), so a retry re-runs expensive and not-always-idempotent work rather than re-attempting
+a cheap gate. The shape worth fixing is specifically *a cheap gating read whose failure discards
+the whole run*.
+
 ## Still open — the monitoring gap (NOT taken)
 
 The retry does nothing about the silence. Cheapest honest instrument is an **outcome** check
