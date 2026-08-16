@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, interactive — session wrap-up) — folded this thread's four instances of one class into CLAUDE.md, and filed the two operator-only blockers that are still degrading live surfaces
+
+**What shipped.** `CLAUDE.md` (one canonical bullet + the atlas-proxy consequence + a Recent-sessions entry) and a new inbox filing. **No code, DB, migration, cron or prod-state change.**
+
+**Canonical bullet added — a THIRD concierge shape, and the worst of the three.** `status:"error"` vs `no_results` is a two-way split this file already documents; `search_serial_deals` had added a claim on top of `no_results` — *"this is not an error"* — asserting the health of an upstream it cannot observe. **A tool cannot see its own health; it can only report how old its data is.** Recorded with the measurement that killed the obvious threshold (5 successful sweeps, gaps 3 h / 6 h median / 22 h p90 / **26.7 h max**, so a 24 h ceiling fires during NORMAL operation) and with the generalization: **whenever a tool's copy characterises an upstream it cannot see, that copy is a guess with a test around it.**
+
+**`atlas-proxy`'s row now records its COST, not just its INERT status.** The table said "shipped, not yet deployed"; it now carries the measured ~60% `egress_blocked` rate, the **zero-row day on 08-12**, and — the part that makes it a priority rather than a chore — that `topshot_active_listings` feeds BOTH the concierge's `search_serial_deals` AND the serial pass of the live alert dispatcher. An inert worker is silently starving a chase-serial alert.
+
+**Filed:** [inbox 2026-08-16T1750Z](docs/overnight/inbox/2026-08-16T1750Z-two-operator-only-blockers-anthropic-403-and-atlas-proxy.md) — the Anthropic `403 credit_balance` (leading hypothesis: a WORKSPACE spend limit, not the org balance, which holds $18.71; includes the do-NOT-read-the-key warning) and the atlas-proxy deploy + egress probe. Also records the Discord plain-DM impossibility so it is not re-investigated, and an explicit ⚠ against "fixing" the staleness flag by lowering it into cry-wolf range.
+
+**Revert:** `git revert <sha>` — docs only, nothing to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — a concierge tool told collectors "this is not an error" about a feed that had written ZERO rows that day, and a test was pinning the reassurance
 
 **What shipped.** `app/api/support-chat/route.ts` (`search_serial_deals`, all four exits + tool description + system prompt) + `__tests__/api-support-chat-tools-populated-4.test.ts`. No DB, migration, cron, auth, hot-wallet or FMV-math change.
