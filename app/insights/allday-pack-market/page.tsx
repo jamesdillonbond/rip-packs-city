@@ -14,105 +14,41 @@
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
-import { fetchAllPaged } from "@/lib/supabase-paginate"
-import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
+import {
+  fetchPackMarketBuckets,
+  num,
+  type PackMarketBuckets,
+  type PackMarketRow,
+} from "@/lib/insights/pack-market-board"
 
 export const revalidate = 600
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb: any = supabaseAdmin
+// Row shape, ranking constants and the paged read all live in
+// lib/insights/pack-market-board.ts, shared with the sibling board — see that
+// file for why the two must not diverge. `num` is re-exported from there so
+// the page and the ranking cannot disagree about what a numeric cell is.
+type Buckets = PackMarketBuckets
 
-interface MarketRow {
-  dist_id: string
-  title: string | null
-  drop_size: number | string | null
-  retail_price: number | string | null
-  opened_pct_of_minted: number | string | null
-  n_sales: number | string | null
-  n_sales_90d: number | string | null
-  last_sale_price: number | string | null
-  last_sale_at: string | null
-  median_price_90d: number | string | null
-  secondary_vs_retail_ratio: number | string | null
+async function fetchBuckets(): Promise<Buckets> {
+  return fetchPackMarketBuckets("allday")
 }
 
-function num(v: number | string | null | undefined): number | null {
-  if (v == null || v === "") return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
 function fmtUsd(v: number | null): string {
   if (v == null) return "—"
   if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
   return `$${v.toFixed(2)}`
 }
+
 function fmtCount(v: number | null): string {
   if (v == null) return "—"
   return Math.round(v).toLocaleString()
 }
+
 function fmtRatio(v: number | null): string {
   if (v == null) return "—"
   return `${v.toFixed(2)}×`
-}
-
-interface Buckets {
-  /** false when the backing read FAILED — distinct from 'no qualifying packs yet'. */
-  ok: boolean
-  discount: MarketRow[]
-  premium: MarketRow[]
-  mostTraded: MarketRow[]
-  qualifying: number
-  lastSaleAt: string | null
-}
-
-async function fetchBuckets(): Promise<Buckets> {
-  // 796 rows qualify today — under the 1,000 cap, but only ~20% headroom and the
-  // same unordered-.limit() shape that is actively truncating the Top Shot board.
-  // Paged + ordered so growth can never silently drop rows from the ranking.
-  const { rows: data, error } = await withPagedBoardBudget(
-    fetchAllPaged<MarketRow>(
-    (from, to) =>
-      sb
-        .from("v_allday_pack_market")
-        .select(
-          "dist_id, title, drop_size, retail_price, opened_pct_of_minted, n_sales, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, secondary_vs_retail_ratio",
-        )
-        .gte("n_sales", 5)
-        .order("dist_id", { ascending: true })
-        .range(from, to),
-    { label: "insights/allday-pack-market" },
-  ),
-    "allday-pack-market",
-  )
-  if (error) {
-    console.error("[insights/allday-pack-market] market", error)
-    return { discount: [], premium: [], mostTraded: [], qualifying: 0, lastSaleAt: null, ok: false }
-  }
-  const rows = (data ?? []) as MarketRow[]
-  const ratio = (r: MarketRow) => num(r.secondary_vs_retail_ratio)
-  const priced = rows.filter((r) => (num(r.retail_price) ?? 0) > 0 && ratio(r) != null)
-  const discount = priced
-    .filter((r) => (ratio(r) ?? 1) < 0.85)
-    .sort((a, b) => (ratio(a) ?? 9) - (ratio(b) ?? 9))
-    .slice(0, 15)
-  const premium = priced
-    .filter((r) => (ratio(r) ?? 0) > 1.15)
-    .sort((a, b) => (ratio(b) ?? 0) - (ratio(a) ?? 0))
-    .slice(0, 15)
-  const mostTraded = rows
-    .slice()
-    .sort((a, b) => (num(b.n_sales) ?? 0) - (num(a.n_sales) ?? 0))
-    .slice(0, 15)
-  const lastSaleAt =
-    rows
-      .map((r) => r.last_sale_at)
-      .filter((d): d is string => !!d)
-      .sort()
-      .pop() ?? null
-  return { discount, premium, mostTraded, qualifying: rows.length, lastSaleAt, ok: true }
 }
 
 function freshnessLabel(iso: string | null): string {
@@ -133,7 +69,7 @@ const cardStyle: React.CSSProperties = {
   padding: 18,
 }
 
-function MarketTable({ rows, accent, showRatio }: { rows: MarketRow[]; accent: string; showRatio: boolean }) {
+function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accent: string; showRatio: boolean }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
@@ -152,7 +88,7 @@ function MarketTable({ rows, accent, showRatio }: { rows: MarketRow[]; accent: s
         </thead>
         <tbody>
           {rows.map((r) => {
-            const opened = num(r.opened_pct_of_minted)
+            const opened = num(r.opened_pct)
             return (
               <tr key={r.dist_id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                 <td style={{ padding: "8px 10px" }}>
@@ -189,7 +125,7 @@ function Bucket({
 }: {
   title: string
   blurb: string
-  rows: MarketRow[]
+  rows: PackMarketRow[]
   accent: string
   showRatio: boolean
 }) {

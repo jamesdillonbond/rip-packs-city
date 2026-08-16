@@ -49,6 +49,78 @@ const BOUNDED = [
   /withPagedBoardBudget\s*(?:<[^>]*>)?\s*\(/,
 ]
 
+/**
+ * ⚠ COMMENTS ARE STRIPPED BEFORE ANY MATCH, and this is not tidiness — the
+ * guards-the-guard case below caught it live. `lib/insights/board-status.ts`
+ * mentions `readBoardOrLive()` twice in its PROSE, so following a page's imports
+ * without stripping meant any page importing `board-status` was declared bounded
+ * by a comment. The original page-level check had the same hole: a page whose
+ * header explained why it uses `withBoardBudget` would pass without calling it.
+ * Newlines are preserved so nothing downstream shifts.
+ *
+ * This is the repo's recurring trap — any check that greps source for a token
+ * must strip comments first, including the one you are extending.
+ */
+function stripComments(src: string): string {
+  const blanks = (s: string) => s.replace(/[^\n]/g, "")
+  return src.replace(/\/\*[\s\S]*?\*\//g, blanks).replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1)
+}
+
+/** A direct DB call in the page itself. */
+const DIRECT_QUERY = /\.from\s*\(|\.rpc\s*(?:as any\))?\s*\(/
+
+/**
+ * ⚠ REPOINTED 2026-08-15, and the reason is a genuine TENSION BETWEEN TWO GUARDS
+ * that anyone extracting a page will hit.
+ *
+ * `server-page-data-access-ratchet` pushes a page's data access DOWN into
+ * `lib/`, and the only way to drop a page off it is for the page to stop
+ * importing a Supabase client at all. But this guard read the PAGE source for a
+ * budget primitive — so the moment a page was correctly extracted, the primitive
+ * moved into the lib module and this guard called the page unbounded. Two
+ * correct changes could not both be satisfied.
+ *
+ * The fix follows ONE level of delegation, and deliberately not more:
+ *   • a page that still holds its own `.from(` / `.rpc(` must name a budget
+ *     primitive ITSELF — unchanged, because that read is in the page;
+ *   • a page with NO direct query may satisfy the bound from a `@/lib/insights/*`
+ *     module it actually imports.
+ *
+ * ⚠ That pairing is what stops this from being a weakening. A page cannot pass
+ * by importing a bounded module while doing an unbounded read of its own, and
+ * only modules the page genuinely imports are consulted — not any bounded file
+ * that happens to exist. Same repointing move as
+ * `pack-dist-contents-not-streamed`: the guard was pinning WHERE the primitive
+ * appears, when the property is that the read is bounded.
+ */
+function importedInsightsLibs(src: string): string[] {
+  const out: string[] = []
+  const re = /from\s+["']@\/(lib\/insights\/[A-Za-z0-9._/-]+)["']/g
+  for (const m of src.matchAll(re)) {
+    for (const ext of [".ts", ".tsx"]) {
+      const file = join(process.cwd(), m[1] + ext)
+      try {
+        out.push(readFileSync(file, "utf8"))
+        break
+      } catch {
+        /* try the next extension */
+      }
+    }
+  }
+  return out
+}
+
+/** Does this page bound its read, directly or through a lib module it imports? */
+function isBounded(raw: string): boolean {
+  const src = stripComments(raw)
+  if (BOUNDED.some((re) => re.test(src))) return true
+  // A page that still queries directly must bound that read itself.
+  if (DIRECT_QUERY.test(src)) return false
+  return importedInsightsLibs(src).some((lib) =>
+    BOUNDED.some((re) => re.test(stripComments(lib))),
+  )
+}
+
 /** Async server pages under app/insights — the ones Next prerenders with a read. */
 function asyncServerPages(): string[] {
   const out: string[] = []
@@ -99,23 +171,83 @@ describe("/insights server pages bound their reads", () => {
 
   it.each(asyncServerPages())("/insights/%s bounds its read", (page) => {
     const src = readFileSync(join(INSIGHTS_DIR, page, "page.tsx"), "utf8")
-    const bounded = BOUNDED.some((re) => re.test(src))
     expect(
-      bounded,
+      isBounded(src),
       `/insights/${page} reads the DB during a PRERENDER without a budget.\n` +
         `Next kills the whole build if any page exceeds 60s, so this is a build-\n` +
         `integrity defect, not a slow page. Use one of:\n` +
         `  readBoardOrLive(...)        — the cached-board ladder\n` +
         `  fetchBoardForPage(...)      — the shared page fetcher\n` +
         `  withBoardBudget(p, label)   — rejects; for a page with a try/catch\n` +
-        `  withPagedBoardBudget(p, l)  — resolves { rows, error }; for fetchAllPaged`,
+        `  withPagedBoardBudget(p, l)  — resolves { rows, error }; for fetchAllPaged\n` +
+        `...or move the read into a lib/insights/* module that uses one of the above,\n` +
+        `which is what the server-page data-access ratchet is pushing you toward.`,
     ).toBe(true)
+  })
+
+  // ⚠ GUARDS THE GUARD. A check that follows delegation can go vacuous in a way
+  // the direct version could not: if `isBounded` ever returned true for anything
+  // that merely LOOKS delegated, every page would pass and the ban would be
+  // decoration. These four cases pin the exact shape of the concession.
+  it("the delegation concession is narrow: a page with its OWN query must still bound it", () => {
+    const pageWithOwnQuery = [
+      `import { fetchThing } from "@/lib/insights/board-page-fetch"`,
+      `import { supabaseAdmin } from "@/lib/supabase"`,
+      `export default async function P() {`,
+      `  const { data } = await supabaseAdmin.from("v_thing").select("*")`,
+      `  return null`,
+      `}`,
+    ].join("\n")
+    // It imports a module that IS bounded — and is still rejected, because the
+    // unbounded read is in the page.
+    expect(isBounded(pageWithOwnQuery)).toBe(false)
+
+    // The same page, with its own budget, passes.
+    expect(isBounded(pageWithOwnQuery.replace("await supabaseAdmin", "await withBoardBudget(supabaseAdmin"))).toBe(true)
+
+    // A fully extracted page — no query of its own — passes on its lib module.
+    expect(
+      isBounded(
+        [
+          `import { fetchPackMarketBuckets } from "@/lib/insights/pack-market-board"`,
+          `export default async function P() { await fetchPackMarketBuckets("allday"); return null }`,
+        ].join("\n"),
+      ),
+    ).toBe(true)
+
+    // ⚠ A page with no query and no bounded import is NOT waved through — and
+    // this exact case is what caught the comment hole: board-status.ts mentions
+    // `readBoardOrLive()` twice in its prose, so before comments were stripped
+    // this returned TRUE and any page importing it was "bounded" by a comment.
+    expect(
+      isBounded(
+        [
+          `import { boardStatus } from "@/lib/insights/board-status"`,
+          `export default async function P() { return null }`,
+        ].join("\n"),
+      ),
+    ).toBe(false)
+
+    // ...and the page-level half of the same hole: naming a primitive in a
+    // COMMENT does not bound anything.
+    expect(
+      isBounded(
+        [
+          `// This page uses withBoardBudget(...) — or rather, it does not.`,
+          `import { supabaseAdmin } from "@/lib/supabase"`,
+          `export default async function P() {`,
+          `  await supabaseAdmin.from("v_thing").select("*")`,
+          `  return null`,
+          `}`,
+        ].join("\n"),
+      ),
+    ).toBe(false)
   })
 
   it("no page is left unbounded — the count is zero, so there is no allowlist", () => {
     const unbounded = pages.filter((page) => {
       const src = readFileSync(join(INSIGHTS_DIR, page, "page.tsx"), "utf8")
-      return !BOUNDED.some((re) => re.test(src))
+      return !isBounded(src)
     })
     expect(unbounded, `unbounded: ${unbounded.join(", ")}`).toEqual([])
   })
