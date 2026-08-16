@@ -24,6 +24,26 @@ export default defineConfig({
   use: {
     baseURL,
     ignoreHTTPSErrors: true,
+
+    // ⚠ A NON-UTC TIMEZONE IS LOAD-BEARING, not cosmetic.
+    //
+    // React #418 (hydration text mismatch) is the one user-visible defect class
+    // no other gate here can see: vitest renders "server" and "client" in one
+    // Node process, and CI runners are UTC — so a page whose SSR output depends
+    // on the runtime zone renders IDENTICALLY on both sides and the mismatch is
+    // unreachable *by construction*. That is exactly how /insights/first-mint
+    // shipped a #418 that only a live browser in a real timezone could produce
+    // (2026-08-16: a sale at 00:00Z rendered "Aug 16" server-side and "Aug 15"
+    // to a Pacific visitor).
+    //
+    // Pinning America/Los_Angeles makes this monitor render in a zone that
+    // DISAGREES with the UTC server, so the console assertion in
+    // e2e/healthy-page.ts can actually observe the class. Pinning the locale too
+    // keeps number/date formatting deterministic run-to-run. Override with
+    // PW_TIMEZONE if a future zone is more representative — but do NOT set it to
+    // UTC, which silently disarms the check.
+    timezoneId: process.env.PW_TIMEZONE || "America/Los_Angeles",
+    locale: "en-US",
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
     proxy: process.env.PW_PROXY_SERVER

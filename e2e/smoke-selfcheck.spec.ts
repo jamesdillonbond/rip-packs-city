@@ -64,6 +64,48 @@ const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
 const SHORT_OK = `<!doctype html><html><body><main>${"Short but genuine content here. ".repeat(4)}</main></body></html>`
 
+// ── hydration-mismatch fixtures (React #418) ────────────────────────────────
+// These pages are HEALTHY by every other measure the helper checks: HTTP 200,
+// no error-boundary text, plenty of content. That is the entire point — a #418
+// does not change the final DOM, so it is invisible to the status/content
+// assertions and only the console listener can see it. Both delivery paths are
+// covered because React can surface it either way depending on the build.
+
+// Thrown, so it arrives via page.on("pageerror") — this is the shape production
+// actually emitted on /insights/top-sales and /insights/first-mint.
+const HYDRATION_THROW = `<!doctype html><html><body>
+  <main>${CONTENT}</main>
+  <script>
+    setTimeout(function () {
+      throw new Error("Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message");
+    }, 0);
+  </script>
+</body></html>`
+
+// Logged, so it arrives via page.on("console") — the dev-build spelling.
+const HYDRATION_CONSOLE = `<!doctype html><html><body>
+  <main>${CONTENT}</main>
+  <script>
+    console.error("Text content does not match server-rendered HTML. Warning: Text content did not match.");
+  </script>
+</body></html>`
+
+// ⚠ THE CRY-WOLF CONTROL, and the more important half of this pair. Real pages
+// emit console errors constantly — measured on production 2026-08-16: 35x HTTP
+// 405, 26x 500, 8x CSP img-src, on pages that are working perfectly. If the
+// helper asserted on ALL console errors it would be red forever and get ignored,
+// which is worse than not having it. This fixture reproduces that ambient noise
+// and MUST still pass.
+const AMBIENT_NOISE = `<!doctype html><html><body>
+  <main>${CONTENT}</main>
+  <img src="/definitely-missing.png" alt="">
+  <script>
+    console.error("Failed to load resource: the server responded with a status of 405 ()");
+    console.error("Loading the image 'https://cdn.example.com/x.png' violates the following Content Security Policy directive: \\"img-src 'self'\\"");
+    console.warn("[Fast Refresh] rebuilding");
+  </script>
+</body></html>`
+
 // Sitemap fixtures for the entity-URL discovery self-check (entity-urls.ts).
 // Segment 1 = TopShot editions, 3 = entities (set/player/team) + top moments,
 // 4 = packs, 0 = series (served EMPTY here to exercise the no-URL -> skip path).
@@ -101,6 +143,9 @@ test.beforeAll(async () => {
     else if (url.startsWith("/error-with-content")) html(ERROR_WITH_CONTENT)
     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
+    else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
+    else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
+    else if (url.startsWith("/ambient-noise")) html(AMBIENT_NOISE)
     else if (url.startsWith("/four-oh-four-with-content")) html(`<!doctype html><html><body><main>${CONTENT}</main></body></html>`, 404)
     else if (url.startsWith("/five-hundred")) html("<!doctype html><html><body><h1>Internal Server Error</h1></body></html>", 500)
     else if (/^\/sitemap\/(\d)\.xml/.test(url)) {
@@ -126,6 +171,33 @@ test("PASSES a healthy page (h1 + real content)", async ({ page }) => {
     name: "healthy fixture",
     expectText: /Rip Packs City/,
   })
+})
+
+test("FAILS a page that throws a React hydration error (#418) despite a healthy DOM", async ({ page }) => {
+  // The regression this whole check exists for: HTTP 200, no error boundary,
+  // ~590 chars of content — every other assertion in the helper passes, and the
+  // page is still broken for the user. Verified live on /insights/top-sales and
+  // /insights/first-mint on 2026-08-16.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/hydration-throw`, name: "hydration throw" }),
+  ).rejects.toThrow(/client-side failure|#418/)
+})
+
+test("FAILS a page that LOGS a hydration mismatch (console path, not pageerror)", async ({ page }) => {
+  // React surfaces this either as a thrown error or a console message depending
+  // on the build, so both listeners have to be wired; covering only pageerror
+  // would miss the dev-build spelling entirely.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/hydration-console`, name: "hydration console" }),
+  ).rejects.toThrow(/client-side failure/)
+})
+
+test("PASSES a page with ambient console noise (does not cry wolf)", async ({ page }) => {
+  // ⚠ The control that keeps the check trustworthy. A failed subresource, a CSP
+  // image warning and a 405 are what every real page emits; if these tripped the
+  // helper the monitor would be permanently red and would stop being read —
+  // strictly worse than not having it. Measured production noise, reproduced.
+  await assertHealthyPage(page, { path: `${base}/ambient-noise`, name: "ambient noise" })
 })
 
 test("FAILS a page rendering a client-side error boundary", async ({ page }) => {

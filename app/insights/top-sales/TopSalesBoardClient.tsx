@@ -103,11 +103,25 @@ function fmtInt(n: number | null): string {
   return Number(n).toLocaleString("en-US")
 }
 
-function relTime(iso: string | null): string {
-  if (!iso) return "—"
+/**
+ * Relative time against an EXPLICIT instant — never `Date.now()` directly.
+ *
+ * ⚠ HYDRATION (React #418). Reading the wall clock during render makes the
+ * server and the first client render disagree: this board is ISR
+ * (`revalidate = 900`), so the served HTML can be up to 15 minutes old and
+ * "12h ago" becomes "13h ago" the moment a boundary is crossed — a text
+ * mismatch, which React reports as the minified #418 seen live on this page on
+ * 2026-08-16. `nowMs` is anchored to a PROP for the first render (see the
+ * `nowMs` state below), so both sides compute the identical string.
+ *
+ * `nowMs === null` means we have no deterministic anchor yet; render the
+ * em-dash rather than guess, which is still identical on both sides.
+ */
+function relTime(iso: string | null, nowMs: number | null): string {
+  if (!iso || nowMs == null) return "—"
   const then = new Date(iso).getTime()
   if (!Number.isFinite(then)) return "—"
-  const diff = Date.now() - then
+  const diff = nowMs - then
   const m = Math.floor(diff / 60000)
   if (m < 1) return "just now"
   if (m < 60) return `${m}m ago`
@@ -187,7 +201,7 @@ function SaleImage({ r, className }: { r: Row; className: string }) {
 }
 
 // Hero tile — the top sales by price, art-forward.
-function HeroTile({ r }: { r: Row }) {
+function HeroTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
   const title = r.player_name || r.set_name || "—"
   const sl = serialLabel(r)
   return (
@@ -203,7 +217,7 @@ function HeroTile({ r }: { r: Row }) {
         <div className="rpc-ts-hero-meta">
           <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
           <span className="rpc-ts-dot">·</span>
-          <span>{relTime(r.sold_at)}</span>
+          <span>{relTime(r.sold_at, nowMs)}</span>
         </div>
         <div className="rpc-ts-hero-parties">
           <span className="rpc-ts-party">
@@ -222,7 +236,7 @@ function HeroTile({ r }: { r: Row }) {
 
 // Compact card for the "Just sold · last 48 hours" horizontal rail. Same art /
 // drill-down / price formatting as everywhere else, sized for a scroll strip.
-function RecentTile({ r }: { r: Row }) {
+function RecentTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
   const title = r.player_name || r.set_name || "—"
   return (
     <Link href={rowHref(r)} className="rpc-ts-recent-card">
@@ -231,13 +245,13 @@ function RecentTile({ r }: { r: Row }) {
       </div>
       <div className="rpc-ts-recent-price">{fmtPrice(r.price_usd)}</div>
       <div className="rpc-ts-recent-name">{title}</div>
-      <div className="rpc-ts-recent-when">{relTime(r.sold_at)}</div>
+      <div className="rpc-ts-recent-when">{relTime(r.sold_at, nowMs)}</div>
     </Link>
   )
 }
 
 // Ranked list row.
-function SaleRow({ r, rank }: { r: Row; rank: number }) {
+function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | null }) {
   const title = r.player_name || r.set_name || "—"
   const sl = serialLabel(r)
   return (
@@ -276,7 +290,7 @@ function SaleRow({ r, rank }: { r: Row; rank: number }) {
       </div>
       <div className="rpc-ts-row-right">
         <div className="rpc-ts-row-price">{fmtPrice(r.price_usd)}</div>
-        <div className="rpc-ts-row-when">{relTime(r.sold_at)}</div>
+        <div className="rpc-ts-row-when">{relTime(r.sold_at, nowMs)}</div>
       </div>
     </Link>
   )
@@ -292,6 +306,30 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+
+  /**
+   * The clock this board renders against — anchored, never read live during the
+   * first render.
+   *
+   * ⚠ Every clock read during render is a hydration mismatch waiting to happen
+   * (React #418), because this page is ISR (`revalidate = 900`): the server
+   * rendered its HTML up to 15 minutes ago, the browser hydrates now, and any
+   * output derived from "now" differs. Measured live 2026-08-16 on this page:
+   * the 48h rail rendered 13 rows server-side and 12 after hydration, and #418
+   * was thrown.
+   *
+   * The initial value comes from `initialFetchedAt`, which is a PROP — so the
+   * server and the client's first render compute byte-identical output. Only
+   * after mount do we swap to the live clock, which is the same shape as
+   * components/insights/FreshnessStamp.
+   */
+  const [nowMs, setNowMs] = useState<number | null>(() => {
+    const t = initialFetchedAt ? Date.parse(initialFetchedAt) : NaN
+    return Number.isFinite(t) ? t : null
+  })
+  useEffect(() => {
+    setNowMs(Date.now())
+  }, [])
 
   const [collection, setCollection] = useState<CollectionFilter>("all")
   const [window, setWindow] = useState<WindowFilter>("7d")
@@ -364,7 +402,15 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
     // Derived from the loaded rows (already price/recency-bounded) so it needs
     // no extra fetch and stays in sync with the active filters. Hidden when the
     // window is quiet (no sales in 48h).
-    const cutoff = Date.now() - 48 * 60 * 60 * 1000
+    //
+    // ⚠ The cutoff rides `nowMs`, NOT `Date.now()`. A useMemo runs during the
+    // server render AND during hydration, so a live clock puts rows sitting near
+    // the 48h boundary on one side of it server-side and the other side
+    // client-side — measured 13 rows vs 12 on 2026-08-16, which is a DOM
+    // mismatch, not a cosmetic difference. Null (no anchor yet) yields an empty
+    // rail on both sides rather than a guess.
+    if (nowMs == null) return []
+    const cutoff = nowMs - 48 * 60 * 60 * 1000
     return [...rows]
       .filter((r) => {
         if (r.price_usd == null || !r.sold_at) return false
@@ -373,7 +419,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
       })
       .sort((a, b) => new Date(b.sold_at!).getTime() - new Date(a.sold_at!).getTime())
       .slice(0, 12)
-  }, [rows])
+  }, [rows, nowMs])
 
   const kpis = useMemo(() => {
     const priced = rows.filter((r) => r.price_usd != null)
@@ -454,7 +500,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
           <div className="rpc-ts-section-label">Featured · highest value</div>
           <div className="rpc-ts-hero-grid">
             {heroRows.map((r) => (
-              <HeroTile key={r.sale_id} r={r} />
+              <HeroTile key={r.sale_id} r={r} nowMs={nowMs} />
             ))}
           </div>
         </section>
@@ -466,7 +512,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
           <div className="rpc-ts-section-label">Just sold · last 48 hours</div>
           <div className="rpc-ts-recent-rail">
             {recentRows.map((r) => (
-              <RecentTile key={r.sale_id} r={r} />
+              <RecentTile key={r.sale_id} r={r} nowMs={nowMs} />
             ))}
           </div>
         </section>
@@ -528,7 +574,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
         ) : (
           <div className="rpc-ts-list">
             {rows.map((r, i) => (
-              <SaleRow key={r.sale_id} r={r} rank={i + 1} />
+              <SaleRow key={r.sale_id} r={r} rank={i + 1} nowMs={nowMs} />
             ))}
           </div>
         )}
