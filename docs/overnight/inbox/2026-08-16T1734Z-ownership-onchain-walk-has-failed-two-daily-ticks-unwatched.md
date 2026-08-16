@@ -123,12 +123,40 @@ drain call), so a retry re-runs expensive and not-always-idempotent work rather 
 a cheap gate. The shape worth fixing is specifically *a cheap gating read whose failure discards
 the whole run*.
 
-## Still open — the monitoring gap (NOT taken)
+## ✅ The monitoring gap is CLOSED (2026-08-16, Trevor-approved)
 
-The retry does nothing about the silence. Cheapest honest instrument is an **outcome** check
-rather than a cadence one — the shape that closed the concierge blind spot: alert on
-`topshot_ownership`'s max `observed_at` age (breach at ~72 h — two missed daily ticks plus slack),
-one indexed read, firing on exactly the condition a collector would notice. ⚠ A
-`pipeline_cadence_watchlist` row would **not** work, for reason (2) above — do not add one and
-consider it covered. Left for a decision because it is a new alerting arm, and this repo has
-already paid for one that cried wolf (`ufc_fmv_stale_hours`).
+Sentinel check **`Ownership Index Freshness`** — warn 30 h (one missed daily tick), crit 72 h
+(~two). Overridable via `sentinel_threshold_config` without a deploy; a MISSING config row falls
+back to those hardcoded values, so a config gap can never silently disable it.
+
+Four design points, each of which was a fork where the obvious choice was wrong:
+
+1. **It reads `pipeline_runs`, not `max(observed_at)`.** The direct metric is the more honest one
+   but there is **no index on `observed_at`** — it is a 4,230-buffer seq scan — and adding one is
+   the wrong trade, because the walk upserts that exact column on every row (a 4th index there is
+   worst-case write churn on an IO-throttled instance). Verified the proxy is **exact**: the last
+   productive run's `started_at` equals `max(observed_at)` to the millisecond.
+2. **It spans BOTH writers.** ⚠ The Dune replay logs as **`ownership-sync-dune`**, while its route
+   is `app/api/cron/sync-topshot-ownership-dune` — I queried the route name first and got zero
+   rows, which this arm would have read as an outage. It is WEEKLY, so an arm watching only the
+   walk would page during a healthy Dune-only week.
+3. ⚠ **An empty `pipeline_runs` window is CRITICAL, never ok.** Retention is ~73 h, so the query
+   returns nothing exactly once the outage outlives it — i.e. the arm would fall silent precisely
+   when things got bad enough to matter. It falls back to the indefinite `pipeline_runs_daily`
+   to *date* the outage, and when even that is unreadable it states the retention bound rather
+   than inventing an age.
+4. **`rows_written > 0` is what makes it an OUTCOME check.** A failing run still writes a
+   `pipeline_runs` row; requiring a productive one is the whole difference from the cadence
+   instruments that read healthy through both failed ticks.
+
+**Not shipped red:** measured live at ship time the arm reads **warn (52.7 h)**, not critical —
+deliberately, since an arm that is red on arrival trains the operator to skim past it (the
+`ufc_fmv_stale_hours` cost). It goes **critical ~09:30Z on 08-17** if tonight's 13:30Z tick fails
+again, and back to **ok** if the retry above works. **The arm and the fix validate each other on
+tonight's tick** — that is the single check worth running tomorrow.
+
+Tests: 6 cases in `__tests__/api-sentinel-deep.test.ts`, mutation-proven (empty-window→ok reds,
+dropping either writer reds, dropping `rows_written > 0` reds, either threshold reds). Pinning the
+two-writer property required teaching `installRecordingFilters` to record `.in()` **with its
+value list** — the fixture's chainables discard arguments, so a status-only assertion would have
+passed just as happily with a writer deleted.
