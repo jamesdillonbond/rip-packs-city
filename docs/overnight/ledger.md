@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `dashboard/packs` + `[collection]/overview` converted; NO new defect in either, which is the result worth recording
+
+Both moved into `PackHistoryClient.tsx` / `CollectionOverviewClient.tsx` so the component
+gate measures them, covered by `__tests__/component-PackHistoryAndOverviewClients.test.tsx`
+(35 tests). **Neither carried a new defect — both were already hardened**, and that is
+recorded here so the next sweep does not re-derive them.
+
+What this buys is that `[collection]/overview`'s **three-way** sales claim is now driven
+rather than grepped. Deep-audit D11, R1 and R4 each fixed one layer of it, and the states
+must never share a branch: *read failed* → "Couldn't load this right now" (about US);
+*read ok, 0 rows* → "No sales in the last 24h" (about the MARKET); *read ok, 0 NAMEABLE* →
+"N recent sales not yet matched to a moment" (about our CATALOG). The third exists because
+Disney Pinnacle traded 960 times in 24 h with 60% of rows carrying a NULL `edition_id` — a
+catalog-coverage gap, not an ingest regression, so the copy has to survive it. Eight
+mutations, all killed, including the one that collapses state 3 into state 2 and the one
+that lets a 200-carrying-an-`error`-key become "an empty collection" (which would render the
+whole KPI band as 0 editions / 0% / $0).
+
+Also topped up `PackSimulatorClient` and `PackHistoryClient`, the two weakest new files by
+missing branches (55 and 63) — the simulator's FMV-coverage disclosure and beat-retail
+withholding, and the packs summary's "+N unpriced" disclosure, are each the honest half of a
+number a collector acts on.
+
+⚠ **One of my own assertions was the "two conditions true at different moments" trap again**:
+a case awaited the ABSENCE of "Loading packs…", which is satisfied by the pre-effect render
+before anything has been fetched. Re-pointed at the positive marker.
+
+Ratchets: client-page-gate 15 → 13, fetch-honesty 18 → 16. Gates: component
+90.73/81.97/89.33/93.59 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores both monolithic `page.tsx` files and both budgets. No
+behaviour change to revert. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — two fabricated ZEROS: "Outstanding liability 0" on the rewards console, "0.00 FP" on the Fast Break optimizer
 
 `admin/rewards` and `nba/fast-break` converted to `AdminRewardsClient.tsx` /
