@@ -954,6 +954,37 @@ const PINS = [
     migration:
       "supabase/migrations/20260815180000_audit_20260815_snapshot_refresh_topshot_conflated_editions_detector_only.sql",
   },
+  {
+    // pg_cron `17 */6 * * *`. Writes moment_acquisitions — the COST BASIS table
+    // every P&L figure a Pinnacle collector sees is computed against. A defect
+    // does not throw; it shows a collector the wrong profit on their own
+    // collection.
+    //
+    // ⚠ Pins that only PRICED sales qualify (`sale_price_usd > 0`), because a
+    // basis of 0 renders as a 100%-profit moment. And pins that this path has NO
+    // nft_id-scoped gate, deliberately: a moment changes hands, so each owner
+    // needs their own basis. Adding the mint sibling's NOT EXISTS here — which
+    // would look like making the pair consistent — would leave every buyer after
+    // the first with no cost basis at all.
+    fn: "backfill_pinnacle_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_acquisitions.sql",
+    migration:
+      "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
+  },
+  {
+    // pg_cron `19 * * * *`. The mint half of the same cost-basis pair.
+    //
+    // ⚠ Pins the two properties most likely to be "tidied" into bugs: a mint
+    // writes NO buy_price (the column is absent from the INSERT list, so it lands
+    // NULL — a 0 would render as 100% profit forever), and the NOT EXISTS gate is
+    // scoped on nft_id ALONE rather than the table's (nft_id, wallet,
+    // transaction_hash) conflict key, so a mint can never be inserted
+    // retroactively beneath a later marketplace purchase by a different wallet.
+    fn: "backfill_pinnacle_mint_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_mint_acquisitions.sql",
+    migration:
+      "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
+  },
 ]
 
 /**
