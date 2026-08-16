@@ -1,6 +1,28 @@
-# The `:13` pg_cron collision is OPERATOR-ONLY — which is why it keeps being re-diagnosed and never fixed
+# The `:13` pg_cron collision — ✅ FIXED 2026-08-16, and the "operator-only" premise in this title was WRONG
 
 Filed 2026-08-16 ~09:30 PT (16:30Z) by the monthly deep audit (run 2, continuation).
+
+> **✅ STATUS: SHIPPED ~09:45 PT. jobid 109 → 332, moved `13 4,16` → `43 4,16`, still `cron_heavy`-owned.**
+> **⛔ THE TITLE AND THE "ACTUAL BLOCKER" SECTION BELOW ARE WRONG AND ARE KEPT AS THE LESSON.** I hit
+> two permission errors, concluded the class was operator-only, and wrote it up that way — while jobs
+> **324–331 had been created as `cron_heavy` hours earlier**, which was standing proof a path existed.
+> **Two failed verbs are not a closed door; enumerate the permission surface before declaring a blocker.**
+> The working path was one query away: `cron_heavy` HAS `schedule` + `unschedule`, just not `alter_job`.
+>
+> ```sql
+> SET ROLE cron_heavy;
+> SELECT cron.unschedule(109);
+> SELECT cron.schedule('rpc-refresh-special-serial-owners-mv', '43 4,16 * * *',
+>                      'SELECT public.refresh_topshot_special_serial_owners_mv();');
+> ```
+>
+> ⚠ **RESCHEDULE AS `cron_heavy`, NEVER AS `postgres`** — `cron.schedule` stamps `username = current_user`,
+> and `cron_heavy` carries `statement_timeout=600s` while `postgres` inherits the global **120s**. This
+> job's measured max is **225 s**, so a `postgres`-owned copy would start silently timing out. The
+> ownership is a *budget*, not bookkeeping.
+>
+> ⚠ `unschedule`+`schedule` mints a NEW jobid (109 → **332**); anything citing 109 is now stale.
+> **Revert:** `SET ROLE cron_heavy; SELECT cron.unschedule(332); SELECT cron.schedule('rpc-refresh-special-serial-owners-mv','13 4,16 * * *','SELECT public.refresh_topshot_special_serial_owners_mv();');`
 
 ## What was observed live
 
@@ -88,10 +110,59 @@ minute **9**, which *looks* like a new collision cluster. It is not: each is hou
 (`48 0,6,12,18` · `48 1,7,13,19` · `48 2,8,14,20` · `48 3,9,15,21` · `48 4,10,16,22` ·
 `48 5,11,17,23`), so **exactly one leg runs per hour**, as that split's design note claims. No action.
 
-## Third backend still unattributed
+## ✅ Third backend RESOLVED — it was the SAME job, and the name is why nobody saw it
 
-`REFRESH MATERIALIZED VIEW CONCURRENTLY public.allday_special_serial_owners_mv` ran as `cron_heavy`
-at the same instant, but **no `cron.job` row carries that command** (searched by command text and by
-jobname across all schedules). It is presumably issued from inside another function. Worth resolving
-before the stagger, since it may need moving too — a stagger that leaves two of three colliding buys
-less than it appears.
+`REFRESH MATERIALIZED VIEW CONCURRENTLY public.allday_special_serial_owners_mv` carries no
+`cron.job` row because **it is the second statement inside `refresh_topshot_special_serial_owners_mv()`**
+— the function jobid 109/332 calls. Read from `pg_get_functiondef`, its body is:
+
+```sql
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.topshot_special_serial_owners_mv;
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.allday_special_serial_owners_mv;
+```
+
+⚠ **A function named `..._topshot_...` refreshes the AllDay MV too** — which is exactly why a search
+by command text and by jobname found nothing, and why this read as a mystery third scheduler. Its own
+`log_pipeline_run` call says so (`'mvs', 'topshot+allday'`); the NAME does not. **Same lesson as the
+`_p` procedure trap already in CLAUDE.md: read the body, never infer the callee from the name.**
+
+**So the stagger moves TWO of the three colliding backends, not one of three** — the correction runs
+in the reassuring direction, and the "may need moving too" worry is void. Nothing further to move.
+
+## ⚠ BUT THE STAGGER IS NOT THE LEVER FOR THE 225 s RUN — and the arithmetic says so cleanly
+
+Both of this job's daily ticks collide with jobid 71, because **71 is hourly**. So that collision is
+present in both ticks equally — and the ticks are not equal:
+
+| date | 04:13Z (21:13 PT) | 16:13Z (09:13 PT) | ratio |
+|---|---|---|---|
+| 08-13 | — | 138.2 s | — |
+| 08-14 | 16.4 s | 159.9 s | **9.8x** |
+| 08-15 | 37.6 s | 181.5 s | **4.8x** |
+| 08-16 | 22.5 s | **224.8 s** | **10.0x** |
+
+**A cause present in both ticks cannot explain a 10x difference between them.** The dominant cost is
+**ambient concurrent load** — 04:13Z is quiet, 16:13Z is the business-hours peak — not the `:13`
+collision. And `:43` at 16:43Z is still business hours. So the stagger is worth keeping (it removes a
+real collision and costs nothing), but **do not expect it to fix the 225 s run**, and do not read a
+still-slow 16:43Z tick as the stagger having failed.
+
+⚠ **The 16:xx tick is also TRENDING UP — 138 -> 160 -> 181 -> 225 s over four days** — which tracks
+the platform-wide saturation this file's opening section observed, not anything about this job.
+
+## ⚠ Live confirmation that a function-level `statement_timeout` is INERT
+
+`refresh_topshot_special_serial_owners_mv()` declares **`SET statement_timeout TO '200s'`** in its
+`proconfig`. The 08-16 16:13Z run took **224.8 s and reported `ok: true`.** Had that declaration bound
+the statements inside the function, the run would have been cancelled at 200 s.
+
+**It did not, so it does not.** The binding budget is the caller's role — `cron_heavy`'s 600 s. This
+is an independent second instance of the trap already recorded for the drain seeders and the
+trust-precompute legs, found on a function nobody had looked at, and it is further evidence that any
+fix phrased as "raise the function's declared timeout" is a no-op.
+
+⚠ **Corollary for reading this pipeline: `pipeline_runs.duration_ms` is a hard 0 on every row.**
+`log_pipeline_run` is called with `p_started_at => clock_timestamp()` while `finished_at` defaults to
+**`now()`, which is transaction-stable** — so the generated column measures the transaction, not the
+work. **Read `extra->>'duration_ms'`** (computed with `clock_timestamp()`), which is where every
+figure in the table above comes from.
