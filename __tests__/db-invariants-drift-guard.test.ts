@@ -1112,6 +1112,26 @@ const PINS = [
     migration:
       "supabase/migrations/20260816040000_audit_20260816_snapshot_attribute_topshot_rips_empirical.sql",
   },
+  {
+    // pg_cron `25 * * * *`. Hourly pack EV for every Top Shot distribution whose
+    // drop pool came from Atlas, appended to pack_ev_history — the table behind
+    // pack_ev_latest and the PUBLIC **+EV** badge.
+    //
+    // ⚠ `is_positive_ev` is the one boolean a collector reads as "buying this
+    // pack is worth it", so the pins here are honesty guards: no +EV without a
+    // known ask, a NULL value_ratio rather than a fabricated one, a delisted or
+    // zero ask treated as NO ask (not a $0 pack, which would look infinitely
+    // +EV), and a FAILED EV computation still writing a row — skipping would
+    // leave last hour's row as pack_ev_latest and keep a stale badge live.
+    //
+    // ⚠ Also pins that `pack_ev` and `is_positive_ev` can legitimately disagree:
+    // an ask-less pack gets a positive-looking pack_ev equal to its gross EV
+    // while the flag is NULL. Anything rendering a buy signal must read the FLAG.
+    fn: "refresh_atlas_pack_ev",
+    test: "supabase/tests/refresh_atlas_pack_ev.sql",
+    migration:
+      "supabase/migrations/20260816050000_audit_20260816_snapshot_refresh_atlas_pack_ev.sql",
+  },
 ]
 
 /**
