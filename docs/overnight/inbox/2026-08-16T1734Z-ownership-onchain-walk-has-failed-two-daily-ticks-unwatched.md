@@ -41,14 +41,62 @@ statement (`stale-wallets`) — the same pool-acquire family as the entity-page 
 open a separate investigation**; it is another view of the 2 GB instance's disk-IO saturation.
 What makes it worth filing separately is only the *silence*, not the cause.
 
-## Suggested next step (not taken)
+## ⚠ Correction (same session): the 85k → 3.7k drop is NEITHER of the two options I offered
 
-Cheapest honest fix is an **outcome** check rather than a cadence one — the shape that closed
-the concierge blind spot: alert on `topshot_ownership`'s max `observed_at` age (breach at, say,
-72 h — two missed daily ticks plus slack), which is one indexed read and fires on exactly the
-condition a collector would notice. A `pipeline_cadence_watchlist` row would **not** work here,
-for reason (2) above; do not add one and consider it covered.
+I flagged the 08-13 (75,757 rows) → 08-14 (1,748 rows) collapse as "queue draining **or** already
+degrading". **It is a third thing, and both of my hypotheses were wrong.** `wallets_walked` is
+**799 on both days** — the batch is a fixed wallet COUNT (`WALLETS_PER_RUN = 800`), so
+`rows_found` just tracks how many moments that particular batch of wallets happens to hold. The
+walk is oldest-`observed_at`-first, so 08-13 drew a batch of whales (85,593 NFTs) and 08-14 drew
+small wallets (3,708). **Expected variance, not a signal.** Do not read `rows_found` as
+throughput on this pipeline; read `wallets_walked`.
 
-Worth confirming first, since it costs one query and changes the framing: whether the 08-13
-(75,757 rows) → 08-14 (1,748 rows) drop is the queue legitimately draining or the walk already
-degrading a day before it started throwing.
+*(Worth a look separately, not chased here: on 08-14 `vanished` (1,960) EXCEEDED `confirmed`
+(1,748) — >50% of Dune-attributed NFTs in that batch were no longer held. Plausible for stale
+small wallets that churned, but it is the one number in the series I cannot explain from batch
+composition alone.)*
+
+## Why `p_limit` is NOT the lever (pre-empting the obvious fix)
+
+`get_stale_ownership_wallets` is:
+
+```sql
+SELECT owner_address, max(observed_at) FROM topshot_ownership
+ GROUP BY owner_address ORDER BY max(observed_at) ASC LIMIT LEAST(...)
+```
+
+Measured: **Parallel Seq Scan over all 267,742 rows, 4,230 buffers, `shared hit=3` (fully cold),
+2,390 ms**, 7,903 distinct wallets. The `LIMIT` sits above a HashAggregate that must consume every
+row first, so **lowering `WALLETS_PER_RUN` buys identical scan cost and less work done** — the same
+scan-bound shape CLAUDE.md already records for `remap_topshot_realign_miskeyed_subeditions`. Don't.
+
+Also note 2.4 s ≠ the ~72 s the run took to fail: the error is **pool-acquire, before execution**,
+so query cost is not the proximate cause and an index would not address it. (An index-only scan on
+`(owner_address, observed_at)` is the tempting next idea and is probably a trap here — this table is
+upserted by this very walk, so pages are non-all-visible and it would degrade to heap fetches, the
+measured-and-rejected `fmv_snapshots` covering-index case. Measure before building it.)
+
+## Mitigation SHIPPED 2026-08-16 (partial — read the caveat)
+
+The gating read now goes through `rpcWithRetry` with a **batch-sized** backoff
+(3 attempts / 20 s base / 300 s total budget) instead of a bare `supabaseAdmin.rpc()`.
+`rpc-with-retry.ts:281` already classifies "connection pool" as transient; the route simply
+wasn't using it. The helper's *default* (3 attempts, ~250 ms) is deliberately tuned for a page
+render — and the comment at `rpc-with-retry.ts:265` records that lengthening it is "a product
+call" because it trades a 500 for a ~20 s hang. **That objection does not apply here: nobody is
+waiting on a daily cron**, and the route has a 720 s budget it never touched (it died at 72 s).
+
+⚠ **This is a mitigation, not a proven fix.** If the pool is saturated for longer than 300 s the
+run still fails. It converts a guaranteed total loss into a likely recovery, and a slow-but-
+succeeding fetch degrades to PARTIAL progress (the queue is resumable) rather than an overrun.
+**Judge it by `wallets_walked` on the next few ticks.**
+
+## Still open — the monitoring gap (NOT taken)
+
+The retry does nothing about the silence. Cheapest honest instrument is an **outcome** check
+rather than a cadence one — the shape that closed the concierge blind spot: alert on
+`topshot_ownership`'s max `observed_at` age (breach at ~72 h — two missed daily ticks plus slack),
+one indexed read, firing on exactly the condition a collector would notice. ⚠ A
+`pipeline_cadence_watchlist` row would **not** work, for reason (2) above — do not add one and
+consider it covered. Left for a decision because it is a new alerting arm, and this repo has
+already paid for one that cried wolf (`ufc_fmv_stale_hours`).
