@@ -718,3 +718,319 @@ describe("pack-events-ingest worker — the opens cursor", () => {
   })
 })
 
+// ── BACKFILL MODE ──────────────────────────────────────────────────────────
+//
+// `POST /backfill` runs the same chunk machinery against a SEPARATE CURSOR SET,
+// walking historical blocks toward a fixed end rather than chasing the sealed
+// tip. It was the last uncovered leg of this worker.
+//
+// ⚠ THE HAZARD IS CURSOR CROSS-CONTAMINATION, and it is silent both ways. If
+// backfill wrote the LIVE cursors it would drag forward ingest back into
+// history and re-walk months of blocks; if live wrote the BACKFILL cursors it
+// would jump the backfill to the tip and permanently skip everything in
+// between — a hole in the historical record that nothing detects, because both
+// pipelines keep reporting healthy ticks the whole time. So the cursor NAMES
+// each mode reads and writes are the load-bearing assertion here, not the row
+// counts.
+//
+// The two modes are also deliberately separated in telemetry
+// (`pack-events-ingest` vs `pack-events-ingest-backfill`), so a wedged backfill
+// cannot be masked by a healthy live tick in `pipeline_runs`.
+describe("pack-events-ingest worker — backfill mode", () => {
+  function backfillPost(token = "worker-token"): Request {
+    return new Request("https://worker.test/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  }
+
+  /** All cursors present, positioned mid-history. TARGET_END_BLOCK is
+   *  151_610_000 and TS_PRIMARY_BACKFILL_END_BLOCK is its own constant, so these
+   *  sit well below both and leave real work to do. */
+  function backfillCursors(over: Record<string, number> = {}) {
+    const base: Record<string, number> = {
+      topshot_pack_purchases: 151_600_000,
+      topshot_pack_opens: 151_600_000,
+      allday_pack_purchases: 151_600_000,
+      topshot_pack_purchases_backfill: 151_500_000,
+      topshot_pack_opens_backfill: 151_500_000,
+      topshot_pack_purchases_primary_backfill: 151_500_000,
+      allday_pack_purchases_backfill: 151_500_000,
+      ...over,
+    }
+    return {
+      data: Object.entries(base).map(([id, last_processed_block]) => ({ id, last_processed_block })),
+      error: null,
+    }
+  }
+
+  /** No events anywhere — this suite is about cursors and mode shape, not rows. */
+  function quietChain() {
+    return installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "151610500" } }]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+  }
+
+  it("serves POST /backfill and reports the backfill-only blocks", async () => {
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const res = await worker.fetch(backfillPost(), ENV, CTX)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+
+    // Backfill-only blocks are present...
+    expect(body.primary_backfill, "primary_backfill is a backfill-mode block").toBeTruthy()
+    expect(body.allday_backfill, "allday_backfill is a backfill-mode block").toBeTruthy()
+    // ...and the LIVE-only block is ABSENT, not null. The body spreads each
+    // block conditionally (`...(x ? {k: x} : {})`), so an inapplicable leg has
+    // no key at all.
+    //
+    // ⚠ Worth stating because it is a real contract wrinkle a consumer can trip
+    // on: `body.allday_forward` is undefined in backfill mode, so a reader doing
+    // `body.allday_forward.rows_inserted` throws rather than reading 0. I
+    // asserted `toBeNull()` here first, on the assumption that a mode-inapplicable
+    // block would be explicitly nulled — it is not, and the test told me so.
+    expect(body.allday_forward).toBeUndefined()
+  })
+
+  it("live mode reports the mirror image", async () => {
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    expect(body.allday_forward).toBeTruthy()
+    expect(body.primary_backfill).toBeUndefined()
+    expect(body.allday_backfill).toBeUndefined()
+  })
+
+  it("backfill writes ONLY the *_backfill cursors, never the live ones", async () => {
+    // ⚠ The core assertion of this suite. A backfill tick that advanced
+    // `topshot_pack_purchases` would drag forward ingest back into history.
+    fetchMock = quietChain()
+    const spy = install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(backfillPost(), ENV, CTX)
+
+    const cursorWrites = (spy.writes.event_cursor ?? []).flatMap((w) => w.rows)
+    const touched = new Set(cursorWrites.map((r) => r.id))
+    for (const live of ["topshot_pack_purchases", "topshot_pack_opens", "allday_pack_purchases"]) {
+      expect(touched.has(live), `backfill must not write the live cursor ${live}`).toBe(false)
+    }
+    // And every cursor it DID write is a backfill one.
+    for (const id of touched) {
+      expect(String(id), `${String(id)} is not a backfill cursor`).toMatch(/_backfill$/)
+    }
+  })
+
+  it("live writes ONLY the live cursors, never the *_backfill ones", async () => {
+    // The mirror hazard, and the worse of the two: a live tick that advanced a
+    // backfill cursor would jump it to the tip and permanently skip every block
+    // in between — a hole in the historical record nothing detects.
+    fetchMock = quietChain()
+    const spy = install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(post(), ENV, CTX)
+
+    const touched = new Set((spy.writes.event_cursor ?? []).flatMap((w) => w.rows).map((r) => r.id))
+    for (const id of touched) {
+      expect(String(id), `live mode wrote the backfill cursor ${String(id)}`).not.toMatch(/_backfill$/)
+    }
+  })
+
+  it("the two modes log under DIFFERENT pipeline names", async () => {
+    // ⚠ Shared telemetry would let a healthy live tick mask a wedged backfill in
+    // pipeline_runs — the cadence monitors key on the pipeline name.
+    fetchMock = quietChain()
+    const liveSpy = install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    await worker.fetch(post(), ENV, CTX)
+    const liveLog = mustFind(
+      liveSpy.rpcCalls,
+      (c) => c.name === "log_pipeline_run",
+      "the live pipeline_runs write",
+    )
+    expect((liveLog.args as Record<string, unknown>).p_pipeline).toBe("pack-events-ingest")
+
+    fetchMock = quietChain()
+    const bfSpy = install({
+      event_cursor: backfillCursors(),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    await worker.fetch(backfillPost(), ENV, CTX)
+    const bfLog = mustFind(
+      bfSpy.rpcCalls,
+      (c) => c.name === "log_pipeline_run",
+      "the backfill pipeline_runs write",
+    )
+    expect((bfLog.args as Record<string, unknown>).p_pipeline).toBe("pack-events-ingest-backfill")
+  })
+
+  it("the AllDay backfill stops short of the forward cursor by the catch-up threshold", async () => {
+    // ⚠ The two AllDay cursors walk TOWARD each other. Without the 1000-block
+    // gap they would overlap and re-ingest the same events from both ends — the
+    // dedupe key absorbs it, but the work is wasted every tick, forever, and the
+    // "caught up" state would never latch.
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors({
+        allday_pack_purchases: 151_600_000,
+        // 500 below the forward cursor — INSIDE the 1000 threshold, so it is
+        // already caught up and must not walk at all.
+        allday_pack_purchases_backfill: 151_599_500,
+      }),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(backfillPost(), ENV, CTX)).json()
+    expect(body.allday_backfill.caught_up_to_forward).toBe(true)
+    expect(body.allday_backfill.chunks_processed).toBe(0)
+    expect(body.allday_backfill.catchup_target_block).toBe(151_600_000 - 1000)
+    expect(body.allday_backfill.allday_forward_cursor).toBe(151_600_000)
+  })
+
+  it("...and is NOT caught up while it is still more than the threshold behind", async () => {
+    // The positive half. Without it, the assertion above is satisfied by a leg
+    // that reports caught_up unconditionally.
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors({
+        allday_pack_purchases: 151_600_000,
+        allday_pack_purchases_backfill: 151_000_000, // far behind
+      }),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(backfillPost(), ENV, CTX)).json()
+    expect(body.allday_backfill.caught_up_to_forward).toBe(false)
+  })
+
+  it("the TopShot primary backfill latches complete at its own end block", async () => {
+    // A separate end from TARGET_END_BLOCK, and it must LATCH — a completed
+    // backfill that kept walking would burn a chunk budget every tick forever.
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors({
+        // Far past any plausible end block, so the complete branch is taken.
+        topshot_pack_purchases_primary_backfill: 999_999_999,
+        // ⚠ EVERY OTHER backfill cursor is parked at/past its own end too, so
+        // the event-fetch count below isolates the primary leg. Left walking,
+        // they contributed 360 fetches and drowned the signal entirely — the
+        // first version of this assertion failed for that reason, not because
+        // the short-circuit was broken.
+        topshot_pack_purchases_backfill: 151_610_000,
+        topshot_pack_opens_backfill: 151_610_000,
+        allday_pack_purchases: 151_600_000,
+        allday_pack_purchases_backfill: 151_599_999,
+      }),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(backfillPost(), ENV, CTX)).json()
+    expect(body.primary_backfill.complete).toBe(true)
+    expect(body.primary_backfill.chunks_processed).toBe(0)
+    expect(
+      body.primary_backfill.end_block,
+      "the end block is reported so an operator can see what 'complete' meant",
+    ).toBeGreaterThan(0)
+
+    // ⚠ THE PROPERTY WORTH PINNING is that a COMPLETED backfill makes no
+    // upstream event fetches at all — a latched cursor must stop hitting Flow
+    // REST every tick, forever. That is asserted below.
+    //
+    // ⚠ But the `if (initial >= END)` early return is NOT what enforces it, and
+    // a surviving mutation is how I found that out. `complete` latches in TWO
+    // places (here, and again after the loop as `if (target >= END) complete =
+    // true`), and `processCursor` ALREADY no-ops when from > end — its
+    // computeChunkBounds returns null and the loop breaks before any fetch. So
+    // deleting the early return changes nothing observable: same `complete`,
+    // same `chunks_processed`, same zero fetches. It is a pure short-circuit
+    // saving one bounds computation.
+    //
+    // Recorded rather than papered over, because the alternative is a comment
+    // claiming a protection no test can detect the loss of — the same thing
+    // that had to be corrected on raise_edition_offers_from_chain's GREATEST.
+    // If `processCursor`'s own guard is ever removed, THIS early return becomes
+    // load-bearing and the assertion below starts covering it.
+    const eventFetches = (fetchMock?.calls ?? []).filter((c) =>
+      String(c.url).includes("/v1/events"),
+    )
+    expect(
+      eventFetches,
+      "a completed backfill must not fetch events at all",
+    ).toHaveLength(0)
+  })
+
+  it("backfill logs its fixed target_end_block; live logs null", async () => {
+    // ⚠ Backfill walks toward a FIXED historical end; live chases the sealed
+    // tip. Conflating them would make backfill chase the tip and never finish.
+    //
+    // ⚠ This value is in the pipeline_runs `extra`, NOT the HTTP body — I looked
+    // for it in the response first and it is not there. The distinction matters
+    // operationally: it is a telemetry field an operator reads out of
+    // pipeline_runs when asking "how far does this backfill still have to go",
+    // and it is invisible to anyone inspecting the endpoint directly.
+    const extraOf = (spy: ReturnType<typeof install>) => {
+      const log = mustFind(spy.rpcCalls, (c) => c.name === "log_pipeline_run", "the log call")
+      return (log.args as { p_extra?: Record<string, unknown> }).p_extra ?? {}
+    }
+
+    fetchMock = quietChain()
+    const bfSpy = install({ event_cursor: backfillCursors(), "rpc:log_pipeline_run": { data: null, error: null } })
+    await worker.fetch(backfillPost(), ENV, CTX)
+    expect(extraOf(bfSpy).target_end_block).toBe(151_610_000)
+
+    fetchMock = quietChain()
+    const liveSpy = install({ event_cursor: backfillCursors(), "rpc:log_pipeline_run": { data: null, error: null } })
+    await worker.fetch(post(), ENV, CTX)
+    expect(extraOf(liveSpy).target_end_block).toBeNull()
+  })
+
+  it("backfill stops at TARGET_END_BLOCK, not at the sealed tip", async () => {
+    // ⚠ The sealed tip here is 500 blocks PAST TARGET_END_BLOCK, and the cursor
+    // starts 200 blocks short of it — inside one 250-block chunk, so a single
+    // tick reaches the boundary either way. That gap is the whole fixture: if
+    // backfill used the live end (null -> sealed tip) it would walk to
+    // 151_610_500; bounded by TARGET_END_BLOCK it stops at 151_610_000.
+    //
+    // An earlier version of this suite left the cursor 110k blocks away, where
+    // the 40-chunk budget runs out long before either end is reached — so the
+    // two behaviours were indistinguishable and the mutation survived.
+    fetchMock = quietChain()
+    install({
+      event_cursor: backfillCursors({
+        topshot_pack_purchases_backfill: 151_609_800,
+        topshot_pack_opens_backfill: 151_609_800,
+      }),
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(backfillPost(), ENV, CTX)).json()
+    expect(body.sealed_tip, "the tip really is past the target").toBe(151_610_500)
+    expect(body.purchases.to_block).toBe(151_610_000)
+    expect(body.opens.to_block).toBe(151_610_000)
+  })
+
+  it("/backfill still requires the bearer token", async () => {
+    fetchMock = quietChain()
+    install({ event_cursor: backfillCursors(), "rpc:log_pipeline_run": { data: null, error: null } })
+    expect((await worker.fetch(backfillPost("wrong"), ENV, CTX)).status).toBe(401)
+  })
+})
+

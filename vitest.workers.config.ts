@@ -67,8 +67,8 @@ export default defineConfig({
       // pass. The ONE legitimate reason to move a number down is that files LEFT
       // the measured set (a worker was retired) — say so in this comment when
       // you do, the way vitest.components.config.ts records the 17738436 case.
-      // Measured 2026-08-15, after four raises the same day:
-      // 82.12 st / 68.23 br / 82.40 fn / 84.98 ln over all 24 worker files.
+      // Measured 2026-08-15, after five raises the same day:
+      // 84.97 st / 71.75 br / 83.79 fn / 88.10 ln over all 24 worker files.
       //
       // The climb, and what each step bought:
       //   68.2/59.0/72.6/70.7  gate seeded at the measured baseline
@@ -76,24 +76,34 @@ export default defineConfig({
       //                        26.3 st / 29.9 br -> 90.6 / 80.4, the worst file
       //                        in the tree (worker-moments-hydrator-deep)
       //   76.2/64.9/77.3/78.9  pack-events-ingest AllDay primary_mint leg
-      //   THIS                 pack-events-ingest OPENS cursor (rip -> moment
+      //   81.6/67.7/81.9/84.4  pack-events-ingest OPENS cursor (rip -> moment
       //                        attribution, the source_pack_rip_id link)
+      //   THIS                 pack-events-ingest BACKFILL MODE (the separate
+      //                        cursor set, and the cross-contamination guard)
       //
       // ⚠ Each raise happened in the SAME commit that earned it. "Keep the
       // buffer for later" is exactly how the component gate accumulated a
       // ~13-point unguarded branch margin.
       //
-      // ⚠ The two files that once dragged this number are both closed out:
-      // topshot-moments-hydrator went 26.3 -> 90.6, and pack-events-ingest's
-      // three production legs (TopShot purchases, AllDay mints, opens) are all
-      // driven. What remains uncovered there is BACKFILL MODE — a separate
-      // cursor set the live path never touches — plus the soft-budget bail-outs,
-      // which need a fake clock rather than a fixture.
+      // ⚠ The two files that once dragged this number are closed out:
+      // topshot-moments-hydrator went 26.3 -> 90.6, and ALL FOUR of
+      // pack-events-ingest's modes are now driven (TopShot purchases, AllDay
+      // mints, opens, and backfill).
+      //
+      // What is left is the tail nobody can reach with a fixture alone:
+      //   • the SOFT-BUDGET bail-outs (`Date.now() - startedMs >= budgetMs`) —
+      //     these need a fake clock, not a fixture, and vi.useFakeTimers must
+      //     not break the AbortSignal.timeout shim this suite already patches.
+      //   • the chunked-write retry/partial-failure paths under
+      //     WRITE_UPSERT_CHUNK_SIZE, which need a stub that fails the Nth chunk.
+      // Both are real work, not rounding error — but neither is a blind spot
+      // anymore in the sense that mattered: every production INGEST path this
+      // worker runs is now exercised.
       thresholds: {
-        statements: 81.6,
-        branches: 67.7,
-        functions: 81.9,
-        lines: 84.4,
+        statements: 84.4,
+        branches: 71.2,
+        functions: 83.2,
+        lines: 87.5,
       },
     },
   },
