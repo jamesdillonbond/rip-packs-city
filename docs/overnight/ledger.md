@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive) — profile avatar `onError` dereferenced `parentElement` AFTER `innerHTML` had detached the `<img>` (Sentry `NEXTJS-2D`)
+
+- **1 file, client-only** (`app/profile/[username]/ProfileClient.tsx`). No DB, no migration, no cron, no auth/`proxy.ts`, no FMV/pricing math.
+- ⚠ **The bug: writing `parent.innerHTML` detaches the element that fired the event, so the very next `e.currentTarget.parentElement` read is `null`** — and the handler then read `.style` off it and threw. It fired on `/profile/tomwagmi`, on an avatar image that 404'd, i.e. **only on the fallback path**, which is why nothing caught it: the happy path never runs this code.
+- **Fix is ordering + a captured ref, not new behaviour.** `const parent = el.parentElement` is taken BEFORE any mutation, the `Object.assign(parent.style, …)` writes now precede the `parent.innerHTML = initials` that detaches, and the rendered result is byte-identical to what the code intended.
+- ⚠ **Note the general shape for anyone touching a DOM error handler: `e.currentTarget` is only valid while the node is attached.** Capture what you need up front; do not re-read the tree through the event after mutating it.
+- **Verified:** `npx tsc --noEmit` clean (run bare, exit code read directly — not through a pipe, per the documented `tail`-swallows-the-status trap). Plain DOM code, no type surface changed.
+- **Revert:** `git revert <sha>` — the commit whose message begins `fix(profile): avatar onError read parentElement.style`. Nothing to unwind in the DB.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — drove the pack-events OPENS cursor; the worker gate is 68.71 → 82.12 across the day
 
 **What shipped.** 5 cases on the opens leg of `pack-events-ingest` + worker thresholds **76.2/64.9/77.3/78.9 → 81.6/67.7/81.9/84.4**. Test-only; worker source untouched.
