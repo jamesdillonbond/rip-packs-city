@@ -1027,6 +1027,43 @@ const PINS = [
     migration:
       "supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql",
   },
+  {
+    // pg_cron `41 5 * * *`. Backfills pinnacle_sales.edition_id from the render
+    // spine — the self-heal for the exact column behind deep-audit R4, whose
+    // NULLs left the overview's top-sales panel unable to NAME 2 of its top 5.
+    //
+    // ⚠ Pins the HAVING clause: it bridges ONLY where a render maps to exactly
+    // ONE edition. Attributing a sale to an arbitrary candidate would move that
+    // edition's FMV, and a wrong price is worse than a missing name. The
+    // `min(pe.id)` is a GROUP BY requirement, NOT a tie-break — reading it as
+    // one is the mistake to avoid. Also pins fill-only, and that the RETURN
+    // counts audit inserts rather than updates (so a re-bridge with an existing
+    // audit row reports 0 while doing real work).
+    fn: "bridge_pinnacle_sales_editions",
+    test: "supabase/tests/bridge_pinnacle_sales_editions.sql",
+    migration:
+      "supabase/migrations/20260816020000_audit_20260816_snapshot_pinnacle_bridge_and_allday_badge_low_ask.sql",
+  },
+  {
+    // pg_cron `*/30 * * * *`. Two phases on badge_editions.low_ask for All Day:
+    // write the current floor ask, then CLEAR it where there no longer is one.
+    //
+    // ⚠ The clear phase is the half that is easy to drop and expensive to lose —
+    // a stale low_ask is a price that NO LONGER EXISTS shown as current, failing
+    // in the reassuring direction so nothing reports it. Also pins that a ZERO
+    // ask is excluded from both phases (so it clears rather than publishing 0),
+    // and IS DISTINCT FROM rather than `<>` (a NULL -> value first write would
+    // be skipped entirely by `<>`).
+    //
+    // ⚠ Its EXCEPTION WHEN OTHERS handler cannot fire on a statement timeout —
+    // PostgreSQL excludes QUERY_CANCELED from OTHERS — so a timeout leaves NO
+    // pipeline_runs row at all. Recorded in the test header, deliberately not
+    // changed; same class as the trust-precompute 999 sentinel.
+    fn: "refresh_allday_badge_low_ask",
+    test: "supabase/tests/refresh_allday_badge_low_ask.sql",
+    migration:
+      "supabase/migrations/20260816020000_audit_20260816_snapshot_pinnacle_bridge_and_allday_badge_low_ask.sql",
+  },
 ]
 
 /**
