@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync, existsSync } from "node:fs"
 import path from "node:path"
 
 // ── consolidated edge-fn inline-copy drift guard ────────────────────────────
@@ -117,7 +117,131 @@ const PINS: Array<[string, string, string, string]> = [
   // missed. It bounds serial numbers on the sales serial backfill, where an
   // unclamped 0/NaN pollutes serials that FMV multipliers key on.
   ["topshot-subedition-parse", "clampInt", "sales-serial-backfill", "bounded integer clamp on backfilled serials"],
+  // ── Added 2026-08-16 (test-coverage sweep) ────────────────────────────────
+  //
+  // ⚠ THE 2026-08-11 SWEEP ABOVE SAYS IT WALKED "every _shared export against every edge
+  // index.ts" AND FOUND 13 SUCH PAIRS. Re-running that exact walk on 2026-08-16 found 20
+  // MORE that were verbatim-identical and named by no pin — so the population had grown
+  // (or the first walk was narrower than its own note claims) while the note read as a
+  // completed census. A "found them all" comment is the thing least likely to be re-run.
+  // Re-derive this list; do not trust this comment either.
+  //
+  // The largest miss is compute-topshot-pack-ev, the biggest edge function on the
+  // platform (1,583 LOC) and the writer of pack_ev_history + pack_drop_pool — i.e. the
+  // public +EV badge and the pack simulator's drop probabilities. It appeared NOWHERE in
+  // the pin list despite holding three verbatim copies of tested _shared exports.
+  // Verified 2026-08-16: all three still match, so this pins a property that holds rather
+  // than fixing a live drift.
+  ["pack-ev-edition", "computeDualPrice", "compute-topshot-pack-ev", "primary-vs-secondary pack price selection; drift silently re-prices every pack"],
+  ["pack-ev-edition", "editionExtKey", "compute-topshot-pack-ev", "edition keying for the EV pool; a mis-key attributes pulls to the wrong edition"],
+  ["pack-ev-edition", "normalizeTier", "compute-topshot-pack-ev", "tier normalisation feeding grail odds"],
+  // Cadence/base64 decode paths — a drift here corrupts the whole on-chain read rather
+  // than failing loudly, which is what makes these worth pinning over prettier targets.
+  ["cdc", "unwrapCdc", "ingest-pinnacle-mints", "JSON-Cadence decode for Pinnacle mint events"],
+  ["pinnacle-mint-parse", "extractDeposit", "ingest-pinnacle-mints", "mint recipient extraction; wrong owner attribution"],
+  ["pinnacle-mint-parse", "extractMint", "ingest-pinnacle-mints", "mint event extraction; wrong edition/serial"],
+  ["topshot-stub-parse", "b64Utf8", "topshot-stub-resolver", "base64 Cadence payload decode for stub metadata"],
+  ["topshot-stub-parse", "flattenCadenceDict", "topshot-stub-resolver", "Cadence dict flatten for stub metadata"],
+  ["topshot-stub-parse", "pickPlayerName", "topshot-stub-resolver", "player-name selection; a drift mislabels a moment's player"],
+  ["topshot-stub-parse", "b64Utf8", "ufc-stub-thumbnail-resolver", "base64 Cadence payload decode for UFC stub thumbnails"],
+  ["pinnacle-edition-key", "extractEditionKey", "pinnacle-nft-resolver", "the royalty:variant:printing triple key; a drift breaks every Pinnacle FMV join"],
+  ["pack-opens-rip-parse", "toRip", "backfill-pack-opens-api", "pack-rip parse; feeds pull attribution and pack EV"],
+  ["atlas-pool-normalize", "normalizeAtlas", "ingest-topshot-atlas-pool", "Atlas drop-pool normalisation; feeds pack drop weights"],
+  ["atlas-pool-normalize", "num", "ingest-topshot-atlas-pool", "numeric coercion inside the pool normaliser"],
+  ["spork-cursor", "isTransient", "ingest-topshot-pack-opens-history", "retry-vs-abort on a spork fetch failure"],
+  // The odds parser: devig and implied-probability maths whose drift would move published
+  // projections without erroring anywhere.
+  ["nba-odds-parse", "americanToImplied", "sync-nba-odds", "American odds to implied probability"],
+  ["nba-odds-parse", "devigPair", "sync-nba-odds", "vig removal; a drift biases every projection"],
+  ["nba-odds-parse", "isoDateInET", "sync-nba-odds", "ET date bucketing; an off-by-one puts a game on the wrong slate"],
+  ["nba-odds-parse", "parseEvents", "sync-nba-odds", "event parse"],
+  ["nba-odds-parse", "pickBookmaker", "sync-nba-odds", "bookmaker selection; decides whose line is published"],
+  // ⚠ THESE NINE WERE FOUND BY THE COMPLETENESS CHECK BELOW, NOT BY THE HAND SWEEP THAT
+  // FOUND THE TWENTY ABOVE. The hand sweep used its own extractor, which required a
+  // line-start `}` to close a function and so missed every copy formatted differently.
+  // The check reuses THIS FILE'S extractFn and norm — the same ones the pin assertions
+  // use — which is why it sees more. The transferable bit: when a guard and an ad-hoc
+  // script disagree about a population, the guard's own primitives are the instrument;
+  // an approximation of them is a second, weaker implementation of the same question.
+  ["topshot-subedition-parse", "decodeDict", "backfill-topshot-subeditions", "Cadence dict decode for subedition backfill; a mis-decode mis-keys parallels"],
+  ["topshot-subedition-parse", "clampInt", "backfill-topshot-subeditions", "bounded integer clamp on subedition ids and serials"],
+  ["ufc-wallet-enrich", "inferTier", "enrich-ufc-wallet", "UFC tier inference; drives the tier shown on every UFC moment"],
+  ["ufc-wallet-enrich", "makeEditionKey", "enrich-ufc-wallet", "UFC edition keying; a drift breaks the join to editions"],
+  ["ufc-wallet-enrich", "parseResult", "enrich-ufc-wallet", "wallet scan result parse"],
+  ["hybrid-custody-parse", "decodeBase64Json", "hybrid-custody-events", "base64 event payload decode for account-link ownership"],
+  ["sales-serial-parse", "normalizeAddr", "sales-serial-backfill", "Flow address normalisation; a drift mis-attributes buyers and sellers"],
+  ["flow-address", "toFlowAddr", "special-serial-delta", "Flow address normalisation for special-serial ownership"],
+  ["flow-address", "toFlowAddr", "special-serial-sweep", "Flow address normalisation for special-serial ownership"],
 ]
+
+// ── COMPLETENESS: the list above must not silently fall behind ──────────────
+//
+// ⚠ THIS EXISTS BECAUSE THE PIN LIST DID FALL BEHIND, AND ITS OWN COMMENT SAID IT HAD NOT.
+// The 2026-08-11 note records walking "every _shared export against every edge index.ts";
+// re-running that exact walk on 2026-08-16 found 20 more verbatim-identical, unpinned
+// pairs. Whether the first walk was narrower than described or the population grew after
+// it, the outcome is the same and is the point: a hand-run census records a MOMENT, and
+// nothing about the note announces its expiry. The remedy is not a better note.
+//
+// So: re-run the walk here, every CI run, and fail on anything unpinned. A new edge fn
+// that copies a tested helper is caught the day it lands, and the human decision it forces
+// is the right one — import the shared module, or pin the copy.
+//
+// Deliberately narrow, for the same reason the list is: only pairs that are VERBATIM
+// identical (under this file's `norm`) are demanded. An edge copy that has legitimately
+// diverged — closing over module state, taking different arguments — is NOT a drift and
+// must not be forced into a pin it would immediately fail.
+describe("edge-fn inline-copy drift guard — the pin list is COMPLETE", () => {
+  /** Every `export function <name>` in a _shared module, name -> [module]. */
+  function sharedExports(): Map<string, string[]> {
+    const out = new Map<string, string[]>()
+    const dir = path.join(root, "supabase/functions/_shared")
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
+      const src = readFileSync(path.join(dir, f), "utf8")
+      for (const m of src.matchAll(/^export (?:async )?function ([A-Za-z0-9_]+)\(/gm)) {
+        const mod = f.replace(/\.ts$/, "")
+        out.set(m[1], [...(out.get(m[1]) ?? []), mod])
+      }
+    }
+    return out
+  }
+
+  const pinned = new Set(PINS.map(([, fn, edge]) => `${edge}::${fn}`))
+  const exports = sharedExports()
+  const edgeDirs = readdirSync(path.join(root, "supabase/functions"), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== "_shared")
+    .map((e) => e.name)
+    .filter((n) => existsSync(path.join(root, `supabase/functions/${n}/index.ts`)))
+
+  it("finds real edge functions and real _shared exports (guard isn't inert)", () => {
+    expect(edgeDirs.length).toBeGreaterThan(20)
+    expect(exports.size).toBeGreaterThan(20)
+  })
+
+  it("every verbatim inline copy of a tested _shared export is pinned above", () => {
+    const unpinned: string[] = []
+    for (const edge of edgeDirs) {
+      const edgeSrc = readEdge(edge)
+      for (const [fn, mods] of exports) {
+        if (pinned.has(`${edge}::${fn}`)) continue
+        const inline = extractFn(edgeSrc, fn)
+        if (inline === null) continue
+        for (const mod of mods) {
+          if (extractFn(readShared(mod), fn) === inline) {
+            unpinned.push(`["${mod}", "${fn}", "${edge}", "<why a drift here bites>"],`)
+            break
+          }
+        }
+      }
+    }
+    expect(
+      unpinned,
+      `${unpinned.length} edge fn(s) hold a VERBATIM copy of a tested _shared export with no ` +
+        `pin. Either import the shared module (the ideal end state) or add the pin(s):\n` +
+        unpinned.join("\n"),
+    ).toEqual([])
+  })
+})
 
 describe("edge-fn inline-copy drift guard — deployed copies match their tested _shared mirror", () => {
   it.each(PINS)(
