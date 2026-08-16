@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the buyback board's own headline was an artifact: 41,301 of 41,307 "acquired" moments were already in the wallet
+
+**Correcting the surface I shipped hours earlier in this same session.** It published **161,797 moments acquired**. The true figure is **~6**. The board now counts only verified marketplace purchases (431 all-time, $10,081.93) and discloses what it discarded.
+
+⚠ **THE MEASUREMENT.** The `direct_transfer` arm of `topshot_insider_buybacks` is produced by `compute_institutional_wallet_diff()` comparing consecutive daily `wallet_holdings_snapshot` rows. **That walk does not return a stable set**, so the wallet's own stock drops out of one snapshot and reappears in the next, and the diff records an arrival. Four independent checks, on `0x4d2c9216f1dca098`:
+- **41,301 of 41,307** distinct moments recorded as acquired were **ALREADY HELD on the first snapshot** (2026-05-19). Only **6** were ever genuinely new.
+- **62–86%** of daily arrivals were present in the wallet **two days earlier**, across nine consecutive day-triples — and that is a **LOWER bound**, since it only catches 2-day gaps.
+- **0 of 200** sampled ever appear in `sales`. ⚠ **Positive control first: 208 of 208 marketplace rows DO resolve on the same join key**, so the key is right and the absence is real.
+- Holdings are flat at **~52,120** (deltas 0, ±1, ±4) while the table claimed **~6,500/day**.
+
+⚠ **The snapshot array is also 13.6% duplicates** (52,123 entries, 45,059 distinct), so `moment_count` and `seeded_wallets.cached_moment_count` **overstate the real holding**. Duplicates plus omissions is the signature of paginated iteration with unstable page boundaries.
+
+⚠ **TWO OF MY OWN INFERENCES WERE WRONG EN ROUTE, AND BOTH CORRECTIONS ARE THE DURABLE PART.** (1) I called flat holdings a "smoking gun" that 6,535 daily acquisitions were impossible — **conflating NET change with GROSS flow**; the true diff showed 5,821 in / 5,432 out, entirely consistent with net +4, and the churn is real even though the arrivals are not. (2) A multi-day verification query returned `flipflop > arrivals`, which is impossible — **`INTERSECT` binds tighter than `EXCEPT` in Postgres**, so `A EXCEPT B INTERSECT C` parsed as `A EXCEPT (B INTERSECT C)`. The impossible value is what exposed it. *Believe the measurement; an impossible number is a bug in the instrument.*
+
+**What shipped.**
+- `rpc_topshot_buyback_analytics` aggregates **only** `acquisition_method='marketplace'`, and returns `coverage.excluded_snapshot_rows` + `excluded_reason` so the board explains its own size rather than implying the programme is inactive. Now: 41 purchases this week, 98 this month, 431 all-time.
+- ⚠ **`/api/analytics/insider/signals` FILTERED — this was a live pre-existing defect, not one I introduced.** The artifact rows outnumber real ones **~375:1** and carry today's date, so they occupied **every slot** in the `/analytics` InsiderSignals panel, which was rendering fabricated events to users as *"insider buyback detected"*. Pinned by a guard asserting the `.eq()` is issued (mutation-verified: removing the filter reds it).
+- `exclusionNotice()` renders the discarded-row count, and is **suppressed when nothing was excluded** so the note cannot outlive the problem.
+
+**Blast radius verified, not assumed.** `topshot_insider_alerts` holds **0** rows of type `cluster_buyback`/`low_serial_buyback`/`set_concentration`, so the buyback detector has never emitted an alert — the alerting path is clean. The 161,366 rows are left in place deliberately as evidence; nothing reads them now.
+
+**Root cause NOT fixed** (the wallet walk itself) — filed at [inbox 2026-08-16T1930Z](docs/overnight/inbox/2026-08-16T1930Z-the-institutional-wallet-walk-is-unstable-and-its-diff-is-fiction.md), including ⚠ **do NOT de-duplicate `moment_ids` on write** (that hides the symptom and leaves the omissions, which are the half that fabricates arrivals) and a note that the diff's DEPARTURE arm is presumably equally unreliable but currently has no consumer.
+
+**Verified.** `tsc` clean; primary **12,811** / 1,266 files green (91.75/79.19/93.47/93.82); component **1,832** / 213 files green (90.80/82.29/89.40/93.75); brand-token guard clean. Both gates above threshold.
+
+**Revert path.** Code: `git revert <the fix(analytics) commit immediately after this ledger commit>`. DB: re-apply `supabase/migrations/20260816184646_audit_20260816_rpc_topshot_buyback_analytics.sql` to restore the previous (artifact-including) RPC.
+
+**Generalizable.** A diff is only as trustworthy as the STABILITY of the observation it diffs. Nothing compared a snapshot to anything but its immediate predecessor, so an unstable walk produced ~6,500 plausible, self-consistent events a day for three months that no cadence, row-count or freshness monitor could distinguish from real activity. **The cheapest falsifier was one query: were these moments already in the wallet before?**
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — a guard so the anon-executable surface cannot grow back silently
 
 **What shipped.** `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts`. Repo-only; no DB or prod change.
