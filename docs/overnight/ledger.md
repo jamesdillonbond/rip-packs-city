@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, interactive, cont.) — re-measured the `fmv-recalc` kill rate: improving (65% → 53%) but still losing HALF of every invocation, and the "nothing watches this" note is now stale
+
+**What shipped:** `CLAUDE.md` only — no code, no DB, no prod change.
+
+- **Measured via the heartbeat marker** (killed runs write no terminal row): 08-14 **65.3%** killed of 176 invocations · 08-15 **54.1%** of 209 · 08-16-to-date **53.4%** of 161. **The direction is real, the level is not survivable.** Throughput tracks it — 45,054 rows on 08-13 against 14,111 so far on 08-16.
+- ⚠ **Recorded TWO caveats on my own numbers rather than presenting them as clean.** My correlation used a ±10 min window against the heartbeat and so differs from the table's existing 75.2% row, which used a different pairing — **the rows must not be mixed**. And **08-13 is retention-truncated** (heartbeat rows prune at ~73 h), so its apparent 80.6% is a partial sample, not a peak; quoting it would manufacture a spike out of missing data.
+- ⚠ **CLAUDE.md's "Nothing watches this" line is now FALSE and was corrected in place.** `fmv_sweep_stall_pct_24h` exists on the trust board and **breached on 08-16 at exactly 50 against `breach_at` 50** — it measures precisely this stall rate. So the ~50% plateau and the new breach are **one fact, not two**, and it should be read together with `fmv_sweep_wedge_hours` (12.17, risen at eight consecutive readings) as a single subsystem signal rather than three separate reds.
+- **Deliberately NOT acted on.** The filed remedy (cut page size per invocation, [inbox 2026-08-15T1600Z](docs/overnight/inbox/2026-08-15T1600Z-fmv-recalc-is-not-running-less-it-is-being-killed.md)) touches **FMV route logic**, which this file flags as sensitive, and "a filed finding is a hypothesis" — it needs a measurement of where the time actually goes inside a run before anyone changes a page size. Measuring and correcting the record is the deliverable; shipping into pricing unprompted is not.
+
+**Revert:** `git revert <sha>` — docs-only.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive, cont.) — verified my own sentinel arm END-TO-END in production, and found the trust board's breached SET had changed twice while the COUNT stayed at 5
 
 **What shipped:** `CLAUDE.md` only — no code, no DB, no prod change.
