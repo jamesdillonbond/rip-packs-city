@@ -119,7 +119,11 @@ Only if you specifically want raw Deposit-event ownership snapshots. Concrete co
 2. **Leave the scaffold in place but marked dead** (don't spend effort finishing it). If a cleanup pass wants to reclaim it, §6 has the retirement SQL — but it's harmless (1 test row + 0 rows + 4 frozen cursor rows + 4 unused SECDEF RPCs), so retiring is optional, not urgent.
 3. **AllDay ownership** stays a *product* backlog item ("does AllDay need a set-completers/holder surface?"), not an engineering TODO. When greenlit → Option A.
 
-## 6. Optional retirement SQL (NOT run — gated on a cleanup decision)
+## 6. Optional retirement SQL — ✅ RAN 2026-08-05 (this heading's "NOT run" is HISTORY)
+
+> ⚠ **Closed out 2026-08-16.** The block below was applied verbatim on 2026-08-05 as `supabase/migrations/20260805015722_audit_20260805_retire_deposit_scanner_ownership_scaffold.sql`, and it is present in `supabase_migrations.schema_migrations` (parity clean). Re-verified live 2026-08-16: both `*_ownership_snapshots` tables dropped, all three functions dropped, all four `*-deposit-scan-*` cursor rows deleted. **`scanner_get_progress` / `scanner_advance_progress` were correctly KEPT** per the carve-out below — still dormant (0 fn-body callers, 0 `cron.job` callers, 0 in-repo references) but anon- and authenticated-revoked, so they are not a drift item. The LIVE special-serial path is untouched (`special_serial_holders` = 25 rows, refresh cron still scheduled). **Everything in §5 is therefore done; nothing here is pending.** Status of record: [docs/code-todos.md](code-todos.md) #2.
+>
+> ⚠ **§1–§4 below describe the PRE-RETIREMENT state and will send you looking for objects that no longer exist.** Read them for the *reasoning* (why the Deposit-scanner design lost to Dune + FCL walk, and what to build if AllDay ownership is ever greenlit), never as a description of live state.
 
 ```sql
 -- Retire the abandoned Deposit-scanner → snapshots → resolve_special_serials_from_ownership
