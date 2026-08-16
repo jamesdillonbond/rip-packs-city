@@ -1,13 +1,49 @@
 -- audit_20260816: companion view exposing PER-METRIC freshness for the trust board.
 --
--- ⚠⚠ COMMITTED **UNAPPLIED** ON PURPOSE — DO NOT ASSUME THIS IS LIVE. ⚠⚠
--- Written 2026-08-16 15:30Z during an ACUTE disk-IO saturation spell (pipeline_runs failure rate
--- 13.8% over the trailing 60 min, up from the 11% the 15:25Z monitor recorded; entity pages already
--- throwing user-facing 45s timeouts). Every apply_migration invalidates PostgREST's schema cache and
--- costs a ~10-20s burst of user-facing PGRST002 500s. This view is a DIAGNOSTIC improvement, not an
--- outage fix, so paying that cost on top of a live user-facing degradation is the wrong trade.
--- APPLY IN A LOW-TRAFFIC WINDOW (and ideally batch it with any other pending migration -- N
--- migrations in one window cost ONE burst instead of N).
+-- ✅ APPLIED 2026-08-16 17:38Z / 10:38 PT — prod version `20260816173845`.
+-- ⚠ The prod version differs from this filename's `20260816153000` BY DESIGN: apply_migration
+-- stamps its own version. `scripts/check-migration-parity.mjs` matches on NAME, not version
+-- (its own header: matching by version "would flag that as missing forever"). Do NOT rename.
+--
+-- Applied from a Cowork CLOUD session against the gate this file itself set. The gate was met and
+-- measured, not asserted: pipeline_runs failure rate formed a clean DESCENDING ladder across four
+-- nested windows — 1.8% / 15 min, 3.3% / 30 min, 4.3% / 60 min, 9.5% / 180 min — versus the 13.8%
+-- at write time and an all-day hourly band of 0.9–18.6%. A single low reading taken minutes after a
+-- 14.9% hour was REFUSED earlier the same day (16:09Z) precisely because one point off the back of
+-- a spike is not evidence a spell has ended; the ladder is. Nothing else was pending to batch with
+-- (audit_20260816_price_only_alerts had already landed as prod version 20260816162403).
+--
+-- VERIFIED AFTER APPLY (separate step, not batched with the apply):
+--   * 19 of 19 rows resolve, refreshed_by_leg NULL count = 0 — every metric maps to a real leg.
+--   * anon SELECT false · authenticated SELECT false · service_role SELECT true.
+--   * pg_class.reloptions = {security_invoker=on} — carried AND re-asserted, as intended.
+--
+-- 💡 WHAT IT MEASURED — the retrospective case for the 8-leg split.
+-- Per-leg `duration_ms`, visible per metric for the first time because each leg finally has its own
+-- budget to complete under. ⚠ TWO independent full-pass observations, NOT one sample — the repo's
+-- standing rule is that a single warm timing is not a cost:
+--
+--   leg                    obs A (17:38Z)   obs B (18:55Z)
+--   impossible_parallel       421,471 ms       366,500 ms     <- 13% swing, still 42-45% of total
+--   serial_supply             164,763 ms       164,763 ms
+--   pinnacle_fmv_share        128,777 ms       128,777 ms
+--   fmv_coverage              121,225 ms       121,225 ms
+--   pack_ev                    75,080 ms        68,726 ms
+--   panini                     12,468 ms         9,489 ms
+--   fmv_sanity                  4,707 ms         4,707 ms
+--   board_liveness                120 ms           120 ms
+--   ---------------------------------------------------------
+--   TOTAL                     928,611 ms       864,307 ms
+--
+-- ⚠ **864-929 s of work against the pre-split monolith's single 600 s statement budget — 44-55%
+-- over, on both observations.** The old one-CALL design was not merely unlucky under saturation; it
+-- was ARITHMETICALLY INCAPABLE of completing, and the conclusion does not rest on one timing.
+-- `impossible_parallel` alone is 42-45% of the total, which is why it was always the CASUALTY rather
+-- than merely the last in line — the ledger's "stalest by POSITION, not because its query is
+-- slowest" read was half right: it is last AND by far the most expensive.
+-- ⚠ This total was UNMEASURABLE before the split. The monolith died partway, so no run ever reported
+-- what a full pass actually costs. The instrument had to exist before the number could.
+-- ⓘ `board_liveness` completes in 120 ms and was starving behind a ~6-minute leg.
 --
 -- WHY THIS EXISTS -- the gap that made a whole defect class invisible.
 -- `v_rpc_trust_health` publishes `metric / value / breach_at / status / catches` and **no age**.
@@ -44,7 +80,7 @@
 -- here -- this view is for operators/service_role -- but any future tail-check running AS cron_heavy
 -- against it would fail on every tick, which is a trap this repo has already paid for once.
 --
--- VERIFY AFTER APPLYING:
+-- VERIFY QUERIES (run at apply time; keep for re-checks):
 --   select * from public.v_rpc_trust_health_freshness order by age_hours desc;
 --   -- post-split expectation: all rows under ~7h. A single row far above the rest names the leg to
 --   -- investigate in `refreshed_by_leg` -- which is the entire point of this view.
