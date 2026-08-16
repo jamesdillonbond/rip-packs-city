@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the `.range()` ORDER BY class driven to ZERO, the dormant buyback detector filtered, and the drift workflow was red-and-correct all along
+
+**Continuation of the buyback-fabrication thread.** Three things shipped plus one investigation result that inverts a hypothesis I stated in the previous entry.
+
+⚠ **THE DRIFT WORKFLOW WAS NEVER SILENTLY GREEN — IT HAS FAILED EVERY SCHEDULED RUN SINCE ≥2026-08-09, AND THAT IS IT WORKING.** `exit 1` means *drift found*. It correctly reported **26 proven-drifted functions** daily, **naming `snapshot-institutional-wallets` in the list the entire time**, while that function ran ~7-week-old code fabricating 161k rows. **The instrument was loud and correct; the signal was not read.** A permanently-red scheduled workflow is indistinguishable from a broken one at a glance — **read its LOG, not its badge**. Baseline at arming 31/37 · 26 on 08-16 · **25 after the v28 deploy.** ⚠ **And there are TWO Supabase PATs: the repo secret is VALID** (it listed 67 deployed functions in that same failing run) **while Trevor's local shell token is REVOKED.** A CLI 401 says nothing about the workflow's credential, or the reverse. Canonicalised under the GHA bullet in CLAUDE.md.
+
+**1. `.range()` without `ORDER BY`: 11 → 0, and the ratchet is now a BAN.** ⚠ **All 11 remaining sites turned out to be genuine multi-page paging LOOPS** (`while (true)` / `for (…; offset += PAGE)`) — I had recorded that a single `.range(0, N)` "first N" limit would be a lower-priority member of the population; that distinction is real in principle and **described none of the code**. Every one could duplicate and drop rows. ⚠ **Order columns are UNIQUE keys verified against `pg_constraint`, not merely selected ones** — a non-unique order leaves ties between pages and reintroduces the defect; `moment_acquisitions.nft_id` looks like the natural key and is **not** (unique is `(nft_id, wallet, transaction_hash)`), so those order by PK `id`. ⚠ **Adding `.order()` reds every test stub that does not implement it** — six stubs across five files needed `order: () => b`; a chain method missing from a mock fails the whole query, not the ordering.
+
+**2. `topshot-insider-detect-patterns` filtered to `marketplace`.** It read the buyback table over a 24h window with no `acquisition_method` filter — exactly the window ~6,500 artifact rows land in daily. ⚠ **DORMANT, not live: 0 cron callers, 0 `pipeline_runs` (and 0 days in the indefinite rollup), 0 alerts of its three types ever.** Latent only. That it emitted nothing so far is **luck — artifact rows carry a NULL `serial_number`** — not design. Repo-only; not deployed (it is one of the 25 still-drifted functions).
+
+**3. Memory committed** to CLAUDE.md: the session entry, the `.range()` bullet updated to the ban plus the unique-key and test-stub gotchas, and the drift-workflow finding.
+
+**Verified.** `tsc` clean; primary **12,917** / 1,275 files green (91.75/79.20/93.49/93.82); component **1,896** green (90.58/82.19/89.52/93.49); brand-token guard clean.
+
+⚠ **STILL UNVERIFIED and it is the one that matters — carried forward deliberately: the v28 boot probe proves the module LOADS, not that it READS correctly.** That is the next 06:00 UTC run, judged on **`entries = distinct_ids` (~52,120)**, never on `entries` alone, which was always right. **That run will also record its largest-ever arrival burst (~7.5k)** as it diffs a complete set against the last corrupt baseline — the fix working, not a regression; single digits the following day is the confirmation. **Do not revert on the burst.**
+
+**Revert path.** `git revert <the fix(pagination) commit immediately after this ledger commit>` — restores the 11 unordered reads, the detector's unfiltered read, the ban's BUDGET, and the six test stubs together. No DB change and no deploy in this commit.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the pack simulator told collectors their pack was un-indexed and sold out, out of our own failed read
 
 `[collection]/packs/simulator/[distId]` and `dashboard/api-keys` converted to
