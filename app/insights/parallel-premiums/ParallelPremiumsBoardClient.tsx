@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import type { ParallelRow, ParallelSortKey } from "@/lib/parallel-premiums-board"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 function fmtUsd(n: number | null): string {
   if (n == null) return "—"
@@ -64,6 +65,13 @@ export default function ParallelPremiumsBoardClient({
   const [highOnly, setHighOnly] = useState<boolean>(true)
   const [sort, setSort] = useState<ParallelSortKey>("premium")
   const [loading, setLoading] = useState(false)
+  // ⚠ A failed refetch used to leave `rows` at the PREVIOUS filter's result,
+  // because the write was gated on `Array.isArray(j?.rows)` and an error
+  // envelope has no `rows`. The board then showed one filter's data under
+  // another filter's label — worse than an empty state, because every row on
+  // screen is real and simply answers a question the reader did not ask. Same
+  // shape as the analytics player search that showed the previous player's rows.
+  const [loadFailed, setLoadFailed] = useState(false)
   const firstRender = useRef(true)
 
   // Parallel-name chips derive from the initial (unfiltered-by-name) dataset so
@@ -86,14 +94,29 @@ export default function ParallelPremiumsBoardClient({
     qs.set("conf", highOnly ? "high" : "all")
     qs.set("sort", sort)
     qs.set("limit", "100")
-    fetch(`/api/public/insights/parallel-premiums?${qs.toString()}`, { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((j) => {
-        if (Array.isArray(j?.rows)) setRows(j.rows as ParallelRow[])
-        if (j?.meta?.fetched_at) setFetchedAt(j.meta.fetched_at)
+    setLoadFailed(false)
+    // fetchJson gates the parse on the status: this route answers a failure with
+    // a well-formed JSON envelope, so a bare `r.json()` resolves and the error
+    // object reaches the caller looking like data.
+    fetchJson<{ rows?: ParallelRow[]; meta?: { fetched_at?: string } }>(
+      `/api/public/insights/parallel-premiums?${qs.toString()}`,
+      { signal: ctrl.signal }
+    )
+      .then((res) => {
+        if (ctrl.signal.aborted) return
+        if (!res.ok || !Array.isArray(res.json?.rows)) {
+          // Clear rather than keep: the stale rows answer the PREVIOUS filter,
+          // and leaving them up is the mislabel this guard exists to prevent.
+          setLoadFailed(true)
+          setRows([])
+          return
+        }
+        setRows(res.json.rows as ParallelRow[])
+        if (res.json.meta?.fetched_at) setFetchedAt(res.json.meta.fetched_at)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoading(false)
+      })
     return () => ctrl.abort()
   }, [parallel, highOnly, sort])
 
@@ -194,11 +217,16 @@ export default function ParallelPremiumsBoardClient({
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && (
+        {loadFailed ? (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--rpc-text-muted)" }}>
+            Couldn&apos;t load these filters just now &mdash; this says nothing about
+            which parallels match.
+          </div>
+        ) : rows.length === 0 ? (
           <div style={{ textAlign: "center", padding: 40, color: "var(--rpc-text-muted)" }}>
             No parallels match these filters.
           </div>
-        )}
+        ) : null}
       </div>
 
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>

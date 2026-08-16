@@ -29,21 +29,31 @@ import { join } from "node:path"
 // object where the caller expects rows, so the status gates the parse."
 //
 // ── WHY A RATCHET AND NOT A BAN ─────────────────────────────────────────────
-// 17 sites across 5 files remain, and each needs more than a mechanical swap:
+// 15 sites across 3 files remain, and each needs more than a mechanical swap:
 // a per-leg failure flag, a render branch ordered before the empty branch, and
-// a test pinning BOTH directions. Banning today would mean shipping a 5-entry
+// a test pinning BOTH directions. Banning today would mean shipping a 3-entry
 // allowlist, which this repo has repeatedly found to be theatre. The ratchet
 // stops the population GROWING while the sweep continues.
 //
-// ⚠ PASSING MEANS THE BLIND SPOT DID NOT GROW — it does not mean these 5 files
+// ⚠ PASSING MEANS THE BLIND SPOT DID NOT GROW — it does not mean these 3 files
 // are fixed. Lower the number in the same commit that converts a file; never
 // raise it.
 //
-// Already converted (do not regress): components/analytics/ListingsDashboard.tsx
-// and components/analytics/PulseDashboard.tsx, pinned behaviourally by
-// __tests__/component-analytics-dashboards-failed-vs-empty.test.tsx.
+// Already converted (do not regress), each pinned behaviourally rather than by
+// this counter:
+//   components/analytics/ListingsDashboard.tsx  ) component-analytics-dashboards
+//   components/analytics/PulseDashboard.tsx     )   -failed-vs-empty.test.tsx
+//   components/analytics/WalletsHubOverview.tsx ) component-analytics-secondary
+//   app/insights/parallel-premiums/…Client.tsx  )   -failed-vs-empty.test.tsx
+//
+// 17 -> 15 on 2026-08-15. ⚠ The two conversions in that pass were NOT of equal
+// severity, and saying so is the point: the parallel-premiums board published a
+// FALSE CLAIM (one filter's rows under another filter's label) while
+// WalletsHubOverview merely rendered nothing. Both are worth fixing; only the
+// first was urgent. A raw-parse count ranks neither — it finds candidates, and
+// you still have to read what each one renders.
 
-const BUDGET = 17
+const BUDGET = 15
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -111,17 +121,24 @@ describe("client code does not parse a response body without checking the status
     for (const anchor of [
       "components/analytics/LoansDashboard.tsx",
       "components/analytics/SalesDashboard.tsx",
+      "components/analytics/SetsDashboard.tsx",
     ]) {
       expect(files, `${anchor} is a known offender and must be detected`).toContain(anchor)
     }
   })
 
-  it("the two converted dashboards are NOT in the population", () => {
-    // The regression check that matters: these were converted in the same pass
-    // that installed this ratchet, so their reappearance means someone reverted
-    // the fix rather than that the budget drifted.
+  it("every converted file is ABSENT from the population", () => {
+    // The regression check that matters: a converted file reappearing means
+    // someone reverted the fix, which is a different event from the budget
+    // drifting upward, and the two need different responses.
     const files = new Set(offenders().map((h) => h.split(":")[0]))
-    expect(files).not.toContain("components/analytics/ListingsDashboard.tsx")
-    expect(files).not.toContain("components/analytics/PulseDashboard.tsx")
+    for (const converted of [
+      "components/analytics/ListingsDashboard.tsx",
+      "components/analytics/PulseDashboard.tsx",
+      "components/analytics/WalletsHubOverview.tsx",
+      "app/insights/parallel-premiums/ParallelPremiumsBoardClient.tsx",
+    ]) {
+      expect(files, `${converted} was converted; its return means a revert`).not.toContain(converted)
+    }
   })
 })

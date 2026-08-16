@@ -8,6 +8,14 @@ import WalletsHubOverview, { formatUsd, formatNumber } from "@/components/analyt
 // a single-fetch component with loading / null-data / with-data / empty-segment
 // legs. These pin the formatter thresholds and drive each render leg.
 
+// ⚠ These success fixtures carry `ok: true` deliberately. They omitted it until
+// 2026-08-15, which passed only because the component did `fetch(...).then((r) =>
+// r.json())` and never looked at the status — so the fixture could not have
+// distinguished a 200 from a 503 even in principle. When the component moved to
+// fetchJson (which gates the parse on the status) the omission surfaced as two
+// failures. An under-specified fixture is invisible while the code shares its
+// blind spot.
+
 describe("formatUsd", () => {
   it("guards null / non-finite / non-positive as $0", () => {
     expect(formatUsd(null)).toBe("$0")
@@ -65,7 +73,7 @@ describe("WalletsHubOverview render", () => {
   })
 
   it("renders the hub with KPI values and segment bars when data arrives", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => overviewResponse() }) as any))
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => overviewResponse() }) as any))
     const { container } = render(<WalletsHubOverview />)
     await waitFor(() => expect(container.textContent).toContain("Wallets hub"))
     expect(container.textContent).toContain("1.5k") // wallets_total 1500
@@ -77,7 +85,7 @@ describe("WalletsHubOverview render", () => {
   it("shows the empty-segment message when every segment is zero", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ json: async () => overviewResponse({ segments: { whale: 0, active: 0, casual: 0, dust: 0 } }) }) as any),
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => overviewResponse({ segments: { whale: 0, active: 0, casual: 0, dust: 0 } }) }) as any),
     )
     const { container } = render(<WalletsHubOverview />)
     await waitFor(() => expect(container.textContent).toContain("Wallets hub"))
@@ -85,7 +93,9 @@ describe("WalletsHubOverview render", () => {
   })
 
   it("renders nothing when the response lacks totals/segments", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({}) }) as any))
+    // A 200 whose body lacks totals/segments — this case exercises the SHAPE
+    // guard, not the status one, so it deliberately stays ok: true.
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }) as any))
     const { container } = render(<WalletsHubOverview />)
     // loading clears, data stays null -> component returns null (empty).
     await waitFor(() => expect(container.textContent).not.toContain("Loading wallet overview"))

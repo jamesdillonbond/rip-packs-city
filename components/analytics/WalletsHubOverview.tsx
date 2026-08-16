@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import KpiCard from "./KpiCard"
 import type { WalletsOverviewResponse } from "@/lib/analytics-types"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 const SEGMENT_COLORS: Record<string, string> = {
   whale: "#a78bfa",
@@ -51,18 +52,27 @@ export function formatNumber(n: number | null | undefined): string {
 export default function WalletsHubOverview() {
   const [data, setData] = useState<WalletsOverviewResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  // Without this the component returned `null` on any failure, so the whole hub
+  // section silently VANISHED from /analytics/wallets. Not a false claim — the
+  // `j.totals && j.segments` guard did keep the error envelope out of state, so
+  // the `|| 0` sums below never manufactured a zero — but a reader cannot tell a
+  // missing section from a section that has nothing to say.
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    fetch("/api/analytics/wallets/overview")
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<WalletsOverviewResponse>("/api/analytics/wallets/overview")
+      .then((res) => {
         if (cancelled) return
-        if (j && j.totals && j.segments) {
-          setData(j as WalletsOverviewResponse)
+        // Both arms matter: a non-2xx (res.ok false) and a 200 whose body is not
+        // the expected shape are equally "we cannot show this", and the shape
+        // check is what kept an error envelope out of state before fetchJson.
+        if (!res.ok || !res.json?.totals || !res.json?.segments) {
+          setLoadFailed(true)
+          return
         }
+        setData(res.json)
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -78,7 +88,15 @@ export default function WalletsHubOverview() {
       </section>
     )
   }
-  if (!data) return null
+  if (!data) {
+    if (!loadFailed) return null
+    return (
+      <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
+        Couldn&apos;t load the wallet overview just now &mdash; this says nothing
+        about the wallet directory.
+      </section>
+    )
+  }
 
   const { totals, segments } = data
   const totalSegments =
