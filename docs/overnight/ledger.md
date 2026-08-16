@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — /dashboard/history and /dashboard/packs both told a collector they have verified no wallets, out of the same copy-pasted failed read
+
+**What shipped.** `lib/wallet/verified-wallets.ts` (new) + both pages wired onto it, plus `__tests__/lib-verified-wallets-failed-vs-empty.test.ts`.
+
+Both pages carried the SAME twenty-line loader, copy-pasted: `if (!res.ok) { setWallets([]); return }`, no error state anywhere. A 503 rendered **"No verified wallets yet — Verify a wallet from your dashboard, then come back here"** with an *Open dashboard* button, to someone who had already verified one. The account-claim sub-class again, and the actionable form of it: the reader is the one person who knows the claim is false, and we send them to redo finished work.
+
+⚠ **TWO paths reached it and only one was visible in the diff.** Both ran the fetch in `try { … } finally { … }` with **no `catch`**, so a thrown fetch escaped as an unhandled rejection while `wallets` sat at its `[]` initial value and the `finally` cleared the loading flag — rendered outcome byte-identical to the non-2xx path. Fixing the status check alone would have left the offline case making the same claim.
+
+⚠ **A MUTATION SURVIVED AND CORRECTED A COMMENT I HAD ALREADY WRITTEN.** I documented the `Array.isArray` shape check as what stops an error envelope becoming "you have none". Measured: `for (const w of x)` **throws** for undefined, null, a plain object and a number alike, so every shape our routes can produce lands in the catch and returns `ok:false` regardless — the guard is redundant behind the catch for all of them. Its unique territory is a **string**, which iterates characters, drops them all, and returns `{ wallets: [], ok: true }` — a silent false "you have none". Pinned that one case and recorded the redundancy rather than implying the check is load-bearing for the common ones.
+
+`api-keys` was checked in the same sweep and is **CLEAN** (its empty state already consults `loadError`) — recorded so nobody re-derives it.
+
+Verified: `tsc` clean · primary **12,484 passed / 1,244 files** (91.74/79.13/93.46/93.81) · 5 mutations, each redding only its own case (the shape check after the added fixture) · guards + all three client/server ratchets still green against tip `16519f14`.
+
+**Revert:** `git revert <code-sha>` restores both loaders; then delete `lib/wallet/verified-wallets.ts` and `__tests__/lib-verified-wallets-failed-vs-empty.test.ts`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — the connect-wallet defect was COPY-PASTED into two game pages, Fast Break said "no active run" during a live run, and a legacy edition link 404'd on a timeout
 
 - **What.** Three pages, three new lib modules, **all four claims-from-failure fixed**: `lib/wallet/pinned-wallet.ts` (shared by `/fast-break` + `/road-to-the-ring`), `lib/fast-break/page-data.ts`, `lib/edition/legacy-redirect.ts`. New `__tests__/lib-fast-break-page-data.test.ts` (11 cases) + 4 guard cases in `server-pages-error-vs-absent-guard`. **11 mutations, all killed.** Ratchet **11 → 8** (17 at session start).
