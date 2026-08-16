@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — three more client pages converted to `*Client.tsx`; ratchets 24 → 21 and 27 → 24
+
+`app/dashboard/history`, `app/(collections)/panini-blockchain/overview` and
+`app/(collections)/panini-blockchain/sniper` each moved their body into a sibling
+`*Client.tsx`, so all three are now measured by the component gate (a `page.tsx` is measured
+by neither gate) and covered by `__tests__/component-PaniniAndHistoryClients.test.tsx`
+(25 tests). No behaviour change on any of the three — all were already honest; this buys
+coverage, not a fix.
+
+⚠ Two things worth carrying forward. (1) The Next-page guard was a SURVIVING MUTATION until
+the last case was written: the existing pager test only ever drove page 0, where Next is
+correctly enabled, so `disabled={false}` on Next was observed by nothing — a collector could
+have paged past the last row and been shown "no activity" as a claim about their own trading
+history. Now driven to the boundary (`total_count` 200 at `PAGE_SIZE` 50 = exactly 4 pages).
+(2) A mutation harness of mine TRUNCATED `__tests__/client-page-fetch-honesty-ratchet.test.ts`
+to zero bytes, and vitest reported it as "No test suite found" — which reads like a config
+problem, not like a guard having been destroyed. Restored from HEAD; the budget was
+re-derived from the file's own no-slack assertion rather than from memory.
+
+Gates: component 90.55/82.18/89.34/93.44 vs 90.3/81.6/89.1/93.2 (functions margin 0.24pt),
+`tsc` clean, all four ratchets green.
+
+Revert: `git revert <sha>` — restores the three monolithic `page.tsx` files and both budgets.
+No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — `snapshot-institutional-wallets` redeployed v27 → v28, closing ~7 weeks of edge-fn drift; the CLI path was dead on an expired PAT
 
 - **Edge function only. No DDL, no migration, no code change, no schedule change. Deployed from a clean tree at `bbeddc2f`.**
