@@ -70,3 +70,36 @@ export function alertPayloadFromForm(form: AlertFormState) {
     cadence: form.cadence,
   }
 }
+
+/**
+ * One-line description of what a saved subscription actually watches.
+ *
+ * ⚠ THE SUMMARY USED TO BE A BARE `≥${min_discount}% off`, WHICH DESCRIBES A
+ * PRICE-ONLY ALERT AS "≥0% off". Since audit_20260816 a subscription with a
+ * max_price and `min_discount = 0` has NO FMV condition at all — the scanner
+ * serves it from `edition_current_ask` rather than the deals board — so "0% off"
+ * is not a weak discount filter, it is the sentinel for "ignore FMV". Rendering
+ * it as a percentage both looks like a bug and omits the only condition the
+ * alert actually has (the price cap), on the very screen where a collector goes
+ * to check what they asked for.
+ *
+ * Mirrors the scanner's own predicate: max_price present AND min_discount 0.
+ */
+export function subscriptionFilterSummary(s: {
+  min_discount: number | null
+  max_price?: number | null
+  min_price?: number | null
+}): string {
+  const money = (n: number) =>
+    `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const priceOnly = s.max_price !== null && s.max_price !== undefined && (s.min_discount ?? 25) === 0
+  if (priceOnly) {
+    const floor =
+      s.min_price !== null && s.min_price !== undefined ? `${money(s.min_price)}–` : ""
+    return `any price ${floor}${money(s.max_price as number)} · FMV ignored`
+  }
+  const parts = [`≥${s.min_discount ?? 25}% off`]
+  if (s.max_price !== null && s.max_price !== undefined) parts.push(`≤${money(s.max_price)}`)
+  if (s.min_price !== null && s.min_price !== undefined) parts.push(`≥${money(s.min_price)}`)
+  return parts.join(" · ")
+}

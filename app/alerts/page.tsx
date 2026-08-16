@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
-import { csvToArr, arrToCsv, toggle, alertPayloadFromForm } from "@/lib/alerts/form";
+import { csvToArr, arrToCsv, toggle, alertPayloadFromForm, subscriptionFilterSummary } from "@/lib/alerts/form";
 import { FMV_ALERT_LABEL, editionHref } from "@/lib/alerts/edition-link";
 import SupportChatConnected from "@/components/SupportChatConnected";
 
@@ -426,8 +426,15 @@ export default function AlertsPage() {
 
           <div style={grid2}>
             <div>
+              {/* 0 is a real, load-bearing value, not a degenerate one: with a
+                  max price set it means "ignore FMV, just watch the price"
+                  (audit_20260816). The hint says so, because nothing else on
+                  this screen would tell you. */}
               <label style={labelStyle}>Min discount % below FMV</label>
               <input type="number" min={0} value={form.min_discount} onChange={(e) => setForm({ ...form, min_discount: e.target.value })} style={inputStyle} />
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 4 }}>
+                Set 0 with a max price to alert on price alone, ignoring FMV.
+              </div>
             </div>
             <div>
               <label style={labelStyle}>Cadence</label>
@@ -540,7 +547,7 @@ export default function AlertsPage() {
                     <div>
                       <div style={{ fontWeight: 800, fontSize: 16 }}>{s.label}</div>
                       <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", fontFamily: MONO, marginTop: 2 }}>
-                        ≥{s.min_discount}% off · {s.channels.join(", ")} · {s.cadence}
+                        {subscriptionFilterSummary(s)} · {s.channels.join(", ")} · {s.cadence}
                         {s.preview_count != null && ` · ${s.preview_count} match now`}
                       </div>
                     </div>
