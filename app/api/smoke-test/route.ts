@@ -1127,6 +1127,16 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // this repo has already paid for cry-wolf alarms (`ufc_fmv_stale_hours`).
     // Below the floor the check reports PASS with an explicit low-sample note
     // rather than a verdict it did not earn.
+    //
+    // ⚠ AND AS OF 2026-08-16 THE FLOOR IS THE NORMAL PATH, NOT THE EDGE CASE.
+    // Once smoke rows are excluded (see the query below), REAL concierge traffic
+    // is ~0–3 conversations/day — 0 on nine of the last ten days. So this check
+    // will usually report `low_sample: true` and no verdict. That is the honest
+    // outcome and it is deliberately NOT "fixed" by lowering MIN_SAMPLE or by
+    // counting smoke rows: a verdict computed from one conversation, or from a
+    // fixture we generated ourselves, is worse than an explicit no-verdict. The
+    // check starts earning its keep the moment real traffic exists, which is
+    // exactly when its answer would matter.
     time(async () => {
       const WINDOW_HOURS = 6;
       const MIN_SAMPLE = 5;
@@ -1144,10 +1154,36 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         "concierge_overloaded",
       ];
       const since = new Date(Date.now() - WINDOW_HOURS * 3600_000).toISOString();
+      // ⚠ EXCLUDE SMOKE-TEST ROWS, OR THIS CHECK MEASURES ITSELF AND PAGES FOREVER.
+      //
+      // Without this filter the check read its own sibling's fixture. The
+      // `support-chat graceful-degradation (synthetic Anthropic 4xx)` check below
+      // deliberately POSTs `x-rpc-test-error-mode: credit_balance` on EVERY smoke
+      // tick to prove the degradation path works — which writes a
+      // `support_conversations` row with category `concierge_unavailable` and
+      // `is_smoke_test = true`. That is the correct behaviour of a good test, and
+      // it is manufactured evidence for this one.
+      //
+      // Measured 2026-08-16, live: of 905 conversations since 08-02, **902 were
+      // smoke tests and 3 were real**, and ALL 863 degraded rows were smoke rows —
+      // real degraded conversations: ZERO. With real traffic near zero and one
+      // synthetic degraded row guaranteed per tick, the share sat at ~100% and
+      // this check could NEVER go green on its own. It fired as
+      // JAVASCRIPT-NEXTJS-2E (27 users, escalating) reporting an outage that was
+      // not happening: the only 3 real conversations in 10 days all SUCCEEDED.
+      //
+      // ⚠ This also means the "~780 degraded conversations" figure this check was
+      // built from was smoke traffic, not user impact. (It does NOT prove the
+      // concierge was healthy then — there was independent evidence of an
+      // Anthropic 403 — only that the user-impact number came from the wrong rows.)
+      //
+      // `not.is.true` rather than `.eq(false)`: legacy rows may carry NULL, and a
+      // NULL is not a smoke test.
       const { data, error } = await svc
         .from("support_conversations")
         .select("category")
         .gte("created_at", since)
+        .not("is_smoke_test", "is", true)
         .neq("category", "beta_feedback");
       if (error) {
         // couldNotRun: the check never evaluated, so its assertion must not be
