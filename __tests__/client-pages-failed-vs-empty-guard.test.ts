@@ -382,4 +382,69 @@ describe("client pages — a failed read is not an empty result", () => {
       )
     }
   })
+
+  // ── /dashboard/alerts — the sibling /alerts was fixed and this was not ─────
+  //
+  // ⚠ Both defects here are the "page contradicts itself" shape, not merely a
+  // misleading empty state: the error banner renders DIRECTLY ABOVE each of
+  // them, so an outage produced an error message and a confident claim beneath
+  // it on the same screen.
+  //
+  //   1. `load()` sets `alerts` to [] on a failed read, and the empty branch
+  //      rendered the WELCOME card — "No alerts yet" plus a pitch to create
+  //      your first one. A collector with a dozen live alerts, on a 503, was
+  //      invited to create a DUPLICATE of one they already have. Exactly the
+  //      defect /alerts was fixed for; this page was not swept at the time.
+  //   2. `runSearch()` sets `matches` to [] on a failed search, and "No
+  //      matches." is a claim that the moment they typed DOES NOT EXIST in the
+  //      catalog — which would send someone away believing the platform does
+  //      not carry their moment.
+  //
+  // Both are gated on `!err` rather than on the array, because the array cannot
+  // distinguish the two outcomes and `err` can.
+  describe("/dashboard/alerts — a failed read is not an empty account", () => {
+    const src = stripComments(read("app", "dashboard", "alerts", "page.tsx")).replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    )
+
+    it("the welcome card is gated on the read having SUCCEEDED", () => {
+      expect(
+        src,
+        "an outage must not render the 'No alerts yet' onboarding card",
+      ).toContain("{ownerKey && !err && alerts && alerts.length === 0 && (")
+    })
+
+    it("the search empty state is gated too", () => {
+      expect(
+        src,
+        "a failed search must not claim the moment is absent from the catalog",
+      ).toContain("{matches && !err && matches.length === 0 && (")
+    })
+
+    it("BOTH directions: a genuinely empty account still gets the welcome card", () => {
+      // The copy must survive. A fix that blanked every empty state would only
+      // move the dishonesty — and this card is the page's onboarding path.
+      expect(src).toContain("No alerts yet")
+      expect(src).toContain("No matches.")
+    })
+
+    it("failure is still tracked and cleared on re-fetch — in BOTH loaders", () => {
+      // `!err` is only meaningful while err is set on failure and reset on a new
+      // attempt; without the reset a recovered page stays permanently blank.
+      //
+      // ⚠ A bare `toContain("setErr(null)")` is NOT enough, and a mutation
+      // proved it: this file has TWO loaders (load() for the alert list,
+      // runSearch() for the moment picker) and each resets its own err, so
+      // deleting the reset from load() left the other occurrence satisfying the
+      // assertion. Both are pinned by their ANCHORING statement instead.
+      expect(src, "load() must clear err before re-fetching").toMatch(
+        /setLoading\(true\);\s*setErr\(null\);/,
+      )
+      expect(src, "runSearch() must clear err before re-searching").toMatch(
+        /setSearching\(true\);\s*setErr\(null\);/,
+      )
+      expect(src).toMatch(/setErr\(j\?\.error \?\? `HTTP \$\{res\.status\}`\)/)
+    })
+  })
 })

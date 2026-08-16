@@ -214,7 +214,21 @@ export default function AlertsPage() {
         <div className="rpc-al-empty">Loading…</div>
       )}
 
-      {ownerKey && alerts && alerts.length === 0 && (
+      {/* ⚠ `!err` is load-bearing. On a failed read the loader sets alerts to []
+          (see `load`), so without this gate a collector with a dozen live alerts
+          hits a 503 and is shown the WELCOME card — "No alerts yet", plus a pitch
+          to create their first one. That invites a DUPLICATE of an alert they
+          already have, and it is a claim about their own account manufactured
+          from our outage.
+
+          The error banner already renders directly above this block, so the
+          un-gated version did not merely mislead — it made the page contradict
+          itself on screen: an error message, and a confident "you have none"
+          beneath it. Same shape as the /insights/pack-reality defect, and the
+          same defect the sibling /alerts page was fixed for; this page was not
+          swept at the time. A genuinely empty account still reaches this card,
+          because `err` is null then. */}
+      {ownerKey && !err && alerts && alerts.length === 0 && (
         <div className="rpc-al-empty-card">
           <div className="rpc-al-empty-eyebrow">Welcome</div>
           <div className="rpc-al-empty-title">No alerts yet</div>
@@ -463,7 +477,13 @@ function CreateAlertModal({
               </button>
             </div>
 
-            {matches && matches.length === 0 && (
+            {/* ⚠ `!err` again, same reason as the alerts list above: a failed
+                search sets matches to [] (see runSearch), and "No matches." is a
+                claim that the moment the collector typed DOES NOT EXIST in the
+                catalog. The error renders a few lines below, so the un-gated
+                version put a contradiction on screen and — worse — would send
+                someone away believing their moment is not on the platform. */}
+            {matches && !err && matches.length === 0 && (
               <div className="rpc-al-empty" style={{ padding: 12 }}>No matches.</div>
             )}
             {matches && matches.length > 0 && (
