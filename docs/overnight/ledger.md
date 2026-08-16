@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — buyback-wallet analytics: 99.7% of the acquisitions cannot be priced, so the board separates volume from spend instead of summing them
+
+**What shipped.** `/analytics/buyback` + `/api/analytics/buyback` — what Top Shot's secondary-buyback wallets accumulate over week / month / year / all-tracked-time, with most-acquired moments, priced spend, and seller leaderboards by both dollars and transactions. New MV `topshot_buyback_daily`, `refresh_topshot_buyback_daily()`, `rpc_topshot_buyback_analytics(text,int)`, pg_cron jobid **333** (`51 8 * * *`), plus `lib/analytics/buyback.ts`, `components/analytics/BuybackDashboard.tsx`, a thin server `page.tsx`, an `/analytics` hub card, and 33 tests across three files.
+
+⚠ **THE MEASUREMENT THAT DECIDED THE DESIGN — the headline metric the request asked for is mostly unknowable, and the naive board would have said $0.** Of **161,797** buyback acquisitions, only **431 (0.3%)** carry a price. The main wallet `0x4d2c9216f1dca098` (NBATopShotCommunity) is detected **entirely** by the daily holdings-snapshot diff, and 100% of its **161,366** rows have **NULL price AND NULL seller** with `sold_at` midnight-pinned to the DETECTION date. It has **3** priced sales in `sales_2026` all year, totalling $801. So `sum(price_usd)` next to the acquisition count publishes the buyback programme at **~$0.05 a moment**, and a seller leaderboard for that wallet is structurally impossible, not merely empty. The second wallet `0xe1f2a091f7bb5245` (TopShot_Buyback_2) is the only one that trades where our `sales_2026` trigger prices it: 431 rows, **$10,081.93**.
+
+⚠ **So the split is carried end to end rather than the question being dropped or faked.** `priced_acquisitions` travels beside `spend_usd` at every level (totals, wallet, edition, day); `spend_known` is an explicit boolean so a consumer cannot infer "spent nothing" from a null it failed to interpret; the seller panels state they describe only priced purchases; and the coverage notice is **SUPPRESSED** when everything in a window is priced, because a permanent caveat is its own false claim. `walletSpendDisplay` returns an em-dash, never `$0.00` — mutation-proven (swapping it for `formatUsd(0)` reds two tests).
+
+⚠ **"All time" is labelled ALL TRACKED TIME.** Snapshot history begins **2026-06-09**, but the wallet already held **52,118** moments on 2026-05-06 — so an unqualified "all-time" implies we are showing the programme's full history when we are showing ~10 weeks of it. `observation_start` is returned by the RPC and rendered.
+
+⚠ **`0xb6f2481eba4df97b` is deliberately OUT of scope** — it is tagged `pack_inventory`, is a pack-distribution account rather than a buyback account, and **none** of its 43,675 rows resolve to an edition. Wallet scope is driven off the `seeded_wallets` **`secondary_buyback` tag**, never a hardcoded address list, so a third buyback wallet appears the day it is tagged.
+
+**Performance.** A single `group by edition_id` on the base table was a **5,765 ms seq scan** (6,327 buffers) — far too slow for a live route on this instance, and a dashboard needs ~6 of them per period. The MV collapses the natural grain **205,472 → 19,602 rows** and the RPC computes every panel in one pass: **2,159 ms, 60,991 buffer HITS but only 394 disk reads**, so it barely touches the throttled disk. Refresh measured **144 ms / 22 disk reads**. Reconciled exactly against the base table: 205,472 acquisitions, 431 priced, $10,081.93 on both sides.
+
+⚠ **A `CREATE INDEX CONCURRENTLY` was aborted by the 60 s MCP timeout and left an INVALID 18 MB index** (`idx_tib_buyer_soldat_cover`, `indisvalid=false`) — write overhead serving no reads. **Dropped**; the MV made it unnecessary. Worth knowing generally: when the MCP times out on a CONCURRENTLY build, check `pg_index.indisvalid` rather than assuming the statement rolled back.
+
+**Security.** An MV can carry neither RLS nor `security_invoker`, so anon/authenticated are revoked EXPLICITLY (this DB's `ALTER DEFAULT PRIVILEGES` means `FROM PUBLIC` alone is not enough). Verified `has_table_privilege` anon/auth **false**, service_role true; the RPC likewise. `check_secdef_anon_exec_drift()` **0**, `check_public_security_invariants()` **0 rows**, `check_anon_write_surface()` **0 rows** after the change.
+
+**Verified.** `tsc` clean; primary **12,726** tests / 1,259 files green at 91.75/79.20/93.47/93.82 (thresholds 91.3/78.6/93.1/93.4); component **1,788** green at 90.78/82.30/89.41/93.75 (thresholds 90.3/81.6/89.1/93.2); all four ratchets, brand-token, proxy and both driver-leak guards unchanged. Three mutations killed. ⚠ `/analytics/*` pages remain **sign-in gated** and `/api/analytics/*` public — the existing posture, deliberately not changed here, since exposure is Trevor's call.
+
+**Revert path.** Code: `git revert <the feat(analytics) commit immediately after this ledger commit>`. DB, in this order:
+```sql
+SELECT cron.unschedule('rpc-refresh-topshot-buyback-daily');
+DROP FUNCTION IF EXISTS public.rpc_topshot_buyback_analytics(text, int);
+DROP FUNCTION IF EXISTS public.refresh_topshot_buyback_daily();
+DROP MATERIALIZED VIEW IF EXISTS public.topshot_buyback_daily CASCADE;
+```
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont.) — the SAME defect on a second page, one commit later: `special-serial-owners` published "0 special serials / 0 distinct holders" out of a failed read
 
 **What shipped:** `special-serial-owners` split to `SpecialSerialOwnersClient.tsx` (+7 tests), KPI-band honesty fix, ratchets **29 → 28** and **32 → 31**. Product code changed, so this deploys.
