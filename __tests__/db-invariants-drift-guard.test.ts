@@ -1086,6 +1086,32 @@ const PINS = [
     migration:
       "supabase/migrations/20260816030000_audit_20260816_snapshot_refresh_golazos_badge_low_ask.sql",
   },
+  {
+    // pg_cron jobid 64 `10 3 * * *`, called with 20000. INFERS which pack
+    // distribution an unattributed Top Shot rip came from, by matching its
+    // editions against the pools observed in rips whose distribution is KNOWN.
+    //
+    // ⚠ Attribution feeds pack EV, which drives a PUBLIC +EV buy signal — so a
+    // rip attached to the wrong distribution moves a number collectors act on.
+    // Live split 2026-08-16: rip_dist/high 36,464 vs empirical_subset/medium
+    // 1,001, i.e. ~2.7% of attributions are inferences sitting beside 36k
+    // observations.
+    //
+    // ⚠ THE PROPERTY TO PROTECT ABOVE ALL: no feedback loop. Both pool CTEs read
+    // method='rip_dist' ONLY, so references are ground truth and never this
+    // function's own output — widen either and each inference becomes evidence
+    // for the next. The two filters MASK EACH OTHER, so the test carries two
+    // purpose-built fixtures (DIST-MIX, and an inferred row on DIST-A) that make
+    // each independently observable; without them both mutations passed.
+    //
+    // Also pins: the >= 20 support bar, >= 2 editions to be identifying, full
+    // (not partial) containment, and HAVING count(*) = 1 so an ambiguous rip is
+    // left unattributed rather than assigned to min(dist_id).
+    fn: "attribute_topshot_rips_empirical",
+    test: "supabase/tests/attribute_topshot_rips_empirical.sql",
+    migration:
+      "supabase/migrations/20260816040000_audit_20260816_snapshot_attribute_topshot_rips_empirical.sql",
+  },
 ]
 
 /**
