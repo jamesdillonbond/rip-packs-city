@@ -251,3 +251,221 @@ describe("pack-events-ingest worker — event_kind classification", () => {
     expect(spy.writes.pack_purchases ?? []).toHaveLength(0)
   })
 })
+
+// ── AllDay: the primary_mint path ──────────────────────────────────────────
+//
+// ⚠ THE HIGHEST-STAKES UNCOVERED LEG IN THIS WORKER. `event_kind` is what the
+// `pack_purchases_set_is_primary_drop` TRIGGER reads to derive `is_primary_drop`,
+// so a regression here does not error — it silently reclassifies AllDay Studio
+// drops as secondary sales across every pack surface. A wrong NUMBER, not a
+// failure. The TopShot half of that classification was already driven above;
+// AllDay's was not, and it reaches the same column by a completely different
+// event shape (PackNFT.Mint, not a contract-reserve Withdraw).
+//
+// AllDay is mint-on-demand: every `PackNFT.Mint` is primary BY DEFINITION, so
+// unlike TopShot there is no signer/from filter — which is exactly why the
+// deposit pairing and the nftType filter carry the whole burden of correctness.
+const EVT_AD_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint"
+const EVT_AD_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit"
+const AD_PACK_TYPE = "A.e4cf4bdc1751c65d.PackNFT.NFT"
+const AD_COLLECTION = "dee28451-5d62-409e-a1ad-a83f763ac070"
+
+function adMintPayload(nftId: string, distId: string | null) {
+  return cdcEvent(EVT_AD_MINT, {
+    id: cdc.uint64(nftId),
+    commitHash: { type: "String", value: "deadbeef" },
+    distId: distId === null ? cdc.optionalNull() : { type: "String", value: distId },
+  })
+}
+
+function adDepositPayload(nftId: string, to: string) {
+  return cdcEvent(EVT_AD_DEPOSIT, {
+    id: cdc.uint64(nftId),
+    to: { type: "Optional", value: { type: "Address", value: to } },
+  })
+}
+
+/** find-or-fail. `Array.prototype.find` returns `T | undefined`, so every
+ *  downstream field access is a tsc error — and sprinkling `!` would silence the
+ *  ONE case worth failing loudly on: the row never having been written at all. */
+function mustFind<T>(rows: T[], pred: (r: T) => boolean, what: string): T {
+  const hit = rows.find(pred)
+  expect(hit, `expected a row matching ${what}`).toBeTruthy()
+  return hit as T
+}
+
+describe("pack-events-ingest worker — AllDay primary_mint", () => {
+  function cursorsAtTip(allday: number) {
+    return {
+      data: [
+        { id: "topshot_pack_purchases", last_processed_block: 1200 },
+        { id: "topshot_pack_opens", last_processed_block: 1200 },
+        { id: "allday_pack_purchases", last_processed_block: allday },
+      ],
+      error: null,
+    }
+  }
+
+  it("a Mint paired with a same-tx Deposit becomes primary_mint with a NULL seller", async () => {
+    const tx = "c".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_MINT, payload: adMintPayload("900", "dist-77") }),
+      ]),
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("900", "0x4444444444444444") }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [{ event_kind: "primary_mint" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const res = await worker.fetch(post(), ENV, CTX)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.allday_forward).toMatchObject({ primary_mint_rows: 1, rows_inserted: 1 })
+
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    const mint = mustFind(rows, (r) => r.pack_nft_id === "900", "the minted pack")
+    expect(mint.event_kind, "the trigger reads THIS to set is_primary_drop").toBe("primary_mint")
+    expect(mint.collection_id).toBe(AD_COLLECTION)
+    // ⚠ seller_address must be NULL, not a sentinel. The column carries a CHECK
+    // requiring NULL or ^0x[0-9a-f]{16}$, so a 'mint:<contract>' style marker
+    // would fail at INSERT — and there is no prior holder to name anyway.
+    expect(mint.seller_address).toBeNull()
+    // AllDay's Mint carries distId inline, so pack_dist_id resolves immediately
+    // (unlike TopShot, where it is NULL at purchase and backfilled after the rip).
+    expect(mint.pack_dist_id).toBe("dist-77")
+    // A Dapper primary purchase is off-chain — no on-chain price to record.
+    expect(mint.sale_price).toBeNull()
+    expect(mint.buyer_address).toBe("0x4444444444444444")
+  })
+
+  it("a Mint with NO matching Deposit is skipped — the pack never landed", async () => {
+    // ⚠ Not a cosmetic filter. Without the pairing there is no buyer, and a row
+    // with a null buyer would be a purchase attributed to nobody.
+    const tx = "d".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_MINT, payload: adMintPayload("901", "dist-77") }),
+      ]),
+      // Deposit exists but in a DIFFERENT transaction — must not pair.
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: "e".repeat(64), eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("901", "0x4444444444444444") }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    expect(body.allday_forward.primary_mint_rows).toBe(0)
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    expect(rows.find((r) => r.pack_nft_id === "901")).toBeUndefined()
+  })
+
+  it("a Mint with no distId still lands, with a NULL pack_dist_id", async () => {
+    // The dist is what names the drop on the pack surfaces. Absent, the row is
+    // still a real primary purchase and must not be dropped — the name can be
+    // resolved later, the purchase cannot be recovered.
+    const tx = "f".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_MINT, payload: adMintPayload("902", null) }),
+      ]),
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("902", "0x6666666666666666") }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [{ event_kind: "primary_mint" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(post(), ENV, CTX)
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    const mint = mustFind(rows, (r) => r.pack_nft_id === "902", "the distId-less mint")
+    expect(mint.event_kind).toBe("primary_mint")
+    expect(mint.pack_dist_id).toBeNull()
+  })
+
+  it("a TopShot pack listing in the AllDay scan is filtered out by nftType", async () => {
+    // ⚠ The AllDay secondary leg reads the SAME NFTStorefrontV2.ListingCompleted
+    // contract as the TopShot one — only the nftType filter separates them. Lose
+    // it and TopShot pack sales would be written under the AllDay collection_id,
+    // corrupting both collections' pack surfaces at once.
+    const tx = "1".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), []),
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("903", "0x7777777777777777") }),
+      ]),
+      // A TS-typed pack listing inside the AllDay window.
+      jsonRoute(encodeURIComponent(EVT_LISTING), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_LISTING, payload: packListingPayload("903", "9.00000000", TS_PACK_TYPE) }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(post(), ENV, CTX)
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    expect(
+      rows.find((r) => r.pack_nft_id === "903" && r.collection_id === AD_COLLECTION),
+      "a TopShot-typed listing must never be written as an AllDay pack",
+    ).toBeUndefined()
+  })
+
+  it("an AllDay-typed listing DOES become a secondary_sale on this cursor", async () => {
+    // The positive half of the filter above — without it, the previous test
+    // passes just as well against a leg that writes nothing at all.
+    const tx = "2".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_AD_MINT), []),
+      jsonRoute(encodeURIComponent(EVT_AD_DEPOSIT), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_AD_DEPOSIT, payload: adDepositPayload("904", "0x8888888888888888") }),
+      ]),
+      jsonRoute(encodeURIComponent(EVT_LISTING), [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_LISTING, payload: packListingPayload("904", "12.50000000", AD_PACK_TYPE) }),
+      ]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: cursorsAtTip(1000),
+      pack_purchases: { data: [{ event_kind: "secondary_sale" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    expect(body.allday_forward.secondary_sale_rows).toBe(1)
+    const rows = (spy.writes.pack_purchases ?? []).flatMap((w) => w.rows)
+    const sale = mustFind(rows, (r) => r.pack_nft_id === "904", "the AllDay secondary sale")
+    expect(sale.event_kind).toBe("secondary_sale")
+    expect(sale.collection_id).toBe(AD_COLLECTION)
+    expect(sale.sale_price).toBe(12.5)
+    // The payer is the real seller — recovered from the tx, not the event.
+    expect(sale.seller_address).toBe("0x5555555555555555")
+  })
+})

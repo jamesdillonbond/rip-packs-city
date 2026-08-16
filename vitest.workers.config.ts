@@ -67,30 +67,32 @@ export default defineConfig({
       // pass. The ONE legitimate reason to move a number down is that files LEFT
       // the measured set (a worker was retired) — say so in this comment when
       // you do, the way vitest.components.config.ts records the 17738436 case.
-      // Measured 2026-08-15 (second pass, same day): 73.79 st / 62.79 br /
-      // 76.38 fn / 76.37 ln over all 24 worker source files.
+      // Measured 2026-08-15, after three raises the same day:
+      // 76.69 st / 65.45 br / 77.77 fn / 79.44 ln over all 24 worker files.
       //
-      // Raised from 68.2/59.0/72.6/70.7 by driving the DEEP path of
-      // topshot-moments-hydrator, which was the worst file in the tree at
-      // **26.3 st / 29.9 br** and is now **90.6 / 80.4**
-      // (__tests__/worker-moments-hydrator-deep.test.ts). Re-seated in the SAME
-      // pass that measured the gain — "keep the buffer for later" is exactly how
-      // the component gate accumulated a ~13-point unguarded branch margin.
+      // The climb, and what each step bought:
+      //   68.2/59.0/72.6/70.7  gate seeded at the measured baseline
+      //   73.3/62.3/75.9/75.9  topshot-moments-hydrator deep path driven —
+      //                        26.3 st / 29.9 br -> 90.6 / 80.4, the worst file
+      //                        in the tree (worker-moments-hydrator-deep)
+      //   THIS                 pack-events-ingest AllDay primary_mint leg driven
       //
-      // ⚠ The aggregate is still dragged down by ONE file, and the spread is the
-      // useful part — do not read 74% as "the workers are three-quarters tested":
-      //   pack-events-ingest/index.ts        46.9 st / 34.1 br   <- the remaining work
-      // Every other file is now 81-100% statements, and 8 are at 100%. That one
-      // is the long inline `fetch()` body — a cursor loop fanning out to Flow
-      // REST — the same shape the primary gate's own header explains cannot be
-      // cleanly driven. The hydrator proved it CAN be driven with a table-aware
-      // supabase stub plus a service-binding fetch mock; the same approach should
-      // work there, and it owns `event_kind`, so it is worth the effort.
+      // ⚠ Each raise happened in the SAME commit that earned it. "Keep the
+      // buffer for later" is exactly how the component gate accumulated a
+      // ~13-point unguarded branch margin.
+      //
+      // ⚠ Still do not read 77% as "the workers are three-quarters tested" — the
+      // spread is the useful part. 22 of 24 files are 81-100% statements and 8
+      // are at 100%; the aggregate is held down by the remaining inline
+      // `fetch()` cursor loops in pack-events-ingest/index.ts (1,912 LOC — the
+      // largest worker by far). Its TopShot purchase classification and its
+      // AllDay primary_mint leg are now both driven; what is left is the opens
+      // cursor and the backfill-mode branches.
       thresholds: {
-        statements: 73.3,
-        branches: 62.3,
-        functions: 75.9,
-        lines: 75.9,
+        statements: 76.2,
+        branches: 64.9,
+        functions: 77.3,
+        lines: 78.9,
       },
     },
   },
