@@ -169,3 +169,83 @@ describe("buildEmailMessage", () => {
     expect(text).toContain("Manage: https://www.rippackscity.com/alerts")
   })
 })
+
+// ── Price-only deals carry no FMV, and the message must not pretend otherwise ─
+//
+// A subscription that says only "≤ $0.60" has no FMV condition, so the scanner
+// serves it from `edition_current_ask` where fmv_usd / discount_pct are NULL by
+// design (audit_20260816). Every render site used to interpolate
+// `${pct(discount_pct)} below FMV ${money(fmv)}` unconditionally, which on such
+// a row reads "— below FMV —" — an em-dash sentence that looks like a broken
+// template and implies we know an FMV we failed to show.
+//
+// ⚠ PINNED IN BOTH DIRECTIONS. A deal that DOES carry an FMV must keep stating
+// it: a fix that blanks the clause everywhere would silently strip the single
+// most useful number from every ordinary deal alert, and would still pass a
+// test that only checked the price-only case.
+describe("price-only deals (no FMV context)", () => {
+  const priceOnly = {
+    price_only: true,
+    fmv_usd: null,
+    serial_fmv_usd: null,
+    discount_pct: null,
+    discount_usd: null,
+    low_ask: 0.55,
+    ask_usd: null,
+    detail_url: "/nba-top-shot/edition/48%3A1652",
+    nft_id: null,
+  } as Partial<DealPayload["deal"]>
+
+  it("telegram states the ask alone, with no FMV clause and no em-dash", () => {
+    const msg = buildTelegramMessage([dealDelivery(priceOnly)])
+    expect(msg).toContain("$0.55 ask")
+    expect(msg).not.toContain("below FMV")
+    expect(msg).not.toContain("—")
+  })
+
+  it("telegram still states the FMV clause on a deal that has one", () => {
+    const msg = buildTelegramMessage([
+      dealDelivery({ low_ask: 12, fmv_usd: 16, discount_pct: 25, ask_usd: null }),
+    ])
+    expect(msg).toContain("$12.00 ask")
+    expect(msg).toContain("25% below FMV $16.00")
+  })
+
+  it("discord OMITS the FMV + Discount fields rather than showing an em-dash", () => {
+    const [embed] = buildDiscordEmbeds([dealDelivery(priceOnly)])
+    const names = embed.fields.map((f: { name: string }) => f.name)
+    expect(names).toContain("Ask")
+    expect(names).not.toContain("FMV")
+    expect(names).not.toContain("Discount")
+    expect(embed.fields.find((f: { name: string }) => f.name === "Ask").value).toBe("$0.55")
+  })
+
+  it("discord keeps FMV + Discount on a deal that has them", () => {
+    const [embed] = buildDiscordEmbeds([
+      dealDelivery({ low_ask: 12, fmv_usd: 16, discount_pct: 25, ask_usd: null }),
+    ])
+    const names = embed.fields.map((f: { name: string }) => f.name)
+    expect(names).toEqual(expect.arrayContaining(["Ask", "FMV", "Discount"]))
+  })
+
+  it("email html + text omit the clause without leaving a stray parenthesis", () => {
+    const { html, text } = buildEmailMessage([dealDelivery(priceOnly)])
+    expect(html).toContain("$0.55")
+    expect(html).not.toContain("below FMV")
+    expect(text).toContain("— $0.55")
+    expect(text).not.toContain("below FMV")
+    expect(text).not.toContain("()")
+  })
+
+  // ⚠ THE DISCRIMINATOR IS AVAILABILITY, NOT THE `price_only` FLAG. This case
+  // is what makes that a real distinction rather than a comment: a legacy
+  // deals-board row with a missing FMV and NO flag must also omit the clause.
+  // Re-pointing `hasFmvContext` at `d.price_only === true` reds exactly here.
+  it("a row with a null FMV but no price_only flag also omits the clause", () => {
+    const msg = buildTelegramMessage([
+      dealDelivery({ fmv_usd: null, serial_fmv_usd: null, discount_pct: null, low_ask: 3, ask_usd: null }),
+    ])
+    expect(msg).toContain("$3.00 ask")
+    expect(msg).not.toContain("below FMV")
+  })
+})

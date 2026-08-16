@@ -70,11 +70,22 @@ describe("alerts/format — the two-board price fallback", () => {
     expect(msg).toContain("—")
     expect(msg).not.toMatch(/NaN|\$null|\$undefined/)
 
-    expect(tg(deal({ ask_usd: Number.POSITIVE_INFINITY, discount_pct: Number.NaN }))).not.toMatch(/NaN|Infinity/)
+    // ⚠ THE FMV IS LOAD-BEARING IN THIS FIXTURE, not decoration. Since
+    // audit_20260816 the "N% below FMV $X" clause is OMITTED when there is no
+    // FMV to state (price-only alerts carry none by design), so without an FMV
+    // here the NaN guard on `pct` would never be reached and this assertion
+    // would pass vacuously — it would be asserting that a string we never
+    // render contains no NaN.
+    expect(
+      tg(deal({ ask_usd: Number.POSITIVE_INFINITY, serial_fmv_usd: 20, discount_pct: Number.NaN }))
+    ).not.toMatch(/NaN|Infinity/)
   })
 
   it("rounds the discount percent rather than printing a float", () => {
-    expect(tg(deal({ discount_pct: 24.6 }))).toContain("25%")
+    // Same reason as above: a discount percent is DERIVED from an FMV, so a
+    // fixture carrying one without the other is a shape production cannot
+    // produce, and the clause that prints it is now correctly withheld.
+    expect(tg(deal({ discount_pct: 24.6, fmv_usd: 11, low_ask: 8 }))).toContain("25%")
   })
 })
 

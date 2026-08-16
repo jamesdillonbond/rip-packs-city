@@ -218,6 +218,14 @@ export interface DealPayload {
     discount_usd: number | null;
     thumbnail_url: string | null;
 
+    // True when the scanner served this row from `edition_current_ask` because
+    // the subscription asked ONLY for a price (max_price with min_discount 0).
+    // Such rows carry fmv_usd / discount_pct NULL by design — see
+    // audit_20260816_price_only_alerts. Records the scanner's INTENT; the
+    // renderer discriminates on whether an FMV exists, which is a different
+    // question (see `hasFmvContext` in lib/alerts/format.ts).
+    price_only?: boolean | null;
+
     // ── Edition-level (cross_collection_deals_board) ──
     name?: string | null;
     collection_name?: string | null;

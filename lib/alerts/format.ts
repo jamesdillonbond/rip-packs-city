@@ -117,6 +117,33 @@ function dapperUrl(d: Deal): string | null {
 function dealTitle(d: Deal): string {
   return d.player_name || d.name || d.external_id || "Moment";
 }
+
+// ── Price-only deals carry NO FMV, and that is the point ─────────────────────
+//
+// A subscription that says only "≤ $0.60" has no FMV condition, so the scanner
+// serves it from `edition_current_ask`, where fmv_usd / discount_pct are NULL by
+// design (audit_20260816 — the FMV lateral measured 28s vs 320ms on the cheapest
+// possible slice, for a column that is not a condition). Every render site below
+// used to interpolate `${pct(discount_pct)} below FMV ${money(fmv)}`
+// unconditionally, which on such a row reads "— below FMV —": an em-dash
+// sentence that looks like a broken template, and invites the reader to think we
+// know an FMV and failed to show it.
+//
+// ⚠ THE DISCRIMINATOR IS THE VALUE, NOT THE `price_only` FLAG, on purpose. The
+// question this asks is "is there an FMV to state at all" — so it also covers a
+// legacy deals-board row that arrives with a null FMV, which the flag would miss
+// and render as an em-dash. The flag stays on the payload because it records the
+// scanner's INTENT (no FMV was ever sought) for anyone reading a delivery row,
+// but intent is not the same question as availability.
+function hasFmvContext(d: Deal): boolean {
+  const fmv = dealFmv(d);
+  return fmv !== null && fmv !== undefined && Number.isFinite(Number(fmv));
+}
+// "25% below FMV $8.00", or null when there is no FMV to compare against.
+function dealFmvClause(d: Deal): string | null {
+  if (!hasFmvContext(d)) return null;
+  return `${pct(d.discount_pct)} below FMV ${money(dealFmv(d))}`;
+}
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -143,7 +170,7 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
       lines.push(
         `\n<a href="${dealDetailUrl(deal)}">${title}</a>` +
           (sub ? `\n${sub}` : "") +
-          `\n${money(dealAsk(deal))} ask · ${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))}` +
+          `\n${money(dealAsk(deal))} ask${dealFmvClause(deal) ? ` · ${dealFmvClause(deal)}` : ""}` +
           (buyLinks.length ? `\n${buyLinks.join(" · ")}` : "")
       );
     }
@@ -176,11 +203,13 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
       const native = nativeBuyLink(deal);
       const dapper = dapperUrl(deal);
       // Discord embed field VALUES render markdown links; field NAMES don't.
-      const fields: any[] = [
-        { name: "Ask", value: money(dealAsk(deal)), inline: true },
-        { name: "FMV", value: money(dealFmv(deal)), inline: true },
-        { name: "Discount", value: pct(deal.discount_pct), inline: true },
-      ];
+      // FMV + Discount are OMITTED, not em-dashed, on a price-only deal — a
+      // field reading "—" is worse than an absent field. See dealFmvClause.
+      const fields: any[] = [{ name: "Ask", value: money(dealAsk(deal)), inline: true }];
+      if (hasFmvContext(deal)) {
+        fields.push({ name: "FMV", value: money(dealFmv(deal)), inline: true });
+        fields.push({ name: "Discount", value: pct(deal.discount_pct), inline: true });
+      }
       const buyLinks = [
         native ? `[${native.label} ↗](${native.url})` : "",
         dapper ? `[Dapper ↗](${dapper})` : "",
@@ -253,7 +282,7 @@ export function buildEmailMessage(deliveries: Delivery[]): {
           </td>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
             <div style="color:#34d399;font-weight:800;font-size:15px;">${money(dealAsk(deal))}</div>
-            <div style="color:rgba(255,255,255,0.5);font-size:12px;">${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))}</div>
+            ${dealFmvClause(deal) ? `<div style="color:rgba(255,255,255,0.5);font-size:12px;">${dealFmvClause(deal)}</div>` : ""}
           </td>
         </tr>`;
     })
@@ -299,7 +328,8 @@ export function buildEmailMessage(deliveries: Delivery[]): {
     const native = nativeBuyLink(deal);
     const dapper = dapperUrl(deal);
     const sub = dealSubline(deal);
-    textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))} (${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))})`);
+    const clause = dealFmvClause(deal);
+    textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))}${clause ? ` (${clause})` : ""}`);
     textLines.push(`  Details: ${dealDetailUrl(deal)}`);
     if (native) textLines.push(`  Buy on ${native.label}: ${native.url}`);
     if (dapper) textLines.push(`  Dapper: ${dapper}`);
