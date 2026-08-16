@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — "set up the image proxy for third party avatars") — and the reason it was needed turned out to be CSP, not privacy or caching
+
+**What shipped.** New `lib/media/avatar-proxy.ts` + `app/api/public/avatar-media/route.ts`, wired into the two BROWSER avatar renders, plus a new `unsupported-host` verdict in `lib/profile/avatar-url.ts` and 2 test files. **No DB change.**
+
+⚠ **THE HEADLINE, AND IT REFRAMES THE WHOLE ASK: A THIRD-PARTY AVATAR NEVER RENDERED AT ALL, AND CSP IS WHY.** `proxy.ts` sends an **enumerated `img-src`** listing our catalogue CDNs, and it does **not** include the NFT image hosts. So `https://i2c.seadn.io/…` — tomwagmi's avatar, set earlier today — is refused by the browser **before a byte moves**, falls through to the monogram, and looks exactly like a dead link. I had filed the open question as "does it render?" and attributed the risk to the 4 MB OG cap; **the real blocker was our own security header.** ⚠ There are TWO CSPs (a permissive one in `next.config.ts`, the restrictive one in `proxy.ts`); browsers enforce multiple CSP headers as an **INTERSECTION**, so the restrictive `img-src` governs. **Serving the bytes from our own origin satisfies `'self'`, which is in every policy we send — so the proxy is correct regardless of which one applies, and I did not have to resolve that ambiguity to justify it.** ⚠ Not verified by reading a live response header (rippackscity.com is blocked from the sandbox).
+
+⚠ **THE HOST ALLOWLIST IS THE SSRF GUARD — the same shape as `/api/public/ipfs-media/[cid]`,** whose header says outright that the CID regex "is the SSRF guard" because its upstream host is fixed. An avatar has no fixed host, so the bound comes from an allowlist instead. **The alternative — accept any host and validate the resolved IP — was rejected on merit, not effort**: DNS rebinding means the name can resolve public when you check it and private when `fetch` re-resolves it, and mitigating that properly needs IP-pinned connections `fetch` does not expose. An allowlist has no such window.
+
+**Security properties, each mutation-tested:** https only (an http upstream re-served over TLS launders a downgraded fetch); **exact** hostname match; **redirects refused not followed** (`redirect: "manual"` + explicit 3xx rejection — an allowlisted host that 302s is the hole an allowlist otherwise leaves open); a content-type **allowlist**; a 4 MB cap; a 6 s timeout; `nosniff`; `Referrer-Policy: no-referrer`; and our own content-type echoed rather than the upstream string.
+
+⚠ **SVG IS EXCLUDED AND MUST STAY EXCLUDED.** An SVG is a document that can carry `<script>`; served from our origin it is same-origin with the session — **stored XSS delivered as a profile picture**. This is why the check is an allowlist and not `startsWith("image/")`, which admits `image/svg+xml`.
+
+⚠ **ON OVERSIZE THIS 502s WHERE ipfs-media REDIRECTS — the opposite call, for a reason.** That route can redirect because `ipfs.io` IS in the CSP, so the browser can load it directly. These hosts are not, so a redirect would hand the browser a URL its own policy forbids: a guaranteed broken image instead of a clean fall-through to the monogram.
+
+⚠ **THE ALLOWLIST IS DELIBERATELY THE COMPLEMENT OF THE CSP LIST** — hosts already in `img-src` render hotlinked, so proxying them would add a hop and a dependency, and would break avatars that work today if this route ever faults. A test parses `proxy.ts` and fails if the two sets overlap.
+
+⚠ **TWO MUTATIONS SURVIVED AND ONE WAS A REAL GAP ON THE MOST IMPORTANT GUARD.** Swapping exact matching for `endsWith` **survived**, because every bypass fixture I wrote ended in some *other* domain. The case with teeth is **`evilarweave.net`** — it ends with an allowlisted host and anyone can register it, so a suffix match would have handed an attacker-controlled origin straight to the fetch. Fixtures added; it reds now. The second (removing the explicit 3xx check) is **redundant behind `!upstream.ok`** and is documented as kept-for-intent rather than contrived into load-bearing — the assertion that genuinely matters is the one pinning `redirect: "manual"`.
+
+⚠ **A KNOCK-ON THAT CORRECTS THIS MORNING'S WORK: the validator was telling collectors an arbitrary https image URL was FINE when the CSP could never paint it.** New `unsupported-host` verdict, pointing at the two things that do work (the Moment picker, or an i.seadn.io link). **Two of my own earlier tests asserted the wrong behaviour and were corrected, not deleted.**
+
+**Verified.** `tsc` clean · primary **EXIT 0** (91.76/79.21/93.46/93.82) · component **EXIT 0** (90.58/82.20/89.52/93.49) · 38 new/updated assertions · 8 mutations run, 6 red immediately, 1 fixed, 1 documented.
+
+**STILL OPEN:** the OG card deliberately still fetches the origin DIRECTLY (server-side, so no CSP applies, and it has its own 4.5 s budget — routing it through this proxy would nest our 6 s timeout inside that and regress it). Unlisted hosts remain undisplayable, which is the status quo, now disclosed to the collector instead of silent.
+
+**Revert:** `git revert <sha>` — avatars return to hotlinking (i.e. third-party ones stop rendering again). Nothing to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the listing-retry-queue reported the queue CLEAR out of its own failed read; found by converting two admin pages for coverage
 
 `app/admin/analytics` and `app/admin/listing-retry-queue` moved their bodies into
