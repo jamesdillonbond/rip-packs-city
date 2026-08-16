@@ -67,32 +67,33 @@ export default defineConfig({
       // pass. The ONE legitimate reason to move a number down is that files LEFT
       // the measured set (a worker was retired) — say so in this comment when
       // you do, the way vitest.components.config.ts records the 17738436 case.
-      // Measured 2026-08-15, after three raises the same day:
-      // 76.69 st / 65.45 br / 77.77 fn / 79.44 ln over all 24 worker files.
+      // Measured 2026-08-15, after four raises the same day:
+      // 82.12 st / 68.23 br / 82.40 fn / 84.98 ln over all 24 worker files.
       //
       // The climb, and what each step bought:
       //   68.2/59.0/72.6/70.7  gate seeded at the measured baseline
       //   73.3/62.3/75.9/75.9  topshot-moments-hydrator deep path driven —
       //                        26.3 st / 29.9 br -> 90.6 / 80.4, the worst file
       //                        in the tree (worker-moments-hydrator-deep)
-      //   THIS                 pack-events-ingest AllDay primary_mint leg driven
+      //   76.2/64.9/77.3/78.9  pack-events-ingest AllDay primary_mint leg
+      //   THIS                 pack-events-ingest OPENS cursor (rip -> moment
+      //                        attribution, the source_pack_rip_id link)
       //
       // ⚠ Each raise happened in the SAME commit that earned it. "Keep the
       // buffer for later" is exactly how the component gate accumulated a
       // ~13-point unguarded branch margin.
       //
-      // ⚠ Still do not read 77% as "the workers are three-quarters tested" — the
-      // spread is the useful part. 22 of 24 files are 81-100% statements and 8
-      // are at 100%; the aggregate is held down by the remaining inline
-      // `fetch()` cursor loops in pack-events-ingest/index.ts (1,912 LOC — the
-      // largest worker by far). Its TopShot purchase classification and its
-      // AllDay primary_mint leg are now both driven; what is left is the opens
-      // cursor and the backfill-mode branches.
+      // ⚠ The two files that once dragged this number are both closed out:
+      // topshot-moments-hydrator went 26.3 -> 90.6, and pack-events-ingest's
+      // three production legs (TopShot purchases, AllDay mints, opens) are all
+      // driven. What remains uncovered there is BACKFILL MODE — a separate
+      // cursor set the live path never touches — plus the soft-budget bail-outs,
+      // which need a fake clock rather than a fixture.
       thresholds: {
-        statements: 76.2,
-        branches: 64.9,
-        functions: 77.3,
-        lines: 78.9,
+        statements: 81.6,
+        branches: 67.7,
+        functions: 81.9,
+        lines: 84.4,
       },
     },
   },

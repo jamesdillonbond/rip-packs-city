@@ -469,3 +469,252 @@ describe("pack-events-ingest worker — AllDay primary_mint", () => {
     expect(sale.seller_address).toBe("0x5555555555555555")
   })
 })
+
+// ── The OPENS cursor: pack rip -> moment attribution ───────────────────────
+//
+// The second of the two legs left dark when the worker gate landed. This is the
+// path that turns "a pack was opened" into the per-moment `moment_acquisitions`
+// rows carrying `source_pack_rip_id` — i.e. the link that lets the platform say
+// a given moment CAME FROM a given pack. Every pack-EV, pull-value and
+// rip-history surface joins on it.
+//
+// ⚠ Its failure mode is attribution, not an error: a rip that writes no moment
+// rows just looks like a pack nobody opened.
+const EVT_OPENED = "A.0b2a3299cc857e29.PackNFT.Opened"
+const EVT_TS_DEPOSIT = "A.0b2a3299cc857e29.TopShot.Deposit"
+const EVT_TS_WITHDRAW = "A.0b2a3299cc857e29.TopShot.Withdraw"
+const CUSTODY = "0xb6f2481eba4df97b"
+
+function openedPayload(packNftId: string) {
+  return cdcEvent(EVT_OPENED, { id: cdc.uint64(packNftId) })
+}
+function tsDepositPayload(momentId: string, to: string) {
+  return cdcEvent(EVT_TS_DEPOSIT, {
+    id: cdc.uint64(momentId),
+    to: { type: "Optional", value: { type: "Address", value: to } },
+  })
+}
+function tsWithdrawPayload(momentId: string, from: string) {
+  return cdcEvent(EVT_TS_WITHDRAW, {
+    id: cdc.uint64(momentId),
+    from: { type: "Optional", value: { type: "Address", value: from } },
+  })
+}
+
+describe("pack-events-ingest worker — the opens cursor", () => {
+  /** Cursors with purchases + allday already at tip so only OPENS has work. */
+  function opensOnly(opens: number) {
+    return {
+      data: [
+        { id: "topshot_pack_purchases", last_processed_block: 1200 },
+        { id: "topshot_pack_opens", last_processed_block: opens },
+        { id: "allday_pack_purchases", last_processed_block: 1200 },
+      ],
+      error: null,
+    }
+  }
+
+  function opensFetch(blocks: {
+    opened: ReturnType<typeof eventBlock>[]
+    deposits: ReturnType<typeof eventBlock>[]
+    withdraws: ReturnType<typeof eventBlock>[]
+  }) {
+    return installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_OPENED), blocks.opened),
+      jsonRoute(encodeURIComponent(EVT_TS_DEPOSIT), blocks.deposits),
+      jsonRoute(encodeURIComponent(EVT_TS_WITHDRAW), blocks.withdraws),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+  }
+
+  it("a rip records moments_pulled and links every moment to it", async () => {
+    const tx = "3".repeat(64)
+    fetchMock = opensFetch({
+      opened: [eventBlock({ height: 1150, txId: tx, eventType: EVT_OPENED, payload: openedPayload("pack-1") })],
+      deposits: [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m1", "0xopener00000000a") }),
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m2", "0xopener00000000a") }),
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m3", "0xopener00000000a") }),
+      ],
+      withdraws: [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_WITHDRAW, payload: tsWithdrawPayload("m1", CUSTODY) }),
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_WITHDRAW, payload: tsWithdrawPayload("m2", CUSTODY) }),
+      ],
+    })
+    const spy = install({
+      event_cursor: opensOnly(1000),
+      pack_rips: { data: [{ id: "rip-uuid-1", tx_hash: tx }], error: null },
+      moment_acquisitions: { data: [{ id: "a" }, { id: "b" }, { id: "c" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const res = await worker.fetch(post(), ENV, CTX)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.opens).toMatchObject({ rips_inserted: 1, moments_linked: 3 })
+
+    const rips = (spy.writes.pack_rips ?? []).flatMap((w) => w.rows)
+    const rip = mustFind(rips, (r) => r.pack_nft_id === "pack-1", "the rip row")
+    expect(rip.opener_address).toBe("0xopener00000000a")
+    // moments_pulled is the DEPOSIT count in that tx — the number a pull-value
+    // surface divides by. It is not the withdraw count (only 2 here).
+    expect(rip.moments_pulled).toBe(3)
+    expect(rip.tx_hash).toBe(tx)
+
+    const moments = (spy.writes.moment_acquisitions ?? []).flatMap((w) => w.rows)
+    expect(moments).toHaveLength(3)
+    for (const m of moments) {
+      expect(m.wallet).toBe("0xopener00000000a")
+      // ⚠ The attribution link. Without it a moment is orphaned from its pack and
+      // every pack-EV / pull-value / rip-history surface loses the join.
+      expect(m.source_pack_rip_id).toBe("rip-uuid-1")
+      expect(m.transaction_hash).toBe(tx)
+    }
+  })
+
+  it("source_address is READ FROM THE WITHDRAW EVENT, and is null when absent", async () => {
+    // ⚠ The worker's own comment: the reveal-custody account "is typically
+    // 0xb6f2481eba4df97b for current pack types but MAY VARY BY PACK FORMAT, so
+    // we always read it from the event." Hardcoding it would silently mis-tag
+    // every moment from a future pack format — and the tag is per-moment, so a
+    // partial withdraw set must leave the unmatched ones NULL rather than
+    // borrowing a sibling's address.
+    const tx = "4".repeat(64)
+    fetchMock = opensFetch({
+      opened: [eventBlock({ height: 1150, txId: tx, eventType: EVT_OPENED, payload: openedPayload("pack-2") })],
+      deposits: [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m10", "0xopener00000000b") }),
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m11", "0xopener00000000b") }),
+      ],
+      withdraws: [
+        // A NON-standard custody address, and only for m10.
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_WITHDRAW, payload: tsWithdrawPayload("m10", "0xfeedfacefeedface") }),
+      ],
+    })
+    const spy = install({
+      event_cursor: opensOnly(1000),
+      pack_rips: { data: [{ id: "rip-uuid-2", tx_hash: tx }], error: null },
+      moment_acquisitions: { data: [{ id: "a" }, { id: "b" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(post(), ENV, CTX)
+    const moments = (spy.writes.moment_acquisitions ?? []).flatMap((w) => w.rows)
+    const tagged = mustFind(moments, (m) => m.nft_id === "m10", "the withdrawn moment")
+    const untagged = mustFind(moments, (m) => m.nft_id === "m11", "the moment with no withdraw")
+    expect(tagged.source_address, "read from the event, not a constant").toBe("0xfeedfacefeedface")
+    expect(untagged.source_address, "no withdraw -> null, never a sibling's address").toBeNull()
+  })
+
+  it("a pack opened with NO minted moments is skipped WITHOUT sinking its siblings", async () => {
+    // ⚠ Deliberate skip: a rip row with moments_pulled 0 would enter every
+    // pull-value average as a zero-value pull and drag the distribution down.
+    //
+    // ⚠ A SIBLING PACK IS IN THE SAME BATCH ON PURPOSE, and an earlier version
+    // of this case did not have one — which made it unable to tell a clean SKIP
+    // from a CRASH. Deleting the `continue` makes `txDeposits[0].decoded` throw
+    // on the empty array, and with only the bad pack present the observable
+    // outcome is identical (0 rips, no pack-3 row), so the mutation survived.
+    // The sibling is what distinguishes them: a crash loses it too.
+    const badTx = "5".repeat(64)
+    const goodTx = "b".repeat(64)
+    fetchMock = opensFetch({
+      opened: [
+        eventBlock({ height: 1150, txId: badTx, eventType: EVT_OPENED, payload: openedPayload("pack-3") }),
+        eventBlock({ height: 1151, txId: goodTx, eventType: EVT_OPENED, payload: openedPayload("pack-3b") }),
+      ],
+      deposits: [
+        // Note: nothing for badTx. This deposit is in an UNRELATED tx.
+        eventBlock({ height: 1150, txId: "6".repeat(64), eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m20", "0xopener00000000c") }),
+        eventBlock({ height: 1151, txId: goodTx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m21", "0xopener00000000e") }),
+      ],
+      withdraws: [],
+    })
+    const spy = install({
+      event_cursor: opensOnly(1000),
+      pack_rips: { data: [{ id: "rip-good", tx_hash: goodTx }], error: null },
+      moment_acquisitions: { data: [{ id: "a" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    const rips = (spy.writes.pack_rips ?? []).flatMap((w) => w.rows)
+    expect(rips.find((r) => r.pack_nft_id === "pack-3"), "the empty pack is skipped").toBeUndefined()
+    // ...and the batch as a whole still completed.
+    expect(body.opens.rips_inserted).toBe(1)
+    expect(
+      mustFind(rips, (r) => r.pack_nft_id === "pack-3b", "the sibling pack").opener_address,
+      "a sibling in the same batch must still be ripped",
+    ).toBe("0xopener00000000e")
+  })
+
+  it("two packs opened in the SAME block are attributed separately", async () => {
+    // Each tx is its own rip. Grouping by BLOCK rather than tx would merge two
+    // collectors' pulls into one rip and hand each the other's moments.
+    const txA = "7".repeat(64)
+    const txB = "8".repeat(64)
+    fetchMock = opensFetch({
+      opened: [
+        eventBlock({ height: 1150, txId: txA, eventType: EVT_OPENED, payload: openedPayload("pack-A") }),
+        eventBlock({ height: 1150, txId: txB, eventType: EVT_OPENED, payload: openedPayload("pack-B") }),
+      ],
+      deposits: [
+        eventBlock({ height: 1150, txId: txA, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("mA", "0xopenerAAAAAAAAa") }),
+        eventBlock({ height: 1150, txId: txB, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("mB", "0xopenerBBBBBBBBb") }),
+      ],
+      withdraws: [],
+    })
+    const spy = install({
+      event_cursor: opensOnly(1000),
+      pack_rips: {
+        data: [
+          { id: "rip-A", tx_hash: txA },
+          { id: "rip-B", tx_hash: txB },
+        ],
+        error: null,
+      },
+      moment_acquisitions: { data: [{ id: "a" }, { id: "b" }], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    await worker.fetch(post(), ENV, CTX)
+    const rips = (spy.writes.pack_rips ?? []).flatMap((w) => w.rows)
+    expect(rips).toHaveLength(2)
+    expect(mustFind(rips, (r) => r.pack_nft_id === "pack-A", "pack A").opener_address).toBe("0xopenerAAAAAAAAa")
+    expect(mustFind(rips, (r) => r.pack_nft_id === "pack-B", "pack B").opener_address).toBe("0xopenerBBBBBBBBb")
+
+    const moments = (spy.writes.moment_acquisitions ?? []).flatMap((w) => w.rows)
+    expect(mustFind(moments, (m) => m.nft_id === "mA", "moment A").source_pack_rip_id).toBe("rip-A")
+    expect(mustFind(moments, (m) => m.nft_id === "mB", "moment B").source_pack_rip_id).toBe("rip-B")
+  })
+
+  it("a failed pack_rips LOOKUP is reported and does not sink the run", async () => {
+    // ⚠ The lookup is chunked and run through Promise.allSettled precisely so one
+    // chunk's failure does not lose the rips that DID resolve. Reported under
+    // `pack_rips_lookup_chunk` so a partial attribution is visible rather than
+    // silently smaller.
+    const tx = "9".repeat(64)
+    fetchMock = opensFetch({
+      opened: [eventBlock({ height: 1150, txId: tx, eventType: EVT_OPENED, payload: openedPayload("pack-4") })],
+      deposits: [
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload("m30", "0xopener00000000d") }),
+      ],
+      withdraws: [],
+    })
+    install({
+      event_cursor: opensOnly(1000),
+      pack_rips: { data: [{ id: "rip-uuid-4", tx_hash: tx }], error: null },
+      "pack_rips:select": { data: null, error: { message: "statement timeout" } },
+      moment_acquisitions: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const res = await worker.fetch(post(), ENV, CTX)
+    // Whatever the outcome of the lookup, the tick must still answer 200 so the
+    // cron records it rather than retrying blind.
+    expect(res.status).toBe(200)
+  })
+})
+
