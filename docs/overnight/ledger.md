@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — six more orphaned anon-executable functions revoked; one holds a pooled connection for 39 SECONDS
+
+**Applied to prod** — `audit_20260816_revoke_anon_exec_on_six_orphaned_wallet_fns`. Second and final slice of the anon-executable-INVOKER audit (first was the two pack fns earlier today).
+
+**The finding.** `get_wallet_cache_count` is anon-executable, has **no caller anywhere**, and takes **39.4 s** on a real wallet:
+
+```
+Function Scan on get_wallet_cache_count (actual time=39449.551..39449.552 rows=1)
+Buffers: shared hit=2591 read=4642 dirtied=922 written=1251
+Execution Time: 39449.677 ms
+```
+
+⚠ **Note the SHAPE: only ~7.2k buffers for 39 s of wall clock.** This is not an expensive plan — it is **IO STARVATION** on the disk-IO-budgeted 2 GB instance (5 active backends at the time, *all* on IO waits). That makes it a WORSE availability surface, not a better one: the cost is paid in held pooled connections during exactly the saturation an attacker would be deepening. Severity is availability, not confidentiality — all six are SECURITY INVOKER, so the caller's own RLS applies and they expose nothing an anonymous visitor cannot already read.
+
+**Revoked (all zero-caller):** `get_pinnacle_set_progress`, `get_pinnacle_wallet_edition_keys`, `get_seeded_wallet_stats`, `get_wallet_cache_count`, `get_wallet_collections`, `get_wallet_edition_keys`. anon/authenticated **false**, service_role + owner **true** — a future in-product caller needs only `supabaseAdmin`.
+
+⚠ **THE DB-SIDE SWEEP ALONE WOULD HAVE BEEN CATASTROPHIC, AND THIS IS THE PART TO REMEMBER.** Of the 37 anon-executable invoker functions touching heavy tables, **32 report ZERO DB callers** — including `get_wallet_moments_with_fmv`, `get_top_sales` and `get_market_pulse`, which are obviously **live product RPCs** called from Next.js routes that Postgres cannot see. Revoking on DB evidence alone would have taken down the wallet and analytics surfaces. **The repo grep is what separates the six from the twenty-six**, and each of the six was verified FOUR ways: `pg_proc.prosrc` (0), `pg_views.definition` (0), `cron.job.command` (0), full-repo grep every file type (0). ⚠ The **views** arm is load-bearing, not ceremony: a `security_invoker=true` view executes its callee AS THE CALLER, so an anon-readable view keeps an anon grant load-bearing even when every code caller is service-role.
+
+⚠ **A CHECK OF MY OWN LIED, IN THE EXACT CLASS I SPENT THE DAY CORRECTING.** My post-apply verification asserted `bool_and(has_function_privilege('anon', …))` for `serial_fmv_estimate` — the function CLAUDE.md says MUST stay anon-executable — and it returned **false**, reading as "I just broke a load-bearing public path." I had not touched it. **There are FOUR overloads**, and `bool_and` collapses a PER-SIGNATURE fact into one boolean: two overloads are anon-executable (the 6- and 7-arg forms, still reached by `get_wallet_moments_with_fmv` and `topshot_underpriced_serials_board`) and two are deliberately revoked (the documented 2026-07-26 drift clearing). **On an overloaded function, aggregate a privilege check at your peril — read it per `oid::regprocedure`.**
+
+**Verified after apply.** anon/authenticated EXECUTE false on all six, service_role true; `check_public_security_invariants()` **0 rows**, `check_anon_write_surface()` **0 rows**, `check_secdef_anon_exec_drift()` length **0**; anon-executable invoker population **84 → 78**.
+
+⚠ **The remaining 78 are NOT swept, deliberately** — most are legitimately anon-reachable and a blanket revoke would break live public surfaces. Ranking approach filed at [inbox 2026-08-16T1910Z](docs/overnight/inbox/2026-08-16T1910Z-86-anon-executable-invoker-fns-are-invisible-to-the-secdef-drift-check.md). ⚠ And `check_secdef_anon_exec_drift()` remains structurally blind to every one of them (it considers SECURITY DEFINER only).
+
+**REVERT:**
+```sql
+GRANT EXECUTE ON FUNCTION public.get_pinnacle_set_progress(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_pinnacle_wallet_edition_keys(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_seeded_wallet_stats(text, uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_wallet_cache_count(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_wallet_collections(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_wallet_edition_keys(text, uuid) TO anon, authenticated;
+```
+(`git revert <sha>` restores the file but does **NOT** undo the grant — run the SQL.)
+
 ### 2026-08-16 · SHIPPED (Cowork cloud, daytime) — the trust-health freshness view, applied in a measured trough; its first query shows the pre-split monolith needed **928.6 s of a 600 s budget**
 
 - **What.** `audit_20260816_trust_health_freshness_companion_view` → prod version **`20260816173845`**, applied **verbatim from the committed file** `supabase/migrations/20260816153000_…` (pulled from a fresh clone, **not retyped**).
