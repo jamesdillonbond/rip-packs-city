@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor supplied the image URL) — tomwagmi's avatar is live; the OPEN item from the entry below is now CLOSED
+
+**What shipped.** One-row `UPDATE` on `public.profile_bio` setting `avatar_url` for `tomwagmi` (`user_id 8f8d5d3d-78d4-4198-863c-8d98629de75a`) to the `i2c.seadn.io` PNG Trevor pasted. Prior value was the **OpenSea item PAGE** (HTML), which had been rendering as the monogram. **No code change.**
+
+**Why it needed a human.** The sandbox cannot reach OpenSea, Etherscan, any Ethereum RPC, **or even `i2c.seadn.io`** (`403 CONNECT` on all), and the two ways around that were declined as bypassing the network control rather than working within it. Trevor fetched it in a browser in seconds.
+
+**What was verified, and what was NOT.** ✅ It passes `classifyAvatarUrl` (`ok`, no warning) — an end-to-end check of the validator shipped hours earlier; ✅ absolute `https://`, so `app/api/og/profile/[username]`'s `startsWith("https://")` gate admits it; ✅ `.png`; ✅ **the path contains the SAME contract `0x5b433d6baf165b268b931f8afbb75372760e706d` as the item page it replaced**, which corroborates it is the right NFT rather than a mis-paste. ⚠ **NOT verified: HTTP status, content-type, or byte size** — the host is unreachable from here, so this rests on Trevor's browser having rendered it.
+
+⚠ **THE ONE RESIDUAL RISK IS THE `?w=2000`.** `ogImageDataUri` drops anything over **4 MB**, and a 2000px PNG can plausibly exceed it — in which case the profile page shows the art but the SOCIAL CARD silently falls back to the monogram. ⚠ **The URL was stored EXACTLY as supplied rather than trimmed to `?w=500`**: a smaller variant is equally unverifiable from here, so inventing one would swap a known-working value for an untested guess. **If the X/Discord unfurl shows initials while the profile shows the art, that is the 4 MB cap — change `w=2000` to `w=500`.**
+
+**State after:** 20 profiles — **19 on the RPC-logo default, 1 (tomwagmi) with their own https avatar, 0 still pointing at a marketplace page.**
+
+**Revert:** `UPDATE public.profile_bio SET avatar_url = NULL, updated_at = now() WHERE user_id = '8f8d5d3d-78d4-4198-863c-8d98629de75a';` (drops them to the RPC-logo default; restoring the broken OpenSea page URL is deliberately not offered).
+
 ### 2026-08-16 · QUEUED (Cowork, deep audit run 2 cont.) — pg_cron never STARTS 2–4% of all scheduled ticks, the rate is up ~10× in two weeks, and a lost tick writes no `pipeline_runs` row
 
 - **Nothing shipped. Read-only; no DB write, no migration, no prod state change — no revert path.** Filing: `docs/overnight/inbox/2026-08-16T1921Z-pg-cron-loses-2-to-4-pct-of-all-ticks-and-writes-no-row.md`.
