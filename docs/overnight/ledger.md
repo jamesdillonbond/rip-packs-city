@@ -80,6 +80,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Verified:** `npx tsc --noEmit` clean (run bare, exit code read directly — not through a pipe, per the documented `tail`-swallows-the-status trap). Plain DOM code, no type surface changed.
 - **Revert:** `git revert <sha>` — the commit whose message begins `fix(profile): avatar onError read parentElement.style`. Nothing to unwind in the DB.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — drove pack-events BACKFILL MODE; the cursor cross-contamination guard is now pinned in both directions
+
+**What shipped.** 11 cases on backfill mode + worker thresholds **81.6/67.7/81.9/84.4 → 84.4/71.2/83.2/87.5**. Test-only; worker source untouched. **All four of `pack-events-ingest`'s modes are now driven.**
+
+⚠ **THE HAZARD IS CURSOR CROSS-CONTAMINATION, and it is silent in BOTH directions.** Backfill writing a LIVE cursor drags forward ingest back into history and re-walks months of blocks; live writing a BACKFILL cursor jumps it to the tip and **permanently skips everything in between — a hole in the historical record nothing detects**, because both pipelines keep reporting healthy ticks throughout. So the assertion is which cursor NAMES each mode writes, not the row counts. Also pinned: the two modes log under **different pipeline names**, so a healthy live tick cannot mask a wedged backfill in `pipeline_runs`; backfill stops at **`TARGET_END_BLOCK`, not the sealed tip**; and the AllDay backfill halts **1,000 blocks short of the forward cursor** — the two walk toward each other, and without the gap they overlap and re-ingest from both ends forever.
+
+⚠ **FOUR of my assertions were wrong about the contract and the tests told me so — I had inferred the response shape instead of reading it.** The body **omits** mode-inapplicable keys via conditional spread rather than nulling them, so `body.allday_forward` is **undefined** in backfill mode (a consumer doing `.rows_inserted` throws rather than reading 0 — a real wrinkle worth recording). And `target_end_block` lives in the **`pipeline_runs` extra, not the HTTP body** — invisible to anyone inspecting the endpoint, which matters because it is exactly the field an operator reads to ask "how far does this backfill still have to go".
+
+⚠ **TWO mutations survived, and each exposed a DIFFERENT fixture defect of mine.** (1) `existingEffectiveEnd` looked pinned but wasn't: my cursor sat 110k blocks from either end, where the 40-chunk budget runs out long before the boundary, so tip-vs-target was **indistinguishable**. Moved to 200 blocks out — inside one 250-block chunk — and it reds. (2) My fetch-count assertion failed at **360** because the *other* backfill cursors were still walking and drowning the signal; parking them isolates the leg.
+
+⚠ **THIRD INSTANCE THIS SESSION OF A GUARD THAT LOOKS LOAD-BEARING SITTING BEHIND ANOTHER.** The primary backfill's `if (initial >= END)` early return is **genuinely redundant**: `complete` latches again after the loop, and `processCursor` already no-ops when `from > end` (its `computeChunkBounds` returns null and the loop breaks before any fetch). Deleting it changes nothing observable. **Documented rather than papered over** — the alternative is a comment claiming a protection no test can detect the loss of, exactly what had to be corrected on `GREATEST` earlier today. The assertion that a completed backfill makes **zero event fetches** is kept and IS meaningful: breaking `processCursor`'s own guard reds three cases.
+
+**Verified:** 369 worker tests green at the new thresholds; `tsc` clean; 6 mutations run — 4 caught immediately, 1 caught after the fixture was fixed, 1 proven redundant and documented.
+
+**Gate across the day: 68.71 → 84.97 st, 59.54 → 71.75 br**, five earned raises, each re-seated in the commit that earned it. **Left:** the soft-budget bail-outs (need a fake clock, and `vi.useFakeTimers` must not break the `AbortSignal.timeout` shim this suite already patches) and the chunked-write partial-failure paths (need a stub that fails the Nth chunk).
+
+**Revert:** `git revert <sha>` — removes the 11 cases and restores the previous thresholds. No source, DB or prod change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — drove the pack-events OPENS cursor; the worker gate is 68.71 → 82.12 across the day
 
 **What shipped.** 5 cases on the opens leg of `pack-events-ingest` + worker thresholds **76.2/64.9/77.3/78.9 → 81.6/67.7/81.9/84.4**. Test-only; worker source untouched.
