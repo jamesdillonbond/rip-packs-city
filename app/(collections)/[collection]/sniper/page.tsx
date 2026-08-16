@@ -1563,13 +1563,23 @@ function SniperMomentsBody() {
                                   </span>
                                   <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.topShotListingCount} listed)</span>
                                 </div>
-                                <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, borderColor: "rgba(59,130,246,0.3)" }}>
-                                  <span style={{ fontSize: 9, color: "var(--rpc-info)", letterSpacing: "0.08em" }}>FLOWTY</span>
-                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
-                                    {depthFloor.flowtyFloor != null ? `$${fmt(depthFloor.flowtyFloor)}` : "—"}
-                                  </span>
-                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.flowtyListingCount} listed)</span>
-                                </div>
+                                {/* ⚠ Conditional, like BEST FLOOR and LT FMV below — NOT unconditional.
+                                    /api/edition-floor no longer reports a Flowty floor: that leg took a
+                                    setID/playID and used neither, returning the cheapest TopShot listing
+                                    on Flowty ANYWHERE as this edition's floor, so it was removed rather
+                                    than repaired. Rendered unconditionally this chip now reads
+                                    "FLOWTY — (0 listed)" on every expansion, which claims we checked
+                                    Flowty for this edition and found nothing — we do not check it at all.
+                                    Absent is honest; "0 listed" is a measurement we never took. */}
+                                {(depthFloor.flowtyFloor != null || depthFloor.flowtyListingCount > 0) && (
+                                  <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, borderColor: "rgba(59,130,246,0.3)" }}>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-info)", letterSpacing: "0.08em" }}>FLOWTY</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
+                                      {depthFloor.flowtyFloor != null ? `$${fmt(depthFloor.flowtyFloor)}` : "—"}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.flowtyListingCount} listed)</span>
+                                  </div>
+                                )}
                                 {depthFloor.crossMarketFloor != null && (
                                   <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.08)", borderColor: "rgba(74,222,128,0.3)" }}>
                                     <span style={{ fontSize: 9, color: "var(--rpc-success)", letterSpacing: "0.08em" }}>BEST FLOOR</span>

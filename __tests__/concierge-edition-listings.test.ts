@@ -6,6 +6,7 @@ import {
   editionPageUrl,
   absoluteEditionPageUrl,
   markSpecialSerials,
+  editionFloorViewFor,
 } from "@/lib/concierge/edition-listings"
 
 // The whole point of this module is that "we could not check" and "nothing is
@@ -207,5 +208,30 @@ describe("markSpecialSerials", () => {
       buy,
     )
     expect(out[0].buy_url).toBeNull()
+  })
+})
+
+describe("editionFloorViewFor — which collections have an edition-keyed book", () => {
+  it("maps All Day and Golazos to their on-chain floor views", () => {
+    expect(editionFloorViewFor("nfl-all-day")).toBe("allday_edition_floor_ask")
+    expect(editionFloorViewFor("laliga-golazos")).toBe("golazos_edition_floor_ask")
+  })
+
+  it("returns null for collections with no edition-keyed book", () => {
+    // Pinnacle's asks are RENDER-keyed in the pinnacle_* tables; UFC's Flow
+    // market is closed. Both must fall through rather than be given a view
+    // that would silently return nothing and read as "no open ask".
+    expect(editionFloorViewFor("disney-pinnacle")).toBeNull()
+    expect(editionFloorViewFor("ufc")).toBeNull()
+    expect(editionFloorViewFor("nba-top-shot")).toBeNull() // uses the GQL path
+  })
+
+  it("returns null for absent / prototype-inherited keys rather than a truthy member", () => {
+    expect(editionFloorViewFor(null)).toBeNull()
+    expect(editionFloorViewFor(undefined)).toBeNull()
+    expect(editionFloorViewFor("")).toBeNull()
+    // A bare index would hand back Object.prototype.toString as a "view name".
+    expect(editionFloorViewFor("toString")).toBeNull()
+    expect(editionFloorViewFor("constructor")).toBeNull()
   })
 })

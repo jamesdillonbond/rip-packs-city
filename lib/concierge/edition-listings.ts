@@ -106,6 +106,52 @@ export function absoluteEditionPageUrl(
 // moment-grain template. If an edition permalink is ever confirmed, add it
 // here and it flows into the tool result unchanged.
 
+/**
+ * Per-collection source of an edition's lowest live ask, for the collections
+ * whose asks live in the on-chain listing index rather than the Top Shot GQL.
+ *
+ * Both views are `DISTINCT ON (edition_id)` over `cached_listings_v2` filtered
+ * to open, unexpired, priced rows — an EVENT-SOURCED book (block_height,
+ * tx_hash), not a scrape, which is what makes absence meaningful rather than
+ * merely unknown.
+ *
+ * ⚠ ABSENCE IS REPORTED AS "no open ask", AND THAT LEANS ON A MONITOR. It is
+ * only true while the collection's listings indexer is alive. Verified
+ * 2026-08-15: `allday-listings-indexer` (90 min ceiling), `pinnacle-listings-
+ * indexer` (90), and `golazos-listings-indexer` (30) are all ACTIVE on
+ * `pipeline_cadence_watchlist`, so a dead indexer pages rather than silently
+ * turning every edition into "nothing listed". **If one is ever deactivated,
+ * this mapping must lose that collection** — otherwise the tool starts making
+ * a market claim nothing is checking.
+ *
+ * ⚠ Do NOT infer indexer health from the DATA's age. Measured the same day:
+ * Golazos's newest open listing was **31 hours old while its indexer had run 10
+ * minutes earlier** — it is a thin market (432 open listings), not a broken
+ * pipeline. A "nothing new lately" check would have called a healthy quiet
+ * market an outage, which is this file's own conflation in a fresh costume.
+ *
+ * ⚠ Two published collections are deliberately ABSENT:
+ *   · disney-pinnacle — its asks are RENDER-keyed and live in the `pinnacle_*`
+ *     parallel tables, so `editions.id` does not key them. It has 16k open
+ *     listings and is worth wiring; it needs the pinnacle router, not this map.
+ *   · ufc — its Flow market CLOSED 2026-05-13. The honest answer there is
+ *     "the market is closed", which the caller sources from `lib/market-closed`;
+ *     reporting "we could not check" would imply it might be listed.
+ */
+export const EDITION_FLOOR_VIEW: Readonly<Record<string, string>> = Object.freeze({
+  "nfl-all-day": "allday_edition_floor_ask",
+  "laliga-golazos": "golazos_edition_floor_ask",
+})
+
+/** The floor view for a collection, or null when it has no edition-keyed book. */
+export function editionFloorViewFor(collectionSlug: string | null | undefined): string | null {
+  if (!collectionSlug) return null
+  // Own-key check: a bare index would return inherited Object.prototype members
+  // ('toString', 'constructor', …) as a truthy "view name".
+  if (!Object.prototype.hasOwnProperty.call(EDITION_FLOOR_VIEW, collectionSlug)) return null
+  return EDITION_FLOOR_VIEW[collectionSlug] ?? null
+}
+
 /** A special serial that is currently listed for this edition. */
 export interface SpecialSerialListing {
   serial: number

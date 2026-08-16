@@ -269,3 +269,95 @@ describe("get_edition_listings — resolution", () => {
     expect(String(out.special_serials_note)).toMatch(/not the full order book|NOT the full order book/i)
   })
 })
+
+describe("get_edition_listings — collections beyond Top Shot", () => {
+  const ALLDAY = {
+    id: "ed-uuid-1",
+    external_id: "12345",
+    player_name: "Patrick Mahomes",
+    set_name: "Base",
+    tier: "COMMON",
+    circulation_count: 5000,
+    collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070",
+  }
+
+  async function driveAllDay(fixtures: Fixtures) {
+    install(fixtures)
+    A.state.script = [{ tools: [{ name: "get_edition_listings", input: { editionKey: "12345" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(
+      new NextRequest("https://t/api/support-chat", {
+        method: "POST",
+        headers: new Headers({ "content-type": "application/json" }),
+        body: JSON.stringify({ message: "cheapest?", sessionId: `ad-${Math.random()}`, collectionId: "nfl-all-day" }),
+      }),
+    )
+    return toolResult()
+  }
+
+  it("reads the All Day floor from the on-chain listing index, with a buy link", async () => {
+    const out = await driveAllDay({
+      editions: { data: [ALLDAY], error: null },
+      fmv_current: { data: [{ fmv_usd: 40, confidence: "HIGH" }], error: null },
+      allday_edition_floor_ask: {
+        data: [{ floor_ask: "25.5", floor_ask_listed_at: "2026-08-15T10:00:00Z", floor_flow_id: 777 }],
+        error: null,
+      },
+    })
+    expect(out.listings_status).toBe("listed")
+    expect(out.floor_ask).toBe(25.5)
+    expect(out.floor_buy_url).toBe("https://nflallday.com/moments/777")
+    expect(out.floor_listed_at).toBe("2026-08-15T10:00:00Z")
+    expect(out.discount_pct).toBe(36.3)
+    // The view carries no depth count; 0 beside a real floor would read as
+    // "zero listings" and contradict it.
+    expect(out.listings_count).toBeNull()
+    expect(String(out.listings_note)).toMatch(/on-chain listing index/i)
+  })
+
+  it("treats an empty index row as no open ask, not as a failed check", async () => {
+    const out = await driveAllDay({
+      editions: { data: [ALLDAY], error: null },
+      fmv_current: { data: [], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+    })
+    expect(out.listings_status).toBe("none_listed")
+  })
+
+  it("treats an index ERROR as unavailable, not as no open ask", async () => {
+    // supabase-js returns errors rather than throwing, so branching on the row
+    // alone would turn a statement timeout into "nothing is listed".
+    const out = await driveAllDay({
+      editions: { data: [ALLDAY], error: null },
+      fmv_current: { data: [], error: null },
+      allday_edition_floor_ask: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    expect(out.listings_status).toBe("unavailable")
+    expect(out.floor_ask).toBeNull()
+    expect(String(out.listings_note)).toMatch(/do NOT say nothing is listed/i)
+  })
+
+  it("states that UFC's market is CLOSED rather than that the check failed", async () => {
+    install({
+      editions: {
+        data: [{ ...ALLDAY, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" }],
+        error: null,
+      },
+      fmv_current: { data: [{ fmv_usd: 12, confidence: "STALE" }], error: null },
+    })
+    A.state.script = [{ tools: [{ name: "get_edition_listings", input: { editionKey: "12345" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(
+      new NextRequest("https://t/api/support-chat", {
+        method: "POST",
+        headers: new Headers({ "content-type": "application/json" }),
+        body: JSON.stringify({ message: "cheapest?", sessionId: `ufc-${Math.random()}`, collectionId: "ufc" }),
+      }),
+    )
+    const out = toolResult()
+    expect((out.market_closed as Record<string, unknown>).closed_on).toBe("2026-05-13")
+    expect(String(out.listings_note)).toMatch(/market is closed/i)
+    // Must NOT read as an outage — that would imply it might still be listed.
+    expect(String(out.listings_note)).not.toMatch(/could NOT reach/i)
+  })
+})

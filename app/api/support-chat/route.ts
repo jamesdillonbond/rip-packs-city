@@ -44,7 +44,9 @@ import {
   discountPct,
   absoluteEditionPageUrl,
   markSpecialSerials,
+  editionFloorViewFor,
 } from "@/lib/concierge/edition-listings";
+import { closedMarket } from "@/lib/market-closed";
 import { safeApiError } from "@/lib/api-error";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { classifySerial } from "@/lib/serials/fun-patterns";
@@ -442,7 +444,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_edition_listings",
-    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor is Top Shot only; other collections return FMV plus edition_url with listings_status 'unavailable'.",
+    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor covers NBA Top Shot (marketplace GQL), NFL All Day and LaLiga Golazos (RPC's on-chain listing index, which also returns floor_buy_url and floor_listed_at). Disney Pinnacle has no edition-keyed book here and returns 'unavailable'. UFC Strike's Flow market CLOSED on 2026-05-13: it returns market_closed with the closure date, and you must say the market is closed rather than that the check failed — never imply a UFC moment can be bought on Flow.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2045,7 +2047,7 @@ async function executeTool(
       if (editionKey) {
         const { data, error } = await supabase
           .from("editions")
-          .select("external_id, player_name, set_name, tier, circulation_count, collection_id")
+          .select("id, external_id, player_name, set_name, tier, circulation_count, collection_id")
           .eq("external_id", editionKey)
           .eq("collection_id", collUuid)
           .limit(1);
@@ -2066,7 +2068,7 @@ async function executeTool(
         }
         let q = supabase
           .from("editions")
-          .select("external_id, player_name, set_name, tier, circulation_count, collection_id")
+          .select("id, external_id, player_name, set_name, tier, circulation_count, collection_id")
           .eq("collection_id", collUuid);
         if (player) q = q.ilike("player_name", `%${player}%`);
         if (setName) q = q.ilike("set_name", `%${setName}%`);
@@ -2119,14 +2121,36 @@ async function executeTool(
         }
       } catch { /* FMV is supplementary; absence is reported as null, never as 0 */ }
 
-      // ── Live floor. Top Shot only — /api/edition-floor reads the Top Shot
-      // marketplace, so for other collections we have no live book and say so
-      // rather than implying we checked.
+      // ── Live floor, from whichever book this collection's asks live in.
+      //
+      // Top Shot goes out to the marketplace GQL via /api/edition-floor; All Day
+      // and Golazos read the on-chain listing index (see EDITION_FLOOR_VIEW for
+      // why absence is a real answer there and which collections are excluded).
+      // A closed market is answered before either, because "we could not check"
+      // would imply the thing might still be listed.
       let floorOk = false;
       let floorAsk: number | null = null;
       let listingsCount = 0;
       let fetchedAt: string | null = null;
-      if (slug === "nba-top-shot") {
+      let floorBuyUrl: string | null = null;
+      let listedAt: string | null = null;
+      const closed = closedMarket(slug);
+      const floorView = editionFloorViewFor(slug);
+
+      if (closed) {
+        // Leaves floorOk false, so the status is 'unavailable' and the payload's
+        // note states the closure instead of implying an outage.
+        //
+        // ⚠ THIS BRANCH IS UNREACHABLE-BY-CONSTRUCTION TODAY and is kept as
+        // belt-and-braces, not because a test covers it: mutation confirms
+        // removing it changes nothing observable. The only closed market is
+        // UFC, which is neither Top Shot nor in EDITION_FLOOR_VIEW, so it
+        // already falls through every branch below without querying anything.
+        // What the UFC test actually pins is the closure NOTE in the payload
+        // (mutating that reddens it). This becomes load-bearing the moment a
+        // collection with a live book closes — which is exactly when someone
+        // would otherwise delete it as dead code.
+      } else if (slug === "nba-top-shot") {
         try {
           const res = await fetch(`${base}/api/edition-floor?editionKey=${encodeURIComponent(editionKey!)}`, {
             cache: "no-store",
@@ -2143,6 +2167,28 @@ async function executeTool(
             fetchedAt = j?.fetchedAt ?? null;
           }
         } catch { /* leaves floorOk false -> listings_status 'unavailable' */ }
+      } else if (floorView) {
+        const { data: fl, error: flErr } = await supabase
+          .from(floorView)
+          .select("floor_ask, floor_ask_listed_at, floor_flow_id")
+          .eq("edition_id", edition.id)
+          .limit(1);
+        // Same rule as above: ok means the QUERY succeeded, not that a row came
+        // back. supabase-js returns errors rather than throwing, so branching on
+        // the row alone would turn a timeout into "nothing is listed".
+        floorOk = !flErr;
+        const fr = (fl ?? [])[0] as any;
+        if (fr) {
+          floorAsk = fr.floor_ask != null ? Number(fr.floor_ask) : null;
+          listedAt = fr.floor_ask_listed_at ?? null;
+          floorBuyUrl = fr.floor_flow_id != null
+            ? marketplaceMomentUrl(slug, String(fr.floor_flow_id))
+            : null;
+        }
+        // ⚠ This view carries the FLOOR only, not a depth count. Emitting 0
+        // here would read as "zero listings" beside a real floor, so the count
+        // stays null and listingsStatus resolves on the floor instead.
+        listingsCount = 0;
       }
 
       const status = listingsStatus(floorOk, listingsCount, floorAsk);
@@ -2176,9 +2222,28 @@ async function executeTool(
           circulation,
         },
         listings_status: status,
-        listings_note: listingsNote(status, slug === "nba-top-shot" ? "the Top Shot marketplace" : "a live marketplace"),
+        // ⚠ A CLOSED market must not be reported as a failed check — that would
+        // imply the edition might still be listed somewhere. The status stays
+        // 'unavailable' (we genuinely have no live ask) but the note states the
+        // real reason, sourced from lib/market-closed rather than inferred.
+        listings_note: closed
+          ? `${closed.note} Do NOT say the live check failed and do NOT imply this can be bought — the market is closed. Any price shown is historical.`
+          : listingsNote(
+              status,
+              slug === "nba-top-shot"
+                ? "the Top Shot marketplace"
+                : floorView
+                  ? "RPC's on-chain listing index"
+                  : "a live marketplace",
+            ),
+        market_closed: closed ? { closed_on: closed.closedOn, venue: closed.venue } : null,
         floor_ask: status === "listed" ? floorAsk : null,
-        listings_count: status === "listed" ? listingsCount : null,
+        // Null, not 0, whenever we do not have a depth count — the on-chain
+        // floor views carry the lowest ask only. A 0 beside a real floor reads
+        // as "zero listings", which contradicts the floor on the same row.
+        listings_count: status === "listed" && listingsCount > 0 ? listingsCount : null,
+        floor_listed_at: status === "listed" ? listedAt : null,
+        floor_buy_url: status === "listed" ? floorBuyUrl : null,
         fmv,
         fmv_confidence: confidence,
         fmv_note: "fmv is a modelled catalog estimate, NOT an ask. Never present it as a price something is listed at.",
