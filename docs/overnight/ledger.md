@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the pack simulator told collectors their pack was un-indexed and sold out, out of our own failed read
+
+`[collection]/packs/simulator/[distId]` and `dashboard/api-keys` converted to
+`PackSimulatorClient.tsx` / `ApiKeysClient.tsx` so the component gate measures them, covered
+by `__tests__/component-SimulatorAndApiKeys.test.tsx` (39 tests).
+
+⚠ **THE DEFECT, and it is the strongest form of this class yet: the false claim is SPECIFIC
+and it CONCLUDES.** On ANY failure — a 503, a 200 carrying a route-level `error`, a thrown
+fetch — the simulator rendered *"Drop pool not indexed — usually because it's sold out and
+being secondary-traded"*: a factual claim about the collector's own pack, manufactured
+entirely from our outage, and a TERMINAL one, because it says the simulator will never work
+for this pack, so they leave rather than retry. `error` was set only by the catch, so every
+non-2xx fell straight through to it. Now split on a `readFailed` flag, with copy that leaves
+a retry open; the genuine un-indexed case (an OK response with an empty pool) is pinned to
+keep reading as it did.
+
+⚠ **A HARNESS BUG OF MINE MADE THE CORE MUTATION SURVIVE, and the shape is worth recording.**
+A bulk rewrite of one describe's `mount(fn)` call sites into `mount({list: fn})` also hit the
+OTHER describe's `mount`, which takes a function — so `r()` threw, the CATCH fired, and every
+case passed *for the wrong reason*. The test was green, the assertion ran, and the mutation
+survived: **a fixture that reaches the right output down the wrong path is indistinguishable
+from a passing test until you mutate.** A second survivor was the classic masking pair —
+`!res.ok || json.error` with a fixture setting both — closed with a 503 carrying no `error`
+field, which is the realistic shape anyway.
+
+`api-keys` was already CLEAN on the failed-read sweep (it consults `loadError` before its
+empty state), so that half is coverage, not a fix — recorded so nobody re-sweeps it.
+
+Ratchets: client-page-gate 19 → 17, fetch-honesty 22 → 20. Gates: component
+90.66/82.13/89.25/93.50 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores both monolithic `page.tsx` files, the merged failure
+branch, and both budgets. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive — final wrap-up) — the CSP finding committed to memory, and my own stale entry corrected
 
 **What shipped.** `CLAUDE.md` only. Security posture gains the finding behind the avatar proxy: **`proxy.ts` sends an ENUMERATED `img-src`, so an image on an unlisted host does not render and fails looking exactly like a dead link** — with the sub-facts that two CSP headers are sent and browsers enforce the **intersection** (so reading the permissive `next.config.ts` one and concluding any host works is wrong), that the fix is same-origin rather than widening `img-src` host by host, that the proxy's **host allowlist is its SSRF guard** and why an any-host proxy was rejected on merit, that **`image/svg+xml` must never be re-served from our origin**, and that hostnames must match **exactly** — with `evilarweave.net` as the `endsWith` bypass that survived the first test suite. The avatars bullet becomes four modules and points there first.
