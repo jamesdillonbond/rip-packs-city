@@ -276,7 +276,17 @@ describe("PulseDashboard (deep) — network failure is soft", () => {
     // The catch arm must still clear loading, or the feed sits on
     // "Loading activity…" forever and reads as a hang rather than an outage.
     await waitFor(() => expect(screen.getByText("Auto-refresh on")).toBeTruthy())
-    expect(screen.getByText("No events match the current filters.")).toBeTruthy()
+
+    // ⚠ This case previously asserted `getByText("No events match the current
+    // filters.")` on a total network failure — i.e. it pinned the DEFECT as the
+    // contract, the same class as the 59 leak tests and the api-rtr-lock-roi
+    // `detail` assertion. A dead network says nothing whatever about what is
+    // trading, so the market claim must be ABSENT and the failure copy present.
+    expect(screen.getByText(/Couldn't load activity just now/)).toBeTruthy()
+    expect(screen.queryByText("No events match the current filters.")).toBeNull()
+
+    // The KPI em-dashes are unchanged and still the point of this case: a failed
+    // summary read must render "—" rather than a manufactured zero.
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4)
   })
 })

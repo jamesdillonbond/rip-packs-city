@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 import Link from "next/link"
 import {
   Activity,
@@ -279,6 +280,11 @@ export default function PulseDashboard() {
   const [activity, setActivity] = useState<PulseActivityRow[]>([])
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  // Only the ACTIVITY leg backs a claim ("No events match the current
+  // filters."). The 24h KPIs already render an em-dash on a null summary and the
+  // sparkline simply draws nothing, so those two need the parse gated but not a
+  // flag of their own.
+  const [activityFailed, setActivityFailed] = useState(false)
   const [tickRefreshedAt, setTickRefreshedAt] = useState<number>(Date.now())
 
   const collectionsRef = useRef(activeCollections)
@@ -304,22 +310,34 @@ export default function PulseDashboard() {
     if (kinds && kinds.length > 0) activityQs.set("kinds", kinds.join(","))
     activityQs.set("limit", "100")
 
+    setActivityFailed(false)
+
+    // ⚠ Was `fetch(...).then((r) => r.json())` with NO `r.ok` check. A failing
+    // route answers with a well-formed JSON envelope, so `r.json()` SUCCEEDS,
+    // the `.catch` never fires, and the error object was cast to the success
+    // type — `?.rows` then read undefined and the feed said "No events match the
+    // current filters." fetchJson gates the parse on the status.
     Promise.all([
-      fetch(`/api/analytics/pulse/24h?${qs.toString()}`).then((r) => r.json()),
-      fetch(`/api/analytics/pulse/hourly?${qs.toString()}`).then((r) => r.json()),
-      fetch(`/api/analytics/pulse/activity?${activityQs.toString()}`).then((r) => r.json()),
+      fetchJson<Pulse24hResponse>(`/api/analytics/pulse/24h?${qs.toString()}`),
+      fetchJson<{ rows?: PulseHourlyRow[] }>(`/api/analytics/pulse/hourly?${qs.toString()}`),
+      fetchJson<{ rows?: PulseActivityRow[] }>(`/api/analytics/pulse/activity?${activityQs.toString()}`),
     ])
       .then(([s, h, a]) => {
         if (cancelled) return
-        setPulse24h((s as Pulse24hResponse) ?? null)
-        setHourly(((h as { rows?: PulseHourlyRow[] })?.rows ?? []) as PulseHourlyRow[])
-        const rows = ((a as { rows?: PulseActivityRow[] })?.rows ?? []) as PulseActivityRow[]
-        setActivity(rows.slice(0, 100))
+        setPulse24h(s.json ?? null)
+        setHourly((h.json?.rows ?? []) as PulseHourlyRow[])
+        setActivityFailed(!a.ok)
+        // Only overwrite the feed when the read succeeded — an outage must not
+        // replace last-known rows with an empty list.
+        if (a.ok) {
+          setActivity(((a.json?.rows ?? []) as PulseActivityRow[]).slice(0, 100))
+        }
         setFreshKeys(new Set())
         setTickRefreshedAt(Date.now())
       })
       .catch(() => {
-        // soft-fail; the UI keeps last-known data
+        // fetchJson never rejects; this only catches a programming fault.
+        if (!cancelled) setActivityFailed(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -354,13 +372,16 @@ export default function PulseDashboard() {
 
       try {
         const [s, h, a] = await Promise.all([
-          fetch(`/api/analytics/pulse/24h?${baseQs.toString()}`).then((r) => r.json()),
-          fetch(`/api/analytics/pulse/hourly?${baseQs.toString()}`).then((r) => r.json()),
-          fetch(`/api/analytics/pulse/activity?${activityQs.toString()}`).then((r) => r.json()),
+          fetchJson<Pulse24hResponse>(`/api/analytics/pulse/24h?${baseQs.toString()}`),
+          fetchJson<{ rows?: PulseHourlyRow[] }>(`/api/analytics/pulse/hourly?${baseQs.toString()}`),
+          fetchJson<{ rows?: PulseActivityRow[] }>(`/api/analytics/pulse/activity?${activityQs.toString()}`),
         ])
-        setPulse24h((s as Pulse24hResponse) ?? null)
-        setHourly(((h as { rows?: PulseHourlyRow[] })?.rows ?? []) as PulseHourlyRow[])
-        const newRows = ((a as { rows?: PulseActivityRow[] })?.rows ?? []) as PulseActivityRow[]
+        // The refresh tick must not blank a healthy panel on a transient blip:
+        // keep last-known values unless the leg actually succeeded.
+        if (s.ok) setPulse24h(s.json ?? null)
+        if (h.ok) setHourly((h.json?.rows ?? []) as PulseHourlyRow[])
+        setActivityFailed(!a.ok)
+        const newRows = (a.ok ? (a.json?.rows ?? []) : []) as PulseActivityRow[]
         if (newRows.length > 0) {
           setActivity((curr) => {
             const seen = new Set(curr.map(activityRowKey))
@@ -587,7 +608,11 @@ export default function PulseDashboard() {
         <div className="space-y-2">
           {visibleActivity.length === 0 ? (
             <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm text-[color:var(--rpc-text-muted)]">
-              {loading ? "Loading activity…" : "No events match the current filters."}
+              {loading
+                ? "Loading activity…"
+                : activityFailed
+                  ? "Couldn't load activity just now — this says nothing about what's trading."
+                  : "No events match the current filters."}
             </div>
           ) : (
             visibleActivity.map((row) => {

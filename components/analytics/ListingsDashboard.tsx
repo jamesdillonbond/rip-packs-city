@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 import Link from "next/link"
 import {
   BarChart3,
@@ -55,6 +56,9 @@ export default function ListingsDashboard() {
   const [summary, setSummary] = useState<ListingsSummaryResponse | null>(null)
   const [offers, setOffers] = useState<LoanOffersResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  // Per LEG: the two reads back two different tables, and a loan-offers outage
+  // must not blank the marketplace snapshot that loaded fine.
+  const [loadFailed, setLoadFailed] = useState({ summary: false, offers: false })
 
   const collectionsQs = useMemo(
     () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
@@ -90,17 +94,28 @@ export default function ListingsDashboard() {
     offersQs.set("sort", sort)
     offersQs.set("limit", "25")
 
+    setLoadFailed({ summary: false, offers: false })
+
+    // ⚠ Was `fetch(...).then((r) => r.json())` with NO `r.ok` check. These routes
+    // answer a failure with a well-formed JSON envelope (`apiErrorResponse`), so
+    // `r.json()` SUCCEEDS, the `.catch` never fires, and the error object was
+    // cast straight to the success type — after which `?.rows` reads undefined
+    // and the table states "No open offers match the current filters."
+    // fetchJson gates the parse on the status, which is exactly what its own
+    // header says it exists to do.
     Promise.all([
-      fetch(`/api/analytics/listings/summary?${summaryQs.toString()}`).then((r) => r.json()),
-      fetch(`/api/analytics/listings/loan-offers?${offersQs.toString()}`).then((r) => r.json()),
+      fetchJson<ListingsSummaryResponse>(`/api/analytics/listings/summary?${summaryQs.toString()}`),
+      fetchJson<LoanOffersResponse>(`/api/analytics/listings/loan-offers?${offersQs.toString()}`),
     ])
       .then(([s, o]) => {
         if (cancelled) return
-        setSummary((s as ListingsSummaryResponse) ?? null)
-        setOffers((o as LoanOffersResponse) ?? null)
+        setLoadFailed({ summary: !s.ok, offers: !o.ok })
+        setSummary(s.json)
+        setOffers(o.json)
       })
       .catch(() => {
-        // soft-fail
+        // fetchJson never rejects, so this only catches a programming fault.
+        if (!cancelled) setLoadFailed({ summary: true, offers: true })
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -294,7 +309,11 @@ export default function ListingsDashboard() {
               {(offers?.rows ?? []).length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
-                    {loading ? "Loading offers…" : "No open offers match the current filters."}
+                    {loading
+                      ? "Loading offers…"
+                      : loadFailed.offers
+                        ? "Couldn't load open offers just now — this says nothing about what's listed."
+                        : "No open offers match the current filters."}
                   </td>
                 </tr>
               ) : (
@@ -443,7 +462,11 @@ export default function ListingsDashboard() {
               {marketplace.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
-                    {loading ? "Loading marketplace data…" : "No marketplace data."}
+                    {loading
+                      ? "Loading marketplace data…"
+                      : loadFailed.summary
+                        ? "Couldn't load marketplace data just now — this says nothing about the market."
+                        : "No marketplace data."}
                   </td>
                 </tr>
               ) : (
