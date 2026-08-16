@@ -49,9 +49,44 @@ async function pinnacleStats() {
       .eq("fmv_confidence", "HIGH"),
   ])
   return {
-    totalEditions: editionsRes.count ?? 0,
-    highConfCount: highConfRes.count ?? 0,
+    totalEditions: countOrNull(editionsRes),
+    highConfCount: countOrNull(highConfRes),
   }
+}
+
+/**
+ * A count we could not read is `null`, never `0`.
+ *
+ * ⚠ THE TRAP THIS EXISTS FOR: a supabase count query that FAILS still
+ * *resolves* — supabase-js returns `{ count: null, error }` rather than
+ * throwing — so a `status === "fulfilled"` check is satisfied and `count ?? 0`
+ * publishes a hard zero. Isolating the legs with `allSettled` (which this route
+ * did, for good reason, after one rejection zeroed the whole KPI strip) bounds
+ * the blast radius of a failure; it does not stop the failing leg itself
+ * asserting "there are none".
+ *
+ * ⚠ LATENT, NOT LIVE, and worth saying so: no in-repo consumer renders these
+ * fields today. Fixed because this is a documented endpoint whose field names
+ * promise a measurement — the same reason `meta.total_rows` was fixed on the
+ * insights routes — not because a surface was observed lying.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function countOrNull(res: any): number | null {
+  if (res?.error) return null
+  return res?.count ?? null
+}
+
+/**
+ * The `allSettled` sibling. ⚠ Kept SEPARATE rather than making `countOrNull`
+ * accept both shapes: the two callers really do hold different things — a raw
+ * `{ count, error }` from `Promise.all` and a `PromiseSettledResult` wrapping
+ * one — and a helper that sniffs for `.status` would silently return null for a
+ * raw result that legitimately carried a `status` field of its own.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function settledCountOrNull(settled: PromiseSettledResult<any>): number | null {
+  if (settled.status !== "fulfilled") return null
+  return countOrNull(settled.value)
 }
 
 async function standardStats(collectionId: string) {
@@ -73,8 +108,8 @@ async function standardStats(collectionId: string) {
       .eq("confidence", "HIGH"),
   ])
   return {
-    totalEditions: editionsRes.status === "fulfilled" ? (editionsRes.value.count ?? 0) : 0,
-    highConfCount: highConfRes.status === "fulfilled" ? (highConfRes.value.count ?? 0) : 0,
+    totalEditions: settledCountOrNull(editionsRes),
+    highConfCount: settledCountOrNull(highConfRes),
   }
 }
 

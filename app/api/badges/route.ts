@@ -199,7 +199,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       editions,
       meta: {
-        total:    countResult.count ?? 0,
+        // ⚠ null, not 0, when the COUNT read failed. `dataResult.error` throws
+        // a few lines above, but the count is deliberately not fatal — the rows
+        // are still worth serving. That makes this the realistic split: the
+        // count is the EXPENSIVE half (`count: "exact"` over badge_editions,
+        // which is why this route logs its elapsed time at all), so it is the
+        // likelier of the two to hit a statement timeout, and it fails by
+        // RESOLVING with `{ count: null, error }` rather than throwing.
+        //
+        // `total` is a pagination contract alongside `limit`/`offset`, so a
+        // zero here does not merely understate — it tells a paginating caller
+        // there is nothing to page through, while `editions` is non-empty in
+        // the same response.
+        //
+        // ⚠ LATENT, NOT LIVE: the one in-repo consumer reads `json.editions`
+        // and ignores `meta.total`. Fixed for the contract, not for an observed
+        // surface.
+        total:    countResult.error ? null : (countResult.count ?? null),
         limit,
         offset,
         mode,
