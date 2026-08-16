@@ -25,6 +25,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Verified:** `tsc` clean · primary **12,177 passed / 1,229 files** · coverage 91.75/79.11/93.5/93.84 vs 91.3/78.6/93.1/93.4 · component **1,717 passed**, 90.72/82.09/89.55/93.68 vs 90.3/81.6/89.1/93.2 · the NEW workers gate **333 passed / 22 files**. **4 mutations:** an indirect sibling key on the anon route reds **both** guards; a `reason:` inline-ternary and a `hint: String(err)` each red the authed guard; re-adding `detail: cacheErr.message` reds the repointed rtr test. Guards pass clean before and after. Fast-forwarded over 10 concurrent commits with **zero file overlap**; re-ran everything on the merged tree.
 
 **Revert:** `git revert <sha>` (code) — restores the published driver messages on all 12 routes and narrows the guard back to five spellings. Docs/inbox commit is a separate sha. No DB unwind.
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of them", item 2/5) — the copy sweep on `[collection]/analytics`: a failed player search showed the PREVIOUS player's numbers under the new name
+
+**What shipped.** Fixed two defects in the debounced player search on `/[collection]/analytics` (1,758 LOC, the largest concentration of claim-making empty states in the client-page tree), and extended `collection-analytics-failed-vs-empty-guard` to cover the spelling it was structurally blind to.
+
+- **A failed search rendered `pickEmpty()`** — "Quiet on the court for now." — a claim that THAT PLAYER has no marketplace activity, manufactured out of our own outage.
+- ⚠ **The worse one: `setPlayerResults` was called only on `!q` or `res.ok`, so a failed search LEFT THE PREVIOUS PLAYER'S ROWS ON SCREEN.** Search Lillard → rows; search Curry → fetch fails → Lillard's numbers still displayed with "Curry" in the input. **One player's market data labelled as another's, with nothing on screen suggesting a problem** — worse than an empty state, because it is confidently wrong rather than merely absent.
+
+⚠ **THE GUARD COULD NOT HAVE FOUND IT, and the reason is the recurring one.** The existing bare-swallow census matches `.catch(() => {})` — **the arrow form only**. This was the statement form, `try { … } catch { /* swallow */ }`, so it sat outside the sweep **by construction** however often the guard ran green. Fifth instance of a guard's own predicate fixing its blast radius (anon driver-message guard → the anon wall; `insights-gate-include-completeness` → `INSIGHTS_DIR`; the error-vs-absent guard → the wrong `analytics/wallets` page; the OG sweep → `og/insights`). Census now covers both forms.
+
+⚠ **And my new census immediately tripped on MY OWN COMMENT**, which quotes `catch { /* swallow */ }` verbatim to explain the fix — the fourth instance of that trap in the repo and the **second in this very file**, which already carries the same note on `componentBody()`. Strip comments first, including in the guard you are writing right now.
+
+⚠ **What I did NOT ship, deliberately, and it is the more useful half.** My own proposal was to ratchet honesty-helper ADOPTION per layer. Measured first: `boardEmptyCopy` sits at 16/44 OG cards, which reads like a 28-card gap — but `og/insights/deals` (and others) degrade to a **generic non-claiming headline** on failure and are already correct. A blanket "must use the helper" ratchet would have flagged accurate cards and pressured them toward a worse shape. Same verdict CLAUDE.md already records for the rejected `boardRowMeta` version. **`apiErrorResponse` at 138/497 routes is likewise not a defect count** — the operator-secret surfaces are legitimately excluded, and the two existing leak guards already cover everything a user can reach. **Adoption ratios are a lead, not a finding.**
+
+**Verified:** `tsc` clean; 38 tests across the four client-page guards green; 4 mutations (revert the swallow / stop clearing stale rows / reorder the branches / never clear the flag) each red only their own assertion, and the empty-state direction is pinned too so a genuinely empty search still reads as one.
+
+**Revert:** `git revert <sha>`. No DB change, no prod state, no migration, no cron.
 
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of them", item 4/5) — pinned both unpinned SCHEDULED DELETERS, and found a DB test that fails for ~3h after UTC midnight every day
