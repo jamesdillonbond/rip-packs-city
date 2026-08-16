@@ -105,6 +105,39 @@ Windows box the path is an ordinary local file and a two-anchor targeted edit is
 recording as its own small lesson: *a blocker inherited from a different execution environment is a
 hypothesis about THIS one.*
 
+## ⚠ ADDENDUM 2026-08-15 ~16:40 PT — `pct_of_catalogue` drifts toward a FALSE POSITIVE, and sooner than first estimated
+
+The primary backstop cannot self-silence (that is why it is primary), but it has the **mirror**
+failure: its denominator only grows, so a **healthy** runner's percentage falls over time until it
+trips the 8% gate. That is the cry-wolf outcome this repo has already paid for.
+
+Measured live (`panini_editions.created_at`, PT):
+
+| quantity | value |
+|---|---|
+| catalogue now | **4,599** |
+| growth, healthy era (07-20 → 08-11) | **109.4 / day** |
+| growth, collapse era (08-12 →) | **15.5 / day** |
+
+The gate fires below **8%**; the healthy band bottoms at **13.2%**. So a healthy day first reads as a
+failure once the catalogue has grown **1.65×** → **7,588**, i.e. **+2,989 editions**:
+
+- at healthy growth (109.4/day) → **~27 days**
+- against the **17.5% median** rather than the band bottom → ~50 days
+- at the current suppressed rate (15.5/day) → ~193 days
+
+⚠ **The mechanism is perverse and is the reason this is not a distant problem: catalogue growth is
+WALK-DRIVEN, so it resumes when the runner does.** The denominator inflates fastest exactly when the
+system is healthy — meaning the gate degrades roughly **four weeks after recovery**, not on some
+long horizon. An earlier estimate of "~3 months" in this thread used a 36/day figure that averaged
+the collapse into the growth rate; the healthy-era rate is three times that.
+
+**Cheap remedy, not urgent today:** state in the prompt *why* 8% was chosen (it separated
+13.2–21.0% healthy from 3.4–6.5% collapse over 29 observed days) and that it must be **re-derived as
+the catalogue grows** — or express the gate against a long-window median of `pct_of_catalogue`
+itself rather than a fixed cut. Without that note a future reader will treat 8% as permanent, which
+is the same failure as the `~800` absolute this filing just removed.
+
 ## Not addressed here
 
 **The underlying collapse itself is unfixed and still deepening** (35% → 28% → 22% over three days).
