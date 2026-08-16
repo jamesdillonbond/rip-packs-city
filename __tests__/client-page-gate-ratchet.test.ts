@@ -112,7 +112,23 @@ const APP_DIR = join(process.cwd(), "app")
  * rows, so a value-based guard would publish stale figures as current. That distinction is
  * itself a killed mutation.
  */
-const BUDGET = 28
+/*
+ * 28 -> 26: `admin/pipeline-health` and `admin/beta-activity`, converted TOGETHER because
+ * they are the same page. SEVEN `app/admin/*\/page.tsx` files carried a byte-identical
+ * token-gate + fetch shell — the copy-paste class this repo has now paid for five times —
+ * so the conversion also extracted it to `lib/admin/use-admin-resource.ts`, where the
+ * PRIMARY gate measures it rather than neither gate.
+ *
+ * ⚠ These two were CLEAN on the honesty sweep (401 clears the credential and the data;
+ * every panel is gated on `data`), so unlike the two conversions before them this fixed no
+ * live defect. Recorded so nobody re-sweeps them. What it did add is `stale`: a non-401
+ * failure deliberately RETAINS the previous payload — last-good beats a blank operations
+ * board — and none of the seven pages could say the figures were no longer current.
+ *
+ * The remaining five admin pages still hold their own copy of the shell; they are the
+ * cheapest conversions left, and each is now a rewire rather than a rewrite.
+ */
+const BUDGET = 25
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
