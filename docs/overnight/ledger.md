@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — "keep going") — went looking for the BAN's remaining blind spots instead of waiting to trip over them; the imperative form's headline count of 34 was a SCANNER ARTIFACT and the real number was 2
+
+**What (2 client files + 1 test; no DB / migration / cron / auth / FMV-math):** the parens hole found last pass was a prompt to audit my own guard rather than a one-off. `client-raw-json-parse-ratchet` only matches `.then()` chains, so it is structurally blind to the **imperative** shape (`const res = await fetch(...)` / `const data = await res.json()`).
+
+⚠ **I ALMOST SHIPPED A RATCHET AT 34 ON A NUMBER THAT WAS WRONG.** The first scan for that shape reported **34 sites across 23 files**. It required the `res.ok` check to appear **BETWEEN** the fetch and the parse — and **31 of those check it immediately AFTER**, which is legitimate and arguably better, because parsing first lets the caller surface the server's own message. Re-measured with the window covering the whole block: **3**. **A pattern count finds candidates, never defects** — the line I wrote two passes ago, which then applied to my own scanner.
+
+⚠ **THE TWO REAL ONES DO TWO WRONG THINGS AT ONCE.** `components/WalletSearch.tsx` and `app/share/[wallet]/ShareEmptyState.tsx` share the shape verbatim: on a non-2xx the envelope parses, `walletAddress` is absent, and control falls through to *"Couldn't find that. **Try a Flow wallet address (0x…)**."* — which asserts the wallet **does not exist** AND tells the reader to **change what they typed**, out of our outage. That is the "diagnoses a cause it cannot know" shape already paid for twice here ("Benchmark data may be too thin", "try a longer time range"). This is the site a collector uses to look up a collection at all.
+
+⚠ **THE THIRD IS DELIBERATELY LEFT AND IS NOT AN ALLOWLIST ENTRY.** `app/alerts/page.tsx`'s suggestion typeahead sets `setSuggestions([])` on failure; an empty autocomplete **asserts nothing**, so suppressing suggestions is correct behaviour rather than an unfixed defect. No guard was widened to cover it, because widening would have forced a 1-entry exception for something that is not an exception.
+
+⚠ **I HIT THE VACUOUS-ORDERING TRAP AGAIN, WITH THE WARNING ABOUT IT ON SCREEN — and my first explanation of it was ALSO wrong.** I wrote `indexOf(guard) < indexOf(parse)` in a comment block that literally says to prefer contiguity, and it failed against correct code. I then recorded the cause as "the guard occurs more than once"; measured, the **guard occurs exactly once** and it is the **PARSE** that appears twice — a second unrelated fetch block earlier in the same file. **The rule is wider than I first stated it: EITHER needle recurring is enough.** Both the trap and my wrong diagnosis are recorded in the test.
+
+⚠ **`tsc` caught a required prop the green suite did not** (`WalletSearch` needs `surface`). Vitest does not typecheck — the documented repo trap, met again.
+
+**Verified:** `tsc` clean · primary **12,415 passed / 1,239 files**, gate 91.75/79.11/93.45/93.83 vs 91.3/78.6/93.1/93.4 · component **1,734 passed**, 90.71/82.3/89.34/93.69 vs 90.3/81.6/89.1/93.2 · the `.then()` ban still reads **0** · **2 mutations**, one per file, each redding only its own case · both directions pinned (a genuine miss must still say "Couldn't find that", or the fix only moves the dishonesty).
+
+⚠ **I STAMPED THIS ENTRY 08-15 AND PT HAD ROLLED TO 08-16.** The session ran across midnight PT and I carried the previous turn's date forward — the recurring trap this file documents, caught only because the entry directly above mine already read 08-16. Earlier entries in this session are correctly 08-15 (PT genuinely was). **Re-read the zone AND the date every time, not once per session.**
+
+**Revert:** `git revert <sha>` (code) — restores the not-found claim on a failed wallet search in both files. No DB unwind.
+
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — a set page's tier bar silently sampled 100 editions of a 3,600-edition set whenever the full-set read FAILED, because empty was already the signal for a legitimate fallback
 
 - **What.** Extracted `fetchFullTierMix` out of `app/(collections)/[collection]/set/[slug]/page.tsx` into **`lib/set-detail/tier-mix.ts`**, returning `{ rows, ok }`, and had the page WITHHOLD the Tier Mix section on `!ok`. New `__tests__/lib-set-detail-tier-mix.test.ts` (12 cases, 7 mutations all killed); a fifth case added to `__tests__/server-pages-error-vs-absent-guard.test.ts` pins the page-side branch (mutation-proven — removing the gate reds it). Server-page data-access ratchet **14 → 13** in the same commit.
