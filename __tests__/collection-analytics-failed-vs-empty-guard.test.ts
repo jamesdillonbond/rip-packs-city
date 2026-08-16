@@ -159,4 +159,80 @@ describe("collection analytics — a failed section read is not an empty market"
     const context = lines.slice(Math.max(0, lineIdx - 10), lineIdx).join("\n")
     expect(context, "the surviving swallow must be the /api/ready probe").toContain('fetch("/api/ready"')
   })
+
+  // ── The BLOCK-form swallow, which the census above could not see ───────────
+  //
+  // ⚠ THE CENSUS ABOVE MATCHES `.catch(() => {})` — THE ARROW FORM ONLY. The
+  // player search used the statement form:
+  //
+  //     try { ... } catch { /* swallow */ } finally { setPlayerLoading(false) }
+  //
+  // so it sat outside that sweep BY CONSTRUCTION, however often the guard ran
+  // green. This is the same shape this repo keeps re-finding — the anon
+  // driver-message guard scoped to the anon wall, insights-gate-include-
+  // completeness walking only INSIDS_DIR, the error-vs-absent guard naming the
+  // wrong `analytics/wallets` page. A guard's own predicate decides its blast
+  // radius. When you add one, ask what spelling it is silent about.
+  it("no BLOCK-form swallow hides a failed fetch either", () => {
+    // ⚠ COMMENTS STRIPPED FIRST, and this one bit immediately: the fix for the
+    // player search is documented in prose that QUOTES the old
+    // `catch { /* swallow */ }` verbatim, so the first run of this census
+    // reported the comment explaining the fix as the defect. Fourth instance of
+    // that trap in this repo, and the second in this very file — see
+    // componentBody() above, which carries the same note.
+    const STRIPPED = stripComments(SRC)
+    const blockSwallows = [...STRIPPED.matchAll(/catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\*[^*]*\*\/)?\s*\}/g)]
+      .map((m) => STRIPPED.slice(0, m.index ?? 0).split("\n").length)
+      // The router.replace() guard is not a fetch — a failed history update has
+      // nothing to render and asserts nothing.
+      .filter((ln) => {
+        const ctx = STRIPPED.split("\n").slice(Math.max(0, ln - 6), ln).join("\n")
+        return !ctx.includes("router.replace")
+      })
+    expect(
+      blockSwallows,
+      "a try/catch around a fetch must set a failure flag, not swallow — otherwise " +
+        "the section renders an empty state that makes a claim about the market."
+    ).toEqual([])
+  })
+
+  it("a failed PLAYER SEARCH does not claim the player has no activity", () => {
+    // Two defects lived here, and the second is the worse one:
+    //   1. A failed search rendered pickEmpty() — "Quiet on the court for now."
+    //      — a claim about THAT PLAYER, manufactured from our own outage.
+    //   2. setPlayerResults was called only on `!q` or `res.ok`, so a failed
+    //      search LEFT THE PREVIOUS PLAYER'S ROWS ON SCREEN: search Lillard, get
+    //      rows; search Curry, have it fail, and Lillard's numbers stayed under
+    //      "Curry" in the input. One player's market data labelled as another's,
+    //      with nothing on screen suggesting a problem.
+    expect(SRC, "must track search failure separately from emptiness").toContain("playerFailed")
+    expect(SRC, "a non-ok response must set the failure flag").toMatch(
+      /} else \{\s*setPlayerFailed\(true\)\s*\}/
+    )
+    expect(SRC, "a thrown fetch must set it too").toMatch(/catch \{ setPlayerFailed\(true\) \}/)
+    expect(
+      SRC,
+      "the flag must be cleared when a new query starts, or a recovered search stays red"
+    ).toContain("setPlayerFailed(false)")
+    expect(
+      SRC,
+      "the previous player's rows must be dropped before the new request — they " +
+        "answer a question the user is no longer asking"
+    ).toMatch(/setPlayerLoading\(true\)[\s\S]{0,300}?setPlayerResults\(null\)/)
+
+    // And the copy must distinguish the two. The failure branch has to precede
+    // the empty branch, or an empty result set renders the outage message.
+    const failIdx = SRC.indexOf("Couldn&apos;t load player results")
+    const emptyIdx = SRC.indexOf("{pickEmpty()}")
+    expect(failIdx, "a distinct failure message must exist").toBeGreaterThan(-1)
+    expect(
+      failIdx,
+      "the playerFailed branch must be checked BEFORE the empty branch"
+    ).toBeLessThan(emptyIdx)
+
+    // ⚠ Both directions. A genuinely empty result is an honest answer and must
+    // keep rendering as one — a fix that turned every empty search into
+    // "couldn't load" would just move the dishonesty.
+    expect(SRC, "a genuinely empty search must still say so").toContain("{pickEmpty()}")
+  })
 })

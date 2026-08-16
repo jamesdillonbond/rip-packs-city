@@ -866,6 +866,9 @@ function AnalyticsInner() {
   const [playerQuery, setPlayerQuery] = useState("")
   const [playerResults, setPlayerResults] = useState<PlayerSearchRow[] | null>(null)
   const [playerLoading, setPlayerLoading] = useState(false)
+  // Distinct from "no results": a failed search must not claim the player has no
+  // marketplace activity. See the debounced-search effect below.
+  const [playerFailed, setPlayerFailed] = useState(false)
 
   const collectionMeta = useMemo(() => getCollection(collection), [collection])
   const accent = collectionMeta?.accent ?? "#EF4444"
@@ -938,11 +941,31 @@ function AnalyticsInner() {
   )
 
   // Debounced player search.
+  //
+  // ⚠ TWO defects lived in the previous `catch { /* swallow */ }` shape, and the
+  // second is the worse one:
+  //
+  //   1. A FAILED search rendered `pickEmpty()` — "Quiet on the court for now."
+  //      — which is a claim that THIS PLAYER has no marketplace activity,
+  //      manufactured out of our own outage.
+  //   2. `setPlayerResults` was only ever called on `!q` or on `res.ok`, so a
+  //      failed search LEFT THE PREVIOUS PLAYER'S ROWS ON SCREEN. Search
+  //      "Lillard", get rows; search "Curry", have the fetch fail, and the table
+  //      still showed Lillard's numbers with "Curry" in the input. That is worse
+  //      than an empty state: it is one player's market data labelled as
+  //      another's, with nothing on screen to suggest anything went wrong.
+  //
+  // So the results are cleared when a new query starts, and failure is tracked
+  // separately from emptiness.
   useEffect(() => {
     const q = playerQuery.trim()
+    setPlayerFailed(false)
     if (!q) { setPlayerResults(null); return }
     const timer = setTimeout(async () => {
       setPlayerLoading(true)
+      // Drop the previous player's rows BEFORE the new request — they answer a
+      // question the user is no longer asking.
+      setPlayerResults(null)
       try {
         const res = await fetch(
           `/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&player=${encodeURIComponent(q)}`
@@ -950,8 +973,10 @@ function AnalyticsInner() {
         if (res.ok) {
           const j = await res.json()
           setPlayerResults(j.playerSearch ?? [])
+        } else {
+          setPlayerFailed(true)
         }
-      } catch { /* swallow */ }
+      } catch { setPlayerFailed(true) }
       finally { setPlayerLoading(false) }
     }, 500)
     return () => clearTimeout(timer)
@@ -1449,6 +1474,12 @@ function AnalyticsInner() {
                 </div>
               ) : playerLoading ? (
                 <div className="h-24 animate-pulse rounded bg-[var(--rpc-surface)]" />
+              ) : playerFailed ? (
+                <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
+                  Couldn&apos;t load player results. This says nothing about whether{" "}
+                  {playerQuery.trim()} has marketplace activity — only that we couldn&apos;t
+                  read it. Try again in a moment.
+                </div>
               ) : !playerResults || playerResults.length === 0 ? (
                 <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">{pickEmpty()}</div>
               ) : (
