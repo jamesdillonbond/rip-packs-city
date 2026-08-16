@@ -923,6 +923,18 @@ Respond in whatever language the user writes in.`;
 }
 
 // ── FMV distribution result formatter ─────────────────────────────────────────
+//
+// ⚠ `edition_url` is emitted here rather than left to the model to construct.
+// The key contains a colon (`48:1652`) that MUST be percent-encoded, and a
+// model assembling the path by hand gets that wrong or invents a route — so
+// the one place that knows the key builds the link. Safe for every collection:
+// `/[collection]/edition/[slug]` serves all five, and the Pinnacle case
+// permanentRedirect()s to its real per-render home at /pinnacle/moment/<id>.
+function editionUrlFor(collectionId: string | null, externalId: string | null): string | null {
+  if (!collectionId || !externalId) return null
+  return absoluteEditionPageUrl(siteUrl(), collectionId, externalId);
+}
+
 function formatDistributionForModel(
   result: FmvDistributionResult,
   collectionId: string | null
@@ -944,7 +956,13 @@ function formatDistributionForModel(
         fmv: result.edition.fmv_usd,
         confidence: result.edition.confidence,
         updated_at: result.edition.computed_at,
+        edition_url: editionUrlFor(collectionId, result.edition.external_id),
       },
+      // FMV is a catalog estimate and says nothing about availability. Without
+      // this the model has previously answered "what's it worth" and then
+      // guessed at whether one is for sale.
+      listings_note:
+        "This is catalog FMV, NOT a live ask. If the user asks whether one is for sale or what the cheapest is, call get_edition_listings with this external_id — do not infer availability from FMV.",
     });
   }
   return JSON.stringify({
@@ -964,6 +982,7 @@ function formatDistributionForModel(
       tier: s.tier,
       fmv: s.fmv_usd,
       confidence: s.confidence,
+      edition_url: editionUrlFor(collectionId, s.external_id),
     })),
   });
 }
@@ -1203,17 +1222,38 @@ async function executeTool(
         return true;
       });
       if (deals && deals.length > 0) {
+        // ⚠ editionKey + edition_url are carried so a follow-up can CHAIN.
+        // Without them the model shows a deal, the user says "is that the
+        // cheapest one?", and the bot has no identifier to pass to
+        // get_edition_listings — so it re-searches the deal board and reports
+        // whatever that returns, which is how a discount-ranked snapshot ends
+        // up being described as the market.
         const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
+          editionKey: d.editionKey ?? null,
           player: d.playerName,
+          set: d.setName ?? null,
           tier: d.tier,
-          serial: d.serialNumber,
+          // ⚠ The field on SniperDeal is `serial`, NOT `serialNumber` — this
+          // read `d.serialNumber` and so emitted `serial: undefined` on every
+          // live deal the concierge has ever quoted. A serial is not cosmetic
+          // on a listing (it drives the price), so an absent one is a real
+          // hole in the answer. Both spellings are accepted because the
+          // catalog fallback below builds rows from a different source.
+          serial: d.serial ?? d.serialNumber ?? null,
           price: d.askPrice,
           fmv: d.adjustedFmv,
           discount_pct: d.discount,
           source: d.source,
           buy_url: d.buyUrl || "",
+          edition_url: editionUrlFor(effectiveCollectionId ?? null, d.editionKey ?? null),
         }));
-        return JSON.stringify({ status: "ok", results, total: deals.length, collectionId: effectiveCollectionId ?? null });
+        return JSON.stringify({
+          status: "ok",
+          results,
+          total: deals.length,
+          collectionId: effectiveCollectionId ?? null,
+          note: "These are DISCOUNTED listings only (a deal board), not the full order book. An edition absent here may still be listed at or above FMV — use get_edition_listings to check one specific edition.",
+        });
       }
     } catch {
       // fall through to catalog

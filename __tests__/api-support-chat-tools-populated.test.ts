@@ -388,19 +388,72 @@ describe("concierge tools — search_live_deals", () => {
   })
 
   it("shapes sniper-feed rows for a non-team query", async () => {
+    // ⚠ This fixture used `serialNumber`, which SniperDeal does not have — the
+    // real field is `serial` (see the interface in app/api/sniper-feed/route.ts).
+    // The handler read `d.serialNumber`, so every live deal the concierge ever
+    // quoted carried `serial: undefined`, and the invented fixture made that
+    // invisible: the test agreed with the bug because both used a shape
+    // production never emits. Fixed on both sides 2026-08-15.
     stubFetch([
       jsonRoute("/api/sniper-feed", {
         deals: [
-          { playerName: "Dame", tier: "RARE", serialNumber: 12, askPrice: 20, adjustedFmv: 35, discount: 43, source: "flowty", buyUrl: "https://x" },
+          {
+            editionKey: "48:1652",
+            playerName: "Dame",
+            setName: "Archive Set",
+            tier: "RARE",
+            serial: 12,
+            askPrice: 20,
+            adjustedFmv: 35,
+            discount: 43,
+            source: "flowty",
+            buyUrl: "https://x",
+          },
         ],
       }),
     ])
-    script("search_live_deals", { limit: 5 })
+    script("search_live_deals", { limit: 5, collectionId: "nba-top-shot" })
     await POST(post("any deals right now"))
     const r = toolResult()
     expect(r.status).toBe("ok")
     const row = (r.results as Array<Record<string, unknown>>)[0]
     expect(row).toMatchObject({ player: "Dame", price: 20, fmv: 35, discount_pct: 43, source: "flowty" })
+    expect(row.serial).toBe(12)
+    // The identifier + link that let a follow-up chain into get_edition_listings.
+    expect(row.editionKey).toBe("48:1652")
+    expect(row.set).toBe("Archive Set")
+    expect(String(row.edition_url)).toContain("/nba-top-shot/edition/48%3A1652")
+  })
+
+  it("labels its own results as a discount board, not the full order book", async () => {
+    // The conflation that produced the bad user-facing answer: an edition
+    // absent from a DEAL board is not an unlisted edition.
+    stubFetch([
+      jsonRoute("/api/sniper-feed", {
+        deals: [{ editionKey: "1:2", playerName: "Dame", tier: "RARE", serial: 1, askPrice: 20, adjustedFmv: 35, discount: 43, source: "flowty", buyUrl: "https://x" }],
+      }),
+    ])
+    script("search_live_deals", { limit: 5 })
+    await POST(post("any deals right now"))
+    const r = toolResult()
+    expect(String(r.note)).toMatch(/DISCOUNTED listings only/i)
+    expect(String(r.note)).toMatch(/get_edition_listings/)
+  })
+
+  it("filters the feed by setName", async () => {
+    stubFetch([
+      jsonRoute("/api/sniper-feed", {
+        deals: [
+          { editionKey: "1:1", playerName: "Dame", setName: "Archive Set", tier: "RARE", serial: 1, askPrice: 20, adjustedFmv: 35, discount: 43, source: "flowty", buyUrl: "https://x" },
+          { editionKey: "2:2", playerName: "Dame", setName: "Base Set", tier: "COMMON", serial: 2, askPrice: 5, adjustedFmv: 9, discount: 44, source: "flowty", buyUrl: "https://y" },
+        ],
+      }),
+    ])
+    script("search_live_deals", { limit: 5, setName: "archive" })
+    await POST(post("archive set deals"))
+    const rows = toolResult().results as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0].set).toBe("Archive Set")
   })
 
   it("falls back to cached_listings when the sniper feed is empty", async () => {
