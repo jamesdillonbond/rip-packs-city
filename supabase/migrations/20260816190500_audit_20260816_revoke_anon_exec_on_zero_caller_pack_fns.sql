@@ -1,0 +1,73 @@
+-- 2026-08-16 — revoke anon/authenticated EXECUTE on two zero-caller pack functions.
+--
+-- ⚠ THE FINDING: `compute_pack_ev_from_pool_tier_weighted` is callable by an
+-- UNAUTHENTICATED caller and costs 45.8 SECONDS / ~2.29M buffers (~17.4 GB
+-- touched) PER CALL, and nothing in the product calls it.
+--
+-- Measured live 2026-08-16 on dist_id 4184 (the largest Top Shot pool, 3,097 rows):
+--
+--   Function Scan ... (actual time=45761.922..45761.923 rows=1 loops=1)
+--   Buffers: shared hit=2260782 read=24987 dirtied=492 written=3
+--   Execution Time: 45762.053 ms
+--
+-- and the reachability is not theoretical — a functional probe confirms it:
+--
+--   begin; set local role anon;
+--   select * from compute_pack_ev_from_pool_tier_weighted(
+--     '95f28a17-...'::uuid, '__no_such_dist__', 99.0, 5, '{"COMMON":1}'::jsonb);
+--   -- => {"ok": false, "reason": "pool_empty"}   (executed, not denied)
+--
+-- The anon key ships in the browser bundle and PostgREST exposes every public
+-- schema function at /rest/v1/rpc/<name>, so this is reachable by anyone.
+-- `proxy.ts` does not help: route-gating is not data-gating, a point this repo
+-- has already paid for (the 2026-07-19 Panini/Candy anon-readable-tables
+-- incident). All four backing tables (pack_drop_pool, fmv_snapshots,
+-- external_pack_drops, external_pack_drop_moments) are anon-SELECTable, so the
+-- function genuinely executes rather than returning empty under RLS.
+--
+-- SEVERITY IS AVAILABILITY, NOT CONFIDENTIALITY. It is SECURITY INVOKER, so the
+-- caller's own RLS applies and it leaks nothing an anonymous visitor cannot
+-- already read. What it offers is unauthenticated compute amplification: one
+-- request costs ~46 s of a pooled connection and ~17 GB of buffer traffic on a
+-- 2 GB, disk-IO-budgeted instance that was ALREADY saturated when this was found
+-- (39 active backends / 27 on IO waits; fmv-recalc being killed at maxDuration on
+-- ~63–75% of invocations; five 60 s MCP timeouts in one session). A handful of
+-- concurrent calls is a full outage, from an unauthenticated client, for free.
+--
+-- ⚠ WHY NO EXISTING CHECK CATCHES IT — the guard-scope class again.
+-- `check_secdef_anon_exec_drift()` only considers SECURITY DEFINER functions.
+-- Both functions here are SECURITY **INVOKER** (prosecdef = false), so that
+-- check is structurally blind to them however often it runs green. There are
+-- **86** anon-executable INVOKER functions in `public` as of this migration;
+-- auditing all of them is a separate project and is filed, not attempted here.
+-- This migration deliberately fixes only the two that are BOTH anon-executable
+-- AND have zero callers, where the revoke cannot break anything.
+--
+-- ZERO-CALLER EVIDENCE (both functions, verified three ways before revoking):
+--   · pg_proc.prosrc across all of public  — 0 other functions reference them
+--   · cron.job.command                     — 0 references
+--   · repo grep (app/ lib/ workers/ scripts/ supabase/functions/, all file types,
+--     excluding migration history) — 0 hits for either name
+-- `score_external_pack_drop` is cheap (external_pack_drops is 7 rows / 105
+-- moments), so it is included for surface reduction rather than for cost.
+--
+-- ⚠ REVOKE BOTH HALVES IN ONE STATEMENT. This database carries
+-- ALTER DEFAULT PRIVILEGES granting EXECUTE to anon + authenticated on new
+-- functions in public, so those arrive as EXPLICIT acl rows that a
+-- `FROM PUBLIC` revoke does not touch — and the converse trap is equally real
+-- (a PUBLIC grant survives revoking the named roles). Verify with
+-- has_function_privilege, never by reading proacl text: the 2026-08-15 drift was
+-- introduced by a migration whose acl text looked clean.
+--
+-- postgres (owner) + service_role keep explicit grants and are unaffected, so a
+-- future in-product caller only needs supabaseAdmin, not a re-grant.
+--
+-- REVERT (restores the pre-migration state exactly):
+--   GRANT EXECUTE ON FUNCTION public.compute_pack_ev_from_pool_tier_weighted(uuid, text, numeric, integer, jsonb) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.score_external_pack_drop(text, bigint) TO anon, authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.compute_pack_ev_from_pool_tier_weighted(uuid, text, numeric, integer, jsonb)
+  FROM PUBLIC, anon, authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.score_external_pack_drop(text, bigint)
+  FROM PUBLIC, anon, authenticated;
