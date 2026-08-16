@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, interactive — thread wrap-up) — the avatar thread's durable findings committed to CLAUDE.md
+
+**What shipped.** `CLAUDE.md` only — one Recent-sessions entry plus **four canonical additions**, each placed where the next reader would look rather than only in the dated log: the **fourth fabricated-number shape** (counting rows of a per-`(entity, collection)` table as entities); **an explicit `NULL` defeats a column `DEFAULT`**, which makes "add a DEFAULT and backfill" inert on the main write path while looking correct in the schema; the **avatar system** (three modules, one field, and why `DEFAULT_AVATAR_URL` must stay absolute-https and inside `STATIC_ROOT_ASSETS`); and **an absence assertion is vacuous unless the fixture would have made the thing present**, plus the over-broad-negative sibling. A fifth went under Testing: **a guard that must be deleted before a feature ships will be deleted in a hurry — make it self-retire and pin the DETECTOR, not the state.** No product/DB/prod change. No tail roll due (Recent sessions still spans Aug 16 · 15 · 14).
+
+**End state of the thread — nothing left half-done.** 20 profiles: **19 on the RPC-logo default, 1 own avatar (tomwagmi, `?w=500`), 0 still pointing at a marketplace page.** 0 ERROR deploys all session, no new Sentry issues (`firstSeen:-8h`), both gates EXIT 0, tree clean.
+
+**Revert:** `git revert <sha>` — docs only.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor: "change tomwagmi's URL to w=500") — one-row avatar resize
 
 **What shipped.** `UPDATE public.profile_bio` for `tomwagmi` (`user_id 8f8d5d3d-78d4-4198-863c-8d98629de75a`), `?w=2000` → `?w=500` on the `i2c.seadn.io` avatar. **No code change.**
