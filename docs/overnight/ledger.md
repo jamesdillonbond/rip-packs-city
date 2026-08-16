@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — client-page copy sweep, picked by CENSUS not by hand: the PUBLIC collector profile made three claims about a named collector out of its own failed reads
+
+**What (one client `page.tsx` + its guard; no DB / migration / cron / auth / FMV-math):** `app/(collections)/[collection]/profile/[username]/page.tsx`. CLAUDE.md names this sweep as the method that works and the tail as open (~3 hand-picked sites against ~175 catch sites across 39 client pages), so this pass **built the census instead of hand-picking**: of the **18** `"use client"` `page.tsx` files that both `fetch(` and carry claim-copy, this one had the worst bare-swallow density — **9 catch blocks, 8 of them bare**. It is PUBLIC and it is about a named person, which is what makes the claims expensive.
+
+**Three legs, four claim sites, all failing to an assertion:**
+- **trophy read** → three empty slabs (reads as *this collector pinned nothing*) **plus `· 0 / 3 TROPHY MOMENTS`** in the headline — a statement about their curation.
+- **sniper read** → *"No live deals available right now."* — a claim about the MARKET.
+- **the sparkline's own read** → *"No FMV history yet for this wallet."* — a claim about that WALLET, manufactured from our outage. `data?.snapshots ?? []` was the whole mechanism.
+
+Fixed **per LEG** (the `/alerts` precedent — one flag would blank the trophy case whenever the sniper feed hiccuped), each set on **both** the null-body path and the `.catch`, each cleared per run, and every failure branch placed **before** its empty branch. All three empty-state strings SURVIVE: an empty case and a quiet market are real answers.
+
+⚠ **THE USEFUL NEGATIVE, and it is pinned rather than assumed: the wallet-derived stats were ALREADY SAFE.** `totalFmv` / `totalMoments` / `totalBadges` each `reduce` to **0** on a failed saved-wallets read — the exact false-zero shape that put "$0 FMV across 0 moments" in this platform's profile unfurls — but every render site gates on `> 0` and emits an em-dash, so no false zero was ever published here. That safety is a property of the CURRENT call sites, not of the data, so the guard now pins it; a later refactor rendering one unconditionally would introduce the defect this page never had. Same for the `bio` / `saved-wallets` / avatar legs, whose bare swallows are **deliberately left** — none backs a claim.
+
+⚠ **I WROTE AN ASSERTION THAT DESCRIBED WORK I HAD NOT DONE, and it failed against the finished page.** A blanket *"no bare swallow remains on this page"* forbids the three legs I intentionally left alone. Removed and replaced with the precise per-leg checks plus a comment recording which legs still swallow and why that is correct. **A guard must assert what the change actually guarantees — not the tidier thing it resembles.**
+
+⚠ **A MUTATION SURVIVED AND THE ASSERTION WAS FINE — the mutation had not applied.** My perl used a literal `·` where the source carries the `\u00b7` escape, so the substitution silently matched nothing and the test "passed" against unmodified code. Re-applied exactly and it red as intended. **A surviving mutation means investigate the mutation first; a no-op edit is indistinguishable from a vacuous assertion.**
+
+**Verified:** `tsc` clean · primary **12,189 passed / 1,229 files** · gate 91.76/79.12/93.51/93.84 vs 91.3/78.6/93.1/93.4 · component **1,719 passed**, 90.72/82.09/89.55/93.68 vs 90.3/81.6/89.1/93.2 · workers **333 passed**, 68.71/59.61/73.14/71.25. Both client-page ratchets **unmoved (33 / 35)** — the page stays a client `page.tsx`, so no gate churn. **5 mutations, each redding only its own assertion:** sparkline reverts to swallowing; sniper failure branch removed; trophy count published unconditionally; `totalFmv` rendered unconditionally (the negative result); trophy flag set only on `.catch` and not on the null body.
+
+**Left open, stated rather than dropped:** the census's other 17 pages — next by bare-swallow density are `[collection]/sniper` (8 catches / 6 bare) and `dashboard/*`. ⚠ **A hardcoded `"NBA TOP SHOT COLLECTOR"` label sits on this `[collection]` route and is WRONG on the other four collections** — a real correctness bug, deliberately NOT fixed here because it is a different class from the honesty sweep and wants its own change.
+
+**Revert:** `git revert <sha>` (code) — restores the three manufactured claims. Docs commit is a separate sha. No DB unwind.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, deep-audit handoff run 2 cont.) — R11's heartbeat has ANSWERED its question (and the correction filed against it does not reproduce); R14 verified harmless and PREPARED-not-applied; three canonical corrections
 
 - **1 prod config change** (`pipeline_cadence_watchlist.notes` for `candy-listings-indexer`, append-only) + `CLAUDE.md` + register rows. **No DDL, no migration, no code.**
