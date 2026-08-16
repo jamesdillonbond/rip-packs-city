@@ -112,8 +112,14 @@ export async function POST(req: NextRequest) {
         } catch (logErr) {
           console.log(`[stripe/webhook] paper-trail insert failed for ${eventId}:`, logErr instanceof Error ? logErr.message : String(logErr))
         }
+        // The message is already logged above AND persisted to the
+        // stripe_payment_log paper trail (handler_error), so dropping it here
+        // loses no diagnostic — and Stripe's retry machinery keys on the STATUS,
+        // not the body, so 503 still buys the exponential-backoff retry.
+        // Publishing our Postgres text into a third party's event log is
+        // needless either way.
         return NextResponse.json(
-          { error: "activate_pro_from_stripe failed — Stripe will retry", detail: error.message },
+          { error: "activate_pro_from_stripe failed — Stripe will retry" },
           { status: 503 }
         )
       } else {

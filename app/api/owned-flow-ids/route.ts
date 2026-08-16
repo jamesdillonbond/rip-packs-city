@@ -128,6 +128,6 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     console.log(`[owned-flow-ids] FCL failure for ${wallet}: ${message}`)
-    return NextResponse.json({ error: "Failed to fetch owned IDs", detail: message }, { status: 500 })
+    return NextResponse.json({ error: "Failed to fetch owned IDs" }, { status: 500 })
   }
 }

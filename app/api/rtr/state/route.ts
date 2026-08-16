@@ -51,7 +51,7 @@ export async function GET() {
     if (error) {
       console.error("[rtr-state GET]", error.message)
       return NextResponse.json(
-        { error: "internal_error", detail: error.message },
+        { error: "internal_error" },
         { status: 500, headers: ROUTE_HEADERS },
       )
     }

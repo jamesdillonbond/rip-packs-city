@@ -32,7 +32,7 @@ export async function GET() {
 
     if (runErr) {
       console.error("[fast-break-today] run lookup:", runErr.message)
-      return NextResponse.json({ error: "internal_error", detail: runErr.message }, { status: 500, headers: ROUTE_HEADERS })
+      return NextResponse.json({ error: "internal_error" }, { status: 500, headers: ROUTE_HEADERS })
     }
     if (!run) {
       return NextResponse.json(
@@ -51,7 +51,7 @@ export async function GET() {
 
     if (gamesErr) {
       console.error("[fast-break-today] games lookup:", gamesErr.message)
-      return NextResponse.json({ error: "internal_error", detail: gamesErr.message }, { status: 500, headers: ROUTE_HEADERS })
+      return NextResponse.json({ error: "internal_error" }, { status: 500, headers: ROUTE_HEADERS })
     }
 
     const baseRunPayload = {
@@ -80,7 +80,7 @@ export async function GET() {
 
     if (projErr) {
       console.error("[fast-break-today] projections lookup:", projErr.message)
-      return NextResponse.json({ error: "internal_error", detail: projErr.message }, { status: 500, headers: ROUTE_HEADERS })
+      return NextResponse.json({ error: "internal_error" }, { status: 500, headers: ROUTE_HEADERS })
     }
 
     const playerIds = Array.from(new Set((projRows ?? []).map(r => r.nba_player_id)))

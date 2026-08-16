@@ -45,6 +45,37 @@ export function leakSites(src: string): string[] {
   //   were still publishing through it.
   const inlineTernary = /\berror\s*:\s*[A-Za-z_$][\w$]*\s+instanceof\s+Error\s*\?\s*[A-Za-z_$][\w$]*(?:\?\.)?\.message/
 
+  // (6) The SIBLING KEY. `error:` holds a fixed, safe literal and the driver
+  //     text rides out in a neighbouring field:
+  //       `{ error: "Failed to fetch listings", detail: message }`
+  //     Every one of (1)-(5) is anchored on the `error:` FIELD, so all five miss
+  //     this — including (4)'s indirect scan, which DOES collect `message` as a
+  //     leaking variable and then looks for it after `error:`. Right file, right
+  //     line, right variable, wrong field.
+  //
+  //     Found 2026-08-15 on /api/panini/listings; a sweep then found 35 sites
+  //     across 20 files, 14 of them user-reachable (fast-break, rtr, wallet
+  //     capability/preflight, owned-flow-ids). Both guards had run green over
+  //     every one of them since they were written.
+  //
+  //     ⚠ The key list is enumerated, not approximated: `detail` is SINGULAR
+  //     here and `details` was already in (1), which is exactly the near-miss
+  //     that let this hide. `reason` and `hint` are the same leak wearing a
+  //     different field name.
+  const SIBLING_KEY = "(?:detail|details|reason|hint|debug|upstream|cause|stderr)"
+  const siblingDirect = new RegExp(
+    `\\b${SIBLING_KEY}\\s*:\\s*(?!result\\.|item\\.|row\\.|payload\\.)[A-Za-z_$][\\w$]*(?:\\?\\.)?\\.message\\b`
+  )
+  const siblingStringified = new RegExp(
+    `\\b${SIBLING_KEY}\\s*:\\s*String\\(\\s*(?:err|e|error|ex|caught)\\b`
+  )
+  const siblingTernary = new RegExp(
+    `\\b${SIBLING_KEY}\\s*:\\s*[A-Za-z_$][\\w$]*\\s+instanceof\\s+Error\\s*\\?`
+  )
+  const siblingInterpolated = new RegExp(
+    `\\b${SIBLING_KEY}\\s*:\\s*\`[^\`]*\\$\\{\\s*(?:err|e|ex|caught)(?:\\?\\.)?\\.message`
+  )
+
   // (4) The indirect form: `const msg = e instanceof Error ? e.message : ...`
   //     then `{ error: msg }` further down. Collect the variable names first.
   const indirect = new Set<string>()
@@ -56,6 +87,13 @@ export function leakSites(src: string): string[] {
   const indirectRx = indirect.size
     ? new RegExp(`\\berror\\s*:\\s*(?:${[...indirect].join("|")})\\b`)
     : null
+  // ...and the same collected variables published under a sibling key, which is
+  // the exact shape found on /api/panini/listings:
+  //   const message = err instanceof Error ? err.message : "Unknown error"
+  //   { error: "Failed to fetch listings", detail: message }
+  const siblingIndirectRx = indirect.size
+    ? new RegExp(`\\b${SIBLING_KEY}\\s*:\\s*(?:${[...indirect].join("|")})\\b`)
+    : null
 
   lines.forEach((line, i) => {
     if (
@@ -63,7 +101,12 @@ export function leakSites(src: string): string[] {
       stringified.test(line) ||
       interpolated.test(line) ||
       inlineTernary.test(line) ||
-      (indirectRx && indirectRx.test(line))
+      (indirectRx && indirectRx.test(line)) ||
+      siblingDirect.test(line) ||
+      siblingStringified.test(line) ||
+      siblingTernary.test(line) ||
+      siblingInterpolated.test(line) ||
+      (siblingIndirectRx && siblingIndirectRx.test(line))
     ) {
       hits.push(`${i + 1}: ${line.trim()}`)
     }

@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     if (eligErr) {
       console.error("[fast-break-optimize] get_fb_eligible_players:", eligErr.message)
       return NextResponse.json(
-        { error: "eligible_rpc_failed", detail: eligErr.message },
+        { error: "eligible_rpc_failed" },
         { status: 500, headers: ROUTE_HEADERS },
       )
     }
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       if (projErr) {
         console.error("[fast-break-optimize] projections:", projErr.message)
         return NextResponse.json(
-          { error: "projections_lookup_failed", detail: projErr.message },
+          { error: "projections_lookup_failed" },
           { status: 500, headers: ROUTE_HEADERS },
         )
       }

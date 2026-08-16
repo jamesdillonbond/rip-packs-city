@@ -117,11 +117,14 @@ export async function GET(req: NextRequest) {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
+    // Logged, never published — Flow REST's own wording. 502 kept on purpose:
+    // the failure is upstream, and apiErrorResponse would classify it internal/500.
+    console.log(
+      "[wallet-preflight] Flow REST request failed:",
+      err instanceof Error ? err.message : String(err)
+    );
     return NextResponse.json(
-      {
-        error: "Flow REST request failed",
-        detail: err instanceof Error ? err.message : String(err),
-      },
+      { error: "Flow REST request failed" },
       { status: 502 }
     );
   }

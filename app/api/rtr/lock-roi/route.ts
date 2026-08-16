@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       if (cacheErr) {
         console.error("[rtr-lock-roi] wallet_moments_cache:", cacheErr.message)
         return NextResponse.json(
-          { error: "internal_error", detail: cacheErr.message },
+          { error: "internal_error" },
           { status: 500, headers: ROUTE_HEADERS },
         )
       }

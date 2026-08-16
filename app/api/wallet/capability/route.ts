@@ -35,8 +35,13 @@ export async function POST(req: NextRequest) {
     const capability = await getWalletCapability(body?.address);
     return NextResponse.json({ ok: true, capability });
   } catch (e: any) {
+    // Logged, never published: this is upstream Flow/Cadence text, and truncating
+    // it to 160 chars made it shorter, not safe. The 502 is kept deliberately —
+    // it says the failure is upstream, which is what tells an operator whether
+    // WE broke; routing this through apiErrorResponse would flatten it to 500.
+    console.log("[wallet/capability] read failed:", String(e?.message ?? e).slice(0, 300));
     return NextResponse.json(
-      { ok: false, error: "capability_read_failed", detail: String(e?.message ?? e).slice(0, 160) },
+      { ok: false, error: "capability_read_failed" },
       { status: 502 },
     );
   }

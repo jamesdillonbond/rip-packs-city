@@ -218,11 +218,23 @@ describe("POST /api/rtr/lock-roi — cache + failure + FMV join", () => {
     expect((await POST(body(w))).headers.get("X-RPC-Cache")).toBe("hit")
   })
 
-  it("500s when the wallet_moments_cache read errors", async () => {
+  it("500s when the wallet_moments_cache read errors, WITHOUT publishing the driver message", async () => {
+    // ⚠ This case used to assert `body.detail === "wmc down"` — i.e. it pinned
+    // the leak as the contract. That is the "tests that assert the defect"
+    // class: 59 tests in this repo once did it, two of them titled "500s and
+    // surfaces the message", which makes a defect read as intended behaviour.
+    //
+    // The real contract is the pair below: the caller learns the request failed
+    // and gets a stable machine code, and Postgres's own text never leaves the
+    // server. Asserting the ABSENCE of the driver string is the half that has
+    // teeth — a `detail` key holding fixed copy would satisfy a mere
+    // `not.toHaveProperty` check while still being wrong if it quoted the error.
     state.errs.wallet_moments_cache = { message: "wmc down" }
     const res = await POST(body("0x00000000000000c3"))
     expect(res.status).toBe(500)
-    expect((await res.json()).detail).toBe("wmc down")
+    const json = await res.json()
+    expect(json.error).toBe("internal_error")
+    expect(JSON.stringify(json)).not.toContain("wmc down")
   })
 
   it("prefers a fresh fmv_current value over the denormalized wmc fmv", async () => {

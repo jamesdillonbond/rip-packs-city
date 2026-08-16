@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     if (eligErr) {
       console.error("[fast-break-lineup] get_fb_eligible_players:", eligErr.message)
       return NextResponse.json(
-        { error: "eligible_rpc_failed", detail: eligErr.message },
+        { error: "eligible_rpc_failed" },
         { status: 500, headers: ROUTE_HEADERS },
       )
     }
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
     if (rpcErr) {
       console.error("[fast-break-lineup] save_fast_break_lineup:", rpcErr.message)
       return NextResponse.json(
-        { error: "lineup_write_failed", detail: rpcErr.message },
+        { error: "lineup_write_failed" },
         { status: 500, headers: ROUTE_HEADERS },
       )
     }

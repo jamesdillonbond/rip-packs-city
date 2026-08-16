@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     if (error) {
       console.error("[fast-break-uses]", error.message)
       return NextResponse.json(
-        { error: "internal_error", detail: error.message },
+        { error: "internal_error" },
         { status: 500, headers: ROUTE_HEADERS },
       )
     }
