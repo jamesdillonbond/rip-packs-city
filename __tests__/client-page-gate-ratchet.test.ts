@@ -82,7 +82,26 @@ const APP_DIR = join(process.cwd(), "app")
  * at 89.1 with well under a point of room. Cover the handlers, not just the
  * fetch paths.
  */
-const BUDGET = 30
+/*
+ * 30 -> 29: `disney-pinnacle/sniper` split into `PinnacleSniperClient.tsx`.
+ *
+ * ⚠ The conversion is what FOUND a live defect, which is the argument for continuing this
+ * workstream on merit rather than for the number. The stats bar was ungated, so a failed
+ * first load published "0 pins" and "FMV coverage: 0 editions" — a claim about the Pinnacle
+ * market and a claim about our own pricing coverage — directly ABOVE the FEED ERROR banner
+ * that was the page's only honest surface. Its empty state was already correctly gated on
+ * `data`, which is precisely the trap: a page is not made honest by fixing the one
+ * component that failed.
+ *
+ * ⚠ And the test written for the first claim site immediately found a SECOND one: a legend
+ * further down published the same fabricated 0 paired with an EXPLANATION for it. Sweep
+ * every site that consumes the same failed read, not the one you noticed.
+ *
+ * No honesty guard covered this page: `client-pages-failed-vs-empty-guard` keeps a
+ * hand-picked list of sniper pages ([collection], panini-blockchain) and this was not on
+ * it — the guard-scope class, met on an allowlist this time.
+ */
+const BUDGET = 29
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([

@@ -58,7 +58,16 @@ const USE_CLIENT = /^\s*["']use client["']/
 // sibling BAN is supposed to forbid — and the ban's regex required parentheses
 // around the arrow parameter, so it read a population of ZERO while that site
 // stood outside it. Both were fixed together.
-const BUDGET = 33
+/* 33 -> 32: `disney-pinnacle/sniper`'s body moved to `PinnacleSniperClient.tsx`, so it is
+ * no longer a `page.tsx` calling fetch directly — it is now measured by the component gate
+ * and covered by `__tests__/component-PinnacleSniperClient.test.tsx`.
+ *
+ * ⚠ Re-derived from THIS FILE'S OWN no-slack assertion, not chosen. A ratchet is a COUNT of
+ * a shared population, so on a concurrent-session collision both "take mine" and "take
+ * theirs" are silently wrong — the only correct value is the one the failing assertion
+ * names. (That collision has already happened once on the sibling client-page ratchet,
+ * where two sessions each subtracted only their own conversions.) */
+const BUDGET = 32
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
