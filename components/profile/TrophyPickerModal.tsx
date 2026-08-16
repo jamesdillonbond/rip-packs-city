@@ -130,6 +130,13 @@ export default function TrophyPickerModal({
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
+  /**
+   * ⚠ A THIRD state beside `null` (loading) and `[]` (you own none). Without it
+   * a failed read is indistinguishable from an empty collection, and the empty
+   * copy is both a claim about the reader's own holdings AND actionable — it
+   * points them at the manual tab to type an id for a Moment we did not load.
+   */
+  const [momentsLoadFailed, setMomentsLoadFailed] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -161,17 +168,33 @@ export default function TrophyPickerModal({
   useEffect(() => {
     let cancelled = false;
     setMoments(null);
+    setMomentsLoadFailed(false);
     const params = new URLSearchParams({ limit: String(PICKER_LIMIT) });
     if (ownerKey) params.set("ownerKey", ownerKey);
     if (leagueFilter !== "all") params.set("league", leagueFilter);
     if (collectionFilter !== "all") params.set("collection", collectionFilter);
     fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
+      // ⚠ `null` means WE COULD NOT READ, and it must not reach `setMoments`
+      // as `[]`. An empty grid renders "No owned moments found yet" — a claim
+      // about the collector's OWN collection manufactured from our outage, and
+      // it sends them to the manual tab to type an id for a Moment we simply
+      // failed to fetch. Same class this file's header already documents for
+      // the search-scope cap; that one was found and this one was not.
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled) setMoments((d?.moments as PickerMoment[]) ?? []);
+        if (cancelled) return;
+        if (d == null) {
+          setMomentsLoadFailed(true);
+          setMoments([]);
+          return;
+        }
+        setMoments((d.moments as PickerMoment[]) ?? []);
       })
       .catch(() => {
-        if (!cancelled) setMoments([]);
+        // `fetch` THROWS on a network failure rather than resolving non-ok.
+        if (cancelled) return;
+        setMomentsLoadFailed(true);
+        setMoments([]);
       });
     return () => {
       cancelled = true;
@@ -507,6 +530,24 @@ export default function TrophyPickerModal({
             {moments == null ? (
               <div style={{ textAlign: "center", padding: 24 }}>
                 <span className="rpc-spinner" />
+              </div>
+            ) : momentsLoadFailed ? (
+              /* ⚠ BEFORE the empty state. "No owned moments found yet" is a
+                 claim about the reader's own collection, and the manual-tab
+                 suggestion beside it makes it ACTIONABLE — they go and type an
+                 id for something we merely failed to load. */
+              <div
+                role="status"
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 12,
+                  color: "var(--rpc-text-secondary)",
+                  padding: 16,
+                  textAlign: "center",
+                }}
+              >
+                Couldn&rsquo;t load your Moments. This is a problem on our side and says nothing
+                about what you own — try again in a moment.
               </div>
             ) : filteredSorted.length === 0 ? (
               <div
