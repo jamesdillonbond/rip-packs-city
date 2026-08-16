@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — "the best way to handle this type of input from users moving forward") — stop asking collectors for a URL: pick an avatar from a Moment you own
+
+**What shipped.** New `components/profile/AvatarMomentPicker.tsx` + wiring into `/profile/edit`, and a test file. **No DB change, no new API, no new column.**
+
+⚠ **THE DESIGN CALL: MORE URL VALIDATION WAS THE WRONG ANSWER TO THIS PROBLEM.** Asking a collector to produce an image URL asks them to do a job browsers make hard — **the obvious thing to copy is the PAGE address**, which is valid, serves HTML, and fails silently. Today's warning helps, but it is still a validator arguing with someone about a task they should not have been given. **On a collectibles platform we already know every Moment they own and already have its art**, so the fix is to remove the typing, not to police it.
+
+**Measured before building, not assumed.** Image coverage on `wallet_moments_cache` across the five largest collector wallets: **81.9% / 98.8% / 99.3% / 99.9% / 100%** (43,303 · 19,291 · 14,263 · 15,484 · 34,860 moments). **21 profiles have a saved wallet.** And the machinery already existed — `/api/profile/top-moments` (the trophy picker's source) returns a **COALESCE'd** thumbnail chain (`wmc.image_url → editions.thumbnail_url → …`), so it is already hardened against the NULL-image case a raw wmc read hits.
+
+⚠ **IT WRITES THE SAME `avatar_url` FIELD, DELIBERATELY — that is the whole reason this is small.** No `avatar_moment_id`, no second save path, no second source of truth: a picked URL flows through exactly the machinery a typed one does — the RPC-logo default when cleared, the load-failure check, the marketplace-page warning, and the OG card's `https` gate. A dedicated column would have doubled every one of those and created a "which wins?" question on every read.
+
+**The URL field is now explicitly the ESCAPE HATCH** — the picker button sits above it and the input is relabelled *"Or paste an image URL"*. Non-collectors and anyone with off-platform art keep the old path.
+
+⚠ **The picker carries the three-state distinction, because it makes a claim about the collector's OWN holdings** — the most repeated defect class in this repo. `null` = loading, `[]` = we asked and there are none, `loadFailed` = we could not ask. A non-2xx **and** a thrown fetch both land in the third (`fetch` rejects on a network failure rather than resolving non-ok, and the offline case is the one usually missed), and the empty state is pinned to still report a genuine zero — a fix that turned every empty state into "couldn't load" only moves the dishonesty.
+
+⚠ **A relabel broke an existing test's selector, and the test was RIGHT to break** — it queried `/avatar url/i`, and the input is now *"Or paste an image URL"*. Updated the query rather than reverting the copy: the field does the same job, its role in the page changed.
+
+**Verified.** `tsc` clean · primary **EXIT 0** (91.75/79.20/93.48/93.82) · component **EXIT 0** (90.78/82.27/89.35/93.72) · **5 mutations red** (failed read collapsing to empty, art-less tiles offered, empty state during load, Pinnacle character fallback dropped, unbounded page).
+
+**STILL OPEN (unchanged):** tomwagmi's `?w=2000` vs the OG 4 MB cap. ⚠ **And the durable third-party risk this does not remove:** any external avatar can rot (seadn hashes expire), leaks visitor IPs to that host, and is refetched per crawler hit. The picker sidesteps it for collectors; a proxy/cache like `/api/public/ipfs-media/<cid>` is the answer if it ever bites, and is NOT built.
+
+**Revert:** `git revert <sha>` — the URL field and its label return; nothing to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — root cause of the buyback fabrication: `.range()` paged with no `ORDER BY`, and the rule was already written down
 
 **Found the mechanism behind the 161,366 fabricated buyback rows, and it is one missing clause.** `snapshot-institutional-wallets` does NOT walk the chain — it offset-pages **our own `wallet_moments_cache`** with `.range()` and **no `.order()`**. Postgres guarantees no row order without `ORDER BY`, so across ~209 sequential pages on the platform's most write-heavy table, rows land on two pages or none.
