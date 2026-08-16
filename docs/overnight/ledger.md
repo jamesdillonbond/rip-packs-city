@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "proceed") — `/dashboard` told a signed-in collector they were NOT SIGNED IN, on the one page that proves otherwise; and the wallet-verification poll reported its own outage as "no matching listing"
+
+**What (1 client page + the shared guard; no DB / migration / cron / auth / FMV-math):** closed out the page census's last two entries. **`[collection]/market` was verified CLEAN and deliberately NOT touched** — a useful negative that confirms CLAUDE.md's standing claim: its main read has a proper `loading : error : empty` ladder, `filterListingsByOwned` already no-ops on `editionStats.size === 0` rather than filtering wrongly, and the thin-volume notice requires `healthRow != null`, so a failed read SUPPRESSES the warning instead of asserting one. The only residual is a silently-inert "Owned" chip, milder than any fix's risk.
+
+⚠ **`/dashboard` is auth-gated by `proxy.ts`, so a reader seeing that page IS signed in — and it rendered "Not signed in" at them.** `email` goes null for two very different reasons (a genuinely expired session, or `/api/profile/me` failing) and the render collapsed them: `{email ?? "Not signed in"}`. **The one page whose existence proves the claim false was making it.** Now three states, with the honest copy kept for the case where it is true.
+
+⚠ **The wallet-verification poll had no `res.ok` check, and this is the highest-stakes instance in the whole sweep.** It is the ONLY self-serve verification path and it awards **+500 credits**. On a non-2xx the envelope still parses, `d.ok` is undefined so the success branch is skipped, and the hint rendered in a position that reads as a **VERIFICATION RESULT** — telling a collector their listing was not found when we never managed to look. A collector who believes that re-lists at a different price or gives up. "We could not check" and "we checked and found nothing" must not share a message; both copies now exist and the no-match one SURVIVES.
+
+**Same file as guard site 1** (the hero picker), two panels that fix never reached — the recurring lesson: *a page is not made honest by fixing the component that failed.* Seventh site on this guard.
+
+⚠ **A MUTATION SURVIVED AND EXPOSED A VACUOUS ASSERTION OF MINE.** I pinned the status-check ordering with `src.indexOf("if (!res.ok) {") < src.indexOf("const d = await res.json()")`. Measured: those strings occur **8 and 4 times** in this 2,519-line file, so `indexOf` compared the WRONG occurrences — moving the guard AFTER the parse did not red it. Repointed to a **CONTIGUOUS** guard-then-parse substring, which no coincidental pair elsewhere can satisfy, and the mutation now reds. ⚠ **`indexOf`-ordering assertions are only sound when both needles are unique in the file** — worth checking before writing one, because the failure is silent and looks thorough.
+
+**Verified:** `tsc` clean · primary **12,360 passed / 1,236 files**, gate 91.74/79.13/93.41/93.82 vs 91.3/78.6/93.1/93.4 · component **1,731 passed**, 90.67/82.27/89.34/93.64 · the raw-parse **BAN still reads 0** · both client-page ratchets unmoved. **4 mutations, each redding only its own assertion:** "Not signed in" republished on a failed read; `meFailed` never set; the verification status check removed (the ORIGINAL defect); and the ordering mutation above, after the assertion was repaired.
+
+**The page census is now CLOSED**: all 18 client `page.tsx` files that both fetch and carry claim-copy have been swept — fixed where a false claim reached a user, verified-and-left where the guards already held.
+
+**Revert:** `git revert <sha>` (code) — restores "Not signed in" on a failed read and the verification poll's unchecked parse. Docs commit is a separate sha. No DB unwind.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "proceed with all, keep going") — pinned the last 14, closing the scheduled SECDEF write surface at **52/52** — and the tranche that "finished" an hour ago was the same 14 measured with a blind predicate
 
 **What shipped.** One snapshot migration covering 14 functions (all committed UNAPPLIED, each byte-identical to live) + 15 DB-invariant pins across 6 new test files + drift-guard registration. **169 pins over 168 distinct fns, 159 `.sql` test files** (up from 155/154/153). **Scheduled SECDEF writers: 52 pinned, 0 unpinned.**
