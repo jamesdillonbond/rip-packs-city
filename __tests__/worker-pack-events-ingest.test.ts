@@ -1034,3 +1034,169 @@ describe("pack-events-ingest worker — backfill mode", () => {
   })
 })
 
+// ── The STAGGERED SOFT BUDGET ──────────────────────────────────────────────
+//
+// The three live legs run in sequence — purchases, then opens, then
+// allday_forward — sharing ONE wall clock that starts at the request. They are
+// bounded at 12s / 16s / 20s respectively, and that staggering is not a tuning
+// detail: the source records the bug it fixed, where all three shared a single
+// SOFT_BUDGET_MS and "opens + allday_forward hit the loop's budget guard
+// immediately and bailed with 0 chunks". A busy purchases leg starved the other
+// two on every tick, indefinitely, while the run still reported ok.
+//
+// ⚠ THIS IS THE ONE PROPERTY IN THIS WORKER NO FIXTURE ALONE CAN REACH — it is
+// a function of elapsed TIME, not of the data. Rather than a fake timer (which
+// would fight the AbortSignal.timeout stub this suite already installs), the
+// clock is driven from the fetch stub: charging every event fetch a fixed cost
+// models "this chunk took N ms" directly and deterministically, with no timers
+// involved at all.
+describe("pack-events-ingest worker — the staggered soft budget", () => {
+  /** ms charged per event FETCH, not per chunk — each chunk issues three
+   *  parallel event fetches, so this is 6s of simulated work per chunk. */
+  const MS_PER_FETCH = 2_000
+  const BASE = 1_700_000_000_000
+
+  let nowMs = BASE
+
+  /** Cursors far enough from the tip that the CHUNK CAP never binds first —
+   *  otherwise the budget guard would be untested and the numbers would still
+   *  look plausible. MAX_CHUNKS_PER_CURSOR_LIVE is 20 and CHUNK_SIZE is 250, so
+   *  20k blocks of runway is ~80 chunks of available work per cursor. */
+  function farBehindCursors() {
+    return {
+      data: [
+        { id: "topshot_pack_purchases", last_processed_block: 1_180_000 },
+        { id: "topshot_pack_opens", last_processed_block: 1_180_000 },
+        { id: "allday_pack_purchases", last_processed_block: 1_180_000 },
+      ],
+      error: null,
+    }
+  }
+
+  /** Every /v1/events fetch advances the clock and returns nothing. */
+  function meteredChain() {
+    return installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200000" } }]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      {
+        match: (url: string) => url.includes("/v1/events"),
+        respond: () => {
+          nowMs += MS_PER_FETCH
+          return { json: [] }
+        },
+      },
+    ])
+  }
+
+  beforeEach(() => {
+    nowMs = BASE
+    vi.spyOn(Date, "now").mockImplementation(() => nowMs)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("every leg gets forward progress — none is starved by the one before it", async () => {
+    // ⚠ THE REGRESSION THIS PINS, stated as the source states it: with a single
+    // shared budget the first leg consumes it and the other two bail with ZERO
+    // chunks on every tick, forever, while the run still reports ok. Nothing
+    // downstream notices, because "0 chunks" is also what a caught-up cursor
+    // reports.
+    fetchMock = meteredChain()
+    install({
+      event_cursor: farBehindCursors(),
+      pack_purchases: { data: [], error: null },
+      pack_rips: { data: [], error: null },
+      moment_acquisitions: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+
+    expect(body.purchases.chunks_processed, "purchases must do work").toBeGreaterThan(0)
+    expect(body.opens.chunks_processed, "opens must NOT be starved").toBeGreaterThan(0)
+    expect(
+      body.allday_forward.chunks_processed,
+      "allday_forward must NOT be starved — it is last in line and the first to lose",
+    ).toBeGreaterThan(0)
+  })
+
+  it("each leg stops at its OWN budget, not the shared ceiling", async () => {
+    // Budgets are 12s / 16s / 20s off one shared start, and each chunk costs 2s.
+    // So the legs get 6 / 2 / 2 chunks. The exact split is what distinguishes a
+    // real stagger from three legs that merely all happen to run.
+    fetchMock = meteredChain()
+    install({
+      event_cursor: farBehindCursors(),
+      pack_purchases: { data: [], error: null },
+      pack_rips: { data: [], error: null },
+      moment_acquisitions: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+
+    // ⚠ 2 / 1 / 1, and the arithmetic is worth spelling out because my first
+    // guess (6/2/2) was wrong: EACH CHUNK FANS OUT TO THREE PARALLEL EVENT
+    // FETCHES — purchases reads ListingCompleted + Deposit + Withdraw, opens
+    // reads Opened + TopShot.Deposit + TopShot.Withdraw, AllDay reads Mint +
+    // Deposit + ListingCompleted. So the stub's 2s-per-FETCH is 6s per CHUNK.
+    //
+    //   purchases: budget 12s, checks at 0s and 6s   -> 2 chunks
+    //   opens:     starts 12s, budget 16s, one check -> 1 chunk
+    //   allday:    starts 18s, budget 20s, one check -> 1 chunk
+    //
+    // The split is the point. Under a SINGLE shared 20s budget purchases would
+    // take all four available slots (0/6/12/18s) and opens and allday_forward
+    // would get ZERO — which is precisely the regression the source describes.
+    expect(body.purchases.chunks_processed, "12s budget, 6s per chunk").toBe(2)
+    expect(body.opens.chunks_processed, "12s already spent, 16s ceiling").toBe(1)
+    expect(body.allday_forward.chunks_processed, "18s already spent, 20s ceiling").toBe(1)
+  })
+
+  it("the chunk CAP is not what stopped them (the guard is not vacuous)", async () => {
+    // ⚠ If maxChunks bound first, every number above would be identical whether
+    // the budget guard existed at all. MAX_CHUNKS_PER_CURSOR_LIVE is 20 and the
+    // observed counts are 6/2/2, so the budget is demonstrably the binding
+    // constraint here.
+    fetchMock = meteredChain()
+    install({
+      event_cursor: farBehindCursors(),
+      pack_purchases: { data: [], error: null },
+      pack_rips: { data: [], error: null },
+      moment_acquisitions: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    for (const leg of ["purchases", "opens", "allday_forward"] as const) {
+      expect(
+        body[leg].chunks_processed,
+        `${leg} hit the 20-chunk cap, so this suite is not testing the budget`,
+      ).toBeLessThan(20)
+    }
+  })
+
+  it("a cheap tick is bounded by the chunk cap instead, and still advances", async () => {
+    // The complementary case: when chunks are FREE the budget never binds and
+    // the cap takes over. Without this, every assertion above is satisfied by a
+    // worker that simply stops after a few chunks for any reason at all.
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200000" } }]),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []), // no clock cost
+    ])
+    install({
+      event_cursor: farBehindCursors(),
+      pack_purchases: { data: [], error: null },
+      pack_rips: { data: [], error: null },
+      moment_acquisitions: { data: [], error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+    expect(body.purchases.chunks_processed, "the 20-chunk cap now binds").toBe(20)
+    expect(body.opens.chunks_processed).toBe(20)
+  })
+})
+
