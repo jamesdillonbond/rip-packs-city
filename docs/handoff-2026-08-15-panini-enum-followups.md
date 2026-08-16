@@ -1,7 +1,7 @@
 # Handoff — Panini enumeration follow-ups (2026-08-15)
 
 **From:** Cowork session. **To:** Claude Code on Trevor's Windows box.
-**Last updated ~16:45 PT — items 1 and 2 are SHIPPED; do not redo them.** One NEW item (5) was found and its fix is verified but unshipped.
+**Last updated 2026-08-16 07:50 PT. Items 1, 2 and 5 are ALL SHIPPED — do not redo them.** ⚠ **The live blocker is now none of the numbered items: the runner box hibernated overnight and lost 3 of 6 walks — see the 🚨 section below, and plug the laptop in.**
 
 ## Context
 
@@ -73,6 +73,38 @@ simulated 2026-08-15 → yesterday 223 · pct_of_catalogue 4.9 · gate fires TRU
 ---
 
 </details>
+
+## 🚨 THE REAL CEILING IS THE BOX SLEEPING — 3 of 6 walks were lost overnight (measured 2026-08-16 07:50 PT)
+
+**This supersedes the walk-budget framing below for anything overnight, and it blocks the measurement plan as written.** Panini ingest was **DOWN 12.8 h**: `panini-ingest` last ran **2026-08-15 18:58 PT**, and the **22:00, 02:00 and 06:00 walks never fired at all** — zero `pipeline_runs` rows, not slow rows. **2026-08-16 is currently a ZERO-DAY.**
+
+**Mechanism, measured end to end on the box — the task is innocent and its settings are all correct:**
+
+| layer | value | verdict |
+|---|---|---|
+| Task `RPC Panini Ingest` | `WakeToRun: True`, `StartWhenAvailable: True`, battery-permissive, `LastTaskResult: 0` | ✅ correctly configured |
+| Power event log | **`S4 Doze to Hibernate` at 21:26 PT**, resumed **07:41 PT** (`Wake Source: Unknown`, i.e. a human) | the outage window |
+| `SUB_SLEEP HIBERNATEIDLE` | AC **never** · DC **45 min** | box hibernates on battery |
+| `SUB_SLEEP RTCWAKE` ("Allow wake timers") | AC **enabled** · DC **DISABLED** | ⚠ **this is what defeats `WakeToRun`** |
+| Current power source | **battery** | the DC column is the one in force |
+
+⚠ **So `WakeToRun: True` on the task is INERT on battery** — a task-level setting cannot override the power plan's DC wake-timer policy. Once the box doze-hibernates to S4 with DC wake timers off, nothing resumes it until someone opens the lid. **Checking the task's own settings will tell you everything is fine; the defeat is one layer down in the power plan.**
+
+⚠ **Cost is large and it dwarfs every lever discussed below.** At the measured post-fix yield of ~418 editions/walk, three lost walks ≈ **1,250 editions ≈ 27% of the 4,589-edition catalogue**, in one night. Tuning `PANINI_WALK_BUDGET_MIN` or per-card cost cannot recover a walk that never started.
+
+⚠ **It is INTERMITTENT, not constant — which is exactly why it has been invisible.** 08-15 fired `02,06,10,14,18` and 08-14 fired at `22`, so on other nights the box happened to be awake. **Overnight availability is the dominant uncontrolled variable in Panini throughput**, and it is not on any instrument: the runner is on Trevor's laptop, so a missed walk writes nothing anywhere and looks identical to "the pipeline is idle".
+
+**The fix is an operator decision (it trades laptop battery), and the cheapest option needs NO setting change at all:**
+
+- **B — keep the laptop plugged in overnight. Recommended, zero-risk, zero-config.** The **AC** profile is already correct: hibernate-after `never` and wake timers `enabled`, so the task's `WakeToRun` works as intended on AC. Nothing to change.
+- **A — allow wake timers on battery:** `powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1` then `powercfg /S SCHEME_CURRENT`. ⚠ **May not be sufficient on its own** — RTC wake out of **S4 hibernate** is unreliable on Modern-Standby laptops, and it will wake the machine every 4 h on battery. Not taken here: it changes Trevor's laptop power behaviour, which is his call.
+- **C — raise the DC hibernate timeout past the 4 h walk gap:** impractical on battery.
+
+⚠ **Immediate, for whoever reads this first:** the box is on **battery** right now and the next walk is **10:00 PT**. If it sleeps before then, that walk dies too. **Plug it in.**
+
+⚠ **CONSEQUENCE FOR THE MEASUREMENT PLAN: "measure one full clean day — six walks firing" is not achievable on an unplugged laptop**, and 08-16 has already lost three walks, so it cannot be the clean day either. **Sequence it: plug the box in FIRST, confirm six walks land, and only then read the daily total.** Otherwise the next clean-day reading will again be a mixed day misread as a throughput ceiling — the same error corrected directly below.
+
+---
 
 ## ⚠ THE BOTTLENECK HAS MOVED — do not pull the enumeration levers (measured 2026-08-15 ~20:00 PT)
 
@@ -202,6 +234,13 @@ Then `panini_fmv_snapshots` editions/day over the next day or two — read it fr
 
 ---
 
-## Expected end state (updated 2026-08-15 18:4x PT)
+## Expected end state (updated 2026-08-16 07:50 PT)
 
-Query 4b fires on a zero-day instead of going quiet; the cardset filter either parked or shipped from a **captured** `applied_filters` / `attribute_code` value rather than a guessed one; and the first genuine `panini-ingest-enum` row confirming `grid_pages` ≥ 82, with `panini_fmv_snapshots` editions/day climbing back off 153.
+**All three code/doc items are shipped and verified.** Query 4b fires on a zero-day instead of going quiet (and ⚠ **08-16 is a live zero-day, so it should fire today — that is the fix working, not a new defect**); the enum fix is confirmed by a genuine `panini-ingest-enum` row at **124 pages / 840 pskus**, well past the ≥82 floor; and the post-fix walk yield is **418 editions**, ~2.6–3.1× the pre-collapse era per walk.
+
+**What is actually left, in order:**
+
+1. 🚨 **Plug the laptop in** (or take option A), then confirm six walks land. Until overnight availability is fixed, every throughput number is a mixed-day artifact and 3 of 6 walks are lost on any night the box is unplugged. **This is the only thing on the critical path.**
+2. **Then** read the first genuinely clean day's editions/day. Expect roughly 2,500 at six post-fix walks; treat anything much lower as a real finding rather than re-deriving the walk budget.
+3. Item 3 (cardset filter) stays parked — it is an efficiency win on a separate clock, not a throughput lever, and it needs a **captured** `applied_filters` / `attribute_code`, never a guessed one.
+
