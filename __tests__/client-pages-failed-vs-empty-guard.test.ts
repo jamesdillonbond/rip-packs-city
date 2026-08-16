@@ -432,6 +432,73 @@ describe("client pages — a failed read is not an empty result", () => {
     })
   })
 
+  // ── SITE 7: /dashboard, two MORE sites (added 2026-08-15) ─────────────────
+  //
+  // The same file as site 1, two panels the hero-picker fix did not reach — the
+  // recurring lesson of this sweep: a page is not "made honest" by fixing the
+  // component that failed.
+  //
+  // 1. `{email ?? "Not signed in"}`. /dashboard is auth-gated by proxy.ts, so a
+  //    reader seeing this page IS signed in. `email` goes null for two very
+  //    different reasons — a genuinely absent session, or /api/profile/me
+  //    failing — and the render collapsed them, telling a collector they were
+  //    not signed in ON THE ONE PAGE THAT PROVES THEY ARE.
+  //
+  // 2. The wallet-verification poll had no `res.ok` check. On a non-2xx the
+  //    envelope still parses, `d.ok` is undefined so the success branch is
+  //    skipped, and the hint rendered in a position that reads as a
+  //    VERIFICATION RESULT. This is the only self-serve verification path and it
+  //    awards credits, so "we could not check" must not wear the same words as
+  //    "we checked and found nothing" — a collector who believes the second
+  //    re-lists at a different price, or gives up.
+  describe("/dashboard — the account panels", () => {
+    const src = stripComments(read("app", "dashboard", "page.tsx")).replace(/\/\*[\s\S]*?\*\//g, "")
+
+    it("distinguishes a failed /api/profile/me from an absent session", () => {
+      expect(src).toContain("const [meFailed, setMeFailed] = useState(false)")
+      expect(src).toContain("setMeFailed(!meRes.ok)")
+      expect(src).toContain('email ?? (meFailed ? "Account details unavailable" : "Not signed in")')
+    })
+
+    it('the "Not signed in" copy SURVIVES for the case where it is true', () => {
+      // An expired session is a real answer and must still say so.
+      expect(src).toContain('"Not signed in"')
+    })
+
+    it("the verification poll checks the status before reading the body", () => {
+      // ⚠ An earlier version compared `src.indexOf("if (!res.ok) {")` against
+      // `src.indexOf("const d = await res.json()")`. Both strings occur more
+      // than once in this 2,519-line file, so indexOf compared the WRONG
+      // occurrences and the assertion was VACUOUS — moving the guard after the
+      // parse did not red it. Caught by mutation, not by review.
+      //
+      // Pinned as a CONTIGUOUS sequence instead: the guard, then the parse, with
+      // nothing between. That cannot be satisfied by a coincidental pair
+      // elsewhere in the file.
+      const guardThenParse =
+        'if (!res.ok) {\n' +
+        '        setCheckHint("Couldn\'t check just now — this says nothing about your listing. Try again shortly.");\n' +
+        "        return;\n" +
+        "      }\n" +
+        "      const d = await res.json();"
+      expect(src).toContain(guardThenParse)
+    })
+
+    it("the no-match hint SURVIVES — a genuine miss is a real answer", () => {
+      expect(src).toContain('"No matching listing found yet."')
+    })
+
+    it("neither dashboard failure message diagnoses a cause it cannot know", () => {
+      for (const marker of ["Account details unavailable", "Couldn't check just now"]) {
+        const i = src.indexOf(marker)
+        expect(i, `${marker} must exist`).toBeGreaterThan(-1)
+        expect(src.slice(i, i + 220)).not.toMatch(
+          /too thin|not indexed|no coverage|wrong price|re-?list|lower your/i,
+        )
+      }
+    })
+  })
+
   it("neither failure message diagnoses a cause it cannot know", () => {
     // The defect these replaced was not just silence — it was a CONFIDENT WRONG
     // EXPLANATION. A replacement that guesses a different wrong cause would be

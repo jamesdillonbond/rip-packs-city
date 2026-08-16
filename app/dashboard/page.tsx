@@ -173,6 +173,12 @@ export default function ProfilePage() {
 function ProfilePageInner() {
   const search = useSearchParams();
   const [email, setEmail] = useState<string | null>(null);
+  // ⚠ /dashboard is auth-gated by proxy.ts, so a reader who sees this page IS
+  // signed in. `email` going null therefore has two very different causes, and
+  // the render collapsed them: a genuinely absent session (possible — a session
+  // can expire mid-visit) versus /api/profile/me failing. The second rendered
+  // "Not signed in" at a collector who was, on the one page that proves it.
+  const [meFailed, setMeFailed] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [resolvedDisplayName, setResolvedDisplayName] = useState<string | null>(null);
   const [bio, setBio] = useState<Bio | null>(null);
@@ -401,6 +407,7 @@ function ProfilePageInner() {
         fetch("/api/profile/activity", { cache: "no-store" }),
       ]);
       const me = meRes.ok ? await meRes.json() : { user: null };
+      setMeFailed(!meRes.ok);
       setEmail(me?.user?.email ?? null);
       setUserId(me?.user?.id ?? null);
       setResolvedDisplayName(me?.user?.display_name ?? null);
@@ -760,7 +767,9 @@ function ProfilePageInner() {
                 {resolvedDisplayName ?? bio?.display_name ?? (email?.split("@")[0] ?? "Profile")}
               </div>
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 2 }}>
-                {email ?? "Not signed in"}
+                {/* Three states, not two: an address, a read we could not make,
+                    and a genuinely absent session. Only the last may say so. */}
+                {email ?? (meFailed ? "Account details unavailable" : "Not signed in")}
               </div>
             </div>
           </div>
@@ -2288,6 +2297,17 @@ function VerifyByListingModal({
             undefined,
         }),
       });
+      // ⚠ No `res.ok` check here previously. On a non-2xx the envelope still
+      // parses, `d.ok` is undefined so the success branch is skipped, and the
+      // hint below rendered in a position that reads as a VERIFICATION RESULT —
+      // telling a collector their listing was not found when we never managed to
+      // look. This is the only self-serve verification path and it awards
+      // credits, so "we could not check" and "we checked and found nothing" must
+      // not share a message.
+      if (!res.ok) {
+        setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
+        return;
+      }
       const d = await res.json();
       if (d?.ok && d?.matched) {
         setVerified(true);
