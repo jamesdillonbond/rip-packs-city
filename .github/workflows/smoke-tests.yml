@@ -20,7 +20,28 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://www.rippackscity.com/api/smoke-test \
+          # ⚠ THE LIVE CONCIERGE PROBE RUNS ONLY ON THE SCHEDULED/DISPATCH RUN,
+          # NEVER ON PUSH. This workflow also triggers on every push to main, and
+          # with concurrent sessions pushing every couple of minutes `?concierge=1`
+          # there would mean ~720 real Anthropic calls/day. That is precisely the
+          # cost that gets a check made optional, and an optional check is not a
+          # monitor — the reason the concierge could die for fourteen days with
+          # every instrument green.
+          #
+          # Why pin it here at all: the route's own fallback window is ~09:00–09:24
+          # UTC and fires only if some caller happens to tick inside it, so the
+          # daily live probe was INCIDENTAL — and this job, the one guaranteed
+          # caller, runs at 12:11 UTC and missed it entirely. One scheduled call a
+          # day makes it deterministic for fractions of a cent.
+          URL="https://www.rippackscity.com/api/smoke-test"
+          if [ "${{ github.event_name }}" != "push" ]; then
+            URL="${URL}?concierge=1"
+            echo "Live concierge probe ENABLED (event=${{ github.event_name }})"
+          else
+            echo "Live concierge probe skipped (push event — see comment above)"
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json")
 

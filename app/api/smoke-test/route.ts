@@ -1591,6 +1591,98 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
 
     // Pinnacle concierge regression — LIVE LLM call (Sonnet + tools), gated.
     // Runs only on the daily window / ?concierge=1, never on the per-tick run.
+    // ⚠ THE ONLY HARD LIVE CONCIERGE CHECK, AND THE ONLY ONE THAT WOULD HAVE
+    // CAUGHT THE FOURTEEN-DAY OUTAGE. Added 2026-08-16.
+    //
+    // The concierge — RPC's flagship differentiator — returned a fallback on
+    // essentially every call from ~2026-08-02, and every instrument read green
+    // until Trevor found it by using the product. Two later attempts to close
+    // that both missed:
+    //   · the live probes below assert CONTENT (Pinnacle results, a LeBron
+    //     mention) and are therefore, correctly, SOFT — model output is flaky and
+    //     an empty result can be a true answer. A soft check never pages, so a
+    //     dead concierge stayed invisible even on the days they ran.
+    //   · the outcome check further up counts DEGRADED CONVERSATIONS, which is
+    //     the right idea and is now honest — but with real concierge traffic at
+    //     ~0–3/day it sits below its sample floor and returns no verdict.
+    //
+    // This check asserts the one thing that is decisive, unambiguous and NOT
+    // model-dependent: did the concierge ANSWER, or did it hand back a degraded
+    // fallback? That is exactly the shape of the outage (`concierge_unavailable`
+    // on every call), so it can be HARD without the cry-wolf cost that made the
+    // others soft.
+    //
+    // ⚠ THE SPLIT IS LOAD-BEARING. A DEGRADED CATEGORY is a hard fail — the
+    // product is broken and someone must know. A TRANSPORT failure (timeout,
+    // non-2xx, unparseable body) is `soft: true` + couldNotRun, because we cannot
+    // tell our outage from a network blip from inside the probe, and the gate
+    // keys on `soft` — a hard fail there would page on a hiccup and this repo has
+    // already paid for that (`ufc_fmv_stale_hours`).
+    //
+    // ⚠ Keyed on CATEGORY, never on the fallback copy — the same reason recorded
+    // on the outcome check: CONCIERGE_ERROR_MESSAGES is user-facing prose that
+    // will be reworded, and a copy-keyed check goes quietly vacuous while green.
+    //
+    // COST: one Anthropic call per live run, i.e. ~1/day (see wantsLiveConcierge
+    // and the scheduled `?concierge=1` in .github/workflows/smoke-tests.yml).
+    // Fractions of a cent against a flagship feature silently dying for a
+    // fortnight. It is deliberately NOT run per-tick: that would be ~720
+    // calls/day, which is how a check becomes expensive, then optional, then not
+    // a monitor at all.
+    ...(liveConcierge ? [ time(async () => {
+      const meta = {
+        name: "concierge answers rather than returning a fallback (live)",
+        endpoint: "/api/support-chat",
+        expected: "category-not-degraded",
+      };
+      const DEGRADED = [
+        "concierge_unavailable",
+        "concierge_model_error",
+        "concierge_rate_limited",
+        "concierge_overloaded",
+      ];
+      let res: Response;
+      try {
+        res = await smokeFetch(`${BASE_URL}/api/support-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
+          body: JSON.stringify({
+            message: "What is Rip Packs City?",
+            sessionId: `smoke-concierge-alive-${Date.now()}`,
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ...meta, passed: false, soft: true, couldNotRun: true, detail: `inconclusive: probe could not reach the route (${msg})`, statusCode: null, bodyExcerpt: null, notes: { inconclusive: true } };
+      }
+      const rawBody = await res.text();
+      if (!res.ok) {
+        return { ...meta, passed: false, soft: true, couldNotRun: true, detail: `inconclusive: HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawBody.slice(0, 500), notes: { inconclusive: true } };
+      }
+      const parsed = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
+      if (!parsed) {
+        return { ...meta, passed: false, soft: true, couldNotRun: true, detail: "inconclusive: unparseable body", statusCode: res.status, bodyExcerpt: rawBody.slice(0, 500), notes: { inconclusive: true } };
+      }
+      const category = String(parsed?.category ?? "");
+      const degraded = DEGRADED.includes(category);
+      return {
+        ...meta,
+        passed: !degraded,
+        detail: degraded
+          ? `CONCIERGE IS NOT ANSWERING: category=${category}. The route returns HTTP 200 with a fallback, so it looks healthy from outside — check the ANTHROPIC_API_KEY's balance and its workspace SPEND LIMIT (a 403 credit_balance presents exactly like this).`
+          : `answered (category=${category || "none"})`,
+        statusCode: res.status,
+        bodyExcerpt: degraded ? rawBody.slice(0, 500) : null,
+        notes: { category },
+      };
+    }, {
+      name: "concierge answers rather than returning a fallback (live)",
+      endpoint: "/api/support-chat",
+      expected: "category-not-degraded",
+    }) ] : []),
+
     ...(liveConcierge ? [ time(async () => {
       const meta = {
         name: "concierge resolves Pinnacle query (collectionId routing)",

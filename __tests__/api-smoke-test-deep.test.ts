@@ -604,14 +604,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 3 live-LLM probes (58 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 4 live-LLM probes (59 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(58)
+    expect(env.total).toBe(59)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",
@@ -622,5 +622,58 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
       expect(r.passed).toBe(true)
       expect(r.soft).toBe(true) // live-LLM probes are always soft — they can never page
     }
+
+    // ⚠ THE FOURTH LIVE PROBE IS THE ONE THAT CAN PAGE, AND THAT ASYMMETRY IS
+    // THE POINT — asserted here rather than left implied by the count.
+    // The three above assert CONTENT and are correctly soft (model output is
+    // flaky; an empty result can be a true answer), which is exactly why a dead
+    // concierge stayed invisible for fourteen days. This one asserts only
+    // "did it answer, or hand back a fallback" — decisive and not
+    // model-dependent — so it is HARD. If it ever acquires `soft: true` the
+    // whole live battery becomes decorative again.
+    const alive = findResult(env, "concierge answers rather than returning a fallback (live)")
+    expect(alive.passed).toBe(true)
+    expect(alive.soft).toBeFalsy()
+  })
+
+  // ⚠ THE ASSERTION THAT ACTUALLY MATTERS: reproduce the fourteen-day outage and
+  // prove this check would have caught it. Everything else about the probe is
+  // shape; this is behaviour. The outage returned HTTP 200 with a fallback body
+  // on every call, which is why it looked healthy from outside for a fortnight.
+  it("hard-fails when the concierge returns a fallback — the outage this exists to catch", async () => {
+    install(greenFixtures())
+    installSmokeFetch(
+      greenStubs([
+        {
+          // Only the liveness probe's own message; the other live probes keep
+          // their normal answers, so this isolates the one variable.
+          match: (u) => u.includes("/api/support-chat"),
+          respond: (_u, init) => {
+            const reqBody = typeof init?.body === "string" ? init.body : ""
+            if (/What is Rip Packs City/i.test(reqBody)) {
+              return {
+                body: JSON.stringify({
+                  response: "The concierge is temporarily unavailable — please try again shortly.",
+                  category: "concierge_unavailable",
+                }),
+              }
+            }
+            return { body: JSON.stringify({ response: "ok", category: "chat" }) }
+          },
+        },
+      ]),
+    )
+
+    const env = await run("?concierge=1")
+    const alive = findResult(env, "concierge answers rather than returning a fallback (live)")
+
+    expect(alive.passed).toBe(false)
+    expect(alive.soft).toBeFalsy() // HARD — it must reach scripts/smoke-gate.py
+    expect(env.allPassed).toBe(false)
+    expect(env.hardPassed).toBe(env.hardTotal - 1)
+    // The detail has to be actionable at 3am: the route answers 200 with a
+    // fallback, so the operator needs pointing at the key's spend limit rather
+    // than at the route.
+    expect(alive.detail).toMatch(/SPEND LIMIT|credit_balance/i)
   })
 })
