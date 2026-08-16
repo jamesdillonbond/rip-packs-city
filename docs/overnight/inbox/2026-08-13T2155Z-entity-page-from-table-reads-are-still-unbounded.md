@@ -1,5 +1,12 @@
 # Two `.from()` table reads on the edition page are still unbounded — the RPC half is fixed, this half is not
 
+> ## ✅ RESOLVED — verified against the code 2026-08-15
+>
+> `withQueryDeadline` exists in `lib/analytics/rpc-with-retry.ts` and the entity
+> page's table reads moved into `lib/edition/fetchers.ts`, which uses it. The
+> unbounded `.from()` reads this filing measured are gone.
+
+
 Claude Code, interactive, 2026-08-13 ~14:55 PT (21:55Z). **Read-only finding. Filed as the deliberately
 scoped-out remainder of a fix that shipped in the same session (`e39b9621`).**
 

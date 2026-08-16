@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "work through anything unresolved") — the raw-parse BAN I announced as closed had a hole in its own regex, and one site stood outside it; plus three filings were RESOLVED but still labelled OPEN
+
+**What (1 client page + 2 guards + 3 inbox closures; no DB / migration / cron / auth / FMV-math):** a triage pass over what was actually unresolved, which turned up a defect in my own work.
+
+⚠ **THE BAN WAS WEAKER THAN I ANNOUNCED IT.** `client-raw-json-parse-ratchet` matched `.then\(\s*\(\s*(\w+)\s*\)\s*=>` — **parentheses REQUIRED around the arrow parameter** — so it was blind to `r => r.json()`, the identical defect written without them. It reported a population of **ZERO** while `app/dashboard/notifications/page.tsx:70` carried exactly that shape. **I closed the class and said so; one site was standing outside the guard the whole time.** Found by opening an unrelated file, not by the guard. Parens are optional now, and the not-vacuous samples cover both forms.
+
+⚠ **A guard's own derivation decides what it can observe — this is the FOURTH instance in this session and the first one that was MINE.** The others were about scope (which files a guard walks, which FIELD it inspects); this one is about **arrow-function syntax**, one level further down than anywhere the lesson had previously bitten.
+
+⚠ **The missed site degraded correctly BY ACCIDENT, which is why nothing surfaced it.** `apiErrorResponse` happens to put an `error` field in the envelope and the next line throws on it — so a 503 became a caught error rather than a false render. A failure body **without** that field (a 500 from a layer not using the helper, an HTML error page) would fall straight through, leaving `j.subscriber` undefined and rendering a **subscribed collector as not subscribed**. Latent, not live. Now on `fetchJson`, so the accident is not load-bearing.
+
+**`client-page-fetch-honesty-ratchet` 35 → 34** — the conversion earned it, and the ratchet's no-slack assertion is what forced the number down in the same commit rather than leaving headroom.
+
+**THREE FILINGS WERE RESOLVED BUT STILL LABELLED OPEN, and a stale lead costs a whole session** (this file records R7, P2, R4 and R8 each doing exactly that). Verified against the code, then closed with the evidence:
+- **collection-analytics failed-vs-empty** — all 8 sections handled; 5 components carry a `failed` flag with distinct copy ordered before the empty branch, market-analytics already had `marketFailed`. ⚠ The 8th (`/api/ready` thin-volume) is deliberately left swallowing and that is CORRECT: `thinVolumeReady` requires the row, so a failed read **suppresses** the caveat rather than asserting one. Guarded by 14 cases incl. a whole-file sweep asserting exactly one bare swallow remains.
+- **entity-page unbounded table reads** — `withQueryDeadline` exists and the reads moved into `lib/edition/fetchers.ts`.
+- **static-ext bypass** — `proxy.ts` gates on `STATIC_ROOT_ASSETS`; the suffix test survives only as a comment warning not to reinstate it.
+
+**Deliberately NOT closed:** `series-detail` (DB lane, and its two obvious fixes are already falsified in the filing — exactly the kind that must stay open), the profile-flair backlog (self-maintained, correctly partial), and the R8 team-names filing (a do-NOT-do finding).
+
+**Verified:** `tsc` clean · primary **12,377 passed / 1,236 files**, gate 91.74/79.12/93.41/93.82 · component **1,731 passed**, 90.67/82.27/89.34/93.64 · **2 mutations on the widened ban** — the paren-less form (the shape it used to miss) and the paren-full form both red · **6-case false-positive check**: `.then(res => other.json())`, `.then(r => (r.ok ? r.json() : null))` and `.then(r => r.text())` all correctly ignored, so widening cost no precision.
+
+**Revert:** `git revert <sha>` (code) — restores the narrow regex, the unchecked parse on the notifications page, and the 35 budget. Docs/inbox closures are a separate sha. No DB unwind.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont.) — corrected the session entry's own "left open" list, which went stale within the hour
 
 **What shipped.** CLAUDE.md only. The session entry written at wrap-up listed the worker chunked-write paths as open; they were closed twenty minutes later. **A stale "still open" claim is the exact drift this file documents** — a future session reading it would either re-do the work or treat a covered path as a blind spot. Now records that both items were parked behind a tooling gap that did not exist, what the two chunk policies are, and the pinned cost of the collected-failure one (skipped moment never retried; `ok: false` while the cursor advances). Only `app/**/page.tsx` remains open.

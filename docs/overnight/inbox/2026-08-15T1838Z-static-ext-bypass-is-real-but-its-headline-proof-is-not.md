@@ -1,5 +1,13 @@
 # The static-extension bypass is REAL — but the proof it ships with is not, and the control test settles it
 
+> ## ✅ RESOLVED — verified against the code 2026-08-15
+>
+> `proxy.ts` now gates on `STATIC_ROOT_ASSETS`, an exact Set of the seven real
+> root assets. The suffix test this filing was about (`STATIC_EXT_RX`) survives
+> only as a named warning in a comment telling the next reader not to reinstate
+> it.
+
+
 Filed 2026-08-15 11:38 PT (18:38Z), Claude Code interactive, from Trevor's Windows box.
 **Read this before committing `proxy.ts`'s new `STATIC_ROOT_ASSETS` comment, the test-file
 comment, `docs/handoff-2026-08-13-static-ext-auth-bypass.md`, or the paste-ready ledger entry —

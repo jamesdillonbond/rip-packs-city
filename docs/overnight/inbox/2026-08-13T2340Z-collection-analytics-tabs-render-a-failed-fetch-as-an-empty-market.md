@@ -1,5 +1,24 @@
 # `[collection]/analytics` renders a failed fetch as an empty market — 8 sections, 1 already fixed
 
+> ## ✅ RESOLVED — verified against the code 2026-08-15
+>
+> All eight sections are handled and **guarded**. Five components carry a
+> `failed` flag with a distinct failure copy ordered BEFORE the empty branch
+> (`OrderBookCard`, `FmvHealthCard`, `PackEvCard`, `WhaleLeaderboard`,
+> `LiquidityHeatmapCard`); the market-analytics leg already had `marketFailed`.
+>
+> ⚠ The eighth — the `/api/ready` thin-volume probe — is deliberately left
+> swallowing, and that is correct rather than unfinished: `thinVolumeReady`
+> requires `row != null && sales_24h < 10`, so a failed read **suppresses** the
+> caveat instead of asserting one. Failing closed on a warning is the safe
+> direction.
+>
+> Pinned by `__tests__/collection-analytics-failed-vs-empty-guard.test.ts`
+> (14 cases), which includes a whole-file sweep asserting **exactly one** bare
+> swallow remains — so a ninth section added later reds even though it appears
+> in no list.
+
+
 **Filed** 2026-08-13 · Claude Code (interactive, test-coverage program) · **read-only finding, NOT shipped**
 **File** `app/(collections)/[collection]/analytics/page.tsx` (1,706 lines, `"use client"`)
 
