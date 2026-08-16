@@ -145,17 +145,29 @@ const CATALOG_COLS =
 // links from a held pin / wallet surface). Both map 1:1 to a render_id, so we
 // redirect them onto the canonical render before loading. wmc has 100% render_id
 // coverage for Pinnacle, so any held pin resolves.
-async function resolveNumericToRenderId(supa: any, id: string): Promise<string | null> {
+/** Sentinel distinguishing "this numeric id maps to no render" (null — a real
+ *  answer) from "we could not ask" (this — must not become a 404). A sentinel
+ *  rather than a third `ok` field keeps the two call sites' branching readable. */
+const RESOLVE_FAILED = Symbol("resolve_failed")
+
+async function resolveNumericToRenderId(
+  supa: any,
+  id: string
+): Promise<string | null | typeof RESOLVE_FAILED> {
   if (!/^\d+$/.test(id)) return null
   // edition_id is the smaller (3-digit) space; check it first.
-  const { data: byEdition } = await supa
+  const { data: byEdition, error: edErr } = await supa
     .from("pinnacle_catalog")
     .select("render_id")
     .eq("edition_id", id)
     .maybeSingle()
+  if (edErr) {
+    console.log("[pinnacle/moment] resolve_by_edition_error", edErr.message)
+    return RESOLVE_FAILED
+  }
   if (byEdition?.render_id) return byEdition.render_id as string
   // Otherwise treat it as an on-chain moment NFT id.
-  const { data: byMoment } = await supa
+  const { data: byMoment, error: mErr } = await supa
     .from("wallet_moments_cache")
     .select("render_id")
     .eq("collection_id", PINNACLE_COLLECTION_ID)
@@ -163,42 +175,74 @@ async function resolveNumericToRenderId(supa: any, id: string): Promise<string |
     .not("render_id", "is", null)
     .limit(1)
     .maybeSingle()
+  if (mErr) {
+    console.log("[pinnacle/moment] resolve_by_moment_error", mErr.message)
+    return RESOLVE_FAILED
+  }
   return (byMoment?.render_id as string) ?? null
 }
 
-async function load(rawId: string): Promise<RenderData | LegacyData | null> {
+/**
+ * Outcome of the pin read.
+ *
+ * ⚠ `ok` answers "did the READ succeed", NOT "is there such a pin". Before this
+ * existed, NONE of the reads in `load` destructured `error` at all — supabase-js
+ * RETURNS errors rather than throwing, so a statement timeout left `data`
+ * undefined, fell through `renders.length === 0` / `if (!ed)`, and returned a
+ * bare `null` that the caller answered with `notFound()`. This is the platform's
+ * shareable Pinnacle pin URL: that told a collector who had just posted the link
+ * that their pin does not exist, and handed a crawler a hard 404 for a real page.
+ * Same class fixed on /moment/[id]; the Pinnacle sibling was never swept.
+ */
+type PinLoad = { data: RenderData | LegacyData | null; ok: boolean }
+
+async function load(rawId: string): Promise<PinLoad> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa = supabaseAdmin as any
   const id = decodeId(rawId)
 
   if (isLegacyKey(id)) {
-    const { data } = await supa
+    const { data, error } = await supa
       .from("pinnacle_catalog")
       .select("render_id, character_name, set_name, variant, total_minted, fmv_usd, thumbnail_url")
       .eq("legacy_edition_key", id)
       .order("fmv_usd", { ascending: false, nullsFirst: false })
+    if (error) {
+      console.log("[pinnacle/moment] legacy_read_error", error.message)
+      return { data: null, ok: false }
+    }
     const renders = (data ?? []) as LegacyRender[]
-    if (renders.length === 0) return null
-    return { kind: "legacy", key: id, renders }
+    if (renders.length === 0) return { data: null, ok: true }
+    return { data: { kind: "legacy", key: id, renders }, ok: true }
   }
 
-  let { data: ed } = await supa
+  let { data: ed, error: edError } = await supa
     .from("pinnacle_catalog")
     .select(CATALOG_COLS)
     .eq("render_id", id)
     .maybeSingle()
+  if (edError) {
+    console.log("[pinnacle/moment] catalog_read_error", edError.message)
+    return { data: null, ok: false }
+  }
   // Numeric id (edition_id or moment NFT id) → redirect onto its render_id.
   if (!ed) {
     const resolved = await resolveNumericToRenderId(supa, id)
+    // A FAILED resolve is not an absent pin — see PinLoad.
+    if (resolved === RESOLVE_FAILED) return { data: null, ok: false }
     if (resolved) {
-      ;({ data: ed } = await supa
+      ;({ data: ed, error: edError } = await supa
         .from("pinnacle_catalog")
         .select(CATALOG_COLS)
         .eq("render_id", resolved)
         .maybeSingle())
+      if (edError) {
+        console.log("[pinnacle/moment] catalog_reread_error", edError.message)
+        return { data: null, ok: false }
+      }
     }
   }
-  if (!ed) return null
+  if (!ed) return { data: null, ok: true }
   // Canonical render_id — may differ from the incoming id when it arrived as a
   // numeric edition_id / moment NFT id and was redirected above.
   const renderId = ed.render_id as string
@@ -252,6 +296,10 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   )
   const nameByAddr: Record<string, string> = {}
   if (addrs.length > 0) {
+    // degrades-on-error: intentional — this is DECORATION. A failed username
+    // lookup leaves nameByAddr empty and the buyer/seller columns render raw
+    // addresses, which understates (the safe direction) rather than asserting
+    // anything false. It must not participate in the ok/notFound decision.
     const { data: unames } = await supa
       .from("wallet_usernames")
       .select("wallet_addr, username")
@@ -273,16 +321,19 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   )
 
   return {
-    kind: "render",
-    ed: ed as CatalogRow,
-    sales,
-    holders: Number(holdersRes.count ?? 0),
-    variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
-    scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
-    siblings,
-    fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
-    nameByAddr,
-    serialLadder,
+    data: {
+      kind: "render",
+      ed: ed as CatalogRow,
+      sales,
+      holders: Number(holdersRes.count ?? 0),
+      variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
+      scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
+      siblings,
+      fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
+      nameByAddr,
+      serialLadder,
+    },
+    ok: true,
   }
 }
 
@@ -292,7 +343,14 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const data = await load(id)
+  const { data, ok } = await load(id)
+  // ⚠ A failed read must not let a transient blip de-index a real pin.
+  if (!ok) {
+    return {
+      title: "Pinnacle edition — Rip Packs City",
+      robots: { index: false, follow: true },
+    }
+  }
   if (!data) return { title: "Pinnacle edition — Rip Packs City" }
 
   if (data.kind === "legacy") {
@@ -380,7 +438,12 @@ export default async function PinnacleMomentPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const data = await load(id)
+  const { data, ok } = await load(id)
+  // ⚠ A FAILED read must never become a 404. This is the shareable Pinnacle pin
+  // URL — the same surface class as /moment/[id], which got this fix while the
+  // Pinnacle sibling did not. `ok && !data` is a real "no such pin" and still
+  // 404s. See the PinLoad doc comment.
+  if (!ok) return <PinnacleShell><PinUnavailableCard id={decodeId(id)} /></PinnacleShell>
   if (!data) notFound()
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
@@ -790,3 +853,50 @@ const CSS = `
   .rpc-pm-pairs { grid-template-columns: 1fr; }
 }
 `
+
+/**
+ * Shown when the pin READ failed — never when the pin genuinely does not exist
+ * (that is still `notFound()`).
+ *
+ * ⚠ Deliberately NOT a 404. This is the shareable Pinnacle pin URL, so a 404 for
+ * a real pin is a hard "this does not exist" served to a collector who just
+ * posted the link and to any crawler that follows it. The metadata branch
+ * carries `robots: noindex, follow` for the same reason. Mirrors
+ * MomentUnavailableCard in app/moment/[id]/page.tsx — the Top Shot sibling that
+ * got this fix while this page was left out of the sweep.
+ */
+function PinUnavailableCard({ id }: { id: string }) {
+  return (
+    <main
+      style={{
+        maxWidth: 640,
+        margin: "0 auto",
+        padding: "64px 24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 28,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          color: "var(--rpc-text-primary)",
+        }}
+      >
+        This pin didn&apos;t load
+      </h1>
+      <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: "var(--rpc-text-secondary)" }}>
+        The catalog is under heavy load right now. This says nothing about whether the pin
+        exists — only that we couldn&apos;t read it. Reload in a moment.
+      </p>
+      <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+        {id}
+      </p>
+    </main>
+  )
+}

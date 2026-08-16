@@ -9,81 +9,21 @@
 
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import WalletProfile from "@/components/analytics/WalletProfile"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
-import type {
-  WalletDetailResponse,
-  WalletPositionTransfersResponse,
-} from "@/lib/analytics-types"
+import {
+  FLOW_ADDR_RE,
+  loadWallet,
+  loadPositionTransfers,
+  lookupUsername,
+} from "@/lib/analytics/wallets/detail-fetchers"
 
 export const revalidate = 600
 export const dynamicParams = true
 
-const FLOW_ADDR_RE = /^0x[0-9a-f]{16}$/i
-
 interface PageParams {
   params: Promise<{ address: string }>
-}
-
-async function loadWallet(addr: string): Promise<WalletDetailResponse | null> {
-  if (!FLOW_ADDR_RE.test(addr)) return null
-  try {
-    const { data, error } = await (supabaseAdmin.rpc as any)(
-      "flowty_analytics_wallet_detail",
-      { p_addr: addr }
-    )
-    if (error) {
-      console.log("[wallet/page] rpc_error", error.message)
-      return null
-    }
-    return (data as WalletDetailResponse) ?? null
-  } catch (e: any) {
-    console.log("[wallet/page] error", e?.message || e)
-    return null
-  }
-}
-
-async function loadPositionTransfers(
-  addr: string
-): Promise<WalletPositionTransfersResponse | null> {
-  if (!FLOW_ADDR_RE.test(addr)) return null
-  try {
-    const { data, error } = await (supabaseAdmin.rpc as any)(
-      "analytics_wallet_position_transfers",
-      { p_addr: addr }
-    )
-    if (error) {
-      console.log("[wallet/page] position_transfers_rpc_error", error.message)
-      return null
-    }
-    return (data as WalletPositionTransfersResponse) ?? null
-  } catch (e: any) {
-    console.log("[wallet/page] position_transfers_error", e?.message || e)
-    return null
-  }
-}
-
-// Resolve a non-hex handle (no leading 0x) to a wallet address via
-// analytics_lookup_username. Returns null when the handle has no entry
-// in wallet_usernames.
-async function lookupUsername(handle: string): Promise<string | null> {
-  try {
-    const { data, error } = await (supabaseAdmin.rpc as any)(
-      "analytics_lookup_username",
-      { p_username: handle }
-    )
-    if (error) {
-      console.log("[wallet/page] lookup_username_error", error.message)
-      return null
-    }
-    if (typeof data === "string" && FLOW_ADDR_RE.test(data)) return data.toLowerCase()
-    return null
-  } catch (e: any) {
-    console.log("[wallet/page] lookup_username_error", e?.message || e)
-    return null
-  }
 }
 
 export async function generateStaticParams() {
@@ -100,7 +40,15 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     // Username path — let the page handler resolve / 404 below.
     return { title: "Wallet — Rip Packs City" }
   }
-  const data = await loadWallet(addr)
+  const { data, ok } = await loadWallet(addr)
+  // ⚠ A FAILED read must not publish "not found", and must not let a transient
+  // blip de-index a real wallet. `noindex, follow` mirrors /moment/[id].
+  if (!ok) {
+    return {
+      title: "Wallet — Rip Packs City",
+      robots: { index: false, follow: true },
+    }
+  }
   if (!data) {
     return { title: "Wallet not found — Rip Packs City" }
   }
@@ -152,16 +100,29 @@ export default async function WalletPage({ params }: PageParams) {
   // Non-hex handle path — try to resolve as a username and redirect.
   if (!FLOW_ADDR_RE.test(addr)) {
     if (!raw || raw.startsWith("0x")) notFound()
-    const resolved = await lookupUsername(raw)
+    const { data: resolved, ok: lookupOk } = await lookupUsername(raw)
+    // ⚠ A failed LOOKUP is not an absent handle. 404ing here tells a visitor the
+    // handle does not exist because the RPC blipped — and ISR caches that.
+    if (!lookupOk) return <WalletUnavailableCard label={raw} />
     if (!resolved) notFound()
     redirect(`/analytics/wallets/${resolved}`)
   }
 
-  const [data, positionTransfers] = await Promise.all([
+  const [walletRes, transfersRes] = await Promise.all([
     loadWallet(addr),
     loadPositionTransfers(addr),
   ])
+  // ⚠ A FAILED read must never become a 404. This page is explicitly
+  // SEO-indexable and served under ISR (revalidate=600), so a single statement
+  // timeout would not 404 one request — it would CACHE that 404 for ten minutes,
+  // for every visitor and every crawler. `ok && !data` is a real "no such
+  // wallet" and still 404s. See lib/analytics/wallets/detail-fetchers.ts.
+  if (!walletRes.ok) return <WalletUnavailableCard label={addr} />
+  const data = walletRes.data
   if (!data) notFound()
+  // The transfers leg fails INDEPENDENTLY — losing a supplementary section must
+  // not take down a page whose primary read succeeded.
+  const positionTransfers = transfersRes.data
 
   const names = await resolveUsernames([addr])
   const username = names.get(addr) ?? null
@@ -214,5 +175,53 @@ export default async function WalletPage({ params }: PageParams) {
         positionTransfers={positionTransfers}
       />
     </>
+  )
+}
+
+/**
+ * Shown when a wallet READ failed — never when the wallet genuinely has no loan
+ * activity (that is a real answer and renders the normal profile) and never when
+ * the address does not exist (that is still `notFound()`).
+ *
+ * ⚠ Deliberately NOT a 404. This page is explicitly SEO-indexable and served
+ * under ISR with `revalidate = 600`, so a 404 emitted during a statement timeout
+ * is CACHED for the next ten minutes — a real, linked wallet reads as deleted to
+ * every visitor and crawler that arrives in that window. The metadata branch
+ * carries `robots: noindex, follow` for the same reason. Mirrors
+ * MomentUnavailableCard in app/moment/[id]/page.tsx.
+ */
+function WalletUnavailableCard({ label }: { label: string }) {
+  return (
+    <main
+      style={{
+        maxWidth: 640,
+        margin: "0 auto",
+        padding: "64px 24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 28,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          color: "var(--rpc-text-primary)",
+        }}
+      >
+        This wallet didn&apos;t load
+      </h1>
+      <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: "var(--rpc-text-secondary)" }}>
+        The loan archive is under heavy load right now. This says nothing about whether the
+        wallet has activity — only that we couldn&apos;t read it. Reload in a moment.
+      </p>
+      <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+        {label}
+      </p>
+    </main>
   )
 }

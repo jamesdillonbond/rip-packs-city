@@ -90,9 +90,20 @@ const APP_DIR = join(process.cwd(), "app")
  * shared module dropped those, which would have silently changed the route's
  * row order for equal-valued rows.
  *
- * The 18 that remain all hold REAL queries — there is no cheap tier left.
+ * The 17 that remain all hold REAL queries — there is no cheap tier left.
+ *
+ * 2026-08-15 (test-coverage "do all of them" pass): 18 -> 17. The
+ * /analytics/wallets/[address] page's three loaders moved to
+ * lib/analytics/wallets/detail-fetchers.ts. That extraction was not done for the
+ * ratchet — it was done because all three returned a bare `null` for BOTH "no
+ * such wallet" and "the read failed", and the page answered `notFound()` on an
+ * explicitly SEO-indexable surface served under ISR (revalidate=600), so one
+ * statement timeout CACHED that 404 for ten minutes. Moving them into lib/ is
+ * what let a behavioural test drive both branches; the ratchet entry falling off
+ * is a side effect, and this line records that the budget was lowered in the
+ * SAME commit that earned it rather than banked as slack.
  */
-const BUDGET = 18
+const BUDGET = 17
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
