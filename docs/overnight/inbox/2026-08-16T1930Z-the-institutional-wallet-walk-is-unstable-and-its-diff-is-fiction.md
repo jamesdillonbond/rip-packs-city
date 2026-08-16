@@ -90,3 +90,98 @@ produced a large, plausible, self-consistent stream of events — ~6,500 a day f
 three months — that no cadence monitor, row-count check or freshness arm could
 distinguish from real activity. **The cheapest available falsifier was one query:
 were these moments already in the wallet before?**
+
+---
+
+## ADDENDUM 2026-08-16 ~20:10Z — root cause identified, fixed in repo, NOT deployed
+
+### Root cause: `.range()` paged with no `ORDER BY`
+
+The function does **not** walk the chain. It offset-pages `wallet_moments_cache`
+in 250-row chunks with `.range()` and **no `.order()`**. Postgres guarantees no
+row order without `ORDER BY`, so across ~209 sequential pages rows land on two
+pages or on none.
+
+**Proved from the schema, not inferred.** `wallet_moments_cache` carries
+`UNIQUE(wallet_address, collection_id, moment_id)` — duplicates are impossible at
+source — and live it holds **52,120 rows / 52,120 distinct** for
+`0x4d2c9216f1dca098`. The snapshot it wrote holds **52,123 entries / 45,059
+distinct**: ~7,064 rows read twice, ~7,061 missed entirely.
+
+⚠ **The count came out within 3 of the truth** because duplicates and omissions
+roughly cancel. That is why three months of this passed every check: the walk read
+the right NUMBER of rows and the wrong SET. **An earlier version of this file said
+`moment_count` overstates the real holding — that was wrong and is corrected here.**
+
+⚠ `lib/supabase-paginate.ts` already stated the rule verbatim. This function
+hand-rolled its own loop instead of calling `fetchAllPaged`. A ratchet now
+enforces it: `__tests__/paginated-range-requires-order-ratchet.test.ts`.
+
+### Repo is fixed; production is NOT
+
+`.order("collection_id").order("moment_id")` is committed. **The edge function has
+not been redeployed, so production still runs the broken read and will keep
+appending artifact rows nightly at 06:00 UTC.** Nothing user-facing is harmed —
+both consumers (the buyback board and `/api/analytics/insider/signals`) now read
+`acquisition_method='marketplace'` only.
+
+### The deploy is blocked on tooling, not on knowledge
+
+Measured drift, deployed v27 vs repo HEAD:
+
+| | deployed v27 | repo HEAD |
+|---|---|---|
+| supabase-js import | `https://esm.sh/@supabase/supabase-js@2.45.0` | bare `@supabase/supabase-js` (needs `deno.json`) |
+| `isTransientErr` | inlined | imported from `../_shared/institutional-snapshot.ts` |
+| holdings aggregation | inlined in `captureSnapshot` | `aggregateHoldingsByCollection` from `../_shared/…` |
+| the `ORDER BY` | **absent** | **present** |
+
+So the repo carries an undeployed 2026-07-26 `_shared` refactor *on top of* the
+fix. ⚠ **`rpc-edge-fn-deploy` §4 documents the MCP fallback as `[{deno.json},{index.ts}]`
+— a two-file shape that does not cover a `../_shared/` import.** Deploying via MCP
+means inventing an upload layout (nested paths + `entrypoint_path`) that has not
+been proven here, and hand-marshalling 566 lines, which §4 explicitly warns
+against. Use the CLI, which resolves `_shared` natively:
+
+```
+npx supabase@latest functions deploy snapshot-institutional-wallets \
+  --no-verify-jwt \
+  --import-map supabase/functions/deno.json \
+  --project-ref bxcqstmqfzmuolpuynti
+```
+
+⚠ `--no-verify-jwt` is mandatory (live value is `verify_jwt:false`; the CLI
+defaults it true and would 401 every caller). ⚠ `--import-map` is mandatory
+(bare specifier).
+
+⚠ **If the CLI 401s** — §4 records both auth traps as live on Trevor's box — the
+MCP route needs `import_map_path:"deno.json"`, `verify_jwt:false`, and files at
+`snapshot-institutional-wallets/index.ts`, `_shared/institutional-snapshot.ts`,
+`deno.json`, with `entrypoint_path:"snapshot-institutional-wallets/index.ts"` so
+that `../_shared/…` resolves. **That layout is a hypothesis; verify with
+`shared-deploy-probe` before pointing it at this function.**
+
+### Verifying the deploy — and the one result that will look like a regression
+
+Per §5, a `pipeline_runs` row proves the gate opened. Then check the SET, not the
+count:
+
+```sql
+select snapshot_at,
+       array_length(moment_ids,1)                        as entries,
+       (select count(distinct x) from unnest(moment_ids) x) as distinct_ids
+from wallet_holdings_snapshot
+where wallet_address='0x4d2c9216f1dca098'
+  and collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
+order by snapshot_at desc limit 3;
+```
+
+**Fixed means `entries = distinct_ids` (~52,120).** Before the fix they differ by
+~7,064. ⚠ **`entries` alone tells you nothing** — it was already correct.
+
+⚠ **THE FIRST CORRECT RUN WILL RECORD ITS LARGEST-EVER ARRIVAL BURST (~7.5k), AND
+THAT IS THE FIX WORKING, NOT A REGRESSION.** The diff compares a now-complete set
+against yesterday's 7k-short corrupt baseline, so every row the old walk kept
+missing reads as an arrival exactly once. It should fall to single digits the
+following day, which is the real confirmation. Do not revert on the burst; the
+consumers are filtered, so it reaches nobody.
