@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. ×3 — "keep going") — Pinnacle can answer "is this one listed?" too, and the reason it could not is that 16,231 open listings carry a NULL edition_id
+
+**Closes the gap the entry below named as next.** `get_edition_listings` now covers all five published collections.
+
+⚠ **THE BLOCKER WAS NOT WHAT I WROTE IT WAS.** The previous entry excluded Pinnacle saying its asks are "render-keyed in the `pinnacle_*` parallel tables". True but not the operative reason — measured live: **all 16,231 of Pinnacle's open rows in `cached_listings_v2` carry `edition_id` NULL**, so the edition-keyed view the other collections use returns nothing for it. Had I wired Pinnacle to that view on the strength of its 16k open listings, it would have reported **"no open ask" for a collection with sixteen thousand live ones** — a false market claim at maximum scale. **A stated reason for an exclusion is worth re-deriving before you act on it, including your own from an hour ago.** ⚠ `pinnacle_listings_direct` is not the answer either — it holds **ZERO rows**, so anything built on it fails the same way silently.
+
+**What shipped.** `getPinnacleEditionListings()` in the Pinnacle router, reading **`pinnacle_catalog.floor_ask`** — the same column `searchPinnacleDeals` uses, on the same row as that render's own `fmv_usd`, so ask and FMV cannot leak across pins. 2,561 renders, 2,338 carrying a floor.
+
+⚠ **IT IS A PERIODIC SNAPSHOT AND SAYS SO.** Top Shot goes out to the marketplace on every call; this column is refreshed in bulk from the Pinnacle studio GraphQL (measured: newest update ~4 h old, **no ask older than 24 h**). Wording it like the live path would overstate it, so the note carries `floor_ask_updated_at` and calls itself a snapshot, not a live quote. Mutation-proven — changing that phrase to "the live floor right now" reds.
+
+⚠ **RENDERS ARE DELIBERATELY NOT COLLAPSED, unlike the FMV path.** `collapseRenders()` picks a representative to answer *what is this worth*, which is defensible for a value estimate across a set. **An ASK is a property of ONE pin**, so attaching the representative's floor to a render the user did not ask about is a wrong price on a specific object. Ambiguity returns candidates instead — the same rule the unified branch follows, and the character-correctness invariant the router opens with (`legacy_edition_key` is SET-level and spans 26 characters).
+
+**Also:** the same transport-vs-rows rule as every other arm — `error` decides `unavailable`, never the row count, because supabase-js RETURNS errors; a render with no ask is genuinely `none_listed`; `listings_count` stays null (no depth available); `special_serials_listed` is empty with a note saying chase serials are a Top Shot feed, so the model cannot present the absence as a Pinnacle finding.
+
+**Coverage now:** Top Shot (marketplace GQL) · All Day + Golazos (on-chain index) · **Pinnacle (per-render catalog)** · UFC (market closed, stated as closed).
+
+**Verified.** `tsc` clean; primary suite **12,299 passed / 1,233 files / 0 failures**; coverage **91.72 / 79.10 / 93.41 / 93.81** against the 91.3 / 78.6 / 93.1 / 93.4 ratchet. Three mutations — error branch removed, candidates collapsed, note claiming a live quote — each red only their own assertion.
+
+⚠ **NOT verified by HTTP round-trip** — the sandbox proxy blocks `rippackscity.com`. Every figure is a live DB measurement plus the suites.
+
+**Revert:** `git revert <sha>` — removes `getPinnacleEditionListings` and the Pinnacle branch; the other four collections are untouched. **No DB change, no migration, no cron, no auth/`proxy.ts` change, no FMV/pricing math touched** — `pinnacle_catalog` is READ.
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — pinned the Pinnacle sales↔editions bridge (the R4 column) and the AllDay badge low-ask refresher
 
 **Repo only — NOTHING APPLIED to prod.** One snapshot migration holding both live definitions (byte-identical, no-op). Pins **145 → 147** over **144 → 146** distinct fns; DB test files 143 → 145. **Unpinned scheduled SECDEF writers: 10 → 8.**
