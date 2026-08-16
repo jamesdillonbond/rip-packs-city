@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — closed the last named worker blind spot, and BOTH halves of it were parked behind a tooling gap that did not exist
+
+**What shipped.** 3 worker tests (`pack-events-ingest`, 29 → 32 cases) + one additive helper field + the worker ratchet re-seated. Test-only; **no worker source change**, no DB, cron, auth or prod change.
+
+⚠ **THE FINDING IS THAT THE PREMISE WAS WRONG, TWICE.** `vitest.workers.config.ts` had listed two items as unreachable "with a fixture alone". Both were reachable:
+- The soft-budget bail-outs were said to need a fake clock. They do not — **driving `Date.now` from the FETCH STUB** (each event fetch advances a mutable value) is deterministic and never touches `vi.useFakeTimers`, so it cannot fight the `AbortSignal.timeout` shim the suite already patches. (Done earlier this session.)
+- The chunked-write paths were said to need "a stub that fails the Nth chunk". **The sequence-aware fixture already does that** — an array payload yields one entry per `await`, so chunk N takes payload N. The only helper change needed was capturing the upsert **OPTIONS**, because `{ onConflict, ignoreDuplicates }` is what makes the replay safe and nothing in the suite could see it.
+**Both were parked behind an assumed tooling gap that a few minutes of reading disproved.** The config comment now says so, because "recorded as unreachable" is exactly the note nobody re-checks.
+
+⚠ **WHAT THE TESTS PIN: this worker runs TWO DELIBERATE CHUNK POLICIES, and the difference is the point.**
+- **A failed WRITE throws and BLOCKS THE CURSOR.** With 401 rows chunked 400 + 1 and the second chunk erroring, the first 400 are durably banked *and* `writeCursor` is never reached — so the next tick replays the whole window. That is the fix for the recorded incident where a single 1796-row upsert timed out deterministically and **permanently wedged the cursor while the cron showed green**. Advancing here would step past 401 events of which 400 landed: one silently lost purchase, forever.
+- **The replay that non-advance implies is safe ONLY because of `ignoreDuplicates` on the right conflict target** — asserted from the newly-captured options, since rows alone cannot show it. A plain insert, or `onConflict: "tx_hash"` alone, would double-count every row of the chunk that DID land.
+- **A failed LOOKUP is collected and the cursor advances anyway.** 101 rips, id-lookup chunked 100 + 1, second chunk errors: the 100 that resolved are still linked, because aborting would throw away real work.
+
+⚠ **AND THE COST OF THAT SECOND POLICY IS NOW PINNED AS A KNOWN PROPERTY.** The 101st rip's moment is skipped (*"skip rather than corrupt FK"*) and, because the cursor advanced past it, **it is never retried** — one moment permanently unattributed to its pack, and every pack-EV / pull-value surface loses that join. ⚠ **A second assertion of mine failed and the code was right again**: the run reports **`ok: false`** (it is `errors.length === 0`) *while the cursor advances*. So the operator gets a red run whose underlying work is not recoverable by acting on the red. **Reporting and recovering are separate things here** — stated plainly rather than left to be discovered during an incident.
+
+**Ratchet re-seated in the SAME pass that measured the drift** — 84.4/71.2/83.2/87.5 → **85.1/72.1/83.8/88.1** against actuals 85.59/72.61/84.25/88.53, back to the ~0.4pt band. "Keep the buffer" is how the component gate reached ~13 points.
+
+**Verified.** 9 mutations, each red: chunking removed · cursor advancing despite the throw · `ignoreDuplicates` dropped · wrong conflict target · write error swallowed · lookup failure made fatal · lookup errors swallowed · unresolved rip given a NULL FK instead of a skip · lookup chunking removed. Full primary suite **12,380 passed / 1,236 files**; worker gate **376 passed**; `tsc` clean.
+
+**Revert:** `git revert <sha>` — test + config only, nothing to unwind.
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — session wrap-up) — folded the session's durable lessons into CLAUDE.md, incl. FIVE new mutation-survivor categories and the predicate trap that defined the whole workstream
 
 **What shipped.** Docs only — CLAUDE.md. No code, DB, migration, cron, auth or prod change.
