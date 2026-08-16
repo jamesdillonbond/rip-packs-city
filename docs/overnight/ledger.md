@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — "keep going") — the rest of the rewards sweep, and my own open question turned out to rest on a FALSE PREMISE
+
+**What shipped.** `app/pricing/page.tsx`, `app/dashboard/page.tsx`, `app/profile/edit/ProfileEditClient.tsx`, plus a new self-retiring guard. **No DB change.** No new Sentry issues from today's three earlier pushes (`firstSeen:-6h` → none).
+
+⚠ **I HAD ASKED TREVOR WHETHER TO TAKE `/rewards` DOWN. IT HAS BEEN A HARD 404 THE WHOLE TIME** — `app/rewards/layout.tsx` calls `notFound()` unconditionally. **The question was built on an assumption I never checked**, and checking it took one `cat`. What that changes: the risk was never "should we hide the page", it was that **surfaces around it still advertised a programme nobody could reach**.
+
+**Three live surfaces, all promising an unshipped programme:**
+- **`/pricing`** — a bucket titled "Concierge + rewards" offering *"earn Status + Credits as you use RPC"* and *"earns 500 Credits"*, on the page whose entire job is to say what you get for money.
+- **`/dashboard`** — the wallet-verify flow used *"earning **+500 credits**"* as its incentive.
+- **`/profile/edit`** — *"Borders and banners are equipped from [Rewards]"*, **linking to the 404**. ⚠ **19 of 20 collectors have no cosmetic equipped**, so it was a dead end for essentially everyone who read it. The line now renders ONLY for someone who already has one, where it is purely descriptive.
+
+**Credits still accrue server-side** (`resolve_wallet_challenge_match` pays 500 on a verified wallet). Accruing silently is fine; advertising is not — same call as the `/api/rewards/track` accrual kept this morning.
+
+⚠ **THE GUARD CAUGHT A REAL SITE I HAD MISSED, ON ITS FIRST RUN.** I fixed the challenge INSTRUCTION copy and left the SUCCESS confirmation — *"✓ Wallet verified — +500 credits earned"* — which is the line more people actually read, since it appears only after they complete the flow. **Fixing the pitch and leaving the receipt is the natural half-sweep**; a directory-wide guard is what finds the other half.
+
+⚠ **THE GUARD RETIRES ITSELF, AND GETTING THAT RIGHT TOOK A SECOND PASS.** Its precondition is READ FROM THE PRODUCT — it enforces only while `app/rewards/layout.tsx` still calls `notFound()` — so the day rewards ships it stops enforcing on its own. ⚠ **The first version asserted `rewardsIsHidden === true`, which HARD-FAILS on launch day**: a guard written to protect the launch would have reddened CI *at* the launch, the exact outcome its own header promised to avoid. Found by MUTATING `notFound()` out, not by review. It now pins the **DETECTOR** (reads the real file; discriminates; a COMMENTED-OUT `notFound()` correctly reads as not-hidden) rather than the current state — so a detector that silently broke cannot leave every case skipping while the guard reports green.
+
+⚠ Comments are stripped, **required not tidy**: the comments explaining these very removals quote the removed copy verbatim, so the fix would document itself into a violation.
+
+**Verified.** `tsc` clean · primary **EXIT 0** (91.76/79.20/93.47/93.83) · component **EXIT 0** (90.81/82.29/89.41/93.75) · 4 mutations: pricing re-advertises → RED, dashboard receipt returns → RED, a link to the 404 → RED, and **rewards ships → 2 passed / 2 SKIPPED (green)**.
+
+**Revert:** `git revert <sha>` — restores the pricing bullets, the credits promises and the /rewards link. Nothing to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — `fmv-recalc` had written ZERO rows for 12.4 h, cursor pinned at offset 0, killed by ONE unretried chunk fetch; and the filed remedy for it is REFUTED
 
 **What shipped:** `lib/analytics/rpc-with-retry.ts` (new `queryWithRetry`, shared `retryLoop`) + `app/api/fmv-recalc/route.ts` (step-1a and step-1b retried) + 5 tests. No DB, migration, cron, auth, hot-wallet — **and no FMV pricing-MATH change**: this changes whether the sweep runs at all, not what any price is.
