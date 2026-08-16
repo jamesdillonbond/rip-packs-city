@@ -258,6 +258,112 @@ describe("client pages — a failed read is not an empty result", () => {
     })
   })
 
+  // ── SITE 5: /[collection]/profile/[username] (added 2026-08-15) ───────────
+  //
+  // Found by CENSUS rather than by hand-picking: of the 18 `"use client"`
+  // page.tsx files that both fetch and carry claim-copy, this one had the worst
+  // bare-swallow density — 9 catch blocks, 8 of them `catch {}` / `.catch(() =>
+  // {})`. It is a PUBLIC page about a named collector, which is what makes the
+  // claims expensive.
+  //
+  // Four sites, three legs:
+  //
+  //   • the trophy read → three empty slabs, i.e. "this collector pinned
+  //     nothing", plus "· 0 / 3 TROPHY MOMENTS" in the headline.
+  //   • the sniper read → "No live deals available right now." (a MARKET claim).
+  //   • the sparkline's own read → "No FMV history yet for this wallet."
+  //
+  // ⚠ THE USEFUL NEGATIVE: the wallet-derived stats were ALREADY SAFE and are
+  // deliberately left alone. `totalFmv` / `totalMoments` / `totalBadges` each
+  // reduce to 0 on a failed read, but every render site gates on `> 0` and emits
+  // an em-dash, so no false $0 was ever published. That safety is a property of
+  // the CURRENT call sites rather than of the data, so it is pinned below — a
+  // later refactor that renders one of them unconditionally would reintroduce
+  // exactly the false-zero this page never had.
+  describe("/[collection]/profile/[username] — three legs, three failures", () => {
+    const path = ["app", "(collections)", "[collection]", "profile", "[username]", "page.tsx"] as const
+    // Block comments stripped locally, same reason as site 4: this page explains
+    // each fix by quoting the copy it guards.
+    const src = stripComments(read(...path)).replace(/\/\*[\s\S]*?\*\//g, "")
+
+    it("tracks failure per leg and clears it on re-fetch", () => {
+      expect(src).toContain("const [failed, setFailed] = useState({ trophies: false, sniper: false })")
+      // Two independent resets — the two legs live in different effects, so one
+      // shared reset would leave whichever effect did not re-run stuck.
+      expect(src).toContain("setFailed(function(f) { return { ...f, trophies: false }; })")
+      expect(src).toContain("setFailed(function(f) { return { ...f, sniper: false }; })")
+    })
+
+    it("sets each flag on BOTH the null-body path and the thrown path", () => {
+      for (const leg of ["trophies", "sniper"]) {
+        const setter = `setFailed(function(f) { return { ...f, ${leg}: true }; })`
+        // Two occurrences: the `if (!data)` guard and the `.catch`. One alone
+        // leaves half the failure modes rendering as an answer.
+        const n = src.split(setter).length - 1
+        expect(n, `${leg} must flag on both the null body and the catch`).toBeGreaterThanOrEqual(2)
+      }
+      // ⚠ Deliberately NOT asserting "no bare swallow remains on this page".
+      // Three legs still swallow — `bio`, `saved-wallets`, and the avatar-change
+      // POST — and that is correct, not unfinished: none of them backs a claim.
+      // A missing tagline or avatar renders as absence, and every wallet-derived
+      // stat is `> 0`-gated (pinned below). A blanket assertion here would have
+      // described work this change did not do, and the first version of this
+      // test did exactly that — it failed against the finished page.
+    })
+
+    it("the sparkline card distinguishes a failed read from a wallet with no history", () => {
+      expect(src).toContain("const [loadFailed, setLoadFailed] = useState(false)")
+      expect(src).toContain("setLoadFailed(false)")
+      expect(src).toContain("if (!data) { setLoadFailed(true); return; }")
+      expect(src).toContain(".catch(function() { setLoadFailed(true); })")
+    })
+
+    it("every failure branch precedes its empty branch", () => {
+      // Ordering is the whole fix: a failed read leaves each list empty, so an
+      // emptiness test placed first swallows the failure silently.
+      expect(src.indexOf("loadFailed ?")).toBeLessThan(src.indexOf("points.length === 0 ?"))
+      expect(src.indexOf("failed.sniper ?")).toBeLessThan(src.indexOf("sniperDeals.length === 0 ?"))
+      expect(src.indexOf("failed.trophies ?")).toBeGreaterThan(-1)
+      expect(src.indexOf("failed.trophies ?")).toBeLessThan(src.indexOf("trophies.map("))
+    })
+
+    it("the empty-state copy SURVIVES — an empty case is still a real answer", () => {
+      expect(src).toContain("No FMV history yet for this wallet.")
+      expect(src).toContain("No live deals available right now.")
+    })
+
+    it("withholds the trophy count on failure instead of publishing 0 / 3", () => {
+      expect(src).toContain('failed.trophies\n            ? "NBA TOP SHOT COLLECTOR"')
+      // ...and still publishes it on the healthy path.
+      expect(src).toContain('" / 3 TROPHY MOMENTS"')
+    })
+
+    it("the wallet-derived stats stay gated on > 0, so a failed read cannot print $0", () => {
+      // The negative result from this sweep, pinned. Each of these reduces to 0
+      // when the saved-wallets read fails; the `> 0` gate is the only thing
+      // between that and a public profile claiming a collector holds nothing.
+      for (const stat of ["totalFmv", "totalMoments", "totalBadges"]) {
+        expect(src, `${stat} must not be rendered unconditionally`).toMatch(
+          new RegExp(`${stat} > 0 \\?`),
+        )
+      }
+    })
+
+    it("no failure message diagnoses a cause it cannot know", () => {
+      for (const marker of [
+        "Couldn&apos;t load this trophy case just now.",
+        "Couldn&apos;t load live deals just now.",
+        "Couldn&apos;t load FMV history just now.",
+      ]) {
+        const i = src.indexOf(marker)
+        expect(i, `${marker} must exist`).toBeGreaterThan(-1)
+        expect(src.slice(i, i + 260)).not.toMatch(
+          /too thin|not indexed|no coverage|try a (longer|different)|lower your/i,
+        )
+      }
+    })
+  })
+
   it("neither failure message diagnoses a cause it cannot know", () => {
     // The defect these replaced was not just silence — it was a CONFIDENT WRONG
     // EXPLANATION. A replacement that guesses a different wrong cause would be

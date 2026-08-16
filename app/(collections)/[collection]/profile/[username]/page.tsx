@@ -357,14 +357,20 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
   const { wallet, label } = props;
   const [points, setPoints] = useState<WalletFmvPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(function() {
     if (!wallet) return;
     setLoading(true);
+    setLoadFailed(false);
     fetch("/api/profile/portfolio-history?wallet=" + encodeURIComponent(wallet) + "&days=30")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
-        const rows = (data?.snapshots ?? []) as WalletFmvPoint[];
+        // ⚠ `data?.snapshots ?? []` collapsed a FAILED read into an empty
+        // series, and the empty branch says "No FMV history yet for this
+        // wallet." — a claim about the wallet, manufactured from our outage.
+        if (!data) { setLoadFailed(true); return; }
+        const rows = (data.snapshots ?? []) as WalletFmvPoint[];
         setPoints(rows.map(function(r) {
           return {
             snapshot_date: r.snapshot_date,
@@ -373,7 +379,7 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
           };
         }));
       })
-      .catch(function() {})
+      .catch(function() { setLoadFailed(true); })
       .finally(function() { setLoading(false); });
   }, [wallet]);
 
@@ -409,6 +415,12 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
         {loading ? (
           <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div className="rpc-skeleton" style={{ width: "90%", height: 14 }} />
+          </div>
+        ) : loadFailed ? (
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
+            Couldn&apos;t load FMV history just now.
+            <br />
+            This says nothing about the wallet&apos;s history.
           </div>
         ) : points.length === 0 ? (
           <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>
@@ -481,6 +493,12 @@ export default function ProfilePageV6() {
   const [loading, setLoading] = useState(true);
   const [sniperLoading, setSniperLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
+  // Per LEG, not one flag: these endpoints fail independently, and a single flag
+  // would blank the trophy case whenever the sniper feed hiccuped. Same shape as
+  // /alerts. Only the legs that back a CLAIM need one — `bio` and `wallets` are
+  // already safe, because every stat derived from wallets is gated on `> 0` and
+  // renders an em-dash rather than a manufactured $0.
+  const [failed, setFailed] = useState({ trophies: false, sniper: false });
 
   // Check if the current user owns this profile
   useEffect(function() {
@@ -494,20 +512,25 @@ export default function ProfilePageV6() {
   useEffect(function() {
     if (!username) return;
     setLoading(true);
+    // Cleared per run, or a recovered profile stays stuck on the failure copy.
+    setFailed(function(f) { return { ...f, trophies: false }; });
 
     const enc = encodeURIComponent(username);
 
     const trophyP = fetch("/api/profile/trophy?username=" + enc)
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
-        if (!data) return;
+        // A null body is a FAILED read, not an empty case. Left unflagged it
+        // rendered three empty slabs plus "0 / 3 TROPHY MOMENTS" in the headline
+        // — a claim about what this collector has curated, on their public page.
+        if (!data) { setFailed(function(f) { return { ...f, trophies: true }; }); return; }
         const slots: (TrophyMoment | null)[] = [null, null, null];
         (data.trophies ?? []).forEach(function(t: TrophyMoment) {
           if (t.slot >= 1 && t.slot <= 3) slots[t.slot - 1] = t;
         });
         setTrophies(slots);
       })
-      .catch(function() {});
+      .catch(function() { setFailed(function(f) { return { ...f, trophies: true }; }); });
 
     const bioP = fetch("/api/profile/bio?ownerKey=" + enc)
       .then(function(r) { return r.ok ? r.json() : null; })
@@ -530,13 +553,16 @@ export default function ProfilePageV6() {
   // Fetch sniper deals
   useEffect(function() {
     setSniperLoading(true);
+    setFailed(function(f) { return { ...f, sniper: false }; });
     fetch("/api/sniper-feed?limit=3")
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
-        if (!data?.deals) return;
+        // "No live deals available right now." is a claim about the MARKET.
+        // A failed read must not be allowed to make it.
+        if (!data?.deals) { setFailed(function(f) { return { ...f, sniper: true }; }); return; }
         setSniperDeals(data.deals.slice(0, 3));
       })
-      .catch(function() {})
+      .catch(function() { setFailed(function(f) { return { ...f, sniper: true }; }); })
       .finally(function() { setSniperLoading(false); });
   }, []);
 
@@ -590,7 +616,12 @@ export default function ProfilePageV6() {
           </div>
         )}
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
-          {"NBA TOP SHOT COLLECTOR \u00b7 " + filledCount + " / 3 TROPHY MOMENTS"}
+          {/* The trophy count is withheld when the read failed \u2014 publishing
+              "0 / 3" would state that this collector has curated nothing. The
+              COLLECTOR label still stands: it does not depend on that read. */}
+          {failed.trophies
+            ? "NBA TOP SHOT COLLECTOR"
+            : "NBA TOP SHOT COLLECTOR \u00b7 " + filledCount + " / 3 TROPHY MOMENTS"}
         </div>
         {(bio?.twitter || bio?.discord) && (
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>
@@ -669,6 +700,15 @@ export default function ProfilePageV6() {
             })}
             <p className="rpc-label" style={{ marginTop: 8 }}>LOADING TROPHY CASE&hellip;</p>
           </div>
+        ) : failed.trophies ? (
+          // Three empty slabs read as "this collector pinned nothing", which is a
+          // statement about them rather than about us. The failure branch has to
+          // precede the render, not sit beside it.
+          <div style={{ ...cardStyle, textAlign: "center", padding: "32px 20px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
+            Couldn&apos;t load this trophy case just now.
+            <br />
+            This says nothing about what they&apos;ve pinned &mdash; try again shortly.
+          </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             {trophies.map(function(trophy, i) {
@@ -734,6 +774,10 @@ export default function ProfilePageV6() {
               return <div key={i} className="rpc-skeleton" style={{ width: w + "%", maxWidth: 400, height: 12 }} />;
             })}
           </div>
+        ) : failed.sniper ? (
+          // Ordering is what makes this non-inert: an empty-length check first
+          // would swallow the failure, since a failed read leaves the list empty.
+          <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>Couldn&apos;t load live deals just now.</div>
         ) : sniperDeals.length === 0 ? (
           <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>No live deals available right now.</div>
         ) : (
