@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — pinned the FMV thin-guard and the offers backstop, and a mutation disproved a claim in my own test comment
+
+**Repo only — NOTHING APPLIED to prod.** One snapshot migration holding both live definitions (byte-identical, no-op to apply). Pins **143 → 145** over **142 → 144** distinct fns; DB test files 141 → 143. **Unpinned scheduled SECDEF writers: 12 → 10.**
+
+**`refresh_topshot_thin_fmv_editions`** (`30 8 * * *`) — an **FMV HONESTY instrument**: the Top Shot editions whose published FMV is inflated against what the market paid (THIN = <15 sales/90 d, AND FMV >1.5× the 90-day median). **Those two constants ARE the definition**, so both are pinned **on their boundaries** — 15 sales is not thin, exactly 1.5× is not flagged. A fixture at 5 sales and 3× passes under any nearby constant and asserts almost nothing. ⚠ **It TRUNCATEs and rebuilds**, which is why it needed a pin more than most: a rebuild inserting nothing leaves the table EMPTY, and empty reads exactly like *"no edition has an unsupported FMV"* — the most reassuring possible answer, produced by a broken instrument.
+
+**`raise_edition_offers_from_chain`** (`34 * * * *`) — the backstop feeding `edition_offers.highest_offer`, the column best-offer displays read. **RAISE-ONLY**: a backstop sees a partial chain view, so lowering a value the primary writer set would **delete a real offer from every surface showing it**. Also pins that **serial/subedition offers are EXCLUDED** — those are bids on one specific serial, and folding one into the edition-level best offer publishes a number nobody is bidding for the edition, which would be the *largest* number on the page.
+
+⚠ **A MUTATION DISPROVED A CLAIM IN MY OWN COMMENT, and the correction is the durable part.** I wrote that raise-only was enforced by "two mechanisms… pinned separately". **It is not, and it cannot be.** The `WHERE EXCLUDED.highest_offer > COALESCE(existing,0)` guard is load-bearing; the `GREATEST(...)` in the SET is **redundant while that guard exists** — the guard only admits rows where EXCLUDED > existing, for which `GREATEST` is EXCLUDED by definition. Replacing it with a plain assignment changes **nothing observable** and the pin stays green. Belt-and-braces is fine to keep; **describing it as a second enforced invariant is not**, because a future reader would trust a protection no test can detect the loss of. Both the test header and the PINS comment now say which is which, and what would make `GREATEST` load-bearing again.
+
+⚠ **One of my mutations was INVALID and I nearly filed it as a surviving one:** I "removed" the TRUNCATE by replacing it with `//noop` — a **JS** comment in a **SQL** file, so the script failed to parse rather than running without the TRUNCATE, and my `grep -c 'ASSERT FAILED'` counted 0. **Grepping only for assertion failures hides a mutation that broke the harness instead of the behaviour.** Redone with `--`: caught.
+
+**Verified:** all **143** DB test files pass on a throwaway `postgres:16`; `tsc` clean; 7 mutations run, 5 caught, 1 invalid-then-caught, 1 genuinely surviving and documented rather than papered over.
+
+**Revert:** `git revert <sha>` — removes two `.sql` tests, the snapshot migration file, and two PINS entries. **Nothing to unwind in prod.**
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — `/admin/rewards` checked only 401, so a 500 rendered "Nothing waiting to ship." over a real redemption queue; and the object-shaped-rejection filing is CLOSED by measurement
 
 **What shipped.** A `loadFailed` gate on `app/admin/rewards/page.tsx` + 4 pinning cases, and `docs/overnight/inbox/2026-08-16T0025Z-…` marked **RESOLVED**.
