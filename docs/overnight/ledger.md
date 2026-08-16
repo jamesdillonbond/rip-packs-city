@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — two documented endpoints publish a hard 0 for a count they failed to read (LATENT, and a mutation corrected which half of my fix mattered)
+
+**What shipped.** `app/api/overview-stats/route.ts` + `app/api/badges/route.ts` publish **null** for an unread count, plus `__tests__/api-count-reads-are-null-not-zero.test.ts`.
+
+⚠ **STATED PLAINLY: BOTH ARE LATENT, NOT LIVE.** No in-repo consumer renders `overview-stats`' fields, and the one consumer of `/api/badges` reads `json.editions` and ignores `meta.total`. Fixed because both are documented endpoints whose field names promise a measurement — the reasoning that fixed `meta.total_rows` — **not** because a surface was observed lying. Saying so is the point; this file's own rule is that a filed finding is a hypothesis.
+
+**The trap.** supabase-js RETURNS errors rather than throwing, so a failed count **resolves** with `{ count: null, error }`. `overview-stats` had the sharpest version: it already used `Promise.allSettled` *deliberately* — its own comment records that one rejection in `Promise.all` once "sent the whole overview to 0/0/$0", landing Top Shot on an all-zero KPI strip. **That fix bounds the blast radius and does nothing about the failing leg asserting "there are none", because the realistic failure is not a rejection at all.** On `badges` the count is the EXPENSIVE half (`count: "exact"`, which is why the route logs elapsed time), so it is the likelier of the two to time out — and `total` is a pagination contract, so a 0 tells a caller there is nothing to page through while `editions` is non-empty in the same response.
+
+⚠ **A MUTATION CORRECTED MY FRAMING, second time this session.** Both routes branch on `error` before falling back, and that branch is **REDUNDANT** — measured across every shape supabase-js produces (`{null,error}` → null, `{0,null}` → 0, `{7,null}` → 7), identical with and without it, because a failed count nulls `count` too. **The load-bearing change is `?? 0` becoming `?? null`.** Kept as intent, documented as not-the-mechanism, and asserted as a composite rather than implying the branch does the work.
+
+⚠ **I also edited the wrong function's shape first** — `pinnacleStats` uses `Promise.all` (raw `{count,error}`) while `standardStats` uses `allSettled` (wrapped), and one helper cannot serve both without sniffing for `.status`. Two helpers, deliberately.
+
+Verified: `tsc` clean · 4 new cases green · 3 mutations, 2 redding only their own cases and the third recorded above · the allSettled isolation property pinned so the fix cannot cost it.
+
+**Revert:** `git revert <code-sha>`; then delete `__tests__/api-count-reads-are-null-not-zero.test.ts`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — /dashboard/history and /dashboard/packs both told a collector they have verified no wallets, out of the same copy-pasted failed read
 
 **What shipped.** `lib/wallet/verified-wallets.ts` (new) + both pages wired onto it, plus `__tests__/lib-verified-wallets-failed-vs-empty.test.ts`.
