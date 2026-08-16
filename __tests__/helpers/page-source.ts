@@ -41,6 +41,34 @@ import { join } from "node:path"
 // current ordering assertion is within one file. If you add one that spans the
 // shell and the client, read the single file you mean instead.
 
+// ── A META-GUARD FOR THIS CLASS WAS PROTOTYPED, MEASURED AND REJECTED ───────
+//
+// The obvious next step is a guard that fails any test hard-coding an
+// `app/**/page.tsx` whose directory also holds a `*Client.tsx`. It was built and
+// run: it produces FALSE POSITIVES and would have made three correct guards
+// wrong.
+//
+// `[collection]/pack/[id]/` contains `PackLifecycleClient.tsx`, but that page was
+// never converted — it is a SERVER page that still holds all of its own logic
+// (generateMetadata, its own reads) and imports client SUBCOMPONENTS as children.
+// Routing `metadata-catch-branch-is-not-a-404`,
+// `metadata-failed-read-vs-absent-guard` and `server-pages-error-vs-absent-guard`
+// through `pageSource` would concatenate an unrelated client child into their
+// source, changing what their `not.toContain` assertions even mean.
+//
+// "Directory has a *Client.tsx" does not imply "this page was split", and the
+// difference is not decidable from the file layout — same shape as the rejected
+// OG headline-count guard, where the defect was not decidable from the card's own
+// source. Do not rebuild it.
+//
+// What makes that acceptable: for a PRESENCE assertion the stale path fails LOUD
+// (red CI, which is how this class was found). The genuinely silent case is an
+// ABSENCE assertion on a client page, which would pass vacuously against a thin
+// shell — that population was swept on 2026-08-16 and is fully routed through
+// this helper. Re-run the sweep if you add one:
+//   grep for `.not.toContain(` / `.not.toMatch(` in a test that reads a
+//   `"use client"` page.tsx, and route it through `pageSource`/`readSite`.
+
 /** Absolute paths that together constitute the page: `page.tsx` + sibling `*Client.tsx`. */
 export function pageSourceFiles(dirAbs: string): string[] {
   const page = join(dirAbs, "page.tsx")
