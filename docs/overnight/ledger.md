@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — session wrap-up) — folded this thread's lessons into CLAUDE.md and corrected two claims it already made
+
+**What shipped.** `CLAUDE.md` only — a session entry plus five canonical corrections. No code, DB, migration, cron, auth, hot-wallet or FMV change; docs-only, so no deploy.
+
+**Two CORRECTIONS to things the file already asserted, which is the part worth the space:**
+- ⚠ **"all 26 `/insights` pages bound their read, unbounded count ZERO"** was true of the PAGES and wrong about the system: `readBoardOrLive` bounds only its live leg, and `readBoardSnapshot` — called TWICE around it — was unbounded. **A guard that checks the caller for an approved primitive says nothing about the primitive's own legs.**
+- ⚠ **The `?? 0`-on-a-count bullet implied `Promise.allSettled` was protective.** It is not: a failed supabase count RESOLVES, so `fulfilled` is true and the `??` still publishes a measured zero.
+
+**Three additions:** instances 13–14 of the account-claim sub-class (the copy-pasted `saved-wallets` loader, plus the `try/finally`-with-no-`catch` second path that is invisible in a diff); instances 4–5 of the count trap, both LATENT and labelled so; and the client-page conversion workstream with its **measured** cost — a conversion moves `% Funcs` DOWN, which is the axis with the least room.
+
+⚠ **Also recorded: a ratchet is the one constant where "take mine" and "take theirs" are BOTH silently wrong.** Two sessions lowered the same budget by their own conversions only (32 and 31); the truth was 30. It is a COUNT of a shared population — re-derive it from the failing no-slack assertion.
+
+**Ratchet numbers refreshed from `const BUDGET`, not from prose:** client-page gate **30**, fetch-honesty **33**, collapse **39**, server-page **8** — with the instruction to read them off the tests, since this is exactly the drift a docs pass exists to catch.
+
+**Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-08-16 · DOCS (Claude Code, interactive, cont. — "keep going") — the queued candy-editions `maxDuration` bump shipped 11 days ago; the lever is EXHAUSTED and the route is not the defect
 
 - **What.** Filed `docs/overnight/inbox/2026-08-16T1545Z-candy-editions-the-maxDuration-lever-is-EXHAUSTED-not-unshipped.md`. Docs-only; nothing shipped, no DB or prod change.
