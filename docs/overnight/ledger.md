@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. ×6 — "keep going") — swept the rest of the estate for the dual-key defect: 5 name-based `editions` lookups, 1 genuine, and the twins' FMV turns out to be frozen ~63 days
+
+**Followed the canonical-edition bug out of my own tool** by enumerating every caller that resolves `editions` by NAME — the only shape that can return both key conventions (an `id`/`external_id` equality lookup returns one row and is not at risk). **Five sites; one real defect.**
+
+⚠ **THE SEVERITY FINDING, which is what makes this worth more than tidiness: TOP SHOT'S TWIN ROWS ARE NOT MAINTAINED.** Measured live over `fmv_current`:
+
+| rows | priced | mean age | max age | older than 30 d |
+|---|---|---|---|---|
+| **twins** (UUID-keyed) | 6,426 | **63.4 days** | 75.0 | **6,263** |
+| canonical (int-keyed) | 13,211 | **1.2 days** | 7.0 | **0** |
+
+The FMV recalc prices canonical rows only. So a twin is not merely a duplicate — **it is a duplicate carrying a two-month-old price**, and any feature keyed to one silently operates on frozen data.
+
+**The one genuine defect: `/api/edition-search`** — `ilike(player_name)`, `limit(10)`, no collection filter, no predicate. It backs the **alert-create modal**, where the two rows are indistinguishable on screen, so a collector picking the twin would create a price alert against an FMV that stopped updating ~63 days ago: **an alert that never fires correctly, with nothing on any surface to say why.** ⚠ **Reported honestly as LATENT, not as an incident** — `fmv_alerts` and `watchlist` are both **0 rows**, so nobody has hit it. It would have bitten the first user who did.
+
+⚠ **THE FIX ORDER MATTERS AND THE OBVIOUS ONE IS WRONG.** De-duplicating *after* a `.limit(10)` returns FEWER than ten rows to the modal. The route now over-fetches 30, de-duplicates, then caps at 10 — and because the route is not collection-scoped it uses the **row-aware** variant, judging each row by its own `collection_id` (the slug form would either readmit the twins or delete every All Day / Golazos / UFC / Candy row).
+
+**The other four were checked and are NOT defects** — recorded so nobody re-opens them: `fmv-distribution` and `get_edition_listings` are the two I fixed earlier today; `teamBadgeFilter` builds a membership SET over ids the caller already holds; and the alert-subscription team resolver selects `team_name` alone into a `new Set`, where duplicates collapse. ⚠ **My sweep script flagged all five, including my own fix** — its 900-character scan window truncated before reaching the de-dup call. **A grep-shaped sweep is a search heuristic, not a defect count** — third time this session that distinction has mattered.
+
+⚠ **A MOCK THAT IGNORED THE PARAMETER UNDER TEST MADE ITS OWN ASSERTIONS DECORATION.** Two mutations initially survived. One was my own malformed patch (it appended a statement instead of removing the de-dup). The other was real and sharper: `api-edition-search.test.ts`'s supabase stub implemented `limit: () => b`, **discarding the argument**, so it returned the whole fixture no matter what the route asked for — meaning "cap before de-dup" changed nothing observable and the over-fetch property could not be tested at all. The stub now honours `.limit(n)`. **When a mutation on a parameter survives, suspect the mock before the assertion.**
+
+**Verified.** `tsc` clean; primary suite **12,354 passed / 1,236 files / 0 failures**; coverage **91.73 / 79.11 / 93.41 / 93.82** against the 91.3 / 78.6 / 93.1 / 93.4 ratchet. Three mutations — de-dup removed (reproducing the bug), cap before de-dup, predicate applied to every collection — each red only their own assertions.
+
+⚠ **NOT verified by HTTP round-trip** — the sandbox proxy blocks `rippackscity.com`.
+
+**Revert:** `git revert <sha>` — restores the duplicate rows in the alert-create search. **No DB change, no migration, no cron, no auth/`proxy.ts` change, no FMV/pricing math touched.**
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "proceed") — `/dashboard` told a signed-in collector they were NOT SIGNED IN, on the one page that proves otherwise; and the wallet-verification poll reported its own outage as "no matching listing"
 
 **What (1 client page + the shared guard; no DB / migration / cron / auth / FMV-math):** closed out the page census's last two entries. **`[collection]/market` was verified CLEAN and deliberately NOT touched** — a useful negative that confirms CLAUDE.md's standing claim: its main read has a proper `loading : error : empty` ladder, `filterListingsByOwned` already no-ops on `editionStats.size === 0` rather than filtering wrongly, and the thin-volume notice requires `healthRow != null`, so a failed read SUPPRESSES the warning instead of asserting one. The only residual is a silently-inert "Owned" chip, milder than any fix's risk.
