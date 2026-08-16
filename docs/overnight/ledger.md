@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont.) — backticks in a `git commit -m` message are command substitution, and they delete the word SILENTLY
+
+**What shipped.** CLAUDE.md only, plus an `--amend` + `--force-with-lease` of the tip I had pushed seconds earlier.
+
+⚠ **THE TRAP.** Bash expands `` `over` `` inside a DOUBLE-quoted string, so a commit message explaining that a guard *"applies to `over` ONLY"* committed as **"applies to  ONLY"**. Five identifiers vanished from one message. **It still reads like prose**, so nothing looks wrong until someone greps the history for a symbol that is no longer there — and while `command not found` goes to stderr, the commit itself SUCCEEDS, so the exit status gives nothing away. Recorded next to the existing heredoc rules, because this is the same class the file already documents for SQL and patch scripts: **write any message containing backticks or `$` to a file with a quoted heredoc (`<<'EOF'`) and use `git commit -F`.** The ledger entries were unaffected precisely because they go through python heredocs.
+
+**Scope checked rather than assumed:** of the last 18 commits only four carry backticks at all, and three of those are a concurrent session's. Mine was the single affected message, now repaired verbatim.
+
+⚠ **A FORCE-PUSH IS RECORDED HERE DELIBERATELY.** `--force-with-lease` on the tip, seconds after pushing and with no intervening commit, is the low-risk end of an operation this repo has been badly burned by — the 2026-08-03 `filter-repo` force-push rewrote every prior sha and broke ~11 of 12 recorded revert paths. **The old sha `40a4d17e` is dead; the commit is `1ef41cb4`.** Anything citing the former should follow the message instead.
+
+**Revert:** `git revert <sha>` — docs only.
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — extracted the pack-REALITY board, whose three buckets are deliberately ASYMMETRIC and had no test saying so
 
 **What shipped.** New `lib/insights/pack-reality-board.ts` + 16 tests; `/insights/allday-pack-reality` converted; server-page ratchet **15 → 14**. No DB, cron, auth, FMV or prod change; the board renders identically.
