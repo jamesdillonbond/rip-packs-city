@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor's 4-item profile-page list) — rewards + achievements + P&L off the public profile, the wallet count fixed, trophies two-wide on mobile
+
+**What shipped.** `app/profile/[username]/{ProfileClient,page}.tsx`, `app/profile/[username]/trophy-case/TrophyCaseShareClient.tsx`, `components/profile/ShareProfileButtons.tsx`, `lib/profile/public-profile.ts`, plus 4 test files and the collapse ratchet. **No DB change, no migration.**
+
+**1 — No rewards promise on any user-facing surface.** The share block's "+50 Status once a day for sharing / more Status when a friend joins" copy is gone, the Achievements section is unmounted, and the "+50 Status earned for sharing" note is removed from `ShareProfileButtons`. ⚠ **That component has FOUR consumers** (profile, dashboard, trophy-case share page, /rewards), so the note was leaking onto three surfaces beyond the one reported — fixing it at the component, not the page, is what covers them. Sharing itself stays; only the promise is gone. **The silent `/api/rewards/track` accrual is KEPT and its response deliberately ignored**, so the data exists when rewards ship — a test pins that the fetch still fires, because deleting it is an easy future "cleanup".
+
+**2 — Cost Basis · P/L is off this page entirely.** It was already own-view-only, but ⚠ **the gating was never the risk — the SURFACE was**: this is the page a collector POSTS, and a card that renders for the owner is one screenshot from being public. Cost basis is unaffected elsewhere (`/[collection]/analytics`). A test asserts the route is **never even requested**, which is stronger than a copy check: it proves the card is gone rather than rendered-empty.
+
+**3 — "4 WALLETS" was a COUNTING BUG, not bad data.** `saved_wallets` is keyed per `(wallet_addr, collection_id)`, so Trevor's ONE Dapper address is four rows — one per collection it holds moments in. The page rendered `wallets.length`. ⚠ **The fix had to be server-side**: `wallet_addr` is stripped from the public payload (the privacy step), so no client can dedupe — `wallet_count` is now computed in `getPublicProfile` and shipped as a scalar. A count is not an address. When the field is absent the client **omits the line** rather than falling back to `wallets.length`, which is the bug. ⚠ **The FMV and moment totals were CORRECT all along** — they sum across those same rows.
+
+⚠ **Found in passing: the privacy assertion guarding that strip was VACUOUS.** `expect(body.wallets[0]).not.toHaveProperty("wallet_address")` names a column that does not exist — it is `wallet_addr` — so it passed on any payload, including one leaking every address. It matters now that the query SELECTs the address to count it. Fixed, plus a whole-payload `not.toContain` on the address value.
+
+**4 — Trophies two-wide on phones.** Dropped the `max-width: 480px` single-column rule on the profile grid and the matching `560px` rule on the trophy-case share page (same case, same complaint; a six-slot case at one-wide is six screens of scrolling on the page people ARRIVE on from a shared link).
+
+**Collapse ratchet 39 → 38** — removing the reward note took a `r.ok ? r.json() : null` site with it.
+
+**Verified.** `tsc` clean · primary gate **EXIT 0** (91.75/79.18/93.46/93.82) · component gate **EXIT 0** (90.76/82.31/89.39/93.74) · 7 mutations run, **6 red immediately and the 7th exposed a vacuous test of mine** — see below.
+
+⚠ **A MUTATION SURVIVED AND THE TEST WAS THE PROBLEM: remounting `<PublicAchievements>` did NOT red "renders no achievements section".** The component returns `null` on an empty list, and the fetch stub answered `{}` for its endpoint — so the assertion passed whether the section was mounted or not. **A test that an element is ABSENT is vacuous unless the fixture would have made it PRESENT.** Fixed with a real unlocked achievement in the stub; the mutation then reds. Same category as the two over-broad negatives caught earlier in this session (`not.toContain("TR")` and `not.toMatch(/WALLET/)`, both of which matched unrelated page copy and failed against correct code).
+
+⚠ **Two pre-existing tests asserted the REMOVED behaviour and were inverted, not deleted** — the cost-basis owner-gating case and the two reward-note cases. Each was a correct test for the behaviour that existed; left standing, a passing test asserting a promise is the thing HOLDING IT IN PLACE. They now assert absence, so a revert reds.
+
+**Revert:** `git revert <sha>`. Restores the rewards copy, the achievements section, the cost-basis card, `wallets.length`, and the one-wide mobile grids. No DB state to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — anon could invoke a 45.8 s / 17 GB pack-EV function that nothing calls; anon+authenticated EXECUTE revoked
 
 **Applied to prod** — `audit_20260816_revoke_anon_exec_on_zero_caller_pack_fns` (in `schema_migrations`; committed file byte-identical).
