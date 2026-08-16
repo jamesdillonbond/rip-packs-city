@@ -1171,6 +1171,10 @@ async function executeTool(
 
   // ── Existing concierge tools (deal hunting, FMV, wallets) ─────────────────
   if (toolName === "search_live_deals") {
+    // Per-source failure flags. A source that fails is NOT a source that found
+    // nothing, and this tool has three of them — see the terminal exit.
+    let liveFeedFailed = false;
+    let catalogFailed = false;
     // Team-scoped deal hunting goes to the edition-grain deals board (the
     // /insights/deals backing view) — the sniper feed has no team dimension,
     // which is why "best Blazers deal" used to come back falsely empty.
@@ -1214,6 +1218,7 @@ async function executeTool(
       const res = await fetch(`${base}/api/sniper-feed?${params.toString()}`, {
         signal: AbortSignal.timeout(5000),
       });
+      // Throws into the catch below, which records liveFeedFailed.
       if (!res.ok) throw new Error(`Sniper feed returned ${res.status}`);
       const data = await res.json();
       // The feed has no set dimension server-side, so set filtering is done
@@ -1262,7 +1267,9 @@ async function executeTool(
         });
       }
     } catch {
-      // fall through to catalog
+      // Failure, not emptiness — recorded so the terminal exit below cannot
+      // report our own outage as "no deals found".
+      liveFeedFailed = true;
     }
 
     try {
@@ -1278,7 +1285,8 @@ async function executeTool(
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
       if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
-      const { data: rows } = await query;
+      const { data: rows, error: rowsErr } = await query;
+      if (rowsErr) catalogFailed = true;
       if (rows && rows.length > 0) {
         const results = rows.map((d: any) => ({
           player: d.player_name,
@@ -1292,7 +1300,35 @@ async function executeTool(
         }));
         return JSON.stringify({ status: "ok", results, total: results.length, source: "catalog_fallback" });
       }
-    } catch { /* silent */ }
+    } catch {
+      catalogFailed = true;
+    }
+
+    // ⚠ EVERY SOURCE FAILING IS NOT AN EMPTY MARKET. Both legs used to be
+    // swallowed and fall into the no_results below, so a sniper-feed outage or
+    // a Postgres timeout was reported to the user as "No deals found matching
+    // those criteria" — a claim about the market manufactured from our own
+    // failure, on the most-used deal tool. An errored tool must stay errored:
+    // the system prompt's "an errored tool is NOT an empty result" rule can
+    // only work if the tool actually says so.
+    // ⚠ The two sources are NOT equal, so this is not `&&` and not `||`.
+    // The sniper feed is authoritative; `cached_listings` is a thin fallback
+    // (measured 2026-08-15: 301 rows, 100% Flowty, 51 sets) that only matters
+    // when the feed is down. Reaching this line means neither leg produced a
+    // row, so:
+    //   · feed answered  -> its empty result IS a real answer, whatever the
+    //     fallback did. Erroring here would cry wolf on a working system.
+    //   · feed FAILED    -> all that is left is a 301-row fallback that also
+    //     produced nothing, which is far too thin to support "there are no
+    //     deals". That is absence of evidence, not evidence of absence.
+    if (liveFeedFailed) {
+      return JSON.stringify({
+        status: "error",
+        message:
+          "The live deal feed could not be reached, and the catalog fallback returned nothing usable. Say the deal search failed — do NOT say there are no deals.",
+        fallback_also_failed: catalogFailed,
+      });
+    }
 
     return JSON.stringify({ status: "no_results", message: "No deals found matching those criteria." });
   }

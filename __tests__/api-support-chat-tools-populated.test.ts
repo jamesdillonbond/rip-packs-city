@@ -456,6 +456,65 @@ describe("concierge tools — search_live_deals", () => {
     expect(rows[0].set).toBe("Archive Set")
   })
 
+  it("reports an ERROR when every deal source failed — an outage is not an empty market", async () => {
+    // Both legs used to be swallowed into "No deals found matching those
+    // criteria", so a feed outage or a Postgres timeout was reported to the
+    // user as a fact about the market, on the most-used deal tool.
+    stubFetch([jsonRoute("/api/sniper-feed", {}, { status: 500 })])
+    install({
+      cached_listings: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    script("search_live_deals", { limit: 5, collectionId: "nba-top-shot" })
+    await POST(post("any deals"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(String(r.message)).toMatch(/do NOT say there are no deals/i)
+    // The driver's own words must not reach the model verbatim.
+    expect(JSON.stringify(r)).not.toMatch(/canceling statement/i)
+  })
+
+  it("will not claim 'no deals' off the thin fallback alone when the feed failed", async () => {
+    // The asymmetry that a surviving mutation exposed: the sniper feed is
+    // authoritative and cached_listings is a 301-row Flowty-only fallback.
+    // Feed down + fallback empty is absence of evidence, not evidence of
+    // absence — so it must NOT read as "there are no deals".
+    stubFetch([jsonRoute("/api/sniper-feed", {}, { status: 503 })])
+    install({ cached_listings: { data: [], error: null } })
+    script("search_live_deals", { limit: 5, collectionId: "nba-top-shot" })
+    await POST(post("any deals"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.fallback_also_failed).toBe(false) // it answered; it was just empty
+  })
+
+  it("still reports no_results when the FEED succeeded and found nothing", async () => {
+    // The other direction: a genuinely empty board is an honest answer and
+    // must not be turned into an error, which would cry wolf on a working system.
+    stubFetch([jsonRoute("/api/sniper-feed", { deals: [] })])
+    install({ cached_listings: { data: null, error: { message: "boom" } } })
+    script("search_live_deals", { limit: 5, collectionId: "nba-top-shot" })
+    await POST(post("any deals"))
+    // Feed answered -> real answer, even though the fallback errored. Erroring
+    // here would cry wolf on a working system.
+    expect(toolResult().status).toBe("no_results")
+  })
+
+  it("does not error when the feed failed but the catalog answered", async () => {
+    // One working source is enough to make the answer real.
+    stubFetch([jsonRoute("/api/sniper-feed", {}, { status: 503 })])
+    install({
+      cached_listings: {
+        data: [{ player_name: "Scoot", set_name: "Base", tier: "COMMON", serial_number: 9, circulation_count: 12000, ask_price: 3, fmv: 5, discount: 40, badge_slugs: null, buy_url: "https://y", collection_id: null }],
+        error: null,
+      },
+    })
+    script("search_live_deals", { limit: 5, collectionId: "nba-top-shot" })
+    await POST(post("any deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.source).toBe("catalog_fallback")
+  })
+
   it("falls back to cached_listings when the sniper feed is empty", async () => {
     stubFetch([jsonRoute("/api/sniper-feed", { deals: [] })])
     install({
