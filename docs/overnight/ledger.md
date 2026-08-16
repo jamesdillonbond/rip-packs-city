@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `[collection]/sets` converted; the client-page ratchet's not-vacuous check went RED ON ITS OWN SUCCESS, for the second time in this repo
+
+`[collection]/sets` moved into `CollectionSetsClient.tsx` so the component gate measures it,
+covered by `__tests__/component-CollectionSetsClient.test.tsx` (40 tests). Already clean on
+the failed-read sweep, so this is coverage — what it buys is that three genuinely interesting
+behaviours are now DRIVEN rather than grepped: the **four-way per-collection endpoint switch**
+(one page, four APIs, and a wrong route returns another collection's sets rather than an
+error), the **retryable-vs-fatal split** from deep-audit D3 (a 503 gets "TAKING TOO LONG" with
+a retry, not a dead "ERROR" wall), and the **`[object Object]` guard** on the error banner.
+All four mutations killed.
+
+⚠ **THE RATCHET'S OWN NOT-VACUOUS CHECK FAILED WHEN THE POPULATION REACHED 10, because it
+asserted `pages.length > 10`.** The guard punished its own success — and its comment two
+lines below already warns about exactly that failure for NAMING a page, citing the
+server-page ratchet which made and corrected the identical error. **It recurred because the
+THRESHOLD form does not look like a canary.** A not-vacuous check must be satisfiable at a
+population of ZERO; it now asserts the WALK finds page files, which is the thing that must
+never silently become false.
+
+⚠ **Also worth carrying: the set-detail expand has the OPPOSITE failure policy to the page,
+and that is correct.** `fetchSetDetail` returns null on any failure and the caller falls back
+to the list-level row, so the expand shows the inline preview rather than staying blank —
+right, because the preview is real data we already hold. Pinned, along with the rule that a
+collection with no detail endpoint must render that preview WITHOUT a request.
+
+Ratchets: client-page-gate 11 → 10, fetch-honesty 14 → 13. Gates: component
+90.56/81.85/89.31/93.47 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores the monolithic `page.tsx`, both budgets, and the old
+not-vacuous assertion. No behaviour change to revert. No DB, migration, cron, auth, or
+prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — `dashboard/alerts` + `[collection]/profile/[username]` converted; the interesting part is what the GATE cost
 
 Both moved into `DashboardAlertsClient.tsx` / `CollectionProfileClient.tsx`, covered by
