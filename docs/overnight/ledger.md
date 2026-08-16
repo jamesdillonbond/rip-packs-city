@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — `/analytics/sales` published "$0 volume · 0 sales · 0 buyers" during an outage, with the em-dash guard PRESENT and unreachable; raw-parse population driven 15 → 0 and the ratchet promoted to a BAN
+
+**What (3 client dashboards + tests + the guard; no DB / migration / cron / auth / FMV-math):** finished the raw-`r.json()` sweep. **Population 15 → 0**, so `client-raw-json-parse-ratchet` is now a **BAN with no allowlist** — the same move recorded for the `/insights` unbounded-prerender class: *driving the population to zero in the same pass is what removes the objection to a ban.*
+
+⚠ **THE HEADLINE, AND IT IS THE SHARPEST INSTANCE IN THE WHOLE SWEEP.** `SalesDashboard` / `LoansDashboard` / `SetsDashboard` cast the parsed body into state with **no shape guard at all** — weaker than `WalletsHubOverview`, which at least checked `j.totals && j.segments`. **An error envelope is TRUTHY**, so
+
+```
+value={summary ? formatUsd(summary.total_volume_usd) : "—"}
+```
+
+took its **DATA** branch, and `formatUsd(undefined)` returns **"$0"** while `formatNumber(undefined)` returns **"0"** (both verified by reading the formatters, not inferred). During a 503 the sales analytics dashboard therefore published **"$0 volume · 0 sales · 0 buyers"** — on the surface whose entire purpose is reporting market volume. **The em-dash fallback was written to prevent exactly this, was sitting right there, and was UNREACHABLE.** The fix writes `null` on failure so the EXISTING guard works, rather than adding a second one.
+
+⚠ **Em-dashes alone are only half the fix** — a column of dashes still does not tell a reader whether we failed or the market was quiet — so all three now carry a `role="status"` banner. Previously `loadFailed` would have been set and never rendered, i.e. dead state.
+
+⚠ **A MUTATION SURVIVED AND IT CORRECTED MY OWN MODEL OF THE FIX.** Collapsing `s.ok ? (s.json as any) : null` to `s.json` changes **nothing**: `fetchJson` already returns `{ ok:false, json:null }` on a non-2xx, so the ternary is **redundant belt-and-braces, not the load-bearing part**. Mutating a leg back to the TRUE original shape (`fetch(...).then((r) => r.json())`) *does* red the case — which is why the real protection is the **ban**, not review. Recorded in the test so nobody reads that ternary as load-bearing.
+
+⚠ **THREE SELF-INFLICTED BREAKAGES, all caught by measuring rather than assuming.** (1) My import insertion anchored on "the last line starting with `import `" and landed **inside a multi-line `import {` block**, syntax-erroring both files — anchor on the `"use client"` directive instead. (2) `const calls: Array<Promise<unknown>>` **erased the `.ok` discriminator** the whole fix depends on; dropping the annotation lets it infer. (3) A file-wide `return (<div className=…>)` regex put the banner in **`CoverageBar`**, a presentational sub-component — this file defines several components, so the anchor must be searched **from the main component's own offset**. ⚠ And `npx tsc --noEmit | head -8; echo $?` reported **`head`'s** status again (printed `TSC_EXIT=0` over 26 real errors) — the trap I had documented hours earlier in this same session.
+
+**Verified:** `tsc` clean · primary **12,336 passed / 1,236 files**, gate 91.73/79.12/93.41/93.81 vs 91.3/78.6/93.1/93.4 · component **1,731 passed**, 90.67/82.27/89.34/93.64 vs 90.3/81.6/89.1/93.2 · ban mutation-proven (reintroducing the pattern in any client file reds it; the not-vacuous check now uses SAMPLES rather than known offenders, since a zero population makes anchors impossible) · banner-removal mutation reds the behavioural case.
+
+**The sweep is CLOSED on this class:** 0 unchecked parses in client code, enforced by a ban rather than a count.
+
+**Left open:** the page census's `dashboard/page.tsx` (12 catches / 2 bare) and `[collection]/market`.
+
+**Revert:** `git revert <sha>` (code) — restores the manufactured "$0 volume · 0 sales" band on three dashboards. Docs commit is a separate sha. No DB unwind.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — pinned `backfill_topshot_historical_pack_ev`, and the clause worth the whole pin is a survivor-bias CAP that throws away a 40x +EV rather than publish it
 
 **What shipped.** Snapshot migration (committed UNAPPLIED — byte-identical to live, md5 `e3e87cba0b3fa7199ac4fc307892142c`) + a DB-invariant pin + drift-guard registration. **151 pins over 150 distinct fns, 149 `.sql` test files.** Eleventh of the unpinned SCHEDULED SECDEF writers closed; **4 remain**.
