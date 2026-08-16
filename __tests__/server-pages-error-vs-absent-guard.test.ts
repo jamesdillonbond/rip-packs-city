@@ -194,4 +194,39 @@ describe("server pages distinguish a failed read from an absent record", () => {
     // The not-found copy must remain reachable for a genuine miss.
     expect(src).toContain('title: "Moment Not Found — Rip Packs City"')
   })
+
+  // 5. /[collection]/set/[slug] — the FIFTH instance, and a variant worth naming
+  //    separately, because the page had a legitimate FALLBACK and the failed read
+  //    quietly took it. `fetchFullTierMix` returned a bare `[]` on a query error,
+  //    and empty is exactly the signal the page uses to mean "no full-set count
+  //    available for this collection — sample the first page instead". The bar
+  //    renders ABSOLUTE COUNTS, so a failed read on a ~3,600-edition set published
+  //    "COMMON · 62 · 62.0%" against a true ~2,200, in the same type and colour as
+  //    the accurate bar. The function's own comment says it exists so the mix is
+  //    "accurate even on sets with > PAGE_SIZE editions" — its failure mode
+  //    silently reinstated the sampling it was written to remove.
+  //
+  //    ⚠ The fallback is KEPT for the case it was written for. Deleting it would
+  //    be the mirror-image defect: a collection whose editions are not reachable
+  //    by set_name would lose a bar it can legitimately render.
+  it("set/[slug] does not sample the first page when the full-set count FAILED", () => {
+    const fetcherSrc = read("lib", "set-detail", "tier-mix.ts")
+    const src = read("app", "(collections)", "[collection]", "set", "[slug]", "page.tsx")
+
+    // A failed read must be a different value from an empty one...
+    expect(fetcherSrc, "a query error must report ok:false").toContain("return { rows: [], ok: false }")
+    // ...and an empty result must stay ok:true, or the sample fallback dies.
+    expect(fetcherSrc, "an empty-but-successful read must stay ok:true").toContain(
+      "return { rows: [], ok: true }",
+    )
+
+    // The page must gate the whole bar on that flag. Anything else — including
+    // passing `tierMix.rows` straight through — reinstates the defect.
+    expect(src, "the bar must be gated on the read having succeeded").toMatch(
+      /tierMix\.ok\s*\?\s*buildTierMixRows\(tierMix\.rows,\s*editions\)\s*:\s*\[\]/,
+    )
+    // ...and the page must not hold its own client for this read any more; the
+    // extraction is what put the logic under the primary coverage gate.
+    expect(src, "the page must not query the database inline").not.toContain("@/lib/supabase")
+  })
 })

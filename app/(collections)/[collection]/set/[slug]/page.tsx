@@ -6,8 +6,8 @@
 
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
@@ -65,45 +65,11 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
   return sectionRows<EditionTile>("set editions", "get_set_editions", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
-// Phase 7 (2026-05-26): full-set tier mix. Queries the editions table directly
-// across all variants (detail.set_name + detail.set_name_variants) so the
-// rendered tier bar is accurate even on sets with > PAGE_SIZE editions, instead
-// of being sampled from the first 100. The new get_set_tier_mix RPC keys by
-// the set's UUID which the SetDetail RPC doesn't surface yet; querying by
-// set_name list works for every collection without a schema change.
-async function fetchFullTierMix(collectionId: string, setNames: string[]): Promise<Array<{ tier: string; n: number }>> {
-  const names = Array.from(new Set(setNames.filter(Boolean)))
-  if (names.length === 0) return []
-  // Scope identically to get_set_editions / get_set_detail (thumbnail-bearing
-  // editions only) so the tier-mix total reconciles with the EDITIONS count and
-  // the grid. Without this, the ~6.4k inert UUID-fossil TS editions inflate the
-  // mix (e.g. "Holo Icon" read 608 vs the real 350). (Item 9, 2026-06-26 audit.)
-  //
-  // Paged: "Base Set" (~3,600 thumbnail-bearing editions) and "Metallic Gold LE"
-  // (~1,023) exceed PostgREST's 1,000-row cap, so a bare .limit(10000) silently
-  // truncated the mix to the first 1,000 and undercounted those sets. Page with
-  // .range() windows (stable .order()) until a short page signals the end.
-  const counts = new Map<string, number>()
-  const PAGE = 1000
-  for (let from = 0; from < 60000; from += PAGE) {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("editions")
-      .select("tier")
-      .eq("collection_id", collectionId)
-      .in("set_name", names)
-      .not("thumbnail_url", "is", null)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) { console.error("[set] tier mix error", error.message); return [] }
-    const rows = (data ?? []) as Array<{ tier: string | null }>
-    for (const row of rows) {
-      const t = (row.tier ?? "UNKNOWN").toUpperCase()
-      counts.set(t, (counts.get(t) ?? 0) + 1)
-    }
-    if (rows.length < PAGE) break
-  }
-  return Array.from(counts.entries()).map(([tier, n]) => ({ tier, n }))
-}
+// Phase 7 (2026-05-26): the full-set tier mix moved to lib/set-detail/tier-mix.ts
+// so it is measured by the primary coverage gate and so its FAILURE is
+// expressible — it used to return a bare [] on a query error, which this page
+// read as the legitimate "no full-set count, sample the first page" fallback.
+// See that module's header.
 
 
 // ── Metadata ────────────────────────────────────────────────────────────────
@@ -148,25 +114,16 @@ export default async function SetPage(props: { params: Promise<{ collection: str
     ? (minLabel === maxLabel ? minLabel : `${minLabel} – ${maxLabel}`)
     : null
 
-  // Phase 7: tier mix uses the full-set count from fetchFullTierMix (not the
-  // paginated editions). Falls back to the editions-list sample if the full
-  // count came back empty (collection without set_name index, e.g.).
-  const totalForMix = tierMix.length > 0
-    ? tierMix.reduce((s, r) => s + r.n, 0)
-    : editions.length
-  const baseRows = tierMix.length > 0
-    ? tierMix
-    : (() => {
-        const m = new Map<string, number>()
-        for (const e of editions) {
-          const t = (e.tier ?? "UNKNOWN").toUpperCase()
-          m.set(t, (m.get(t) ?? 0) + 1)
-        }
-        return Array.from(m.entries()).map(([tier, n]) => ({ tier, n }))
-      })()
-  const tierMixRows = baseRows
-    .map(r => ({ tier: r.tier, n: r.n, pct: totalForMix > 0 ? (r.n / totalForMix) * 100 : 0 }))
-    .sort((a, b) => b.n - a.n)
+  // Phase 7: the bar is built from the full-set count, falling back to the
+  // first-page sample when that read SUCCEEDED and returned nothing (a
+  // collection whose editions are not reachable by set_name).
+  //
+  // ⚠ On a FAILED read the section is withheld entirely. The bar prints
+  // ABSOLUTE COUNTS with no provenance, so sampling 100 of a ~3,600-edition set
+  // renders "COMMON · 62 · 62.0%" against a true ~2,200 — a wrong number
+  // presented identically to a right one. Showing nothing is the honest
+  // outcome; the editions grid below still carries the page.
+  const tierMixRows = tierMix.ok ? buildTierMixRows(tierMix.rows, editions) : []
 
   return (
     <div>
