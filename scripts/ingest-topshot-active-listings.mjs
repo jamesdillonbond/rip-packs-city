@@ -36,6 +36,7 @@
 
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { pathToFileURL } from "url";
 
 const execFileP = promisify(execFile);
 
@@ -45,10 +46,6 @@ const FLOOR = process.env.FLOOR != null && process.env.FLOOR !== "" ? Number(pro
 const MAX_TARGETS = process.env.MAX_TARGETS ? Number(process.env.MAX_TARGETS) : Infinity;
 const DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
 
-if (!TOKEN) {
-  console.error("[listings-ingest] missing INGEST_SECRET_TOKEN");
-  process.exit(1);
-}
 
 const ROUTE = `${BASE_URL}/api/cron/topshot-active-listings-ingest`;
 const ATLAS_URL =
@@ -170,6 +167,14 @@ function buildRow(target, tx, isNo1) {
 }
 
 async function main() {
+  // Moved here from module scope 2026-08-16 so this file can be imported by a test without
+  // the import itself calling process.exit. Direct-run behaviour is unchanged and verified
+  // byte-for-byte: same stderr line, same exit code 1, and it still happens before any
+  // network call.
+  if (!TOKEN) {
+    console.error("[listings-ingest] missing INGEST_SECRET_TOKEN");
+    process.exit(1);
+  }
   const startedAt = new Date().toISOString();
   const t0 = Date.now();
   let timedOut = false;
@@ -295,7 +300,25 @@ async function main() {
   console.log(`[listings-ingest] DONE ${JSON.stringify(stats)}`);
 }
 
-main().catch((e) => {
-  console.error("[listings-ingest] FATAL", e);
-  process.exit(1);
-});
+// Run only when invoked directly, so the pure helpers above can be imported by a test.
+//
+// ⚠ THIS GUARD IS LOAD-BEARING AND ITS FAILURE MODE IS SILENT. This script is the whole of
+// the `topshot-active-listings-ingest` workflow; if the condition were wrong the job would
+// exit 0 having done nothing, writing no pipeline_runs row — indistinguishable from "the
+// cron never fired", which is the exact invisible-failure shape CLAUDE.md records for the
+// 401'd catalog cron and the gate-key outage. It is compared as a file URL rather than a
+// raw path because argv[1] is an OS path (backslashes on Windows) while import.meta.url is
+// always a URL, so a string compare of the two is wrong on the maintainer's own machine.
+// __tests__/scripts-ingest-topshot-active-listings.test.ts SPAWNS this file and asserts it
+// still runs, rather than trusting the condition by reading it.
+const isDirectRun =
+  process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main().catch((e) => {
+    console.error("[listings-ingest] FATAL", e);
+    process.exit(1);
+  });
+}
+
+export { buildRow };
