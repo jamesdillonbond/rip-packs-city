@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { pageSource } from "./helpers/page-source"
 import {
   fetchVerifiedWallets,
   VERIFIED_WALLETS_UNAVAILABLE,
@@ -124,17 +123,23 @@ describe("both dashboard pages branch on the failure BEFORE the empty state", ()
   // ⚠ Contiguity, not indexOf-ordering. The vacuous-ordering trap recorded
   // twice already in this repo bites when EITHER needle recurs, and
   // `wallets.length === 0` is not guaranteed unique in a 700-line page.
-  const PAGES = ["app/dashboard/history/page.tsx", "app/dashboard/packs/page.tsx"]
+  // ⚠ DIRECTORIES, not `page.tsx`. Both pages have since been split into a thin
+  // shell plus a sibling `*Client.tsx`, which moved every needle below out of
+  // `page.tsx` (walletsFailed: 3 hits in the client, 1 in the shell) and reddened
+  // this guard on a refactor that changed no behaviour. `pageSource` reads the
+  // page as a unit so the assertions keep their full strength either way — the
+  // contiguity regex still holds because the branch lives wholly in one file.
+  const PAGES = ["app/dashboard/history", "app/dashboard/packs"]
 
   it.each(PAGES)("%s: walletsFailed is checked immediately before the empty branch", (rel) => {
-    const src = readFileSync(join(process.cwd(), rel), "utf8")
+    const src = pageSource(rel)
     expect(src).toContain(") : walletsFailed ? (")
     // The failure branch's closing ternary arm runs straight into the empty one.
     expect(src).toMatch(/\) : walletsFailed \? \([\s\S]{0,900}?\) : wallets\.length === 0 \? \(/)
   })
 
   it.each(PAGES)("%s: reads through the shared module, not its own fetch", (rel) => {
-    const src = readFileSync(join(process.cwd(), rel), "utf8")
+    const src = pageSource(rel)
     expect(src).toContain("fetchVerifiedWallets")
     // The copy-pasted loader must not come back. Both pages legitimately fetch
     // other endpoints, so this is scoped to the saved-wallets call itself.

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync, existsSync } from "fs"
+import { existsSync } from "fs"
 import path from "path"
 import { COLLECTIONS } from "@/lib/collections"
+import { pageSource } from "./helpers/page-source"
 
 // ARCHITECTURE GUARD — closed-market disclosure on every priced UFC tab.
 //
@@ -47,9 +48,13 @@ const KNOWN_UNMOUNTED: Record<string, string> = {
 }
 
 function sourceOf(tab: string): string {
-  const p = path.join(COLLECTION_ROOT, tab, "page.tsx")
-  if (!existsSync(p)) throw new Error(`missing page source for tab "${tab}" at ${p}`)
-  return readFileSync(p, "utf8")
+  // The tab AS A UNIT: `page.tsx` plus any sibling `*Client.tsx`. `overview` is
+  // already split (the banner lives in CollectionOverviewClient.tsx, 0 hits in
+  // page.tsx) and the other four are not yet, so reading only `page.tsx` reds on
+  // whichever tab is converted next while the banner is mounted and working.
+  const dir = path.join(COLLECTION_ROOT, tab)
+  if (!existsSync(dir)) throw new Error(`missing page source for tab "${tab}" at ${dir}`)
+  return pageSource("app", "(collections)", "[collection]", tab)
 }
 
 describe("invariant: closed-market disclosure reaches every priced UFC tab", () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { pageSource } from "./helpers/page-source"
 
 // Source guard for the failed-vs-empty split on two more `"use client"` pages.
 //
@@ -30,6 +31,13 @@ import { join } from "node:path"
 // still say so; what changed is that it is no longer reachable from a failure.
 
 function read(...parts: string[]): string {
+  // A `page.tsx` request reads the page AS A UNIT — the shell plus any sibling
+  // `*Client.tsx` — because the `*Client.tsx` conversion moves the logic these
+  // assertions grep for between the two files with no behaviour change. Doing it
+  // in the helper rather than at 14 call sites means the next conversion is a
+  // no-op here instead of a red build that invites loosening the assertion.
+  // See __tests__/helpers/page-source.ts for why that repair is the real risk.
+  if (parts[parts.length - 1] === "page.tsx") return pageSource(...parts.slice(0, -1))
   return readFileSync(join(process.cwd(), ...parts), "utf8")
 }
 
