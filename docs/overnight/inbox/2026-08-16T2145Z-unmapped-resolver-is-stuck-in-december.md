@@ -17,11 +17,16 @@ Replayed against the table for All Day (`dee28451-…`, `resolved_at IS NULL`), 
 | | |
 |---|---|
 | window rows | **2,000** |
-| window span | **2025-12-29 14:42:59Z → 2025-12-29 22:13:05Z = 7.50 hours** |
-| rows with `price_usd = 0` | **1,780 (89.0%)** |
+| window span | **2025-12-29 14:42:59Z → 2025-12-30 01:39:29Z = 10.94 hours** |
+| rows with `price_usd = 0` | **1,738 (86.9%)** |
+| **frozen** (`open_n > 1 AND price_usd = 0`) | **1,534 (76.7%)** |
 
-⛔ **The resolver's entire candidate window is seven and a half hours of a single day in December
-2025**, overwhelmingly price-zero rows that the promotion path deliberately excludes
+⚠ **Corrected 2026-08-16 16:49 PT / 23:49Z — an earlier revision of this filing published
+7.50 h / 89.0% and claimed the originating pass's figures "did not reproduce". That was MY error and
+it is now retracted; see the reconciliation below.**
+
+⛔ **The resolver's entire candidate window is under eleven hours of late December 2025**
+(2025-12-29 into 2025-12-30), overwhelmingly price-zero rows that the promotion path deliberately excludes
 (`promote_unmapped_sales` skips `price_usd <= 0`). A fixed ascending order over a set far larger
 than the window means **the tail is never reached** — it re-scans the same December slice every
 30 minutes.
@@ -34,18 +39,29 @@ actionable rows grew 47,557 → 47,560 → 47,564, with outflow 212–223/24 h a
 2026-08-16): a fixed ordering over a population larger than the per-tick budget starves a constant
 tail. The remedy there — rotation — is the cheap remedy here too.
 
-### ⚠ Numbers that did NOT reproduce, and why that matters
+### ✅ RECONCILED — the originating figures were right; my "did not reproduce" note was wrong
 
-The originating pass reported an **11-hour** window (to 2025-12-30 01:39Z) and **76.7% frozen**
-using the predicate `open_n > 1 AND price_usd = 0`. Neither reproduces exactly:
+Re-measured live 2026-08-16 23:49Z against the catalog and the table. **The originating pass's
+10.94 h / 76.7% frozen reproduce EXACTLY**, and my divergent 7.50 h / 89.0% came from measuring a
+different population. Retracted in full:
 
-- ⚠ **`open_n` is not a column on `unmapped_sales`**, and `resolution_hint ? 'open_n'` matches
-  **0 of 2,000** window rows. It is computed inside `get_unmapped_resolver_targets`, so that
-  predicate cannot be replayed against the table and the 76.7% could not be re-derived here.
-- The window span differs (7.50 h vs 11 h) because the window drains slightly between passes.
+- ⛔ **"`open_n` is computed inside `get_unmapped_resolver_targets`" is FALSE.**
+  `position('open_n' in pg_get_functiondef(...))` = **0** for that function — it references neither
+  `open_n` nor `transaction_hash`. `open_n` is computed inside **`refresh_unmapped_backlog_growth`**
+  (position 309), the function that raises the Sentinel alert itself, as
+  `count(*) … GROUP BY u.collection_id, u.transaction_hash` over `resolved_at IS NULL` rows. Both
+  inputs are real columns, **so the predicate is fully replayable** — and it is the alert's own
+  vocabulary, which is why the originating pass used it.
+- ⛔ **"the window drains slightly between passes" is FALSE.** The divergence was a **missing clause**:
+  dropping the `NOT EXISTS (… nft_edition_map …)` predicate from the candidate CTE reproduces
+  **89.0% / 7.50 h / 2025-12-29 22:13:05Z exactly**. That clause is what makes the window the
+  resolver's *actual* candidate set; without it the population includes NFTs that are **already
+  mapped** and which the resolver therefore never looks at.
+- ⚠ **The two percentages are not interchangeable: unpriced (86.9%) is a SUPERSET of frozen (76.7%)**
+  — frozen additionally requires `open_n > 1`. Substituting one for the other is not a tightening of
+  the same number.
 
-**The structural conclusion is unchanged and is what should be acted on** — but quote the measured
-7.50 h / 89.0% above, not the originating figures.
+**Quote 10.94 h / 86.9% unpriced / 76.7% frozen.** The structural conclusion was never in dispute.
 
 ---
 
@@ -58,10 +74,22 @@ backfill of `unmapped_sales_resolution_failures`. But:
 > `get_unmapped_resolver_targets` maps **nft_id → edition**. It is *not* the price-promotion path
 > (`promote_unmapped_sales` is). Excluding a frozen row also stops its NFT ever being mapped.
 
-The originating pass measured the loss as **50,213 distinct All Day NFTs appearing ONLY in frozen
-rows** (vs 2,840 that also appear in an actionable row, where exclusion is free). ⚠ **That figure is
-carried from the originating pass and was NOT independently re-measured here** — re-measure before
-acting, as it is the number the whole trade-off turns on.
+⛔ **RE-MEASURED 2026-08-16 23:49Z, AND THE HEADLINE FIGURE WAS OVERSTATED BY 65%.** The originating
+pass reported **50,213** distinct All Day NFTs appearing ONLY in frozen rows. Live:
+
+| | |
+|---|---|
+| frozen NFTs | 53,048 |
+| actionable NFTs | 43,978 |
+| frozen **and** also actionable (exclusion free) | 2,840 |
+| frozen-only | **50,208** ✅ reproduces (1 row of live drift) |
+| ⛔ frozen-only **AND still absent from `nft_edition_map`** | **30,331** |
+
+**19,877 of the 50,208 frozen-only NFTs already have an `nft_edition_map` entry.** They were mapped
+through some other path, and the candidate CTE's `NOT EXISTS … nft_edition_map` clause means the
+resolver already skips them — so excluding their rows forfeits **nothing**. ⚠ **The real cost of the
+exclusion lever is ~30,331 NFTs, not ~50,213.** The originating pass counted a population without
+checking it against the table that makes the count moot.
 
 Exclusion is arguably still right: the loss is *deferred* rather than permanent (such an NFT becomes
 actionable if it later trades in a priced single-NFT tx), and the resolver currently maps ~200/day
@@ -77,8 +105,9 @@ while never reaching the actionable pile at all. But that is a data-coverage jud
    so the resolver stops re-scanning December. Directly mirrors the board-liveness rotation fix.
    `unmapped_sales` already carries `last_onchain_attempt_at` and `onchain_attempts`, so the
    rotation key exists — no schema change.
-2. **Exclude frozen rows by reason** — biggest throughput win, costs the ~50,213 mappings above.
-   Verify that count first.
+2. **Exclude frozen rows by reason** — biggest throughput win, costs ~**30,331** mappings (NOT the
+   ~50,213 originally filed; re-measured above). Cheaper than believed, but still a data-coverage
+   judgment with a ~30k-row blast radius.
 3. **Both.**
 
 ⛔ **Do NOT raise `breach_at` on `unmapped_resolution_backlog_max`** — that only defers the crossing,
