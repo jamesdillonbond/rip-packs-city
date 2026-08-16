@@ -2347,7 +2347,12 @@ function VerifyByListingModal({
       )}
 
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-        We picked one of your cheap Moments. List it on Top Shot at the exact price below, then click <strong>I&apos;ve listed it — Done</strong>. We confirm the live listing and verify you instantly — earning <strong>+500 credits</strong>. The price is ~100× the Moment&apos;s value (and at least $10), so nobody will buy it — you can delist right after.
+        {/* ⚠ NO CREDITS PROMISE. This said "earning +500 credits", which is the
+            unshipped rewards programme used as the incentive to complete a flow
+            — and the shop those credits buy from is a hard 404. The award still
+            happens server-side (resolve_wallet_challenge_match); it just is not
+            dangled. Verification is the reason to do this, and it is a real one. */}
+        We picked one of your cheap Moments. List it on Top Shot at the exact price below, then click <strong>I&apos;ve listed it — Done</strong>. We confirm the live listing and verify you instantly. The price is ~100× the Moment&apos;s value (and at least $10), so nobody will buy it — you can delist right after.
       </div>
 
       {loading && !challenge && !unavailable && (
@@ -2411,7 +2416,7 @@ function VerifyByListingModal({
 
           {done && (
             <div style={{ marginTop: 12, color: "var(--rpc-success)", fontFamily: monoFont, fontSize: 12 }}>
-              ✓ Wallet verified — +500 credits earned. You can delist the Moment now.
+              ✓ Wallet verified. You can delist the Moment now.
             </div>
           )}
           {checkHint && !done && (

@@ -128,14 +128,18 @@ export default function PricingPage() {
             <li>Sniper feed with discount-vs-FMV deal scoring + outbound listing links</li>
             <li>Set / team / player / series browse with completion tracking</li>
           </Bucket>
-          <Bucket title="Concierge + rewards">
+          {/* ⚠ THE REWARDS BULLETS WERE REMOVED 2026-08-16 (Trevor) AND MUST NOT
+              COME BACK UNTIL THE PROGRAMME SHIPS. This bucket advertised "earn
+              Status + Credits as you use RPC" and "earns 500 Credits" on the
+              PRICING page — the one surface whose whole job is to tell someone
+              what they get for their money. `/rewards` has meanwhile been a hard
+              404 the entire time (app/rewards/layout.tsx calls notFound()
+              unconditionally), so the shop those credits are for cannot be
+              reached at all. Credits do still accrue server-side; accruing
+              silently is fine, advertising them is not. */}
+          <Bucket title="Concierge">
             <li>AI Concierge (Claude) on every page — ask about ROI, FMV, deals, set paths</li>
-            {/* The redemption shop is NOT live — app/rewards/layout.tsx notFound()s
-                unconditionally, so /rewards is a hard 404. Credits genuinely accrue
-                (resolve_wallet_challenge_match pays 500 on a verified wallet), so the
-                honest claim is "earned and banked", not "redeem them in the shop". */}
-            <li>Rewards: earn Status + Credits as you use RPC (the redemption shop isn&apos;t open yet)</li>
-            <li>Verify a wallet with the listing challenge from your dashboard — earns 500 Credits</li>
+            <li>Verify a wallet with the listing challenge from your dashboard</li>
             <li>Direct line for feature requests via @RipPacksCity</li>
           </Bucket>
         </div>

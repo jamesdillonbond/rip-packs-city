@@ -365,15 +365,19 @@ export default function ProfileEditClient() {
               equippedBanner={form.equipped_banner}
             />
 
-            <div className="hint" style={{ marginTop: -6 }}>
-              Borders and banners are equipped from{" "}
-              <Link href="/rewards" style={{ color: "var(--rpc-text-secondary)" }}>
-                Rewards
-              </Link>
-              {form.equipped_border || form.equipped_banner
-                ? " — they show in the preview above."
-                : " — you have none equipped yet."}
-            </div>
+            {/* ⚠ THIS USED TO LINK TO /rewards, WHICH IS A HARD 404
+                (app/rewards/layout.tsx calls notFound() unconditionally). So the
+                one instruction on this page for getting a cosmetic sent every
+                collector to a dead end — and 19 of 20 have none equipped, i.e.
+                it was a dead end for almost everyone who read it.
+                The line is now shown ONLY to someone who already HAS a cosmetic,
+                where it is purely descriptive and true. Restore the link when
+                /rewards is reachable again. */}
+            {(form.equipped_border || form.equipped_banner) && (
+              <div className="hint" style={{ marginTop: -6 }}>
+                Your equipped border and banner show in the preview above.
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="username">Public username</label>
