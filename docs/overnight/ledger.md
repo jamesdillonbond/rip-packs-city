@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont.) — corrected the session entry's own "left open" list, which went stale within the hour
+
+**What shipped.** CLAUDE.md only. The session entry written at wrap-up listed the worker chunked-write paths as open; they were closed twenty minutes later. **A stale "still open" claim is the exact drift this file documents** — a future session reading it would either re-do the work or treat a covered path as a blind spot. Now records that both items were parked behind a tooling gap that did not exist, what the two chunk policies are, and the pinned cost of the collected-failure one (skipped moment never retried; `ok: false` while the cursor advances). Only `app/**/page.tsx` remains open.
+
+**Revert:** `git revert <sha>` — docs only.
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — closed the last named worker blind spot, and BOTH halves of it were parked behind a tooling gap that did not exist
 
 **What shipped.** 3 worker tests (`pack-events-ingest`, 29 → 32 cases) + one additive helper field + the worker ratchet re-seated. Test-only; **no worker source change**, no DB, cron, auth or prod change.
