@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of them", item 3/5) — a THIRD coverage gate for `workers/**`, plus a rot-guard for the gates themselves
+
+**What shipped.** `vitest.workers.config.ts` + npm script `test:coverage:workers` + a blocking `worker-tests` CI job, seeded at the measured baseline **68.2 st / 59.0 br / 72.6 fn / 70.7 ln** (actuals 68.71 / 59.54 / 73.14 / 71.25). Plus `__tests__/coverage-gates-are-wired-to-ci.test.ts`.
+
+⚠ **This is a DIFFERENT gap from the `page.tsx` blind spot, and the difference is why it cost an hour rather than a week.** `app/**/page.tsx` is unmeasured *and* largely untested — it needs ratchets on proxies because the work has not been done. The workers are the opposite: **already genuinely well tested** (22 suites, 21 importing worker source and driving `fetch()`/`scheduled()`, plus a completeness rot-guard). 6,129 LOC with no floor under it, so it could rot silently and the first anyone would learn is an ingest pipeline going quiet. **This adds no tests; it stops the existing ones eroding.**
+
+⚠ **Do not read the 68% aggregate as "the workers are half-tested" — the SPREAD is the finding.** Two files carry it: `topshot-moments-hydrator/index.ts` (26.3 st) and `pack-events-ingest/index.ts` (46.9 st). Every other file is 81–100%, and **8 of 24 are at 100%**. Those two are the long inline `fetch()` bodies — cursor loops fanning out to Flow REST and the TopShot GQL proxy — the exact shape the primary gate's own header says cannot be cleanly driven. That is where the next real work is.
+
+⚠ **A measurement trap I nearly filed as a config bug:** the text reporter hides 100% files (`skipFull`), so 7 of the 24 sources were missing from the table and it read as an `include` that was silently dropping files. The HTML report lists all 24. **Parse the HTML before concluding a coverage config is broken.**
+
+**Why the second guard.** A coverage gate is only a gate while CI runs it; a config with excellent thresholds that no workflow invokes is worse than none, because its existence reads as protection. The guard asserts the loop closes for all three gates (config → npm script → ci.yml job), refuses all-zero thresholds, and fails if a FOURTH vitest config appears unregistered. It deliberately does **not** pin threshold values — those move legitimately, and pinning them means editing two files per raise, which is the friction that stops people raising.
+
+**Verified:** 333 worker tests green at the new thresholds; 3 mutations (CI job removed / thresholds zeroed / npm script deleted) each red only their own assertion.
+
+**Revert:** `git revert <sha>` — removes the config, the script, the CI job and the guard. No DB change, no prod state, no worker redeployed (this measures worker source, it does not deploy it).
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, deep-audit handoff run 2 cont.) — D31: recovered BOTH fileless prod migrations byte-exact, and there were two real ones, not the one on file
 
 - **Repo only** — two `supabase/migrations/*.sql` files recovered from prod. **Nothing applied**; both are already live and both re-apply as no-ops (`ADD COLUMN IF NOT EXISTS` / `CREATE OR REPLACE`). This restores the git revert path that did not exist for either.
