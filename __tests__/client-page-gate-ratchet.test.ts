@@ -146,7 +146,16 @@ const APP_DIR = join(process.cwd(), "app")
  * Its Suspense boundary is HOISTED to the server page (the body calls useSearchParams);
  * leaving it inside would move the file into the gate without making it renderable.
  */
-const BUDGET = 24
+/*
+ * 24 -> 21: `dashboard/history`, `panini-blockchain/overview`, `panini-blockchain/sniper`.
+ *
+ * ⚠ ALL THREE WERE ALREADY HONEST, and each carries an in-file comment explaining the
+ * distinction it makes. Recorded so nobody re-sweeps them: a conversion that finds nothing
+ * is a real result. What the tests add is proof the ladders still behave that way — the
+ * comments could not do that, and until the split nothing could drive the failure branch
+ * they describe.
+ */
+const BUDGET = 21
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([

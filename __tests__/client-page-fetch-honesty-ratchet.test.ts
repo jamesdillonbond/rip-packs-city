@@ -67,7 +67,16 @@ const USE_CLIENT = /^\s*["']use client["']/
  * theirs" are silently wrong — the only correct value is the one the failing assertion
  * names. (That collision has already happened once on the sibling client-page ratchet,
  * where two sessions each subtracted only their own conversions.) */
-const BUDGET = 27
+/* 27 -> 24: `dashboard/history`, `panini-blockchain/overview` and `panini-blockchain/sniper`
+ * each moved their body into a `*Client.tsx`, so all three are now measured by the component
+ * gate and covered by `__tests__/component-PaniniAndHistoryClients.test.tsx`.
+ *
+ * ⚠ Re-derived from the no-slack assertion again, and this time it caught a data loss rather
+ * than a collision: a mutation harness of mine truncated THIS FILE to zero bytes, and vitest
+ * reported it as "No test suite found" — which reads like a config problem, not like the
+ * ratchet having been destroyed. Restoring from HEAD and re-reading the assertion's own
+ * message is what produced 24; a remembered number would have been unverifiable. */
+const BUDGET = 24
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
