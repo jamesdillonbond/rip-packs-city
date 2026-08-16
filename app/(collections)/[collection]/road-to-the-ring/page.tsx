@@ -8,7 +8,7 @@
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchPinnedWallet } from "@/lib/wallet/pinned-wallet"
 import RTRClient from "@/components/rtr/RTRClient"
 
 export const dynamic = "force-dynamic"
@@ -86,19 +86,9 @@ export default async function RoadToTheRingPage(props: {
 
   const user = await getCurrentUser()
   let topShotWallet: string | null = null
+  let walletOk = true
   if (user) {
-    const { data: walletRow } = await supabaseAdmin
-      .from("saved_wallets")
-      .select("wallet_addr, pinned_at")
-      .eq("user_id", user.id)
-      .eq("collection_id", NBA_TOP_SHOT_UUID)
-      .order("pinned_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const candidate = walletRow?.wallet_addr ?? null
-    if (typeof candidate === "string" && /^0x[a-f0-9]{16}$/i.test(candidate)) {
-      topShotWallet = candidate.toLowerCase()
-    }
+    ;({ wallet: topShotWallet, ok: walletOk } = await fetchPinnedWallet(user.id, NBA_TOP_SHOT_UUID))
   }
 
   return (
@@ -110,6 +100,11 @@ export default async function RoadToTheRingPage(props: {
 
       {!user ? (
         <SignInCard />
+      ) : !walletOk ? (
+        /* BEFORE the connect-wallet card: an unread wallet is not an absent
+           one, and that card tells a collector who HAS pinned one to go connect
+           it — a claim about their own account made out of our outage. */
+        <WalletUnavailableCard />
       ) : !topShotWallet ? (
         <ConnectWalletCard />
       ) : (
@@ -122,6 +117,21 @@ export default async function RoadToTheRingPage(props: {
   // factored out to a shared component since they're 30 lines and only
   // two consumers exist. Refactor to components/auth-gates/ when a
   // third surface needs them.
+  /** Distinct from ConnectWalletCard: says only that WE could not read, and
+   *  makes no claim about whether the reader has pinned a wallet. */
+  function WalletUnavailableCard() {
+    return (
+      <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+          Couldn&apos;t load your pinned wallet
+        </div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+          This is a problem on our side, not a statement about your account. Reload in a moment.
+        </div>
+      </div>
+    )
+  }
+
   function SignInCard() {
     return (
       <div style={{ ...CARD_STYLE, maxWidth: 520 }}>

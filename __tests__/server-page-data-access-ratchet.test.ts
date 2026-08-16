@@ -117,7 +117,7 @@ const APP_DIR = join(process.cwd(), "app")
  * ⚠ Both were already covered by comments asserting the right behaviour. The
  * comment is not the check; moving the code somewhere a test can drive it is.
  */
-const BUDGET = 11
+const BUDGET = 8
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
@@ -153,7 +153,15 @@ describe("server-page data-access ratchet", () => {
     // Without this, a broken walk would silently report zero and the ratchet
     // would pass forever while the blind spot grew — the failure mode that makes
     // a guard worse than no guard, because it reads as active protection.
-    expect(pages.length).toBeGreaterThan(10)
+    //
+    // ⚠ It asserts on the WALK, not on how many pages are still dirty. This read
+    // `expect(pages.length).toBeGreaterThan(10)` until 2026-08-16, when the
+    // population reached 8 and the guard went red on its own success — the exact
+    // failure the next comment names, in numeric form rather than by naming a
+    // page. A not-vacuous check must be satisfiable at a population of ZERO,
+    // which is the goal state; what it has to prove is that the enumerator can
+    // still see the tree.
+    expect(serverPages(APP_DIR).length, "the walk itself must find pages").toBeGreaterThan(50)
     // Self-consistency rather than naming a specific page: every page the walk
     // returns must really carry the import. Naming one would be a canary that
     // dies the moment someone converts it — which is the goal, so the guard

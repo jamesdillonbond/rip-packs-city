@@ -5,12 +5,10 @@
 // app/(collections)/[collection]/edition/[slug]/page.tsx in Phase 1B.
 
 import { notFound, redirect } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByDbSlug } from "@/lib/collection-slug"
+import { lookupLegacyEdition, UUID_RE } from "@/lib/edition/legacy-redirect"
 
 export const dynamic = "force-dynamic"
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default async function LegacyEditionRedirect(
   props: { params: Promise<{ id: string }> }
@@ -18,25 +16,17 @@ export default async function LegacyEditionRedirect(
   const { id } = await props.params
   if (!UUID_RE.test(id)) notFound()
 
-  const client = supabaseAdmin as unknown as {
-    from: (t: string) => {
-      select: (s: string) => {
-        eq: (col: string, val: string) => {
-          maybeSingle: () => Promise<{ data: { external_id: string | null; collections: { slug: string } | null } | null; error: { message: string } | null }>
-        }
-      }
-    }
-  }
+  const { target, ok } = await lookupLegacyEdition(id)
 
-  const { data, error } = await client.from("editions")
-    .select("external_id, collections!inner(slug)")
-    .eq("id", id)
-    .maybeSingle()
+  // ⚠ A FAILED read must not 404. This route catches LEGACY inbound links, so a
+  // statement timeout here hands a hard 404 for an edition that exists, to the
+  // audience least likely to retry. Throwing renders the retryable error
+  // boundary; a genuine miss still 404s on the line below.
+  if (!ok) throw new Error("edition redirect unavailable")
+  if (!target) notFound()
 
-  if (error || !data || !data.external_id || !data.collections?.slug) notFound()
-
-  const coll = getCollectionByDbSlug(data.collections.slug)
+  const coll = getCollectionByDbSlug(target.collectionDbSlug)
   if (!coll) notFound()
 
-  redirect(`/${coll.urlSlug}/edition/${encodeURIComponent(data.external_id)}`)
+  redirect(`/${coll.urlSlug}/edition/${encodeURIComponent(target.externalId)}`)
 }

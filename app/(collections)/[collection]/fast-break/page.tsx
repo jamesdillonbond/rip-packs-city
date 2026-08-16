@@ -10,7 +10,8 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { getCollection } from "@/lib/collections"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchActiveRun, fetchSlate, type SlateGame } from "@/lib/fast-break/page-data"
+import { fetchPinnedWallet } from "@/lib/wallet/pinned-wallet"
 import FastBreakClient from "@/components/fast-break/FastBreakClient"
 import SlateRow from "@/components/fast-break/SlateRow"
 
@@ -27,23 +28,6 @@ function todayInET(): string {
   })
   const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]))
   return `${parts.year}-${parts.month}-${parts.day}`
-}
-
-interface ActiveRun {
-  id: string
-  name: string
-  lineup_size: number
-  has_captain: boolean
-  start_date: string
-  end_date: string
-}
-
-interface SlateGame {
-  gameId: string
-  homeTeam: string
-  awayTeam: string
-  tipoffAt: string | null
-  status: string
 }
 
 const PAGE_HEADER_STYLE: React.CSSProperties = {
@@ -117,51 +101,30 @@ export default async function FastBreakPage(props: {
 
   // 2. Active run + tonight's slate — read directly from supabaseAdmin so
   // there's no extra HTTP hop on the server-rendering path.
-  const { data: run } = await supabaseAdmin
-    .from("fast_break_runs")
-    .select("id, name, lineup_size, has_captain, start_date, end_date")
-    .eq("is_active", true)
-    .maybeSingle<ActiveRun>()
-
   const gameDate = todayInET()
-  const { data: gameRows } = await supabaseAdmin
-    .from("nba_games")
-    .select("id, home_team_abbr, away_team_abbr, tipoff_at, status")
-    .eq("game_date", gameDate)
-    .order("tipoff_at", { ascending: true })
-
-  const games: SlateGame[] = (gameRows ?? []).map(g => ({
-    gameId: g.id as string,
-    homeTeam: g.home_team_abbr as string,
-    awayTeam: g.away_team_abbr as string,
-    tipoffAt: g.tipoff_at as string | null,
-    status: g.status as string,
-  }))
+  const [{ run, ok: runOk }, { games, ok: slateOk }] = await Promise.all([
+    fetchActiveRun(),
+    fetchSlate(gameDate),
+  ])
 
   // 3. Auth + Top Shot wallet lookup. Sign-in card if no user, then
   // connect-wallet card if no Top Shot wallet pinned.
   const user = await getCurrentUser()
 
   let topShotWallet: string | null = null
+  let walletOk = true
   if (user) {
-    const { data: walletRow } = await supabaseAdmin
-      .from("saved_wallets")
-      .select("wallet_addr, pinned_at")
-      .eq("user_id", user.id)
-      .eq("collection_id", NBA_TOP_SHOT_UUID)
-      .order("pinned_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const candidate = walletRow?.wallet_addr ?? null
-    if (typeof candidate === "string" && /^0x[a-f0-9]{16}$/i.test(candidate)) {
-      topShotWallet = candidate.toLowerCase()
-    }
+    ;({ wallet: topShotWallet, ok: walletOk } = await fetchPinnedWallet(user.id, NBA_TOP_SHOT_UUID))
   }
 
   // 4. Header — same shape regardless of auth state, so the page never jumps.
+  // "No active run" is a claim about Top Shot's schedule. A failed read must
+  // not make it — the em-dash says nothing rather than something false.
   const subtitle = run
     ? `${run.name} · ${run.lineup_size} players${run.has_captain ? " + Captain" : ""}`
-    : "No active run"
+    : runOk
+      ? "No active run"
+      : "—"
 
   return (
     <section style={{ paddingBottom: 60 }}>
@@ -172,13 +135,32 @@ export default async function FastBreakPage(props: {
 
       {!user ? (
         <SignInCard />
+      ) : !walletOk ? (
+        /* BEFORE the connect-wallet card: an unread wallet is not an absent
+           one, and that card tells a collector who HAS pinned one to go connect
+           it — a claim about their own account made out of our outage. */
+        <UnavailableCard what="your pinned wallet" />
       ) : !topShotWallet ? (
         <ConnectWalletCard />
+      ) : !runOk ? (
+        /* BEFORE NoRunCard, whose copy promises we would surface a run if there
+           were one — the strongest possible form of this false claim. */
+        <UnavailableCard what="tonight's Fast Break run" />
       ) : !run ? (
         <NoRunCard />
       ) : (
         <>
-          <SlateRow games={games} gameDate={gameDate} />
+          {slateOk ? (
+            <SlateRow games={games} gameDate={gameDate} />
+          ) : (
+            /* An empty slate is a real answer (the NBA does not play nightly),
+               so a failed read must not borrow it. */
+            <div style={{ ...CARD_STYLE, marginBottom: 16 }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-muted)" }}>
+                Tonight&rsquo;s slate couldn&rsquo;t be loaded. This says nothing about whether games are on.
+              </div>
+            </div>
+          )}
           <FastBreakClient
             walletAddr={topShotWallet}
             runId={run.id}
@@ -222,6 +204,24 @@ export default async function FastBreakPage(props: {
         <Link href="/dashboard" className="rpc-btn-primary" style={{ display: "inline-block", textDecoration: "none" }}>
           Pin a wallet on your dashboard
         </Link>
+      </div>
+    )
+  }
+
+  /**
+   * The failure card, distinct from every "absent" card above it. The copy must
+   * not assert anything about the reader's account or Top Shot's schedule — it
+   * says only that WE could not read.
+   */
+  function UnavailableCard({ what }: { what: string }) {
+    return (
+      <div style={{ ...CARD_STYLE, maxWidth: 520 }}>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", marginBottom: 8 }}>
+          Couldn&apos;t load {what}
+        </div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+          This is a problem on our side, not a statement about what&apos;s there. Reload in a moment.
+        </div>
       </div>
     )
   }

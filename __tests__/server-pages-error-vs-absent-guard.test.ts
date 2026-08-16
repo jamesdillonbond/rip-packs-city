@@ -308,4 +308,78 @@ describe("server pages distinguish a failed read from an absent record", () => {
       /\{walletOk\s*&&\s*!wallet\s*&&\s*\(/,
     )
   })
+
+  // 7-8. /fast-break and /road-to-the-ring — the same defect, COPY-PASTED. Both
+  //    read the user's pinned Top Shot wallet with an identical eight-line query
+  //    that never destructured `error`, so a failed read rendered
+  //    ConnectWalletCard: "connect a Top Shot wallet", shown to a collector who
+  //    has pinned one. Fast Break carries two more of the same shape — a failed
+  //    run read renders "No active Fast Break run … we'll surface the next run
+  //    here as soon as Top Shot opens it" DURING a live run (a false claim with
+  //    a guarantee attached), and a failed slate read renders as a quiet night.
+  //
+  //    ⚠ The gate ladder is what makes these testable as ORDER rather than as
+  //    copy: each failure branch must sit ABOVE the absent-branch it would
+  //    otherwise fall into, or the flag exists and changes nothing.
+  it.each([
+    ["fast-break", ["app", "(collections)", "[collection]", "fast-break", "page.tsx"]],
+    ["road-to-the-ring", ["app", "(collections)", "[collection]", "road-to-the-ring", "page.tsx"]],
+  ] as const)("%s does not tell a collector to connect the wallet they pinned", (_name, parts) => {
+    const code = stripComments(read(...parts))
+
+    expect(code, "the page must read the wallet through the shared fetcher").toContain(
+      "fetchPinnedWallet(user.id, NBA_TOP_SHOT_UUID)",
+    )
+    const failure = code.indexOf("!walletOk ?")
+    const connect = code.indexOf("<ConnectWalletCard />")
+    expect(failure, "a !walletOk branch must exist").toBeGreaterThan(-1)
+    expect(failure, "it must precede the connect-wallet card").toBeLessThan(connect)
+    // ...and the connect card must stay reachable for someone who really has
+    // pinned nothing, or the fix strands them with no way forward.
+    expect(connect, "the connect card must remain reachable").toBeGreaterThan(-1)
+  })
+
+  it("fast-break does not report a failed run read as 'no active run'", () => {
+    const fetcherSrc = read("lib", "fast-break", "page-data.ts")
+    const code = stripComments(read("app", "(collections)", "[collection]", "fast-break", "page.tsx"))
+
+    expect(fetcherSrc, "a failed run read must be ok:false").toContain("return { run: null, ok: false }")
+    expect(fetcherSrc, "genuinely between runs must stay ok:true").toContain(
+      "return { run: (data as ActiveRun | null) ?? null, ok: true }",
+    )
+    // The failure branch must precede NoRunCard, whose copy promises we would
+    // surface a run if there were one.
+    const failure = code.indexOf("!runOk ?")
+    const noRun = code.indexOf("<NoRunCard />")
+    expect(failure, "a !runOk branch must exist").toBeGreaterThan(-1)
+    expect(failure, "it must precede NoRunCard").toBeLessThan(noRun)
+    expect(noRun, "NoRunCard must remain reachable between runs").toBeGreaterThan(-1)
+    // The SUBTITLE makes the same claim in the header and must be gated too —
+    // it renders above the gate ladder, so fixing only the card leaves
+    // "No active run" on screen during a live run.
+    expect(code, "the subtitle must not assert 'No active run' on a failed read").toMatch(
+      /runOk\s*\n?\s*\?\s*"No active run"/,
+    )
+  })
+
+  it("the legacy /edition/[id] redirect does not 404 a real edition on a failed read", () => {
+    // This route exists to catch LEGACY inbound links — old shares and anything
+    // a crawler already indexed — so `if (error || !data) notFound()` handed a
+    // hard 404 for an edition that exists, to the audience least likely to
+    // retry. Throwing renders the retryable error boundary; a genuine miss
+    // still 404s.
+    const code = stripComments(read("app", "edition", "[id]", "page.tsx"))
+    const fetcherSrc = read("lib", "edition", "legacy-redirect.ts")
+
+    expect(fetcherSrc, "a failed lookup must be ok:false").toContain("return { target: null, ok: false }")
+    expect(fetcherSrc, "a genuine miss must stay ok:true").toContain("return { target: null, ok: true }")
+    const thrown = code.indexOf('if (!ok) throw new Error("edition redirect unavailable")')
+    const notFoundCall = code.indexOf("if (!target) notFound()")
+    expect(thrown, "a failed read must throw, not notFound()").toBeGreaterThan(-1)
+    expect(thrown, "the throw must precede the not-found branch").toBeLessThan(notFoundCall)
+    expect(notFoundCall, "a genuine miss must still 404").toBeGreaterThan(-1)
+    expect(code, "error must no longer be folded into the notFound condition").not.toContain(
+      "if (error || !data",
+    )
+  })
 })
