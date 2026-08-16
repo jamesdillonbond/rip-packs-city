@@ -8,9 +8,14 @@
 //   (b) Copy link   → clipboard-copies the profile URL (for Discord paste).
 //
 // Both build the /profile/<username> URL with UTM params so inbound clicks are
-// attributable, and both fire the `share_profile` rewards earn via
-// /api/rewards/track (the share ACTION is what's rewarded — a posted tweet
-// can't be verified without X API access; the DB caps it to +50 once/day).
+// attributable, and both fire the `share_profile` earn via /api/rewards/track.
+//
+// ⚠ THAT EARN IS SILENT AND MUST STAY SILENT (2026-08-16). The rewards program
+// is not built out, so nothing user-facing may promise or confirm points — this
+// component used to render "+50 Status earned for sharing" under the buttons,
+// on the profile, the dashboard AND the trophy-case share page. The accrual is
+// kept so the data is there when rewards actually ship; the CLAIM is gone.
+// Do not reinstate a Status/credits confirmation here.
 //
 // REFERRAL: when `referrerId` (the sharer's auth user id) is supplied, the
 // shared URL also carries `&ref=<id>`. RefCapture (mounted in the root layout)
@@ -64,8 +69,6 @@ export default function ShareProfileButtons({
   referrerId?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
-  // null = not attempted; true = +50 just earned; false = already earned today
-  const [earned, setEarned] = useState<boolean | null>(null);
 
   const tweetText = useMemo(() => {
     let stat = "";
@@ -95,16 +98,13 @@ export default function ShareProfileButtons({
   // repeat same-day click is a harmless no-op ({ awarded:false }). 401 (anon)
   // just leaves the note hidden.
   const track = useCallback(() => {
+    // Fire-and-forget, and the RESPONSE IS DELIBERATELY IGNORED: reading
+    // `awarded` back is what used to drive the "+50 Status earned" note.
     fetch("/api/rewards/track", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event: "share_profile" }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d) setEarned(!!d.awarded);
-      })
-      .catch(() => {});
+    }).catch(() => {});
   }, []);
 
   const shareX = useCallback(() => {
@@ -158,18 +158,6 @@ export default function ShareProfileButtons({
           {copied ? "Copied!" : "Copy link"}
         </button>
       </div>
-      {earned !== null && (
-        <div
-          style={{
-            marginTop: 8,
-            fontFamily: MONO,
-            fontSize: 11,
-            color: earned ? "#5cc46a" : "#9a9a9a",
-          }}
-        >
-          {earned ? "+50 Status earned for sharing" : "Already earned your share bonus today"}
-        </div>
-      )}
     </div>
   );
 }

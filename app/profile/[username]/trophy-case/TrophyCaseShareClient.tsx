@@ -153,9 +153,12 @@ export default function TrophyCaseShareClient({
                 <TrophySlab key={`case-${i}`} slab={s} slot={i + 1} mode="public" />
               ))}
             </div>
+            {/* Two across on phones, never one. A six-slot case at one-wide is
+                six screens of scrolling, and this is the page people ARRIVE on
+                from a shared link — the whole case should be takeable in at a
+                glance. Mirrors .rpc-trophy-grid on the profile page. */}
             <style>{`
               @media (max-width: 900px) { .rpc-case-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; } }
-              @media (max-width: 560px) { .rpc-case-grid { grid-template-columns: minmax(0,1fr) !important; } }
             `}</style>
           </>
         )}

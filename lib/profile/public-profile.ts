@@ -66,6 +66,19 @@ export type PublicProfilePayload = {
   bio: PublicProfileBio
   trophies: Record<string, unknown>[]
   wallets: PublicProfileWallet[]
+  /**
+   * DISTINCT wallet ADDRESSES, which is not `wallets.length`.
+   *
+   * ⚠ `saved_wallets` is keyed per (wallet_addr, collection_id), so pinning ONE
+   * address produces one row per collection it holds moments in — Trevor's
+   * single Dapper wallet is four rows, and the profile read "4 WALLETS".
+   *
+   * It has to be computed HERE and shipped as a scalar: `wallet_addr` is
+   * deliberately stripped from `wallets` below (the privacy step), so no
+   * consumer of this payload is able to derive it. A count is not an address,
+   * so publishing the number leaks nothing the page did not already claim.
+   */
+  wallet_count: number
 }
 
 export type PublicProfileResult =
@@ -139,7 +152,9 @@ async function getPublicProfileUncached(
     supabase
       .from("saved_wallets")
       .select(
-        "username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
+        // wallet_addr is selected but NEVER published — it exists only to count
+        // distinct addresses below, and is dropped in the mapping step.
+        "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
       )
       .eq("user_id", userId),
   ])
@@ -177,6 +192,16 @@ async function getPublicProfileUncached(
     `[public/profile:${source}] trophies+wallets parallel elapsedMs=${Date.now() - fanT0} trophies=${trophies?.length ?? 0} wallets=${wallets?.length ?? 0}`
   )
 
+  // Count DISTINCT addresses before the strip below, which is the only point
+  // in the pipeline where they still exist. Rows with a null/blank address are
+  // not counted — a row we cannot attribute to an address is not evidence of
+  // another wallet.
+  const walletCount = new Set(
+    (wallets ?? [])
+      .map((w: any) => (typeof w.wallet_addr === "string" ? w.wallet_addr.trim().toLowerCase() : ""))
+      .filter((a: string) => a !== "")
+  ).size
+
   // Strip wallet ADDRESSES from the public payload — load-bearing privacy step.
   const walletSummaries: PublicProfileWallet[] = (wallets ?? []).map((w: any) => ({
     username: w.username ?? null,
@@ -209,6 +234,7 @@ async function getPublicProfileUncached(
       },
       trophies: trophies ?? [],
       wallets: walletSummaries,
+      wallet_count: walletCount,
     },
   }
 }

@@ -171,6 +171,8 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
 export default function ProfileClient(props: {
   initialBio?: ProfileBio | null;
   initialWallets?: SavedWalletPublic[];
+  /** DISTINCT wallet addresses — see the WALLETS tile for why not wallets.length. */
+  initialWalletCount?: number | null;
 }) {
   const params = useParams();
   const username = params?.username as string;
@@ -184,6 +186,13 @@ export default function ProfileClient(props: {
   const [bio, setBio] = useState<ProfileBio | null>(props.initialBio ?? null);
   const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>(props.initialWallets ?? []);
+  // Server-computed, because `wallets` has had its addresses stripped and so
+  // cannot be deduped here. null = the payload did not carry it, which the
+  // tile renders by OMITTING the line rather than falling back to
+  // wallets.length — that fallback is the bug this replaced.
+  const [walletCount, setWalletCount] = useState<number | null>(
+    typeof props.initialWalletCount === "number" ? props.initialWalletCount : null
+  );
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   // Current viewer's handle + auth id (null = anon). Drives the own-profile
@@ -214,6 +223,7 @@ export default function ProfileClient(props: {
         if (!data) return;
         if (data.bio) setBio(data.bio);
         if (Array.isArray(data.wallets)) setWallets(data.wallets);
+        if (typeof data.wallet_count === "number") setWalletCount(data.wallet_count);
       })
       .catch(function() {});
 
@@ -485,16 +495,24 @@ export default function ProfileClient(props: {
             }}
           >
             <div style={labelStyle}>SHARE YOUR COLLECTION</div>
+            {/* ⚠ NO POINTS/REWARDS COPY HERE. This used to promise "+50 Status
+                once a day for sharing" and "more Status when a friend joins
+                through your link" — a reward the program is not built enough to
+                pay out. Sharing itself is real and stays; the promise does not.
+                Do not reinstate any Status/credits language on a public surface
+                until the rewards program actually ships. */}
             <div style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em", maxWidth: 440 }}>
-              Post your trophy case on X or Discord. Earn <strong style={{ color: accentColor }}>+50 Status</strong> once a day for sharing — and{" "}
-              <strong style={{ color: accentColor }}>more Status</strong> when a friend joins through your link.
+              Post your trophy case on X or Discord.
             </div>
             <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} />
           </section>
         )}
 
-        {/* ── Achievements ── */}
-        {username && <PublicAchievements ownerKey={username} />}
+        {/* ── Achievements: REMOVED 2026-08-16 ──
+            Badges are part of the same unshipped rewards program as the Status
+            copy above, so they were making a promise the product cannot keep.
+            The component and its API are intact; re-mount
+            <PublicAchievements ownerKey={username} /> here when rewards ship. */}
 
         {/* ── Stat Tiles ── */}
         <div style={{ display: "grid", gridTemplateColumns: rpcScore != null ? "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 24 }}>
@@ -530,9 +548,20 @@ export default function ProfileClient(props: {
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
               {totalMoments > 0 ? totalMoments.toLocaleString() : "—"}
             </div>
-            <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
-              {wallets.length} WALLET{wallets.length !== 1 ? "S" : ""}
-            </div>
+            {/* ⚠ `walletCount` is DISTINCT ADDRESSES from the server, NOT
+                `wallets.length`. saved_wallets is keyed per (wallet_addr,
+                collection_id), so one pinned address becomes one row per
+                collection it holds moments in — a single Dapper wallet read
+                "4 WALLETS". The addresses are stripped from this payload for
+                privacy, so the count cannot be derived here; when the server
+                did not send one we omit the line rather than print a number we
+                cannot stand behind. (The FMV and moment totals above are sums
+                across those same rows, so they were correct all along.) */}
+            {walletCount != null && (
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
+                {walletCount} WALLET{walletCount !== 1 ? "S" : ""}
+              </div>
+            )}
           </div>
         </div>
 
@@ -617,18 +646,19 @@ export default function ProfileClient(props: {
             @media (max-width: 768px) {
               .rpc-trophy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
             }
-            @media (max-width: 480px) {
-              .rpc-trophy-grid { grid-template-columns: minmax(0, 1fr) !important; }
-            }
           `}</style>
         </section>
 
-        {/* ── Cost Basis (own profile only — spend/P-L is private) ── */}
-        {isOwnProfile && username && (
-          <div style={{ marginBottom: 14 }}>
-            <CostBasisCard ownerKey={username} ownView={isOwnProfile} />
-          </div>
-        )}
+        {/* ── Cost Basis · P/L: REMOVED FROM THIS PAGE 2026-08-16 ──
+            Spend and profit/loss do not belong on the shareable profile at all,
+            even own-view. This page is the one a collector posts publicly, and
+            a card that renders for the owner is one screenshot away from being
+            public — the gating was never the risk, the SURFACE was. Portfolio
+            FMV stays: a total holdings value is what the page is for; what it
+            COST you is not.
+            Cost basis is unaffected elsewhere — it still lives per-wallet on
+            /[collection]/analytics (components/analytics/CostBasisCard), which
+            is where a collector looks at their own numbers. */}
 
         {/* ── Collection Breakdown ── */}
         {username && (

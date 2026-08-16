@@ -55,8 +55,19 @@ const ROOTS = ["app", "components"]
  * shape they replaced — so a version without stripComments() would double-count
  * the very conversions the ratchet is meant to reward, and a future conversion
  * that documents itself would look like a REGRESSION.
+ *
+ * 39 -> 38 on 2026-08-16: ShareProfileButtons' `.then(r => r.ok ? r.json() :
+ * null)` went with the removal of the "+50 Status earned" note (the rewards
+ * program is not built out, so no surface may confirm an earn). The site was
+ * removed rather than converted, which counts the same to this ratchet — the
+ * population shrank.
+ *
+ * ⚠ RE-DERIVE THIS FROM THE FAILING no-slack ASSERTION, never by subtracting
+ * your own conversions from the number you read earlier. It is a COUNT of a
+ * shared population, and concurrent sessions move it: two sessions each
+ * subtracting their own work from 33 both wrote a wrong number on 2026-08-16.
  */
-const BUDGET = 39
+const BUDGET = 38
 
 /**
  * A failure funnelled into the success-with-nothing value.

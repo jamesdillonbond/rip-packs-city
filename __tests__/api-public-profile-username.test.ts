@@ -98,7 +98,9 @@ describe("GET /api/public/profile/[username]", () => {
       equipped_banner: null,
     }
     st.trophy = [{ slot: 1, moment_id: "m1", player_name: "Dame", serial_number: "1", fmv: "9000" }]
-    st.wallets = [{ collection_id: "c1", cached_fmv_usd: 1234, accent_color: null }]
+    st.wallets = [
+      { wallet_addr: "0xabc", collection_id: "c1", cached_fmv_usd: 1234, accent_color: null },
+    ]
     const res = await GET(req, ctx("Trevor"))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -107,9 +109,83 @@ describe("GET /api/public/profile/[username]", () => {
     // trophies numeric coercion out of the jsonb RPC
     expect(body.trophies[0].serial_number).toBe(1)
     expect(body.trophies[0].fmv).toBe(9000)
-    // wallet addresses stripped; accent_color defaulted
-    expect(body.wallets[0]).not.toHaveProperty("wallet_address")
+    // ⚠ `wallet_addr`, NOT `wallet_address`. This assertion previously named a
+    // column that does not exist on saved_wallets, so the privacy strip it
+    // claims to guard was never actually tested — it passed on any payload,
+    // including one leaking every address. It matters now: the query SELECTS
+    // wallet_addr (to count distinct addresses) and drops it in the mapping,
+    // so this is the only thing standing between that and publishing it.
+    expect(body.wallets[0]).not.toHaveProperty("wallet_addr")
+    expect(JSON.stringify(body)).not.toContain("0xabc")
     expect(body.wallets[0].accent_color).toBe("#E03A2F")
     expect(body.wallets[0].cached_fmv).toBe(1234)
+  })
+})
+
+describe("wallet_count counts ADDRESSES, not saved_wallets rows", () => {
+  // The bug this replaced: saved_wallets is keyed per (wallet_addr,
+  // collection_id), so pinning ONE address writes one row per collection it
+  // holds moments in. The profile rendered `wallets.length` and told a
+  // collector with a single Dapper wallet that they had "4 WALLETS".
+  //
+  // It is computed server-side and shipped as a scalar because the addresses
+  // are stripped from the payload — no client can derive it.
+  beforeEach(() => {
+    st.idRow = { user_id: "u1" }
+    st.bio = { username: "trevor", display_name: "Trevor" }
+  })
+
+  it("reports 1 for one address spread across four collections", async () => {
+    st.wallets = ["c1", "c2", "c3", "c4"].map((c) => ({
+      wallet_addr: "0xbd94cade097e50ac",
+      collection_id: c,
+      cached_fmv_usd: 100,
+      cached_moment_count: 10,
+    }))
+    const body = await (await GET(req, ctx("trevor"))).json()
+    expect(body.wallets).toHaveLength(4) // the rows are all still there…
+    expect(body.wallet_count).toBe(1) // …but that is ONE wallet
+  })
+
+  it("still counts genuinely distinct addresses separately", async () => {
+    // The mirror case. A fix that just hardcoded 1, or counted collections,
+    // would pass the case above and be wrong for everyone with two wallets.
+    st.wallets = [
+      { wallet_addr: "0xaaa", collection_id: "c1" },
+      { wallet_addr: "0xaaa", collection_id: "c2" },
+      { wallet_addr: "0xbbb", collection_id: "c1" },
+    ]
+    const body = await (await GET(req, ctx("trevor"))).json()
+    expect(body.wallet_count).toBe(2)
+  })
+
+  it("treats casing/whitespace as the same address", async () => {
+    st.wallets = [
+      { wallet_addr: "0xAAA", collection_id: "c1" },
+      { wallet_addr: " 0xaaa ", collection_id: "c2" },
+    ]
+    const body = await (await GET(req, ctx("trevor"))).json()
+    expect(body.wallet_count).toBe(1)
+  })
+
+  it("does not count a row whose address is missing", async () => {
+    // A row we cannot attribute to an address is not evidence of another
+    // wallet, and counting it would reintroduce the over-count one row at a
+    // time.
+    st.wallets = [
+      { wallet_addr: "0xaaa", collection_id: "c1" },
+      { wallet_addr: null, collection_id: "c2" },
+      { wallet_addr: "", collection_id: "c3" },
+    ]
+    const body = await (await GET(req, ctx("trevor"))).json()
+    expect(body.wallet_count).toBe(1)
+  })
+
+  it("is 0, not absent, for a collector with no wallets", async () => {
+    // The client omits the line when the field is missing, so an absent
+    // wallet_count would silently hide a real zero.
+    st.wallets = []
+    const body = await (await GET(req, ctx("trevor"))).json()
+    expect(body.wallet_count).toBe(0)
   })
 })

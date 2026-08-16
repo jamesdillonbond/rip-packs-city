@@ -5,10 +5,16 @@ import ShareProfileButtons from "@/components/profile/ShareProfileButtons"
 
 // Pins the "share your collection" affordance: the UTM-tagged profile URL each
 // action builds (attribution + the &ref= referral loop), the X-intent open, the
-// clipboard copy + "Copied!" state, and the fire-and-forget rewards track whose
-// {awarded} result drives the +50 / already-earned note. These are the pieces
-// that make the referral/rewards loop actually fire — silent breakage here loses
-// attribution and reward credit.
+// clipboard copy + "Copied!" state, and the fire-and-forget rewards track.
+//
+// ⚠ TWO CASES HERE WERE INVERTED ON 2026-08-16, AND THAT IS THE POINT. They
+// asserted the "+50 Status earned for sharing" / "Already earned your share
+// bonus today" notes, and they were CORRECT tests for the behaviour that
+// existed. Once the rewards program was pulled from every user-facing surface
+// (it is not built out, so the promise could not be honoured), a passing test
+// asserting the promise is the thing HOLDING IT IN PLACE — it would red the
+// removal and read as a regression. They now assert the notes are ABSENT while
+// the silent accrual still fires, so a revert reds instead.
 
 let openMock: ReturnType<typeof vi.fn>
 let writeTextMock: ReturnType<typeof vi.fn>
@@ -62,16 +68,34 @@ describe("ShareProfileButtons", () => {
     expect(intent).toContain("ref=user-99")
   })
 
-  it("shows the +50 earned note when the reward track returns awarded:true", async () => {
-    render(<ShareProfileButtons username="trevor" />)
-    fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
-    await waitFor(() => expect(screen.getByText(/\+50 Status earned/i)).toBeTruthy())
+  it("never promises points, whatever the reward track answers", async () => {
+    // The rewards program is not built out, so no surface may confirm an earn.
+    // Driven through BOTH answers the endpoint can give, because the component
+    // used to render a different note for each.
+    for (const awarded of [true, false]) {
+      cleanup()
+      fetchMock.mockResolvedValue({ ok: true, json: async () => ({ awarded }) } as any)
+      render(<ShareProfileButtons username="trevor" />)
+      fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
+      // Await the tracking call so the assertion lands AFTER the point where
+      // the note used to appear — asserting an absence before the fetch settles
+      // would pass against the old code too, and prove nothing.
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      const text = document.body.textContent ?? ""
+      expect(text).not.toMatch(/\+50/)
+      expect(text).not.toMatch(/Status/i)
+      expect(text).not.toMatch(/earned/i)
+      expect(text).not.toMatch(/bonus/i)
+    }
   })
 
-  it("shows the already-earned note when awarded:false", async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ awarded: false }) } as any)
+  it("still fires the silent accrual, so the data is there when rewards ship", async () => {
+    // Removing the CLAIM must not remove the tracking — that distinction is the
+    // whole design, and deleting the fetch would be an easy "cleanup" later.
     render(<ShareProfileButtons username="trevor" />)
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
-    await waitFor(() => expect(screen.getByText(/Already earned your share bonus today/i)).toBeTruthy())
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/rewards/track", expect.anything()),
+    )
   })
 })

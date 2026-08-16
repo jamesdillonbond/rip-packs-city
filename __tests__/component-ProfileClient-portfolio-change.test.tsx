@@ -230,21 +230,41 @@ describe("the RPC score band", () => {
 })
 
 describe("own-profile gating", () => {
-  it("shows the private cost-basis card only to the profile owner", async () => {
+  // ⚠ THIS BLOCK USED TO ASSERT THE OWNER *SEES* THE COST-BASIS CARD, and that
+  // was a correct test for the behaviour that existed: the card was gated to
+  // the owner, and the case pinned the case-insensitive username match so a
+  // casing difference could not expose someone's spend.
+  //
+  // The card was removed from this page entirely on 2026-08-16 (Trevor). The
+  // gating was never the risk — this is the page a collector POSTS, and a card
+  // that renders for the owner is one screenshot from being public. So the
+  // owner case is inverted below rather than deleted: kept as a positive
+  // assertion that NOBODY sees it, including the viewer who used to.
+  //
+  // Cost basis is not gone from the product — it lives per-wallet on
+  // /[collection]/analytics, covered by component-CostBasisCard-analytics.
+  it("shows the cost-basis card to NOBODY, including the profile owner", async () => {
     installFetch({
       "/api/public/profile/": PROFILE,
       "/api/profile/trophy-slabs": { slabs: [] },
       "/api/profile/portfolio-history": { snapshots: [] },
       "/api/profile/teams": { teams: [] },
       "/api/profile/me": { user: { username: "TREVOR", id: "u1" } },
-      "/api/profile/cost-basis-summary": { totalSpent: 0, totalPurchases: 0, netPL: 0 },
+      "/api/profile/cost-basis-summary": { totalSpent: 4200, totalPurchases: 12, netPL: 900 },
       "/api/profile/collection-breakdown": { collections: [] },
       "/api/profile/top-movers": { gainers: [], losers: [] },
     })
     const { container } = render(<ProfileClient />)
-    // Match is case-insensitive: the session username casing must not decide
-    // whether spend and P/L are exposed.
-    await waitFor(() => expect(container.textContent).toMatch(/Cost Basis/i))
+    // Waits on the own-profile share block, which only renders once
+    // /api/profile/me has resolved and matched — so this asserts the absence
+    // AFTER the point where the card used to appear, not before it.
+    await waitFor(() => expect(container.textContent).toMatch(/SHARE YOUR COLLECTION/i))
+    expect(container.textContent).not.toMatch(/Cost Basis/i)
+    expect(container.textContent).not.toMatch(/Total Spent/i)
+    // The fixture above returns a real spend, so a card rendered from it would
+    // show these figures. Nothing does.
+    expect(container.textContent).not.toContain("4200")
+    expect(container.textContent).not.toContain("$4.2K")
   })
 
   it("hides it from every other viewer", async () => {

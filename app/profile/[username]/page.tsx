@@ -43,6 +43,7 @@ export default async function PublicProfilePage(props: {
     <ProfileClient
       initialBio={data?.bio ?? null}
       initialWallets={Array.isArray(data?.wallets) ? data.wallets : []}
+      initialWalletCount={typeof data?.wallet_count === "number" ? data.wallet_count : null}
     />
   )
 }
