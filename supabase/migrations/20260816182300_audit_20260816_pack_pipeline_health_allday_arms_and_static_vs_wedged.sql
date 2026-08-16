@@ -1,14 +1,25 @@
 -- 2026-08-16 — rebuild public.v_pack_pipeline_health.
 --
--- ⚠ COMMITTED UNAPPLIED. Apply in a low-traffic window: every apply_migration
+-- ✅ APPLIED 2026-08-16 as schema_migrations version `20260816185749`.
+-- (The version differs from this filename's timestamp because apply_migration
+-- stamps its own; migration-parity matches on NAME, so that is expected.)
+--
+-- It was authored UNAPPLIED and held back deliberately: every apply_migration
 -- invalidates PostgREST's schema cache and costs a ~10–20 s burst of user-facing
--- PGRST002 500s. At authoring time the instance was disk-IO saturated (five
--- 60 s MCP timeouts in one session, fmv-recalc being killed at maxDuration on
--- ~63–75% of invocations), so this was deliberately NOT pushed into it.
+-- PGRST002 500s, and at authoring time the instance was disk-IO saturated (five
+-- 60 s MCP timeouts in one session; fmv-recalc killed at maxDuration on ~63–75%
+-- of invocations). It was applied later the same day in a measured quiet window
+-- — `pg_stat_activity` showing 0 active backends and 0 IO waits — which is the
+-- cheap check worth repeating before any apply.
+--
+-- Verified after apply: all 10 rows present across both collections
+-- (6 live / 2 static / 1 quiescent / 0 wedged), `reloptions` still
+-- `{security_invoker=on}`, `check_public_security_invariants()` and
+-- `check_anon_write_surface()` both 0 rows.
 --
 -- REVERT: the prior definition is reproduced verbatim at the bottom of this file
 -- under "REVERT BODY". Re-run that block; it carries its own
--- `WITH (security_invoker = on)`.
+-- `WITH (security_invoker = on)` and its own DROP.
 --
 -- ── WHY ───────────────────────────────────────────────────────────────────────
 -- This view is the only standing instrument over pack ingestion, and a 2026-08-16
@@ -65,7 +76,23 @@
 -- (prune_pipeline_runs(3), pg_cron jobid 57) or the activity columns read 0 for
 -- every pipeline and every static cursor reports `not_running`.
 
-CREATE OR REPLACE VIEW public.v_pack_pipeline_health
+-- ⚠ DROP + CREATE, NOT `CREATE OR REPLACE` — and this is not a style choice.
+-- `CREATE OR REPLACE VIEW` cannot rename or reorder columns; the prior view's
+-- first column is `pipeline` and this one's is `collection_slug`, so a replace
+-- fails outright:
+--     42P16: cannot change name of view column "pipeline" to "collection_slug"
+-- ⚠ THE SQL TEST CANNOT CATCH THIS. `supabase/tests/v_pack_pipeline_health.sql`
+-- builds the view inside a rolled-back transaction where no prior definition
+-- exists, so the compatibility constraint against the LIVE view is invisible to
+-- it by construction — the test passed while the apply failed. Verified safe to
+-- drop first: zero DB dependents (pg_depend/pg_rewrite) and zero repo consumers;
+-- this view is operator-diagnostic only, read by no route, cron or function.
+-- ⚠ The REVERT BODY at the bottom carries the same DROP for the same reason —
+-- reverting hits the identical constraint in the opposite direction, so a
+-- `CREATE OR REPLACE` revert would fail exactly when it is needed.
+DROP VIEW IF EXISTS public.v_pack_pipeline_health;
+
+CREATE VIEW public.v_pack_pipeline_health
 WITH (security_invoker = on) AS
 WITH streams AS (
   SELECT *
@@ -166,7 +193,10 @@ COMMENT ON VIEW public.v_pack_pipeline_health IS
   'Pack ingestion health for Top Shot + All Day: one row per event_cursor, with 24h pipeline_runs activity and per-collection data recency. status distinguishes a cursor that stopped with nothing left to find (quiescent) from one still finding rows and not advancing (wedged); `static` means the owning pipeline drives several cursors so rows_found cannot be attributed — see rows_attributable. Cheap by construction: no count(*), recency rides idx_pack_{purchases,rips}_collection_time.';
 
 -- ── REVERT BODY ───────────────────────────────────────────────────────────────
--- CREATE OR REPLACE VIEW public.v_pack_pipeline_health
+-- ⚠ The DROP is REQUIRED here too — see the note at the top. Reverting renames
+-- the columns back, which `CREATE OR REPLACE VIEW` refuses with the same 42P16.
+-- DROP VIEW IF EXISTS public.v_pack_pipeline_health;
+-- CREATE VIEW public.v_pack_pipeline_health
 -- WITH (security_invoker = on) AS
 --  SELECT 'topshot_pack_purchases (live)'::text AS pipeline,
 --     (SELECT event_cursor.last_processed_block FROM event_cursor WHERE event_cursor.id = 'topshot_pack_purchases'::text) AS cursor_block,

@@ -99,8 +99,21 @@ INSERT INTO public.pack_rips VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '6 minutes'),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', now() - interval '95 minutes');
 
+-- ⚠ KNOWN LIMIT OF THIS HARNESS, recorded because it already bit once.
+-- This file builds the view in a rolled-back transaction where NO PRIOR
+-- DEFINITION EXISTS, so it is structurally incapable of seeing whether the
+-- migration can actually REPLACE the live view. It cannot: the prior view's
+-- first column is `pipeline` and this one's is `collection_slug`, and
+-- `CREATE OR REPLACE VIEW` refuses to rename or reorder columns
+-- (42P16). The test passed green while the production apply failed outright.
+-- The migration therefore does DROP + CREATE, mirrored here so the two stay
+-- byte-comparable. **A green rolled-back DB test is not evidence that a
+-- migration applies** — that is only learned from the apply itself.
+
 -- >>> BEGIN verbatim v_pack_pipeline_health >>>
-CREATE OR REPLACE VIEW public.v_pack_pipeline_health
+DROP VIEW IF EXISTS public.v_pack_pipeline_health;
+
+CREATE VIEW public.v_pack_pipeline_health
 WITH (security_invoker = on) AS
 WITH streams AS (
   SELECT *
