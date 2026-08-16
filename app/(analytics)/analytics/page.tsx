@@ -9,6 +9,7 @@ import {
   Package,
   Layers,
   Sparkles,
+  ShieldAlert,
   ArrowUpRight,
 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
@@ -376,6 +377,18 @@ export default async function AnalyticsOverviewPage() {
               { label: "Editions", value: formatCount(setsTotalEditions) },
             ]
           : [{ label: "Status", value: "Live" }],
+    },
+    {
+      // No methodologyTopic: there is no /analytics/methodology/buyback page,
+      // and linking to one that 404s is worse than omitting the link. The
+      // coverage caveats this surface needs are rendered inline on the board
+      // itself, where the numbers they qualify actually appear.
+      href: "/analytics/buyback",
+      label: "Buyback Wallets",
+      description:
+        "What Top Shot's secondary-buyback wallets are accumulating by week, month and year — most-acquired moments, priced spend, and who they buy from.",
+      icon: ShieldAlert,
+      status: "live",
     },
   ]
 
