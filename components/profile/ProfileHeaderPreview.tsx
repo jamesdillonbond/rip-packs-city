@@ -20,6 +20,7 @@
 // Pure and prop-driven so it is unit-testable — the editor page itself is a
 // `page.tsx`, measured by neither coverage gate.
 
+import { useEffect, useState } from "react";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 
@@ -75,8 +76,26 @@ export default function ProfileHeaderPreview({
   // make this component do the exact thing it exists to prevent: show the
   // collector something their visitors do not see.
   const typed = avatarUrl.trim();
-  const showImage = typed === "" || /^https?:\/\/\S+$/i.test(typed);
+  const looksLikeUrl = typed === "" || /^https?:\/\/\S+$/i.test(typed);
   const previewSrc = resolveAvatarUrl(avatarUrl);
+
+  // ⚠ THE ONLY HONEST TEST OF AN AVATAR URL IS LOADING IT, and it is free here
+  // because the preview already renders one. Before this, a URL that pointed at
+  // HTML (an OpenSea item page — the real case that prompted it) previewed as a
+  // broken <img> and saved silently, and the collector's profile then showed the
+  // monogram, which is INDISTINGUISHABLE from never having set an avatar. The
+  // load result is the difference between "you have not set one" and "the one
+  // you set does not work".
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Every new value deserves a fresh attempt, or one bad paste pins the failure
+  // notice for the rest of the editing session — including after it is fixed.
+  useEffect(() => { setLoadFailed(false); }, [previewSrc]);
+
+  // ⚠ `loadFailed` FEEDS THE BRANCH, it does not merely add a notice. The public
+  // page's Avatar swaps the monogram in via onError, so a preview that kept
+  // showing a broken-image icon would be showing the collector something their
+  // visitors never see — the exact drift this component exists to prevent.
+  const showImage = looksLikeUrl && !loadFailed;
 
   return (
     <div
@@ -124,6 +143,7 @@ export default function ProfileHeaderPreview({
               alt=""
               data-testid="preview-avatar-image"
               data-preview-avatar="ring"
+              onError={() => setLoadFailed(true)}
               style={{
                 width: 56,
                 height: 56,
@@ -157,6 +177,23 @@ export default function ProfileHeaderPreview({
             </div>
           )}
         </div>
+
+        {loadFailed && (
+          <div
+            data-testid="preview-avatar-load-failed"
+            style={{
+              fontFamily: MONO,
+              fontSize: 10,
+              lineHeight: 1.5,
+              color: "var(--rpc-warning)",
+              maxWidth: 320,
+              margin: "0 auto 10px",
+            }}
+          >
+            That link did not load as an image, so visitors will see your
+            initials instead.
+          </div>
+        )}
 
         <div
           style={{

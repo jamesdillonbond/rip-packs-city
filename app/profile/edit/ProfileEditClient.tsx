@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/lib/teams";
 import ProfileHeaderPreview from "@/components/profile/ProfileHeaderPreview";
+import { avatarUrlWarning } from "@/lib/profile/avatar-url";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -168,6 +169,20 @@ export default function ProfileEditClient() {
   function update<K extends keyof BioForm>(key: K, value: BioForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  /**
+   * What (if anything) is wrong with the avatar URL, in words the collector can
+   * act on. Derived rather than held in state — it is a pure function of the
+   * field, so state would be a second copy to keep in sync.
+   *
+   * ⚠ It WARNS, it does not block. A host can be down for a minute and an
+   * avatar that fails today may be fine tomorrow; refusing the save would
+   * strand someone over a transient failure. What was missing was any signal at
+   * all — a collector pasted an OpenSea item page, we saved it, said nothing,
+   * and their profile fell back to initials, which looks identical to never
+   * having set one.
+   */
+  const avatarWarning = useMemo(() => avatarUrlWarning(form.avatar_url), [form.avatar_url]);
 
   function setPickTeam(league: League, slug: string) {
     setPicks((prev) => {
@@ -513,7 +528,13 @@ export default function ProfileEditClient() {
               {/* Blank used to mean "show my initials"; it now means "show the
                   RPC logo", so the field has to say so — the live preview above
                   shows it, but only once you look away from the input. */}
-              <div className="hint">Leave blank to use the RPC logo.</div>
+              {avatarWarning ? (
+                <div className="hint" data-testid="avatar-url-warning" style={{ color: "var(--rpc-warning)" }}>
+                  {avatarWarning}
+                </div>
+              ) : (
+                <div className="hint">Leave blank to use the RPC logo.</div>
+              )}
             </div>
 
             <div className="field">

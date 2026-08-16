@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 import ProfileHeaderPreview, {
   hexToRgba,
   initialsFor,
@@ -154,6 +154,34 @@ describe("ProfileHeaderPreview", () => {
     render(<ProfileHeaderPreview {...base} equippedBorder="not-a-sku" equippedBanner="nope" />)
     expect(screen.queryByTestId("preview-banner")).toBeNull()
     expect(avatarSlot()).toBeTruthy()
+  })
+
+  it("reports a URL that does not load as an image", () => {
+    // ⚠ THE ONLY HONEST TEST OF AN AVATAR URL IS LOADING IT. A collector who
+    // pasted an OpenSea item page previously saw a broken <img> here and a
+    // monogram on their live profile — which is indistinguishable from never
+    // having set an avatar, so nothing told them the value was the problem.
+    render(<ProfileHeaderPreview {...base} avatarUrl="https://example.com/not-an-image" />)
+    expect(screen.queryByTestId("preview-avatar-load-failed")).toBeNull()
+    fireEvent.error(screen.getByTestId("preview-avatar-image"))
+    expect(screen.getByTestId("preview-avatar-load-failed")).toBeTruthy()
+    // …and it says what the VISITOR will see, not just that something failed.
+    expect(screen.getByTestId("preview-avatar-load-failed").textContent).toMatch(/initials/i)
+    // The monogram takes over, so the preview still matches the public page.
+    expect(screen.getByTestId("preview-avatar-initials")).toBeTruthy()
+  })
+
+  it("clears the failure when the URL changes, so a fix is visible immediately", () => {
+    // Otherwise one bad paste pins the notice for the rest of the session and
+    // the collector cannot tell whether their correction worked.
+    const { rerender } = render(
+      <ProfileHeaderPreview {...base} avatarUrl="https://example.com/broken" />,
+    )
+    fireEvent.error(screen.getByTestId("preview-avatar-image"))
+    expect(screen.getByTestId("preview-avatar-load-failed")).toBeTruthy()
+    rerender(<ProfileHeaderPreview {...base} avatarUrl="https://example.com/good.png" />)
+    expect(screen.queryByTestId("preview-avatar-load-failed")).toBeNull()
+    expect(screen.getByTestId("preview-avatar-image")).toBeTruthy()
   })
 
   it("falls back to the username when no display name is set", () => {
