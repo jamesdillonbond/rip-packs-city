@@ -393,6 +393,51 @@ describe("client pages — a failed read is not an empty result", () => {
   // the neighbouring error proves the panel *can* report failure. On the sniper
   // surface that claim is what tells a collector the listing in front of them is
   // the only one.
+  describe("/[collection]/sniper listing suggestions — the empty copy is a CONCLUSION", () => {
+    // ⚠ Not an empty state: "No listing suggestions found. Your moments are
+    // priced at or below current market asks." is a specific analytical claim
+    // about the reader's own portfolio, and it is actionable in the direction
+    // of INACTION — it tells them not to re-list. Three failure paths used to
+    // produce it: a non-2xx snapshot read, a thrown fetch, and the deals feed
+    // not having loaded.
+    const src = stripComments(
+      read("app", "(collections)", "[collection]", "sniper", "page.tsx"),
+    )
+
+    it("classifies through the shared state machine rather than inline", () => {
+      // The arithmetic and the four states live in lib/, where the primary gate
+      // measures them — this page is 1,790 lines that neither gate sees.
+      expect(src).toContain("suggestionsState({")
+      expect(src).toContain("buildListingSuggestions(owned, data.deals)")
+    })
+
+    it("BOTH exits classify — the non-ok body and the thrown fetch", () => {
+      // The `.catch` used to only stop the spinner, leaving the conclusion on
+      // screen after a network failure.
+      expect(src).toContain('setSuggestionsState("read-failed")')
+      const catchBlock = src.slice(src.indexOf("setSuggestionsLoading(true);"))
+      expect(catchBlock).toMatch(/\.catch\(\(\) => \{[\s\S]{0,200}setSuggestionsState\("read-failed"\)/)
+    })
+
+    it("both failure branches precede the conclusion", () => {
+      const readFailed = src.indexOf('suggestionsState_ === "read-failed" ?')
+      const noMarket = src.indexOf('suggestionsState_ === "no-market" ?')
+      const conclusion = src.indexOf("Your moments are priced at or below current market asks")
+      expect(readFailed, "a read-failed branch must exist").toBeGreaterThan(-1)
+      expect(noMarket, "a no-market branch must exist").toBeGreaterThan(-1)
+      expect(readFailed).toBeLessThan(conclusion)
+      expect(noMarket).toBeLessThan(conclusion)
+      // ...and the conclusion must REMAIN reachable: when both sides loaded it
+      // is true and useful, and routing it into a failure notice would hide a
+      // real answer behind a false apology.
+      expect(conclusion, "the honest conclusion must survive").toBeGreaterThan(-1)
+    })
+
+    it("the failure copy does not make a claim about the reader's pricing", () => {
+      expect(src).toContain("This says\n              nothing about how your Moments are priced")
+    })
+  })
+
   describe("/[collection]/sniper depth panel — both legs report failure", () => {
     const src = stripComments(
       read("app", "(collections)", "[collection]", "sniper", "page.tsx"),

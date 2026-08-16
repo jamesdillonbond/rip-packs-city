@@ -27,6 +27,13 @@ import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
+  buildListingSuggestions,
+  suggestionsState,
+  type ListingSuggestion,
+  type OwnedMoment,
+  type SuggestionsState,
+} from "@/lib/sniper/listing-suggestions";
+import {
   filterSniperDeals,
   sortByVerifiedFirst,
   computeSniperStats,
@@ -142,8 +149,15 @@ function SniperMomentsBody() {
 
   // ── Task 7: Listing suggestions panel
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ player: string; serial: number; pctAbove: number }>>([]);
+  const [suggestions, setSuggestions] = useState<ListingSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  /**
+   * ⚠ The panel's empty copy is a CONCLUSION — "Your moments are priced at or
+   * below current market asks" — so it may only be published when we actually
+   * compared. Three failure paths used to land on it: a non-2xx snapshot read,
+   * a thrown fetch, and the deals feed not having loaded.
+   */
+  const [suggestionsState_, setSuggestionsState] = useState<SuggestionsState>("none");
 
   // ── Task 1: "Just Sold" ghost listings ──────────────────────────────────────
   const prevDealIdsRef = useRef<Set<string>>(new Set());
@@ -742,29 +756,30 @@ function SniperMomentsBody() {
                   if (!showSuggestions && ownerKey) {
                     setSuggestionsLoading(true);
                     fetch(`/api/collection-snapshot?wallet=${encodeURIComponent(ownerKey)}`)
+                      // ⚠ null means WE COULD NOT READ, and it must stay
+                      // distinguishable from a collection that holds nothing.
                       .then((r) => r.ok ? r.json() : null)
                       .then((snapshot) => {
-                        if (!snapshot?.topMoments || !data?.deals) { setSuggestionsLoading(false); return; }
-                        const userMoments = snapshot.topMoments ?? [];
-                        const dealMap = new Map<string, SniperDeal>();
-                        for (const d of data.deals) { dealMap.set(d.editionKey, d); }
-                        const results: Array<{ player: string; serial: number; pctAbove: number }> = [];
-                        for (const m of userMoments) {
-                          const edKey = m.editionKey ?? "";
-                          const deal = dealMap.get(edKey);
-                          if (deal && m.fmv && deal.askPrice > m.fmv) {
-                            results.push({
-                              player: m.playerName ?? "Unknown",
-                              serial: m.serialNumber ?? 0,
-                              pctAbove: Math.round(((deal.askPrice - m.fmv) / m.fmv) * 100),
-                            });
-                          }
-                        }
-                        results.sort((a, b) => b.pctAbove - a.pctAbove);
-                        setSuggestions(results.slice(0, 10));
+                        const owned: OwnedMoment[] | null = snapshot?.topMoments
+                          ? (snapshot.topMoments as OwnedMoment[])
+                          : null;
+                        const results = owned && data?.deals
+                          ? buildListingSuggestions(owned, data.deals)
+                          : [];
+                        setSuggestions(results);
+                        setSuggestionsState(
+                          suggestionsState({ ownedMoments: owned, deals: data?.deals, resultCount: results.length }),
+                        );
                         setSuggestionsLoading(false);
                       })
-                      .catch(() => setSuggestionsLoading(false));
+                      .catch(() => {
+                        // `fetch` THROWS on a network failure rather than
+                        // resolving non-ok — the same false conclusion by a
+                        // second route.
+                        setSuggestions([]);
+                        setSuggestionsState("read-failed");
+                        setSuggestionsLoading(false);
+                      });
                   }
                 }}
                 className="rpc-chip"
@@ -1686,6 +1701,19 @@ function SniperMomentsBody() {
           ) : suggestionsLoading ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
               Analyzing your portfolio...
+            </div>
+          ) : suggestionsState_ === "read-failed" ? (
+            /* ⚠ BEFORE the conclusion below. "Your moments are priced at or
+               below current market asks" is a specific analytical claim about
+               the reader's own portfolio, and it is actionable in the direction
+               of INACTION — it tells them not to re-list. */
+            <div role="status" className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+              Couldn&rsquo;t read your collection, so there&rsquo;s nothing to compare against yet. This says
+              nothing about how your Moments are priced.
+            </div>
+          ) : suggestionsState_ === "no-market" ? (
+            <div role="status" className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
+              Waiting on the live listings feed — suggestions compare your Moments against it.
             </div>
           ) : suggestions.length === 0 ? (
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)" }}>
