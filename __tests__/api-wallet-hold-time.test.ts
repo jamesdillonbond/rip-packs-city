@@ -20,6 +20,11 @@ vi.mock("@/lib/supabase", () => ({
         select: () => b,
         eq: () => b,
         not: () => b,
+        // The route offset-pages, so it carries a deterministic .order() — the
+        // stub must accept it or the chain breaks before .range(). Ordering is
+        // by the PK `id`: moment_acquisitions.nft_id is NOT unique (the unique
+        // constraint is (nft_id, wallet, transaction_hash)).
+        order: () => b,
         range: (start: number): Promise<Result> =>
           Promise.resolve(state.error ? { data: null, error: state.error } : { data: state.rows.slice(start, start + 1000), error: null }),
       }

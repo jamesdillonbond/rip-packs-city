@@ -43,20 +43,34 @@ import { join } from "node:path"
 // about WHICH N. Those are legitimately lower priority. What must not happen is
 // a NEW hand-rolled paging LOOP without an order.
 //
-// Passing means the population did not GROW. It does not mean the 11 remaining
-// sites are correct.
+// Passing now means the population is EMPTY. Any new unordered `.range()` fails
+// CI outright — which is affordable precisely because the debt was cleared rather
+// than frozen.
+//
+// ⚠ Choose the order column from a UNIQUE key, not merely a selected one. A
+// non-unique order leaves ties between pages and reintroduces the defect:
+// `moment_acquisitions.nft_id` looks like the natural key and is not (the unique
+// constraint is (nft_id, wallet, transaction_hash)), so those sites order by the
+// PK `id` instead.
 
 const ROOTS = ["app", "lib", "supabase/functions", "workers"]
 
 /**
- * The ceiling. Lower it when you add an `.order()`; NEVER raise it.
+ * ZERO. This is now a BAN, not a ratchet — the population was driven to 0 in the
+ * same session that found the defect.
  *
- * 13 when first measured (2026-08-16), immediately reduced to 11 by ordering the
- * two wallet_moments_cache paging loops in wallet-backfill-helpers.ts. The
- * snapshot-institutional-wallets site — the one that caused the incident — was
- * fixed in the same pass and is not counted here.
+ * 13 when first measured (2026-08-16) → 11 (the two wallet_moments_cache loops in
+ * wallet-backfill-helpers.ts) → 0 (the remaining 11 route-level loops).
+ *
+ * ⚠ AN EARLIER VERSION OF THIS FILE SAID a single `.range(0, N)` used as a
+ * "first N" limit is a lower-priority member of this population. That was a
+ * reasonable expectation and it was WRONG about the actual population: triaged
+ * one by one, **all 11 remaining sites were genuine multi-page paging loops**
+ * (`while (true)` / `for (…; offset += PAGE)`), every one able to duplicate and
+ * drop rows. The distinction is still real in principle; it just described none
+ * of the code. Do not assume a flagged site is benign — open it.
  */
-const BUDGET = 11
+const BUDGET = 0
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[]
@@ -118,13 +132,14 @@ export function findUnorderedRangeSites(roots: string[] = ROOTS): string[] {
 describe("paginated .range() must carry a deterministic .order()", () => {
   const sites = findUnorderedRangeSites()
 
-  it("does not grow the unordered-pagination population", () => {
-    expect(sites.length).toBeLessThanOrEqual(BUDGET)
+  it("no query offset-pages with .range() without a deterministic .order()", () => {
+    expect(sites).toEqual([])
   })
 
-  // No-slack: the frozen number must EQUAL the live count. A ratchet with
-  // headroom silently licenses the next N additions.
-  it("BUDGET matches the live count exactly — lower it when you fix a site", () => {
+  // Kept as a separate assertion so a future re-introduction that also edits
+  // BUDGET upward still trips something.
+  it("BUDGET stays at zero — this is a ban now, not a ratchet", () => {
+    expect(BUDGET).toBe(0)
     expect(sites.length).toBe(BUDGET)
   })
 

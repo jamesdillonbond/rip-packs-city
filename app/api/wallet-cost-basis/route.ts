@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
         .eq("collection_id", TOPSHOT_UUID)
         .not("buy_price", "is", null)
         .gt("buy_price", 0)
+        .order("id", { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1)
       if (error) throw new Error(error.message)
       const batch = (data ?? []) as AcqRow[]

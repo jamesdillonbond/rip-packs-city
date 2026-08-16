@@ -116,6 +116,9 @@ async function runPackListings(startedAtIso: string) {
         .from("editions")
         .select("id, external_id, set_name, tier, series, player_name")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
+        // Deterministic order (PK). Offset paging without one returns some rows on
+        // two pages and some on none -- the defect that fabricated 161k buyback rows.
+        .order("id", { ascending: true })
         .range(from, from + pageSize - 1)
       if (error) {
         console.log(`[allday-pack-listings] editions fetch error: ${error.message}`)
@@ -145,6 +148,7 @@ async function runPackListings(startedAtIso: string) {
         .from("cached_listings")
         .select("id, set_name, tier, ask_price, thumbnail_url, collection_id")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .order("id", { ascending: true })
         .range(from, from + pageSize - 1)
       if (error) {
         console.log(`[allday-pack-listings] cached_listings fetch error: ${error.message}`)

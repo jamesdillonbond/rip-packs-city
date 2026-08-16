@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       .from("editions")
       .select("id, external_id, name, set_name, player_name, tier")
       .eq("collection_id", GOLAZOS_COLLECTION_ID)
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const pageRows = page ?? []

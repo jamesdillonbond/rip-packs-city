@@ -136,6 +136,7 @@ async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
       .select("moment_id")
       .eq("wallet_address", wallet)
       .eq("collection_id", NBA_TOP_SHOT_UUID)
+      .order("moment_id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) {
       console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)

@@ -45,6 +45,11 @@ vi.mock("@supabase/supabase-js", () => ({
       const b: any = {
         select: () => b,
         eq: () => b,
+        // The route offset-pages, so it must carry a deterministic .order() —
+        // without one Postgres may return a row on two pages and none. The stub
+        // has to accept it or the chain breaks. See
+        // __tests__/paginated-range-requires-order-ratchet.test.ts.
+        order: () => b,
         range: () => b,
         delete: () => { b.__mode = "delete"; return b },
         upsert: (chunk: any[]) => {

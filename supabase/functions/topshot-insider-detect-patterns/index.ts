@@ -55,6 +55,20 @@ async function loadRecentBuybacks(): Promise<BuybackRow[]> {
       editions:edition_id (player_name, set_name, circulation_count)
     `)
     .gte("sold_at", sinceIso)
+    // MARKETPLACE ONLY. The direct_transfer arm of this table is produced by
+    // diffing daily wallet-holdings snapshots, and that walk paged
+    // wallet_moments_cache with no ORDER BY, so the wallet's own stock dropped
+    // out of one snapshot and reappeared in the next. Measured 2026-08-16:
+    // 41,301 of 41,307 distinct moments it reported as "acquired" were ALREADY
+    // HELD on the first snapshot, and ~6,500 land per day carrying TODAY's
+    // date -- exactly the 24h window this detector reads.
+    //
+    // This detector is DORMANT (no cron caller, zero pipeline_runs, zero alerts
+    // of its three types ever), so this is latent rather than live. The filter
+    // is here so a revival cannot publish fabricated insider alerts; that it
+    // emitted nothing so far is luck -- artifact rows carry a NULL
+    // serial_number -- not design.
+    .eq("acquisition_method", "marketplace")
     .order("sold_at", { ascending: false })
 
   if (error) {

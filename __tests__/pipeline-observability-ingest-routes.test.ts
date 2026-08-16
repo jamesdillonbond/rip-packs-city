@@ -43,7 +43,7 @@ describe("allday-pack-listings — pipeline observability", () => {
       createClient: () => ({
         from() {
           const b: any = {
-            select: () => b, eq: () => b, range: () => b, delete: () => b,
+            select: () => b, eq: () => b, order: () => b, range: () => b, delete: () => b,
             upsert: () => b,
             then: (resolve: any) => resolve({ data: [], error: null }),
           }

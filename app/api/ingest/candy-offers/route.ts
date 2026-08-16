@@ -384,6 +384,7 @@ async function handleSweep(req: NextRequest) {
           .from("candy_offers")
           .select("buyer, last_seen_at")
           .eq("is_active", true)
+          .order("pda_address", { ascending: true })
           .range(from, from + 999)
         for (const row of activeBuyers ?? []) {
           if (!row?.buyer) continue

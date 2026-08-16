@@ -14,6 +14,7 @@ vi.mock("@supabase/supabase-js", () => {
     from: () => b,
     select: () => b,
     eq: () => b,
+    order: () => b,
     range: () => b,
     upsert: async () => ({ error: state.upsertErr }),
     then: (resolve: any) => resolve(state.result),

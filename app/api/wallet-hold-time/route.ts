@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
         .eq("wallet", wallet)
         .eq("collection_id", TOPSHOT_UUID)
         .not("acquired_date", "is", null)
+        .order("id", { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1)
       if (error) throw new Error(error.message)
       const batch = (data ?? []) as Array<{ acquired_date: string }>

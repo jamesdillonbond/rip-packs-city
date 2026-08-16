@@ -46,6 +46,9 @@ export async function GET(req: NextRequest) {
         .eq("wallet_address", wallet.toLowerCase())
         .eq("collection_id", collectionId)
         .not("edition_key", "is", null)
+        // edition_key is NOT unique per wallet (many moments share one); moment_id is,
+        // via UNIQUE(wallet_address, collection_id, moment_id).
+        .order("moment_id", { ascending: true })
         .range(offset, offset + PAGE - 1)
       if (error) {
         console.warn("[wallet/edition-counts] query error: " + error.message)

@@ -27,7 +27,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from(table: string) {
       const b: any = {
-        select: () => b, eq: () => b, range: () => b, delete: () => b,
+        select: () => b, eq: () => b, order: () => b, range: () => b, delete: () => b,
         upsert: (chunk: any[]) => { st.upserts.push(...chunk); return b },
         then: (resolve: any) => {
           if (table === "editions") return resolve(st.editions)

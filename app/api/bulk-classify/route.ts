@@ -70,6 +70,9 @@ async function getAllUnclassifiedIds(
       .select("nft_id")
       .eq("wallet", wallet)
       .eq("acquisition_method", "unknown")
+      // PK order: nft_id is NOT unique here (unique is nft_id+wallet+transaction_hash),
+      // so ordering by it would leave ties between pages.
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1)
 
     if (error) throw new Error("Supabase query failed: " + error.message)

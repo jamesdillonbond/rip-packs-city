@@ -1026,6 +1026,8 @@ async function computeAllDaySniperFeed(opts: {
         .select("edition_id, fmv_usd, confidence")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .gt("fmv_usd", 0)
+        // fmv_current is DISTINCT ON (edition_id), so edition_id is unique here.
+        .order("edition_id", { ascending: true })
         .range(from, from + FMV_PAGE - 1);
       if (fmvErr) {
         console.error(`[sniper-feed] AD fmv_current error @${from}: ${fmvErr.message}`);
