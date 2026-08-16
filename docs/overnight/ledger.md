@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — "set my RPC's wallet avatar to the RPC logo") — one-row prod data change, no code
+
+**What shipped.** A single `UPDATE` on `public.profile_bio` setting `avatar_url` for Trevor's account (`user_id 15548e5c-6241-4d15-9e49-1eaed584f2a2`, username `jamesdillonbond`) to `https://www.rippackscity.com/rip-packs-city-logo.png`. Prior value was **NULL**, so the profile was rendering the two-letter `JA` monogram fallback everywhere an avatar appears. **No code, migration, cron, auth, hot-wallet or FMV change.**
+
+**Checked before writing, because the avatar is fetched SERVER-SIDE in two places with no session.** `/api/og/profile/[username]` (edge) and the trophy-case PDF both fetch the URL over HTTP. `/rip-packs-city-logo.png` is an exact member of `STATIC_ROOT_ASSETS` in `proxy.ts`, so it is genuinely public — had it been gated, the auth wall would have 302'd to `/login` and handed satori an **HTML document at status 200**, the documented `/fonts/*.ttf` failure mode. Also confirmed the file is a **96 KB PNG** (OG cap is 4 MB, and `ogImageDataUri` accepts `image/png`) and that the URL is `https://`-prefixed, which `app/api/og/profile/[username]/route.tsx:348` requires before it will embed the avatar at all.
+
+**Scope note — there is no separate "wallet avatar" in this product.** `profile_bio.avatar_url` is the only avatar concept (grep for a wallet-keyed one returns nothing); it renders on `/profile/<username>`, the dashboard, the profile OG card and the trophy-case PDF, so this one row covers all of them.
+
+**Revert:** `UPDATE public.profile_bio SET avatar_url = NULL, updated_at = now() WHERE user_id = '15548e5c-6241-4d15-9e49-1eaed584f2a2';` (restores the monogram fallback). Nothing to revert in git.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive — session wrap-up) — folded this thread's four instances of one class into CLAUDE.md, and filed the two operator-only blockers that are still degrading live surfaces
 
 **What shipped.** `CLAUDE.md` (one canonical bullet + the atlas-proxy consequence + a Recent-sessions entry) and a new inbox filing. **No code, DB, migration, cron or prod-state change.**
