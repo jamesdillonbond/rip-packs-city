@@ -20,6 +20,7 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react"
 // asserted through the rendered DOM.
 
 import ProfileClient from "@/app/profile/[username]/ProfileClient"
+import { DEFAULT_AVATAR_URL } from "@/lib/profile/default-avatar"
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ username: "trevor" }),
@@ -285,5 +286,50 @@ describe("ProfileClient — accent colour handling", () => {
     render(<ProfileClient />)
     await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
     expect(document.body.innerHTML).toMatch(/rgba\(0,\s*255,\s*0/)
+  })
+})
+
+describe("ProfileClient — the avatar a collector gets before they set one", () => {
+  // The RPC logo is the default (lib/profile/default-avatar.ts). Asserted
+  // through the rendered DOM because the Avatar component is not exported, and
+  // because the thing that matters is what a visitor SEES — the module's own
+  // unit test can only prove the string is right, not that this page uses it.
+  const routes = {
+    "/api/profile/trophy-slabs": { slabs: [] },
+    "/api/profile/portfolio-history": { snapshots: [] },
+    "/api/profile/me": { user: null },
+  }
+
+  it("renders the RPC logo when avatar_url is null", async () => {
+    installFetch({ "/api/public/profile/": PUBLIC_PROFILE, ...routes })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
+    const img = document.querySelector('img[alt="trevor"]') as HTMLImageElement
+    expect(img).toBeTruthy()
+    expect(img.getAttribute("src")).toBe(DEFAULT_AVATAR_URL)
+    // The monogram is now reachable ONLY via onError (which swaps it in by
+    // mutating the parent), so the avatar slot must contain the image and no
+    // text. Asserted on the PARENT rather than on document.body, because "TR"
+    // is a substring of half the copy on this page — the first version of this
+    // assertion failed for exactly that reason and proved nothing about the
+    // avatar either way.
+    expect(img.parentElement?.textContent).toBe("")
+  })
+
+  it("still prefers the collector's own avatar over the default", async () => {
+    // The mirror-image assertion. A default that quietly overrides a chosen
+    // avatar is a worse bug than no default at all, and it is exactly what a
+    // careless `resolveAvatarUrl(DEFAULT)` argument order would produce.
+    installFetch({
+      "/api/public/profile/": {
+        ...PUBLIC_PROFILE,
+        bio: { ...PUBLIC_PROFILE.bio, avatar_url: "https://example.com/me.png" },
+      },
+      ...routes,
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
+    const img = document.querySelector('img[alt="trevor"]') as HTMLImageElement
+    expect(img.getAttribute("src")).toBe("https://example.com/me.png")
   })
 })

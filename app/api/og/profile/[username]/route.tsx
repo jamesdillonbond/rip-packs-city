@@ -51,6 +51,7 @@ import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { ogImageDataUri } from "@/lib/og/img-data";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 import {
   brandFonts,
@@ -344,11 +345,19 @@ export async function GET(
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
     const initials = username.slice(0, 2).toUpperCase();
-    const avatarDataUri =
-      typeof bio?.avatar_url === "string" && bio.avatar_url.startsWith("https://")
-        ? await ogImageDataUri(bio.avatar_url)
-        : null;
-    if (bio && avatarDataUri) bio.avatar_url = avatarDataUri;
+    // A collector who has not set an avatar gets the RPC logo, same as the
+    // profile page — a card is the one surface where the monogram was most
+    // visible, since it is what someone ELSE sees in their timeline.
+    //
+    // ⚠ The `startsWith("https://")` gate stays: it guards a value a collector
+    // typed, and DEFAULT_AVATAR_URL is deliberately absolute so it passes.
+    // ⚠ `hasAvatar` still means "we fetched BYTES", not "a URL existed" — a
+    // dead host (or a dead logo) must fall through to the monogram rather than
+    // baking a broken <img> into a cached PNG.
+    const avatarSrc = resolveAvatarUrl(bio?.avatar_url);
+    const avatarDataUri = avatarSrc.startsWith("https://")
+      ? await ogImageDataUri(avatarSrc)
+      : null;
     const hasAvatar = !!avatarDataUri;
 
     return new ImageResponse(
@@ -439,7 +448,11 @@ export async function GET(
               <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
                 {hasAvatar ? (
                   <img
-                    src={bio!.avatar_url as string}
+                    // The prefetched data URI, NOT `bio.avatar_url`. It used to
+                    // read the row after mutating it in place, which now would
+                    // also dereference a null `bio` — the default renders an
+                    // avatar even for a profile whose row did not come back.
+                    src={avatarDataUri as string}
                     width={80}
                     height={80}
                     style={{

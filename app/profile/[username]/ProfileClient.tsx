@@ -13,6 +13,7 @@ import FollowButton from "@/components/profile/FollowButton";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { getCollectionByUuid } from "@/lib/collections";
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -124,42 +125,39 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
   const ringWidth = border ? 3 : 2;
   const boxShadow = border?.glow ? "0 0 16px " + border.glow : undefined;
 
-  if (bio?.avatar_url) {
-    return (
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: ringWidth + "px solid " + ringColor, boxShadow, flexShrink: 0 }}>
-        <img
-          src={bio.avatar_url}
-          alt={username}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={function(e) {
-            // Capture the parent BEFORE mutating innerHTML: setting
-            // parent.innerHTML detaches this <img>, so e.currentTarget.parentElement
-            // becomes null and reading .style off it throws (NEXTJS-2D).
-            const el = e.currentTarget;
-            const parent = el.parentElement;
-            el.style.display = "none";
-            if (parent) {
-              Object.assign(parent.style, {
-                background: accentBg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontFamily: condensedFont,
-                fontWeight: "800",
-                fontSize: (size * 0.35) + "px",
-                color: accent,
-              });
-              parent.innerHTML = initials;
-            }
-          }}
-        />
-      </div>
-    );
-  }
-
+  // A collector who has not set an avatar gets the RPC logo (resolveAvatarUrl),
+  // so this always renders an <img> and there is no "no avatar" JSX branch any
+  // more. The monogram survives ONLY as the onError fallback below — which is
+  // now the sole path to it, and it still matters: a collector who saved a
+  // broken URL, or whose host is down, must not get an empty circle.
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: accentBg, border: ringWidth + "px solid " + ringColor, boxShadow, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 800, color: accent, fontFamily: condensedFont, flexShrink: 0 }}>
-      {initials}
+    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: ringWidth + "px solid " + ringColor, boxShadow, flexShrink: 0 }}>
+      <img
+        src={resolveAvatarUrl(bio?.avatar_url)}
+        alt={username}
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        onError={function(e) {
+          // Capture the parent BEFORE mutating innerHTML: setting
+          // parent.innerHTML detaches this <img>, so e.currentTarget.parentElement
+          // becomes null and reading .style off it throws (NEXTJS-2D).
+          const el = e.currentTarget;
+          const parent = el.parentElement;
+          el.style.display = "none";
+          if (parent) {
+            Object.assign(parent.style, {
+              background: accentBg,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: condensedFont,
+              fontWeight: "800",
+              fontSize: (size * 0.35) + "px",
+              color: accent,
+            });
+            parent.innerHTML = initials;
+          }
+        }}
+      />
     </div>
   );
 }

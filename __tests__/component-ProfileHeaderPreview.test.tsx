@@ -6,6 +6,7 @@ import ProfileHeaderPreview, {
   initialsFor,
 } from "@/components/profile/ProfileHeaderPreview"
 import { BORDER_COSMETICS, BANNER_COSMETICS } from "@/lib/cosmetics"
+import { DEFAULT_AVATAR_URL } from "@/lib/profile/default-avatar"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The /profile/edit live preview.
@@ -31,6 +32,16 @@ const base = {
 
 afterEach(cleanup)
 
+// The avatar slot, WHICHEVER branch drew it. Ring colour, ring width and glow
+// are identical on the image and the monogram by design, so a test about the
+// ring should not also be asserting which of the two rendered — that coupling
+// is what made these cases red when blank started previewing the logo.
+function avatarSlot(): HTMLElement {
+  const el = document.querySelector("[data-preview-avatar]")
+  if (!el) throw new Error("no avatar slot rendered")
+  return el as HTMLElement
+}
+
 describe("ProfileHeaderPreview", () => {
   it("renders the name, tagline and live profile URL", () => {
     render(<ProfileHeaderPreview {...base} tagline="Blazers Team Captain" />)
@@ -50,11 +61,29 @@ describe("ProfileHeaderPreview", () => {
   it("holds the monogram until the avatar URL is plausibly a URL", () => {
     // Typed a character at a time. Rendering `htt` as an <img> means a broken
     // image icon on nearly every keystroke.
-    for (const partial of ["", "h", "htt", "https:/", "not-a-url"]) {
+    //
+    // ⚠ "" IS DELIBERATELY NOT IN THIS LIST — see the case below. Empty is not
+    // a keystroke on the way to a URL, it is the saved state "no avatar", and
+    // that now renders the RPC logo.
+    for (const partial of ["h", "htt", "https:/", "not-a-url"]) {
       cleanup()
       render(<ProfileHeaderPreview {...base} avatarUrl={partial} />)
       expect(screen.queryByTestId("preview-avatar-image")).toBeNull()
       expect(screen.getByTestId("preview-avatar-initials")).toBeTruthy()
+    }
+  })
+
+  it("previews the RPC logo — not the monogram — when the field is blank", () => {
+    // The whole point of this component is that the edit screen must not show
+    // a collector something their visitors do not see. Blank saves as NULL,
+    // and NULL renders the logo to visitors, so a monogram here would be the
+    // exact lie this file exists to prevent.
+    for (const blank of ["", "   "]) {
+      cleanup()
+      render(<ProfileHeaderPreview {...base} avatarUrl={blank} />)
+      const img = screen.getByTestId("preview-avatar-image") as HTMLImageElement
+      expect(img.getAttribute("src")).toBe(DEFAULT_AVATAR_URL)
+      expect(screen.queryByTestId("preview-avatar-initials")).toBeNull()
     }
   })
 
@@ -87,7 +116,7 @@ describe("ProfileHeaderPreview", () => {
       return `rgb(${r}, ${g}, ${b})`
     }
     render(<ProfileHeaderPreview {...base} equippedBorder="flame" />)
-    const av = screen.getByTestId("preview-avatar-initials")
+    const av = avatarSlot()
     expect(av.style.border).toContain(rgbOf(BORDER_COSMETICS.flame.ring))
   })
 
@@ -101,7 +130,7 @@ describe("ProfileHeaderPreview", () => {
       return `rgb(${r}, ${g}, ${b})`
     }
     render(<ProfileHeaderPreview {...base} accentColor="#34D399" equippedBorder="ice" />)
-    const av = screen.getByTestId("preview-avatar-initials")
+    const av = avatarSlot()
     expect(av.style.border).toContain(rgbOf(BORDER_COSMETICS.ice.ring))
     expect(av.style.border).not.toContain(rgbOf("#34D399"))
   })
@@ -124,7 +153,7 @@ describe("ProfileHeaderPreview", () => {
   it("ignores an unknown cosmetic value rather than rendering a phantom", () => {
     render(<ProfileHeaderPreview {...base} equippedBorder="not-a-sku" equippedBanner="nope" />)
     expect(screen.queryByTestId("preview-banner")).toBeNull()
-    expect(screen.getByTestId("preview-avatar-initials")).toBeTruthy()
+    expect(avatarSlot()).toBeTruthy()
   })
 
   it("falls back to the username when no display name is set", () => {

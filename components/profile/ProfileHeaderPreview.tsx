@@ -21,6 +21,7 @@
 // `page.tsx`, measured by neither coverage gate.
 
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -68,7 +69,14 @@ export default function ProfileHeaderPreview({
   // An avatar URL is typed a character at a time. Rendering `htt` as an <img>
   // guarantees a broken-image icon on nearly every keystroke, so the monogram
   // holds until the value is plausibly a URL.
-  const showImage = /^https?:\/\/\S+$/i.test(avatarUrl.trim());
+  //
+  // ⚠ EMPTY IS NOT MID-TYPING — it is the saved state "I have no avatar", which
+  // now renders the RPC logo to visitors. Previewing a monogram for it would
+  // make this component do the exact thing it exists to prevent: show the
+  // collector something their visitors do not see.
+  const typed = avatarUrl.trim();
+  const showImage = typed === "" || /^https?:\/\/\S+$/i.test(typed);
+  const previewSrc = resolveAvatarUrl(avatarUrl);
 
   return (
     <div
@@ -112,9 +120,10 @@ export default function ProfileHeaderPreview({
           {showImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={avatarUrl}
+              src={previewSrc}
               alt=""
               data-testid="preview-avatar-image"
+              data-preview-avatar="ring"
               style={{
                 width: 56,
                 height: 56,
@@ -127,6 +136,7 @@ export default function ProfileHeaderPreview({
           ) : (
             <div
               data-testid="preview-avatar-initials"
+              data-preview-avatar="ring"
               style={{
                 width: 56,
                 height: 56,

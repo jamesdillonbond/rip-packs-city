@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
 import { getCollection } from "@/lib/collections";
+import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -216,7 +217,18 @@ function Avatar(props: {
 }) {
   const { username, bio, size = 64, editable = false, onAvatarChange } = props;
   const [hovered, setHovered] = useState(false);
+  // ⚠ The image having FAILED is now tracked in state rather than handled by
+  // hiding the <img>. It has to be: a collector with no avatar of their own now
+  // gets the RPC logo (resolveAvatarUrl), so the old `display: none` onError
+  // would leave an EMPTY circle where the monogram used to be — a fallback that
+  // was adequate only while "no avatar" skipped the <img> entirely.
+  const [imgFailed, setImgFailed] = useState(false);
+  const avatarUrl = resolveAvatarUrl(bio?.avatar_url);
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
+
+  // A new URL deserves a fresh attempt — otherwise one broken value pins the
+  // monogram for the rest of the session, including after a successful edit.
+  useEffect(() => { setImgFailed(false); }, [avatarUrl]);
 
   function handleClick() {
     if (!editable || !onAvatarChange) return;
@@ -244,13 +256,13 @@ function Avatar(props: {
       onMouseLeave={function() { setHovered(false); }}
       onClick={handleClick}
     >
-      {bio?.avatar_url ? (
+      {!imgFailed ? (
         <img
-          src={bio.avatar_url}
+          src={avatarUrl}
           alt={username}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={function(e) {
-            e.currentTarget.style.display = "none";
+          onError={function() {
+            setImgFailed(true);
           }}
         />
       ) : (

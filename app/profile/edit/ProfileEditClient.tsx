@@ -510,6 +510,10 @@ export default function ProfileEditClient() {
                 onChange={(e) => update("avatar_url", e.target.value)}
                 placeholder="https://..."
               />
+              {/* Blank used to mean "show my initials"; it now means "show the
+                  RPC logo", so the field has to say so — the live preview above
+                  shows it, but only once you look away from the input. */}
+              <div className="hint">Leave blank to use the RPC logo.</div>
             </div>
 
             <div className="field">
