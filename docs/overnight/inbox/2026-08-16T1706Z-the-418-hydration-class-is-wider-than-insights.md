@@ -54,6 +54,19 @@ Reproduce: the walker in the guard test, with `ROOTS` widened to `["app", "compo
 - **`e2e-smoke` (Playwright, every 6h) is also blind** — it asserts rendered DOM but does not read the browser console. A #418 does not change the final DOM (React re-renders client-side), so the page looks healthy.
 - **Only a source guard, or a console-reading browser check, can catch this class.** Cowork's live console-read during the weekly `rpc-surface-qa` sweep is what found it.
 
-## Suggested next step, if taken
+## ✅ The recommended next step SHIPPED the same day — this file is now a REGISTER, not a proposal
 
-Add console-error assertions to `e2e/smoke.spec.ts` (`page.on("console", …)` failing on `Minified React error`). That would cover the whole site at once, including the 17 above, without needing to classify each site by hand — and it closes the detection gap rather than the instance. Cheaper and broader than sweeping 17 files; do that first.
+The suggestion here was to add console-error assertions rather than sweep 17 files by hand. That shipped in `d89e1798`/`caea7913`:
+
+- `e2e/healthy-page.ts` attaches `console` + `pageerror` listeners **before** `goto` and fails on React-invariant/hydration text only. It lives in the shared assertion, so **all three** e2e specs (smoke, entity-smoke, self-check — 57 tests) inherit it by construction.
+- `playwright.config.ts` pins `timezoneId: America/Los_Angeles`. ⚠ **Load-bearing**: CI runners are UTC, and a UTC browser renders SSR and hydration in the same zone, so the class is unreachable *by construction* — exactly as in vitest. Setting it to UTC silently disarms the whole check.
+- The filter is deliberately narrow, against the measured noise recorded above; a cry-wolf control fixture pins that ambient 405/500/CSP noise must still PASS.
+
+**So the 17 sites below are now WATCHED, not merely listed** — if one of them ever produces a real mismatch on a monitored page, the 6-hourly run reports it.
+
+⚠ **Two reasons this file stays open rather than being closed.**
+
+1. **The monitor is PROBABILISTIC.** A #418 of this kind is data-dependent — it needs a value to cross a boundary between the ISR snapshot and hydration. Measured: the 30-page sweep caught `/insights/top-sales` failing, and a full suite run ~40 min later passed that same page. Detection ≠ prevention.
+2. **Most of the 17 are NOT on a monitored page.** The e2e list covers public surfaces only; `app/admin/**`, `/dashboard/**`, `/rewards` and `components/analytics/**` sit behind the auth wall and are outside the monitor's reach — the guard-scope class again.
+
+**If someone does sweep them**, the per-site decision is unchanged and still cannot be made statically: pin the zone only where the value is meant to be absolute, and use the mount-swap pattern (`components/insights/FreshnessStamp`, or the `nowMs` anchor added to `TopSalesBoardClient`) where the viewer genuinely wants local time or a live clock.
