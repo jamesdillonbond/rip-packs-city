@@ -405,6 +405,14 @@ async function loadCachedMomentIds(wallet: string, collectionUuid: string): Prom
       .select("moment_id")
       .eq("wallet_address", wallet)
       .eq("collection_id", collectionUuid)
+      // Deterministic order is required to offset-page correctly: without it
+      // Postgres may return a row on two pages and none, so the Set comes back
+      // short. Milder here than in snapshot-institutional-wallets (2026-08-16),
+      // where the same omission fabricated 161k events: this Set only decides
+      // what to SKIP, so a missing id costs a redundant idempotent re-upsert
+      // rather than a false record. Fix it anyway — it was ~13.5% of a large
+      // wallet's rows.
+      .order("moment_id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) {
       console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
@@ -468,6 +476,9 @@ async function loadCachedMomentIdsAndKeys(
       .select("moment_id, edition_key")
       .eq("wallet_address", wallet)
       .eq("collection_id", collectionUuid)
+      // Same reason as loadCachedMomentIds above: offset paging without a
+      // deterministic order silently duplicates and drops rows.
+      .order("moment_id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) {
       console.warn(`[wallet-backfill] cached-id-key read failed: ${error.message}`)

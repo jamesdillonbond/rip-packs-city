@@ -224,6 +224,33 @@ async function loadAllMomentsForWallet(wallet: string, startedAtIso: string): Pr
         .from("wallet_moments_cache")
         .select("collection_id, moment_id, fmv_usd")
         .eq("wallet_address", wallet)
+        // ── THE ORDER BY IS LOAD-BEARING. DO NOT REMOVE IT. ──────────────────
+        // Postgres guarantees NO row order without ORDER BY, so offset paging an
+        // unordered query returns rows twice on one page and skips them on
+        // another. lib/supabase-paginate.ts states this rule explicitly; this
+        // loop is hand-rolled and did not follow it, and the cost was three
+        // months of fabricated data.
+        //
+        // Measured 2026-08-16, before the fix, on 0x4d2c9216f1dca098:
+        //   wallet_moments_cache  52,120 rows / 52,120 DISTINCT (the unique
+        //                         constraint on (wallet, collection, moment_id)
+        //                         makes duplicates impossible at source)
+        //   snapshot array        52,123 entries / 45,059 DISTINCT
+        // i.e. the walk read the right NUMBER of rows and the wrong SET —
+        // ~7,064 read twice, ~7,061 missed entirely. Because the two roughly
+        // cancel, moment_count looked correct, which is why nothing caught it.
+        //
+        // Downstream, compute_institutional_wallet_diff read each day's missed
+        // ~7k as departures and the next day's different ~7k as ARRIVALS: 161,366
+        // fabricated "buyback acquisitions", of which 41,301 of 41,307 distinct
+        // moments were already held on the very first snapshot.
+        //
+        // (collection_id, moment_id) is a total order per wallet because the
+        // unique constraint covers the triple. Keyset paging would additionally
+        // survive concurrent inserts/deletes mid-walk; offset+ORDER BY is
+        // sufficient here because these wallets change by single digits a day.
+        .order("collection_id", { ascending: true })
+        .order("moment_id", { ascending: true })
         .range(from, to)
       return { data: data as MomentRow[] | null, error }
     })
