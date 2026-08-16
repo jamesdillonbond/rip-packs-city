@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — a guard so the anon-executable surface cannot grow back silently
+
+**What shipped.** `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts`. Repo-only; no DB or prod change.
+
+**Why.** Today's audit revoked **8** anon-executable functions with no caller anywhere, two of them pathological — `compute_pack_ev_from_pool_tier_weighted` at **45.8 s / ~17.4 GB** and `get_wallet_cache_count` at **39.4 s**, both invokable by an unauthenticated client. Revoking them fixes the instances. **Nothing stopped the population growing back**: a new function in `public` is anon-executable **by default** here (a PUBLIC grant *plus* explicit anon/authenticated rows from this DB's `ALTER DEFAULT PRIVILEGES`), and `check_secdef_anon_exec_drift()` considers SECURITY **DEFINER** only, so every INVOKER function is outside it by construction however often it runs green.
+
+**The rule: state a decision, per FUNCTION NAME.** Either revoke, or say why not (`-- anon-exec: intentional — <why> (<fn>)`). Silence is not a decision — the same philosophy as the sibling view-security-invoker guard, and per-name for the same reason (a file hardening function A must not vouch for B).
+
+⚠ **A `REVOKE … FROM PUBLIC` ALONE DOES NOT SATISFY IT, deliberately.** The explicit anon/authenticated rows SURVIVE a PUBLIC-only revoke — a migration doing exactly that measured `has_function_privilege('anon', …) = true` right after apply and took the drift check 0 → 1 while its `proacl` text looked clean. The guard requires all three roles named.
+
+⚠ **The escape hatch will often be the RIGHT answer, and that is not a weakness.** Plenty of functions should be anon-executable (the collection tabs were un-gated 07-17, `/share/[wallet]` is public), and `serial_fmv_estimate` MUST stay so. ⚠ A **SNAPSHOT** migration must use the marker rather than add a revoke: unlike views and reloptions, `CREATE OR REPLACE FUNCTION` does **not** reset a function's ACL, so a revoke there would change production while pretending to be a byte-identical no-op.
+
+⚠ **CUTOFF `20260817000000`, and the in-scope population is ZERO today — which is why the not-vacuous work matters.** 276 of 577 migrations create a public function, so enumerating them would be noise, and an applied migration is history. Setting the cutoff at *today* was measured and rejected: it would immediately red ~10 of other sessions' migrations from this afternoon. Per this repo's own rule — *a not-vacuous check must be satisfiable at a population of zero* — the guard asserts **the walk and the detector** against synthetic fixtures instead of requiring a non-empty population.
+
+**Verified END-TO-END, not just green.** A throwaway in-scope migration proved all three states: no decision → **RED** naming the exact offender; `FROM PUBLIC` only → **still RED**; `FROM PUBLIC, anon, authenticated` → **GREEN**; file removed → green with no leftovers. Fixture cases additionally pin that a marker not naming the function does not vouch for it, and that a **commented-out** revoke does not count. `tsc` clean; 191 tests green across this and both sibling guards.
+
+**REVERT:** `git revert <sha>` — deletes the guard. Nothing else to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — "keep going") — the rest of the rewards sweep, and my own open question turned out to rest on a FALSE PREMISE
 
 **What shipped.** `app/pricing/page.tsx`, `app/dashboard/page.tsx`, `app/profile/edit/ProfileEditClient.tsx`, plus a new self-retiring guard. **No DB change.** No new Sentry issues from today's three earlier pushes (`firstSeen:-6h` → none).
