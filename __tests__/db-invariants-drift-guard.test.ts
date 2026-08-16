@@ -985,6 +985,48 @@ const PINS = [
     migration:
       "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
   },
+  {
+    // pg_cron `30 8 * * *`. An FMV HONESTY instrument: the set of Top Shot
+    // editions whose published FMV is inflated relative to what the market
+    // actually paid — THIN (<15 sales/90d) AND FMV >1.5x the 90-day median. Those
+    // two constants ARE the definition, so both are pinned ON their boundaries
+    // (15 sales is not thin; exactly 1.5x is not flagged).
+    //
+    // ⚠ It TRUNCATEs and rebuilds, which is why it needs a pin more than most: a
+    // rebuild that inserts nothing leaves the table EMPTY, and empty reads
+    // exactly like "no edition has an unsupported FMV" — the most reassuring
+    // possible answer, produced by a broken instrument.
+    fn: "refresh_topshot_thin_fmv_editions",
+    test: "supabase/tests/refresh_topshot_thin_fmv_editions.sql",
+    migration:
+      "supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql",
+  },
+  {
+    // pg_cron `34 * * * *`. Backstop for the offers indexer, feeding
+    // edition_offers.highest_offer — the denormalized column the best-offer
+    // displays read.
+    //
+    // ⚠ RAISE-ONLY. A backstop runs on a partial view of the chain, so lowering
+    // a value the primary writer set would DELETE a real offer from every
+    // surface showing it.
+    //
+    // ⚠ TWO mechanisms LOOK like they enforce that; only the
+    // `WHERE EXCLUDED.highest_offer > COALESCE(existing, 0)` guard actually
+    // does. The `GREATEST(...)` in the SET is redundant while that guard exists
+    // (the guard only admits rows where EXCLUDED > existing, for which GREATEST
+    // is EXCLUDED by definition) — replacing it with a plain assignment changes
+    // nothing observable and the pin stays green. Verified by mutation, which
+    // is how an earlier version of this comment — claiming both were pinned
+    // separately — was found to be wrong. See the test file header.
+    //
+    // Also pins that serial/subedition offers are EXCLUDED: those are bids on one
+    // specific serial, and folding one into the edition-level best offer
+    // publishes a number nobody is bidding for the edition as a whole.
+    fn: "raise_edition_offers_from_chain",
+    test: "supabase/tests/raise_edition_offers_from_chain.sql",
+    migration:
+      "supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql",
+  },
 ]
 
 /**
