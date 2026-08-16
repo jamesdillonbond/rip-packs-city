@@ -17,10 +17,16 @@
 //     ?url=https://www.rippackscity.com/api/bots/telegram
 //     &secret_token=<TELEGRAM_WEBHOOK_SECRET>
 
-// 60s: concierge replies can run multi-tool loops well past 30s; Telegram is
-// answered via sendMessage (not the webhook response), so a longer lambda is
-// safe — it just gives the concierge room to finish.
-export const maxDuration = 60;
+// ⚠ THIS MUST OUTLIVE /api/support-chat, WHICH CAPS ITSELF AT 60s.
+//
+// Same defect as the Discord route, and it was 60 here too: the reply is sent
+// via sendMessage AFTER the concierge returns, so a lambda killed at the same
+// 60s as its callee sends nothing at all. Telegram has no "thinking" indicator,
+// so it fails as pure silence, which is harder to notice and reads to the user
+// exactly like a dead bot.
+//
+// 90s = the callee's own 60s ceiling + the bridge's 70s abort + room to send.
+export const maxDuration = 90;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";

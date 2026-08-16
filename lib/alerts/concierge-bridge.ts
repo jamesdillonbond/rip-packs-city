@@ -10,6 +10,25 @@
 
 const SITE = "https://www.rippackscity.com";
 
+/**
+ * Hard bound on the call to /api/support-chat.
+ *
+ * ⚠ THIS FETCH HAD NO TIMEOUT, AND THAT IS WHAT LEFT A DISCORD USER STARING AT
+ * "Rip Packs City is thinking…" FOR EIGHT MINUTES (2026-08-16).
+ *
+ * The bots defer the interaction and finish the work in `after()`, so the ONLY
+ * thing that ever answers the user is the follow-up PATCH at the end of that
+ * work. If the lambda is killed first, no follow-up is sent and Discord shows
+ * its thinking state until the interaction token expires. The bot's own
+ * try/catch cannot help: a killed lambda runs no catch block.
+ *
+ * `/api/support-chat` caps itself at maxDuration 60, so 70s covers every run it
+ * can legitimately complete while still guaranteeing this call RETURNS —
+ * failed, but returned — leaving the caller alive to send an honest message.
+ * The bot routes carry a longer maxDuration than this so the PATCH always fits.
+ */
+const CONCIERGE_TIMEOUT_MS = 70_000;
+
 export function conciergeEnabled(): boolean {
   return process.env.ALERTS_BOT_CONCIERGE === "1";
 }
@@ -42,6 +61,7 @@ export async function conciergeReply(
         ownerId: opts.ownerId ?? undefined,
         pageContext: "bot_dm",
       }),
+      signal: AbortSignal.timeout(CONCIERGE_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const data = await res.json();

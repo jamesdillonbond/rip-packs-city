@@ -15,9 +15,20 @@
 //   Authorization: Bot <DISCORD_BOT_TOKEN>
 //   body: see COMMANDS below.
 
-// 60s: the /ask concierge can run multi-tool loops past 30s; the interaction
-// is deferred, so the lambda just needs to stay alive for the follow-up PATCH.
-export const maxDuration = 60;
+// ⚠ THIS MUST OUTLIVE /api/support-chat, WHICH CAPS ITSELF AT 60s.
+//
+// It was 60 — the SAME budget as the route it calls — so when the concierge ran
+// long, this lambda was killed at the very moment its own error handling would
+// have fired. `/ask` is DEFERRED, so the only thing that ever answers the user
+// is the follow-up PATCH at the end of `after()`; a killed lambda sends none,
+// and Discord shows "Rip Packs City is thinking…" until the interaction token
+// expires. Measured 2026-08-16: a user sat on that for eight minutes, and the
+// log line was `POST /api/bots/discord 200 [error] Task timed out after 60
+// seconds`. A caller that dies with its callee has no failure path at all.
+//
+// 90s = the callee's own 60s ceiling + the bridge's 70s abort + room for the
+// PATCH. Raise the bridge timeout and this together, never one alone.
+export const maxDuration = 90;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
@@ -164,6 +175,8 @@ export async function POST(req: NextRequest) {
             ? reply.slice(0, 1990).trimEnd() + "…" // Discord 2000-char cap
             : reply
           : "Couldn't get an answer just now — try again in a moment.";
+        // ⚠ Reaching this line at all is the point: a deferred interaction that
+        // never gets a follow-up shows "thinking…" until the token expires.
         await followUp(appId, token, { content });
       } catch (e) {
         console.log("[bots/discord] ask err", e instanceof Error ? e.message : String(e));
