@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the new concierge smoke check was measuring ITS OWN SIBLING'S FIXTURE and reporting an outage that was not happening
+
+**What shipped.** `app/api/smoke-test/route.ts` — the "concierge answers rather than degrading" check now excludes `is_smoke_test` rows. New guard `__tests__/smoke-concierge-degraded-share-excludes-smoke-rows.test.ts`.
+
+**The defect.** That check (added earlier today) reads `support_conversations` over 6 h and fails when the DEGRADED share crosses 50%. Its own comment says it measures *"what share of REAL conversations got a degraded fallback rather than an answer."* **It had no `is_smoke_test` filter.** Meanwhile its sibling — `support-chat graceful-degradation (synthetic Anthropic 4xx)` — POSTs `x-rpc-test-error-mode: credit_balance` on EVERY smoke tick, deliberately, to prove the degradation path works, writing a `concierge_unavailable` row with `is_smoke_test = true`. **A good test doing its job, and manufactured evidence for the other one.**
+
+**Measured live before changing anything:** of **905** conversations since 2026-08-02, **902 were smoke tests and 3 were real**, and **ALL 863 degraded rows were smoke rows — real degraded conversations: ZERO.** Broken out by day, real traffic was **0 on nine of the last ten days**, then 3 on 08-16 — **all three SUCCEEDED**. So the alarm (Sentry `JAVASCRIPT-NEXTJS-2E`, 27 users, *escalating*) reported a total concierge outage that was not happening. ⚠ And with one synthetic degraded row guaranteed per tick against ~0 real traffic, **it could never have gone green on its own** — a permanent false page, which is the fastest way to get every other check on the board ignored.
+
+⚠ **A CORRECTION TO THE RECORD THAT MATTERS MORE THAN THE FIX.** CLAUDE.md records "~780 degraded conversations since 08-02" and "150 `concierge_unavailable` vs 3 `general` in 24 h" as **user impact**. Those are smoke-test rows. Real degraded conversations in that window: **0**. ⚠ This does **NOT** prove the concierge was healthy then — there was independent evidence of an Anthropic 403 `credit_balance`, and Trevor found it by using the product — but the user-impact NUMBER came from the wrong rows and should not be requoted.
+
+⚠ **THE SHARPEST FORM OF THE GUARD-SCOPE CLASS YET: a monitor whose input set includes the output of another monitor.** Every prior instance in this file is a guard blind to something *outside* its derived scope; this one is a guard that can *see itself*. Worth checking for wherever a check reads a table that the test suite also writes.
+
+**Consequence, stated honestly rather than smoothed over.** With smoke rows excluded, real traffic is ~0–3/day, so the check will normally report `low_sample: true` and **no verdict**. That is the honest outcome and is deliberately NOT "fixed" by lowering `MIN_SAMPLE` or by counting smoke rows — a verdict from one conversation, or from a fixture we generated ourselves, is worse than an explicit no-verdict. It starts earning its keep the moment real traffic exists, which is exactly when its answer matters.
+
+**Verification.** Guard is a SOURCE check and **strips comments first** — load-bearing, not tidy: the fix's own comment names `is_smoke_test` several times, so a raw grep would pass on the prose alone with the filter deleted (this repo has shipped that bug ≥6 times). Mutation-proven: removing the filter while leaving every comment intact reds 2 of 4 cases; restored byte-identical and green. It also pins that the sibling still manufactures those rows, so the reasoning is re-derived rather than trusted if that ever changes. Smoke suites **31/31**, `tsc` clean.
+
+**REVERT:** `git revert <sha>` — restores the unfiltered query and deletes the guard. No DB or prod-state change.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive, cont.) — re-measured the `fmv-recalc` kill rate: improving (65% → 53%) but still losing HALF of every invocation, and the "nothing watches this" note is now stale
 
 **What shipped:** `CLAUDE.md` only — no code, no DB, no prod change.
