@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type React from "react"
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
 import SpecialSerialOwnersClient from "@/app/special-serial-owners/SpecialSerialOwnersClient"
@@ -11,7 +12,14 @@ import SpecialSerialOwnersClient from "@/app/special-serial-owners/SpecialSerial
 // coverage gate, so nothing could drive its failure path until the body moved to a
 // *Client.tsx that the component gate includes.
 
-vi.mock("next/link", () => ({ default: ({ children, ...p }: never) => <a {...(p as object)}>{children}</a> }))
+// ⚠ Typed as a real object, not `never`: a rest element cannot be created from `never`
+// (TS2700), so the tidy-looking `...p` spread type-checks in vitest and reds `tsc` — the
+// repo's most-repeated CI breakage, met here for the third time in one session.
+vi.mock("next/link", () => ({
+  default: ({ children, ...rest }: { children?: React.ReactNode } & Record<string, unknown>) => (
+    <a {...rest}>{children}</a>
+  ),
+}))
 vi.mock("@/components/MobileNav", () => ({ default: () => null }))
 // ⚠ MobileNav pulls in SupportChatConnected, which reads `usePathname()` and calls
 // `.split` on it unguarded — so in jsdom, where the App Router provides no path, the whole
