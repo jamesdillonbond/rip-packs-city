@@ -30,6 +30,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert:** `git revert <sha>` (code) — restores the mislabeled-rows board and the vanishing section. Docs commit is a separate sha. No DB unwind.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — pinned `refresh_golazos_badge_low_ask`, whose self-heal ORDERING is the whole reason it is not "the AllDay one with a different UUID"
+
+**What shipped.** Snapshot migration (committed UNAPPLIED — byte-identical to live, md5 `b01f4f4eaec7cda3ddfce710ab7cfd9d`) + a DB-invariant pin + its drift-guard registration. **148 pins over 147 distinct fns, 146 `.sql` test files.** Eighth of the unpinned SCHEDULED SECDEF writers closed; 7 remain.
+
+**Why it needed its own pin.** It is the same two-phase write/clear shape as the already-pinned `refresh_allday_badge_low_ask` **plus one step**: it calls `resolve_golazos_listing_edition_ids()` FIRST, healing `edition_id` on newly indexed listings *before* reading `golazos_edition_floor_ask`. ⚠ **That ordering is load-bearing.** The view keys on `edition_id`, so a freshly indexed listing whose `edition_id` is still NULL is **invisible to it** — the ask never reaches the badge and the edition reads as having **no ask while a live listing sits on the marketplace**, with the job reporting `ok`. Same class as the Pinnacle NULL-`edition_id` gap (deep-audit R4). Pinned with a deliberately OBSERVABLE stand-in resolver so the ordering itself is asserted, not just the outcome.
+
+⚠ **A MUTATION SURVIVED AND THE LIVE VIEW EXPLAINED IT — the function's own `floor_ask > 0` is REDUNDANT.** Relaxing it to `>= 0` changed nothing, because `golazos_edition_floor_ask` already carries `price_usd > 0` (read from `pg_get_viewdef`, not assumed). **Documented in place as unreachable rather than contrived around** — a fixture reaching that clause would assert a state the view cannot produce — together with what would make it load-bearing again. Fourth guard this session found redundant behind another layer.
+
+⚠ **A SECOND SURVIVOR WAS A REAL GAP IN MY FIXTURE, not a redundant guard.** Dropping `be.collection_id = v_coll` from BOTH phases passed, because no badge row could collide. **`editions.external_id` is NOT unique across collections** (CLAUDE.md states it outright), so a Top Shot badge row can legitimately carry a Golazos external_id — and an unscoped write would stamp a **Golazos ask onto a Top Shot badge**, while an unscoped clear would **wipe a Top Shot ask that is perfectly current**. Both silent: the number stays plausible, it is simply another collection's. Two colliding rows added; both mutations now red. **Fixture-before-guard again — a guard is unobservable unless the bad input would OTHERWISE succeed.**
+
+**Verified.** 7 mutations, each red: resolve-after-read · resolve deleted · clear phase deleted · `IS DISTINCT FROM` → `<>` · unscoped write · unscoped clear · hardcoded resolve count. Full DB suite **146 files, 0 failures**; drift guard + pin-parser coverage **149 tests green**.
+
+**Revert:** `git revert <sha>`. **Nothing to unwind in prod** — the migration is a snapshot of what already runs and was NOT applied; the rest is test-only. No cron, auth/`proxy.ts`, hot-wallet or FMV/pricing change.
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. ×3 — "keep going") — Pinnacle can answer "is this one listed?" too, and the reason it could not is that 16,231 open listings carry a NULL edition_id
 
