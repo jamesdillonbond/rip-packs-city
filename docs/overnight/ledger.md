@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont.) — `v_pack_pipeline_health` APPLIED in a measured quiet window, and `CREATE OR REPLACE VIEW` refused it
+
+**Applied to prod** — `audit_20260816_pack_pipeline_health_allday_arms_and_static_vs_wedged`, schema_migrations version **`20260816185749`**. ⚠ **This SUPERSEDES the earlier "committed UNAPPLIED" entry below** — that entry's revert line ("no prod DB state to unwind") is now false and has been corrected in place.
+
+**Why now.** It was deliberately held back while the instance was saturated. Re-checked `pg_stat_activity` and found **0 active backends / 0 IO waits** (down from 39 active / 27 IO waits earlier in the session) — a genuine quiet window, which is a one-query check worth repeating before any apply.
+
+⚠ **THE APPLY FAILED FIRST, AND THE TEST COULD NEVER HAVE CAUGHT IT.**
+
+```
+ERROR: 42P16: cannot change name of view column "pipeline" to "collection_slug"
+```
+
+`CREATE OR REPLACE VIEW` **cannot rename or reorder columns**, and the rebuild changes the whole column list. `supabase/tests/v_pack_pipeline_health.sql` builds the view inside a rolled-back transaction where **no prior definition exists**, so the compatibility constraint against the LIVE view is invisible to it *by construction* — the test was green while the apply errored outright. **A green rolled-back DB test is not evidence that a migration applies.** Recorded in the test header as a known limit of that harness, not papered over.
+
+⚠ **AND THE REVERT BODY HAD THE SAME BUG IN REVERSE.** Reverting renames the columns back, so a `CREATE OR REPLACE` revert hits the identical 42P16 — i.e. the documented revert path would have failed **exactly when it was needed**. Both directions now carry `DROP VIEW IF EXISTS` first. Verified safe to drop: **zero** DB dependents (`pg_depend`/`pg_rewrite`) and **zero** repo consumers — this view is operator-diagnostic, read by no route, cron or function.
+
+**Verified after apply.** All 10 rows across both collections — **6 `live` / 2 `static` / 1 `quiescent` / 0 `wedged`** — returning instantly where the old definition blew the 60 s budget. The two finished TS backfills read `static` (not a growing alarm) with `rows_attributable=false`; the history backfill reads `quiescent`, matching its edge fn's own `done:true`. `reloptions` still **`{security_invoker=on}`** after the DROP+CREATE (the option does not survive by itself — it is restated on the CREATE). `check_public_security_invariants()` **0 rows**, `check_anon_write_surface()` **0 rows**. DB suite still **160/160** green after the DDL change.
+
+**REVERT:** run the `REVERT BODY` block at the bottom of `supabase/migrations/20260816182300_audit_20260816_pack_pipeline_health_allday_arms_and_static_vs_wedged.sql` (it includes its own `DROP VIEW IF EXISTS` and `WITH (security_invoker = on)`). `git revert <sha>` alone restores the file only.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive, cont. — "keep going") — ran the trust-precompute split's own falsifier at 18:48–18:55Z: it PASSED, and produced three corrections including a 4.7× error in a leg's cost
 
 **What shipped:** `CLAUDE.md` only — no code, no DB, no prod change. Turns a recorded PREDICTION into a MEASUREMENT before it rolled off into a session log unverified.
@@ -133,7 +153,7 @@ GRANT EXECUTE ON FUNCTION public.score_external_pack_drop(text, bigint) TO anon,
 
 **Files.** `supabase/migrations/20260816182300_audit_20260816_pack_pipeline_health_allday_arms_and_static_vs_wedged.sql` (UNAPPLIED), `supabase/tests/v_pack_pipeline_health.sql`.
 
-**Revert.** `git revert <sha>`. The migration is UNAPPLIED, so there is **no prod DB state to unwind**. If it has since been applied, re-run the `REVERT BODY` block reproduced verbatim at the bottom of the migration file — it restores the prior definition and carries its own `WITH (security_invoker = on)`.
+**Revert.** ⚠ **SUPERSEDED — this migration WAS APPLIED later the same day** (schema_migrations version `20260816185749`); see the newer 2026-08-16 entry above. `git revert <sha>` restores the file but does **NOT** undo the prod change. If it has since been applied, re-run the `REVERT BODY` block reproduced verbatim at the bottom of the migration file — it restores the prior definition and carries its own `WITH (security_invoker = on)`.
 
 ⚠ **Apply in a low-traffic window.** Every `apply_migration` costs a ~10–20 s burst of user-facing `PGRST002` 500s, and at authoring time the instance was disk-IO saturated (five 60 s MCP timeouts in one session; `fmv-recalc` being killed at `maxDuration` on ~63–75% of invocations). Deliberately not pushed into that.
 
