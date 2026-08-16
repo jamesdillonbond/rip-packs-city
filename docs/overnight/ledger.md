@@ -51,6 +51,28 @@ Docs-only, operator action surfaced. `panini-ingest` last ran **2026-08-15 18:58
 - **Revert:** `git revert <sha>` (restores the single `page.tsx`, the blank-form render and BUDGETs 33/34). No DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV/pricing change.
 - **Verified:** `tsc` clean; primary suite **12,489 passed**; component gate **1,740 + 16 passed**.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "Proceed") — opened the client-page conversion workstream: gate ratchet 33 → 31, and measured what a conversion actually costs the component gate
+
+**What shipped.** `app/(collections)/[collection]/packs/page.tsx` → a server page; `app/dashboard/notifications/` split into `NotificationsClient.tsx` + a thin server `page.tsx`; `__tests__/component-NotificationsClient.test.tsx` (21 cases); `client-page-gate-ratchet` BUDGET **33 → 31**.
+
+**The blind spot.** A `"use client"` page.tsx is matched by NEITHER coverage gate — the primary gate is `lib/**` + `app/api/**/route.ts`, the component gate is `components/**` + `app/**/*Client.tsx`. 33 such pages, ~27k LOC. The remedy is the `*Client.tsx` split, because that glob IS gated.
+
+⚠ **THE CHEAPEST SHAPE, AND IT IS NOW EXHAUSTED.** `[collection]/packs` was a client page for ONE reason: it called `useParams()` for the collection slug, which a server page receives as a prop. No `*Client.tsx` was needed — everything below it was already a gated component. **A sweep of the remaining 32 found no others whose only client-side API is a routing hook**, so from here every conversion is a genuine split.
+
+⚠ **THE MEASURED COST OF A CONVERSION, which is the number that decides whether the next one is affordable.** Landing `NotificationsClient` at **100/85.9/100/100** moved the component gate 90.72/82.09/89.55/93.68 → **90.78/82.34/89.42/93.74**. Statements, branches and lines UP; **FUNCTIONS DOWN 0.13** — and that is the direction to watch, because a page contributes many small handlers, so a partly-tested conversion hits `% Funcs` hardest and that gate sits at 89.1 with **0.32pt** of room. My first pass landed at 77.8 funcs and narrowed it to 0.15 before I covered the four input handlers. **Cover the handlers, not just the fetch paths.**
+
+⚠ **Hoisting the Suspense boundary to the server page is what makes the split TESTABLE**, not a detail: `useSearchParams` needs a boundary, and leaving it inside would have moved the file into the gate without making it renderable by a test — measurement with no assertions.
+
+**Two things pinned that were previously unmeasured:** a failed hydrate must not draw a complete, plausible and WRONG picture of what a collector has signed up for (every checkbox defaults, and Save sits below it, so acting on it overwrites the real settings); and the save path's three notes differ on whether alerts are actually LIVE. Also recorded, not endorsed: **a minimum discount of `0` is silently rewritten to `20`** (`parseInt(…) || 20`).
+
+⚠ **My mutation harness caught a duplicate expression via its baseline occurrence assertion** (`deal_max_price: maxPrice ? … : null` appears twice — POST body and local state), and `tsc` caught the repo's most-repeated CI breakage in my own new test: `vi.fn(async () => …)` infers a zero-length args tuple, so `mock.calls[i][1]` is a **TS2493**. Type the mock at creation.
+
+**Correction to my own prior summary:** the fetch-honesty ratchet is at **34**, not 35, and is unmoved here — notifications already imported `fetchJson`, so it was never in that set.
+
+Verified: `tsc` clean · primary **12,509 / 1,246 files** · component **1,755 / 206 files**, both gates passing · 6 mutations, each redding only its own case · all four gate/include guards green.
+
+**Revert:** `git revert <code-sha>` restores both pages and the budgets. No DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — two documented endpoints publish a hard 0 for a count they failed to read (LATENT, and a mutation corrected which half of my fix mattered)
 
 **What shipped.** `app/api/overview-stats/route.ts` + `app/api/badges/route.ts` publish **null** for an unread count, plus `__tests__/api-count-reads-are-null-not-zero.test.ts`.
