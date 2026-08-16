@@ -125,3 +125,69 @@ describe("ParallelPremiumsBoardClient — a failed filter must not relabel the p
     expect(screen.queryByText(/Couldn't load these filters/)).toBeNull()
   })
 })
+
+// ── The false-ZERO trio (ratchet 15 → 0, ban installed) ─────────────────────
+//
+// SalesDashboard / LoansDashboard / SetsDashboard cast the parsed body straight
+// into state with NO shape guard at all — weaker than WalletsHubOverview above,
+// which at least checked `j.totals && j.segments`. That matters because an error
+// envelope is TRUTHY:
+//
+//     value={summary ? formatUsd(summary.total_volume_usd) : "—"}
+//
+// takes its DATA branch, and `formatUsd(undefined)` is "$0" while
+// `formatNumber(undefined)` is "0". So /analytics/sales published
+// "$0 volume · 0 sales · 0 buyers" during an outage, with the em-dash fallback
+// present, written for exactly this, and unreachable.
+//
+// The fix writes null on failure, which makes the EXISTING guard work rather
+// than adding a second one — plus a banner, because a column of em-dashes still
+// does not tell a reader whether we failed or the market was quiet.
+// ⚠ MUTATION NOTE, recorded because it corrects a plausible reading of the fix:
+// the `s.ok ? (s.json as any) : null` ternary in these three files is REDUNDANT
+// belt-and-braces, not the load-bearing part. `fetchJson` already returns
+// `{ ok: false, json: null }` on a non-2xx, so collapsing the ternary to
+// `s.json` is a semantic no-op and that mutation SURVIVES this suite — correctly.
+//
+// What actually removes the defect is the switch to `fetchJson` itself, which is
+// why it is enforced by a BAN (client-raw-json-parse-ratchet.test.ts) rather
+// than left to review. Mutating a leg back to the true original shape —
+// `fetch(...).then((r) => r.json())` — DOES red the case below, which is the
+// check that matters. The ternary is kept for the reader, not the runtime.
+import SalesDashboard from "@/components/analytics/SalesDashboard"
+
+describe("SalesDashboard — an outage must not publish $0 volume", () => {
+  it("renders em-dashes and a notice, never a manufactured zero", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => errorEnvelope as any))
+    const { container } = render(<SalesDashboard />)
+
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy())
+    const text = container.textContent ?? ""
+
+    // The defect, stated directly: these are what formatUsd/formatNumber return
+    // for undefined, and they must not appear as KPI values.
+    expect(text).not.toContain("$0")
+    expect(text).toMatch(/Couldn't load some of this data just now/)
+    // The em-dash path — the guard that was unreachable — must now be live.
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("a real response still renders real figures", async () => {
+    // Both directions: the notice must not become the permanent state, and a
+    // genuine zero from the API is still a legitimate number to show.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string) =>
+        success(
+          String(u).includes("/sales/summary")
+            ? { total_volume_usd: 1_500_000, total_sales: 42, unique_buyers: 7, unique_sellers: 5 }
+            : { rows: [] },
+        ) as any,
+      ),
+    )
+    const { container } = render(<SalesDashboard />)
+
+    await waitFor(() => expect(container.textContent ?? "").toContain("$1.50M"))
+    expect(screen.queryByRole("status")).toBeNull()
+  })
+})

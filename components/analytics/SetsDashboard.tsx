@@ -1,5 +1,7 @@
 "use client"
 
+import { fetchJson } from "@/lib/analytics/fetch-json"
+
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
@@ -343,6 +345,7 @@ export default function SetsDashboard() {
   const [seriesResp, setSeriesResp] = useState<SeriesResponse | null>(null)
   const [directory, setDirectory] = useState<DirectoryResponse | null>(null)
 
+  const [loadFailed, setLoadFailed] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [seriesLoading, setSeriesLoading] = useState(true)
   const [directoryLoading, setDirectoryLoading] = useState(true)
@@ -355,15 +358,20 @@ export default function SetsDashboard() {
   useEffect(() => {
     let cancelled = false
     setSummaryLoading(true)
+    setLoadFailed(false)
     const qs = new URLSearchParams()
     if (collectionsQs) qs.set("collections", collectionsQs)
-    fetch(`/api/analytics/sets/summary?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<SetsSummaryResponse>(`/api/analytics/sets/summary?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setSummary(j as SetsSummaryResponse)
+        // ⚠ Was `.then((r) => r.json())` then `setSummary(j as SetsSummaryResponse)`. A failing
+        // route answers with a well-formed JSON envelope, so the parse SUCCEEDS
+        // and the ERROR OBJECT reached state — truthy, so every
+        // `x ? … : "—"` guard downstream took its DATA branch and formatted
+        // undefined into "$0" / "0". Writing null is what restores the guard.
+        if (!res.ok) setLoadFailed(true)
+        setSummary(res.ok ? res.json : null)
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setSummaryLoading(false)
       })
@@ -377,13 +385,17 @@ export default function SetsDashboard() {
     setSeriesLoading(true)
     const qs = new URLSearchParams()
     if (collectionsQs) qs.set("collections", collectionsQs)
-    fetch(`/api/analytics/sets/series?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<SeriesResponse>(`/api/analytics/sets/series?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setSeriesResp(j as SeriesResponse)
+        // ⚠ Was `.then((r) => r.json())` then `setSeriesResp(j as SeriesResponse)`. A failing
+        // route answers with a well-formed JSON envelope, so the parse SUCCEEDS
+        // and the ERROR OBJECT reached state — truthy, so every
+        // `x ? … : "—"` guard downstream took its DATA branch and formatted
+        // undefined into "$0" / "0". Writing null is what restores the guard.
+        if (!res.ok) setLoadFailed(true)
+        setSeriesResp(res.ok ? res.json : null)
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setSeriesLoading(false)
       })
@@ -400,13 +412,17 @@ export default function SetsDashboard() {
     qs.set("sort", sort)
     qs.set("min_coverage", String(minCoverage))
     qs.set("limit", String(limit))
-    fetch(`/api/analytics/sets/directory?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<DirectoryResponse>(`/api/analytics/sets/directory?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setDirectory(j as DirectoryResponse)
+        // ⚠ Was `.then((r) => r.json())` then `setDirectory(j as DirectoryResponse)`. A failing
+        // route answers with a well-formed JSON envelope, so the parse SUCCEEDS
+        // and the ERROR OBJECT reached state — truthy, so every
+        // `x ? … : "—"` guard downstream took its DATA branch and formatted
+        // undefined into "$0" / "0". Writing null is what restores the guard.
+        if (!res.ok) setLoadFailed(true)
+        setDirectory(res.ok ? res.json : null)
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setDirectoryLoading(false)
       })
@@ -426,6 +442,16 @@ export default function SetsDashboard() {
 
   return (
     <div className="space-y-10">
+      {loadFailed && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-xl border border-[color:var(--rpc-red-border)] bg-[var(--rpc-red-bg)] px-4 py-3 text-sm text-[color:var(--rpc-text-muted)]"
+        >
+          Couldn&apos;t load some of this data just now &mdash; the figures below are
+          shown as &mdash; rather than guessed. This says nothing about the market.
+        </div>
+      )}
       {/* Header + filter chips */}
       <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-6">
         <div className="flex flex-col gap-1">

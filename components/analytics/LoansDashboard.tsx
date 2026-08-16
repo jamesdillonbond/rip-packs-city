@@ -1,5 +1,7 @@
 "use client"
 
+import { fetchJson } from "@/lib/analytics/fetch-json"
+
 import { useEffect, useMemo, useState } from "react"
 import {
   HandCoins,
@@ -122,6 +124,7 @@ export default function LoansDashboard({
   const [topLenders, setTopLenders] = useState<LeaderboardResponse | null>(null)
   const [topBorrowers, setTopBorrowers] = useState<LeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null)
 
   useEffect(() => {
@@ -135,26 +138,35 @@ export default function LoansDashboard({
     // Hardcode min_volume=100 on the leaderboard fetches to filter the dust
     // ranks ($0/$1 from canceled or test loans). Callers who want the dust
     // back can pass min_volume=0 directly to the API.
-    const calls: Array<Promise<unknown>> = [
-      fetch(`/api/analytics/loans/summary?${qs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/limbo-summary${collectionsQs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/timeseries?${qs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/new-wallets?${qs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/cohorts${collectionsQs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/leaderboard?role=lender&min_volume=100&${qs}`).then((r) => r.json()),
-      fetch(`/api/analytics/loans/leaderboard?role=borrower&min_volume=100&${qs}`).then((r) => r.json()),
+    const calls = [
+      fetchJson(`/api/analytics/loans/summary?${qs}`),
+      fetchJson(`/api/analytics/loans/limbo-summary${collectionsQs}`),
+      fetchJson(`/api/analytics/loans/timeseries?${qs}`),
+      fetchJson(`/api/analytics/loans/new-wallets?${qs}`),
+      fetchJson(`/api/analytics/loans/cohorts${collectionsQs}`),
+      fetchJson(`/api/analytics/loans/leaderboard?role=lender&min_volume=100&${qs}`),
+      fetchJson(`/api/analytics/loans/leaderboard?role=borrower&min_volume=100&${qs}`),
     ]
 
     Promise.all(calls)
       .then(([s, lb, ts, nw, ch, tl, tb]) => {
         if (cancelled) return
-        setSummary(s as AnalyticsSummaryResponse | null)
-        setLimbo(lb as AnalyticsLimboSummary | null)
-        setTimeseries(ts as TimeseriesResponse)
-        setNewWallets(nw as NewWalletsResponse)
-        setCohorts(ch as CohortsResponse)
-        setTopLenders(tl as LeaderboardResponse)
-        setTopBorrowers(tb as LeaderboardResponse)
+        // ⚠ Was `fetch(...).then((r) => r.json())` with no status check, then
+        // `setSummary(s as XResponse | null)`. A failing route answers with a
+        // well-formed JSON envelope, so the parse SUCCEEDS and the ERROR OBJECT
+        // reached state — and an error object is TRUTHY, so the
+        // `summary ? ... : "—"` guard below took its DATA branch and called
+        // formatUsd(undefined) -> "$0", formatNumber(undefined) -> "0".
+        // The em-dash fallback existed to prevent exactly that and was
+        // unreachable. Writing null on failure is what makes it work again.
+        setLoadFailed([s, lb, ts, nw, ch, tl, tb].some((r) => !r.ok))
+        setSummary(s.ok ? (s.json as any) : null)
+        setLimbo(lb.ok ? (lb.json as any) : null)
+        setTimeseries(ts.ok ? (ts.json as any) : null)
+        setNewWallets(nw.ok ? (nw.json as any) : null)
+        setCohorts(ch.ok ? (ch.json as any) : null)
+        setTopLenders(tl.ok ? (tl.json as any) : null)
+        setTopBorrowers(tb.ok ? (tb.json as any) : null)
         setRefreshedAt(new Date().toISOString())
       })
       .catch(() => {
@@ -227,6 +239,16 @@ export default function LoansDashboard({
 
   return (
     <div className="space-y-8">
+      {loadFailed && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-xl border border-[color:var(--rpc-red-border)] bg-[var(--rpc-red-bg)] px-4 py-3 text-sm text-[color:var(--rpc-text-muted)]"
+        >
+          Couldn&apos;t load some of this data just now &mdash; the figures below are
+          shown as &mdash; rather than guessed. This says nothing about the market.
+        </div>
+      )}
       <FilterBar
         title={title ?? "Flowty Loan Analytics"}
         subtitle={

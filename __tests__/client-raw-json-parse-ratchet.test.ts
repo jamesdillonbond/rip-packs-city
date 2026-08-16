@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-// Ratchet on `fetch(url).then((r) => r.json())` — parsing a body without ever
+// BAN on `fetch(url).then((r) => r.json())` — parsing a body without ever
 // checking the status — in `"use client"` code.
 //
 // ── WHY THIS IS A DEFECT AND NOT A STYLE PREFERENCE ─────────────────────────
@@ -12,11 +12,16 @@ import { join } from "node:path"
 // dangerous. On a 503 the body PARSES FINE, so:
 //
 //   • the promise RESOLVES, and any `.catch(() => {})` never fires;
-//   • the error object is then cast to the success type
-//     (`setSummary((s as ListingsSummaryResponse) ?? null)`);
-//   • `?.rows` on it reads undefined, yielding `[]`;
-//   • and the render layer states a conclusion — "No open offers match the
-//     current filters.", "No events match the current filters."
+//   • the error object is written to state, cast to the success type;
+//   • and — the part that got past every reviewer of these files — an error
+//     object is TRUTHY, so a guard written as
+//
+//         value={summary ? formatUsd(summary.total_volume_usd) : "—"}
+//
+//     takes its DATA branch. `formatUsd(undefined)` returns "$0" and
+//     `formatNumber(undefined)` returns "0", so /analytics/sales published
+//     "$0 volume · 0 sales · 0 buyers" during an outage. The em-dash fallback
+//     was written to prevent precisely that, and was UNREACHABLE.
 //
 // ⚠ Note the direction: hardening the SERVER to return a clean JSON error
 // envelope made this CLIENT bug quieter, not louder. A route that once blew up
@@ -28,32 +33,20 @@ import { join } from "node:path"
 // envelope). Parsing and returning it would put driver text or an `{error}`
 // object where the caller expects rows, so the status gates the parse."
 //
-// ── WHY A RATCHET AND NOT A BAN ─────────────────────────────────────────────
-// 15 sites across 3 files remain, and each needs more than a mechanical swap:
-// a per-leg failure flag, a render branch ordered before the empty branch, and
-// a test pinning BOTH directions. Banning today would mean shipping a 3-entry
-// allowlist, which this repo has repeatedly found to be theatre. The ratchet
-// stops the population GROWING while the sweep continues.
+// ── WHY A BAN NOW, WHEN THIS SHIPPED AS A RATCHET ───────────────────────────
+// It was a ratchet at 17 for one day, because a ban then would have meant
+// shipping a 5-entry allowlist — which this repo calls theatre. The population
+// was driven 17 → 15 → 0 across two passes, and **driving it to zero is what
+// removes the objection to a ban** (the same move recorded for the /insights
+// unbounded-prerender class). There is no allowlist here and there must not be
+// one: the correct response to a new offender is `fetchJson`, not an entry.
 //
-// ⚠ PASSING MEANS THE BLIND SPOT DID NOT GROW — it does not mean these 3 files
-// are fixed. Lower the number in the same commit that converts a file; never
-// raise it.
-//
-// Already converted (do not regress), each pinned behaviourally rather than by
-// this counter:
-//   components/analytics/ListingsDashboard.tsx  ) component-analytics-dashboards
-//   components/analytics/PulseDashboard.tsx     )   -failed-vs-empty.test.tsx
-//   components/analytics/WalletsHubOverview.tsx ) component-analytics-secondary
-//   app/insights/parallel-premiums/…Client.tsx  )   -failed-vs-empty.test.tsx
-//
-// 17 -> 15 on 2026-08-15. ⚠ The two conversions in that pass were NOT of equal
-// severity, and saying so is the point: the parallel-premiums board published a
-// FALSE CLAIM (one filter's rows under another filter's label) while
-// WalletsHubOverview merely rendered nothing. Both are worth fixing; only the
-// first was urgent. A raw-parse count ranks neither — it finds candidates, and
-// you still have to read what each one renders.
-
-const BUDGET = 15
+// ⚠ Writing `null` on failure is only HALF the fix. It restores the em-dash,
+// but a reader still cannot tell "no data" from "we could not load it" — so
+// every converted file also carries a visible failure state, pinned
+// behaviourally by:
+//   __tests__/component-analytics-dashboards-failed-vs-empty.test.tsx
+//   __tests__/component-analytics-secondary-failed-vs-empty.test.tsx
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -64,8 +57,9 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-/** Comments removed — line AND block. A guard must not count its own prose, and
- *  several of these files quote the pattern in a comment explaining their fix. */
+/** Comments removed — line AND block. A guard must not read its own prose as
+ *  evidence, and the converted files quote the banned pattern to explain the
+ *  fix. This header alone would otherwise register as several offenders. */
 function stripComments(src: string): string {
   return src
     .split("\n")
@@ -79,13 +73,17 @@ function stripComments(src: string): string {
 // `.then((res) => other.json())` is not swept up.
 const RAW_JSON_RX = /\.then\(\s*\(\s*(\w+)\s*\)\s*=>\s*\1\.json\(\)\s*\)/
 
+function clientFiles(): string[] {
+  return [...walk(join(process.cwd(), "components")), ...walk(join(process.cwd(), "app"))].filter(
+    (f) => /^["']use client["']/m.test(readFileSync(f, "utf8")),
+  )
+}
+
 function offenders(): string[] {
   const hits: string[] = []
-  for (const f of [...walk(join(process.cwd(), "components")), ...walk(join(process.cwd(), "app"))]) {
-    const raw = readFileSync(f, "utf8")
-    if (!/^["']use client["']/m.test(raw)) continue
+  for (const f of clientFiles()) {
     const rel = f.slice(process.cwd().length + 1).replace(/\\/g, "/")
-    stripComments(raw)
+    stripComments(readFileSync(f, "utf8"))
       .split("\n")
       .forEach((line, i) => {
         if (RAW_JSON_RX.test(line)) hits.push(`${rel}:${i + 1}`)
@@ -94,51 +92,37 @@ function offenders(): string[] {
   return hits
 }
 
-describe("client code does not parse a response body without checking the status", () => {
-  it(`has no more than ${BUDGET} unchecked parses`, () => {
+describe("client code never parses a response body without checking the status", () => {
+  it("has ZERO unchecked parses — no allowlist", () => {
     const hits = offenders()
     expect(
-      hits.length,
-      `Unchecked \`r.json()\` parses grew to ${hits.length} (budget ${BUDGET}).\n` +
+      hits,
+      "A client file parses a response body without checking the status.\n" +
         "Use fetchJson() from lib/analytics/fetch-json.ts — it gates the parse on\n" +
-        "the status, so a 5xx error envelope cannot be cast to the row type.\n\n" +
+        'the status, so a 5xx error envelope cannot reach state and then satisfy a\n' +
+        'truthy `x ? … : "—"` guard.\n\n' +
+        "Do NOT add an allowlist entry here; convert the file.\n\n" +
         hits.join("\n"),
-    ).toBeLessThanOrEqual(BUDGET)
+    ).toEqual([])
   })
 
-  it("has NO SLACK — the budget equals the live count", () => {
-    // A ratchet with headroom silently licenses the next N additions. This repo
-    // has already paid for the compound version: the component gate reached a
-    // ~13-point unguarded branch buffer that way.
-    expect(offenders().length).toBe(BUDGET)
+  it("is not vacuous — the matcher still detects the pattern", () => {
+    // Guards the guard, and it has to be done with SAMPLES rather than a known
+    // offender: the population is zero, so the anchor-based check this file used
+    // while it was a ratchet is no longer possible. Without this, a broken
+    // walk() or regex would leave the ban passing forever over nothing.
+    expect(RAW_JSON_RX.test("fetch(url).then((r) => r.json())")).toBe(true)
+    expect(RAW_JSON_RX.test("  .then((res) => res.json())")).toBe(true)
+    // ...and it must not fire on the correct shapes.
+    expect(RAW_JSON_RX.test("fetchJson<T>(url)")).toBe(false)
+    expect(RAW_JSON_RX.test(".then((r) => (r.ok ? r.json() : null))")).toBe(false)
+    // A different receiver is somebody else's json(), not an unchecked parse.
+    expect(RAW_JSON_RX.test(".then((res) => other.json())")).toBe(false)
   })
 
-  it("is not vacuous — the matcher finds the known population", () => {
-    // Guards the guard. If walk() or the regex broke, the count would read 0 and
-    // this ratchet would pass forever while pointing at nothing.
-    const files = new Set(offenders().map((h) => h.split(":")[0]))
-    expect(files.size).toBeGreaterThan(0)
-    for (const anchor of [
-      "components/analytics/LoansDashboard.tsx",
-      "components/analytics/SalesDashboard.tsx",
-      "components/analytics/SetsDashboard.tsx",
-    ]) {
-      expect(files, `${anchor} is a known offender and must be detected`).toContain(anchor)
-    }
-  })
-
-  it("every converted file is ABSENT from the population", () => {
-    // The regression check that matters: a converted file reappearing means
-    // someone reverted the fix, which is a different event from the budget
-    // drifting upward, and the two need different responses.
-    const files = new Set(offenders().map((h) => h.split(":")[0]))
-    for (const converted of [
-      "components/analytics/ListingsDashboard.tsx",
-      "components/analytics/PulseDashboard.tsx",
-      "components/analytics/WalletsHubOverview.tsx",
-      "app/insights/parallel-premiums/ParallelPremiumsBoardClient.tsx",
-    ]) {
-      expect(files, `${converted} was converted; its return means a revert`).not.toContain(converted)
-    }
+  it("actually walks a non-trivial number of client files", () => {
+    // The other half of not-vacuous: offenders() returning [] must mean "none
+    // found", not "nothing scanned".
+    expect(clientFiles().length).toBeGreaterThan(50)
   })
 })
