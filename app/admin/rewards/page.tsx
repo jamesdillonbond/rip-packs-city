@@ -159,6 +159,9 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  // Distinct from "the lists are empty". See load() — a failed read used to
+  // leave every list at [], which rendered "Nothing waiting to ship."
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // adjust form
   const [adjUser, setAdjUser] = useState("");
@@ -170,11 +173,22 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadFailed(false);
     try {
       const res = await fetch("/api/admin/rewards", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       if (res.status === 401) {
         setFlash({ kind: "err", msg: "Bad token." });
         onSignOut();
+        return;
+      }
+      // ⚠ Only 401 was checked before, so ANY other non-2xx fell through to
+      // `data.pending ?? []` and emptied every list. A 500 therefore rendered
+      // "Nothing waiting to ship." — and this is the queue of PHYSICAL
+      // redemptions someone has already spent credits on. An operator reading
+      // that during an outage concludes there is nothing to fulfil.
+      if (!res.ok) {
+        setLoadFailed(true);
+        setFlash({ kind: "err", msg: `Load failed: HTTP ${res.status}.` });
         return;
       }
       const data = await res.json();
@@ -184,6 +198,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
       setRaffles(data.raffles ?? []);
       setDraws(data.draws ?? []);
     } catch {
+      setLoadFailed(true);
       setFlash({ kind: "err", msg: "Load failed." });
     } finally {
       setLoading(false);
@@ -329,7 +344,12 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
 
             {/* PENDING REDEMPTIONS */}
             <H2>Pending redemptions</H2>
-            {pending.length === 0 ? (
+            {loadFailed ? (
+              <p style={{ fontFamily: MONO, color: "#d6a13a" }}>
+                Couldn&apos;t load redemptions — this says nothing about whether any are
+                waiting. Retry before assuming the queue is clear.
+              </p>
+            ) : pending.length === 0 ? (
               <p style={{ fontFamily: MONO, color: "#7a7a7a" }}>Nothing waiting to ship.</p>
             ) : (
               <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 28 }}>
@@ -528,8 +548,8 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                   ))}
                   {balances.length === 0 && (
                     <tr>
-                      <td style={{ ...td, color: "#7a7a7a" }} colSpan={6}>
-                        No participants yet.
+                      <td style={{ ...td, color: loadFailed ? "#d6a13a" : "#7a7a7a" }} colSpan={6}>
+                        {loadFailed ? "Couldn't load balances." : "No participants yet."}
                       </td>
                     </tr>
                   )}

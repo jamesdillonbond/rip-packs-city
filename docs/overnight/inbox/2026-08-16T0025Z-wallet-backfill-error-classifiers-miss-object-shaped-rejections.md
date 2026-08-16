@@ -1,6 +1,6 @@
 # The wallet-backfill error classifiers miss object-shaped rejections, and the cost is a permanently-red mega-wallet
 
-**Filed 2026-08-16 00:25Z (2026-08-15 17:25 PT) · Claude Code, interactive test-coverage pass · NOT SHIPPED — this changes ingest retry behaviour**
+**Filed 2026-08-16 00:25Z · RESOLVED 2026-08-16 by measurement — see the next section. Kept as a record so nobody re-opens it.**
 
 ## What
 
@@ -20,13 +20,30 @@ This is not "an error message renders badly". These classifiers exist **specific
 
 A missed classification therefore does the opposite of the intended thing: the mega-wallet goes back into the **failure count forever**, where it reads as a regression nobody can clear and no retry resolves. The same applies to `computation_limit_exceeded` (1110) and `access_api_error_likely_computation_limit`.
 
-## How likely is the object shape?
+## MEASURED 2026-08-16 — IT DOES NOT HAPPEN IN PRODUCTION. This is a latent robustness gap, not a live defect.
 
-Unverified, and that is the point of filing rather than fixing. FCL and the Flow REST wrapper both reject with non-`Error` values in some paths, but **I have not measured how often a real 1106/1110 arrives object-shaped in production**. The right next step is a measurement, not a patch:
+The original filing said this was unverified and asked for a diagnostic. **No diagnostic was needed** — the evidence was already in the database, and the check is decisive because the SAME stringification that feeds the classifiers also feeds the logged error:
 
-- Add a one-line diagnostic at the catch site recording `typeof err` and `err?.constructor?.name` for classified-as-unknown failures on the wallet-backfill pipelines, and read it after a day.
-- If object-shaped rejections never occur, this is a latent robustness gap and can stay as-is with the tests documenting it.
-- If they do occur, the fix is one line per classifier — but see the caveat below.
+```
+catch (err) {
+  const msg = err instanceof Error ? err.message : String(err)   // <- same expression
+  ...
+  await logRun({ ..., ok: false, error: msg })                   // <- lands in pipeline_runs.error
+```
+
+So an object-shaped rejection would write the literal `[object Object]` into `pipeline_runs.error`. Measured:
+
+| source | rows with `[object Object]` | rows with any error | total |
+|---|---|---|---|
+| `pipeline_runs`, `wallet-backfill%` (73 h retention) | **0** | 902 | 12,197 |
+| `pipeline_runs`, all pipelines | **0** | 2,943 | 41,561 |
+| `pipeline_runs_daily.last_error` (indefinite, from 2026-07-29) | **0** | 676 | 2,465 |
+
+**Zero out of 902 real wallet-backfill errors**, and zero across every pipeline the platform runs. FCL and the Flow REST wrapper evidently reject with `Error` instances on these paths in practice.
+
+⚠ One caveat on the weakest row: `pipeline_runs_daily.last_error` keeps only ONE error per pipeline per day, so a rare object-shaped failure could in principle be masked there by a later different error. The 73 h `pipeline_runs` window is the load-bearing evidence — it retains every row.
+
+**Disposition: leave the code as it is.** The tests below pin the current behaviour in both directions, which is the appropriate response to a gap that is real in principle and absent in practice. Do NOT widen the classifiers on the strength of this note — that was the original recommendation, and the measurement removed its justification.
 
 ## Why I did not just fix it
 

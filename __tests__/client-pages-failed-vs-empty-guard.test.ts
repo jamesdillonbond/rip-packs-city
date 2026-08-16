@@ -515,4 +515,65 @@ describe("client pages — a failed read is not an empty result", () => {
       expect(src).toMatch(/setErr\(j\?\.error \?\? `HTTP \$\{res\.status\}`\)/)
     })
   })
+
+  // ── /admin/rewards — only 401 was checked ─────────────────────────────────
+  //
+  // ⚠ `load()` checked `res.status === 401` and NOTHING ELSE, so any other
+  // non-2xx fell straight through to `data.pending ?? []` and emptied every
+  // list. A 500 therefore rendered "Nothing waiting to ship." — and `pending` is
+  // the queue of PHYSICAL redemptions a collector has ALREADY SPENT CREDITS ON.
+  // An operator reading that during an outage concludes there is nothing to
+  // fulfil, and someone's order silently never ships. Admin surface, but the
+  // consequence lands on a user.
+  //
+  // ⚠ THE MEASUREMENT THAT FOUND IT IS WORTH MORE THAN THE FIX, because my first
+  // three attempts at it were all wrong. "35 client pages fetch without
+  // fetchJson" is not a defect list: 32 of 37 already track failure. Narrowing
+  // to "no failure state" gave 4, then 5, then — once the pattern also matched
+  // `setErr(` and redirect-based handling — TWO:
+  //   • /dashboard/alerts   (fixed: the welcome card + "No matches.")
+  //   • /admin/rewards      (this one)
+  // Everything else was already correct, including three pages I opened
+  // expecting defects. `auth/confirm` redirects to /login?error=session_failed
+  // on every real failure and its /api/profile/touch warn is deliberately
+  // fire-and-forget — a failed last_active_at stamp must not block a sign-in.
+  // Do not re-derive this list from a grep for `setError(`.
+  describe("/admin/rewards — a failed load is not an empty ship queue", () => {
+    const src = stripComments(read("app", "admin", "rewards", "page.tsx")).replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    )
+
+    it("checks res.ok, not just 401", () => {
+      expect(
+        src,
+        "any non-2xx must be caught — 401 alone lets a 500 empty every list",
+      ).toMatch(/if \(!res\.ok\) \{\s*setLoadFailed\(true\);/)
+    })
+
+    it("tracks the failure separately and clears it on re-load", () => {
+      expect(src).toContain("const [loadFailed, setLoadFailed] = useState(false)")
+      // Reset at the top of load(), or a recovered page stays stuck on the copy.
+      expect(src).toMatch(/setLoading\(true\);\s*setLoadFailed\(false\);/)
+      // And the thrown path must set it too, not only the non-ok path.
+      expect(src).toMatch(/\} catch \{\s*setLoadFailed\(true\);/)
+    })
+
+    it("the ship queue reports a failed read instead of claiming it is clear", () => {
+      expect(src).toContain("{loadFailed ? (")
+      expect(src).toMatch(/Couldn&apos;t load redemptions/)
+      // Ordering: the failure branch must precede the emptiness test.
+      expect(src.indexOf("Couldn&apos;t load redemptions")).toBeLessThan(
+        src.indexOf("Nothing waiting to ship."),
+      )
+    })
+
+    it("BOTH directions: a genuinely empty queue still says so", () => {
+      // A fix that blanked every empty state would only move the dishonesty —
+      // and "Nothing waiting to ship." is the correct, useful answer on a clear
+      // queue, which is most days.
+      expect(src).toContain("Nothing waiting to ship.")
+      expect(src).toContain("No participants yet.")
+    })
+  })
 })
