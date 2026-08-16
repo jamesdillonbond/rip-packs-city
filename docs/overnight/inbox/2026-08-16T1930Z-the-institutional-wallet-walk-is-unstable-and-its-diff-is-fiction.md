@@ -1,6 +1,8 @@
 # The institutional wallet walk is unstable, and everything derived from its diff is fiction
 
-**Filed 2026-08-16 19:30Z (Claude Code, interactive). Contained downstream, root cause NOT fixed.**
+**Filed 2026-08-16 19:30Z. ✅ RESOLVED 2026-08-16 ~20:56Z — root cause found, fixed and DEPLOYED (v28).**
+**Read the CLOSING ADDENDUM at the foot of this file first; the two sections above it are the
+investigation as it stood mid-flight and say "not fixed" / "not deployed", which is no longer true.**
 
 ## What is wrong
 
@@ -26,8 +28,10 @@ Measured live on `0x4d2c9216f1dca098` (NBATopShotCommunity):
 
 Corroborating: holdings are flat at ~52,120 (daily deltas 0, ±1, ±4) while the
 table claimed ~6,500 acquisitions/day. And the snapshot array itself is **13.6%
-duplicates** — 52,123 entries, 45,059 distinct — so `moment_count` (and
-`seeded_wallets.cached_moment_count`) **overstate the real holding**. Duplicate
+duplicates** — 52,123 entries, 45,059 distinct. ⚠ **CORRECTION: an earlier version of
+this line said `moment_count` therefore overstates the real holding. It does NOT** —
+52,123 against a true 52,120, because the duplicates and the omissions roughly cancel.
+That is exactly why every count-based check passed for three months. Duplicate
 emission plus skipping is the classic signature of paginated iteration with
 unstable page boundaries.
 
@@ -185,3 +189,80 @@ against yesterday's 7k-short corrupt baseline, so every row the old walk kept
 missing reads as an arrival exactly once. It should fall to single digits the
 following day, which is the real confirmation. Do not revert on the burst; the
 consumers are filtered, so it reaches nobody.
+
+
+---
+
+## CLOSING ADDENDUM 2026-08-16 ~20:56Z — DEPLOYED, v27 → v28
+
+**`snapshot-institutional-wallets` is ACTIVE at v28 with `import_map: true`,
+`verify_jwt: false`.** The `.order()` fix is live. This file's earlier sections are
+superseded.
+
+⚠ **The CLI command this file recommended FAILED, and not for the reason the error
+suggested.** `npx supabase functions deploy … --import-map …` returned **401** — but
+the upload itself had succeeded and all three assets resolved. Checked
+independently rather than inferred from the deploy error: `GET
+https://api.supabase.com/v1/projects` with the same shell's `SUPABASE_ACCESS_TOKEN`
+**also 401s**, so the PAT is revoked/expired (right shape — 44 chars, `sbp_`
+prefix — which is why it fails at authz rather than parse). **A deploy error is not
+evidence about the deploy; test the credential separately.** Deployed via the
+Supabase MCP instead, which authenticates on a different path.
+
+⚠ **The hypothesised MCP layout in the previous addendum was CORRECT and I was
+over-cautious in not attempting it.** Mirroring the CLI's exact three upload paths
+(`supabase/functions/deno.json`, `…/snapshot-institutional-wallets/index.ts`,
+`…/_shared/institutional-snapshot.ts`) keeps `../_shared/…` resolvable. The
+documented two-file MCP shape genuinely does not cover a `_shared` import — that
+part stands — but the fix is to mirror the CLI's paths, not to avoid the MCP.
+
+✅ **The other half of the caution was load-bearing and is now confirmed: a naive
+redeploy WOULD have boot-failed a live daily pipeline.** v27 predates `591de3d2`
+(bare-specifier imports), so it carried `import_map: false`; the current
+`index.ts` imports `@supabase/supabase-js` as a bare specifier, unresolvable
+without the map. **Measuring the drift before deploying is what made this safe.**
+
+⚠ **Verified by BOOT PROBE, not by the deploy response — a bad import or a missing
+env var fails at BOOT, which the deploy API does not report.** A `POST` with no
+`Authorization` returned **401 with a plain-text `Unauthorized` body**: that is the
+function's own check (`verify_jwt` is false, and a gateway rejection would be
+JSON), proving the module loaded, both imports resolved, `Deno.serve` registered
+and `INGEST_SECRET_TOKEN` is present. It returns before any snapshot work, so
+nothing was triggered.
+
+### ⚠ STILL UNVERIFIED: the boot probe proves it LOADS, not that it READS correctly
+
+The behavioural proof is the next scheduled run (**06:00 UTC**). Check the SET, not
+the count:
+
+```sql
+select snapshot_at,
+       array_length(moment_ids,1)                           as entries,
+       (select count(distinct x) from unnest(moment_ids) x) as distinct_ids
+from wallet_holdings_snapshot
+where wallet_address='0x4d2c9216f1dca098'
+  and collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
+order by snapshot_at desc limit 3;
+```
+
+**Fixed means `entries = distinct_ids` (~52,120).** Before the fix they differ by
+~7,064. ⚠ **`entries` alone tells you nothing — it was already correct.**
+
+⚠ **THAT RUN WILL ALSO RECORD ITS LARGEST-EVER ARRIVAL BURST (~7.5k), AND THAT IS
+THE FIX WORKING.** It diffs a now-complete set against the last corrupt baseline,
+so every row the old walk kept missing reads as an arrival exactly once. It should
+fall to single digits the following day — that is the real confirmation. **Do not
+revert on the burst**; both consumers are filtered to `marketplace`, so it reaches
+no user.
+
+### Left open
+
+- **The expired `SUPABASE_ACCESS_TOKEN` is unrotated**, so every `supabase` CLI path
+  stays 401 until a new PAT is minted at `supabase.com/dashboard/account/tokens`.
+  Operator-only — a token is not something to generate from a transcript.
+- **This was one instance of a repo-wide condition** that `edge-fn-drift.yml` reports
+  daily; the other drifted functions are untouched. ⚠ Given v27 was ~7 weeks stale
+  and silently so, **assume other functions are running old code until checked** —
+  and check each one's `import_map` before redeploying it, for the reason above.
+- `compute_institutional_wallet_diff`'s **departure arm** is still unexamined (see
+  the section above); it has no consumer today.
