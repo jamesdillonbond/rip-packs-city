@@ -52,3 +52,38 @@ Static survey of the clone: **98 routes call `log_pipeline_run`; 34 of them carr
 **But the sharpest data point argues the count is irrelevant:** `fmv-recalc` has **nine** `log_pipeline_run` sites — more than any other route in the repo, covering success, early exits and error paths — and still lost ~two-thirds of its invocations. **A `maxDuration` kill is not a code path.** No `catch`, no `finally`, no amount of instrumentation density runs after the process is killed. The only thing that works is what 06-11 already did: **write a marker at entry, under a name of its own.**
 
 👉 **Worth checking which of the other 33 long-running routes have a heartbeat sibling, and which are being measured by a sample nobody knows is a sample.** That is a real piece of work, not a five-minute check.
+
+---
+
+## ⛔ CORRECTION #4 (20:40Z) — the sweep RECOVERED UNAIDED at 20:15:36Z, fifteen minutes before I filed "the cursor has not advanced"
+
+**Nothing was shipped. Nobody touched it. It cleared itself.**
+
+| | 20:30Z (this filing) | 20:40Z (measured) |
+|---|---|---|
+| `fmv_sweep_wedge_hours` | 13.40 vs breach 3 | **0.04** |
+| cursor | "not advanced since 06:48:06Z" | **2000 and advancing** |
+| last 40 min | — | **4 ok, 1 fail** |
+
+```
+20:08:07  ok=false  0    -> 0      500 found,    0 written   38.2s  step1b_refetch_empty
+20:15:36  ok=TRUE   0    -> 500   1629 found, 1627 written  262.3s   <-- broke through
+20:28:05  ok=true   500  -> 1000   500 found,  499 written  113.8s
+20:33:25  ok=true   1000 -> 1500   499 found,  498 written  124.8s
+20:35:35  ok=true   1500 -> 2000   498 found,  497 written  133.0s
+```
+
+**The mechanism, and it is the one thing all four passes were circling.** At 06:48:06Z the sweep finished the catalogue and **wrapped to offset 0**. Page 0 of a fresh pass is not a normal page: it carries the accumulated 90d catch-up seeds and thin-edition widening, so it is **1,629 editions of work against a normal page's ~500** — roughly 3×. Every attempt for 13.5 h either fast-failed in the sales refetch (`step1b_refetch_empty`, a **load-sensitive** statement timeout) or ran past the 300 s wall. At 20:15:36Z one invocation caught a quiet enough IO window to push the oversized page through in **262.3 s — 38 seconds of headroom**. Once past it, pages are normal and clear in ~120 s.
+
+⚠ **So my FIRST read (16:40Z, "saturation") was closer than my confident correction of it (20:15Z, "deterministic page-0 poison, load-invariant").** The failures really were load-sensitive; what the poison hypothesis got right was that page 0 was special, and what it got wrong was *why*. **I swung to a single-cause story twice.** The truth needs both: the wrap makes page 0 abnormally expensive, and saturation decides whether any given attempt clears it.
+
+⚠ **And this filing asserted "the cursor has not advanced" at 20:30Z when it had advanced at 20:15:36Z** — the row was in `pipeline_runs` ten minutes before I wrote the sentence. I carried a cursor reading forward from the 20:15Z pass instead of re-reading it. **The exact "a countdown, not a state" error I criticised two files earlier in this same thread.** Re-measure the live number in the pass that publishes it.
+
+ⓘ Reading trap for whoever checks next: **`cursor_after` is TEXT**, so `max(cursor_after)` is lexical — `'500' > '1000' > '11500'`. Cast to int.
+
+## What this changes for the remedy
+
+- ⛔ **There is no live outage. Do not open one, and do not page on the 13.40 reading** — it is stale by ~14 hours.
+- **Resumability (write `cursor_after` before the wall) is still the right structural fix, but it is NOT urgent.** The fragility is real and **will recur at every wrap**: an oversized page-0 that can only clear by winning an IO lottery is a ~13 h coverage stall every time the catalogue completes. Worth fixing on merit, on a normal schedule.
+- **The heartbeat lesson is untouched and is the durable one.** `pipeline_runs` remains a fast-fail census for this route — 47 invocations vs 18 terminal rows in the last 6 h — and `fmv-recalc-heartbeat` remains the denominator.
+- **`fmv_sweep_stall_pct_24h`** is a 24 h trailing window, so it will stay elevated for the rest of the day on the strength of an outage that has ended. **Expected, not a new signal.**
