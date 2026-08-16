@@ -106,7 +106,12 @@ const USE_CLIENT = /^\s*["']use client["']/
  * hardened; this is coverage. Both carry a claim about the READER'S OWN ACCOUNT, which is
  * the worst version of the failed-read class — the reader is the one person who knows it is
  * wrong, and it is actionable. */
-const BUDGET = 14
+/* 14 -> 13: `[collection]/sets` moved into `CollectionSetsClient.tsx`, covered by
+ * `__tests__/component-CollectionSetsClient.test.tsx`. Already clean on the failed-read
+ * sweep; what the conversion buys is that the FOUR-WAY per-collection endpoint switch, the
+ * retryable-vs-fatal split (deep-audit D3) and the `[object Object]` guard on the error
+ * banner are now driven rather than grepped. */
+const BUDGET = 13
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

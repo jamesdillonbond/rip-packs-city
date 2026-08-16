@@ -185,7 +185,12 @@ const APP_DIR = join(process.cwd(), "app")
  * hardened; this is coverage. Both carry a claim about the READER'S OWN ACCOUNT, which is
  * the worst version of the failed-read class — the reader is the one person who knows it is
  * wrong, and it is actionable. */
-const BUDGET = 11
+/* 11 -> 10: `[collection]/sets` moved into `CollectionSetsClient.tsx`, covered by
+ * `__tests__/component-CollectionSetsClient.test.tsx`. Already clean on the failed-read
+ * sweep; what the conversion buys is that the FOUR-WAY per-collection endpoint switch, the
+ * retryable-vs-fatal split (deep-audit D3) and the `[object Object]` guard on the error
+ * banner are now driven rather than grepped. */
+const BUDGET = 10
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
@@ -221,7 +226,15 @@ describe("client-page gate ratchet", () => {
   const pages = ungatedClientPages()
 
   it("the enumerator finds real client pages (not vacuously passing)", () => {
-    expect(pages.length).toBeGreaterThan(10)
+    // ⚠ THE WALK, NOT THE POPULATION. This asserted `pages.length > 10` and went RED at
+    // exactly 10 — i.e. the guard punished its own success, the mistake the comment two
+    // lines below already warns about for NAMING a page, expressed as a THRESHOLD instead.
+    // The server-page ratchet made and corrected this identical error; it recurred here
+    // because the threshold form does not look like a canary.
+    //   A not-vacuous check has to be satisfiable at a population of ZERO. What must never
+    // silently become true is that the ENUMERATOR finds nothing at all, so assert the walk
+    // reaches real page files and that every survivor really is a client page.
+    expect(pageFiles(APP_DIR).length, "the enumerator must find page.tsx files at all").toBeGreaterThan(20)
     // Self-consistency rather than naming a page: naming one makes a canary that
     // dies the moment someone converts it, so the guard would punish its own
     // success (the mistake the server-page ratchet made and had corrected).
