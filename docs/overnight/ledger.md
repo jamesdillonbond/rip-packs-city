@@ -8,6 +8,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont.) — the SAME defect on a second page, one commit later: `special-serial-owners` published "0 special serials / 0 distinct holders" out of a failed read
+
+**What shipped:** `special-serial-owners` split to `SpecialSerialOwnersClient.tsx` (+7 tests), KPI-band honesty fix, ratchets **29 → 28** and **32 → 31**. Product code changed, so this deploys.
+
+- ⚠ **Same shape as the Pinnacle sniper page fixed one commit earlier**, which is the argument for continuing the conversion workstream on merit: a **summary band rendered ABOVE a section whose own failure ladder was already correct**. The KPIs said "0 special serials", "0 distinct holders" while the list directly below said **"Failed to load"** — the page contradicting itself on screen. *A page is not made honest by fixing the section that reports the failure.*
+- ⚠ **THE GUARD IS ON `error`, NOT ON `rows.length`, and the difference is load-bearing:** a REFRESH failure keeps the previous rows in state, so a value-based guard would publish **stale figures as current** while the list said the read had failed. That exact substitution is one of the killed mutations.
+- **Found by CONVERTING, not by reading.** A `page.tsx` is measured by neither coverage gate, so nothing could drive its failure path until the body moved to a `*Client.tsx` the component gate includes. Both defects in this sweep were invisible until the code moved somewhere a test could reach it.
+- ⚠ **A jsdom trap worth knowing for the next page test:** `MobileNav` pulls in `SupportChatConnected`, which calls `.split` on `usePathname()` unguarded — so in jsdom, where the App Router supplies no path, **the whole tree throws before a single assertion runs**. Stubbed at `next/navigation` rather than by mocking another component, since the same null will bite any future page test that mounts it.
+- ⚠ **And a test-harness correction:** a `mockResolvedValueOnce` chain is the wrong tool for "first load succeeds, then refreshes fail" — the mount effect can fire more than once, so the failing response is consumed by an invocation the test never intended and the SETUP looks broken rather than the assertion failing honestly. A mutable flag makes the transition explicit and order-independent.
+- **Verification:** 7 mutations, all killed. Component gate **90.78/82.30/89.38/93.73** vs 90.3/81.6/89.1/93.2. `tsc` clean.
+- **Revert:** `git revert <sha>` restores the single-file page and the ungated KPI band, and re-raises both ratchets.
+
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the new concierge smoke check was measuring ITS OWN SIBLING'S FIXTURE and reporting an outage that was not happening
 
 **What shipped.** `app/api/smoke-test/route.ts` — the "concierge answers rather than degrading" check now excludes `is_smoke_test` rows. New guard `__tests__/smoke-concierge-degraded-share-excludes-smoke-rows.test.ts`.
