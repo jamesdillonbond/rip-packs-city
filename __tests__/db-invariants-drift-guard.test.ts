@@ -1155,6 +1155,80 @@ const PINS = [
     migration:
       "supabase/migrations/20260816060000_audit_20260816_snapshot_backfill_topshot_historical_pack_ev.sql",
   },
+  // ── The last four unpinned SCHEDULED SECDEF writers (2026-08-16) ──────────
+  // With these, that whole population is pinned: it was measured at 33 scheduled
+  // writers, 14 of them unpinned, on 2026-08-15.
+  {
+    // pg_cron `37 5 * * *`. FABRICATES a CDN thumbnail url for artless Top Shot
+    // editions by borrowing a representative moment's asset path.
+    //
+    // ⚠ It is a synthesised URL, so the only thing between "the edition finally
+    // shows its art" and "the edition shows SOMEONE ELSE'S art" is which moment
+    // is picked. The three-tier COALESCE is that choice; tier (c) matches on
+    // subedition_id so a parallel cannot inherit a sibling parallel's or the
+    // base printing's image — the conflation class this repo keeps paying for.
+    //
+    // Also pins: no representative means no row (and no audit row claiming a
+    // fill that never happened), fill-only in both directions, and that the
+    // audit table is a ONCE-ONLY ledger — a manually undone fill is never redone.
+    fn: "fill_ts_artless_from_rep_moments",
+    test: "supabase/tests/fill_ts_artless_from_rep_moments.sql",
+    migration:
+      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+  },
+  {
+    // pg_cron `10 4 * * *`. Rebuilds the cross-collection cohort.
+    //
+    // ⚠ `HAVING COUNT(DISTINCT collection_id) >= 3` is not a tuning constant —
+    // it is what "cross-collection collector" MEANS here, and every downstream
+    // figure is a statement about that cohort. Pinned from both sides of the
+    // boundary, plus DISTINCT-not-COUNT(*), the atomic TRUNCATE-then-rebuild,
+    // and the single shared computed_at.
+    //
+    // ⚠ Also pins what the fmv COALESCE actually does: SUM already ignores
+    // NULLs, so it only matters when EVERY moment is unpriced — and there it
+    // publishes a hard $0.00 rather than NULL. Recorded as current behaviour,
+    // not endorsed; it is the `?? 0` shape in a DB function.
+    fn: "refresh_cross_collection_cohort_step1",
+    test: "supabase/tests/refresh_cross_collection_cohort_step1.sql",
+    migration:
+      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+  },
+  {
+    // pg_cron `25 4 * * *`. The DOWNSTREAM half of the pair — per Top Shot set,
+    // how much of the cohort holds it.
+    //
+    // ⚠ It has NO check that step1 ran. Pinned so the failure mode is a known
+    // property: an empty cohort quietly yields an empty overlap table, and the
+    // realistic version is "yesterday's cohort" because step1 truncates inside
+    // its own transaction. Also pins holders-are-DISTINCT-wallets (COUNT(*)
+    // there would inflate "how many people" by each collector's position depth)
+    // and both collection scopes — the editions-side one needs a colliding
+    // external_id to be observable at all, which is a real state.
+    fn: "refresh_cross_collection_cohort_step2",
+    test: "supabase/tests/refresh_cross_collection_cohort_step2.sql",
+    migration:
+      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+  },
+  {
+    // pg_cron `45 9 * * *`. Refreshes the five "new collectors" MVs.
+    //
+    // ⚠ THE ORDER IS THE INVARIANT: `mv_ts_buyer_first_buy` first, because the
+    // other four derive from it. Refreshing a dependent view before its base
+    // recomputes it from YESTERDAY's data — silently, with the run still ok,
+    // leaving a summary that disagrees with the base it summarises. The test
+    // shims REFRESH via an event trigger to observe the sequence, since view
+    // contents can only show that data is right, not that it was computed in the
+    // order that makes it right.
+    //
+    // Also pins that its EXCEPTION handler logs ok:false and does NOT re-raise,
+    // so cron.job_run_details reports success and pipeline_runs.ok is the only
+    // health signal.
+    fn: "refresh_insights_new_collectors",
+    test: "supabase/tests/refresh_insights_new_collectors.sql",
+    migration:
+      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+  },
 ]
 
 /**
