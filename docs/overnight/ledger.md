@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — two fabricated ZEROS: "Outstanding liability 0" on the rewards console, "0.00 FP" on the Fast Break optimizer
+
+`admin/rewards` and `nba/fast-break` converted to `AdminRewardsClient.tsx` /
+`FastBreakClient.tsx` so the component gate measures them, covered by
+`__tests__/component-RewardsConsoleAndFastBreak.test.tsx` (36 tests).
+
+⚠ **THE REWARDS ONE IS A PER-PANEL SCOPE FAILURE ON A PAGE THAT WAS ALREADY FIXED ONCE.** It
+carries an explicit `loadFailed` guarding every LIST — added after a failed read rendered
+"Nothing waiting to ship." over a queue of physical redemptions people had already spent
+credits on. The eight-tile ECONOMY BAND above those lists was never covered by it: `num()`
+coerces an absent value to 0, so a failed read published **"Outstanding liability 0"** and
+**"Pending redemptions 0"** in the same band as the real figures. *A page is not made honest
+by fixing the component that failed.* Fixed by WITHHOLDING the band (eight em-dashes reads as
+"every figure is genuinely absent"), and fixed at the call site rather than inside `num()`,
+because every other caller reads a value off a row that DID load — one interpolates into a
+confirm dialog, where an em-dash would be worse than a zero.
+
+⚠ **THE FAST BREAK ONE PUT THE FABRICATED NUMBER ABOVE ITS OWN ERROR MESSAGE.** `?? 0`
+published **"0.00 FP" as the Total Projected** in 44px brand red, directly above "Couldn't
+load the optimizer right now" — the page saying both at once, with the number the louder of
+the two, read as a claim about the slate rather than about us. Now `null` through to render.
+
+Both pinned in BOTH directions: a programme that genuinely owes nothing still reads 0, and a
+slate that genuinely projects nothing still reads 0.00 FP.
+
+⚠ **A mutation survived on a fixture gap worth naming**: the raffle-draw confirmation
+("this is final and recorded") was UNREACHABLE because every fixture had `raffles: []`, so
+deleting the confirm changed nothing observable. Six raffle cases added; all three mutations
+now killed.
+
+Ratchets: client-page-gate 17 → 15, fetch-honesty 20 → 18. Gates: component
+90.63/82.01/89.25/93.48 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores both monolithic `page.tsx` files, the `?? 0` score, the
+un-gated economy band, and both budgets. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the `.range()` ORDER BY class driven to ZERO, the dormant buyback detector filtered, and the drift workflow was red-and-correct all along
 
 **Continuation of the buyback-fabrication thread.** Three things shipped plus one investigation result that inverts a hypothesis I stated in the previous entry.
