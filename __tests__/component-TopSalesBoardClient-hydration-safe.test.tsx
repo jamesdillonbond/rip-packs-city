@@ -16,8 +16,18 @@ import { render, cleanup } from "@testing-library/react"
 //
 // The page is ISR (`revalidate = 900`), so the HTML the browser receives can be
 // up to 15 minutes old. Anything derived from "now" therefore differs between
-// the server render and hydration. Measured live on the deployed page: the 48h
-// rail rendered 13 rows server-side and 12 after hydration.
+// the server render and hydration.
+//
+// ⚠ WHAT IS AND IS NOT MEASURED. #418 WAS observed live on this page on
+// 2026-08-16 (via pageerror, with a positive control proving the listener
+// worked), and both reads above are unsafe BY CONSTRUCTION — which is what these
+// cases pin. The specific culprit was NOT isolated: a first attempt reported the
+// 48h rail as "13 server-side vs 12 hydrated" and that was an ARTIFACT, counting
+// a raw-HTML string (the inlined `.rpc-ts-recent-when {` CSS rule adds one)
+// against a DOM element count. Real rows were 12 vs 12. Because #418 reported
+// `args[]=text` — a TEXT mismatch — relTime is the likelier culprit. These tests
+// pin the PROPERTY (a server render must not move with the clock), which holds
+// regardless of which read was firing.
 //
 // ── WHAT THIS PINS, AND WHY IT IS A SERVER RENDER ──────────────────────────
 // The contract React actually enforces is: the SERVER render and the client's

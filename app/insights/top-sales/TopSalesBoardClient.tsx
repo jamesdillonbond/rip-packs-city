@@ -314,9 +314,18 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
    * ⚠ Every clock read during render is a hydration mismatch waiting to happen
    * (React #418), because this page is ISR (`revalidate = 900`): the server
    * rendered its HTML up to 15 minutes ago, the browser hydrates now, and any
-   * output derived from "now" differs. Measured live 2026-08-16 on this page:
-   * the 48h rail rendered 13 rows server-side and 12 after hydration, and #418
-   * was thrown.
+   * output derived from "now" differs.
+   *
+   * ⚠ WHAT IS AND IS NOT MEASURED. React #418 WAS observed live on this page on
+   * 2026-08-16 (captured via pageerror, with a positive control proving the
+   * listener worked). The mechanism below is unsafe BY CONSTRUCTION, which is
+   * why it is fixed. But the specific culprit was NOT isolated: a first attempt
+   * reported the 48h rail as "13 rows server-side vs 12 hydrated", and that was
+   * a measurement artifact — it counted the string in the raw HTML, where the
+   * inlined CSS rule `.rpc-ts-recent-when {` contributes one occurrence, against
+   * a DOM element count. Real rows were 12 vs 12. Since #418 reported
+   * `args[]=text`, a TEXT mismatch, relTime is the likelier of the two. Do not
+   * re-cite a rail-count divergence; it was never demonstrated.
    *
    * The initial value comes from `initialFetchedAt`, which is a PROP — so the
    * server and the client's first render compute byte-identical output. Only
@@ -406,9 +415,9 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
     // ⚠ The cutoff rides `nowMs`, NOT `Date.now()`. A useMemo runs during the
     // server render AND during hydration, so a live clock puts rows sitting near
     // the 48h boundary on one side of it server-side and the other side
-    // client-side — measured 13 rows vs 12 on 2026-08-16, which is a DOM
-    // mismatch, not a cosmetic difference. Null (no anchor yet) yields an empty
-    // rail on both sides rather than a guess.
+    // client-side. That is a structural hazard, not an observed divergence —
+    // see the nowMs docblock for what was and was not measured. Null (no anchor
+    // yet) yields an empty rail on both sides rather than a guess.
     if (nowMs == null) return []
     const cutoff = nowMs - 48 * 60 * 60 * 1000
     return [...rows]
