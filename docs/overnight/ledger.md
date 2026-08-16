@@ -8,6 +8,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `/alerts` converted; a test that looked for a button that does not exist asserted NOTHING, and only mutation said so
+
+`/alerts` moved into `AlertsClient.tsx` so the component gate measures it, covered by
+`__tests__/component-AlertsClient.test.tsx` (40 tests). Already clean, and unusually
+thoroughly: failure is tracked **per leg** (channels / subscriptions / FMV alerts), because
+every empty state on that page is a claim about the READER'S OWN account — "No alerts yet",
+"not linked", "No watched editions yet" — and one shared flag would blank all three whenever
+any one hiccuped. The three legs are now driven independently, which is the only way to
+prove they really are independent. Eight mutations, all killed.
+
+⚠ **TWO SURVIVORS, AND BOTH WERE MY ASSERTIONS RATHER THAN THE CODE.** (1) The
+failure-copy RESET was tested by clicking a "Reload" button — **there is no such button**;
+the copy points at a browser reload, and the only in-page path that re-runs `load()` is a
+successful mutation. The `if (reload)` guard meant the test silently asserted nothing.
+**A conditional guard around the action under test converts a failing test into a passing
+one.** (2) The preview-count case asserted the absence of `/0 deal\(s\)/`; mutating the
+null-check yields **"Saved. undefined deal(s) match right now"**, which sails through. Now
+asserted as the absence of ANY count — *a fabricated count is wrong whatever it says.*
+
+⚠ **Three fixture/DOM assumptions of mine were wrong and each cost a round.** `EMPTY_FORM`
+**pre-selects the email channel**, so clicking the chip "to pick a channel" was removing the
+only one — every save test then failed on the very guard it was meant to satisfy.
+`player_names` is a comma-separated STRING in `FormState` rendered as removable CHIPS, so it
+is neither an input value nor plain page text (and matching page text would have been
+vacuous, since the same name appears in the list above). And the suggestion list commits on
+**`onMouseDown`**, not `onClick`, so the input's `onBlur` cannot close it first — `click`
+does nothing and reads as the list never rendering.
+
+⚠ **One behaviour worth knowing for the product, not just the test:** the chip typeahead
+adds `suggestions[0] ?? query`, so a collector can still set a filter we do not suggest. **A
+broken `/api/alerts/suggest` must not silently narrow what they are allowed to watch** —
+pinned.
+
+Ratchets: client-page-gate 10 → 9, fetch-honesty 13 → 12. Gates: component
+90.51/81.80/89.16/93.42 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores the monolithic `page.tsx` and both budgets. No
+behaviour change to revert. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, cont.) — the `fmv-recalc` fix is VERIFIED and the item is CLOSED; CLAUDE.md was describing a degraded state that has recovered
 
 - **Docs only (CLAUDE.md). No app code, no test behaviour, no DB.** Revert: `git revert` the commit `docs(claude.md): fmv-recalc verified, trust board down to 3 breached`.
