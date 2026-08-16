@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — a concierge tool told collectors "this is not an error" about a feed that had written ZERO rows that day, and a test was pinning the reassurance
+
+**What shipped.** `app/api/support-chat/route.ts` (`search_serial_deals`, all four exits + tool description + system prompt) + `__tests__/api-support-chat-tools-populated-4.test.ts`. No DB, migration, cron, auth, hot-wallet or FMV-math change.
+
+**How it was found — by finishing the alert thread rather than declaring it done.** Having made a price-only alert able to fire, I checked whether the LAST leg delivers. `alert_deliveries`: **834 all-time, newest 2026-06-25 — 52 days ago**, while `alerts-dispatch`/`alerts-send` keep running. That turned out to be an **honest** silence (2 active subs: Trevor's, matching 0 at a true $4.00 floor, and a Blazers-rookie-special-serial sub against a 3-row pool) — but tracing *why* the pool is 3 rows found the real defect one layer down.
+
+⚠ **THE FIND: the tool hard-coded a claim it cannot observe.** `search_serial_deals`' empty-state said *"The residential serial-listing feed refreshes every few hours; **this is not an error**"*, and the prompt told the model *"do NOT imply the feed is broken"*. Measured live: `topshot-active-listings-ingest` fails **`egress_blocked`** most sweeps (the Atlas WAF blocks the GHA runner IP; `workers/atlas-proxy` is the known fix and is still INERT), and on **2026-08-12 it wrote ZERO rows across all 5 runs of the day**. On a day like that the concierge told a collector nothing was listed below FMV **and explicitly reassured them nothing was wrong** — the failure-renders-as-data class with the reassurance written in as an instruction. **A tool cannot see its own health; it can only report how old its data is.**
+
+⚠ **"Every few hours" was ALSO wrong, and measuring it is what stopped me picking a cry-wolf threshold.** Over the ~73 h `pipeline_runs` window there were only **5 successful sweeps** — gaps **min 3 h / median 6 h / p90 22 h / max 26.7 h**. A 24 h ceiling would fire during normal operation, which is the `ufc_fmv_stale_hours` cost this repo already paid. So the **AGE is the primary output** (stated on every response, and the model is required to state it), and `feed_stale` sits conservatively at **36 h**, clear of the worst observed normal gap — with the 5-sweep sample size recorded in place, because it cannot support a sharp threshold.
+
+⚠ **ALL FOUR EXITS carry it, not just the one that was wrong.** The two empty exits claim the market is quiet; the two POPULATED exits can send a collector to a listing that has already sold, which is the same snapshot problem pointing at money. Sweeping the read rather than the site that failed.
+
+⚠ **A TEST WAS PINNING THE REASSURANCE — second instance of this class today, and subtler than the first.** `expect(String(r.message)).toMatch(/not an error/i)`. The morning's instance pinned a *limitation*; this one pins a *reassurance*. Both are claims the tool could not support. Inverted to assert the phrase is **ABSENT** and the age fields are present.
+
+⚠ **One mutation SURVIVED and it corrected my own comment.** Dropping `!freshErr` from the freshness read changes nothing — a failed `.maybeSingle()` nulls the row too, so both shapes fall through the same branch. **The load-bearing part is that an unresolved age stays `null` and is never defaulted to 0.** Same correction the `?? 0` sweep already made once; the comment now says so instead of claiming the error-check is the mechanism.
+
+**Verified.** `tsc` clean · 3 of 4 mutations red (stale-never-fires, feedStale hard-coded false, age nulled on the populated exit) · 3 new cases (populated result carries age; a 40 h feed reads stale rather than "market is quiet"; a FAILED freshness read reports unknown rather than 0) · full suite green.
+
+**Not fixed here, and it is not mine to fix:** the underlying `egress_blocked` ingest. `workers/atlas-proxy` exists and is INERT pending an operator `wrangler deploy` + a Cloudflare-egress-to-Atlas probe. This change makes the staleness VISIBLE rather than papered over.
+
+**Revert:** `git revert <sha>` — restores the previous copy and assertion. No DB or prod-state change.
 ### 2026-08-16 · DOCS (Claude Code, interactive — "find a TODO comment and implement one") — the code TODO backlog is genuinely EMPTY; the last tracked TODO was implemented in prod on 08-05 and never closed out, so two docs still describe dropped objects as live
 
 **What shipped:** docs only — no code, no migration, no prod DB or data change.
