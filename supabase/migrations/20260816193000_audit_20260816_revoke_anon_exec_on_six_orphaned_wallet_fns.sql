@@ -1,0 +1,80 @@
+-- 2026-08-16 — revoke anon/authenticated EXECUTE on six ORPHANED wallet/analytics
+-- functions that read heavy tables. Second and final slice of the same audit that
+-- produced audit_20260816_revoke_anon_exec_on_zero_caller_pack_fns.
+--
+-- ⚠ THE FINDING: `get_wallet_cache_count` takes **39.4 SECONDS** on a real wallet,
+-- is callable by an UNAUTHENTICATED caller, and nothing in the product calls it.
+-- Measured live 2026-08-16 on 0xbd94cade097e50ac (Trevor's wallet):
+--
+--   Function Scan on get_wallet_cache_count (actual time=39449.551..39449.552 rows=1)
+--   Buffers: shared hit=2591 read=4642 dirtied=922 written=1251
+--   Execution Time: 39449.677 ms
+--
+-- ⚠ Note the shape: only ~7.2k buffers, yet 39 s of wall clock. This is NOT an
+-- expensive PLAN — it is IO STARVATION on a disk-IO-budgeted 2 GB instance (5
+-- active backends at the time, ALL on IO waits). Which makes it worse as an
+-- availability surface, not better: the cost is paid in held pooled connections
+-- during exactly the saturation an attacker would be deepening.
+--
+-- SEVERITY IS AVAILABILITY, NOT CONFIDENTIALITY — all six are SECURITY INVOKER, so
+-- the caller's own RLS applies and they expose nothing an anonymous visitor cannot
+-- already read (the collection tabs were un-gated 2026-07-17 and /share/[wallet] is
+-- public by design). What they offer is unauthenticated compute against the
+-- platform's heaviest tables, for free, on functions with no product consumer.
+--
+-- ── THE SIX, AND HOW ORPHANHOOD WAS ESTABLISHED ──────────────────────────────
+--   get_pinnacle_set_progress(text)
+--   get_pinnacle_wallet_edition_keys(text)
+--   get_seeded_wallet_stats(text, uuid)
+--   get_wallet_cache_count(text)
+--   get_wallet_collections(text)
+--   get_wallet_edition_keys(text, uuid)
+--
+-- Each verified FOUR ways, because a DB-side sweep alone is not sufficient:
+--   · pg_proc.prosrc across all of public          — 0 other functions reference them
+--   · pg_views.definition across all of public     — 0 views reference them
+--     (⚠ this arm is load-bearing: a `security_invoker=true` VIEW executes its
+--      callee AS THE CALLER, so an anon-readable view keeps an anon grant
+--      load-bearing even when every code caller is service-role. That is exactly
+--      why `serial_fmv_estimate` MUST stay anon-executable and is not touched here.)
+--   · cron.job.command                             — 0 references
+--   · full-repo grep, every file type, excluding migrations/docs/.git — 0 hits
+--
+-- ⚠ THE DB-SIDE SWEEP ON ITS OWN WOULD HAVE BEEN CATASTROPHIC HERE. Of the 37
+-- anon-executable invoker functions touching heavy tables, **32 report zero DB
+-- callers** — including `get_wallet_moments_with_fmv`, `get_top_sales` and
+-- `get_market_pulse`, which are obviously live product RPCs invoked from Next.js
+-- routes that Postgres cannot see. Revoking on DB evidence alone would have taken
+-- down the wallet and analytics surfaces. The repo grep is what separates the six
+-- from the twenty-six.
+--
+-- ⚠ WHY NO EXISTING CHECK CATCHES THIS CLASS: `check_secdef_anon_exec_drift()`
+-- considers SECURITY DEFINER functions only, and every one of these is INVOKER, so
+-- that check is structurally blind to them however often it runs green. **78
+-- anon-executable INVOKER functions remain** after this migration; they are NOT
+-- swept, deliberately — most are legitimately anon-reachable, and a blanket revoke
+-- would break live public surfaces. Ranking approach filed at
+-- docs/overnight/inbox/2026-08-16T1910Z-86-anon-executable-invoker-fns-....md
+--
+-- postgres (owner) + service_role keep explicit grants and are unaffected, so a
+-- future in-product caller needs only supabaseAdmin, not a re-grant.
+--
+-- ⚠ Revoke BOTH halves in one statement: this DB carries ALTER DEFAULT PRIVILEGES
+-- granting EXECUTE to anon + authenticated on new functions in public, so those
+-- arrive as EXPLICIT acl rows a `FROM PUBLIC` revoke does not touch — and the
+-- converse is equally true. Verify with has_function_privilege, never proacl text.
+--
+-- REVERT (restores the pre-migration state exactly):
+--   GRANT EXECUTE ON FUNCTION public.get_pinnacle_set_progress(text) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.get_pinnacle_wallet_edition_keys(text) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.get_seeded_wallet_stats(text, uuid) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.get_wallet_cache_count(text) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.get_wallet_collections(text) TO anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION public.get_wallet_edition_keys(text, uuid) TO anon, authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_pinnacle_set_progress(text)          FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_pinnacle_wallet_edition_keys(text)   FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_seeded_wallet_stats(text, uuid)      FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_wallet_cache_count(text)             FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_wallet_collections(text)             FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_wallet_edition_keys(text, uuid)      FROM PUBLIC, anon, authenticated;
