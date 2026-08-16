@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, docs pass cont.) — public views drifted 134 → 135; the split's migration is deliberately absent from `schema_migrations`; and my own alerts bullet was superseded within the hour
+
+**Docs-only. No product/DB/prod change. Revert: `git revert <sha>` (CLAUDE.md).**
+
+⚠ **I RECORDED A LIMITATION AS "DISCLOSED, NOT REMOVABLE" AND A CONCURRENT SESSION REMOVED IT HOURS LATER.** My canonical bullet said the price-only alert's residual FMV condition was a **scanner** limitation, honestly disclosed in `applied_filters`. Trevor then directed the scanner change and `audit_20260816_price_only_alerts` shipped. **The framing was right for its moment and is now history**, so the bullet is rewritten to lead with the fix and keep the measurements: a price-only alert could not fire at **ANY** price (**111 board rows, cheapest $1.00**, against a raw ask universe of **4,563, floor $0.33** — *the listings were there, the instrument could not see them*); a **SECOND independent defect would have made that fix change nothing** (`set_names` matched EXACTLY while the saved filter was `Archive` and the set is `Archive Set`); re-adding FMV context would cost **28,117 ms vs 320 ms**; **an honest zero is indistinguishable from a structural one**, and the clean end-to-end proof is a throwaway sub with `channels = '{}'` (an empty array cannot enqueue); and the render discriminator is **availability, not the `price_only` flag**. **"Disclose what you cannot yet remove" stands as the right call at the time, not as the end state.**
+
+**Live sweep of the canonical facts not yet re-measured.** **Public views 134 → 135**; tables **367**, `editions` **36** columns, RLS-off **0**, both security invariants **0 rows**. ⚠ That view count **EXCLUDES materialized views (a separate 30)**, so a `pg_class` sweep over relkind `v` *and* `m` returns 165 and is **not** a discrepancy.
+
+⚠ **`20260816150800_…_trust_precompute_split_into_8_leg_jobs.sql` is a committed RECORD deliberately ABSENT from `supabase_migrations.schema_migrations`** — applied via `execute_sql` + `SET LOCAL ROLE cron_heavy`, the only path that can reschedule those jobs, not via `apply_migration`. **Its absence is NOT evidence it was never applied.** ⚠ `migration-parity.yml` cannot catch this shape: it reports prod-applied migrations with **no committed file**, i.e. only the opposite direction.
+
+Re-confirmed 16:41Z: `v_rpc_trust_health_freshness` still absent from live, still 2 of 8 legs fired — consistent with the schedule, not a stall.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor: "Do the scanner change so price-only alerts actually ignore FMV") — a price-only alert could not fire, and a SECOND defect would have made the fix change nothing for the one subscription that motivated it
 
 **What shipped.** `audit_20260816_price_only_alerts` (1 migration, 3 objects) + `lib/alerts/format.ts` + `lib/alerts.ts`.
