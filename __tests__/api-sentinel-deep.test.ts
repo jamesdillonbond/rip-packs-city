@@ -80,6 +80,12 @@ function greenFixtures(): Fixtures {
       error: null,
     },
     "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    // Ownership Index Freshness reads the most recent productive run of either
+    // ownership writer. Fresh => ok.
+    pipeline_runs: {
+      data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+      error: null,
+    },
     // Per-collection + per-source ingest health — all within their ceilings.
     "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
   }
@@ -120,15 +126,18 @@ function installRecordingFilters(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture(fixtures)
   const f = spy.fixture as { from: (t: string) => Record<string, unknown> }
   const baseFrom = f.from.bind(f)
-  const filters: Record<string, Array<{ op: string; col: string }>> = {}
+  // `in` is recorded WITH its value list: the Ownership Index Freshness arm must
+  // span BOTH ownership writers, and since the fixture's chainables discard their
+  // arguments, dropping one writer is otherwise invisible to any status assertion.
+  const filters: Record<string, Array<{ op: string; col: string; val?: unknown }>> = {}
   const queryCount: Record<string, number> = {}
   f.from = (table: string) => {
     queryCount[table] = (queryCount[table] ?? 0) + 1
     const b = baseFrom(table)
-    for (const op of ["gte", "lte", "gt", "lt", "eq"] as const) {
+    for (const op of ["gte", "lte", "gt", "lt", "eq", "in"] as const) {
       const base = b[op] as (...a: unknown[]) => unknown
       b[op] = (...args: unknown[]) => {
-        ;(filters[table] ??= []).push({ op, col: String(args[0]) })
+        ;(filters[table] ??= []).push({ op, col: String(args[0]), val: args[1] })
         return base(...args)
       }
     }
@@ -191,6 +200,123 @@ describe("POST /api/sentinel — full battery", () => {
     expect(check(report, "Pipeline Silence").status).toBe("ok")
     expect(check(report, "Trust Health").detail).toBe("2/2 trust metrics ok")
     expect(check(report, "Sniper Feed").detail).toBe("2 deals (topshot: 1, allday: 1)")
+    expect(check(report, "Ownership Index Freshness").status).toBe("ok")
+  })
+
+  // Ownership Index Freshness — the arm added after ownership-onchain-walk failed
+  // two daily ticks (2026-08-15/16) with every cadence-shaped instrument reading
+  // healthy, because the cron fired on time and a FAILING run still logs a row.
+  describe("Ownership Index Freshness", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+
+    it("goes critical when the last productive write is older than the crit threshold", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-onchain-walk", started_at: hoursAgo(80) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("80.0h ago")
+    })
+
+    it("warns after one missed daily tick without paging", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-onchain-walk", started_at: hoursAgo(40) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      expect(check(report, "Ownership Index Freshness").status).toBe("warn")
+    })
+
+    // The arm must span BOTH writers: the Dune replay is WEEKLY, so a quiet walk
+    // is not an outage if Dune just refreshed the index. Reading only the walk
+    // would page during a legitimately healthy week.
+    it("stays ok when the weekly Dune writer is the freshest source", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-sync-dune", started_at: hoursAgo(2) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("ownership-sync-dune")
+    })
+
+    // THE load-bearing case. pipeline_runs prunes at ~73h, so once the outage
+    // outlives retention the query returns NOTHING — and "no rows" is the state
+    // the arm must never read as healthy, because it arrives exactly when the
+    // outage has gone on long enough to matter.
+    it("treats an empty pipeline_runs window as CRITICAL, not ok, and dates it from the indefinite rollup", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: [], error: null },
+        pipeline_runs_daily: { data: [{ day: "2026-08-01" }], error: null },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("2026-08-01")
+      expect(c.detail).toContain("no fresh write")
+    })
+
+    // Same empty window, but the rollup is unreadable too: still critical, and the
+    // detail must state a bound it can substantiate rather than inventing an age.
+    it("stays critical with honest wording when the rollup cannot date it either", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: [], error: null },
+        pipeline_runs_daily: { data: [], error: null },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("retention")
+      expect(c.detail).not.toMatch(/\d+(\.\d+)?h ago/)
+    })
+
+    // The two-writer property, asserted at the QUERY rather than via status. The
+    // fixture's chainables discard their arguments, so a status-only test passes
+    // just as happily with a writer deleted from the list — it would assert
+    // nothing about the one thing that keeps this arm from paging during a
+    // healthy Dune-only week. Also pins rows_written > 0, which is what makes
+    // this an OUTCOME check rather than a cadence one: a failing run still logs.
+    it("queries BOTH ownership writers and requires rows_written > 0", async () => {
+      const spy = installRecordingFilters(greenFixtures())
+      stubFetch([sniperOk, telegramOk, resendOk])
+      await POST(post())
+
+      const runFilters = spy.filters.pipeline_runs ?? []
+      const writers = runFilters.find((f) => f.op === "in" && f.col === "pipeline")
+      expect(writers?.val).toEqual(
+        expect.arrayContaining(["ownership-onchain-walk", "ownership-sync-dune"])
+      )
+      expect(runFilters).toContainEqual(
+        expect.objectContaining({ op: "gt", col: "rows_written", val: 0 })
+      )
+    })
+
+    // A saturated DB is not data loss — the platform-wide rule for this route.
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("warn")
+    })
   })
 
   it("classifies a statement-timeout sales error as inconclusive WARN, not CRITICAL (2026-06-10 class)", async () => {

@@ -371,6 +371,98 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "FMV Freshness", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
   }
 
+  // Ownership Index Freshness — an OUTCOME check on topshot_ownership (consumer:
+  // lib/set-completers-board.ts, the rookie / set-completers surfaces).
+  //
+  // ⚠ WHY THIS IS NOT A pipeline_cadence_watchlist ROW. On 2026-08-15 and 08-16
+  // `ownership-onchain-walk` failed both daily ticks on a pool-acquire timeout,
+  // wrote 0 rows, and froze the index at an 08-14 observed_at — while every
+  // cadence-shaped instrument read HEALTHY, because the cron fired exactly on
+  // time and a FAILING run still writes a pipeline_runs row. `detect_stalled_
+  // pipelines()` keys on recency, so it is structurally blind to this. The only
+  // question that catches it is "did the data actually get fresher", which is
+  // what this asks. Do not "simplify" it into a cadence check.
+  //
+  // ⚠ TWO WRITERS, and the arm must span both: `ownership-onchain-walk` (daily
+  // FCL confirmation walk) and `ownership-sync-dune` (WEEKLY Dune event replay).
+  // Reading only the walk would page during a legitimately quiet week that Dune
+  // had just refreshed. Note the Dune pipeline LOGS as `ownership-sync-dune`
+  // while its route is app/api/cron/sync-topshot-ownership-dune — the log name is
+  // the one that matters here, and guessing it from the route yields zero rows
+  // (which this arm would then have to treat as an outage).
+  //
+  // Cost: reads pipeline_runs (~9.5k rows), NOT the 267k-row table. `max(observed_at)`
+  // would be the more direct metric but there is no index on that column, so it is a
+  // 4,230-buffer seq scan — and adding one is the wrong trade, since the walk upserts
+  // observed_at on every row. Verified 2026-08-16 the proxy is exact: the last
+  // productive run's timestamp equals max(observed_at) to the millisecond.
+  try {
+    const OWNERSHIP_WRITERS = ["ownership-onchain-walk", "ownership-sync-dune"];
+    const ownWarn = thr("Ownership Index Freshness", "warn_at", 30); // one missed daily tick
+    const ownCrit = thr("Ownership Index Freshness", "crit_at", 72); // ~two missed ticks
+    const { data: ownRows, error: ownErr } = await supabase
+      .from("pipeline_runs")
+      .select("pipeline, started_at")
+      .in("pipeline", OWNERSHIP_WRITERS)
+      .gt("rows_written", 0)
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (ownErr) {
+      const sat = isSaturationError(ownErr.message);
+      checks.push({
+        name: "Ownership Index Freshness",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${ownErr.message}`,
+      });
+    } else if (!ownRows || ownRows.length === 0) {
+      // ⚠ NOT healthy, and NOT a number we can state. pipeline_runs prunes at ~73h
+      // (prune_pipeline_runs(3)), so an empty result means the last productive write
+      // is OLDER than the retention window — i.e. strictly worse than the crit
+      // threshold, arriving exactly when the outage has gone on long enough to
+      // matter. Treating "no rows" as ok would silence the arm precisely then.
+      // pipeline_runs_daily is the indefinite record, so use it to say HOW stale
+      // rather than publishing a bound we cannot substantiate.
+      let ageDetail = "no productive run within pipeline_runs retention (~73h)";
+      try {
+        const { data: rollup } = await supabase
+          .from("pipeline_runs_daily")
+          .select("day")
+          .in("pipeline", OWNERSHIP_WRITERS)
+          .gt("rows_written", 0)
+          .order("day", { ascending: false })
+          .limit(1);
+        if (rollup && rollup.length > 0) {
+          const days = Math.floor(
+            (now.getTime() - new Date(`${rollup[0].day}T00:00:00Z`).getTime()) / 86_400_000
+          );
+          ageDetail = `last write ${rollup[0].day} (~${days}d ago)`;
+        }
+      } catch {
+        /* rollup unreadable -> keep the honest retention-bound wording above */
+      }
+      checks.push({
+        name: "Ownership Index Freshness",
+        status: "critical",
+        detail: `topshot_ownership has no fresh write: ${ageDetail}`,
+      });
+    } else {
+      const ageHours = (now.getTime() - new Date(ownRows[0].started_at).getTime()) / 3_600_000;
+      checks.push({
+        name: "Ownership Index Freshness",
+        status: ageHours < ownWarn ? "ok" : ageHours < ownCrit ? "warn" : "critical",
+        detail: `Last ownership write: ${ageHours.toFixed(1)}h ago (${ownRows[0].pipeline})`,
+        value: `${ageHours.toFixed(1)}h`,
+      });
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: "Ownership Index Freshness",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+    });
+  }
+
   try {
     // Scope to CANONICAL Top Shot (integer-pair external_id), latest-per-edition,
     // split by printing class. sentinel_fmv_confidence_rows(collection) can only
