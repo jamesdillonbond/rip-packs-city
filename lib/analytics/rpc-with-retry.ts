@@ -290,11 +290,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-export async function rpcWithRetry<T>(
-  client: SupabaseClient,
-  fn: string,
-  args: Record<string, unknown>,
-  opts: RetryOptions = {}
+/**
+ * The shared retry loop behind BOTH `rpcWithRetry` and `queryWithRetry`.
+ *
+ * Extracted rather than copied, for the reason `withQueryDeadline` gives two
+ * paragraphs below: *one mechanism with one set of edge cases beats two that can
+ * drift*. `attempt` is handed the REMAINING budget and must produce a fresh
+ * attempt each call — for a PostgREST builder that means calling the factory
+ * again, because a builder is a single-use thenable.
+ */
+async function retryLoop<T>(
+  attempt: (remainingMs: number) => Promise<{ data: T | null; error: PostgrestError | null }>,
+  label: string,
+  opts: RetryOptions
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const attempts = Math.max(1, opts.attempts ?? 3)
   const base = Math.max(1, opts.baseDelayMs ?? 50)
@@ -307,10 +315,10 @@ export async function rpcWithRetry<T>(
     // call still settles within `budget` no matter how the attempts fall.
     const remaining = deadline - Date.now()
     if (remaining <= 0) {
-      lastErr = lastErr ?? timeoutError(budget, fn)
+      lastErr = lastErr ?? timeoutError(budget, label)
       break
     }
-    const { data, error } = await withDeadline<T>((client.rpc as any)(fn, args), remaining, fn)
+    const { data, error } = await attempt(remaining)
     if (!error) return { data: (data as T | null) ?? null, error: null }
     lastErr = error
     if (i === attempts - 1) break
@@ -321,11 +329,58 @@ export async function rpcWithRetry<T>(
     const delay = Math.min(base * Math.pow(4, i), Math.max(0, deadline - Date.now()))
     if (delay <= 0) break
     console.log(
-      `[rpc-with-retry] transient error on ${fn} attempt ${i + 1}/${attempts}: ${error.message || (error as any)?.code || "unknown"} — retrying in ${delay}ms`
+      `[rpc-with-retry] transient error on ${label} attempt ${i + 1}/${attempts}: ${error.message || (error as any)?.code || "unknown"} — retrying in ${delay}ms`
     )
     await sleep(delay)
   }
   return { data: null, error: lastErr }
+}
+
+export async function rpcWithRetry<T>(
+  client: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown>,
+  opts: RetryOptions = {}
+): Promise<{ data: T | null; error: PostgrestError | null }> {
+  return retryLoop<T>(
+    (remaining) => withDeadline<T>((client.rpc as any)(fn, args), remaining, fn),
+    fn,
+    opts
+  )
+}
+
+/**
+ * `withQueryDeadline` + retry, for a **table read whose failure discards a whole
+ * batch run**. Takes a FACTORY, not a builder — see below.
+ *
+ * ⚠ WHY THIS EXISTS ALONGSIDE `withQueryDeadline`, WHICH DELIBERATELY DOES NOT
+ * RETRY. That function's reasoning — *"a retry doubles the worst-case hold on a
+ * pool that is already the thing saturating"* — is correct **for a page render a
+ * human is waiting on**, where the cost of retrying is paid by that reader. It is
+ * the wrong trade for a background sweep, and `fmv-recalc` is the proof: on
+ * 2026-08-16 it wrote **zero rows for 12.4 h across 17 consecutive runs**, every
+ * one dying on a SINGLE unretried chunk fetch (`sales_refetch_failed: 1 chunk
+ * fetch errors`) at 45–139 s against a 300 s ceiling, leaving its cursor pinned at
+ * offset 0. Not retrying did not spare the pool anything — the route re-ran the
+ * whole page on the next cron tick and failed the same way. **A retry here
+ * REPLACES a guaranteed full re-run with a cheap second attempt.**
+ *
+ * ⚠ TAKES A FACTORY BECAUSE A POSTGREST BUILDER IS SINGLE-USE. `.from().select()`
+ * returns a thenable that fires its request once; awaiting the same object twice
+ * does not re-issue it, so a retry that closed over one builder would "retry" by
+ * re-reading the first attempt's settled result — passing tests, fixing nothing.
+ * Each attempt calls `build()` to construct a fresh query.
+ *
+ * Default budget/attempts match `rpcWithRetry`. A batch caller should pass a
+ * LONGER `baseDelayMs`: the default ~250 ms of backoff is sized for a page render
+ * and lands entirely inside a saturation spell that lasts seconds.
+ */
+export async function queryWithRetry<T>(
+  build: () => unknown,
+  label: string,
+  opts: RetryOptions = {}
+): Promise<{ data: T | null; error: PostgrestError | null }> {
+  return retryLoop<T>((remaining) => withDeadline<T>(build(), remaining, label), label, opts)
 }
 
 /**

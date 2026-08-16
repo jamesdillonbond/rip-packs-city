@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
+import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -64,6 +65,20 @@ const POSTGREST_ROW_CAP = 1000
 // Route-segment config: the paginated sweep plus the haircut pass can run
 // well past the platform default, so pin the Vercel Pro maximum.
 export const maxDuration = 300
+
+// Step-1 retry budgets. ⚠ Sized against `maxDuration = 300`, NOT chosen for
+// comfort: a run that spends its whole budget retrying and then succeeds is worse
+// than one that fails fast, because it gets killed at the wall having written
+// nothing either way. Step 1a RETURNS on failure so it can never stack with 1b;
+// a run that proceeds therefore risks at most STEP1B_BUDGET_MS of retrying on top
+// of a sweep that averages ~194 s.
+// ⚠ The BACKOFF, not the retry, is the load-bearing part — rpc-with-retry's
+// default is ~250 ms total, which lands entirely inside a saturation spell that
+// lasts seconds. See queryWithRetry's header.
+const STEP1_RETRY_ATTEMPTS = 3
+const STEP1_RETRY_BASE_MS = 1_500 // → 1.5 s + 6 s of backoff across 3 attempts
+const STEP1A_BUDGET_MS = 90_000
+const STEP1B_BUDGET_MS = 120_000
 
 // Disney Pinnacle owns its own FMV table (pinnacle_fmv_snapshots) and edition
 // table (pinnacle_editions). 314 Pinnacle rows pre-dated the split and still
@@ -264,13 +279,26 @@ export async function POST(req: NextRequest) {
     // "edition_page_fetch: canceling statement due to statement timeout"
     // failures. See migration audit_20260711_fmv_recalc_edition_page_fn_120s_timeout
     // + the covering index idx_sales_2026_fmv_recalc_window.
-    const { data: editionPage, error: editionPageError } = await (supabaseAdmin as any)
-      .rpc("fmv_recalc_edition_page", {
+    // 2026-08-16: retried, because a failure here discards the ENTIRE run before
+    // the cursor can advance — 3 of the 17 consecutive zero-row runs in the
+    // 06:48–19:10Z outage died right here on "Timed out acquiring connection from
+    // connection pool", at 45–139 s against a 300 s ceiling. The batch-sized
+    // backoff (not the page-render default of ~250 ms) is the load-bearing part;
+    // see queryWithRetry's header for why a background sweep and a page render
+    // take opposite answers on whether to retry under saturation.
+    const { data: editionPage, error: editionPageError } = await rpcWithRetry<
+      EditionPageRow[]
+    >(
+      supabaseAdmin as never,
+      "fmv_recalc_edition_page",
+      {
         p_window_start: windowStart,
         p_pinnacle_collection_id: PINNACLE_COLLECTION_ID,
         p_limit: limit,
         p_offset: offset,
-      })
+      },
+      { attempts: STEP1_RETRY_ATTEMPTS, baseDelayMs: STEP1_RETRY_BASE_MS, timeoutMs: STEP1A_BUDGET_MS }
+    )
 
     if (editionPageError) {
       console.error("[FMV-RECALC] Edition page fetch error:", editionPageError.message)
@@ -375,15 +403,29 @@ export async function POST(req: NextRequest) {
       const slice = pageEditionIds.slice(i, i + IN_CHUNK)
       let from = 0
       for (;;) {
-        const { data: chunkSales, error: chunkErr } = await supabaseAdmin
-          .from("sales")
-          .select("edition_id, collection_id, price_usd, sold_at, serial_number")
-          .gte("sold_at", windowStart)
-          .gt("price_usd", 0)
-          .neq("collection_id", PINNACLE_COLLECTION_ID)
-          .in("edition_id", slice)
-          .order("id", { ascending: true })
-          .range(from, from + SALES_PAGE - 1)
+        // 2026-08-16: retried. This single fetch is what took the sweep dark for
+        // 12.4 h — 14 of 17 consecutive runs logged `sales_refetch_failed: 1 chunk
+        // fetch errors`, and ⚠ "1 chunk" is not one-of-many: IN_CHUNK equals
+        // DEFAULT_LIMIT (both 500), so a full page is exactly ONE chunk and a
+        // single transient pool timeout empties `salesPage`, skips the page, and
+        // leaves the cursor pinned at its offset. Nothing downstream ran.
+        // ⚠ A FACTORY, not a builder — a PostgREST builder is a single-use
+        // thenable, so a retry closing over one object would re-await the first
+        // attempt's settled result and "succeed" at retrying nothing.
+        const { data: chunkSales, error: chunkErr } = await queryWithRetry<SaleRow[]>(
+          () =>
+            supabaseAdmin
+              .from("sales")
+              .select("edition_id, collection_id, price_usd, sold_at, serial_number")
+              .gte("sold_at", windowStart)
+              .gt("price_usd", 0)
+              .neq("collection_id", PINNACLE_COLLECTION_ID)
+              .in("edition_id", slice)
+              .order("id", { ascending: true })
+              .range(from, from + SALES_PAGE - 1),
+          `fmv-recalc sales chunk ${i}+${from}`,
+          { attempts: STEP1_RETRY_ATTEMPTS, baseDelayMs: STEP1_RETRY_BASE_MS, timeoutMs: STEP1B_BUDGET_MS }
+        )
         if (chunkErr) {
           console.error(
             `[FMV-RECALC] Sales fetch error for edition slice ${i}-${i + slice.length} range ${from}:`,

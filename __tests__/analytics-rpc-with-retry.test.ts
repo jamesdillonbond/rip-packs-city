@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { rpcWithRetry, DEFAULT_RPC_TIMEOUT_MS } from "@/lib/analytics/rpc-with-retry"
+import { rpcWithRetry, queryWithRetry, DEFAULT_RPC_TIMEOUT_MS } from "@/lib/analytics/rpc-with-retry"
 
 // Unit tests for lib/analytics/rpc-with-retry.ts — the wrapper every
 // /api/analytics/* route uses. It must retry connection-class (transient)
@@ -278,5 +278,70 @@ describe("rpcWithRetry — wall-clock bound", () => {
     await rpcWithRetry({ rpc } as any, "f", {}, { timeoutMs: 60, attempts: 1, baseDelayMs: 1 })
     expect(seen).toBeInstanceOf(AbortSignal)
     expect(seen?.aborted).toBe(true)
+  })
+})
+
+// queryWithRetry — the table-read sibling, added 2026-08-16 after fmv-recalc wrote
+// ZERO rows for 12.4h across 17 consecutive runs, every one dying on a single
+// unretried `.from("sales")` chunk fetch that left its cursor pinned at offset 0.
+//
+// The property that matters most here is the FACTORY. A PostgREST builder is a
+// single-use thenable: it fires its request once, and awaiting the same object
+// again yields the first attempt's settled result. A retry that closed over one
+// builder would therefore "retry" without re-issuing anything — and would pass a
+// naive test that only counted awaits.
+describe("queryWithRetry", () => {
+  const poolErr = { error: { message: "Timed out acquiring connection from connection pool." } }
+
+  it("CALLS THE FACTORY AGAIN on retry — not just re-awaits one builder", async () => {
+    const build = vi.fn()
+    build.mockResolvedValueOnce({ data: null, ...poolErr })
+    build.mockResolvedValueOnce({ data: [{ id: 1 }], error: null })
+
+    const res = await queryWithRetry(build, "sales chunk", { baseDelayMs: 1 })
+
+    // Two DISTINCT invocations of the builder factory, not two awaits of one.
+    expect(build).toHaveBeenCalledTimes(2)
+    expect(res).toEqual({ data: [{ id: 1 }], error: null })
+  })
+
+  it("does not retry a non-transient error, so a real fault still fails fast", async () => {
+    const build = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "42703", message: "column does not exist" },
+    })
+    const res = await queryWithRetry(build, "sales chunk", { baseDelayMs: 1 })
+    expect(build).toHaveBeenCalledTimes(1)
+    expect((res.error as { code?: string })?.code).toBe("42703")
+  })
+
+  it("gives up after `attempts` and returns the last error rather than throwing", async () => {
+    const build = vi.fn().mockResolvedValue({ data: null, ...poolErr })
+    const res = await queryWithRetry(build, "sales chunk", { attempts: 3, baseDelayMs: 1 })
+    expect(build).toHaveBeenCalledTimes(3)
+    expect(String((res.error as { message?: string })?.message)).toMatch(/connection pool/i)
+    expect(res.data).toBeNull()
+  })
+
+  it("succeeds on the first try without invoking the factory twice", async () => {
+    const build = vi.fn().mockResolvedValue({ data: [{ id: 7 }], error: null })
+    const res = await queryWithRetry(build, "sales chunk", { baseDelayMs: 1 })
+    expect(build).toHaveBeenCalledTimes(1)
+    expect(res.data).toEqual([{ id: 7 }])
+  })
+
+  // The shared budget is a TOTAL, not per-attempt: an exhausted budget must stop
+  // the loop rather than let `attempts` multiply it.
+  it("stops when the total budget is exhausted even with attempts remaining", async () => {
+    const build = vi.fn(
+      () => new Promise((r) => setTimeout(() => r({ data: null, ...poolErr }), 30))
+    )
+    const res = await queryWithRetry(build, "sales chunk", {
+      attempts: 5,
+      baseDelayMs: 1,
+      timeoutMs: 45,
+    })
+    expect(build.mock.calls.length).toBeLessThan(5)
+    expect(res.error).not.toBeNull()
   })
 })
