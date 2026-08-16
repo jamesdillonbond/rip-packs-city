@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — `/dashboard/alerts` invited a collector to duplicate an alert they already had, and told them their moment isn't in the catalog
+
+**What shipped.** Two one-token gates on `app/dashboard/alerts/page.tsx` + 4 pinning cases. **Both defects are the "page contradicts itself" shape** — the error banner renders DIRECTLY ABOVE each of them, so an outage put an error message and a confident claim on the same screen.
+
+- **`load()` sets `alerts` to `[]` on a failed read**, and the empty branch rendered the **WELCOME card** — "No alerts yet" plus a pitch to create your first one. A collector with a dozen live alerts, on a 503, was **invited to create a DUPLICATE** of one they already have. ⚠ **Exactly the defect the sibling `/alerts` page was fixed for; this page was not swept at the time.**
+- **`runSearch()` sets `matches` to `[]` on a failed search**, and **"No matches."** is a claim that the moment they typed **does not exist in the catalog** — which sends someone away believing RPC does not carry their moment.
+
+⚠ **HOW I FOUND IT IS THE TRANSFERABLE PART, AND MY FIRST TWO MEASUREMENTS WERE BOTH WRONG.** My own earlier framing — *"35 client pages still fetch without `fetchJson`; the conversions aren't done"* — **overstates it as a defect backlog**. Measured: **32 of 37 already track a failure state**, and several I opened were outright correct (`special-serial-owners` has a proper `error : loading : empty` ladder; `admin/fmv-health` distinguishes a 401 from other failures, so converting it to `fetchJson` would **LOSE** that and be a regression). **Not importing the helper ≠ defective.** ⚠ And my first sweep reported **4** offenders because the pattern only looked for `setError(`/`setFailed(` — it missed `setStatsError(` and `setErr(`. **A too-narrow grep produced a wrong list, twice, in the same session I have been documenting that exact class.** The right target was never "convert 35 pages"; it was the 5 that genuinely lacked a failure state, of which this one mattered.
+
+⚠ **A MUTATION CAUGHT A VACUOUS ASSERTION OF MINE.** `expect(src).toContain("setErr(null)")` survived deleting the reset from `load()`, because the **modal's `runSearch()` has its own** and satisfied the string. Both are now pinned by their ANCHORING statement (`setLoading(true); setErr(null);` and `setSearching(true); setErr(null);`), and each deletion now reds independently.
+
+**Verified:** `tsc` clean; 28 cases in the client-page guard green; 5 mutations each reddening only their own assertion, including the both-directions check — a genuinely empty account must still get the welcome card, or the fix just moves the dishonesty.
+
+**Revert:** `git revert <sha>`. No DB, prod, migration or cron change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — drove the AllDay `primary_mint` leg, the half of `event_kind` that was untested
 
 **What shipped.** 5 cases appended to `__tests__/worker-pack-events-ingest.test.ts` + worker-gate thresholds **73.3/62.3/75.9/75.9 → 76.2/64.9/77.3/78.9**. Test-only; worker source untouched.
