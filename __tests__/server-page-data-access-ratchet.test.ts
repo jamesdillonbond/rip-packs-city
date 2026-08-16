@@ -117,7 +117,7 @@ const APP_DIR = join(process.cwd(), "app")
  * ⚠ Both were already covered by comments asserting the right behaviour. The
  * comment is not the check; moving the code somewhere a test can drive it is.
  */
-const BUDGET = 12
+const BUDGET = 11
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]

@@ -26,6 +26,26 @@ function read(...parts: string[]): string {
   return readFileSync(join(process.cwd(), ...parts), "utf8")
 }
 
+/**
+ * Blank out comments, preserving offsets so `indexOf` ordering still holds.
+ *
+ * ⚠ REQUIRED, not tidiness. This file asserts on user-visible COPY, and the
+ * fixes it guards are documented by comments that QUOTE that copy to explain
+ * themselves — so an ordering check reads the comment's occurrence, not the
+ * render's. It bit immediately: the my-teams case below failed against correct
+ * code because the comment above the failure branch quotes "Follow a team to
+ * build your hub". At least the fifth instance of this trap in this repo, and
+ * the second where the offending comment was written in the same commit as the
+ * guard. Any check that greps source for a string must strip comments first —
+ * including the one you are writing now.
+ */
+function stripComments(src: string): string {
+  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, blanks)
+    .replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1 + " ".repeat(_m.length - p1.length))
+}
+
 describe("server pages distinguish a failed read from an absent record", () => {
   it("pack/[id] does not collapse an RPC error into 'not found'", () => {
     const src = read("app", "(collections)", "[collection]", "pack", "[id]", "page.tsx")
@@ -228,5 +248,64 @@ describe("server pages distinguish a failed read from an absent record", () => {
     // ...and the page must not hold its own client for this read any more; the
     // extraction is what put the logic under the primary coverage gate.
     expect(src, "the page must not query the database inline").not.toContain("@/lib/supabase")
+  })
+
+  // 6. /my-teams — the SIXTH instance, and the one where both false claims are
+  //    about the READER'S OWN ACCOUNT, which is the worst version of this class:
+  //    the reader is the only person who knows the claim is wrong, and has no
+  //    way to tell that we know it too.
+  //
+  //    `fetchFanTeams` returned `[]` on error and the page renders zero teams as
+  //    "Follow a team to build your hub" with two suggested teams — so a
+  //    collector who follows six was told they follow none and invited to start
+  //    over. `fetchBoundWallet` returned `null` on error and the page renders a
+  //    null wallet as "Add a wallet address … on your profile" — told to add the
+  //    wallet they already added.
+  //
+  //    ⚠ Behind sign-in, which is exactly why no sweep had reached it: the anon
+  //    driver-message guard derives its file set from `isPublicPath`, so
+  //    everything past the auth wall is outside it BY CONSTRUCTION.
+  it("my-teams does not report a failed read as 'you follow no teams'", () => {
+    const src = read("app", "my-teams", "page.tsx")
+    const fetcherSrc = read("lib", "fan-teams", "fetchers.ts")
+
+    expect(fetcherSrc, "a failed follow read must be ok:false").toContain(
+      "return { teams: [], ok: false }",
+    )
+    expect(fetcherSrc, "an empty follow list must stay ok:true").toContain(
+      "return { teams: Array.isArray(data) ? (data as FanTeam[]) : [], ok: true }",
+    )
+    expect(src, "page must destructure the follow read's ok").toMatch(
+      /const \{\s*teams\s*,\s*ok:\s*teamsOk\s*\}\s*=\s*await fetchFanTeams\(/,
+    )
+    // ⚠ The failure branch must precede the follow prompt, or the fix is inert
+    // — measured over the COMMENT-STRIPPED source, because the comment above
+    // that branch quotes the prompt copy to explain itself.
+    const code = stripComments(src)
+    const failure = code.indexOf("if (!teamsOk) {")
+    const prompt = code.indexOf("Follow a team to build your hub")
+    expect(failure, "the !teamsOk branch must exist").toBeGreaterThan(-1)
+    expect(failure, "it must precede the empty-state prompt").toBeLessThan(prompt)
+    // ...and the follow prompt must remain reachable for a genuinely new account.
+    expect(src).toContain("if (teams.length === 0)")
+    // The copy must not assert anything about which teams they follow.
+    expect(src, "the failure card must not claim they follow nothing").toContain(
+      "says nothing about which teams you follow",
+    )
+  })
+
+  it("my-teams does not tell a collector to add the wallet they already added", () => {
+    const src = read("app", "my-teams", "page.tsx")
+    const fetcherSrc = read("lib", "fan-teams", "fetchers.ts")
+
+    expect(fetcherSrc, "a failed wallet read must be ok:false").toContain(
+      "return { wallet: null, ok: false }",
+    )
+    // The prompt must be gated on the read having SUCCEEDED — an omitted prompt
+    // understates, which is the safe direction; asserting it is a false claim
+    // about the reader's own profile.
+    expect(src, "the add-a-wallet prompt must be gated on walletOk").toMatch(
+      /\{walletOk\s*&&\s*!wallet\s*&&\s*\(/,
+    )
   })
 })

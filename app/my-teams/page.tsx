@@ -13,9 +13,16 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import type { Metadata } from "next"
 import { getCurrentUser, getSupabaseServer } from "@/lib/auth/supabase-server"
-import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUuid } from "@/lib/collection-slug"
 import { fmtTeamUsd, fmtTeamCount, teamLogoUrl } from "@/lib/fan-teams-format"
+import {
+  fetchFanTeams,
+  fetchBoundWallet,
+  fetchTeamCard,
+  type FanTeam,
+  type TeamDetail,
+  type TeamProgress,
+} from "@/lib/fan-teams/fetchers"
 import TeamLogo from "@/components/entity/TeamLogo"
 
 export const dynamic = "force-dynamic"
@@ -26,39 +33,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-interface FanTeam {
-  league: string
-  collection_slug: string
-  collection_id: string
-  team_name: string
-  route_slug: string
-  primary_color: string | null
-  secondary_color: string | null
-  abbreviation: string | null
-  external_id: string | null
-  is_primary: boolean
-}
-
-interface TeamDetail {
-  fmv_total_usd?: number | null
-  floor_total_usd?: number | null
-  edition_count?: number | null
-  sales_30d?: number | null
-  volume_30d_usd?: number | string | null
-}
-
-interface TeamProgress {
-  total?: number
-  owned?: number
-  completion_pct?: number
-  cost_to_complete_usd?: number
-  locked_owned?: number
-  missing_count?: number
-  wallet_cached?: boolean
-}
-
-type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-
 const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA"]
 const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga" }
 
@@ -67,64 +41,33 @@ const fmtUsd = fmtTeamUsd
 const fmtCount = fmtTeamCount
 const logoFor = teamLogoUrl
 
-async function fetchFanTeams(): Promise<FanTeam[]> {
-  const supabase = await getSupabaseServer()
-  const { data, error } = await (supabase as unknown as RpcClient).rpc("get_my_fan_teams", {})
-  if (error) {
-    console.error("[my-teams] get_my_fan_teams error:", error.message)
-    return []
-  }
-  return Array.isArray(data) ? (data as FanTeam[]) : []
-}
-
-// Auto-bound wallet: the user's verified, most-recently-pinned saved wallet.
-async function fetchBoundWallet(userId: string): Promise<string | null> {
-  const supabase = await getSupabaseServer()
-  const { data, error } = await supabase
-    .from("saved_wallets")
-    .select("wallet_addr, pinned_at")
-    .eq("user_id", userId)
-    .not("verified_at", "is", null)
-    .order("pinned_at", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) {
-    console.log("[my-teams] saved wallet read error:", error.message)
-    return null
-  }
-  const addr = (data as { wallet_addr?: string } | null)?.wallet_addr
-  return addr && addr.trim() ? addr.trim() : null
-}
-
-function admin() {
-  return supabaseAdmin as unknown as RpcClient
-}
-
-async function fetchTeamCard(team: FanTeam, wallet: string | null): Promise<{ detail: TeamDetail | null; progress: TeamProgress | null }> {
-  const [detailRes, progressRes] = await Promise.all([
-    admin().rpc("get_team_detail", { p_collection_id: team.collection_id, p_team_slug: team.route_slug }),
-    admin().rpc("get_team_checklist_progress", {
-      p_collection_id: team.collection_id,
-      p_team_slug: team.route_slug,
-      p_scope: "all_time",
-      p_wallet: wallet,
-    }),
-  ])
-  const detail = detailRes.data && typeof detailRes.data === "object"
-    ? (Array.isArray(detailRes.data) ? (detailRes.data[0] as TeamDetail) : (detailRes.data as TeamDetail))
-    : null
-  const progress = progressRes.data && typeof progressRes.data === "object" && !Array.isArray(progressRes.data)
-    ? (progressRes.data as TeamProgress)
-    : null
-  return { detail, progress }
-}
-
 export default async function MyTeamsPage() {
   const user = await getCurrentUser()
   if (!user) redirect("/login?next=/my-teams")
 
-  const teams = await fetchFanTeams()
-  const wallet = await fetchBoundWallet(user.id)
+  const session = await getSupabaseServer()
+  const { teams, ok: teamsOk } = await fetchFanTeams(session)
+  const { wallet, ok: walletOk } = await fetchBoundWallet(session, user.id)
+
+  // ⚠ A FAILED read must not tell a collector they follow nothing. Zero teams
+  // renders "Follow a team to build your hub" with two suggestions — right for
+  // a new account, and an invitation to start over for someone who follows six.
+  // The failure branch must come FIRST, or the fix is inert.
+  if (!teamsOk) {
+    return (
+      <div>
+        <PageHeading />
+        <div className="rpc-card" style={{ padding: 28, textAlign: "center" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
+            Your teams couldn&rsquo;t be loaded
+          </div>
+          <div style={{ color: "var(--rpc-text-muted)", fontSize: 14, lineHeight: 1.5 }}>
+            This is a problem on our side and says nothing about which teams you follow — they are still there. Reload in a moment.
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Empty state — no follows yet.
   if (teams.length === 0) {
@@ -158,7 +101,11 @@ export default async function MyTeamsPage() {
   return (
     <div>
       <PageHeading />
-      {!wallet && (
+      {/* ⚠ `walletOk &&` is load-bearing: an unread wallet is not an absent one,
+          and this copy tells its owner to add the wallet they already added.
+          Omitting the prompt understates — the safe direction — where asserting
+          it makes a false claim about the reader's own profile. */}
+      {walletOk && !wallet && (
         <div
           className="rpc-mono"
           style={{
