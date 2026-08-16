@@ -384,7 +384,9 @@ describe("ProfileEditClient — the live preview must agree with the form", () =
     // about to save.
     const fn = installFetch({})
     render(<ProfileEditClient />)
-    const avatar = await screen.findByLabelText(/avatar url/i)
+    // Relabelled "Or paste an image URL" on 2026-08-16, when "Choose from your
+    // Moments" became the primary path and the text field became the fallback.
+    const avatar = await screen.findByLabelText(/paste an image url/i)
     fireEvent.change(avatar, { target: { value: "https://cdn.example/a.png" } })
     fireEvent.change(screen.getByLabelText(/accent color/i), { target: { value: "#00ff00" } })
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LEAGUES, type League, type TeamMaster, type UserFavoriteTeam } from "@/lib/teams";
 import ProfileHeaderPreview from "@/components/profile/ProfileHeaderPreview";
 import { avatarUrlWarning } from "@/lib/profile/avatar-url";
+import AvatarMomentPicker from "@/components/profile/AvatarMomentPicker";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -184,6 +185,8 @@ export default function ProfileEditClient() {
    */
   const avatarWarning = useMemo(() => avatarUrlWarning(form.avatar_url), [form.avatar_url]);
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   function setPickTeam(league: League, slug: string) {
     setPicks((prev) => {
       const next = { ...prev };
@@ -308,6 +311,10 @@ export default function ProfileEditClient() {
         *{box-sizing:border-box;margin:0;padding:0;}
         .field { display:flex; flex-direction:column; gap:6px; }
         .field label { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.04em; text-transform:uppercase; }
+        /* Section heading for a field that has more than one input path (the
+           avatar: pick a Moment, or paste a URL). Matches .field label so the
+           form still reads as one consistent ladder. */
+        .field-heading { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.04em; text-transform:uppercase; }
         .field input, .field textarea, .field select { background:#0d0d0d; border:1px solid var(--rpc-border); color:var(--rpc-text-primary); padding:10px 12px; border-radius:6px; font-family:${monoFont}; font-size:13px; }
         .field input:focus, .field textarea:focus, .field select:focus { outline:none; border-color:var(--rpc-red); }
         .hint { font-family:${monoFont}; font-size:10px; color:rgba(255,255,255,0.4); }
@@ -522,7 +529,35 @@ export default function ProfileEditClient() {
             </div>
 
             <div className="field">
-              <label htmlFor="avatar_url">Avatar URL (optional)</label>
+              <div className="field-heading">Avatar</div>
+              {/* ⚠ THE PICKER IS THE PRIMARY PATH AND SITS ABOVE THE FIELD.
+                  Asking a collector for an image URL asks them to do a job
+                  browsers make hard — the obvious thing to copy is the PAGE
+                  address, which is valid, serves HTML, and fails silently. We
+                  already know every Moment they own and already have its art,
+                  so the field is the ESCAPE HATCH, not the main road. */}
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                style={{
+                  alignSelf: "flex-start",
+                  background: "transparent",
+                  border: "1px solid var(--rpc-red)",
+                  color: "var(--rpc-red)",
+                  borderRadius: 4,
+                  padding: "6px 12px",
+                  fontFamily: monoFont,
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  cursor: "pointer",
+                  marginBottom: 8,
+                }}
+              >
+                CHOOSE FROM YOUR MOMENTS →
+              </button>
+              <label htmlFor="avatar_url" className="hint" style={{ marginBottom: 4 }}>
+                Or paste an image URL
+              </label>
               <input
                 id="avatar_url"
                 value={form.avatar_url}
@@ -540,6 +575,18 @@ export default function ProfileEditClient() {
                 <div className="hint">Leave blank to use the RPC logo.</div>
               )}
             </div>
+
+            {pickerOpen && (
+              <AvatarMomentPicker
+                onClose={() => setPickerOpen(false)}
+                onPick={(url) => {
+                  // Writes the SAME field a typed URL writes, so the default,
+                  // the warning, the preview and the OG card all apply unchanged.
+                  update("avatar_url", url);
+                  setPickerOpen(false);
+                }}
+              />
+            )}
 
             <div className="field">
               <label htmlFor="accent_color">Accent color</label>
