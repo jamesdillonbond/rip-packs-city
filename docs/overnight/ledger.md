@@ -595,6 +595,16 @@ The correct predicate is neither: **`if (liveFeedFailed)`** at the terminal exit
 ⚠ **NOT verified by HTTP round-trip** — the sandbox proxy blocks `rippackscity.com`. Every figure above is a live DB measurement plus the suites, not a real tool call.
 
 **Revert:** `git revert <sha>` — drops the All Day/Golazos arm, the closed-market note and the sniper chip fix. **No DB change, no migration, no cron, no auth/`proxy.ts` change, no FMV/pricing math touched** — the two floor views are READ, not created.
+### 2026-08-15 · DOCS (Claude Code, interactive) — the Panini "498 vs 223" recovery headline was a MIXED day; the real unit is 418 editions per post-fix walk
+
+Docs-only. Corrected the uncommitted bottleneck analysis in `docs/handoff-2026-08-15-panini-enum-followups.md` after verifying every one of its claims live. The enum fix `75647b8e` shipped **14:35 PT**, so of today's five walks only 18:00 ran post-fix — per-walk editions were **2 / 52 / 95 / 5 / 418**, i.e. today's 498 is four crippled walks plus one healthy one. **Six post-fix walks project to ~2,500/day against the 08-08→08-11 healthy era's 795–965**, so the fix cleared the old ceiling rather than recovering toward it; the pre-fix walks were dying in **39–58 s** against a 50-min budget, which is the dilution stall's signature and better evidence than any daily total.
+
+⚠ **Today can never be the clean day the handoff asks for — four of its walks predate the fix. The first all-post-fix day is 2026-08-16.** ⚠ The rival explanation is dead: walk-hours are **identical** on 08-11 and 08-15 (`02,06,10,14,18`) yet 08-11 took 1,135 ingest batches to today's 254, so the collapse was per-walk work, not missed walks or laptop sleep. ⚠ Recorded a cross-instrument trap: the `1.1 vs 3.5 writes/unique` figures come from `pipeline_runs_daily.rows_written`, while `panini_fmv_snapshots` gives **1.15 / 1.46** for the same days — and within a single walk the ratio is exactly 1.00, so the 1.15 is 74 editions re-touched *across* walks. Also that a current-day `pipeline_runs_daily` row can read LOWER than an earlier live count (rollup is `11 */6 * * *`; 508 vs 550) — staleness, not a decrease.
+
+Verified on disk that items 1 and 5 really are shipped (`grep 800` = 0; three `coalesce` numerators present). **Recommendation unchanged: pull no levers** — the 18:00 walk used its full budget to reach 418 of 840 enumerated pskus, so the walk budget is the binding term but is not yet binding on anything that matters. Left untouched: two untracked files from a concurrent live session (a `20260816014000_…reconcile_cron…` migration and an inbox monitor file written during this session).
+
+**Revert:** `git revert <sha>` — docs-only, no code, no DB, no prod state.
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive) — `Query 4b` went SILENT on a zero-day, the escalation tree was missing a third of its stop reasons, and the lever it named is inert
 
 **What:** `panini-freshness-check` (scheduled-task prompt, **NOT in this repo** — `C:/Users/TDill/Claude/Scheduled/panini-freshness-check/SKILL.md`). Three edits, one file. No repo code, DB, migration, cron, auth or FMV change.

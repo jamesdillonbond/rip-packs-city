@@ -74,9 +74,49 @@ simulated 2026-08-15 → yesterday 223 · pct_of_catalogue 4.9 · gate fires TRU
 
 </details>
 
+## ⚠ THE BOTTLENECK HAS MOVED — do not pull the enumeration levers (measured 2026-08-15 ~20:00 PT)
+
+The 18:00 walk is the first full post-fix walk, and it reframes everything below. Measured:
+
+- Enumeration: **7.93 min**, stopped at `max_iters` (200 iters), **124 pages / 3,720 items / 840 WC pskus**.
+- Card walk: `18:00:04 → 18:58:31` = **58.5 min total**, i.e. the walk phase hit its **50-minute `WALK_BUDGET_MS` exactly**.
+- It walked **394 of the 840 pskus it enumerated — 47%** — at **8.9 s/edition**.
+
+**Enumeration is fixed and is no longer the constraint. The 50-minute walk budget is.** Three plausible next moves are therefore wrong:
+
+1. ⚠ **Do NOT raise `ENUM_MAX_ITERS` or `PANINI_ENUM_BUDGET_MIN`.** They would enumerate more pskus the walk already cannot reach. `max_iters` as the steady state is *correct behaviour*, not a defect to fix — and note the budget had 2.07 min spare (475,885 ms of 600,000), so the clock was never the binding term anyway.
+2. ⚠ **Item 3 demotes again.** The cardset filter saves ~5 min of *enumeration* wall-clock, which is on a separate clock from the walk (`tWalk` starts after enumeration). **It does not increase editions/day at all.** It is now a marginal tidiness win, not a throughput lever.
+3. **If throughput ever genuinely needs a lever**, the real ones are `PANINI_WALK_BUDGET_MIN` (50 min, and walks are 4 h apart so there is headroom) or the 8.9 s/edition per-card cost (`PANINI_SALES_HISTORY=0` removes the sales-tab click). **Neither is warranted yet — see below.**
+
+⚠ **THE "498 vs 223" HEADLINE IS A MIXED DAY AND UNDERSTATES THE FIX — corrected 2026-08-15 20:40 PT.** The enum fix `75647b8e` shipped at **14:35 PT**, so of today's five walks **only the 18:00 one ran post-fix**. Per-walk, measured off `panini_fmv_snapshots`:
+
+| walk (PT) | unique editions | wall-clock |
+|---|---|---|
+| 02:00 | 2 | 58 s |
+| 06:00 | 52 | 10.0 min |
+| 10:00 | 95 | 11.6 min |
+| 14:00 | 5 | 39 s (the deploy-window probe) |
+| **18:00** | **418** | **50.0 min — the full `WALK_BUDGET_MS`** |
+
+So today's 498 is **154 from four crippled walks + 418 from one healthy walk**, and quoting it against yesterday's 223 compares a mixed day to a broken one. **The honest unit is 418 editions per post-fix walk.** ⚠ **Six such walks project to ~2,500/day — not 498, and 2.6–3.1× the 08-08→08-11 healthy era's 795–965/day**, so the fix has already cleared the old ceiling rather than merely recovering toward it.
+
+⚠ **And the pre-fix walks were dying in MINUTES, which is the defect's real signature.** 02:00 ran 58 s and 14:00 ran 39 s; the two that got going stopped at 10–12 min against a 50-min budget. That is the dilution stall ending walks early — exactly what `75647b8e` ("stop enumeration on grid exhaustion, not on WC-subset stalls") was written to fix, and it is stronger evidence for the fix than any daily total.
+
+⚠ **CONSEQUENCE FOR THE MEASUREMENT PLAN: today can NEVER be the clean day.** Four of its walks predate the fix. **The first all-post-fix day is 2026-08-16.** Read the clean-day number then — do not close this out on tonight's total.
+
+⚠ **The walk CADENCE was never the problem, which kills the obvious rival explanation.** Active walk-hours are **identical** on 08-11 and 08-15 (both `02,06,10,14,18`), yet 08-11 took **1,135** ingest batches against today's **254**. Same number of walks, no runner commit in between — so the collapse was per-walk work, not missed walks or laptop sleep. ⚠ Anyone re-deriving this should note `pipeline_runs` retains only ~73 h, so the 08-11 batch count must come from `pipeline_runs_daily`.
+
+⚠ **The `1.1 vs 3.5 writes/unique` figures are from `pipeline_runs_daily.rows_written`, NOT from `panini_fmv_snapshots` — the two disagree and the trap is cross-instrument.** Snapshot rows give **1.15** today and **1.46** on 08-11; `rows_written` gives **1.02** and **3.15**. Both are defensible, they answer different questions (edition upserts vs priced snapshots), and mixing them silently halves the apparent gain. **State which table any ratio came from.** ⚠ Also, within each individual walk today writes/unique is exactly **1.00** — the 1.15 is entirely **74 editions re-touched across different walks**, not re-walking inside one.
+
+⚠ `pipeline_runs_daily` for the CURRENT day is refreshed by pg_cron `11 */6 * * *`, so it lags: it read `rows_written` **508** at 20:40 PT against **550** measured live 40 min earlier. **A current-day rollup row can read LOWER than an earlier live count** — that is staleness, not a decrease.
+
+**Recommendation unchanged, and now better grounded: pull nothing.** The 18:00 walk reached **418 of the 840 pskus it enumerated (50%)** using its entire budget, so the walk budget really is the binding term — but at ~2,500/day projected it is not yet binding on anything that matters. **Measure 2026-08-16 (the first all-post-fix day), then decide.**
+
+---
+
 ## Item 3 — Cardset filter param (BLOCKED on an operator action; now narrowed to two fields)
 
-**Status: demoted.** The composite progress signal in `scripts/panini-enum-progress.mjs` (`enumProgress = wcPskus + gridItems`) already fixes the dilution defect **structurally** — a non-WC stretch advances progress, so dilution can no longer end the walk. The filter is now an **efficiency optimisation**, and an optimisation does not justify guessing a parameter in production ingest.
+**Status: demoted TWICE — see the bottleneck section above; this is no longer on the throughput path.** The composite progress signal in `scripts/panini-enum-progress.mjs` (`enumProgress = wcPskus + gridItems`) already fixes the dilution defect **structurally** — a non-WC stretch advances progress, so dilution can no longer end the walk. The filter is now an **efficiency optimisation**, and an optimisation does not justify guessing a parameter in production ingest.
 
 Still worth having: the 08-15 walk spent its whole enumeration budget on a grid measured at **21.8% WC-Prizm walk-wide** (vs 48% on page 1), so ~78% of that budget scrolls product we discard.
 
