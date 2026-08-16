@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — extracted the pack-REALITY board, whose three buckets are deliberately ASYMMETRIC and had no test saying so
+
+**What shipped.** New `lib/insights/pack-reality-board.ts` + 16 tests; `/insights/allday-pack-reality` converted; server-page ratchet **15 → 14**. No DB, cron, auth, FMV or prod change; the board renders identically.
+
+**Why this one.** Chosen by DERIVATION density rather than size — it carried **10** filter/sort/slice sites, three times the next page. It is the honesty board about **our own pack-EV model** ("the model says $X, packs actually pull $Y"), so every threshold decides which distributions a collector is shown as evidence the model is wrong — and all of it sat in a `page.tsx` that neither coverage gate measures.
+
+⚠ **THE THREE BUCKETS ARE NOT SYMMETRIC, AND NOTHING SAID SO.** Reading the asymmetries as oversights is the mistake this module now prevents:
+- **The fossil guard (`modeled EV <= 1.5 × price`) applies to `over` ONLY.** A depleted pool models at 40–86× its price and *by construction* looks like a massive over-valuation — so without it the "model over-values" board would be nothing but drained pools and the real over-valuations would be pushed off. On `under` a fossil is not a plausible member at all, so guarding there would exclude nothing while implying the lists are filtered alike.
+- **`over` requires a modeled EV of $2, `under` only $0.50.** A ratio is a ratio: on a pack modeled at $0.30 a realized $0.10 reads as a dramatic over-valuation while being twenty cents. `over` is the accusatory list, so it carries the higher bar.
+- **`onModel` ranks by SAMPLE SIZE, not ratio** — a band has no "most" end to sort toward, so the most-opened distributions lead as the strongest evidence.
+- **The gaps between bands (0.6–0.8, 1.25–1.8) belong to nothing, deliberately** — a row in between supports neither claim, and widening a band to close a gap would put ambiguous evidence under a confident heading.
+
+⚠ **TWO MUTATIONS SURVIVED AND BOTH WERE MY FIXTURES AGREEING WITH THEMSELVES.** Sorting `onModel` by ratio instead of opens passed, because I had given the most-opened row the *higher* ratio — both criteria produced the same list. And building `onModel` from raw rows instead of the priced set passed, because every unpriced fixture had a ratio *outside* every band. **A fixture only tests a discriminator when the two candidate implementations DISAGREE on it** — the third time this session that a survivor was a fixture problem rather than a missing assertion, and the shape is always the same.
+
+**Also pinned:** the SQL gates the JS filter repeats. The price/model filters exist in BOTH places — the SQL copy is a cost optimisation (this view aggregates 2.8M rows; filtering cut 1,559 rows to 302, one page instead of two) and the JS copy is the correctness one, so the ranking cannot depend on the SQL having been written right. Dropping either is a real change, so both are asserted.
+
+**Verified.** 14 mutations red: fossil guard dropped · fossil guard wrongly extended to `under` · fossil bound made strict · `over`'s EV floor lowered to `under`'s · each of the three bands' inclusivity flipped · `onModel` sorted by ratio · slice-before-sort · priced filter dropped · `low_confidence_ev` gate inverted · `n_opens` gate dropped · failed read reporting ok:true · `onModel` built from raw rows. Full primary suite **12,412 passed / 1,238 files**; `tsc` clean.
+
+**Revert:** `git revert <sha>` — restores the inline fetcher and the ratchet at 15. No DB unwind.
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. — "keep going") — extracted the two sealed-pack market boards, and the extraction exposed a TENSION BETWEEN TWO GUARDS plus a hole a comment could satisfy
 
 **What shipped.** New `lib/insights/pack-market-board.ts` shared by `/insights/allday-pack-market` + `/insights/topshot-pack-market`, 15 tests for it, the build-safety guard repointed, and the server-page data-access ratchet lowered **17 → 15**. No DB, cron, auth, FMV or prod change; both boards render identically.
