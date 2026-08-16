@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont.) — `disney-pinnacle/collection` told a collector they hold "Total Pins: 0", under the banner saying the read had failed
+
+**What shipped:** `disney-pinnacle/collection` split to `PinnacleCollectionClient.tsx` (+16 tests), two honesty fixes, ratchets **25 → 24** and **28 → 27**. Product code changed, so this deploys.
+
+- ⚠ **THIRD PAGE IN THIS SWEEP WITH THE SAME DEFECT, AND THE SHARPEST FORM OF IT: the manufactured figure is a claim about the READER'S OWN HOLDINGS.** The catch set `momentCount` to a hard **0**, rendered as "Total Pins: 0" directly under the error banner.
+- ⚠ **WHAT MARKS IT AS AN OVERSIGHT RATHER THAN A DECISION — and it is a tell worth reusing:** every SIBLING field on that same catch line was already nulled (`totalFmv`, `unlockedFmv`, `unlockedCount`, `bestOfferTotal`, `spreadGap`) and this one alone was zeroed. **One zeroed figure beside five withheld ones on the same line is not a policy.**
+- ⚠ **AND THE TEST WRITTEN FOR THAT SITE FOUND A SECOND, exactly as on the two pages before it:** the table's *"No Pinnacle pins found for this wallet"* empty state also fires on a failed read, because the catch empties `rows`. **Every conversion in this sweep has produced the same lesson — sweep every site consuming the failed read, not the one you noticed.** Both are pinned in BOTH directions: a genuinely empty wallet still reads 0 and still gets the empty state.
+- ⚠ **Suspense HOISTED to the server page** (the body calls `useSearchParams`) — leaving it inside moves the file into the gate without making it renderable by a test, i.e. measurement with no assertions.
+- ⚠ **A MUTATION EXPOSED A VACUOUS ASSERTION OF MINE THAT LOOKED RIGOROUS.** "encodes the wallet into the request" asserted `toContain(encodeURIComponent(WALLET))` — and a plain hex address survives `encodeURIComponent` UNCHANGED, so it was asserting the raw string. The wallet is USER INPUT, so the case that matters is a value containing `&`: now pinned that `0xabc&limit=99999` arrives percent-encoded and does **not** survive as a real query parameter.
+- ⚠ **FOURTH fixture-shaped mistake of the session, same cause every time:** the row renderer reads `player_name`, and I wrote `character_name` (what Pinnacle calls it elsewhere), so the summary rendered and the rows silently did not. **Read the renderer, not the domain vocabulary.**
+- **Also covered the unserialised-pin distinction**, because CLAUDE.md records that ~72% of Pinnacle holdings sit on unserialised editions and used to "read as missing data we had failed to fetch" — collapsing that back to an em-dash would re-tell that lie for most of the page.
+- **Verification:** 6 mutations, all killed after making the encoding one observable. Component gate **90.60/82.22/89.58/93.52** vs 90.3/81.6/89.1/93.2. Primary **12,902 passed / 1,273 files / 0 failures**. `tsc` clean.
+- **Revert:** `git revert <sha>` restores the single-file page, the zeroed count and the ungated empty state, and re-raises both ratchets.
+
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — "the best way to handle this type of input from users moving forward") — stop asking collectors for a URL: pick an avatar from a Moment you own
 
 **What shipped.** New `components/profile/AvatarMomentPicker.tsx` + wiring into `/profile/edit`, and a test file. **No DB change, no new API, no new column.**
