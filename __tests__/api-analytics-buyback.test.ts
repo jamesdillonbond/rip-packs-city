@@ -30,20 +30,23 @@ const payload = {
   period: "month",
   window_start: "2026-08-01",
   window_end: "2026-08-16",
+  basis: "verified_marketplace_purchases",
   totals: {
-    acquisitions: 92263,
-    priced_acquisitions: 98,
+    purchases: 98,
+    priced_purchases: 98,
     spend_usd: 4936.73,
     spend_known: true,
-    distinct_editions: 900,
+    distinct_editions: 60,
     active_days: 15,
   },
   coverage: {
     observation_start: "2026-06-09",
-    unpriced_acquisitions: 92165,
-    unpriced_share_pct: 99.9,
+    unpriced_purchases: 0,
     counterparty_known_for: 98,
     date_grain: "day",
+    excluded_snapshot_rows: 92165,
+    excluded_wallets: 1,
+    excluded_reason: "wallet walk is unstable",
   },
   wallets: [],
   top_editions_by_count: [],
@@ -65,11 +68,13 @@ describe("GET /api/analytics/buyback", () => {
     const res = await GET(req("https://t/api/analytics/buyback?period=month"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.totals.acquisitions).toBe(92263)
-    // priced_acquisitions must survive to the client: it is the only thing that
-    // lets a consumer tell an unpriced acquisition from a free one.
-    expect(body.totals.priced_acquisitions).toBe(98)
-    expect(body.coverage.unpriced_share_pct).toBe(99.9)
+    expect(body.totals.purchases).toBe(98)
+    // priced_purchases must survive to the client: it is the only thing that
+    // lets a consumer tell an unpriced purchase from a free one.
+    expect(body.totals.priced_purchases).toBe(98)
+    // And the excluded-row count must survive, or the board cannot explain why
+    // it is small and reads as "Top Shot stopped buying".
+    expect(body.coverage.excluded_snapshot_rows).toBe(92165)
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=900")
   })
 
@@ -142,10 +147,10 @@ describe("GET /api/analytics/buyback", () => {
   it("a genuinely empty window still returns 200 — an honest zero", async () => {
     rpc.data = {
       ...payload,
-      totals: { ...payload.totals, acquisitions: 0, priced_acquisitions: 0, spend_usd: 0 },
+      totals: { ...payload.totals, purchases: 0, priced_purchases: 0, spend_usd: 0 },
     }
     const res = await GET(req("https://t/api/analytics/buyback?period=week"))
     expect(res.status).toBe(200)
-    expect((await res.json()).totals.acquisitions).toBe(0)
+    expect((await res.json()).totals.purchases).toBe(0)
   })
 })

@@ -7,6 +7,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // path with buyback name-filtering.
 
 const tables: Record<string, { data: any; error?: any }> = {}
+// Records .eq() calls per table so a test can assert WHICH rows were requested,
+// not merely that a query ran.
+const eqCalls: Array<[string, string, unknown]> = []
 
 vi.mock("@/lib/supabase", () => {
   const builder = (table: string) => {
@@ -17,6 +20,10 @@ vi.mock("@/lib/supabase", () => {
       order: () => b,
       in: () => b,
       limit: () => b,
+      eq: (col: string, val: unknown) => {
+        eqCalls.push([table, col, val])
+        return b
+      },
       then: (resolve: any) => resolve(payload()),
     }
     return b
@@ -28,9 +35,29 @@ import { GET } from "@/app/api/analytics/insider/signals/route"
 
 beforeEach(() => {
   for (const k of Object.keys(tables)) delete tables[k]
+  eqCalls.length = 0
 })
 
 describe("GET /api/analytics/insider/signals", () => {
+  // ── THE ARTIFACT FILTER ───────────────────────────────────────────────────
+  // The direct_transfer arm of topshot_insider_buybacks is produced by diffing
+  // daily wallet-holdings snapshots, and that walk is unstable: measured
+  // 2026-08-16, 41,301 of 41,307 distinct moments it reported as "acquired"
+  // were ALREADY HELD on the first snapshot, and 0 of 200 sampled appear in
+  // `sales` at any time. Those rows outnumber the real ones ~375:1 and carry
+  // today's date, so they filled every slot in this panel and it published
+  // fabricated events as "insider buyback detected". Only marketplace rows,
+  // which carry a sale_id from a real priced sale, may reach a user.
+  it("requests ONLY marketplace buybacks, never the snapshot-diff artifacts", async () => {
+    await GET()
+    const buybackEq = eqCalls.filter(([t]) => t === "topshot_insider_buybacks")
+    expect(buybackEq).toContainEqual([
+      "topshot_insider_buybacks",
+      "acquisition_method",
+      "marketplace",
+    ])
+  })
+
   it("reports has_data=false when every source is empty", async () => {
     const res = await GET()
     expect(res.status).toBe(200)

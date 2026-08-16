@@ -40,6 +40,19 @@ export async function GET() {
         .select(
           "id, acquisition_method, buyer_address, seller_address, moment_id, serial_number, price_usd, sold_at, editions:edition_id(player_name, set_name)"
         )
+        // MARKETPLACE ONLY. The direct_transfer arm is produced by diffing daily
+        // wallet-holdings snapshots, and that walk is unstable: the wallet's own
+        // existing stock drops out of one snapshot and reappears in the next,
+        // which the diff records as an arrival. Measured 2026-08-16, 41,301 of
+        // 41,307 distinct moments it reported as "acquired" were ALREADY HELD on
+        // the first snapshot, and 0 of 200 sampled appear in `sales` at any time
+        // (positive control: 208/208 marketplace rows DO resolve on the same
+        // key). Because those rows dominate by ~375:1 and carry today's date,
+        // they occupied every slot in this panel — so this feed was reporting
+        // fabricated events to users as "insider buyback detected".
+        // Marketplace rows are trustworthy: each carries a sale_id written by
+        // the sales_2026 trigger from a real priced sale.
+        .eq("acquisition_method", "marketplace")
         .order("sold_at", { ascending: false })
         // Pull extra so we can resolve names via the moment fallback and still
         // land 5 named rows after dropping the genuinely-unresolvable ones.

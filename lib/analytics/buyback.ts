@@ -1,24 +1,37 @@
 // Types and pure display logic for the Top Shot buyback-wallet analytics
 // surface (/analytics/buyback, backed by /api/analytics/buyback).
 //
-// The logic here exists to keep ONE distinction intact all the way to the
-// screen: an acquisition we could not price is not an acquisition that cost
-// nothing. 99.7% of the buyback programme's acquisitions reach us through a
-// daily holdings-snapshot diff that carries no price and no counterparty, so a
-// surface that renders `spend_usd ?? 0` publishes "$0" for 161,366 real
-// purchases — a claim about Top Shot's spending manufactured entirely out of our
-// own collection method.
+// ── WHY THIS BOARD IS SMALL, AND WHY THAT IS THE HONEST ANSWER ──────────────
+// The first version of this surface published 161,797 "moments acquired". That
+// number was an artifact. It came from the direct_transfer arm of
+// topshot_insider_buybacks, which is produced by diffing consecutive daily
+// wallet-holdings snapshots -- and that wallet walk is unstable, so the wallet's
+// own existing stock drops out of one snapshot and reappears in the next, which
+// the diff reads as an arrival. Measured 2026-08-16:
 //
-// These are pure functions over the API payload so they can be unit-tested
-// without rendering, and so the rule lives in one place rather than being
-// re-derived at each of the ~8 sites that show a dollar figure.
+//   * 41,301 of 41,307 distinct moments it reported as acquired were ALREADY
+//     HELD on the first snapshot. Only six were ever genuinely new.
+//   * 62-86% of daily "arrivals" were present in the wallet two days earlier.
+//   * 0 of 200 sampled ever appear in `sales` (positive control: 208/208
+//     marketplace rows do resolve on the same key).
+//   * Holdings sit flat at ~52,120 while the table claimed ~6,500/day.
+//
+// So the board now counts ONLY verified marketplace purchases -- rows carrying a
+// sale_id from the sales_2026 trigger. That is 431 rows, not 161,797. A small
+// true number beats a large false one, and `coverage.excluded_*` states what was
+// removed so the surface can explain its own size rather than implying the
+// buyback programme is inactive.
+//
+// The second rule this module keeps intact: an acquisition we could not price is
+// not one that cost nothing, so `spend_usd` never travels without
+// `priced_purchases` beside it.
 
 /** Calendar-to-date windows the API accepts. Mirrors BUYBACK_PERIODS. */
 export type BuybackPeriod = "week" | "month" | "year" | "all"
 
 export interface BuybackTotals {
-  acquisitions: number
-  priced_acquisitions: number
+  purchases: number
+  priced_purchases: number
   spend_usd: number | null
   spend_known: boolean
   distinct_editions: number
@@ -27,16 +40,19 @@ export interface BuybackTotals {
 
 export interface BuybackCoverage {
   observation_start: string | null
-  unpriced_acquisitions: number
-  unpriced_share_pct: number | null
+  unpriced_purchases: number
   counterparty_known_for: number
   date_grain: string
+  /** Holdings-snapshot rows deliberately excluded as unreliable. */
+  excluded_snapshot_rows: number
+  excluded_wallets: number
+  excluded_reason: string | null
 }
 
 export interface BuybackWallet {
   address: string
   username: string | null
-  acquisitions: number
+  purchases: number
   priced_acquisitions: number
   spend_usd: number | null
   distinct_editions: number
@@ -49,7 +65,7 @@ export interface BuybackEdition {
   set_name: string | null
   tier: string | null
   series?: number | null
-  acquisitions?: number
+  purchases?: number
   priced_acquisitions: number
   spend_usd: number | null
 }
@@ -63,7 +79,7 @@ export interface BuybackSeller {
 
 export interface BuybackDay {
   d: string
-  acquisitions: number
+  purchases: number
   priced_acquisitions: number
   spend_usd: number | null
 }
@@ -72,6 +88,7 @@ export interface BuybackPayload {
   period: BuybackPeriod
   window_start: string | null
   window_end: string | null
+  basis?: string
   totals: BuybackTotals
   coverage: BuybackCoverage
   wallets: BuybackWallet[]
@@ -107,14 +124,9 @@ export function formatCount(n: number | null | undefined): string {
 /**
  * How a wallet's spend should read.
  *
- * `spend_known` is false when NOTHING in the window carried a price, which for
- * the main buyback wallet is every window. Returning "$0.00" there would be a
- * measured-looking zero produced by our collection method, so the caller gets an
- * explicit `known: false` plus copy that names the reason.
- *
- * Note the deliberate asymmetry: a wallet that DID trade on the marketplace and
- * genuinely spent nothing is impossible here (a priced row has a price), so
- * `known: true` with a zero total is safe to render as $0.00.
+ * Returns `known: false` with an em-dash rather than "$0.00" when nothing in the
+ * window carried a price — a measured-looking zero produced by our own
+ * collection method is a claim we cannot support.
  */
 export function walletSpendDisplay(w: BuybackWallet): {
   known: boolean
@@ -125,49 +137,65 @@ export function walletSpendDisplay(w: BuybackWallet): {
     return {
       known: false,
       text: NO_FIGURE,
-      note: "Acquired by direct transfer — no price is recorded on-chain for these",
+      note: "No price recorded on-chain for these acquisitions",
     }
   }
   return { known: true, text: formatUsd(w.spend_usd), note: null }
 }
 
 /**
- * Whether the headline spend figure is only part of the story, and by how much.
+ * Whether the headline spend figure is only part of the story.
  *
- * Returns null when every acquisition in the window was priced — in that case
- * the spend total is complete and a caveat would cry wolf on the system working,
- * which is its own false claim.
+ * Null when every purchase in the window was priced — a caveat on a complete
+ * figure would cry wolf on the system working, which is its own false claim.
  */
 export function spendCoverageNotice(
   totals: BuybackTotals,
   coverage: BuybackCoverage
 ): { headline: string; detail: string } | null {
-  if (totals.acquisitions <= 0) return null
-  if (coverage.unpriced_acquisitions <= 0) return null
-
-  const pct =
-    coverage.unpriced_share_pct != null
-      ? `${coverage.unpriced_share_pct}%`
-      : `${formatCount(coverage.unpriced_acquisitions)} of ${formatCount(totals.acquisitions)}`
+  if (totals.purchases <= 0) return null
+  if (coverage.unpriced_purchases <= 0) return null
 
   return {
-    headline: `Spend is known for ${formatCount(totals.priced_acquisitions)} of ${formatCount(
-      totals.acquisitions
-    )} acquisitions`,
+    headline: `Spend is known for ${formatCount(totals.priced_purchases)} of ${formatCount(
+      totals.purchases
+    )} purchases`,
     detail:
-      `${pct} of moments in this window arrived by direct transfer, which carries no price ` +
-      `and no counterparty on-chain. Those are real acquisitions with an unknown cost — not ` +
-      `free ones. Dollar figures and the seller leaderboard below describe only the ` +
-      `${formatCount(totals.priced_acquisitions)} marketplace purchase(s) we can price.`,
+      `${formatCount(coverage.unpriced_purchases)} purchase(s) in this window carry no ` +
+      `on-chain price. Those are real acquisitions with an unknown cost — not free ones.`,
+  }
+}
+
+/**
+ * The disclosure that explains why this board is small.
+ *
+ * Without it a reader sees "41 purchases this week" and concludes Top Shot has
+ * nearly stopped buying, when in fact we discarded 39,048 unreliable rows. The
+ * count is stated so the omission is auditable rather than merely asserted.
+ *
+ * Null when nothing was excluded — the note must not outlive the problem.
+ */
+export function exclusionNotice(
+  coverage: BuybackCoverage
+): { headline: string; detail: string } | null {
+  if (!coverage.excluded_snapshot_rows || coverage.excluded_snapshot_rows <= 0) return null
+  return {
+    headline: `${formatCount(
+      coverage.excluded_snapshot_rows
+    )} holdings-snapshot movements excluded as unreliable`,
+    detail:
+      coverage.excluded_reason ??
+      "Holdings-snapshot movements are excluded because the wallet walk is unstable; " +
+        "only verified marketplace purchases are counted.",
   }
 }
 
 /**
  * Copy for the "all time" window.
  *
- * Our snapshot history starts at `observation_start`; the main buyback wallet
- * already held 52,118 moments before that. Labelling the window "all time"
- * without saying so implies we are showing the programme's whole history.
+ * Our verified-purchase history starts at `observation_start`; the buyback
+ * wallets were operating before that. Labelling the window "all time" without
+ * saying so implies we are showing the programme's whole history.
  */
 export function observationNotice(
   period: BuybackPeriod,
@@ -176,8 +204,8 @@ export function observationNotice(
   if (!coverage.observation_start) return null
   if (period !== "all") return null
   return (
-    `Tracked since ${coverage.observation_start} — the buyback wallets were already ` +
-    `holding moments before we began snapshotting them, so "all time" means "all ` +
+    `Verified purchases tracked since ${coverage.observation_start} — the buyback wallets ` +
+    `were operating before we began capturing priced purchases, so "all time" means "all ` +
     `tracked time", not the programme's full history.`
   )
 }

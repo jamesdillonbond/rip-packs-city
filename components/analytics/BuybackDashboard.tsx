@@ -1,10 +1,17 @@
 "use client"
 
-// BuybackDashboard — analytics for the Top Shot secondary-buyback wallets.
+// BuybackDashboard — VERIFIED marketplace purchases by the Top Shot
+// secondary-buyback wallets.
 //
-// Renders four calendar-to-date windows over /api/analytics/buyback. The whole
-// component is built around one rule: a failed read and an unpriced acquisition
-// must never render as a number.
+// It counts only purchases we can confirm against a real priced sale. The
+// holdings-snapshot arm that once supplied a 161,797 headline is excluded as an
+// artifact (see lib/analytics/buyback.ts for the four measurements), and the
+// exclusion is DISCLOSED with its row count — otherwise "41 purchases this week"
+// reads as "Top Shot stopped buying" rather than "we discarded 39,048 rows we
+// could not stand behind".
+//
+// The other rule: a failed read and an unpriced purchase must never render as a
+// number.
 //
 //   * fetchJson (not a bare `.catch`) so a 5xx / network failure / HTML login
 //     body reaches the render layer as `ok: false` rather than an empty array
@@ -24,6 +31,7 @@ import {
   formatUsd,
   observationNotice,
   spendCoverageNotice,
+  exclusionNotice,
   walletLabel,
   walletSpendDisplay,
   NO_FIGURE,
@@ -132,6 +140,7 @@ export default function BuybackDashboard() {
 
   const coverageNotice = data ? spendCoverageNotice(data.totals, data.coverage) : null
   const obsNotice = data ? observationNotice(data.period, data.coverage) : null
+  const excluded = data ? exclusionNotice(data.coverage) : null
 
   return (
     <div className="space-y-4">
@@ -145,8 +154,8 @@ export default function BuybackDashboard() {
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--rpc-text-secondary)" }}>
           Top Shot repurchases moments off the secondary market and re-stuffs them into future
-          packs. What these wallets accumulate is a curatorial signal about which players and sets
-          are being elevated.
+          packs. Every confirmed purchase is a curatorial signal about which players and sets are
+          being elevated. Counts below are verified marketplace purchases only.
         </p>
       </header>
 
@@ -206,7 +215,7 @@ export default function BuybackDashboard() {
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi label="Moments acquired" value={formatCount(data.totals.acquisitions)} />
+            <Kpi label="Verified purchases" value={formatCount(data.totals.purchases)} />
             <Kpi label="Distinct editions" value={formatCount(data.totals.distinct_editions)} />
             <Kpi label="Active days" value={formatCount(data.totals.active_days)} />
             <Kpi
@@ -214,7 +223,7 @@ export default function BuybackDashboard() {
               value={
                 data.totals.spend_known ? formatUsd(data.totals.spend_usd) : NO_FIGURE
               }
-              hint={`across ${formatCount(data.totals.priced_acquisitions)} priced buy(s)`}
+              hint={`across ${formatCount(data.totals.priced_purchases)} priced buy(s)`}
             />
           </div>
 
@@ -238,6 +247,27 @@ export default function BuybackDashboard() {
             </div>
           ) : null}
 
+          {/* Why the numbers are small. Without this a reader concludes Top Shot
+              stopped buying, when in fact we discarded rows we could not stand
+              behind. The count makes the omission auditable. */}
+          {excluded ? (
+            <div
+              className="rounded-lg p-3 flex items-start gap-2"
+              style={{
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
+              }}
+            >
+              <Info size={16} style={{ color: "var(--rpc-text-muted)" }} aria-hidden />
+              <div className="text-xs">
+                <strong style={{ color: "var(--rpc-text-primary)" }}>{excluded.headline}</strong>
+                <div className="mt-1" style={{ color: "var(--rpc-text-secondary)" }}>
+                  {excluded.detail}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {obsNotice ? (
             <p className="text-xs" style={{ color: "var(--rpc-text-ghost)" }}>
               {obsNotice}
@@ -247,7 +277,7 @@ export default function BuybackDashboard() {
           <Panel title="By wallet">
             {data.wallets.length === 0 ? (
               <p className="text-sm" style={{ color: "var(--rpc-text-muted)" }}>
-                No buyback activity in this window.
+                No verified buyback purchases in this window.
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -255,7 +285,7 @@ export default function BuybackDashboard() {
                   <thead>
                     <tr style={{ color: "var(--rpc-text-muted)" }} className="text-left text-xs uppercase">
                       <th className="py-1 pr-3">Wallet</th>
-                      <th className="py-1 pr-3 text-right">Moments</th>
+                      <th className="py-1 pr-3 text-right">Purchases</th>
                       <th className="py-1 pr-3 text-right">Editions</th>
                       <th className="py-1 pr-3 text-right">Priced buys</th>
                       <th className="py-1 text-right">Spend</th>
@@ -270,7 +300,7 @@ export default function BuybackDashboard() {
                             {walletLabel(w.address, w.username)}
                           </td>
                           <td className="py-2 pr-3 text-right" style={{ color: "var(--rpc-text-primary)" }}>
-                            {formatCount(w.acquisitions)}
+                            {formatCount(w.purchases)}
                           </td>
                           <td className="py-2 pr-3 text-right" style={{ color: "var(--rpc-text-secondary)" }}>
                             {formatCount(w.distinct_editions)}
@@ -296,12 +326,12 @@ export default function BuybackDashboard() {
           </Panel>
 
           <Panel
-            title="Most acquired moments"
-            subtitle="By number of copies taken off the market in this window — the clearest read on what Top Shot is accumulating."
+            title="Most purchased moments"
+            subtitle="By number of copies bought off the market in this window — the clearest read on what Top Shot is accumulating."
           >
             {data.top_editions_by_count.length === 0 ? (
               <p className="text-sm" style={{ color: "var(--rpc-text-muted)" }}>
-                No acquisitions resolved to an edition in this window.
+                No verified purchases resolved to an edition in this window.
               </p>
             ) : (
               <ol className="space-y-1">
@@ -319,7 +349,7 @@ export default function BuybackDashboard() {
                       </span>
                     </span>
                     <span style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)" }}>
-                      {formatCount(e.acquisitions)}
+                      {formatCount(e.purchases)}
                     </span>
                   </li>
                 ))}

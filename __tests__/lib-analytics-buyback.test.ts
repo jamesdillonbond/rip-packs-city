@@ -2,15 +2,18 @@ import { describe, it, expect } from "vitest"
 
 // Pure-logic tests for the buyback surface's honesty rules.
 //
-// Every case here exists because the naive implementation of the same thing is
-// a false claim: `spend_usd ?? 0` renders 161,366 unpriced acquisitions as "$0
-// spent", which is a statement about Top Shot's behaviour manufactured out of
-// our own collection method. These assert the ABSENCE of the false claim, not
-// merely the presence of a caveat.
+// Two separate false claims are guarded here, and they point in OPPOSITE
+// directions:
+//   * an unpriced purchase must not render as "$0.00" (overstating certainty);
+//   * a small verified count must not render without saying that 161,366
+//     unreliable rows were discarded (understating activity, and reading as
+//     "Top Shot stopped buying").
+// These assert the ABSENCE of the false claim, not merely the presence of copy.
 
 import {
   formatCount,
   formatUsd,
+  exclusionNotice,
   observationNotice,
   spendCoverageNotice,
   walletLabel,
@@ -22,96 +25,105 @@ import {
 } from "@/lib/analytics/buyback"
 
 const wallet = (over: Partial<BuybackWallet> = {}): BuybackWallet => ({
-  address: "0x4d2c9216f1dca098",
-  username: "NBATopShotCommunity",
-  acquisitions: 161366,
-  priced_acquisitions: 0,
-  spend_usd: null,
-  distinct_editions: 1352,
-  spend_known: false,
+  address: "0xe1f2a091f7bb5245",
+  username: "TopShot_Buyback_2",
+  purchases: 431,
+  priced_acquisitions: 431,
+  spend_usd: 10081.93,
+  distinct_editions: 138,
+  spend_known: true,
   ...over,
 })
 
 const totals = (over: Partial<BuybackTotals> = {}): BuybackTotals => ({
-  acquisitions: 161797,
-  priced_acquisitions: 431,
+  purchases: 431,
+  priced_purchases: 431,
   spend_usd: 10081.93,
   spend_known: true,
-  distinct_editions: 1482,
+  distinct_editions: 138,
   active_days: 48,
   ...over,
 })
 
 const coverage = (over: Partial<BuybackCoverage> = {}): BuybackCoverage => ({
   observation_start: "2026-06-09",
-  unpriced_acquisitions: 161366,
-  unpriced_share_pct: 99.7,
+  unpriced_purchases: 0,
   counterparty_known_for: 431,
   date_grain: "day",
+  excluded_snapshot_rows: 161366,
+  excluded_wallets: 1,
+  excluded_reason: "41,301 of 41,307 distinct moments were already held on the first snapshot",
   ...over,
 })
 
 describe("walletSpendDisplay", () => {
   it("an unpriced wallet reads as an em-dash, NEVER as $0", () => {
-    const d = walletSpendDisplay(wallet())
+    const d = walletSpendDisplay(
+      wallet({ spend_known: false, spend_usd: null, priced_acquisitions: 0 })
+    )
     expect(d.known).toBe(false)
     expect(d.text).toBe(NO_FIGURE)
-    // The whole point: the string "$0" must not appear anywhere in the output.
     expect(d.text).not.toMatch(/\$\s*0/)
-    expect(d.note).toMatch(/no price is recorded/i)
+    expect(d.note).toMatch(/no price recorded/i)
   })
 
-  it("a wallet whose spend is genuinely known renders the figure with no caveat", () => {
-    const d = walletSpendDisplay(
-      wallet({ spend_known: true, spend_usd: 10081.93, priced_acquisitions: 431 })
-    )
+  it("a wallet whose spend is known renders the figure with no caveat", () => {
+    const d = walletSpendDisplay(wallet())
     expect(d.known).toBe(true)
     expect(d.text).toBe("$10.1k")
-    // A caveat on a complete figure would cry wolf on the system working.
     expect(d.note).toBeNull()
   })
 
   it("spend_known true but a null total still refuses to invent a number", () => {
-    // Defensive: if the RPC ever reports known-with-null, an em-dash is right
-    // and `$NaN` / `$0` are both wrong.
     const d = walletSpendDisplay(wallet({ spend_known: true, spend_usd: null }))
     expect(d.known).toBe(false)
     expect(d.text).toBe(NO_FIGURE)
   })
 })
 
-describe("spendCoverageNotice", () => {
-  it("discloses the unpriced share when any acquisition is unpriced", () => {
-    const n = spendCoverageNotice(totals(), coverage())
+describe("exclusionNotice", () => {
+  it("states how many unreliable rows were discarded, so a small board is explicable", () => {
+    const n = exclusionNotice(coverage())
     expect(n).not.toBeNull()
-    expect(n!.headline).toContain("431")
-    expect(n!.headline).toContain("161,797")
-    expect(n!.detail).toContain("99.7%")
-    // It must say the acquisitions are real but unpriced — not that they were free.
-    expect(n!.detail).toMatch(/unknown cost — not\s+free/i)
+    expect(n!.headline).toContain("161,366")
+    expect(n!.headline).toMatch(/excluded as unreliable/i)
+    expect(n!.detail).toContain("41,301")
   })
 
-  it("is SUPPRESSED when every acquisition in the window was priced", () => {
-    // A permanent caveat is its own false claim: it tells a reader the number is
-    // partial when it is complete.
+  it("falls back to fixed copy when the RPC supplies no reason", () => {
+    const n = exclusionNotice(coverage({ excluded_reason: null }))
+    expect(n!.detail).toMatch(/wallet walk is unstable/i)
+  })
+
+  it("is SUPPRESSED when nothing was excluded — the note must not outlive the problem", () => {
+    expect(exclusionNotice(coverage({ excluded_snapshot_rows: 0 }))).toBeNull()
+  })
+})
+
+describe("spendCoverageNotice", () => {
+  it("discloses the unpriced share when any purchase is unpriced", () => {
     const n = spendCoverageNotice(
-      totals({ acquisitions: 431, priced_acquisitions: 431 }),
-      coverage({ unpriced_acquisitions: 0, unpriced_share_pct: 0 })
+      totals({ purchases: 500, priced_purchases: 431 }),
+      coverage({ unpriced_purchases: 69 })
     )
-    expect(n).toBeNull()
+    expect(n).not.toBeNull()
+    expect(n!.headline).toContain("431")
+    expect(n!.headline).toContain("500")
+    expect(n!.detail).toMatch(/unknown cost — not free/i)
+  })
+
+  it("is SUPPRESSED when every purchase in the window was priced", () => {
+    // The normal state now that only verified purchases are counted. A standing
+    // caveat here would cry wolf on a complete figure.
+    expect(spendCoverageNotice(totals(), coverage())).toBeNull()
   })
 
   it("is suppressed on an empty window rather than dividing by zero", () => {
     const n = spendCoverageNotice(
-      totals({ acquisitions: 0, priced_acquisitions: 0, spend_usd: 0 }),
-      coverage({ unpriced_acquisitions: 0, unpriced_share_pct: null })
+      totals({ purchases: 0, priced_purchases: 0, spend_usd: 0 }),
+      coverage({ unpriced_purchases: 0 })
     )
     expect(n).toBeNull()
-  })
-
-  it("falls back to raw counts when the percentage is unavailable", () => {
-    const n = spendCoverageNotice(totals(), coverage({ unpriced_share_pct: null }))
-    expect(n!.detail).toContain("161,366")
   })
 })
 
@@ -153,7 +165,7 @@ describe("formatters distinguish absent from zero", () => {
 
 describe("walletLabel", () => {
   it("prefers a resolved username", () => {
-    expect(walletLabel("0x4d2c9216f1dca098", "NBATopShotCommunity")).toBe("NBATopShotCommunity")
+    expect(walletLabel("0xe1f2a091f7bb5245", "TopShot_Buyback_2")).toBe("TopShot_Buyback_2")
   })
 
   it("truncates an unresolved address rather than showing nothing", () => {
