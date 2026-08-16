@@ -2646,15 +2646,25 @@ async function executeTool(
       // strictly worse bug than the one being fixed. Caught by attempting the
       // UPDATE on a live row before shipping the code.
       //
-      // ⚠ AND 0 IS NOT "no FMV condition" — the scanner cannot express that.
-      // `build_deal_alerts_for_subscription` (and the dispatcher it mirrors)
-      // reads `cross_collection_deals_board` with
-      //   discount_pct >= COALESCE(min_discount, 25) AND fmv_usd > 0
-      // so 0 still means "at or below FMV, and priced". A listing ABOVE FMV, or
-      // on an edition with no FMV, cannot fire a subscription at all. A true
-      // price-only alert needs a scanner change, not a tool change — filed, not
-      // done here. `applied_filters` below DISCLOSES the residual condition
-      // rather than letting it be the same invisible filter one notch smaller.
+      // ⚠ 0 NOW MEANS "NO FMV CONDITION", AND IT DID NOT WHEN THIS DEFAULT
+      // SHIPPED. Read this before re-adding any FMV caveat below.
+      //
+      // The first version of this block could only DISCLOSE the residual
+      // condition: both scanners read `cross_collection_deals_board` with
+      // `discount_pct >= COALESCE(min_discount, 25) AND fmv_usd > 0`, so even at
+      // 0 a listing above FMV — or on an edition with no FMV — could not fire.
+      // `audit_20260816_price_only_alerts` REMOVED that: `max_price` present
+      // with `min_discount = 0` is now the sentinel for a price-only pass, which
+      // the scanners serve from `edition_current_ask` (no FMV gate, no price
+      // floor). Measured at the time: the deals board held 111 rows with a $1.00
+      // floor against 4,563 raw asks from $0.33, so the old alert could not fire
+      // at ANY price.
+      //
+      // So 0 is load-bearing in BOTH directions now — it suppresses the default
+      // AND selects the price-only pool. Do not "simplify" it to null (23502)
+      // and do not re-introduce a disclosure that no longer describes the
+      // scanner: a caveat the product has outgrown understates what the alert
+      // does, which is the same class of wrong as the filter it replaced.
       const minDiscount = Number.isFinite(Number(toolInput.min_discount)) && Number(toolInput.min_discount) > 0
         ? Math.min(Number(toolInput.min_discount), 95)
         : explicitMaxPrice != null
@@ -2722,14 +2732,32 @@ async function executeTool(
       const appliedFilters: string[] = [
         explicitMaxPrice != null ? `price at or below $${explicitMaxPrice}` : null,
         minDiscount > 0 ? `at least ${minDiscount}% below FMV` : null,
-        // ⚠ Even at 0 the scanner requires the listing to be at-or-below FMV on
-        // an edition that HAS an FMV, so this is disclosed rather than omitted.
-        // Omitting it would recreate the invisible-filter bug one notch smaller.
-        minDiscount === 0
-          ? "at or below FMV — the deal scanner is FMV-based, so a listing priced ABOVE FMV (or on an edition with no FMV yet) will not fire even if it is under your price"
+        // ⚠ This entry used to disclose the OPPOSITE — that even at 0 the
+        // scanner still required the listing to be at-or-below FMV. That was
+        // true when written and is false since audit_20260816: a price-only
+        // subscription is served from `edition_current_ask`, which has no FMV
+        // gate at all. Stating the old caveat now would tell the user their
+        // alert is NARROWER than it is, which fails the same way the invisible
+        // filter did — the user reads silence as "nothing listed" while a real
+        // over-FMV listing under their cap goes unmentioned. Stated positively
+        // because it is a genuine property of the saved row, not an absence.
+        //
+        // ⚠ `explicitMaxPrice != null` is REDUNDANT TODAY and is kept as intent,
+        // not as a working guard — mutation-checked: dropping it changes nothing,
+        // because the ternary above only yields 0 in the `explicitMaxPrice !=
+        // null` branch. It becomes load-bearing the moment min_discount can
+        // reach 0 by another route (e.g. honouring an explicit `min_discount: 0`
+        // from the model), and it mirrors the scanner's own two-part predicate,
+        // so a reader comparing the two sees the same shape on both sides.
+        minDiscount === 0 && explicitMaxPrice != null
+          ? "FMV is NOT a condition — this fires on price alone, including a listing priced above FMV or on an edition RPC has no FMV for"
           : null,
         arr(toolInput.players)?.length ? `player: ${arr(toolInput.players)!.join(", ")}` : null,
-        arr(toolInput.sets)?.length ? `set: ${arr(toolInput.sets)!.join(", ")}` : null,
+        // ⚠ The scanner matches set names by CONTAINMENT (audit_20260816), so
+        // "Archive" matches "Archive Set" and "Archive Set 1986-87". Saying
+        // `set: Archive` implies an exact match the scanner does not perform,
+        // and the breadth is the user's to know about.
+        arr(toolInput.sets)?.length ? `set name contains: ${arr(toolInput.sets)!.join(", ")}` : null,
         teamNames?.length ? `team: ${teamNames.join(", ")}` : null,
         badgeKeys?.length ? `badge: ${badgeKeys.join(", ")}` : null,
         arr(toolInput.tiers)?.length ? `tier: ${arr(toolInput.tiers)!.join(", ")}` : null,

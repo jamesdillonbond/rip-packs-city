@@ -396,7 +396,7 @@ describe("manage_deal_subscriptions", () => {
     expect(written.min_discount).toBe(25)
   })
 
-  it("reports every saved filter back, including the residual FMV condition", async () => {
+  it("reports every saved filter back, and states that a price-only alert ignores FMV", async () => {
     A.authedEmail = "t@example.com"
     A.userId = "user-1"
     install({
@@ -409,11 +409,52 @@ describe("manage_deal_subscriptions", () => {
     const filters = (r.applied_filters as string[]).join(" | ")
     expect(filters).toMatch(/at or below \$0\.6/i)
     expect(filters).toMatch(/Damian Lillard/)
-    // ⚠ min_discount 0 is NOT "no FMV condition" — the scanner still requires
-    // discount_pct >= 0 and fmv_usd > 0, so an over-FMV listing under the price
-    // cap will not fire. Disclosed, or it is the same invisible filter smaller.
-    expect(filters).toMatch(/at or below FMV/i)
+    // ⚠ THIS ASSERTION IS INVERTED FROM ITS FIRST VERSION, ON PURPOSE. It used
+    // to require the disclosure "at or below FMV — the deal scanner is
+    // FMV-based …", which was TRUE when written: both scanners read
+    // cross_collection_deals_board, so even min_discount 0 kept an FMV gate.
+    // audit_20260816_price_only_alerts removed that gate — a price-only sub is
+    // served from `edition_current_ask`. Keeping the old assertion would have
+    // pinned a caveat that now UNDERSTATES the alert, telling the user it is
+    // narrower than it is; that is the same failure as the invisible filter,
+    // pointing the other way.
+    expect(filters).toMatch(/FMV is NOT a condition/i)
+    expect(filters).not.toMatch(/at or below FMV/i)
     expect(String(r.applied_filters_note)).toMatch(/State EVERY entry/i)
+  })
+
+  // The scanner matches set names by containment since audit_20260816 ("Archive"
+  // matches "Archive Set"), which is the whole reason Trevor's alert could not
+  // fire even once the price gate was removed. The confirmation has to say so —
+  // `set: Archive` implies an exact match the scanner does not perform.
+  it("describes a set filter as containment, not equality", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: { data: { id: "s12", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Archive"], max_price: 0.6 })
+    await POST(post("alert me on Archive at $0.60"))
+    const filters = (toolResult().applied_filters as string[]).join(" | ")
+    expect(filters).toMatch(/set name contains: Archive/i)
+  })
+
+  // ⚠ BOTH DIRECTIONS. An ordinary discount alert must NOT claim FMV is ignored
+  // — it is the alert's main condition. A fix that emitted the new line
+  // unconditionally would be a fresh false statement, not a smaller one.
+  it("a discount alert states its FMV threshold and never claims FMV is ignored", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: { data: { id: "s13", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", players: ["Damian Lillard"], min_discount: 30 })
+    await POST(post("alert me on 30% off Lillard"))
+    const filters = (toolResult().applied_filters as string[]).join(" | ")
+    expect(filters).toMatch(/at least 30% below FMV/i)
+    expect(filters).not.toMatch(/FMV is NOT a condition/i)
   })
 
   it("surfaces a list error rather than an empty subscription set", async () => {
