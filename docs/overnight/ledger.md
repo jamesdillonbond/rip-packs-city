@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — anon could invoke a 45.8 s / 17 GB pack-EV function that nothing calls; anon+authenticated EXECUTE revoked
+
+**Applied to prod** — `audit_20260816_revoke_anon_exec_on_zero_caller_pack_fns` (in `schema_migrations`; committed file byte-identical).
+
+**The finding.** `compute_pack_ev_from_pool_tier_weighted` was **anon-executable** and costs, measured live on dist_id 4184 (largest TS pool, 3,097 rows):
+
+```
+Function Scan ... (actual time=45761.922..45761.923 rows=1 loops=1)
+Buffers: shared hit=2260782 read=24987 dirtied=492 written=3
+Execution Time: 45762.053 ms
+```
+
+**~46 s and ~17.4 GB of buffer traffic per call, and NOTHING IN THE PRODUCT CALLS IT.** Reachability is not theoretical — a `SET LOCAL ROLE anon` probe returned `{"ok":false,"reason":"pool_empty"}`, i.e. it **executed** rather than being denied. The anon key ships in the browser bundle and PostgREST exposes every public function at `/rest/v1/rpc/<name>`; `proxy.ts` is irrelevant (route-gating ≠ data-gating, the 2026-07-19 Panini/Candy lesson), and all four backing tables are anon-SELECTable so it really runs.
+
+⚠ **Severity is AVAILABILITY, not confidentiality.** It is SECURITY INVOKER, so the caller's own RLS applies and it leaks nothing an anon visitor cannot already read. What it offers is **unauthenticated compute amplification**: ~46 s of a pooled connection and ~17 GB of buffers per request on a 2 GB IO-budgeted instance that was **already saturated when this was found** (39 active backends / 27 on IO waits; `fmv-recalc` killed at `maxDuration` on ~63–75% of invocations). A handful of concurrent calls is a full outage, from an unauthenticated client, for free.
+
+⚠ **WHY NOTHING CAUGHT IT — the guard-scope class, again.** `check_secdef_anon_exec_drift()` only considers SECURITY **DEFINER** functions. This one is SECURITY **INVOKER** (`prosecdef=false`), so that check is structurally blind to it however often it runs green. **There are 86 anon-executable INVOKER functions in `public`** — filed as its own item, deliberately not swept here.
+
+**Scope discipline.** Only the two functions that are BOTH anon-executable AND zero-caller were touched, where a revoke cannot break anything. Zero-caller verified three ways each: `pg_proc.prosrc` across all of public (0), `cron.job.command` (0), repo grep across `app/ lib/ workers/ scripts/ supabase/functions/` excluding migration history (0). `score_external_pack_drop` is included for surface reduction only — it is cheap (`external_pack_drops` is 7 rows / 105 moments). ⚠ A prefix-grep trap: `get_pack_detail` looks called but every hit is the *different, live* `get_pack_detail_bundle`.
+
+**Verified after apply.** `has_function_privilege` → anon **false**, authenticated **false**, service_role **true**, owner **true**. Functional probe: anon now raises `insufficient_privilege`. `check_public_security_invariants()` **0 rows**, `check_secdef_anon_exec_drift()` array length **0**, `check_anon_write_surface()` **0 rows** — posture undisturbed. Revoked BOTH halves in one statement (`FROM PUBLIC, anon, authenticated`) because this DB's `ALTER DEFAULT PRIVILEGES` grants explicit anon/authenticated rows a PUBLIC-only revoke leaves behind.
+
+**REVERT:**
+```sql
+GRANT EXECUTE ON FUNCTION public.compute_pack_ev_from_pool_tier_weighted(uuid, text, numeric, integer, jsonb) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.score_external_pack_drop(text, bigint) TO anon, authenticated;
+```
+(`git revert <sha>` restores the migration file but does **not** undo the grant — run the SQL above.)
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "keep going") — building the #418 DETECTOR immediately found a SECOND live instance on a public board, from a different mechanism, on a page nobody had touched
 
 **Code-only (1 client component + 1 new test + 2 e2e files + playwright.config). No DB, migration, cron, edge-fn, auth/`proxy.ts`, hot-wallet, or FMV/pricing change.**
