@@ -13,14 +13,14 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
+import {
+  fetchVerifiedWallets,
+  VERIFIED_WALLETS_UNAVAILABLE,
+  type VerifiedWallet as SavedWallet,
+} from "@/lib/wallet/verified-wallets"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
-
-interface SavedWallet {
-  wallet_addr: string
-  verified_at: string | null
-}
 
 interface SummaryTotals {
   spent_usd: number
@@ -135,6 +135,9 @@ function urlSlug(dbSlug: string): string {
 export default function PackHistoryDashboard() {
   const [wallets, setWallets] = useState<SavedWallet[]>([])
   const [walletsLoading, setWalletsLoading] = useState(true)
+  // ⚠ Distinct from `wallets.length === 0`: an empty list is a real answer
+  // about this account, a failed read is a statement about us.
+  const [walletsFailed, setWalletsFailed] = useState(false)
   const [activeWallet, setActiveWallet] = useState<string | null>(null)
 
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -158,23 +161,9 @@ export default function PackHistoryDashboard() {
     async function load() {
       setWalletsLoading(true)
       try {
-        const res = await fetch("/api/profile/saved-wallets", { cache: "no-store" })
-        if (!res.ok) {
-          if (!cancelled) setWallets([])
-          return
-        }
-        const json = await res.json() as { wallets?: SavedWallet[] }
-        // Collapse to unique wallet_addrs; only retain verified ones.
-        const verifiedSet = new Map<string, SavedWallet>()
-        for (const w of json.wallets ?? []) {
-          if (!w.verified_at) continue
-          const k = w.wallet_addr.toLowerCase()
-          if (!verifiedSet.has(k)) {
-            verifiedSet.set(k, { wallet_addr: k, verified_at: w.verified_at })
-          }
-        }
+        const { wallets: list, ok } = await fetchVerifiedWallets()
         if (cancelled) return
-        const list = Array.from(verifiedSet.values())
+        setWalletsFailed(!ok)
         setWallets(list)
         if (list.length > 0) setActiveWallet(list[0].wallet_addr)
       } finally {
@@ -313,6 +302,18 @@ export default function PackHistoryDashboard() {
         {/* Wallet selector */}
         {walletsLoading ? (
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading wallets…</div>
+        ) : walletsFailed ? (
+          /* ⚠ MUST precede the empty branch. Below it, a failed read tells a
+             collector who HAS verified a wallet that they have none, and points
+             them at the dashboard to redo it. */
+          <div
+            role="status"
+            style={{ padding: 18, border: "1px dashed #444", borderRadius: 8, textAlign: "center" }}
+          >
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
+              {VERIFIED_WALLETS_UNAVAILABLE}
+            </div>
+          </div>
         ) : wallets.length === 0 ? (
           <div style={{ padding: 18, border: "1px dashed #444", borderRadius: 8, textAlign: "center" }}>
             <div style={{ fontFamily: condensedFont, fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
