@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor: "change tomwagmi's URL to w=500") — one-row avatar resize
+
+**What shipped.** `UPDATE public.profile_bio` for `tomwagmi` (`user_id 8f8d5d3d-78d4-4198-863c-8d98629de75a`), `?w=2000` → `?w=500` on the `i2c.seadn.io` avatar. **No code change.**
+
+**Why:** `ogImageDataUri` drops anything over **4 MB**, and a 2000px PNG can plausibly exceed it — in which case the profile page shows the art while the SOCIAL CARD silently falls back to the monogram. 500px is still ~6× the largest place the avatar renders (80px at 2× DPR).
+
+⚠ **Written as a guarded `replace()`, not a literal `SET`** — `... and avatar_url like '%w=2000%'`, so it is a **no-op returning zero rows** if the stored value is not what this entry assumes. It returned one row, so the assumption held. Worth copying for any one-row edit made from a value read earlier in a session.
+
+⚠ **STILL UNVERIFIED FROM HERE, and this does not change that:** `i2c.seadn.io` is blocked from the sandbox (`403 CONNECT`), so neither the old nor the new URL has been fetched by me. `?w=` is seadn's standard resize param and the path is otherwise byte-identical, but **if the avatar disappears entirely, w=500 is the change to undo** — that is the one new risk this introduces, and it is cheaper to check than the cap it avoids.
+
+**Revert:** `UPDATE public.profile_bio SET avatar_url = replace(avatar_url,'w=500','w=2000'), updated_at = now() WHERE user_id = '8f8d5d3d-78d4-4198-863c-8d98629de75a';`
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive, cont.) — `disney-pinnacle/collection` told a collector they hold "Total Pins: 0", under the banner saying the read had failed
 
 **What shipped:** `disney-pinnacle/collection` split to `PinnacleCollectionClient.tsx` (+16 tests), two honesty fixes, ratchets **25 → 24** and **28 → 27**. Product code changed, so this deploys.
