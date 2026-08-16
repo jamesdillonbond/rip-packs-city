@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — drove the pack-events OPENS cursor; the worker gate is 68.71 → 82.12 across the day
+
+**What shipped.** 5 cases on the opens leg of `pack-events-ingest` + worker thresholds **76.2/64.9/77.3/78.9 → 81.6/67.7/81.9/84.4**. Test-only; worker source untouched.
+
+**What the opens cursor does.** Turns "a pack was opened" into the per-moment `moment_acquisitions` rows carrying **`source_pack_rip_id`** — the link that lets the platform say a moment CAME FROM a given pack. Every pack-EV, pull-value and rip-history surface joins on it. ⚠ **Its failure mode is attribution, not an error:** a rip that writes no moment rows just looks like a pack nobody opened.
+
+**Pinned:** `moments_pulled` is the **DEPOSIT** count, not the withdraw count (a pull-value surface divides by it); `source_address` is **read from the Withdraw event, never hardcoded** — the worker's own comment says the custody account "may vary by pack format", and an unmatched deposit must stay **NULL rather than borrow a sibling's** address; rips are keyed **per transaction, not per block**, since grouping by block would merge two collectors' pulls and hand each the other's moments.
+
+⚠ **A MUTATION EXPOSED AN ASSERTION OF MINE THAT COULD NOT TELL A SKIP FROM A CRASH.** The "pack opened with no minted moments is skipped" case had only the bad pack in the batch. Deleting the `continue` makes `txDeposits[0].decoded` throw on the empty array — **and the observable outcome is identical** (0 rips, no such row), so the mutation survived. Fixed by putting a **SIBLING pack in the same batch**: a clean skip leaves it ripped, a crash loses it too. **When you assert that something is skipped, include something that must survive the skip** — otherwise "skipped" and "exploded" are the same assertion.
+
+**Gate across the day: 68.71 → 82.12 st, 59.54 → 68.23 br**, in four earned steps, each re-seated in the commit that earned it. ⚠ **Both files that once dragged it are closed out** — the hydrator 26.3 → 90.6, and all three of `pack-events-ingest`'s production legs (TopShot purchases, AllDay mints, opens) now driven. **What remains is BACKFILL MODE** — a separate cursor set the live path never touches — plus the soft-budget bail-outs, which need a fake clock rather than a fixture.
+
+**Verified:** 358 worker tests green at the new thresholds; `tsc` clean; 4 mutations each reddening only their own assertion, one of them only after the fixture was strengthened.
+
+**Revert:** `git revert <sha>` — removes the 5 cases and restores the previous thresholds. No source, DB or prod change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "work on all of these") — pinned the FMV thin-guard and the offers backstop, and a mutation disproved a claim in my own test comment
 
 **Repo only — NOTHING APPLIED to prod.** One snapshot migration holding both live definitions (byte-identical, no-op to apply). Pins **143 → 145** over **142 → 144** distinct fns; DB test files 141 → 143. **Unpinned scheduled SECDEF writers: 12 → 10.**
