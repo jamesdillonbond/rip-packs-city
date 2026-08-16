@@ -227,6 +227,88 @@ describe("buildMarketSnapshot — special-serial premium", () => {
     expect(no1.fmvMid as number).toBeGreaterThan(base.fmvMid as number)
   })
 
+  // ── THE MULTIPLIERS THEMSELVES ────────────────────────────────────────────
+  //
+  // ⚠ The two cases in this block above assert only RELATIVE ordering
+  // ("greater than the plain model"). That is satisfied by ANY multiplier > 1,
+  // so `#1 Serial` could drift from 1.35 to 1.53 — a 13% move on every #1 in the
+  // catalogue — with the whole suite green. These are FMV-MOVING CONSTANTS on a
+  // platform whose own rules make a pricing change Trevor's call, so the exact
+  // factor is pinned. A legitimate re-fit SHOULD have to edit this test; that is
+  // the point, not friction.
+  //
+  // The ratio is exact rather than base-dependent: `fmvCore` is
+  // `applySerialPremium(base)` when special and `round2(base)` when not, off the
+  // SAME base, so special/plain collapses to the multiplier (round2 on both
+  // sides is why this is toBeCloseTo rather than toBe).
+  //
+  // ⚠ These deliberately do NOT match lib/serials/fun-patterns.ts, and must not
+  // be "reconciled" with it. Those are NOVELTY quirks that carry no premium by
+  // design (Trevor: "they don't get a value bump ... that's part of the
+  // collecting experience"); these encode OBSERVED market premium. Folding
+  // either into the other silently moves FMV for thousands of moments.
+  it.each([
+    ["#1 Serial", 1.35],
+    ["Perfect Mint", 1.18],
+    ["Jersey Match", 1.2],
+    ["First Mint", 1.12],
+    ["Last Mint", 1.08],
+  ])("%s multiplies FMV by exactly %sx", (trait, expected) => {
+    const plain = buildMarketSnapshot(
+      input({ momentId: "mult", truth: truth({ marketBackedLastSale: 100 }) }),
+    )
+    const special = buildMarketSnapshot(
+      input({
+        momentId: "mult",
+        specialSerialTraits: [trait as string],
+        truth: truth({ marketBackedLastSale: 100 }),
+      }),
+    )
+    expect(plain.fmvMid).not.toBeNull()
+    expect(special.fmvMid).not.toBeNull()
+    expect((special.fmvMid as number) / (plain.fmvMid as number)).toBeCloseTo(expected as number, 2)
+  })
+
+  it("stacking is MULTIPLICATIVE, not additive", () => {
+    // 1.35 x 1.18 = 1.593, whereas an additive reading (1 + 0.35 + 0.18) gives
+    // 1.53. Both are "bigger than either alone", so the ordering assertions
+    // below cannot tell them apart — a 4% FMV difference on every moment that
+    // carries two traits.
+    const plain = buildMarketSnapshot(
+      input({ momentId: "mult", truth: truth({ marketBackedLastSale: 100 }) }),
+    )
+    const both = buildMarketSnapshot(
+      input({
+        momentId: "mult",
+        specialSerialTraits: ["#1 Serial", "Perfect Mint"],
+        truth: truth({ marketBackedLastSale: 100 }),
+      }),
+    )
+    expect((both.fmvMid as number) / (plain.fmvMid as number)).toBeCloseTo(1.35 * 1.18, 2)
+  })
+
+  it("an unrecognised trait flags the special method but moves the price by exactly 1x", () => {
+    // ⚠ A real and easy-to-miss split: `hasSpecialSerialPremium` is
+    // `traits.length > 0`, so ANY trait switches fmvMethod to "special serial
+    // premium model" — but `applySerialPremium` only multiplies for the five
+    // NAMED traits. So an unknown trait relabels the method while leaving the
+    // number identical. That is the correct behaviour (an unpriced quirk must
+    // not invent a premium), and it is asserted so that a future edit adding a
+    // catch-all multiplier has to do so deliberately.
+    const plain = buildMarketSnapshot(
+      input({ momentId: "mult", truth: truth({ marketBackedLastSale: 100 }) }),
+    )
+    const unknown = buildMarketSnapshot(
+      input({
+        momentId: "mult",
+        specialSerialTraits: ["Palindrome"],
+        truth: truth({ marketBackedLastSale: 100 }),
+      }),
+    )
+    expect(unknown.fmvMethod).toBe("special serial premium model")
+    expect(unknown.fmvMid).toBe(plain.fmvMid)
+  })
+
   it("stacks multiple trait multipliers", () => {
     const one = buildMarketSnapshot(
       input({

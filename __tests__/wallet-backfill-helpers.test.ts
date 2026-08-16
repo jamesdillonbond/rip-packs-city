@@ -207,6 +207,89 @@ describe("error classifiers", () => {
     expect(isAccessApiInternalServerError(new Error("/v1/scripts only"))).toBe(false)
   })
 
+  // ── NON-Error REJECTIONS ─────────────────────────────────────────────────
+  //
+  // Every classifier is `err instanceof Error ? err.message : String(err)`, and
+  // until now only two of the five had ANY non-Error case — so the `String(err)`
+  // half was dark for the other three. It is not a hypothetical path: FCL and
+  // the Flow REST wrapper both reject with non-Error values in practice.
+  //
+  // ⚠ WHAT THESE PIN IS A REAL LIMITATION, NOT A FIX. `String(err)` on an
+  // OBJECT-shaped rejection yields "[object Object]", so a genuine 1106 arriving
+  // as `{ message: "... 1106 ..." }` is NOT classified — and the consequence is
+  // operational, not cosmetic: storage/computation-limit wallets are marked
+  // `ok: true` with a terminated_reason precisely so they stop counting as
+  // pipeline failures, so a missed classification puts a permanently-unfixable
+  // mega-wallet back into the failure count forever, where it looks like a
+  // regression nobody can clear.
+  //
+  // These tests deliberately DOCUMENT the current behaviour rather than assert
+  // the behaviour I would prefer. Reading `.message` off an object-shaped
+  // rejection would change retry-vs-abort on production wallet ingest, which is
+  // a behaviour change to make deliberately and measure — not a side effect of a
+  // coverage pass. Filed rather than shipped.
+  it("classifiers read a raw STRING rejection (the String(err) half)", () => {
+    expect(isStorageLimitError("Cadence error code 1106 raised")).toBe(true)
+    expect(isComputationLimitError("computation exceeds limit (100000)")).toBe(true)
+    expect(isAccessApiInternalServerError("error=internal server error path=/v1/scripts")).toBe(true)
+    expect(
+      isNoCollectionCapabilityError("Flow script HTTP 400: code = InvalidArgument desc = x"),
+    ).toBe(true)
+  })
+
+  it("an OBJECT-shaped rejection stringifies to [object Object] and is NOT classified", () => {
+    // ⚠ Documented limitation — see the block comment above. If this ever starts
+    // returning true, someone has taught the classifiers to read `.message` off
+    // a non-Error, which is a deliberate change to ingest retry behaviour and
+    // should arrive with a measurement of how many wallets it re-classifies.
+    const objectShaped = { message: "Cadence error code 1106: max interaction with storage" }
+    expect(isStorageLimitError(objectShaped)).toBe(false)
+    expect(isComputationLimitError({ message: "computation exceeds limit (100000)" })).toBe(false)
+    expect(
+      isAccessApiInternalServerError({ message: "error=internal server error /v1/scripts" }),
+    ).toBe(false)
+  })
+
+  it("null / undefined rejections are classified as unknown, never as a limit", () => {
+    // `String(null)` is "null" and `String(undefined)` is "undefined" — neither
+    // matches any pattern, which is the safe direction: an unknown failure must
+    // stay a real failure rather than be silently marked ok:true.
+    for (const bad of [null, undefined, 0, false]) {
+      expect(isStorageLimitError(bad), `${String(bad)} must not read as a storage limit`).toBe(false)
+      expect(isComputationLimitError(bad)).toBe(false)
+      expect(isAccessApiInternalServerError(bad)).toBe(false)
+      expect(isNoCollectionCapabilityError(bad)).toBe(false)
+      expect(isFlowQueryTimeout(bad)).toBe(false)
+    }
+  })
+
+  it("isStorageLimitError is CASE-INSENSITIVE but isAccessApiInternalServerError's shape check is explicit", () => {
+    // The storage/computation classifiers lowercase the message first; the other
+    // two rely on /i flags instead. Both work, and mixing them up when adding a
+    // sixth classifier is the easy mistake — an uppercased upstream message
+    // would silently stop matching a non-/i pattern.
+    expect(isStorageLimitError(new Error("MAX INTERACTION WITH STORAGE EXCEEDED"))).toBe(true)
+    expect(isComputationLimitError(new Error("COMPUTATION EXCEEDS LIMIT (100000)"))).toBe(true)
+    expect(isAccessApiInternalServerError(new Error("ERROR=INTERNAL SERVER ERROR /V1/SCRIPTS"))).toBe(true)
+    expect(
+      isNoCollectionCapabilityError(new Error("FLOW SCRIPT HTTP 400: CODE = INVALIDARGUMENT")),
+    ).toBe(true)
+  })
+
+  it("isNoCollectionCapabilityError's elapsed gate is checked ON the boundary", () => {
+    // ⚠ The guard is `elapsedMs > 10_000`, and a fixture at 4s or 20s passes
+    // whether the comparison is `>` or `>=` and whether the constant is 10s or
+    // 15s — so the existing cases assert far less about the gate than they look
+    // like they do. Exactly 10,000 must still classify (the boundary is
+    // exclusive); one millisecond past must not.
+    const msg = "Flow script HTTP 400: code = InvalidArgument desc = failed to ex"
+    expect(isNoCollectionCapabilityError(new Error(msg), 10_000)).toBe(true)
+    expect(isNoCollectionCapabilityError(new Error(msg), 10_001)).toBe(false)
+    // A non-numeric elapsed is ignored entirely rather than treated as slow —
+    // otherwise omitting the argument would flip the verdict.
+    expect(isNoCollectionCapabilityError(new Error(msg), undefined)).toBe(true)
+  })
+
   it("isNoCollectionCapabilityError requires the 400/InvalidArgument shape and fast elapsed", () => {
     const msg = "Flow script HTTP 400: code = InvalidArgument desc = failed to ex"
     expect(isNoCollectionCapabilityError(new Error(msg))).toBe(true)
