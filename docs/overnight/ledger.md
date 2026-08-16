@@ -20,6 +20,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 Re-confirmed 16:41Z: `v_rpc_trust_health_freshness` still absent from live, still 2 of 8 legs fired — consistent with the schedule, not a stall.
 
+**Post-ship watch, 16:56Z — the split is behaving exactly as predicted.** Jobid **328 fired on its own 16:48Z minute and `succeeded`**, taking it to **3 of 8 legs fired, all on schedule, all successful**. `max(age)` rose **15.25 → 15.95 h** in the same window, which is the **predicted transient** (the un-fired `impossible_parallel` leg ageing toward its 18:48Z fire), not a stall. ⚠ **The falsifier is still the check that matters and is ~2 h out: if the arm has not CLEARED by ~18:55Z, leg 324 did not fire and the split has a real problem.** Expect a ~40-minute **re-breach at ~20:07Z** on the way to steady state — that is the last pre-split timestamp ageing out; **do not open an incident on it.**
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — Trevor: "Do the scanner change so price-only alerts actually ignore FMV") — a price-only alert could not fire, and a SECOND defect would have made the fix change nothing for the one subscription that motivated it
 
 **What shipped.** `audit_20260816_price_only_alerts` (1 migration, 3 objects) + `lib/alerts/format.ts` + `lib/alerts.ts`.
