@@ -16,9 +16,16 @@
 
 const UPSTREAM = "https://nft.paniniamerica.net/onepanini";
 
-// TODO(discovery): the exact static headers the Panini SPA sends to /onepanini
-// (app-version / client-id / content-type / any signed header). Capture from a
-// logged-in session's network tab, then fill here. Do NOT hardcode any user token.
+// TODO(discovery) CLOSED 2026-07-19 — WILL NOT BE FILLED, and this worker will not be
+// deployed. The premise was that /onepanini could be replayed from Cloudflare given the right
+// static headers. It cannot: the request carries a 15-minute SIGNATURE bound to a logged-in
+// session, so there is no set of static headers that makes this work — crafting the GQL call
+// returns 426 regardless of origin IP. That is why the shipped design inverts the approach and
+// lets the SITE sign every request natively in a real logged-in browser
+// (scripts/ingest-panini-runner.mjs), which also means RPC never holds the raw token.
+// The dead-end lanes (crafted GQL → 426, psku derivation, fetch override) are written up in
+// docs/handoff-2026-07-19-panini-catalog-and-candy-offers.md — do not re-derive them.
+// Left inert rather than deleted as the record of a rejected approach.
 const UPSTREAM_HEADERS = {
   "Content-Type": "application/json",
   "Origin": "https://nft.paniniamerica.net",

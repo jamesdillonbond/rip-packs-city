@@ -1,4 +1,20 @@
-// ingest-panini-runner.mjs — Panini Plane-A residential runner (DRAFT / not wired).
+// ingest-panini-runner.mjs — Panini Plane-A residential runner.
+//
+// ⚠⚠ SUPERSEDED 2026-08-16 — THIS FILE IS FROZEN HISTORY. THE LIVE RUNNER IS
+// `scripts/ingest-panini-runner.mjs` (~34 KB vs this 4 KB draft), on Windows Task Scheduler
+// every 4h since 2026-07-25. Read the contract there, never here. Kept only because it is the
+// draft the go-live buildkit was written against.
+//
+// Do not treat anything below as current. Three ways this file actively misleads:
+//   1. `loadPskus()` returns ONE hardcoded sample; the live runner enumerates via a dual path
+//      (network getMarketPlaceList interception + a DOM harvest of the virtualized grid).
+//   2. PACK_URLS is missing FOTL and carries a stale Hobby listing id.
+//   3. ⚠ The psku sample below encodes the OLD, WRONG field order. The format is
+//      `packcard-<setId>_<parallelSetId>_<cardId>_<playerId>` (corrected 2026-07-19 — the last
+//      two fields were swapped). CLAUDE.md flags this exact correction; a session reading the
+//      shape off this draft reproduces the bug the correction exists to prevent.
+//
+// All three TODOs below are RESOLVED — see each one in place.
 //
 // Runs on a RESIDENTIAL machine with a Chrome profile already logged into
 // nft.paniniamerica.net. It drives that logged-in session with Playwright, lets the
@@ -26,12 +42,22 @@ const BASE = "https://nft.paniniamerica.net";
 // Pack pages: /marketplace-details/subpack-<x>-<pack_id>.html  (Hobby pack_id 1038 confirmed).
 const PACK_URLS = [
   `${BASE}/marketplace-details/subpack-5242848-1038.html`, // Hobby — confirmed
-  // TODO(go-live): + the FOTL pack page (its pack_id), + any craft/challenge packs.
+  // TODO(go-live) RESOLVED 2026-07-16 — FOTL was captured as pack_id 1039 and is live in
+  // scripts/ingest-panini-runner.mjs alongside Hobby (1038). Craft/challenge packs were NOT
+  // added and that is deliberate, not an omission: they have no marketplace listing page to
+  // walk. Do not re-open this against the draft's stale Hobby listing id above.
 ];
 
 // Edition pages: /marketplace-details/<psku>.html
-// TODO(go-live): populate the full psku list from the grid-enumeration capture
-// (getMarketPlaceList-style call on /marketplace/nfts.html). One per (player × parallel).
+// TODO(go-live) RESOLVED 2026-07-16/19 — the live runner enumerates by BOTH (a) intercepting
+// the grid getMarketPlaceList response and (b) scrolling the virtualized grid and scraping
+// packcard-<...> pskus out of the card-image srcs, because (a) alone misses cards whose
+// response fired before the listener attached. ⚠ Enumeration is LISTING-GATED and cannot be
+// completed here — an edition enters the index only once listed, so coverage is a floor, not a
+// census (measured 38.8% on 2026-08-02 and it drifts as the denominator grows). Panini exposes
+// no full-checklist route, so the answer shipped was to DISCLOSE the gap on the public surface
+// (panini_coverage_summary → the "floor, not a census" banner + meta.coverage), not to finish
+// this list. Do not re-derive the dead ends (crafted GQL → 426, offline psku derivation).
 function loadPskus() {
   if (process.env.PANINI_PSKU_FILE && fs.existsSync(process.env.PANINI_PSKU_FILE)) {
     return fs.readFileSync(process.env.PANINI_PSKU_FILE, "utf8").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
