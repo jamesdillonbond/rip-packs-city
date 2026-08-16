@@ -161,7 +161,14 @@ const APP_DIR = join(process.cwd(), "app")
  * The conversion found a live defect: the retry queue's rows table rendered "No rows for this
  * filter" on a FAILED read — the queue reported as CLEAR out of our own outage, on the one
  * screen an operator uses to decide whether the drain is working. */
-const BUDGET = 19
+/* 19 -> 17: `[collection]/packs/simulator/[distId]` and `dashboard/api-keys` moved into
+ * `PackSimulatorClient.tsx` / `ApiKeysClient.tsx`, covered by
+ * `__tests__/component-SimulatorAndApiKeys.test.tsx`. The simulator carried a live defect —
+ * on any failed read it rendered "Drop pool not indexed — usually because it's sold out and
+ * being secondary-traded", a specific factual claim about the collector's pack manufactured
+ * from our own outage, and a terminal one (it says the simulator will never work here, so
+ * they leave rather than retry). api-keys was already clean; that half is coverage. */
+const BUDGET = 17
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
