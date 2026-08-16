@@ -111,7 +111,13 @@ const USE_CLIENT = /^\s*["']use client["']/
  * sweep; what the conversion buys is that the FOUR-WAY per-collection endpoint switch, the
  * retryable-vs-fatal split (deep-audit D3) and the `[object Object]` guard on the error
  * banner are now driven rather than grepped. */
-const BUDGET = 13
+/* 13 -> 12: `/alerts` moved into `AlertsClient.tsx`, covered by
+ * `__tests__/component-AlertsClient.test.tsx`. Already clean — and unusually thoroughly:
+ * failure is tracked PER LEG (channels / subscriptions / FMV alerts), because every empty
+ * state on that page is a claim about the READER'S OWN account and one shared flag would
+ * blank all three whenever any one hiccuped. The three legs are now driven independently,
+ * which is the only way to prove they really are independent. */
+const BUDGET = 12
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

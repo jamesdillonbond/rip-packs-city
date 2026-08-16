@@ -190,7 +190,13 @@ const APP_DIR = join(process.cwd(), "app")
  * sweep; what the conversion buys is that the FOUR-WAY per-collection endpoint switch, the
  * retryable-vs-fatal split (deep-audit D3) and the `[object Object]` guard on the error
  * banner are now driven rather than grepped. */
-const BUDGET = 10
+/* 10 -> 9: `/alerts` moved into `AlertsClient.tsx`, covered by
+ * `__tests__/component-AlertsClient.test.tsx`. Already clean — and unusually thoroughly:
+ * failure is tracked PER LEG (channels / subscriptions / FMV alerts), because every empty
+ * state on that page is a claim about the READER'S OWN account and one shared flag would
+ * blank all three whenever any one hiccuped. The three legs are now driven independently,
+ * which is the only way to prove they really are independent. */
+const BUDGET = 9
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
