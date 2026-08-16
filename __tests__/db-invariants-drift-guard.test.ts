@@ -838,6 +838,137 @@ const PINS = [
       "supabase/migrations/20260815203500_audit_20260815_snapshot_prune_pipeline_runs.sql",
   },
   {
+  // ── Trust-board precompute legs (8) ───────────────────────────────────────
+  //
+  // ⚠ THESE ENTERED THE "SCHEDULED WRITER" POPULATION WITH NO CODE CHANGE AT ALL.
+  // CLAUDE.md recorded that surface CLOSED at 52/52 on 2026-08-16. Re-derived the same
+  // day with the same predicate it was 52 of 63, and eight of the eleven newcomers are
+  // these legs: the 8-way cron split retired the monolithic orchestrator (jobid 287) and
+  // created per-leg jobs 324-331, so each leg's NAME now appears directly in
+  // cron.job.command where previously only the orchestrator's did.
+  //
+  // The lesson is worth more than the pins: a closed-set claim over "scheduled X" can be
+  // REOPENED BY A PURE SCHEDULING CHANGE. The pin count never fell; the population grew.
+  // Re-derive it, do not quote it.
+  //
+  // Stakes: these ten-odd metrics ARE the trust board, and v_rpc_trust_health has no
+  // per-metric age column — so a leg that writes a WRONG value is indistinguishable from
+  // one that wrote a right one. The max-age arm cannot see a value that is fresh and wrong.
+  //
+  // Every leg test also pins the same documented defect in both directions: the 999
+  // sentinel fires on an ordinary error and CANNOT fire on a statement timeout, because
+  // PostgreSQL excludes QUERY_CANCELED from `WHEN OTHERS`. That is current behaviour and
+  // deliberately unfixed (the fix was shipped and reverted on 2026-08-15, `255e7d24`).
+  //
+  // Writes the ten per-collection FMV coverage arms. ⚠ Its two COALESCE(...,0) defaults
+  // point in OPPOSITE directions for the identical absence: 0% stale reads as PERFECT,
+  // 0% high/med share reads as WORST. Pinned, not endorsed.
+    fn: "rpc_thp_leg_fmv_coverage",
+    test: "supabase/tests/rpc_thp_leg_fmv_coverage.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // Parallel-only, known-circulation-only. Both filters asserted in both directions:
+  // without the second, a catalog gap (circulation 0) would read as mass conflation.
+    fn: "rpc_thp_leg_impossible_parallel",
+    test: "supabase/tests/rpc_thp_leg_impossible_parallel.sql",
+    migration:
+      "supabase/migrations/20260810230704_audit_20260810_precompute_split_m3a_widen_impossible_parallel_budget.sql",
+  },
+  {
+  // ⚠ Two deliberate blind spots pinned because they look like health: a collection under
+  // the 200-sample floor is INVISIBLE rather than safe, and with nothing over the floor the
+  // arm publishes 0 — a platform-wide ingest stop reads as perfect serial supply.
+    fn: "rpc_thp_leg_serial_supply",
+    test: "supabase/tests/rpc_thp_leg_serial_supply.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // The one leg whose sentinel is reachable WITHOUT an exception (empty history ->
+  // NULLIF -> COALESCE 999). ⚠ It can also go NEGATIVE when more packs are published than
+  // priced, which reads as very healthy against an upper-bound threshold.
+    fn: "rpc_thp_leg_pack_ev",
+    test: "supabase/tests/rpc_thp_leg_pack_ev.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // ⚠ THE MODEL FOR THE OTHERS: an incomplete sweep publishes 999 (INCONCLUSIVE), never
+  // the partial numbers it did collect. Compare rpc_thp_leg_fmv_coverage, which publishes a
+  // hard 0 for its own absence and so reads as perfect.
+    fn: "rpc_thp_leg_board_liveness",
+    test: "supabase/tests/rpc_thp_leg_board_liveness.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // Dry days is a CURRENT-STREAK counter (running bool_or from the newest day backwards),
+  // not a total — which is why +1/day on the breached arm is the outage continuing rather
+  // than new information, and why one captured day resets it to 0 immediately.
+    fn: "rpc_thp_leg_panini",
+    test: "supabase/tests/rpc_thp_leg_panini.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // Thin by design; pinned for the one thing it cannot express — an empty view and a view
+  // that stopped being populated both publish 0.
+    fn: "rpc_thp_leg_fmv_sanity",
+    test: "supabase/tests/rpc_thp_leg_fmv_sanity.sql",
+    migration:
+      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+  },
+  {
+  // Reads pinnacle_fmv_history, which is a TRIGGER-written copy of pinnacle_catalog rather
+  // than an independent source — so this arm's denominator is not the catalogue.
+    fn: "rpc_thp_leg_pinnacle_fmv_share",
+    test: "supabase/tests/rpc_thp_leg_pinnacle_fmv_share.sql",
+    migration:
+      "supabase/migrations/20260811012334_audit_20260811_precompute_leg_pinnacle_fmv_share_d34.sql",
+  },
+  {
+  // ── Non-SECDEF scheduled writers (3) ──────────────────────────────────────
+  //
+  // ⚠ The other three of the eleven. They were missed because the sweep that produced the
+  // "52 of 52" claim was scoped to SECURITY DEFINER functions, and these are not. A
+  // predicate's scope is the first thing to question when a closed set turns out not to be.
+  //
+  // The Pinnacle FMV writer — a PRICING writer. Pins that an ASK-derived price never
+  // overwrites a sales-derived one, that an absurd floor is rejected BEFORE it can reach the
+  // price chart, and that a vanished floor reverts to NO_DATA rather than leaving a stale
+  // ask standing as a current price.
+    fn: "pinnacle_fmv_recalc_render_all",
+    test: "supabase/tests/pinnacle_fmv_recalc_render_all.sql",
+    migration:
+      "supabase/migrations/20260623161114_pinnacle_ask_only_cover_null_confidence.sql",
+  },
+  {
+  // Shares a file with the writer above, because the defect lives in their INTERACTION:
+  // NOW() is transaction-stable, so both of that function's passes stamp one fmv_computed_at
+  // and collide on this trigger's (render_id, computed_at) key. While that resolved to DO
+  // NOTHING it discarded the PUBLISHED revision for 776 renders. Measured live 2026-08-16
+  // after the DO UPDATE fix: 0 renders differ. ⚠ CLAUDE.md still describes this as open in
+  // two places; the test asserts the fixed behaviour so a revert reds.
+    fn: "pinnacle_catalog_fmv_history_capture",
+    test: "supabase/tests/pinnacle_fmv_recalc_render_all.sql",
+    migration:
+      "supabase/migrations/20260815172945_audit_20260815_pinnacle_fmv_history_keep_last_write_per_timestamp.sql",
+  },
+  {
+  // ⚠ Was UNPINNABLE: its only committed migration declared a zero-argument FUNCTION while
+  // live is a three-argument PROCEDURE with a soft deadline and per-wallet COMMITs — drift
+  // that `db:pins:check` was structurally blind to, because it only reads functions already
+  // in this array. The snapshot migration above captures the live body.
+  // ⚠ Its test cannot use the suite's BEGIN/ROLLBACK isolation (a COMMIT inside an explicit
+  // transaction raises 2D000); it runs in a throwaway DATABASE instead. See the file header.
+    fn: "reconcile_all_saved_wallet_stats",
+    test: "supabase/tests/reconcile_all_saved_wallet_stats.sql",
+    migration:
+      "supabase/migrations/20260816181600_audit_20260816_snapshot_reconcile_all_saved_wallet_stats.sql",
+  },
+  {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
     // destructive-op circuit breaker, so this pin is the ONLY remaining check
     // on what it deletes from wallet_moments_cache. Pins that the SURVIVOR is
@@ -1394,17 +1525,35 @@ const PINS = [
  * of a function commented out (e.g. in a REVERT note), so a naive indexOf would
  * latch onto the stale commented copy and compare the wrong DDL.
  */
+// ⚠ PROCEDURE, not just FUNCTION. This looked for `CREATE OR REPLACE FUNCTION` only
+// until 2026-08-16, which made every PROCEDURE in this database UNPINNABLE — the
+// extractor returned null and the pin could not be added at all. Postgres treats the
+// two as separate object kinds and pg_proc holds both (prokind 'f' vs 'p'), so a
+// scheduled writer that happens to be a procedure was outside this guard's reach BY
+// CONSTRUCTION, however often it ran green. `reconcile_all_saved_wallet_stats` is one
+// (it COMMITs per wallet, which is only legal in a procedure); so is the trust-board
+// orchestrator `rpc_trust_health_precompute_refresh_p`.
+//
+// It failed SAFE rather than silently — a missing extraction reds the pin's own test —
+// but "safe" here meant the pin could never be written, which is indistinguishable from
+// nobody having got round to it. That is the same shape as the other scope blind spots
+// in this repo: the guard's own predicate decided what it was able to see.
+const FN_KINDS = ["FUNCTION", "PROCEDURE"] as const
+
 function findFnStart(src: string, name: string): number {
-  const needle = `CREATE OR REPLACE FUNCTION public.${name}`
-  let from = 0
-  for (;;) {
-    const idx = src.indexOf(needle, from)
-    if (idx < 0) return -1
-    const lineStart = src.lastIndexOf("\n", idx) + 1
-    // if the same line has a `--` before the match, it's a comment — skip it.
-    if (!src.slice(lineStart, idx).includes("--")) return idx
-    from = idx + needle.length
+  for (const kind of FN_KINDS) {
+    const needle = `CREATE OR REPLACE ${kind} public.${name}`
+    let from = 0
+    for (;;) {
+      const idx = src.indexOf(needle, from)
+      if (idx < 0) break
+      const lineStart = src.lastIndexOf("\n", idx) + 1
+      // if the same line has a `--` before the match, it's a comment — skip it.
+      if (!src.slice(lineStart, idx).includes("--")) return idx
+      from = idx + needle.length
+    }
   }
+  return -1
 }
 
 /**
@@ -1425,6 +1574,36 @@ function extractSqlFn(src: string, name: string): string | null {
   if (semi < 0) return null
   return rest.slice(0, semi + 1).replace(/\s+/g, " ").trim()
 }
+
+describe("the extractor itself handles both object kinds", () => {
+  // Guards the guard. Without this, narrowing findFnStart back to FUNCTION-only would
+  // simply make every procedure pin fail with "not found" — which reads like a bad path
+  // or a renamed function, not like a lost capability.
+  const FN = `CREATE OR REPLACE FUNCTION public.zz_probe()\n RETURNS void LANGUAGE plpgsql\nAS $fn$ BEGIN NULL; END $fn$;\n`
+  const PROC = `CREATE OR REPLACE PROCEDURE public.zz_probe(IN a integer)\n LANGUAGE plpgsql\nAS $procedure$ BEGIN COMMIT; END $procedure$;\n`
+
+  it("extracts a FUNCTION", () => {
+    expect(extractSqlFn(FN, "zz_probe")).toContain("CREATE OR REPLACE FUNCTION public.zz_probe")
+  })
+
+  it("extracts a PROCEDURE", () => {
+    expect(extractSqlFn(PROC, "zz_probe")).toContain("CREATE OR REPLACE PROCEDURE public.zz_probe")
+  })
+
+  it("still skips a commented-out declaration of either kind", () => {
+    expect(extractSqlFn(`-- ${FN}`, "zz_probe")).toBeNull()
+    expect(extractSqlFn(`-- ${PROC}`, "zz_probe")).toBeNull()
+  })
+
+  it("at least one pin is actually a PROCEDURE, so the capability is exercised for real", () => {
+    // Not vacuous, and satisfiable at any population > 0: if the last procedure pin is
+    // ever removed this reds, prompting a decision rather than silent rot.
+    const procPins = PINS.filter(({ test }) =>
+      /CREATE OR REPLACE PROCEDURE public\./.test(readFileSync(path.join(root, test), "utf8")),
+    )
+    expect(procPins.length).toBeGreaterThan(0)
+  })
+})
 
 describe("DB-invariant drift guard — embedded DDL must equal the committed migration", () => {
   it.each(PINS)("$fn: the SQL test's copy is byte-identical (normalized) to its migration", ({ fn, test, migration }) => {
