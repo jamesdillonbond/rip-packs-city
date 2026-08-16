@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. ×4 — "keep going") — `search_live_deals` had NO error path at all, and a surviving mutation proved my first fix was the wrong shape
+
+**Swept the remaining 33 concierge tools for the class this thread has been chasing**, by counting per-tool whether a bare `catch` can reach a `no_results` return. One tool came back with **`error=0`** — no error exit anywhere: `search_live_deals`, the most-used deal tool on the platform.
+
+⚠ **THREE WAYS TO FAIL, ALL LANDING ON "No deals found matching those criteria."** The sniper-feed leg was `catch { /* fall through to catalog */ }`; the catalog leg was `catch { /* silent */ }`; and the catalog query **never destructured `error` at all** — `const { data: rows } = await query` — so a Postgres timeout left `rows` null and fell straight through. supabase-js RETURNS errors rather than throwing, so that `catch` could never have seen a DB failure in the first place. A feed outage and a statement timeout were both reported to the collector as a **fact about the market**. The system prompt's *"an errored tool is NOT an empty result"* rule cannot work when the tool never says it errored.
+
+⚠ **THE PART WORTH KEEPING: MY FIRST FIX WAS `liveFeedFailed && catalogFailed`, AND A SURVIVING MUTATION KILLED IT.** Flipping `&&` to `||` reddened nothing, and chasing why showed the predicate was wrong in both directions — **the two sources are not equal and neither operator expresses that**:
+- the **sniper feed is authoritative**; if it answered, its empty result is a real answer and erroring would cry wolf on a working system, whatever the fallback did;
+- **`cached_listings` is a thin fallback** — measured this session at **301 rows, 100% Flowty, 51 sets** — so "feed down + fallback empty" is *absence of evidence, not evidence of absence*, and must not read as "there are no deals".
+
+The correct predicate is neither: **`if (liveFeedFailed)`** at the terminal exit (reaching that line already means the fallback produced no rows). Pinned in BOTH directions — feed-down + fallback-empty must ERROR, feed-healthy-empty + fallback-ERRORED must stay `no_results` — and all three mutations (`&&`, `||`, branch removed) now red. **A mutation that survives is not always a missing test; sometimes it is telling you the predicate is wrong.**
+
+**Also:** the terminal error carries `fallback_also_failed` so the two cases stay distinguishable in the transcript, and the driver's message never reaches the model (asserted).
+
+⚠ **The sweep's other four hits were checked and are NOT defects** — `get_edition_listings`, `search_catalog`, `get_price_history` and `find_quirky_serials` all carry real `"error"` exits alongside their bare catches (their swallows are on genuinely supplementary legs). **A bare-catch count is a search heuristic, not a defect count** — the same caveat a concurrent session recorded for the sniper page hours earlier, independently reached.
+
+**Verified.** `tsc` clean; primary suite **12,326 passed / 1,235 files / 0 failures**; coverage **91.73 / 79.12 / 93.41 / 93.81** against the 91.3 / 78.6 / 93.1 / 93.4 ratchet.
+
+⚠ **NOT verified by HTTP round-trip** — the sandbox proxy blocks `rippackscity.com`.
+
+**Revert:** `git revert <sha>` — restores the swallows and the missing error exit. **No DB change, no migration, no cron, no auth/`proxy.ts` change, no FMV/pricing math touched.**
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — lowered the raw-parse ratchet 17 → 15, and the two conversions were NOT of equal severity: one PUBLIC board was showing one filter's rows under another filter's label
 
 **What (2 client files + 2 test files + the ratchet; no DB / migration / cron / auth / FMV-math):** worked down the ratchet installed hours earlier, per its own rule (*lower the number in the same commit that converts a file*). Population **17 sites / 5 files → 15 / 3**.
