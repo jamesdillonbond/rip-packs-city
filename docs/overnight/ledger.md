@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, interactive — session wrap) — recorded the TODO session to CLAUDE.md Recent sessions; the two shipped fixes are UNVERIFIED in prod and the checks are named
+
+**What shipped:** `CLAUDE.md` (one Recent-sessions entry) — no code, no DB, no prod change. No tail roll due (the section still spans Aug 16 · 15 · 14).
+
+- **Why it is worth an entry at all:** the literal ask ("find a TODO, implement one") resolved in minutes because the backlog is genuinely empty — everything of value came from following ONE incidental finding, and it ended on a live 12.4 h pricing outage. The durable lessons are the retry-vs-cadence rule, the `queryWithRetry` factory property, the falsifier's 53-second margin, and three filed plans that measurement killed.
+- ⚠ **THE HANDOFF ITEM: the `fmv-recalc` retry is UNVERIFIED in production.** Deploy went READY 19:34:29Z; the last tick was 19:30:52Z and none had run by 19:46Z. **Judge it by `cursor_after` advancing off `'0'` and `rows_written > 0` — not by the commit, and not by `ok` alone.** Tonight's 13:30Z `ownership-onchain-walk` tick validates the other retry AND the new sentinel arm in one shot.
+- **Expected tonight and NOT a regression:** the trust arm re-breaches ~20:07Z for ~40 min (leg 326's pre-split 07:07:21Z write ageing past 13 h) and goes green for good at 20:48Z. Confirmed on the way out at 19:38Z: arm **12.56 · ok**, leg 326 at 12.52 h — on schedule.
+- **One unexplained number left on the record rather than smoothed over:** on 08-14 `ownership-onchain-walk` logged `vanished` **1,960** exceeding `confirmed` **1,748** — >50% of Dune-attributed NFTs in that batch no longer held. Plausible for stale small wallets, but it is the one figure I could not derive from batch composition.
+
+**Revert:** `git revert <sha>` — docs-only.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the buyback board's own headline was an artifact: 41,301 of 41,307 "acquired" moments were already in the wallet
 
 **Correcting the surface I shipped hours earlier in this same session.** It published **161,797 moments acquired**. The true figure is **~6**. The board now counts only verified marketplace purchases (431 all-time, $10,081.93) and discloses what it discarded.
