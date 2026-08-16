@@ -33,6 +33,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert:** `git revert <sha>` — docs only.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive, cont. — "Proceed") — my deploy ERRORED on a page I never touched, and chasing it found the board cache's fallback is unbounded
+
+**What shipped.** `lib/insights/board-cache.ts` — both snapshot legs of `readBoardOrLive` are now time-bounded (`BOARD_SNAPSHOT_TIMEOUT_MS` = 3s), plus 4 cases in `__tests__/lib-insights-board-cache.test.ts`.
+
+**How it was found.** Deploy `dpl_J4xD1YB7CfBtvwFABcBuhmU3SFuX` for `ff3cae84` came back **ERROR** — `Export encountered an error on /insights/deals/page` — a page **none of my five files touch**, during the documented disk-IO saturation class. Caught only by checking the deploy state PER COMMIT; production aliases never moved, so www stayed on the last good build.
+
+⚠ **THE GAP, and why it looked safe.** `readBoardSnapshot` try/catches to `null`, so it **cannot throw** — which is exactly what hid the problem. It was **UNBOUNDED**, and `readBoardOrLive` calls it **twice** (fresh check, then stale fallback) around the 8s live bound. Under the pool saturation the cache exists to survive, a one-row lookup can sit in an acquire queue for tens of seconds, so **the ladder's own worst case could exceed Next's 60s per-page export budget and fail the whole build.** Bounded, the worst case is 3 + 8 + 3 = **14s**.
+
+⚠ **`insights-server-pages-bound-their-reads` PASSED THE WHOLE TIME, AND CORRECTLY.** It checks the PAGE for an approved primitive, and `readBoardOrLive` is one. **The unbounded leg was INSIDE the primitive**, a level below anywhere that guard looks — the guard-scope shape this repo keeps paying for, met one layer down. The remedy CLAUDE.md records for this class ("all 26 pages bound their reads, unbounded count ZERO") is true and was not sufficient.
+
+⚠ **STATED PLAINLY: I have NOT proven this caused that build failure.** The logs show many boards hitting their 8s bound and degrading correctly, then deals failing; they do not identify which leg consumed the budget. The gap is real and could produce exactly this failure. **A plausible mechanism is not a measurement** — recorded as a fix for a real gap, not as a root cause.
+
+⚠ **My first hypothesis was WRONG and reading the code killed it**: I expected `readBoardSnapshot` to THROW and propagate. It cannot. The finding only appeared once I stopped looking for a throw and asked what could HANG.
+
+**The fixture is a read that never settles** — a throwing read was already covered and is a different, cheap failure. `liveWithinBudget` is now a one-line delegate to a shared `withinBudget`, so no second primitive. 3 mutations, all red: un-bounding either leg reds its own case, and turning the ceiling into a floor reds 12.
+
+Verified: `tsc` clean · primary **12,538 / 1,249 files** · 18 pre-existing board-cache cases unchanged.
+
+**Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet or FMV change.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive) — Panini lost 3 of 6 walks overnight: the box doze-hibernated to S4 and `WakeToRun` is INERT on battery
 
 Docs-only, operator action surfaced. `panini-ingest` last ran **2026-08-15 18:58 PT** and the **22:00 / 02:00 / 06:00 walks never fired** — zero `pipeline_runs` rows, a **12.8 h** outage, and **2026-08-16 is a live zero-day**. Measured the chain end to end on the box: the scheduled task is **innocent** (`WakeToRun: True`, `StartWhenAvailable: True`, battery-permissive, `LastTaskResult: 0`), but the power event log shows **`S4 Doze to Hibernate` at 21:26 PT** resuming only at 07:41 on a human wake, `HIBERNATEIDLE` is **45 min on DC / never on AC**, and **`RTCWAKE` ("Allow wake timers") is DISABLED on DC / enabled on AC** — with the box on battery.
