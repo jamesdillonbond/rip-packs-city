@@ -1,40 +1,43 @@
 {
-  "captured_at_utc": "2026-08-15T08:10:00Z",
-  "run": "rpc-nightly-autonomous-pass (01:05 PT Aug 15; MONITOR + NO-PUSH, 8th consecutive night)",
-  "mode": "Genuine overnight window (DB now() 08:05Z = 01:05 PT, no clock skew: FMV computed_at 08:02Z confirms real time). Normal shipping WOULD be allowed, but sandbox shell is DOWN (useradd exit 12, /sessions no-space) so git is unavailable -> NO-PUSH: DB migrations + artifact repairs + Supabase/Vercel/Sentry MCP + mount file access all GREEN; code commits/deploys impossible. ALSO deferred DB writes: instance is in an active disk-IO saturation spell (statement timeouts across pipelines + pg_cron MV refreshes), so a new migration/CIC is the wrong time; no additive-DB candidate queued anyway. Shipped 0 / reverted 0 / repaired 0. Outputs on MOUNT, UNPUSHED.",
+  "captured_at_utc": "2026-08-16T14:46:07Z",
+  "run": "rpc-nightly-autonomous-pass (07:46 PT Aug 16; OFF-HOURS + MONITOR + NO-PUSH, 9th consecutive night)",
+  "mode": "Real time from DB (now() 14:44Z, corroborated by max sales.ingested_at 14:44Z + fmv computed_at 14:40Z, no clock skew). 14:44Z = 07:44 PT = OUTSIDE 00:00-06:00 -> late/morning launch -> OFF-HOURS monitor: queue, do not ship. ALSO sandbox shell DOWN (useradd exit 12, /sessions no-space, failed identically twice) -> git unavailable -> NO-PUSH. DB/Vercel/Sentry MCP + mount file access all GREEN. Shipped 0 / reverted 0 / repaired 0. Outputs on MOUNT, UNPUSHED.",
   "capabilities": {
     "device_bash": "DOWN (useradd exit 12, /sessions no-space; failed identically twice)",
     "git": "UNAVAILABLE (no shell -> no clone, no push)",
-    "supabase_mcp": "GREEN (reads; rpc_ops_snapshot FMV-share leg + sales.ingested_at scans time out under saturation -> used per-leg checks)",
-    "vercel_mcp": "GREEN (list_deployments; 0 ERROR in last 20)",
+    "supabase_mcp": "GREEN (rpc_ops_snapshot ran full this time; pg_cron failures + security all queried clean)",
+    "vercel_mcp": "GREEN (20 recent: 14 READY / 6 CANCELED / 0 ERROR)",
     "sentry_mcp": "GREEN (0 new / 0 regressed / 48h)",
     "cowork_artifacts": "GREEN (11 artifacts, none flagged broken)",
     "mount_file_access": "GREEN"
   },
-  "prod_deploy": "15c7dc4f (refactor(smoke): retire tautological Pinnacle FMV drift guard) READY = current production. A concurrent Claude Code session pushed a large batch since the prior run; Trevor's c25e0f5 committed the stranded 08-14 NO-PUSH artifacts + 2 corrections. All 20 recent deploys READY or CANCELED (docs-only ignoreCommand skips / superseded builds) -> ZERO ERROR.",
+  "prod_deploy": "1073691d (test(guard): freeze the account-level empty-collapse idiom) READY = current production tip, the Aug-16 Claude Code server-page honesty sweep. 0 ERROR deploys in last 20.",
   "shipped_this_run": 0,
   "reverted_this_run": 0,
   "repaired_this_run": 0,
   "security": { "invariants": [], "anon_write_holes": [], "rls_off_base_tables": [], "secdef_anon_violations": [] },
-  "db_size_mb": 12929,
+  "db_size_mb": 13074,
   "sentry_new_or_regressed_48h": 0,
+  "sentinel_ts_uuid_editions_48h": 0,
+  "editions_by_collection": { "nba_top_shot": 19773, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125 },
+  "fmv_high_med": { "nba_top_shot": 7496, "nfl_all_day": 1672, "laliga_golazos": 5, "ufc_strike": 0 },
   "trust_health_breaches": {
-    "panini_sale_price_capture_dry_days": { "value": 18, "breach_at": 3, "class": "KNOWN - home-box Panini runner outage; operator-owned. FMV fresh; only new-price CAPTURE dry. +1/day as expected (17->18)." },
-    "public_board_slow_count": { "value": 9, "breach_at": 1, "class": "KNOWN - saturation collateral, oscillating (16 on 08-11, 1 on 08-14 03:12Z, 6 at 05:16Z, 9 now). public_board_empty_count 0 -> no board broken/empty." },
-    "unmapped_resolution_backlog_max": { "value": "AllDay floor 47524 actionable of 106070 (58546 multi-NFT frozen)", "breach_at": 100, "class": "KNOWN - AllDay permanent-class floor; net-draining (inflow 43/24h < outflow 74/24h)." }
+    "fmv_sweep_wedge_hours": { "value": 7.97, "breach_at": 3, "class": "KNOWN - saturation collateral, OSCILLATING (7.40 08-15 15:20PT -> 9.35 evening peak 00:15Z -> 7.97 now, eased back)." },
+    "trust_precompute_max_age_hours": { "value": 13.78, "breach_at": 13, "class": "KNOWN - board watching itself; trust-precompute-refresh (jobid 287) leg timing out -> partial refresh. Eased from 17.09 (00:15Z) to just-over-breach." },
+    "public_board_slow_count": { "value": 12, "breach_at": 1, "class": "KNOWN - saturation collateral, oscillating 9-14 band. public_board_empty_count 0 -> no board broken/empty." },
+    "panini_sale_price_capture_dry_days": { "value": 19, "breach_at": 3, "class": "KNOWN - home-box Panini runner outage; operator. +1/day expected (18->19)." },
+    "unmapped_resolution_backlog_max": { "value": 258, "breach_at": 100, "class": "KNOWN - AllDay permanent-class floor; net-draining (inflow 242/24h < outflow 293/24h)." }
   },
-  "pipeline_alerts": {
-    "SATURATION_WAVE": "Disk-IO burst-credit throttle class: statement/pool/upstream timeouts across wallet-username-resolver (63/106), lock-check-batch (48/105), refresh_wmc_fmv_changed (143/435, documented #2 disk reader), populate-pinnacle-wmc-fmv (19/55), allday-buyer-backfill (5/18), allday-unmapped-resolver-tail (7/18). Plus pg_cron MV-refresh timeouts: allday-pack-realized, ccm-step1, challenge-costs, new-collectors, reconcile-saved-wallet-stats, misattrib-candidates, pinnacle-fmv-recalc-backstop, thin-sale-ask-disclosure. NOT a logic defect, NOT traced to a ship; leaves MVs STALE not broken; refreshes next tick. public_board_empty_count 0.",
-    "pg_net_http_403": "CRITICAL 24/2h - recurring gate-key half-rotation. Refined by c25e0f5: ONE job (jobid 16), not a subset of 14 (71 of the 403s on jobid 16's minutes, 0 on others). Operator: complete rotation as ONE window.",
-    "compute-pinnacle-pack-ev": "HIGH 9/9 fail, deterministic ON CONFLICT. Fix bd53bb3a is UNDEPLOYED not ineffective (edge fn, never in Vercel scan; dist_dupe_count absent from all 10 recent runs). Operator/CC + blocked by unset PINNACLE_PACK_EV_GATE_KEY.",
-    "topshot-active-listings-ingest": "HIGH 11/14 fail egress_blocked - KNOWN (GHA runner WAF-blocked ~83%; atlas-proxy fix inert pending operator wrangler deploy).",
-    "candy-listings-indexer": "cron_silent 633m (info) - known no-op under ME quest-hold; candy_mlb unpublished, board reads directly."
-  },
-  "post_ship_watch": "PASS - 0 reverts. Concurrent CC batch + Trevor c25e0f5 since prior run. Sentry 0 new/0 regressed 48h; production READY; 0 ERROR deploys; saturation wave is documented class not a ship regression; public_board_empty_count 0. Nothing attributable, nothing to revert.",
-  "escalation": "Sandbox shell down 8th consecutive night blocks all overnight git push + daytime-monitor inbox archival. Operator: free /sessions volume (delete old Cowork sessions) per docs/handoff-2026-08-09-cowork-shell-recovery.md.",
+  "fmv_sweep_stall_pct_24h": 44.9,
+  "pipeline_alerts_summary": "ALL saturation-class (statement/pool/upstream timeouts): allday-buyer-backfill 60%, allday-unmapped-resolver-tail 50%, populate-pinnacle-wmc-fmv 61%, reconcile-saved-wallet-stats 71%, wallet-username-resolver 78%, compute-pinnacle-pack-ev 67% (deterministic ON CONFLICT, fix bd53bb3a UNDEPLOYED), topshot-active-listings-ingest 67% (egress_blocked WAF), + medium fmv-recalc/lock-check/refresh_wmc_fmv_*/run-insider-detectors/topshot-fmv-populate. Documented disk-IO burst-credit throttle class; NOT logic defects, NOT traced to any ship; MVs left STALE not broken.",
+  "pgcron_failures": "10 jobs, ALL 'canceling statement due to statement timeout' (trust-health-precompute-refresh, allday-pack-realized MV, public-board-liveness-sweep, misattrib-candidates MV, pinnacle-fmv-recalc-backstop, serial-fmv-multipliers-weekly [BY DESIGN weekly], thin-sale-ask-disclosure, candy-wmc-ghost-purge, allday-ev-corrected-refresh, serial-fmv-jersey-weekly). Same saturation root cause; none post-fix.",
+  "candy_editions_ingest": "cron_silent 1806m - 08-16 08:40Z daily tick missing, likely the documented 300s timeout-kill under saturation. Editions change slowly; operator/CC maxDuration bump. QUEUED.",
+  "post_ship_watch": "PASS - 0 reverts. Concurrent CC Aug-16 server-page honesty sweep (fix trophy-picker/profile/api-count/dashboard/my-teams/pinnacle/wallet-search/set + refactor insights) landed since prior run; frontend read-honesty fixes with own tests/reverts. 0 ERROR deploys, 0 new/regressed Sentry 48h, security [], public_board_empty_count 0, saturation is DB disk-IO unrelated to these frontend changes. Nothing attributable, nothing to revert.",
+  "queued_new": "The :13 cron stagger (jobs 71/109 off minute 13) - ready-to-run, reversible, corrected-mechanism filed 2026-08-16T0030Z (cron_heavy jobs reschedulable via SET LOCAL ROLE cron_heavy + cron.schedule in-place). NOT shipped: off-hours + cannot ledger a prod DB-state change without git. Operator/genuine-overnight window.",
+  "escalation": "Sandbox shell down 9th consecutive night blocks ALL overnight git push + daytime-monitor inbox archival (~66 files accumulated). Operator: free /sessions volume (delete old Cowork sessions) per docs/handoff-2026-08-09-cowork-shell-recovery.md.",
   "outputs": [
-    "docs/handoff-2026-08-15-overnight-pass.md (mount, unpushed)",
+    "docs/handoff-2026-08-16-overnight-pass.md (mount, unpushed)",
     "docs/overnight/metrics-latest.json (mount, unpushed)"
   ],
-  "not_written": "ledger.md + inbox archive - both need git; mount-only append-at-top splice against an origin advanced ~15 commits by a concurrent CC session tonight is the destroyed-revert-path hazard, and nothing shipped needs a revert-path entry. Deferred until push restored."
+  "not_written": "ledger.md + inbox archive - both need git. Nothing shipped needs a revert-path entry; append-at-top splice against an origin advanced ~20 commits by the concurrent CC sweep is the destroyed-revert-path hazard. Deferred until push restored."
 }
