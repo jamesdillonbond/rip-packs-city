@@ -24,6 +24,7 @@ import {
   getPinnacleFmv,
   explainPinnacleFmv,
   searchPinnacleByName,
+  getPinnacleEditionListings,
 } from "@/lib/concierge/pinnacle-router";
 import {
   fetchUnifiedFmvDistribution,
@@ -444,7 +445,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_edition_listings",
-    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor covers NBA Top Shot (marketplace GQL), NFL All Day and LaLiga Golazos (RPC's on-chain listing index, which also returns floor_buy_url and floor_listed_at). Disney Pinnacle has no edition-keyed book here and returns 'unavailable'. UFC Strike's Flow market CLOSED on 2026-05-13: it returns market_closed with the closure date, and you must say the market is closed rather than that the check failed — never imply a UFC moment can be bought on Flow.",
+    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor covers NBA Top Shot (marketplace GQL), NFL All Day and LaLiga Golazos (RPC's on-chain listing index, which also returns floor_buy_url and floor_listed_at). Disney Pinnacle is resolved per RENDER from the Pinnacle catalog (pass renderId, or characterName plus setName/variant) — its floor is a periodic snapshot rather than a live query, so state floor_listed_at when you quote it, and a render with no ask is genuinely not listed. Pinnacle asks are per-render, so an ambiguous match returns candidates and you must NOT quote one render's floor for another. UFC Strike's Flow market CLOSED on 2026-05-13: it returns market_closed with the closure date, and you must say the market is closed rather than that the check failed — never imply a UFC moment can be bought on Flow.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -453,6 +454,9 @@ const TOOLS: Anthropic.Tool[] = [
         setName: { type: "string", description: "Set name (partial match, e.g. 'Archive Set', 'Run It Back'). Strongly recommended alongside playerName — a player alone usually matches many editions." },
         tier: { type: "string", description: "Tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE) to disambiguate further." },
         collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Defaults to the active page's collection." },
+        renderId: { type: "string", description: "Disney Pinnacle ONLY — the render id, when you already have it. Pinnacle asks are per-render." },
+        characterName: { type: "string", description: "Disney Pinnacle ONLY — character name (e.g. 'Mickey Mouse', 'Greef Karga'). Use instead of playerName on Pinnacle." },
+        variant: { type: "string", description: "Disney Pinnacle ONLY — variant type (Pinnacle's equivalent of tier)." },
       },
       required: [],
     },
@@ -2039,6 +2043,22 @@ async function executeTool(
   if (toolName === "get_edition_listings") {
     try {
       const slug = effectiveCollectionId ?? "nba-top-shot";
+      // Pinnacle is resolved by RENDER, not by an `editions` row — it has none,
+      // and all 16,231 of its open cached_listings_v2 rows carry a NULL
+      // edition_id, so the unified path below would report a collection with
+      // sixteen thousand live listings as having no open ask.
+      if (isPinnacle(slug)) {
+        return getPinnacleEditionListings(
+          supabase,
+          {
+            renderId: toolInput.renderId ?? undefined,
+            characterName: toolInput.characterName ?? toolInput.playerName ?? undefined,
+            setName: toolInput.setName ?? undefined,
+            variant: toolInput.variant ?? toolInput.tier ?? undefined,
+          },
+          base,
+        );
+      }
       const collUuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
       let editionKey = String(toolInput.editionKey ?? "").trim() || null;
 

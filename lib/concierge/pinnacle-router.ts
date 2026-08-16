@@ -355,3 +355,144 @@ export async function searchPinnacleByName(
     }),
   }
 }
+
+// ── get_edition_listings, Pinnacle arm ───────────────────────────────────────
+//
+// Pinnacle could not answer "what's the cheapest one listed?" through the
+// unified path: that branch resolves the edition out of the `editions` table
+// and then reads an edition-keyed floor view, and Pinnacle is in NEITHER.
+// Measured 2026-08-15: all 16,231 of its open rows in `cached_listings_v2`
+// carry a NULL `edition_id`, so the view the other collections use returns
+// nothing for it — which would have rendered as "no open ask" on a collection
+// with sixteen thousand live listings. `pinnacle_listings_direct` is not the
+// answer either: it holds ZERO rows.
+//
+// The real per-render ask is `pinnacle_catalog.floor_ask` — the same column
+// searchPinnacleDeals reads, on the same row as that render's own fmv_usd, so
+// ask and FMV can never leak across pins.
+//
+// ⚠ THE FLOOR HERE IS A PERIODIC SNAPSHOT, NOT A LIVE QUERY. Top Shot goes out
+// to the marketplace on every call; this column is refreshed in bulk from the
+// Pinnacle studio GraphQL (measured: newest update ~4h old, and no ask older
+// than 24h). Reporting it with the same "live" wording would overstate it, so
+// the note carries floor_ask_updated_at and says what it is.
+//
+// ⚠ RENDERS ARE DELIBERATELY NOT COLLAPSED HERE, unlike the FMV path.
+// collapseRenders() picks a representative to answer "what is this worth",
+// which is reasonable for a value estimate across a set. An ASK is a property
+// of ONE pin: attaching the representative's floor to a render the user did
+// not ask about is a wrong price on a specific object. Ambiguity returns the
+// candidates instead — the same rule the unified branch follows, and the
+// character-correctness invariant this module opens with.
+const CATALOG_LISTING_COLUMNS =
+  "render_id, character_name, set_name, variant, total_minted, floor_ask, floor_ask_updated_at, fmv_usd, fmv_confidence"
+
+interface CatalogListingRow {
+  render_id: string
+  character_name: string | null
+  set_name: string | null
+  variant: string | null
+  total_minted: number | null
+  floor_ask: number | null
+  floor_ask_updated_at: string | null
+  fmv_usd: number | null
+  fmv_confidence: string | null
+}
+
+export async function getPinnacleEditionListings(
+  supabase: Supabase,
+  input: { renderId?: string; characterName?: string; setName?: string; variant?: string },
+  siteBase: string
+): Promise<string> {
+  try {
+    let q = supabase.from("pinnacle_catalog").select(CATALOG_LISTING_COLUMNS)
+    if (input.renderId) {
+      q = q.eq("render_id", input.renderId)
+    } else {
+      if (input.characterName) q = q.ilike("character_name", `%${input.characterName}%`)
+      if (input.setName) q = q.ilike("set_name", `%${input.setName}%`)
+      if (input.variant) q = q.ilike("variant", `%${input.variant}%`)
+      if (!input.characterName && !input.setName && !input.variant) {
+        return JSON.stringify({
+          status: "error",
+          message: "Provide renderId, or characterName and/or setName for a Pinnacle pin.",
+        })
+      }
+    }
+    const { data, error } = await q.limit(25)
+    // supabase-js RETURNS errors rather than throwing, so this must branch on
+    // `error` and not on whether rows came back — otherwise a statement timeout
+    // becomes "nothing is listed", the conflation this whole tool exists to stop.
+    if (error) {
+      return JSON.stringify({
+        status: "ok",
+        listings_status: "unavailable",
+        listings_note:
+          "We could NOT read the Pinnacle catalog to check listings. Say the live check failed — do NOT say nothing is listed, and do NOT present fmv as a listing price.",
+      })
+    }
+    const rows = (data ?? []) as CatalogListingRow[]
+    if (rows.length === 0) {
+      return JSON.stringify({
+        status: "no_results",
+        message:
+          "No Pinnacle render matches that character/set. This is a CATALOG miss, not a market claim — do not say it isn't listed.",
+      })
+    }
+    if (rows.length > 1) {
+      return JSON.stringify({
+        status: "ambiguous",
+        message:
+          "More than one Pinnacle render matches. Pinnacle asks are per-render, so ask the user which and call again with that renderId — do not quote one render's floor for another.",
+        candidates: rows.slice(0, 10).map((r) => ({
+          renderId: r.render_id,
+          character: r.character_name,
+          set: r.set_name,
+          variant: r.variant,
+          minted: r.total_minted,
+        })),
+        total_matches: rows.length,
+      })
+    }
+
+    const r = rows[0]
+    const ask = r.floor_ask != null ? Number(r.floor_ask) : null
+    const fmv = r.fmv_usd != null ? Number(r.fmv_usd) : null
+    const listed = ask != null && ask > 0
+    return JSON.stringify({
+      status: "ok",
+      edition: {
+        renderId: r.render_id,
+        player: r.character_name,
+        set: r.set_name,
+        tier: r.variant,
+        circulation: r.total_minted,
+      },
+      listings_status: listed ? "listed" : "none_listed",
+      listings_note: listed
+        ? `floor_ask is the lowest ask recorded for THIS render, refreshed periodically from the Pinnacle marketplace (see floor_listed_at) — it is a snapshot, not a live quote, so say when it was last checked.`
+        : `The Pinnacle catalog carries no ask for this render right now, which means it is not currently listed. This is a real answer about the market — say it plainly.`,
+      floor_ask: listed ? ask : null,
+      // Pinnacle's marketplace has no per-pin permalink we have verified, so
+      // there is no depth count and no per-listing buy link — only the venue.
+      listings_count: null,
+      floor_listed_at: listed ? r.floor_ask_updated_at : null,
+      floor_buy_url: listed ? PINNACLE_MARKETPLACE_URL : null,
+      fmv,
+      fmv_confidence: r.fmv_confidence,
+      fmv_note:
+        "fmv is a modelled per-render estimate, NOT an ask. Never present it as a price something is listed at.",
+      discount_pct:
+        listed && fmv != null && fmv > 0 ? Math.round(((fmv - ask!) / fmv) * 1000) / 10 : null,
+      edition_url: `${siteBase.replace(/\/+$/, "")}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
+      special_serials_listed: [],
+      special_serials_note:
+        "Chase-serial listings are a Top Shot feed; Pinnacle asks are per-render, not per-serial.",
+    })
+  } catch (err) {
+    return JSON.stringify({
+      status: "error",
+      message: err instanceof Error ? err.message : "pinnacle listings lookup failed",
+    })
+  }
+}

@@ -361,3 +361,84 @@ describe("get_edition_listings — collections beyond Top Shot", () => {
     expect(String(out.listings_note)).not.toMatch(/could NOT reach/i)
   })
 })
+
+describe("get_edition_listings — Disney Pinnacle (per-render)", () => {
+  const RENDER = {
+    render_id: "r-1",
+    character_name: "Mickey Mouse",
+    set_name: "Steamboat Willie",
+    variant: "Golden",
+    total_minted: 500,
+    floor_ask: "42.5",
+    floor_ask_updated_at: "2026-08-15T20:00:00Z",
+    fmv_usd: 60,
+    fmv_confidence: "MEDIUM",
+  }
+
+  async function drivePin(fixtures: Fixtures, input: unknown = { renderId: "r-1" }) {
+    install(fixtures)
+    A.state.script = [{ tools: [{ name: "get_edition_listings", input }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(
+      new NextRequest("https://t/api/support-chat", {
+        method: "POST",
+        headers: new Headers({ "content-type": "application/json" }),
+        body: JSON.stringify({ message: "cheapest?", sessionId: `pin-${Math.random()}`, collectionId: "disney-pinnacle" }),
+      }),
+    )
+    return toolResult()
+  }
+
+  it("reads the per-render floor and links the pin page", async () => {
+    const out = await drivePin({ pinnacle_catalog: { data: [RENDER], error: null } })
+    expect(out.listings_status).toBe("listed")
+    expect(out.floor_ask).toBe(42.5)
+    expect(out.discount_pct).toBe(29.2)
+    expect(String(out.edition_url)).toContain("/pinnacle/moment/r-1")
+    // ⚠ Must NOT claim a live query — this column is a periodic snapshot.
+    expect(String(out.listings_note)).toMatch(/snapshot, not a live quote/i)
+    expect(out.floor_listed_at).toBe("2026-08-15T20:00:00Z")
+  })
+
+  it("treats a render with no ask as genuinely not listed", async () => {
+    const out = await drivePin({
+      pinnacle_catalog: { data: [{ ...RENDER, floor_ask: null }], error: null },
+    })
+    expect(out.listings_status).toBe("none_listed")
+    expect(out.floor_ask).toBeNull()
+    expect(out.fmv).toBe(60) // FMV still stands; it is not an ask
+  })
+
+  it("treats a catalog ERROR as unavailable, not as no ask", async () => {
+    const out = await drivePin({
+      pinnacle_catalog: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    expect(out.listings_status).toBe("unavailable")
+    expect(String(out.listings_note)).toMatch(/do NOT say nothing is listed/i)
+    expect(JSON.stringify(out)).not.toMatch(/canceling statement/i)
+  })
+
+  it("returns candidates rather than quoting one render's floor for another", async () => {
+    // Character-correctness is the module's opening invariant: legacy keys are
+    // SET-level and span characters, so collapsing here would attach a real ask
+    // to a pin the user did not ask about.
+    const out = await drivePin(
+      {
+        pinnacle_catalog: {
+          data: [RENDER, { ...RENDER, render_id: "r-2", character_name: "Goofy", floor_ask: "999" }],
+          error: null,
+        },
+      },
+      { characterName: "Mickey" },
+    )
+    expect(out.status).toBe("ambiguous")
+    expect((out.candidates as unknown[]).length).toBe(2)
+    expect(out.floor_ask).toBeUndefined()
+  })
+
+  it("does not offer Top Shot chase-serial rows on Pinnacle", async () => {
+    const out = await drivePin({ pinnacle_catalog: { data: [RENDER], error: null } })
+    expect(out.special_serials_listed).toEqual([])
+    expect(String(out.special_serials_note)).toMatch(/per-render, not per-serial/i)
+  })
+})
