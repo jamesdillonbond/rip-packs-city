@@ -101,6 +101,13 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: raw, limit: 1 }),
       });
+      // ⚠ Same defect as components/WalletSearch.tsx: without a status check a
+      // failed search fell through to the not-found copy, which claims the
+      // wallet does not exist and tells the reader to change their input.
+      if (!res.ok) {
+        setError("Couldn't search just now — this says nothing about that wallet. Try again shortly.");
+        return;
+      }
       const data = await res.json().catch(() => null);
       const addr: string | undefined = data?.walletAddress;
       if (addr && FLOW_ADDRESS.test(addr)) {

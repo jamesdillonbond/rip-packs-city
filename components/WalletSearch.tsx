@@ -161,6 +161,15 @@ export default function WalletSearch({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: raw, limit: 1 }),
       })
+      // ⚠ No status check previously. On a non-2xx the envelope still parses,
+      // `walletAddress` is absent, and control fell through to the not-found
+      // copy below — which tells the reader their wallet does not exist AND
+      // advises them to change what they typed, out of an outage. That is the
+      // "diagnoses a cause it cannot know" shape.
+      if (!res.ok) {
+        setError("Couldn't search just now — this says nothing about that wallet. Try again shortly.")
+        return
+      }
       const data = await res.json().catch(() => null)
       const addr: string | undefined = data?.walletAddress
       if (addr && FLOW_ADDRESS.test(addr)) {
