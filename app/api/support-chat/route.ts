@@ -387,7 +387,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "manage_deal_subscriptions",
-    description: "Create, list, pause, resume, or delete the user's DEAL ALERT SUBSCRIPTIONS — standing combo-filter alerts the platform scans automatically (every ~15 min) and delivers to their linked Telegram / Discord / email. THE tool for any 'alert me when…' request that combines filters: team + badge + special serials + discount threshold (e.g. 'alert me when a Blazers rookie special serial is listed 25%+ under FMV'). Filters (all optional, combinable): teams, badges ('rookie' expands to all Rookie badges), players, sets, tiers, min_discount (% under FMV, default 25), max_price, special_serials_only (=only #1/perfect-mint chase serials from the underpriced serials board), require_jersey_serial, require_last_mint. Use manage_alerts instead ONLY for a single-edition price alert. Requires a signed-in user (web) or a /link-ed bot chat; if it returns not_linked, tell them to link at rippackscity.com/alerts.",
+    description: "Create, list, pause, resume, or delete the user's DEAL ALERT SUBSCRIPTIONS — standing combo-filter alerts the platform scans automatically (every ~15 min) and delivers to their linked Telegram / Discord / email. THE tool for any 'alert me when…' request that combines filters: team + badge + special serials + discount threshold (e.g. 'alert me when a Blazers rookie special serial is listed 25%+ under FMV'). Filters (all optional, combinable): teams, badges ('rookie' expands to all Rookie badges), players, sets, tiers, min_discount (% under FMV — applied by default ONLY when no max_price is given; a price IS the user's threshold, so do not let a discount be added on top unless they asked for one), max_price, special_serials_only (=only #1/perfect-mint chase serials from the underpriced serials board), require_jersey_serial, require_last_mint. Use manage_alerts instead ONLY for a single-edition price alert. Requires a signed-in user (web) or a /link-ed bot chat; if it returns not_linked, tell them to link at rippackscity.com/alerts.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -399,7 +399,7 @@ const TOOLS: Anthropic.Tool[] = [
         players: { type: "array", items: { type: "string" }, description: "Exact player names." },
         sets: { type: "array", items: { type: "string" }, description: "Exact set names." },
         tiers: { type: "array", items: { type: "string" }, description: "Tiers (COMMON, FANDOM, RARE, LEGENDARY, ULTIMATE)." },
-        min_discount: { type: "number", description: "Minimum % below FMV to alert on (default 25)." },
+        min_discount: { type: "number", description: "Minimum % below FMV to alert on. Defaults to 25 ONLY when max_price is absent. If the user names just a price, do NOT pass this — adding an FMV condition they did not ask for makes the alert narrower than the confirmation they will read." },
         max_price: { type: "number", description: "Only alert on asks at or below this USD price." },
         special_serials_only: { type: "boolean", description: "true = ONLY special-serial listings (#1 / perfect mint) from the underpriced serials board; no edition-grain deals. Set true whenever the user says 'special serials'." },
         require_jersey_serial: { type: "boolean", description: "Only serials matching the player's jersey number." },
@@ -2621,16 +2621,56 @@ async function executeTool(
         }
       }
 
+      const explicitMaxPrice =
+        Number.isFinite(Number(toolInput.max_price)) && Number(toolInput.max_price) > 0
+          ? Number(toolInput.max_price)
+          : null;
+
+      // ⚠ DO NOT APPLY THE 25% DEFAULT WHEN THE USER GAVE A PRICE (Trevor, 2026-08-16).
+      //
+      // The default used to be unconditional, so "alert me any time a Damian
+      // Lillard Archive moment lists for $0.60 or less" was SAVED as
+      // `max_price 0.60 AND min_discount 25` — an FMV condition the user never
+      // asked for. A $0.55 listing only 10% under FMV would not have fired,
+      // and the confirmation said "whenever one lists at $0.60 or under", so
+      // the alert was strictly narrower than the sentence describing it.
+      // Silence would then be indistinguishable from "nothing has listed".
+      //
+      // The default still earns its place on an open-ended request ("alert me
+      // on good Blazers deals"), where a threshold is the only thing making the
+      // alert meaningful rather than a firehose. A price IS the user's
+      // threshold, so adding a second one invents a criterion.
+      // Pass min_discount explicitly to combine them.
+      // ⚠ 0, NEVER null. `alert_subscriptions.min_discount` is NOT NULL DEFAULT
+      // 25, so writing null throws 23502 and the alert is never created — a
+      // strictly worse bug than the one being fixed. Caught by attempting the
+      // UPDATE on a live row before shipping the code.
+      //
+      // ⚠ AND 0 IS NOT "no FMV condition" — the scanner cannot express that.
+      // `build_deal_alerts_for_subscription` (and the dispatcher it mirrors)
+      // reads `cross_collection_deals_board` with
+      //   discount_pct >= COALESCE(min_discount, 25) AND fmv_usd > 0
+      // so 0 still means "at or below FMV, and priced". A listing ABOVE FMV, or
+      // on an edition with no FMV, cannot fire a subscription at all. A true
+      // price-only alert needs a scanner change, not a tool change — filed, not
+      // done here. `applied_filters` below DISCLOSES the residual condition
+      // rather than letting it be the same invisible filter one notch smaller.
       const minDiscount = Number.isFinite(Number(toolInput.min_discount)) && Number(toolInput.min_discount) > 0
         ? Math.min(Number(toolInput.min_discount), 95)
-        : 25;
+        : explicitMaxPrice != null
+          ? 0
+          : 25;
       const serialOnly = toolInput.special_serials_only === true;
 
       const autoLabel = [
         teamNames?.join("/"),
         badgeKeys?.includes("rookieyear") ? "rookie" : badgeKeys?.join("/"),
         serialOnly ? "special serials" : "deals",
-        `${minDiscount}%+ under FMV`,
+        // The label must describe what was SAVED, not a template — an alert
+        // labelled "25%+ under FMV" that carries no discount filter is the
+        // same lie in the list view.
+        minDiscount > 0 ? `${minDiscount}%+ under FMV` : null,
+        explicitMaxPrice != null ? `≤ $${explicitMaxPrice}` : null,
       ].filter(Boolean).join(" ");
 
       const row: Record<string, unknown> = {
@@ -2640,7 +2680,7 @@ async function executeTool(
         cadence: "instant",
         collection_ids: serialOnly || teamNames ? [tsUuid] : null,
         min_discount: minDiscount,
-        max_price: Number.isFinite(Number(toolInput.max_price)) && Number(toolInput.max_price) > 0 ? Number(toolInput.max_price) : null,
+        max_price: explicitMaxPrice,
         tiers: arr(toolInput.tiers)?.map((t) => t.toUpperCase()) ?? null,
         player_names: arr(toolInput.players),
         set_names: arr(toolInput.sets),
@@ -2666,11 +2706,46 @@ async function executeTool(
         if (preview && typeof preview.deals_count === "number") previewCount = preview.deals_count;
       } catch { /* non-fatal */ }
 
+      // ⚠ THE CONFIRMATION MUST DESCRIBE WHAT WAS SAVED, FILTER BY FILTER.
+      //
+      // The model previously got back only `{id, label, channels}` and wrote
+      // the confirmation from the user's REQUEST, so a silently-added filter
+      // was invisible: "you'll get a notification whenever a Damian Lillard
+      // Archive moment lists at $0.60 or under" described a row that also
+      // required 25% under FMV. An alert narrower than its own description
+      // fails SILENTLY — the user reads the quiet as "nothing has listed",
+      // which is the failure-renders-as-absence class applied to a promise.
+      //
+      // `applied_filters` is the saved row read back, and the prompt requires
+      // every entry to be stated. It is the tool's answer, not the model's
+      // memory of the ask.
+      const appliedFilters: string[] = [
+        explicitMaxPrice != null ? `price at or below $${explicitMaxPrice}` : null,
+        minDiscount > 0 ? `at least ${minDiscount}% below FMV` : null,
+        // ⚠ Even at 0 the scanner requires the listing to be at-or-below FMV on
+        // an edition that HAS an FMV, so this is disclosed rather than omitted.
+        // Omitting it would recreate the invisible-filter bug one notch smaller.
+        minDiscount === 0
+          ? "at or below FMV — the deal scanner is FMV-based, so a listing priced ABOVE FMV (or on an edition with no FMV yet) will not fire even if it is under your price"
+          : null,
+        arr(toolInput.players)?.length ? `player: ${arr(toolInput.players)!.join(", ")}` : null,
+        arr(toolInput.sets)?.length ? `set: ${arr(toolInput.sets)!.join(", ")}` : null,
+        teamNames?.length ? `team: ${teamNames.join(", ")}` : null,
+        badgeKeys?.length ? `badge: ${badgeKeys.join(", ")}` : null,
+        arr(toolInput.tiers)?.length ? `tier: ${arr(toolInput.tiers)!.join(", ")}` : null,
+        serialOnly ? "chase serials only (#1 / perfect mint)" : null,
+        toolInput.require_jersey_serial === true ? "jersey-match serial only" : null,
+        toolInput.require_last_mint === true ? "last mint only" : null,
+      ].filter(Boolean) as string[];
+
       return JSON.stringify({
         status: "ok",
         subscription: created,
         matches_right_now: previewCount,
-        message: `Subscription live — the scanner checks every ~15 minutes and delivers to ${channels.join(" + ")}. ${previewCount === 0 ? "Nothing matches right now, which is normal for tight chase-serial filters — it fires the moment something lists." : ""}`,
+        applied_filters: appliedFilters,
+        applied_filters_note:
+          "State EVERY entry in applied_filters back to the user in your confirmation. These are the conditions actually saved — an alert only fires when ALL of them hold. Do not describe the alert from their request; describe it from this list, so a filter they did not name is never invisible to them.",
+        message: `Subscription live — the scanner checks every ~15 minutes and delivers to ${channels.join(" + ")}. ${previewCount === 0 ? "Nothing matches right now, which is normal for tight filters — it fires the moment something lists." : ""}`,
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "manage_deal_subscriptions failed").error });

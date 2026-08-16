@@ -264,7 +264,7 @@ afterEach(() => {
 })
 
 describe("GET /api/smoke-test — deep drive of the full battery", () => {
-  it("fully-green run: 54/54 (hard 42/42), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
+  it("fully-green run: 55/55 (hard 43/43), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
     const spy = install(greenFixtures())
     const { calls } = installSmokeFetch(greenStubs())
 
@@ -276,11 +276,15 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // 200-status public-page check — MINUS the /api/cart/validate probe, dropped
     // 2026-08-01 with the read-only cart/gift/trade teardown, MINUS the Pinnacle
     // FMV drift guard, retired 2026-08-14 as a tautology that could not fail.)
-    expect(env.total).toBe(54)
-    expect(env.passed).toBe(54)
+    // 55/43 as of 2026-08-16: +1 HARD check, "concierge answers rather than
+    // degrading". It exists because the concierge failed ~780 conversations over
+    // 14 days while this suite reported ALL PASSED — the only concierge probes
+    // were soft AND opt-in, so nothing measured whether users got answers.
+    expect(env.total).toBe(55)
+    expect(env.passed).toBe(55)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(42) // 12 checks are soft-flagged in a green run
-    expect(env.hardPassed).toBe(42)
+    expect(env.hardTotal).toBe(43) // 12 checks are soft-flagged in a green run
+    expect(env.hardPassed).toBe(43)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -302,7 +306,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of all structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(54)
+    expect(writes[0].rows).toHaveLength(55)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -600,14 +604,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 3 live-LLM probes (57 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 3 live-LLM probes (58 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(57)
+    expect(env.total).toBe(58)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",

@@ -1103,6 +1103,88 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "zero-violations",
     }),
 
+    // ⚠ IS THE CONCIERGE ACTUALLY ANSWERING ANYONE? Hard test, added 2026-08-16.
+    //
+    // The concierge failed ~780 consecutive conversations over FOURTEEN DAYS
+    // (2026-08-02 → 08-16) — Anthropic returning 403 `credit_balance` on nearly
+    // every call — and every instrument read green the whole time. The smoke
+    // test logged `ALL PASSED hard 37/37` while it was down. Trevor found it by
+    // using the product.
+    //
+    // Nothing caught it because the only concierge probes here are (a) SOFT and
+    // (b) opt-in, since each one spends real Anthropic tokens. So this check
+    // deliberately measures the OUTCOME instead of making a call: what share of
+    // real conversations got a degraded fallback rather than an answer. It
+    // costs one indexed read and cannot itself burn credits.
+    //
+    // ⚠ Keyed on `category`, NOT on the fallback COPY. The strings in
+    // CONCIERGE_ERROR_MESSAGES are user-facing prose that will be reworded, and
+    // a check that greps for them would go quietly vacuous the day someone
+    // improves the wording — while still reporting green.
+    //
+    // ⚠ The sample floor is load-bearing. Without it a single failed
+    // conversation on a quiet night is "100% degraded" and pages for nothing;
+    // this repo has already paid for cry-wolf alarms (`ufc_fmv_stale_hours`).
+    // Below the floor the check reports PASS with an explicit low-sample note
+    // rather than a verdict it did not earn.
+    time(async () => {
+      const WINDOW_HOURS = 6;
+      const MIN_SAMPLE = 5;
+      const FAIL_AT_SHARE = 0.5;
+      const meta = {
+        name: "concierge answers rather than degrading",
+        endpoint: "db:support_conversations.category",
+        expected: `degraded-share-below-${FAIL_AT_SHARE * 100}pct-over-${WINDOW_HOURS}h`,
+      };
+      // Categories CONCIERGE_ERROR_MESSAGES writes when it cannot answer.
+      const DEGRADED = [
+        "concierge_unavailable",
+        "concierge_model_error",
+        "concierge_rate_limited",
+        "concierge_overloaded",
+      ];
+      const since = new Date(Date.now() - WINDOW_HOURS * 3600_000).toISOString();
+      const { data, error } = await svc
+        .from("support_conversations")
+        .select("category")
+        .gte("created_at", since)
+        .neq("category", "beta_feedback");
+      if (error) {
+        // couldNotRun: the check never evaluated, so its assertion must not be
+        // restated as though it had been violated.
+        return { ...meta, passed: false, couldNotRun: true, detail: `query error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const rows = (data ?? []) as Array<{ category: string | null }>;
+      const total = rows.length;
+      const degraded = rows.filter((r) => DEGRADED.includes(String(r.category))).length;
+      const share = total > 0 ? degraded / total : 0;
+      if (total < MIN_SAMPLE) {
+        return {
+          ...meta,
+          passed: true,
+          detail: `only ${total} conversation(s) in ${WINDOW_HOURS}h — below the ${MIN_SAMPLE}-sample floor, no verdict`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { total, degraded, low_sample: true },
+        };
+      }
+      const passed = share < FAIL_AT_SHARE;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? `${degraded}/${total} degraded over ${WINDOW_HOURS}h (${Math.round(share * 100)}%)`
+          : `CONCIERGE DEGRADED: ${degraded}/${total} conversations (${Math.round(share * 100)}%) returned a fallback instead of an answer in the last ${WINDOW_HOURS}h. Check the ANTHROPIC_API_KEY's balance/spend limit — a 403 credit_balance looks identical to a healthy route from the outside (HTTP 200).`,
+        statusCode: null,
+        bodyExcerpt: null,
+        notes: { total, degraded, share_pct: Math.round(share * 100) },
+      };
+    }, {
+      name: "concierge answers rather than degrading",
+      endpoint: "db:support_conversations.category",
+      expected: "degraded-share-below-50pct-over-6h",
+    }),
+
     // Anon-write SURFACE invariant. Complements the check above, which only
     // catches RLS-OFF tables. This one catches the sneakier hole: a table with
     // RLS ON that STILL lets anon write because it carries an anon write grant
