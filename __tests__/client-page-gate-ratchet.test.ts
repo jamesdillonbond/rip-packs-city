@@ -44,8 +44,45 @@ const APP_DIR = join(process.cwd(), "app")
 /**
  * The ceiling. Lower it when you convert a page to the `*Client.tsx` split;
  * NEVER raise it. 33 when this landed.
+ *
+ * ⚠ THIS NUMBER WAS RESOLVED FROM A THREE-WAY COLLISION, so the arithmetic is
+ * written out: two sessions ran this workstream at once and each lowered the
+ * budget by its own conversions only (32 and 31). Neither was right — 33 minus
+ * THREE conversions is 30. A ratchet is the one constant where "take mine" and
+ * "take theirs" are both silently wrong, because the value is a COUNT of a
+ * shared population, not an opinion. Re-derive it from the failing no-slack
+ * assertion rather than picking a side.
+ *
+ * 33 -> 32 (concurrent session): `profile/edit` -> `ProfileEditClient.tsx`.
+ * Landed with no note recording which page it converted; noted here because a
+ * ratchet whose history has a gap cannot be audited later.
+ *
+ * 33 -> 32: `[collection]/packs/page.tsx` was a client page for ONE reason —
+ * it called `useParams()` to read the collection slug, which a server page
+ * receives as a prop. No `*Client.tsx` was needed, because everything below it
+ * was already a gated component. ⚠ That is the cheapest shape of conversion, so
+ * look for it first — and it is now EXHAUSTED: a sweep of the remaining 32
+ * found none whose only client-side API is a routing hook. Every one left holds
+ * real state, effects or handlers, so from here a conversion means a genuine
+ * split plus enough tests to keep the component gate's aggregate up.
+ *
+ * 32 -> 31: `dashboard/notifications` — the first REAL split, and the one that
+ * establishes the shape. The body moved to `NotificationsClient.tsx` and
+ * `page.tsx` became a server wrapper owning the Suspense boundary that
+ * `useSearchParams` requires. ⚠ Hoisting that boundary to the server is what
+ * makes the client component renderable by a test at all; leaving it inside
+ * would have moved the file into the gate without making it testable.
+ *
+ * ⚠ MEASURED COST OF A CONVERSION, because this is the number that decides
+ * whether the next one is affordable: landing the file at 100/85.9/100/100 moved
+ * the component gate's aggregate 90.72/82.09/89.55/93.68 -> 90.78/82.34/89.42/
+ * 93.74. Statements, branches and lines went UP; FUNCTIONS went DOWN 0.13, and
+ * that is the direction to watch — a page contributes many small handlers, so an
+ * untested or partly-tested conversion hits `% Funcs` hardest, and that gate sits
+ * at 89.1 with well under a point of room. Cover the handlers, not just the
+ * fetch paths.
  */
-const BUDGET = 32
+const BUDGET = 30
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
