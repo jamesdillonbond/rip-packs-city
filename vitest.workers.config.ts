@@ -90,20 +90,29 @@ export default defineConfig({
       // pack-events-ingest's modes are now driven (TopShot purchases, AllDay
       // mints, opens, and backfill).
       //
-      // What is left is the tail nobody can reach with a fixture alone:
-      //   • the SOFT-BUDGET bail-outs (`Date.now() - startedMs >= budgetMs`) —
-      //     these need a fake clock, not a fixture, and vi.useFakeTimers must
-      //     not break the AbortSignal.timeout shim this suite already patches.
-      //   • the chunked-write retry/partial-failure paths under
-      //     WRITE_UPSERT_CHUNK_SIZE, which need a stub that fails the Nth chunk.
-      // Both are real work, not rounding error — but neither is a blind spot
-      // anymore in the sense that mattered: every production INGEST path this
-      // worker runs is now exercised.
+      // ⚠ BOTH ITEMS THIS COMMENT USED TO LIST AS UNREACHABLE ARE NOW DONE, and
+      // in both cases the "we need new tooling" premise was wrong:
+      //   • the SOFT-BUDGET bail-outs were said to need a fake clock. They did
+      //     not — driving `Date.now` from the FETCH STUB (each event fetch
+      //     advances a mutable value) is deterministic and never touches
+      //     vi.useFakeTimers, so it cannot fight the AbortSignal.timeout shim.
+      //   • the chunked-write partial-failure paths were said to need "a stub
+      //     that fails the Nth chunk". The sequence-aware fixture ALREADY does
+      //     that — an array payload yields one entry per await, so chunk N takes
+      //     payload N. The only helper change needed was capturing the upsert
+      //     OPTIONS, because `{ onConflict, ignoreDuplicates }` is what makes the
+      //     replay safe and nothing in the suite could see it.
+      // ⚠ The lesson worth keeping: BOTH were parked behind an assumed tooling
+      // gap that a few minutes of reading disproved. Re-check the premise before
+      // recording something as unreachable.
+      //
+      // What is genuinely left is the residue inside those paths — alternate
+      // error shapes and the deeper backfill branches — not a named blind spot.
       thresholds: {
-        statements: 84.4,
-        branches: 71.2,
-        functions: 83.2,
-        lines: 87.5,
+        statements: 85.1,
+        branches: 72.1,
+        functions: 83.8,
+        lines: 88.1,
       },
     },
   },

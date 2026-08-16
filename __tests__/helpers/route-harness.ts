@@ -193,6 +193,14 @@ export interface RecordedRpcCall {
 export interface RecordedWrite {
   method: "insert" | "upsert" | "update"
   rows: Record<string, unknown>[]
+  /**
+   * The write's second argument — `{ onConflict, ignoreDuplicates }` for an
+   * upsert. Captured because that object, not the rows, is what makes a REPLAY
+   * safe: a chunked writer whose cursor did not advance re-sends every chunk on
+   * the next tick, and only `ignoreDuplicates` on the right conflict target
+   * stops that double-counting. Nothing else in the suite could see it.
+   */
+  options?: Record<string, unknown>
 }
 
 /**
@@ -225,14 +233,18 @@ export function makeInstrumentedSupabaseFixture(
   fixture.from = (table: string) => {
     const b = baseFrom(table)
     for (const method of ["insert", "upsert", "update"] as const) {
-      const base = b[method] as (rows: unknown) => unknown
-      b[method] = (rows: unknown) => {
+      const base = b[method] as (rows: unknown, options?: unknown) => unknown
+      b[method] = (rows: unknown, options?: unknown) => {
         if (opts.failWrites?.includes(table)) {
           throw new Error(`forced ${table} ${method} failure`)
         }
         const arr = Array.isArray(rows) ? rows : [rows]
-        ;(writes[table] ??= []).push({ method, rows: arr as Record<string, unknown>[] })
-        return base(rows)
+        ;(writes[table] ??= []).push({
+          method,
+          rows: arr as Record<string, unknown>[],
+          options: (options ?? undefined) as Record<string, unknown> | undefined,
+        })
+        return base(rows, options)
       }
     }
     return b

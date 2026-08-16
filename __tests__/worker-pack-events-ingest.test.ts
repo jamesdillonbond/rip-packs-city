@@ -1200,3 +1200,236 @@ describe("pack-events-ingest worker — the staggered soft budget", () => {
   })
 })
 
+describe("pack-events-ingest worker — the two chunk policies", () => {
+  function liveCursors(purchases: number, opens = 1195, allday = 1200) {
+    return {
+      data: [
+        { id: "topshot_pack_purchases", last_processed_block: purchases },
+        { id: "topshot_pack_opens", last_processed_block: opens },
+        { id: "allday_pack_purchases", last_processed_block: allday },
+      ],
+      error: null,
+    }
+  }
+
+
+  // ── The two chunk policies ───────────────────────────────────────────────
+  //
+  // This worker deliberately runs TWO different policies for a failed chunk,
+  // and the difference is the point:
+  //
+  //   WRITES (pack_purchases / pack_rips / moment_acquisitions) THROW. The
+  //   cursor then does not advance, so the next tick replays the whole window —
+  //   safe only because every write is an upsert with ignoreDuplicates on a real
+  //   conflict target. A lost write here is data loss, so stopping is correct.
+  //
+  //   LOOKUPS/DELETES collect chunkErrors and CONTINUE. Partial results still
+  //   attribute the rips that did resolve, and a leftover placeholder row is
+  //   harmless. Aborting there would throw away good work for nothing.
+  //
+  // Neither is reachable without a batch bigger than the chunk size, which is
+  // why both sat untested. The sequence-aware fixture already supports failing
+  // the Nth call — an array payload yields one entry per await — so no helper
+  // change was needed beyond capturing the upsert OPTIONS, which are what makes
+  // the replay safe and which nothing else in the suite could see.
+  describe("chunked writes", () => {
+    const CHUNK = 400 // WRITE_UPSERT_CHUNK_SIZE
+
+    function txFor(i: number) {
+      return i.toString(16).padStart(64, "0")
+    }
+
+    /** N secondary pack sales, each its own tx, all inside one block. */
+    function nPurchases(n: number, height = 1100) {
+      const listings = []
+      const deposits = []
+      for (let i = 0; i < n; i++) {
+        const tx = txFor(i)
+        const nftId = String(100000 + i)
+        listings.push(
+          eventBlock({ height, txId: tx, eventType: EVT_LISTING, payload: packListingPayload(nftId, "9.00000000") }),
+        )
+        deposits.push(
+          eventBlock({ height, txId: tx, eventType: EVT_DEPOSIT, payload: depositPayload(nftId, "0x1111111111111111") }),
+        )
+      }
+      return { listings, deposits }
+    }
+
+    it("a failing chunk keeps the EARLIER chunks' rows and refuses to advance the cursor", async () => {
+      // 401 rows -> chunks of 400 + 1. The SECOND chunk errors.
+      const { listings, deposits } = nPurchases(CHUNK + 1)
+      fetchMock = installFetchMock([
+        jsonRoute("sealed", [{ header: { height: "1200" } }]),
+        jsonRoute(encodeURIComponent(EVT_LISTING), listings),
+        jsonRoute(encodeURIComponent(EVT_DEPOSIT), deposits),
+        jsonRoute(encodeURIComponent(EVT_WITHDRAW), []),
+        jsonRoute("/v1/transactions/", { payer: "0x3333333333333333" }),
+        jsonRoute("/v1/events", []),
+      ])
+      const spy = install({
+        event_cursor: liveCursors(1000),
+        pack_purchases: [
+          { data: Array.from({ length: CHUNK }, () => ({ event_kind: "secondary_sale" })), error: null },
+          { data: null, error: { message: "canceling statement due to statement timeout" } },
+        ],
+        "rpc:log_pipeline_run": { data: null, error: null },
+      })
+
+      const body = await (await worker.fetch(post(), ENV, CTX)).json()
+
+      // ⚠ THE INCIDENT THIS CHUNKING FIXED: a single 1796-row upsert timed out
+      // deterministically and PERMANENTLY wedged the cursor, re-failing every
+      // tick while the cron showed green. Chunking means the first 400 rows are
+      // durably banked even though the flush as a whole failed.
+      const attempted = (spy.writes.pack_purchases ?? []).map((w) => w.rows.length)
+      expect(attempted, "two chunks were attempted, sized 400 then 1").toEqual([CHUNK, 1])
+
+      // ⚠ AND THE CURSOR MUST NOT ADVANCE. writeCursor runs AFTER the flush in
+      // the same commit callback, so a throwing flush skips it. Advancing here
+      // would step past 401 events of which only 400 landed — one silently lost
+      // purchase, permanently, with the run still reporting a tip.
+      const cursorWrites = (spy.writes.event_cursor ?? []).flatMap((w) => w.rows)
+      expect(
+        cursorWrites.some((r) => r.id === "topshot_pack_purchases"),
+        "the purchases cursor must not be written at all when its flush threw",
+      ).toBe(false)
+
+      // The failure is reported rather than swallowed.
+      expect(
+        (body.errors ?? []).some(
+          (e: { cursor?: string; message?: string }) =>
+            e.cursor === "topshot_pack_purchases" && /statement timeout/.test(e.message ?? ""),
+        ),
+        "the driver message reaches the run's errors[]",
+      ).toBe(true)
+    })
+
+    it("the replay that non-advance implies is safe ONLY because of ignoreDuplicates on the conflict target", async () => {
+      // The two halves are a pair: refusing to advance guarantees a REPLAY, and
+      // the replay is safe only if re-sending an already-written chunk is a
+      // no-op. Assert the upsert options, because rows alone cannot show it —
+      // and a plain insert, or a wrong conflict target, would double-count every
+      // row of the chunk that DID land above.
+      const { listings, deposits } = nPurchases(3)
+      fetchMock = installFetchMock([
+        jsonRoute("sealed", [{ header: { height: "1200" } }]),
+        jsonRoute(encodeURIComponent(EVT_LISTING), listings),
+        jsonRoute(encodeURIComponent(EVT_DEPOSIT), deposits),
+        jsonRoute(encodeURIComponent(EVT_WITHDRAW), []),
+        jsonRoute("/v1/transactions/", { payer: "0x3333333333333333" }),
+        jsonRoute("/v1/events", []),
+      ])
+      const spy = install({
+        event_cursor: liveCursors(1000),
+        pack_purchases: { data: [], error: null },
+        "rpc:log_pipeline_run": { data: null, error: null },
+      })
+
+      await worker.fetch(post(), ENV, CTX)
+
+      const write = (spy.writes.pack_purchases ?? [])[0]
+      expect(write?.method).toBe("upsert")
+      expect(write?.options).toMatchObject({
+        onConflict: "tx_hash,pack_nft_id",
+        ignoreDuplicates: true,
+      })
+    })
+  })
+
+  // ── The OTHER policy: a failed LOOKUP chunk is collected, not fatal ───────
+  it("a failed rip-id LOOKUP chunk still links the rips that DID resolve, and the cursor advances anyway", async () => {
+    // 101 rips -> the id lookup chunks at 100 + 1. The SECOND chunk errors.
+    //
+    // ⚠ THE CONTRAST WITH THE TEST ABOVE IS THE WHOLE POINT. A failed WRITE
+    // throws and blocks the cursor, because a lost write is data loss and the
+    // replay is the recovery. A failed LOOKUP does neither: it is collected into
+    // errors[] and the cursor advances regardless, because the 100 rips that DID
+    // resolve are real work that aborting would throw away.
+    const LOOKUP_CHUNK = 100 // PACK_RIPS_LOOKUP_CHUNK_SIZE
+    const N = LOOKUP_CHUNK + 1
+    const opened = []
+    const deposits = []
+    for (let i = 0; i < N; i++) {
+      const tx = i.toString(16).padStart(64, "0")
+      opened.push(eventBlock({ height: 1150, txId: tx, eventType: EVT_OPENED, payload: openedPayload(`pack-${i}`) }))
+      deposits.push(
+        eventBlock({ height: 1150, txId: tx, eventType: EVT_TS_DEPOSIT, payload: tsDepositPayload(`m-${i}`, "0xopener00000000c") }),
+      )
+    }
+    fetchMock = installFetchMock([
+      jsonRoute("sealed", [{ header: { height: "1200" } }]),
+      jsonRoute(encodeURIComponent(EVT_OPENED), opened),
+      jsonRoute(encodeURIComponent(EVT_TS_DEPOSIT), deposits),
+      jsonRoute(encodeURIComponent(EVT_TS_WITHDRAW), []),
+      jsonRoute("/v1/transactions/", { payer: "0x5555555555555555" }),
+      jsonRoute("/v1/events", []),
+    ])
+    // pack_rips payload sequence: (1) the rips upsert, then (2) the two id-lookup
+    // chunks. The lookup fires chunk 1 before chunk 2 — each async arm runs
+    // synchronously up to its first await — so the order is deterministic.
+    const resolved = Array.from({ length: LOOKUP_CHUNK }, (_, i) => ({
+      id: `rip-${i}`,
+      tx_hash: i.toString(16).padStart(64, "0"),
+    }))
+    const spy = install({
+      event_cursor: {
+        data: [
+          { id: "topshot_pack_purchases", last_processed_block: 1200 },
+          { id: "topshot_pack_opens", last_processed_block: 1000 },
+          { id: "allday_pack_purchases", last_processed_block: 1200 },
+        ],
+        error: null,
+      },
+      pack_rips: [
+        { data: resolved, error: null }, // (1) upsert
+        { data: resolved, error: null }, // (2) lookup chunk 1 — 100 hashes
+        { data: null, error: { message: "canceling statement due to statement timeout" } }, // chunk 2
+      ],
+      moment_acquisitions: { data: Array.from({ length: LOOKUP_CHUNK }, (_, i) => ({ id: `a-${i}` })), error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+
+    const body = await (await worker.fetch(post(), ENV, CTX)).json()
+
+    // ⚠ THE RUN REPORTS **NOT OK** — `ok` is `errors.length === 0`, and a
+    // collected chunk failure is still an error. That is honest, and it pairs
+    // badly with the advancing cursor below in a way worth stating plainly: the
+    // operator gets a red run, but the work behind it is NOT retried, so acting
+    // on the red will not recover the skipped moment. Reporting and recovering
+    // are separate things here.
+    expect(body.ok, "a collected chunk failure still reddens the run").toBe(false)
+
+    // The 100 rips whose ids resolved ARE linked; aborting would have lost them.
+    const moments = (spy.writes.moment_acquisitions ?? []).flatMap((w) => w.rows)
+    expect(moments, "the resolved rips' moments still land").toHaveLength(LOOKUP_CHUNK)
+    for (const m of moments) expect(m.source_pack_rip_id).toBeTruthy()
+
+    // ⚠ AND THE CURSOR ADVANCES ANYWAY — the opposite of the write policy.
+    const cursorWrites = (spy.writes.event_cursor ?? []).flatMap((w) => w.rows)
+    expect(
+      cursorWrites.some((r) => r.id === "topshot_pack_opens" && r.last_processed_block === 1200),
+      "a collected lookup failure does not block the opens cursor",
+    ).toBe(true)
+
+    // ⚠ THE COST OF THAT TRADE, PINNED SO IT IS A KNOWN PROPERTY AND NOT A
+    // SURPRISE: the 101st rip's moment is skipped ("skip rather than corrupt
+    // FK") and, because the cursor advanced past it, it is NEVER RETRIED. One
+    // moment stays permanently unattributed to its pack, and every pack-EV /
+    // pull-value surface loses that join. That is the deliberate price of not
+    // losing the other 100 — but it IS a price, and nothing else records it.
+    expect(
+      moments.some((m) => m.nft_id === `m-${N - 1}`),
+      "the unresolved rip's moment is skipped, and the advanced cursor means it never comes back",
+    ).toBe(false)
+
+    // The failure is reported rather than swallowed.
+    expect(
+      (body.errors ?? []).some(
+        (e: { cursor?: string; message?: string }) =>
+          e.cursor === "topshot_pack_opens" && /pack_rips_lookup_chunk/.test(e.message ?? ""),
+      ),
+      "the chunk failure is surfaced with its source label",
+    ).toBe(true)
+  })
+})
