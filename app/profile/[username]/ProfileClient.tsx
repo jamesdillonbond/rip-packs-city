@@ -132,10 +132,14 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
           alt={username}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
           onError={function(e) {
-            e.currentTarget.style.display = "none";
-            if (e.currentTarget.parentElement) {
-              e.currentTarget.parentElement.innerHTML = initials;
-              Object.assign(e.currentTarget.parentElement.style, {
+            // Capture the parent BEFORE mutating innerHTML: setting
+            // parent.innerHTML detaches this <img>, so e.currentTarget.parentElement
+            // becomes null and reading .style off it throws (NEXTJS-2D).
+            const el = e.currentTarget;
+            const parent = el.parentElement;
+            el.style.display = "none";
+            if (parent) {
+              Object.assign(parent.style, {
                 background: accentBg,
                 display: "flex",
                 alignItems: "center",
@@ -145,6 +149,7 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
                 fontSize: (size * 0.35) + "px",
                 color: accent,
               });
+              parent.innerHTML = initials;
             }
           }}
         />
