@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — drove the AllDay `primary_mint` leg, the half of `event_kind` that was untested
+
+**What shipped.** 5 cases appended to `__tests__/worker-pack-events-ingest.test.ts` + worker-gate thresholds **73.3/62.3/75.9/75.9 → 76.2/64.9/77.3/78.9**. Test-only; worker source untouched.
+
+⚠ **`event_kind` is what the `pack_purchases_set_is_primary_drop` TRIGGER reads to derive `is_primary_drop`** — so a regression does not error, it **silently reclassifies AllDay Studio drops as secondary sales across every pack surface**. A wrong NUMBER, not a failure. The TopShot half of that classification was already driven; **AllDay's reaches the same column by a completely different event shape** (`PackNFT.Mint`, not a contract-reserve `Withdraw`) and was dark.
+
+**Pinned, each with a reason it is not cosmetic:**
+- **`seller_address` must be NULL, not a sentinel.** The column's CHECK allows only NULL or `^0x[0-9a-f]{16}$`, so a `mint:<contract>` marker fails at INSERT — and there is no prior holder to name.
+- **A Mint with no same-tx Deposit is skipped.** Without the pairing there is no buyer, and the row would be a purchase attributed to nobody.
+- **A Mint with no `distId` still lands** with a NULL `pack_dist_id` — the drop name can be resolved later, the purchase cannot be recovered.
+- ⚠ **The nftType filter is what separates AllDay from TopShot on a SHARED contract.** Both read the same `NFTStorefrontV2.ListingCompleted`; lose the filter and TopShot pack sales get written under the AllDay `collection_id`, **corrupting both collections' pack surfaces at once**. Pinned in BOTH directions — a TS-typed listing must be excluded AND an AllDay-typed one must be included, because the negative alone passes just as well against a leg that writes nothing.
+
+⚠ **A `tsc` failure of mine produced a better test than the version that compiled.** `Array.find` returns `T | undefined`, so every field access errored. Sprinkling `!` would have silenced **the one case worth failing loudly on — the row never having been written at all** — so it became a `mustFind` helper that asserts presence and narrows. Guard-the-guard: emptying the mint loop entirely reds two cases rather than passing through.
+
+**Verified:** 353 worker tests green at the new thresholds; `tsc` clean; 6 mutations each reddening only their own assertion (mint→secondary_sale, deposit pairing removed, nftType filter dropped, seller sentinel, distId ignored, mint loop emptied).
+
+**Gate now 76.69 st / 65.45 br** (from 68.71/59.54 when it was seeded this morning). ⚠ Still not "three-quarters tested" — **22 of 24 files are 81–100%** and 8 are at 100%; the aggregate is held down by the remaining inline cursor loops in `pack-events-ingest/index.ts` (1,912 LOC). What is left there: the **opens cursor** and the **backfill-mode** branches.
+
+**Revert:** `git revert <sha>` — removes the 5 cases and restores the previous thresholds. No source, DB or prod change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — drove the worst file in `workers/**` from 26.3% to 90.6%, and the gate moved with it
 
 **What shipped.** `__tests__/worker-moments-hydrator-deep.test.ts` (15 cases) + worker-gate thresholds re-seated **68.2/59.0/72.6/70.7 → 73.3/62.3/75.9/75.9**. Test-only; the worker source is untouched.
