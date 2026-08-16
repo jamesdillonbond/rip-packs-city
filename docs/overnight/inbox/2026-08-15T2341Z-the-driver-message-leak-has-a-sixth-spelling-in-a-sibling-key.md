@@ -1,9 +1,41 @@
 # The driver-message leak has a SIXTH spelling, and both shared guards are blind to it by construction
 
+> ## ✅ RESOLVED 2026-08-15 — swept the same session, in a second pass
+>
+> Every **user-reachable** site is fixed and the spelling is in the shared helper,
+> so all three guards now catch it. **The user-reachable population is ZERO.**
+> What is left (22 sites / 11 files) is operator-secret gated by the guard's own
+> `isOperatorSurface` rule, where a driver message reaches someone holding the
+> token — that is the documented, intended exclusion, not a backlog.
+>
+> **Four corrections to what this note originally said, each worth more than the fix:**
+>
+> 1. **The population was 35 sites / 20 files, not "~20 / ~15".** The first count
+>    came from a shell grep with a narrower key list.
+> 2. ⚠ **My first scanner reported WRONG LINE NUMBERS** — it stripped `//` lines
+>    by *removing* them before splitting, so every offset shifted. I nearly
+>    triaged against them; the tell was context that contained no leak at all.
+>    **Blank comment lines, never delete them.**
+> 3. **`stripe/webhook` was not covered by the operator rule** (it gates on a
+>    Stripe signature, not a shared secret). Fixed the route rather than widening
+>    `OPERATOR_SECRET_RE` — loosening an exclusion is the dangerous direction, and
+>    the guard's own test says the exclusion is sound only while every excluded
+>    route really requires a secret.
+> 4. ⚠ **`/api/owned-flow-ids` is ANON-reachable** (`isPublicPath` → true) and was
+>    publishing FCL/Cadence text to anonymous visitors. It is the sharpest site in
+>    the batch, and the *anon* guard had been running green over it for exactly
+>    the sibling-key reason described below.
+>
+> ⚠ **One existing test asserted the leak as the contract** —
+> `api-rtr-lock-roi` pinned `body.detail === "wmc down"`. Repointed to assert the
+> absence of the driver string plus the stable code. Same class as the 59 tests
+> recorded in CLAUDE.md, two of them titled *"500s and surfaces the message"*.
+>
+> The triage in "Recommended fix" below was followed as written and all three
+> traps in it were real. Kept for the reasoning.
+
 **Filed 2026-08-15 23:41Z (16:41 PDT), Claude Code.** Found while fixing the
-`/panini-blockchain/sniper` surface. **Not swept** — the fix is mechanical but the
-population is ~20 sites across ~15 files, and widening the shared helper reddens
-all of them in one commit. Two of the panini sites are fixed; the rest are here.
+`/panini-blockchain/sniper` surface.
 
 ## The finding
 
