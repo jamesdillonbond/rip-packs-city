@@ -310,13 +310,45 @@ async function liveWithinBudget<T extends Record<string, unknown>>(
   live: () => Promise<BoardLiveResult<T>>,
   ms: number
 ): Promise<BoardLiveResult<T> | null> {
+  return withinBudget(live, ms)
+}
+
+/**
+ * Wall-clock ceiling for a SNAPSHOT read.
+ *
+ * ⚠ WHY THE FALLBACK NEEDS A BOUND OF ITS OWN. `readBoardSnapshot` cannot throw —
+ * it try/catches to null — so it looked safe, and that is exactly what hid this:
+ * it is UNBOUNDED, and `readBoardOrLive` calls it up to TWICE (once for the fresh
+ * check, once for the stale fallback) around the 8s live bound. Under the pool
+ * saturation this cache exists to survive, a single-row lookup can sit in an
+ * acquire queue for tens of seconds, so the ladder's own worst case could exceed
+ * Next's 60s per-page export budget and fail the whole production build — on a
+ * page whose reads were all "bounded" as far as
+ * `insights-server-pages-bound-their-reads` could see.
+ *
+ * ⚠ That guard is not weak: it checks the PAGE for an approved primitive, and
+ * `readBoardOrLive` is one. The unbounded leg was INSIDE the primitive, a level
+ * below anywhere the guard looks — the same guard-scope shape this repo keeps
+ * paying for. With this, the ladder's worst case is 3 + 8 + 3 = 14s.
+ *
+ * 3s is deliberately generous for a single-row `maybeSingle()` on a table with one
+ * row per board: if it has not answered in 3s we are in exactly the saturation the
+ * stale rung is for, and waiting longer buys a fresher answer at the price of the
+ * whole build.
+ */
+export const BOARD_SNAPSHOT_TIMEOUT_MS = 3_000
+
+/** Shared race. Resolves `null` on failure OR on exceeding the budget, so a slow
+ *  path and a broken path collapse into one branch — the property the live bound
+ *  was added for, now available to every leg of the ladder. */
+async function withinBudget<T>(run: () => Promise<T | null>, ms: number): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined
   // Catch INSIDE, so the raced promise can never reject — an abandoned query that
   // fails later would otherwise surface as an unhandled rejection long after we
   // stopped listening.
   const attempt = (async () => {
     try {
-      return await live()
+      return await run()
     } catch {
       return null
     }
@@ -347,7 +379,10 @@ export async function readBoardOrLive<T extends Record<string, unknown>>(
   live: () => Promise<BoardLiveResult<T>>,
   timeoutMs: number = BOARD_LIVE_TIMEOUT_MS
 ): Promise<{ payload: T; source: BoardSource }> {
-  const fresh = await readBoardSnapshot(key)
+  // ⚠ BOUNDED. See BOARD_SNAPSHOT_TIMEOUT_MS: this leg cannot throw but it can
+  // HANG, and it runs before the live bound gets a say. An unbounded fresh-check
+  // is the ladder's own worst case, not the live query's.
+  const fresh = await withinBudget(() => readBoardSnapshot(key), BOARD_SNAPSHOT_TIMEOUT_MS)
   if (fresh && !fresh.stale) {
     return { payload: withCacheMeta(fresh.payload, fresh) as T, source: "fresh-cache" }
   }
@@ -358,7 +393,12 @@ export async function readBoardOrLive<T extends Record<string, unknown>>(
   }
 
   // Live query errored/threw — fall back to the last-good snapshot at any age.
-  const stale = fresh ?? (await readBoardSnapshot(key))
+  // ⚠ Also bounded, and this is the leg that matters most: it only runs when the
+  // instance is ALREADY struggling, so it is the likeliest of the three to sit in
+  // an acquire queue. A timed-out fallback degrades to `live-degraded`, which the
+  // page renders with the honest notice — the outcome the ladder was built for.
+  const stale =
+    fresh ?? (await withinBudget(() => readBoardSnapshot(key), BOARD_SNAPSHOT_TIMEOUT_MS))
   if (stale) {
     return { payload: withCacheMeta(stale.payload, stale) as T, source: "stale-cache" }
   }

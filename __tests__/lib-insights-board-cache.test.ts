@@ -5,9 +5,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const state: {
   read: { data: any; error: any } | null
   throwOnRead: boolean
+  /** Never settles — models a pooled connection stuck in the acquire queue, which
+   *  is what saturation actually produces. A THROW was already modelled; a HANG
+   *  was not, and only the hang can blow a build's per-page export budget. */
+  hangOnRead: boolean
   throwOnUpsert: boolean
   upserts: any[]
-} = { read: null, throwOnRead: false, throwOnUpsert: false, upserts: [] }
+} = { read: null, throwOnRead: false, hangOnRead: false, throwOnUpsert: false, upserts: [] }
 
 vi.mock("@/lib/supabase", () => {
   const admin: any = {
@@ -16,6 +20,7 @@ vi.mock("@/lib/supabase", () => {
     eq: () => admin,
     maybeSingle: async () => {
       if (state.throwOnRead) throw new Error("read boom")
+      if (state.hangOnRead) return new Promise(() => {})
       return state.read ?? { data: null, error: null }
     },
     upsert: async (row: any) => {
@@ -32,6 +37,7 @@ import {
   warmBoard,
   withCacheMeta,
   BOARD_CACHE_FRESH_MS,
+  BOARD_SNAPSHOT_TIMEOUT_MS,
 } from "@/lib/insights/board-cache"
 
 const isoAgo = (ms: number) => new Date(Date.now() - ms).toISOString()
@@ -46,6 +52,7 @@ const liveOk = (payload: any = { rows: [{ id: 9 }] }, rowCount = 1) =>
 beforeEach(() => {
   state.read = null
   state.throwOnRead = false
+  state.hangOnRead = false
   state.throwOnUpsert = false
   state.upserts = []
 })
@@ -264,5 +271,76 @@ describe("readBoardOrLive — slow live query", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// ── The snapshot legs are BOUNDED, not merely un-throwable ──────────────────
+//
+// ⚠ HOW THIS GAP SURVIVED, which is the transferable part. `readBoardSnapshot`
+// try/catches to `null`, so it CANNOT throw — and that is precisely what made it
+// look safe. It was UNBOUNDED, and `readBoardOrLive` calls it up to TWICE (the
+// fresh check, then the stale fallback) around an 8s live bound. Under the pool
+// saturation this cache exists to survive, a one-row lookup can sit in an acquire
+// queue for tens of seconds, so the ladder's own worst case could exceed Next's
+// 60s per-page export budget and fail the whole production build.
+//
+// ⚠ `insights-server-pages-bound-their-reads` passed the entire time, correctly:
+// it checks the PAGE for an approved primitive, and `readBoardOrLive` is one. The
+// unbounded leg was INSIDE the primitive, a level below anywhere that guard looks
+// — the guard-scope shape this repo keeps paying for, met one layer down.
+//
+// The fixture is a read that NEVER SETTLES. A throwing read was already covered
+// and is a different failure: a throw is caught immediately and costs nothing.
+describe("readBoardOrLive — every leg of the ladder is time-bounded", () => {
+  it("a hanging FRESH check does not hold the caller; the live result still serves", async () => {
+    vi.useFakeTimers()
+    try {
+      state.hangOnRead = true
+      const live = liveOk({ rows: [{ id: 42 }] })
+      const p = readBoardOrLive("deals", live)
+      await vi.advanceTimersByTimeAsync(BOARD_SNAPSHOT_TIMEOUT_MS)
+      const res = await p
+      // The bound elapsed, the fresh check yielded nothing, and the ladder moved
+      // on to the live query rather than parking the render.
+      expect(res.source).toBe("live")
+      expect((res.payload as any).rows[0].id).toBe(42)
+      expect(live).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("a hanging STALE fallback degrades honestly instead of parking the render", async () => {
+    // The leg that matters most: it only runs when the instance is ALREADY
+    // struggling, so it is the likeliest of the three to sit in a queue.
+    vi.useFakeTimers()
+    try {
+      state.hangOnRead = true
+      const live = vi.fn(async () => ({ payload: { rows: [] }, ok: false, rowCount: 0 }))
+      const p = readBoardOrLive("deals", live)
+      // Both snapshot bounds plus the live bound.
+      await vi.advanceTimersByTimeAsync(BOARD_SNAPSHOT_TIMEOUT_MS * 2 + 8_000)
+      const res = await p
+      // `live-degraded` is what the page turns into the visible honest notice.
+      expect(res.source).toBe("live-degraded")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("the whole ladder settles well inside a per-page export budget", async () => {
+    // The property the build actually needs, stated as one number rather than
+    // three: 3 + 8 + 3 = 14s worst case, against Next's 60s.
+    expect(BOARD_SNAPSHOT_TIMEOUT_MS * 2 + 8_000).toBeLessThan(60_000)
+  })
+
+  it("a FAST snapshot is not delayed by the bound", async () => {
+    // The other direction — the bound must be a ceiling, not a floor. Without
+    // this, replacing the race with a plain sleep would pass everything above.
+    state.read = snapshotRow(1_000)
+    const started = Date.now()
+    const res = await readBoardOrLive("deals", liveOk())
+    expect(res.source).toBe("fresh-cache")
+    expect(Date.now() - started).toBeLessThan(BOARD_SNAPSHOT_TIMEOUT_MS)
   })
 })
