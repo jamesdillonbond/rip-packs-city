@@ -29,6 +29,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 ⚠ **NOT verified by HTTP round-trip** — the sandbox proxy blocks `rippackscity.com`. Every figure is a live DB measurement plus the suites.
 
 **Revert:** `git revert <sha>` — removes `getPinnacleEditionListings` and the Pinnacle branch; the other four collections are untouched. **No DB change, no migration, no cron, no auth/`proxy.ts` change, no FMV/pricing math touched** — `pinnacle_catalog` is READ.
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — pinned the STAGGERED SOFT BUDGET, the one property in pack-events-ingest no fixture alone could reach
+
+**What shipped.** 4 cases driving the wall-clock budget guard. Test-only. **Thresholds NOT raised** — see below, and that is the honest part.
+
+**What it protects.** The three live legs run in sequence (purchases → opens → allday_forward) sharing ONE clock that starts at the request, bounded at **12s / 16s / 20s**. That staggering is not tuning: the source records the bug it fixed, where all three shared a single `SOFT_BUDGET_MS` and *"opens + allday_forward hit the loop's budget guard immediately and bailed with 0 chunks"*. **A busy purchases leg starved the other two on every tick, indefinitely, while the run still reported ok** — and "0 chunks" is also what a caught-up cursor reports, so nothing downstream could tell them apart.
+
+⚠ **THE TECHNIQUE, since it is the reason this was left until last.** The property is a function of elapsed TIME, not of the data, so no fixture reaches it. A fake timer would fight the `AbortSignal.timeout` stub this suite already installs — so instead the **clock is driven from the fetch stub**: `Date.now` is spied to a mutable value that each event fetch advances by a fixed cost. No timers involved at all, fully deterministic.
+
+⚠ **MY FIRST ARITHMETIC WAS WRONG AND THE TEST CAUGHT IT — the numbers are 2/1/1, not 6/2/2.** I charged 2s per chunk; in fact **each chunk fans out to THREE parallel event fetches** (purchases reads ListingCompleted + Deposit + Withdraw; opens reads Opened + TopShot.Deposit + TopShot.Withdraw; AllDay reads Mint + Deposit + ListingCompleted), so the stub's per-FETCH cost is **6s per chunk**. Measured rather than re-guessed. The split is the whole point: under a single shared 20s budget purchases would take all four slots (0/6/12/18s) and the other two would get **ZERO**.
+
+⚠ **A guard against the suite going vacuous is included and is not decoration:** if `MAX_CHUNKS_PER_CURSOR_LIVE` ever bound before the budget, every number here would be identical whether the budget guard existed at all. Lowering the cap to 1 reds two cases. The complementary "cheap tick" case pins the other direction — with free chunks the CAP takes over at 20 — without which the whole suite is satisfied by a worker that stops after a few chunks for any reason.
+
+⚠ **COVERAGE BARELY MOVED — 84.97 → 85.02 st, 71.75 → 71.81 br — and that is the correct outcome, not a disappointment.** Those branches were already being EXECUTED by other cases; what was missing was any assertion about *when* they fire. **Coverage asks whether a line ran, not whether the behaviour it implements is right** — the same distinction this repo records for `/insights/pack-reality`, which sat inside the component gate and still shipped a false market claim. Thresholds left where they are; re-seating for 0.05pt would be churn.
+
+**Verified:** 29 cases in the file green; `tsc` clean; 4 mutations each reddening only their own assertions — including **the exact documented regression** (all three legs on one shared budget), removing the guard entirely, widening the purchases budget, and collapsing the chunk cap.
+
+**Revert:** `git revert <sha>`. No source, DB or prod change.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — pinned the Pinnacle sales↔editions bridge (the R4 column) and the AllDay badge low-ask refresher
 
 **Repo only — NOTHING APPLIED to prod.** One snapshot migration holding both live definitions (byte-identical, no-op). Pins **145 → 147** over **144 → 146** distinct fns; DB test files 143 → 145. **Unpinned scheduled SECDEF writers: 10 → 8.**
