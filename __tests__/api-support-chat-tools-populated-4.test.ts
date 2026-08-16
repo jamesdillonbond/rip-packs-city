@@ -204,7 +204,63 @@ describe("search_serial_deals — board path shaping", () => {
     expect(r.status).toBe("no_results")
     expect(r.source).toBe("underpriced_serials_board")
     expect(String(r.message)).toMatch(/listedOnly=true/)
-    expect(String(r.message)).toMatch(/not an error/i)
+    // ⚠ THIS ASSERTION IS INVERTED FROM ITS FIRST VERSION. It used to require
+    // the copy "this is not an error" — a hard-coded claim that the feed is
+    // HEALTHY, emitted regardless of whether it was. Measured 2026-08-16:
+    // topshot-active-listings-ingest fails `egress_blocked` most sweeps and on
+    // 2026-08-12 wrote ZERO rows across all 5 runs of the day, so on a dead-feed
+    // day this told a collector nothing was listed AND reassured them nothing
+    // was wrong. The tool cannot observe its own health; it can only report how
+    // old the data is.
+    expect(String(r.message)).not.toMatch(/not an error/i)
+    expect(r).toHaveProperty("feed_age_hours")
+    expect(r).toHaveProperty("feed_stale")
+  })
+
+  // Every exit of this tool makes a claim whose validity depends on how old the
+  // snapshot is — the empty ones claim the market is quiet, the populated ones
+  // can send a collector to a listing that has already sold. All four carry the
+  // age; sweeping the read rather than the one exit that failed.
+  it("carries feed age on a POPULATED result too, not just an empty one", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [boardRow()], error: null },
+      topshot_active_listings: { data: { last_seen_at: new Date(Date.now() - 5 * 3600_000).toISOString() }, error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.feed_age_hours).toBeCloseTo(5, 0)
+    expect(r.feed_stale).toBe(false)
+    expect(String(r.note)).toMatch(/last refreshed/i)
+  })
+
+  it("flags a feed well past its normal range as stale rather than calling the market quiet", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [], error: null },
+      topshot_active_listings: { data: { last_seen_at: new Date(Date.now() - 40 * 3600_000).toISOString() }, error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.feed_stale).toBe(true)
+    expect(String(r.message)).toMatch(/beyond its normal range|looks stale/i)
+  })
+
+  // ⚠ A FAILED freshness read must not become "age 0" or a confident silence —
+  // supabase-js RETURNS errors, so branching on the row instead of the error is
+  // exactly how a failed read turns into a fabricated fact.
+  it("reports an unknown feed age as unknown when the freshness read fails", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [], error: null },
+      topshot_active_listings: { data: null, error: { message: "boom" } },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.feed_age_hours).toBeNull()
+    expect(r.feed_stale).toBe(false)
+    expect(String(r.message)).toMatch(/could not determine/i)
   })
 
   it("surfaces a board error as status=error", async () => {

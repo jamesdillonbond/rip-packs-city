@@ -479,7 +479,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_serial_deals",
-    description: "Find Top Shot special serials that are CURRENTLY LISTED FOR SALE — and how each ask compares to that serial's FMV. This is the LISTINGS tool for chase serials; it answers 'what #1 (or perfect-mint) serials are for sale right now / which is the best value?'. Do NOT use get_special_serial_owners for 'for sale' questions — that tool only tells you who HOLDS a serial, not whether it's listed. Top Shot ONLY. By default returns the underpriced board (special serials listed BELOW their serial-FMV, ranked by discount, tight estimates first). Set listedOnly=true to list ALL currently-listed special serials regardless of discount (some may be above FMV / troll asks — each row carries ask vs serial_fmv so you can tell). Filter by playerName, team (e.g. 'Blazers'), badge (e.g. 'rookie'), tag (#1 = the first mint, perfect = serial == circulation), and tier — when the user asks for a team's or rookies' special serials, PASS those filters instead of returning unfiltered results. Each row includes a buy_url to the native Top Shot marketplace. Powered by the residential serial-listing feed, which refreshes roughly every few hours; when it returns nothing, say nothing special-serial is listed below FMV right now — do NOT imply the feed is broken.",
+    description: "Find Top Shot special serials that are CURRENTLY LISTED FOR SALE — and how each ask compares to that serial's FMV. This is the LISTINGS tool for chase serials; it answers 'what #1 (or perfect-mint) serials are for sale right now / which is the best value?'. Do NOT use get_special_serial_owners for 'for sale' questions — that tool only tells you who HOLDS a serial, not whether it's listed. Top Shot ONLY. By default returns the underpriced board (special serials listed BELOW their serial-FMV, ranked by discount, tight estimates first). Set listedOnly=true to list ALL currently-listed special serials regardless of discount (some may be above FMV / troll asks — each row carries ask vs serial_fmv so you can tell). Filter by playerName, team (e.g. 'Blazers'), badge (e.g. 'rookie'), tag (#1 = the first mint, perfect = serial == circulation), and tier — when the user asks for a team's or rookies' special serials, PASS those filters instead of returning unfiltered results. Each row includes a buy_url to the native Top Shot marketplace. Powered by the Top Shot active-listing feed, which is a SNAPSHOT, not a live query. EVERY response carries feed_age_hours (how long ago that feed last refreshed, null if we could not tell) plus feed_stale and feed_note — you MUST state the age when you report an empty result, because 'nothing is listed' is a claim about the MARKET and it is only as good as the last sweep. Measured: this feed's refresh gaps run 3h to 27h and its ingest is frequently blocked upstream, so an empty result after a long gap may mean the feed is behind rather than that the market is quiet; when feed_stale is true, say the feed looks stale instead of asserting the market is empty, and when feed_age_hours is null say you could not tell. Do NOT claim the feed is healthy — you cannot see that.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -849,7 +849,7 @@ Never narrate our indexing to the user. "The feed doesn't filter by set name", "
 These are two DIFFERENT tools and you must pick the right one:
 - **search_serial_deals** answers "what special serials are FOR SALE / which #1 (or perfect-mint) is the best value right now?" It reads live listings and compares each ask to that serial's FMV. Use it for any "best value", "cheapest", "listed", "for sale", "buy a #1" question about chase serials. Default returns serials listed BELOW serial-FMV; pass listedOnly=true to see everything listed.
 - **get_special_serial_owners** answers ONLY "WHO currently HOLDS the #1 / perfect / jersey serial?" It is an OWNERSHIP tool — its results say nothing about whether anything is listed.
-NEVER conclude "none are listed for sale" from get_special_serial_owners — it cannot tell you that. If the user asks about buying/best-value/listed special serials, you MUST call search_serial_deals; only say nothing's listed if search_serial_deals itself returns no_results (and then frame it as "nothing's listed below FMV right now," not "the feed is broken"). For "who has the #1" use get_special_serial_owners; for "where can I buy the #1 / which is the best value" use search_serial_deals (you may use both for "who owns it and is any listed?").
+NEVER conclude "none are listed for sale" from get_special_serial_owners — it cannot tell you that. If the user asks about buying/best-value/listed special serials, you MUST call search_serial_deals; only say nothing's listed if search_serial_deals itself returns no_results — and then QUALIFY it with that response's feed_age_hours rather than asserting the market is quiet ("nothing's listed below FMV as of the feed's last refresh N hours ago"). This tool reads a SNAPSHOT whose ingest is frequently blocked upstream, so an empty result is jointly a fact about the market and about how fresh our copy of it is; feed_stale=true means say the feed looks behind, and a null feed_age_hours means say you could not tell. Never state or imply that the feed is healthy or "not an error" — that is not something you can observe. For "who has the #1" use get_special_serial_owners; for "where can I buy the #1 / which is the best value" use search_serial_deals (you may use both for "who owns it and is any listed?").
 
 ## CRITICAL — Factor badges into valuation and ranking
 Badges carry real market premium (Rookie Year, Top Shot Debut, Championship Year, Rookie Premiere, MVP Year, etc.). When a tool result row includes a \`badges\` / \`badge_slugs\` field, you MUST factor those badges into your valuation and ranking commentary — a rookie/debut/championship moment is reasonably worth more than an otherwise-identical plain edition, and you should say so. NEVER tell the user you "can't factor badges in because you didn't call a tool" — if the row has a badges field, the data is already in front of you; use it. For "is this a chase / why is this worth more / which is the better pickup" and for #1-serial questions, prefer search_catalog_deals (its rows carry badges) over get_fmv (which does not), or chain them so your answer is badge-aware. As always, this is context, not a buy/sell call, and any price you cite must come from a tool row this turn.
@@ -2342,6 +2342,59 @@ async function executeTool(
       const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"] ?? null;
       const buyUrl = (nftId: any) => (nftId != null ? marketplaceMomentUrl("nba-top-shot", String(nftId)) : null);
 
+      // ⚠ HOW OLD IS THE FEED? Both exits below make a claim about the MARKET
+      // ("nothing is listed"), and that claim is only as good as the last sweep.
+      //
+      // This block exists because the empty-state copy used to assert
+      // "the feed refreshes every few hours; this is not an error" —
+      // hard-coded reassurance that the feed is healthy, emitted regardless of
+      // whether it is. Measured 2026-08-16: `topshot-active-listings-ingest`
+      // fails `egress_blocked` most sweeps (the Atlas WAF blocks the GHA runner
+      // IP; `workers/atlas-proxy` is the fix and is still INERT), and on
+      // 2026-08-12 it wrote ZERO rows across all 5 runs of the day. On a day
+      // like that the tool told a collector nothing was listed below FMV AND
+      // told the model not to imply anything was wrong.
+      //
+      // ⚠ THE AGE IS THE SIGNAL; THE FLAG IS DELIBERATELY CONSERVATIVE. Measured
+      // over the ~73h pipeline_runs window there were only 5 successful sweeps —
+      // gaps min 3h / median 6h / p90 22h / max 26.7h — so "every few hours" was
+      // itself wrong, and a 24h ceiling would fire on normal operation. That is
+      // the cry-wolf outcome `ufc_fmv_stale_hours` already cost this repo. So
+      // `feed_stale` sits at 36h (clear of the worst observed normal gap) and is
+      // NOT the primary output: the model is told the age every time and must
+      // state it, because a 5-sweep sample cannot support a sharp threshold.
+      const FEED_STALE_HOURS = 36;
+      let feedAgeHours: number | null = null;
+      try {
+        const { data: freshRow, error: freshErr } = await supabase
+          .from("topshot_active_listings")
+          .select("last_seen_at")
+          .eq("active", true)
+          .order("last_seen_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        // ⚠ THE LOAD-BEARING PART IS THAT AN UNRESOLVED AGE STAYS `null`, NOT
+        // the `!freshErr` check — mutation-proven: dropping `!freshErr` changes
+        // nothing, because a failed `.maybeSingle()` nulls the row as well as
+        // setting the error, so both shapes the client emits fall through to
+        // the same branch. Kept as intent (supabase-js RETURNS errors rather
+        // than throwing, so a reader should see the error acknowledged), but do
+        // not let this comment claim it is the mechanism — that is the mistake
+        // the `?? 0` sweep already corrected once. What actually prevents the
+        // fabricated fact is that `feedAgeHours` is never defaulted to 0.
+        if (!freshErr && freshRow?.last_seen_at) {
+          feedAgeHours =
+            Math.round(((Date.now() - new Date(freshRow.last_seen_at).getTime()) / 3_600_000) * 10) / 10;
+        }
+      } catch { /* non-fatal: an unknown age is reported as unknown */ }
+      const feedStale = feedAgeHours != null && feedAgeHours >= FEED_STALE_HOURS;
+      const feedNote =
+        feedAgeHours == null
+          ? "Could not determine when the serial-listing feed last refreshed — say so rather than implying the market is quiet."
+          : feedStale
+            ? `The serial-listing feed last refreshed ${feedAgeHours}h ago, which is beyond its normal range — say the feed looks stale and that this may not reflect the current market.`
+            : `The serial-listing feed last refreshed ${feedAgeHours}h ago. State that age when you report an empty result, so the user can judge it.`;
+
       // team/badge filters (2026-07-11): the board/listings tables don't carry
       // team or badge columns, so post-filter via editions.team_name and
       // badge_editions.play_tags keyed by external_id. normalize('Rookie Year')
@@ -2410,7 +2463,13 @@ async function executeTool(
           return JSON.stringify({
             status: "ok",
             source: "underpriced_serials_board",
-            note: "Top Shot only. Every row is listed BELOW its serial-FMV. serial_fmv_usd is the per-serial estimate; estimate_quality='tight' is more reliable than 'coarse'. fmv on these rows is authoritative.",
+            feed_age_hours: feedAgeHours,
+            feed_stale: feedStale,
+            // ⚠ The age matters on a NON-empty result too: these rows are a
+            // snapshot, so an old sweep can send a collector to a listing that
+            // has already sold. Reporting rows is not the same as reporting
+            // that they are still there.
+            note: `Top Shot only. Every row is listed BELOW its serial-FMV. serial_fmv_usd is the per-serial estimate; estimate_quality='tight' is more reliable than 'coarse'. fmv on these rows is authoritative. ${feedNote}`,
             total: rows.length,
             rows: rows.map((r: any) => ({
               player: r.player_name,
@@ -2434,7 +2493,10 @@ async function executeTool(
         return JSON.stringify({
           status: "no_results",
           source: "underpriced_serials_board",
-          message: "Nothing matching is listed below its serial-FMV right now. The residential serial-listing feed refreshes every few hours; this is not an error. To see ALL currently-listed special serials regardless of discount, call again with listedOnly=true.",
+          feed_age_hours: feedAgeHours,
+          feed_stale: feedStale,
+          feed_note: feedNote,
+          message: `Nothing matching is listed below its serial-FMV as of the last feed refresh. ${feedNote} To see ALL currently-listed special serials regardless of discount, call again with listedOnly=true.`,
         });
       }
 
@@ -2481,12 +2543,21 @@ async function executeTool(
       listings.sort((a: any, b: any) => (b.discount_pct ?? -1e9) - (a.discount_pct ?? -1e9));
       listings = listings.slice(0, limit);
       if (listings.length === 0) {
-        return JSON.stringify({ status: "no_results", source: "active_listings", message: "No special serials matching those filters are listed right now." });
+        return JSON.stringify({
+          status: "no_results",
+          source: "active_listings",
+          feed_age_hours: feedAgeHours,
+          feed_stale: feedStale,
+          feed_note: feedNote,
+          message: `No special serials matching those filters were listed as of the last feed refresh. ${feedNote}`,
+        });
       }
       return JSON.stringify({
         status: "ok",
         source: "active_listings",
-        note: "Top Shot only. ALL currently-listed special serials — some asks may be ABOVE serial_fmv (a negative discount_pct = overpriced/troll ask); do not call those deals. serial_fmv is authoritative where present; where null, report the ask as-is and say FMV is unavailable.",
+        feed_age_hours: feedAgeHours,
+        feed_stale: feedStale,
+        note: `Top Shot only. ALL currently-listed special serials — some asks may be ABOVE serial_fmv (a negative discount_pct = overpriced/troll ask); do not call those deals. serial_fmv is authoritative where present; where null, report the ask as-is and say FMV is unavailable. ${feedNote}`,
         total: listings.length,
         rows: listings,
       });
