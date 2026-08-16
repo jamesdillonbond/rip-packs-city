@@ -1132,6 +1132,29 @@ const PINS = [
     migration:
       "supabase/migrations/20260816050000_audit_20260816_snapshot_refresh_atlas_pack_ev.sql",
   },
+  {
+    // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as
+    // colliding at :13. Backfills pack EV at the PRIMARY retail price (its atlas
+    // sibling prices against the secondary ask), into the same pack_ev_history
+    // behind the public +EV badge.
+    //
+    // ⚠ THE PIN EXISTS FOR ONE CLAUSE: `gross_ev <= 3 * sec_ask`, the
+    // survivor-bias cap. A DEPLETED Top Shot pool prices at 40-86x — the good
+    // moments are gone and what remains is the tail — so an EV over the original
+    // pool is absurd. This DISCARDS such a row. Removing it puts a green +EV
+    // badge on packs that are nothing of the sort. The cheapest live ask is the
+    // denominator (ORDER BY ASC), and the test pins that too: with the dearest
+    // ask instead, a 40x EV sails through.
+    //
+    // Also pins the satoshi conversion (>= 1000000 divided by 1e8 — eight orders
+    // of magnitude), weighted-pools-only, and that a SENTINEL row does not count
+    // as covered so a failed distribution is retried rather than suppressed for
+    // 12 hours.
+    fn: "backfill_topshot_historical_pack_ev",
+    test: "supabase/tests/backfill_topshot_historical_pack_ev.sql",
+    migration:
+      "supabase/migrations/20260816060000_audit_20260816_snapshot_backfill_topshot_historical_pack_ev.sql",
+  },
 ]
 
 /**
