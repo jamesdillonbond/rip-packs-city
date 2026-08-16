@@ -15,108 +15,36 @@
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
-import { supabaseAdmin } from "@/lib/supabase"
-import { fetchAllPaged } from "@/lib/supabase-paginate"
-import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
+import {
+  fetchPackRealityBuckets,
+  num,
+  type PackRealityBuckets,
+  type PackRealityRow,
+} from "@/lib/insights/pack-reality-board"
 
 export const revalidate = 600
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb: any = supabaseAdmin
+// Row shape, every threshold, and the paged read live in
+// lib/insights/pack-reality-board.ts — see that file for why the three buckets
+// are deliberately asymmetric. `num` comes from there too, so the page and the
+// ranking cannot disagree about what a numeric cell is.
+type Buckets = PackRealityBuckets
 
-interface RealizedRow {
-  dist_id: string
-  title: string | null
-  pack_price: number | string | null
-  modeled_gross_ev: number | string | null
-  ev_method: string | null
-  n_opens: number | string | null
-  n_valued: number | string | null
-  realized_mean: number | string | null
-  realized_median: number | string | null
-  realized_to_modeled_ratio: number | string | null
+async function fetchBuckets(): Promise<Buckets> {
+  return fetchPackRealityBuckets()
 }
 
-function num(v: number | string | null | undefined): number | null {
-  if (v == null || v === "") return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
 function fmtUsd(v: number | null): string {
   if (v == null) return "—"
   if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
   return `$${v.toFixed(2)}`
 }
+
 function fmtCount(v: number | null): string {
   if (v == null) return "—"
   return Math.round(v).toLocaleString()
-}
-
-interface Buckets {
-  /** false when the backing read FAILED — distinct from 'no qualifying packs yet'. */
-  ok: boolean
-  over: RealizedRow[]
-  under: RealizedRow[]
-  onModel: RealizedRow[]
-  qualifying: number
-  fetchedAt: string
-}
-
-async function fetchBuckets(): Promise<Buckets> {
-  // 1,559 rows qualify against the 1,000-row cap — the worst truncation of the
-  // three pack boards: ~559 rows were being dropped, arbitrarily (no .order()),
-  // before the over/under/on-model buckets were computed from them.
-  const { rows: data, error } = await withPagedBoardBudget(
-    fetchAllPaged<RealizedRow>(
-    (from, to) =>
-      sb
-        .from("v_allday_pack_realized_ev")
-        .select(
-          "dist_id, title, pack_price, modeled_gross_ev, ev_method, n_opens, n_valued, realized_mean, realized_median, realized_to_modeled_ratio",
-        )
-        .gte("n_opens", 5)
-        .eq("low_confidence_ev", false)
-        // Push the page's own `priced` filter into SQL. v_allday_pack_realized_ev
-        // costs ~26s (it aggregates 2.8M pack_rips rows), so paging it is far more
-        // expensive than the other boards — filtering here cuts 1,559 rows to 302,
-        // which fits in ONE page instead of two and halves the work. The JS `priced`
-        // filter below is identical, so the rendered result is unchanged.
-        .gt("pack_price", 0)
-        .not("modeled_gross_ev", "is", null)
-        .order("dist_id", { ascending: true })
-        .range(from, to),
-    { label: "insights/allday-pack-reality" },
-  ),
-    "allday-pack-reality",
-  )
-  const fetchedAt = new Date().toISOString()
-  if (error) {
-    console.error("[insights/allday-pack-reality] realized", error)
-    return { over: [], under: [], onModel: [], qualifying: 0, fetchedAt, ok: false }
-  }
-  const rows = (data ?? []) as RealizedRow[]
-  const priced = rows.filter((r) => (num(r.pack_price) ?? 0) > 0 && num(r.modeled_gross_ev) != null)
-  const ratio = (r: RealizedRow) => num(r.realized_to_modeled_ratio)
-  const nonFossil = (r: RealizedRow) => {
-    const ev = num(r.modeled_gross_ev)
-    const price = num(r.pack_price)
-    return ev != null && price != null && ev <= price * 1.5
-  }
-  const over = priced
-    .filter((r) => nonFossil(r) && (ratio(r) ?? 99) < 0.6 && (num(r.modeled_gross_ev) ?? 0) >= 2)
-    .sort((a, b) => (ratio(a) ?? 99) - (ratio(b) ?? 99))
-    .slice(0, 12)
-  const under = priced
-    .filter((r) => (ratio(r) ?? 0) > 1.8 && (num(r.modeled_gross_ev) ?? 0) >= 0.5)
-    .sort((a, b) => (ratio(b) ?? 0) - (ratio(a) ?? 0))
-    .slice(0, 12)
-  const onModel = priced
-    .filter((r) => (ratio(r) ?? 0) >= 0.8 && (ratio(r) ?? 0) <= 1.25)
-    .sort((a, b) => (num(b.n_opens) ?? 0) - (num(a.n_opens) ?? 0))
-    .slice(0, 12)
-  return { over, under, onModel, qualifying: priced.length, fetchedAt, ok: true }
 }
 
 function freshnessLabel(iso: string): string {
@@ -135,7 +63,7 @@ const cardStyle: React.CSSProperties = {
   padding: 18,
 }
 
-function RealizedTable({ rows, accent }: { rows: RealizedRow[]; accent: string }) {
+function RealizedTable({ rows, accent }: { rows: PackRealityRow[]; accent: string }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
@@ -176,7 +104,7 @@ function RealizedTable({ rows, accent }: { rows: RealizedRow[]; accent: string }
   )
 }
 
-function Bucket({ title, blurb, rows, accent }: { title: string; blurb: string; rows: RealizedRow[]; accent: string }) {
+function Bucket({ title, blurb, rows, accent }: { title: string; blurb: string; rows: PackRealityRow[]; accent: string }) {
   if (rows.length === 0) return null
   return (
     <section style={cardStyle}>

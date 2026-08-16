@@ -103,7 +103,7 @@ const APP_DIR = join(process.cwd(), "app")
  * is a side effect, and this line records that the budget was lowered in the
  * SAME commit that earned it rather than banked as slack.
  */
-const BUDGET = 15
+const BUDGET = 14
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
