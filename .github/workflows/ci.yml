@@ -181,6 +181,33 @@ jobs:
       - run: npm ci
       - run: npm run test:coverage:components
 
+  # Cloudflare Worker coverage. `workers/**` is 6,129 LOC of production ingest
+  # and proxy code that neither of the two gates above measures — the primary
+  # gate stops at lib/** + app/**/route.ts(x), the component gate at
+  # components/** + *Client.tsx.
+  #
+  # ⚠ Unlike the page.tsx blind spot, this code was already WELL TESTED (22
+  # suites, 21 of them importing the worker source and driving its fetch() /
+  # scheduled() handlers). What it lacked was a floor, so that coverage could rot
+  # silently — and the first anyone would learn of it is an ingest pipeline going
+  # quiet. This job adds no tests; it stops the existing ones from eroding.
+  #
+  # Stakes: pack-events-ingest owns `event_kind`, which the
+  # pack_purchases_set_is_primary_drop trigger reads to derive `is_primary_drop`,
+  # so a regression there misclassifies primary drops as secondary sales across
+  # every pack surface — a wrong number, not an error.
+  worker-tests:
+    name: Worker coverage (Cloudflare workers/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:coverage:workers
+
   # DB-invariant tests (supabase/tests/*.sql). Each test file is self-contained —
   # it creates minimal fixtures + a VERBATIM copy of the committed function DDL,
   # asserts the invariant, and ROLLBACKs — so no full-schema apply is needed (the
