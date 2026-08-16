@@ -155,7 +155,13 @@ const APP_DIR = join(process.cwd(), "app")
  * comments could not do that, and until the split nothing could drive the failure branch
  * they describe.
  */
-const BUDGET = 21
+/* 21 -> 19: `admin/analytics` and `admin/listing-retry-queue` moved their bodies into
+ * `AdminAnalyticsClient.tsx` / `ListingRetryQueueClient.tsx`, so both are now measured by the
+ * component gate and covered by `__tests__/component-AdminAnalyticsAndRetryQueue.test.tsx`.
+ * The conversion found a live defect: the retry queue's rows table rendered "No rows for this
+ * filter" on a FAILED read — the queue reported as CLEAR out of our own outage, on the one
+ * screen an operator uses to decide whether the drain is working. */
+const BUDGET = 19
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
