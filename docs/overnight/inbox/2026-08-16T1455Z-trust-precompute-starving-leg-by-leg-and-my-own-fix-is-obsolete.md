@@ -99,8 +99,28 @@ which is why it is the most-stale row every time.
   through a third instrument — not a third investigation.**
 - ⚠ **The arm reads `max(age)` over ALL rows**, so one perpetually-failing leg pins it
   permanently red. That is the `ufc_fmv_stale_hours` cry-wolf fuse this repo has already paid for
-  once. If the legs are split, the arm should report per-leg. *(Still OPEN after the 08-16 split —
-  it is a view change, not a schedule change.)*
+  once. If the legs are split, the arm should report per-leg.
+
+  > ✅ **RESOLVED 2026-08-16 15:45Z — and the answer is that the arm needs NO CHANGE. Do not
+  > re-point it.** Read live, the arm is
+  > `COALESCE((SELECT round(max(EXTRACT(epoch FROM now() - p2.computed_at))/3600.0, 2)
+  > FROM rpc_trust_health_precompute p2), 999)` with `breach_at = 13`.
+  > **Post-split every one of the 8 legs runs on a 6-hour cadence** (`48 0,6,12,18` · `48 1,7,13,19`
+  > · `48 2,8,14,20` · `48 3,9,15,21` · `48 4,10,16,22` · `48 5,11,17,23` · `9 0,6,12,18` ·
+  > `9 3,9,15,21`), so each metric's age cycles 0 → 6 h and the **max across all 19 settles at ~6.1 h**
+  > (6 h + the longest leg's runtime). Against `breach_at = 13` that is roughly **two missed cycles of
+  > headroom** — the arm goes green at steady state and fires only on a real, sustained miss.
+  >
+  > ⚠ **The cry-wolf worry was misdiagnosed, including by me.** "One perpetually-failing leg pins it
+  > red" is **correct behaviour, not a defect**: a leg that never completes means the board really is
+  > publishing a stale metric, and that should be red. Unlike `ufc_fmv_stale_hours` — which was
+  > structurally unable to go green because a closed market's staleness only grows — this arm has a
+  > reachable green state the moment the leg recovers. **They are not the same fuse.**
+  >
+  > What was genuinely missing was never the threshold, it was **WHICH metric is stale** — the arm
+  > reports one number for 19 metrics. That is supplied by `v_rpc_trust_health_freshness`
+  > (`migrations/20260816153000_…`, committed **UNAPPLIED**), which names the metric *and* the leg
+  > that owes it. **Closing this as "add visibility, don't move the threshold."**
 
 ## Durable
 
