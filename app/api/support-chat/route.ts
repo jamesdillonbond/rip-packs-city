@@ -46,6 +46,7 @@ import {
   absoluteEditionPageUrl,
   markSpecialSerials,
   editionFloorViewFor,
+  keepCanonicalEditions,
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
 import { safeApiError } from "@/lib/api-error";
@@ -2129,9 +2130,13 @@ async function executeTool(
         if (player) q = q.ilike("player_name", `%${player}%`);
         if (setName) q = q.ilike("set_name", `%${setName}%`);
         if (tier) q = q.eq("tier", tier);
-        const { data, error } = await q.limit(25);
+        const { data, error } = await q.limit(50);
         if (error) return JSON.stringify({ status: "error", message: safeApiError(error, "get_edition_listings lookup failed").error });
-        const rows = data ?? [];
+        // ⚠ Top Shot stores every moment TWICE — once int-keyed, once UUID-keyed.
+        // Without this the tool reported one moment as two candidates, and the
+        // model invented a collection ("Pinnacle") to explain the duplicate.
+        // No-op for every other collection; see keepCanonicalEditions.
+        const rows = keepCanonicalEditions(data ?? [], slug);
         if (rows.length === 0) {
           return JSON.stringify({
             status: "no_results",
@@ -2143,9 +2148,15 @@ async function executeTool(
         if (rows.length > 1) {
           return JSON.stringify({
             status: "ambiguous",
-            message: "More than one edition matches. Ask the user which, then call again with that editionKey.",
+            // ⚠ Every candidate is in ONE collection — this lookup is scoped by
+            // collection_id. Say so explicitly: when the rows looked alike the
+            // model previously presented them as being from two different
+            // collections, which is a fact it cannot know and here was false.
+            message: `More than one ${slug} edition matches. All candidates are ${slug}. Ask the user which, then call again with that editionKey.`,
+            collectionId: slug,
             candidates: rows.slice(0, 10).map((r: any) => ({
               editionKey: r.external_id,
+              collectionId: slug,
               player: r.player_name,
               set: r.set_name,
               tier: r.tier,

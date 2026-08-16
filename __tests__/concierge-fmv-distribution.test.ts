@@ -264,3 +264,71 @@ describe("fetchPinnacleFmvDistribution — TRIPLE keying invariant", () => {
     expect(out).toEqual({ status: "no_results", message: "Pinnacle edition 'kX' has no priced render." })
   })
 })
+
+describe("fetchUnifiedFmvDistribution — Top Shot's dual key convention", () => {
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+  // `editions` stores every Top Shot moment TWICE — int-keyed and UUID-keyed —
+  // and the twins carry their own fmv_current rows, so an unfiltered
+  // distribution counts each moment twice and computes p10/p50/p90 over the
+  // inflated set. Measured 2026-08-15 for "Damian Lillard": 65 canonical vs 28
+  // twins, 14 of them priced, so count read 77 against a truth of 63.
+  it("counts each moment ONCE, not once per key convention", async () => {
+    const client = makeClient({
+      editions: {
+        list: {
+          data: [
+            { id: "a", external_id: "48:1652", player_name: "Damian Lillard", set_name: "Archive Set", tier: "COMMON", collection_id: TS },
+            { id: "b", external_id: "9e89b552-0236-4ffc-ab6b:d01a3af4-dce1-499a", player_name: "Damian Lillard", set_name: "Archive Set", tier: "COMMON", collection_id: TS },
+            { id: "c", external_id: "121:4255", player_name: "Damian Lillard", set_name: "Run It Back", tier: "LEGENDARY", collection_id: TS },
+          ],
+          error: null,
+        },
+      },
+      fmv_current: {
+        list: {
+          data: [
+            { edition_id: "a", fmv_usd: 10, confidence: "HIGH", computed_at: "2026-08-15T00:00:00Z" },
+            { edition_id: "b", fmv_usd: 10, confidence: "HIGH", computed_at: "2026-08-15T00:00:00Z" },
+            { edition_id: "c", fmv_usd: 500, confidence: "HIGH", computed_at: "2026-08-15T00:00:00Z" },
+          ],
+          error: null,
+        },
+      },
+    })
+    const res = await fetchUnifiedFmvDistribution(client, {
+      collectionUuid: TS,
+      player: "Damian Lillard",
+    } as never)
+    if (res.status !== "ok" || res.mode !== "distribution") throw new Error("expected a distribution")
+    expect(res.count).toBe(2) // NOT 3 — "b" is "a" under the other convention
+    expect(res.sample_editions.map((e) => e.external_id).sort()).toEqual(["121:4255", "48:1652"])
+  })
+
+  it("keeps a non-Top-Shot collection's UUID keys, which are canonical there", async () => {
+    // ⚠ All Day / Golazos / UFC / Candy are 100% UUID-keyed, so applying the
+    // int-key predicate to them would return an empty distribution.
+    const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const client = makeClient({
+      editions: {
+        list: {
+          data: [
+            { id: "x", external_id: "9e89b552-0236-4ffc-ab6b", player_name: "Patrick Mahomes", set_name: "Base", tier: "COMMON", collection_id: AD },
+          ],
+          error: null,
+        },
+      },
+      fmv_current: {
+        list: {
+          data: [{ edition_id: "x", fmv_usd: 25, confidence: "HIGH", computed_at: "2026-08-15T00:00:00Z" }],
+          error: null,
+        },
+      },
+    })
+    const res = await fetchUnifiedFmvDistribution(client, {
+      collectionUuid: AD,
+      player: "Patrick Mahomes",
+    } as never)
+    expect(res.status).toBe("ok")
+  })
+})

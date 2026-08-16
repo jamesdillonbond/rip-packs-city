@@ -7,6 +7,9 @@ import {
   absoluteEditionPageUrl,
   markSpecialSerials,
   editionFloorViewFor,
+  isCanonicalEditionKey,
+  keepCanonicalEditions,
+  keepCanonicalEditionRows,
 } from "@/lib/concierge/edition-listings"
 
 // The whole point of this module is that "we could not check" and "nothing is
@@ -233,5 +236,78 @@ describe("editionFloorViewFor — which collections have an edition-keyed book",
     // A bare index would hand back Object.prototype.toString as a "view name".
     expect(editionFloorViewFor("toString")).toBeNull()
     expect(editionFloorViewFor("constructor")).toBeNull()
+  })
+})
+
+describe("canonical-edition predicate — the dual-key trap", () => {
+  it("keeps the int-keyed Top Shot row and drops its UUID-keyed twin", () => {
+    // The exact pair behind a live wrong answer: one moment, two rows,
+    // presented to a user as two editions from two different collections.
+    const rows = [
+      { external_id: "48:1652" },
+      { external_id: "9e89b552-0236-4ffc-ab6b-8cf7c27d46b4:d01a3af4-dce1-499a-94d0-4104befb5b40" },
+    ]
+    expect(keepCanonicalEditions(rows, "nba-top-shot")).toEqual([{ external_id: "48:1652" }])
+  })
+
+  it("keeps subedition parallels — the regex must NOT be end-anchored", () => {
+    // `$` would drop every setID:playID::subID parallel (Hexwave/Jukebox),
+    // which are canonical. That reads as a coverage collapse, not a bad query.
+    expect(isCanonicalEditionKey("48:1652::3", "nba-top-shot")).toBe(true)
+    expect(keepCanonicalEditions([{ external_id: "48:1652::3" }], "nba-top-shot")).toHaveLength(1)
+  })
+
+  it("is a NO-OP for every other collection, whose own keys are UUIDs", () => {
+    // ⚠ Applying the predicate globally returns ZERO rows for these — measured
+    // 2026-08-15, All Day / Golazos / UFC / Candy are 100% non-int-keyed.
+    const uuidRow = [{ external_id: "9e89b552-0236-4ffc-ab6b-8cf7c27d46b4" }]
+    for (const slug of ["nfl-all-day", "laliga-golazos", "ufc", "candy-mlb", "disney-pinnacle"]) {
+      expect(keepCanonicalEditions(uuidRow, slug)).toHaveLength(1)
+      expect(isCanonicalEditionKey("anything-at-all", slug)).toBe(true)
+    }
+  })
+
+  it("does not collapse two DIFFERENT moments that share player/set/tier", () => {
+    // Filtering by key convention, not de-duplicating by name: one player can
+    // have several plays in a set, and collapsing on those fields would hide a
+    // real second edition.
+    const rows = [{ external_id: "48:1652" }, { external_id: "48:1999" }]
+    expect(keepCanonicalEditions(rows, "nba-top-shot")).toHaveLength(2)
+  })
+
+  it("treats a missing key on Top Shot as non-canonical rather than keeping it", () => {
+    expect(isCanonicalEditionKey(null, "nba-top-shot")).toBe(false)
+    expect(isCanonicalEditionKey(undefined, "nba-top-shot")).toBe(false)
+    expect(isCanonicalEditionKey("", "nba-top-shot")).toBe(false)
+  })
+})
+
+describe("keepCanonicalEditionRows — the CROSS-COLLECTION case", () => {
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+
+  it("judges each row by its OWN collection, so one query can mix both conventions", () => {
+    // ⚠ The slug form cannot do this. Passing null would let Top Shot's twins
+    // through; passing "nba-top-shot" would delete every All Day row, since
+    // All Day is 100% UUID-keyed.
+    const rows = [
+      { external_id: "48:1652", collection_id: TS },                       // canonical TS
+      { external_id: "9e89b552-0236:d01a3af4-dce1", collection_id: TS },   // TS twin
+      { external_id: "9e89b552-0236-4ffc-ab6b", collection_id: AD },       // All Day, legitimately UUID
+    ]
+    const kept = keepCanonicalEditionRows(rows, TS)
+    expect(kept.map((r) => r.collection_id)).toEqual([TS, AD])
+    expect(kept.map((r) => r.external_id)).toEqual(["48:1652", "9e89b552-0236-4ffc-ab6b"])
+  })
+
+  it("keeps a Top Shot subedition parallel", () => {
+    const rows = [{ external_id: "48:1652::3", collection_id: TS }]
+    expect(keepCanonicalEditionRows(rows, TS)).toHaveLength(1)
+  })
+
+  it("treats a null external_id on a Top Shot row as non-canonical", () => {
+    expect(keepCanonicalEditionRows([{ external_id: null, collection_id: TS }], TS)).toHaveLength(0)
+    // ...but a null key on another collection is not this predicate's business.
+    expect(keepCanonicalEditionRows([{ external_id: null, collection_id: AD }], TS)).toHaveLength(1)
   })
 })

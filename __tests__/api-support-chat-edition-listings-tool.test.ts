@@ -217,6 +217,48 @@ describe("get_edition_listings — resolution", () => {
     expect(out.floor_ask).toBeUndefined()
   })
 
+  it("resolves cleanly when Top Shot returns a moment under BOTH key conventions", async () => {
+    // The live wrong answer: "There are two Damian Lillard Archive Set editions
+    // — looks like a Top Shot one and a Pinnacle one." Both rows were Top Shot,
+    // the same moment int-keyed and UUID-keyed. It must resolve to ONE, not go
+    // ambiguous and invite the model to invent a collection.
+    const out = await drive(
+      { playerName: "Damian Lillard", setName: "Archive Set" },
+      {
+        editions: {
+          data: [
+            LILLARD,
+            { ...LILLARD, external_id: "9e89b552-0236-4ffc-ab6b-8cf7c27d46b4:d01a3af4-dce1-499a-94d0-4104befb5b40" },
+          ],
+          error: null,
+        },
+        fmv_current: { data: [{ fmv_usd: 4, confidence: "MEDIUM" }], error: null },
+        topshot_active_listings: { data: [], error: null },
+      },
+      [jsonRoute("/api/edition-floor", { ok: true, topShotFloor: 3, topShotListingCount: 12 })],
+    )
+    expect(out.status).toBe("ok")
+    expect((out.edition as Record<string, unknown>).editionKey).toBe("48:1652")
+  })
+
+  it("labels every ambiguous candidate with its collection so none can be invented", async () => {
+    const out = await drive(
+      { playerName: "Damian Lillard" },
+      {
+        editions: {
+          data: [LILLARD, { ...LILLARD, external_id: "121:4255", set_name: "Run It Back" }],
+          error: null,
+        },
+      },
+    )
+    expect(out.status).toBe("ambiguous")
+    expect(out.collectionId).toBe("nba-top-shot")
+    for (const c of out.candidates as Array<Record<string, unknown>>) {
+      expect(c.collectionId).toBe("nba-top-shot")
+    }
+    expect(String(out.message)).toMatch(/All candidates are nba-top-shot/i)
+  })
+
   it("a catalog miss is labelled as a catalog miss, not as an unlisted edition", async () => {
     const out = await drive({ playerName: "Nobody At All" }, { editions: { data: [], error: null } })
     expect(out.status).toBe("no_results")

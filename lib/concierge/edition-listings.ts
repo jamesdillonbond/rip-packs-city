@@ -152,6 +152,82 @@ export function editionFloorViewFor(collectionSlug: string | null | undefined): 
   return EDITION_FLOOR_VIEW[collectionSlug] ?? null
 }
 
+/**
+ * THE PLATFORM CANONICAL-EDITION PREDICATE.
+ *
+ * `editions` stores the SAME Top Shot moment under two key conventions: the
+ * int `setID:playID` (`48:1652`) and a UUID pair
+ * (`9e89b552-…:d01a3af4-…`). Measured 2026-08-15: Top Shot holds 19,772 rows,
+ * of which **13,211 are canonical and 6,561 are the UUID-keyed twins**. So any
+ * lookup that does not filter returns every Top Shot moment TWICE.
+ *
+ * This is not cosmetic. It shipped a user-visible wrong answer: asked for the
+ * cheapest Damian Lillard Archive moment, the concierge returned two candidates
+ * with identical player/set/tier/circulation and announced one of them as
+ * "Pinnacle". Both were Top Shot — the same moment under both conventions — and
+ * the model invented a collection to explain why two identical rows existed.
+ * A duplicate that is impossible to tell apart invites exactly that.
+ *
+ * ⚠ THE REGEX IS UNANCHORED AT THE END, DELIBERATELY. `$` would drop every
+ * `setID:playID::subID` parallel (Hexwave/Jukebox subeditions), which ARE
+ * canonical. That mistake reads as a coverage collapse rather than a bad query.
+ *
+ * ⚠ IT IS TOP-SHOT-ONLY, AND APPLYING IT ANYWHERE ELSE RETURNS ZERO ROWS.
+ * Measured the same day: All Day (6,190), Golazos (575), UFC (518) and Candy
+ * (125) are **100% non-int-keyed** — they have no dual convention, so the
+ * predicate that de-duplicates Top Shot annihilates them. Scope it by
+ * collection, never apply it globally.
+ */
+export const CANONICAL_TOPSHOT_KEY_RE = /^[0-9]+:[0-9]+/
+
+/** True when this row is the canonical representation for its collection. */
+export function isCanonicalEditionKey(
+  externalId: string | null | undefined,
+  collectionSlug: string | null | undefined,
+): boolean {
+  // Only Top Shot has two conventions; every other collection's own key is
+  // canonical by definition.
+  if (collectionSlug !== "nba-top-shot") return true
+  if (!externalId) return false
+  return CANONICAL_TOPSHOT_KEY_RE.test(externalId)
+}
+
+/**
+ * Drop the UUID-keyed twins from a Top Shot result set.
+ *
+ * ⚠ Filters rather than de-duplicating by name: two DIFFERENT moments can share
+ * a player+set+tier (a set with several plays by one player), and collapsing on
+ * those fields would hide a real second edition. The key convention is the only
+ * thing that distinguishes a twin from a sibling.
+ */
+export function keepCanonicalEditions<T extends { external_id?: string | null }>(
+  rows: readonly T[],
+  collectionSlug: string | null | undefined,
+): T[] {
+  return rows.filter((r) => isCanonicalEditionKey(r.external_id, collectionSlug))
+}
+
+/**
+ * Row-aware form of {@link keepCanonicalEditions}, for callers that hold a
+ * collection UUID rather than a slug — and, more importantly, for queries that
+ * are NOT scoped to a single collection.
+ *
+ * ⚠ A cross-collection query cannot use the slug form. Passing `null` there
+ * would skip filtering entirely and let Top Shot's twins back in, while passing
+ * "nba-top-shot" would apply the int-key predicate to All Day / Golazos / UFC /
+ * Candy rows and delete every one of them. Each row must be judged by ITS OWN
+ * `collection_id`, which is what this does.
+ */
+export function keepCanonicalEditionRows<
+  T extends { external_id?: string | null; collection_id?: string | null },
+>(rows: readonly T[], topShotCollectionUuid: string): T[] {
+  return rows.filter((r) =>
+    r.collection_id === topShotCollectionUuid
+      ? CANONICAL_TOPSHOT_KEY_RE.test(r.external_id ?? "")
+      : true,
+  )
+}
+
 /** A special serial that is currently listed for this edition. */
 export interface SpecialSerialListing {
   serial: number

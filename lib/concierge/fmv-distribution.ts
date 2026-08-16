@@ -1,3 +1,5 @@
+import { keepCanonicalEditionRows } from "@/lib/concierge/edition-listings"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 // lib/concierge/fmv-distribution.ts
 //
 // Shared catalog-FMV helpers used by the support-chat tools. The unified
@@ -216,9 +218,30 @@ export async function fetchUnifiedFmvDistribution(
   // than ~500 editions to compute a meaningful distribution. Larger queries
   // return the first 500 ordered by id, which is acceptable for a sampled
   // distribution at p10/p50/p90.
-  const { data: editions, error: edErr } = await query.limit(500)
+  const { data: editionRows, error: edErr } = await query.limit(500)
   if (edErr) return { status: "no_results", message: `editions query error: ${edErr.message}` }
-  if (!editions || editions.length === 0) {
+  // ⚠ Drop Top Shot's UUID-keyed twins before anything is counted. `editions`
+  // holds every Top Shot moment under BOTH the int `setID:playID` key and a
+  // UUID pair, so an unfiltered distribution counts each moment twice — and
+  // the twins carry their own FMV rows, so this is not a cosmetic duplicate.
+  // Measured 2026-08-15 for "Damian Lillard": 65 canonical vs 28 twins, of
+  // which 14 are priced, so `count` reported 77 where the truth is 63 and the
+  // percentiles were computed over the inflated set. No-op for every other
+  // collection (they have no dual convention — applying it there returns
+  // zero rows); see keepCanonicalEditions.
+  type CatalogEditionRow = {
+    id: string
+    external_id: string | null
+    player_name: string | null
+    set_name: string | null
+    tier: string | null
+    collection_id: string | null
+  }
+  const editions = keepCanonicalEditionRows<CatalogEditionRow>(
+    (editionRows ?? []) as CatalogEditionRow[],
+    COLLECTION_UUID_BY_SLUG["nba-top-shot"] ?? "",
+  )
+  if (editions.length === 0) {
     return { status: "no_results", message: "No catalog editions matched those filters." }
   }
 
