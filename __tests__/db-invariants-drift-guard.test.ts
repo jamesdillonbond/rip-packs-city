@@ -1064,6 +1064,28 @@ const PINS = [
     migration:
       "supabase/migrations/20260816020000_audit_20260816_snapshot_pinnacle_bridge_and_allday_badge_low_ask.sql",
   },
+  {
+    // pg_cron `10,40 * * * *`. The Golazos sibling of the above — and it is NOT
+    // "the AllDay one with a different UUID", which is the whole reason it gets
+    // its own pin: it calls resolve_golazos_listing_edition_ids() FIRST, healing
+    // edition_id on newly indexed listings BEFORE reading the floor-ask view.
+    //
+    // ⚠ That ordering is load-bearing. golazos_edition_floor_ask joins on
+    // edition_id, so a freshly indexed listing whose edition_id is still NULL is
+    // INVISIBLE to it — the ask never reaches the badge and the edition reads as
+    // having no ask while a live listing sits on the marketplace, with the job
+    // reporting ok. Same class as the Pinnacle NULL-edition_id gap (deep-audit
+    // R4). The test asserts the ordering directly, via a deliberately observable
+    // stand-in resolver.
+    //
+    // ⚠ Coverage context before anyone "fixes" the ~37% Golazos low_ask share:
+    // the ceiling is LISTING-GATED, not a defect, and a second cron will not
+    // raise it. This function is that one cron.
+    fn: "refresh_golazos_badge_low_ask",
+    test: "supabase/tests/refresh_golazos_badge_low_ask.sql",
+    migration:
+      "supabase/migrations/20260816030000_audit_20260816_snapshot_refresh_golazos_badge_low_ask.sql",
+  },
 ]
 
 /**
