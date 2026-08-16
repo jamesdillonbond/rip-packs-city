@@ -101,7 +101,17 @@ async function sendDiscordGroup(userId: string, group: Delivery[]): Promise<void
     method: "POST",
     headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      content: `🎯 ${group.length} new alert${group.length === 1 ? "" : "s"} from Rip Packs City`,
+      // ⚠ The "/ask" line is not decoration — it is the only way a user can
+      // reply here. This DM is the surface where they naturally type a
+      // follow-up ("what's the cheapest one listed?"), and a plain message is
+      // NEVER delivered to us: Discord sends message events over a Gateway
+      // websocket, which serverless cannot hold, so only slash commands reach
+      // the Interactions endpoint. Without this line the user types into the
+      // void and concludes the bot is broken — which is exactly what happened.
+      // Telegram needs no equivalent: its webhook does receive plain text.
+      content:
+        `🎯 ${group.length} new alert${group.length === 1 ? "" : "s"} from Rip Packs City\n` +
+        `_Reply with_ \`/ask <question>\` _— plain messages don't reach the bot here._`,
       embeds: buildDiscordEmbeds(group),
     }),
   });

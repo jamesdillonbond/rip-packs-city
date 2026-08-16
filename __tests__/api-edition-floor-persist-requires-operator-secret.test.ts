@@ -35,7 +35,28 @@ vi.mock("@/lib/cross-market-floor", () => ({
   selectCrossMarketFloor: () => ({ floor: 1.23, source: "test" }),
 }))
 
-vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })) as never)
+// ⚠ This stub must model a SUCCESSFUL marketplace lookup. It used to return
+// `{ ok: false, status: 503 }`, which was harmless only while the route served
+// a failed venue fetch as a 200 with null floors. Now that a failed lookup
+// correctly 503s (an outage is not an empty order book), a failing stub would
+// short-circuit the handler before it ever reaches the persist branch — so
+// every assertion below would pass for the wrong reason, proving nothing about
+// the authorization gate this file exists to pin.
+const TS_GQL_OK = {
+  data: {
+    searchEditions: {
+      data: {
+        searchSummary: {
+          data: { data: [{ setID: "1", playID: "2", lowestAsk: 1.23, forSaleCount: 2 }] },
+        },
+      },
+    },
+  },
+}
+vi.stubGlobal(
+  "fetch",
+  vi.fn(async () => ({ ok: true, status: 200, json: async () => TS_GQL_OK })) as never,
+)
 
 const OLD_ENV = { ...process.env }
 

@@ -38,6 +38,13 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
+import {
+  listingsStatus,
+  listingsNote,
+  discountPct,
+  absoluteEditionPageUrl,
+  markSpecialSerials,
+} from "@/lib/concierge/edition-listings";
 import { safeApiError } from "@/lib/api-error";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { classifySerial } from "@/lib/serials/fun-patterns";
@@ -230,6 +237,7 @@ const TOOLS: Anthropic.Tool[] = [
         player: { type: "string", description: "Player or subject name to filter by (partial match, case-insensitive). REQUIRED whenever the user names a specific person — pass 'LeBron James', 'Patrick Mahomes', 'Messi', etc. For sports collections." },
         character: { type: "string", description: "Character name for Disney Pinnacle (e.g. 'Goofy', 'Mickey Mouse', 'Greef Karga'). REQUIRED whenever the user names a specific character on Pinnacle. Aliased to `player` server-side; pass either field." },
         team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Chiefs'). Use whenever the user asks for deals on a TEAM's moments. Routes to the edition-grain deals board (Top Shot, All Day, Pinnacle)." },
+        setName: { type: "string", description: "Set name filter, partial ok (e.g. 'Archive Set', 'Run It Back', 'Base Set'). Pass whenever the user names a SET. Note this filters the DEAL board — for whether one specific edition is listed at all, use get_edition_listings instead." },
         tier: { type: "string", description: "Tier filter (collection-dependent labels)" },
         maxPrice: { type: "number", description: "Maximum price in USD" },
         minDiscount: { type: "number", description: "Minimum % below FMV (0-100). Use 15 for 'good deals'." },
@@ -430,6 +438,21 @@ const TOOLS: Anthropic.Tool[] = [
         editionKey: { type: "string" },
       },
       required: ["editionKey"],
+    },
+  },
+  {
+    name: "get_edition_listings",
+    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor is Top Shot only; other collections return FMV plus edition_url with listings_status 'unavailable'.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        editionKey: { type: "string", description: "Edition key — Top Shot setID:playID (e.g. '48:1652'). Preferred when known; skips name resolution entirely." },
+        playerName: { type: "string", description: "Player name (partial match). Use with setName when you don't have an editionKey." },
+        setName: { type: "string", description: "Set name (partial match, e.g. 'Archive Set', 'Run It Back'). Strongly recommended alongside playerName — a player alone usually matches many editions." },
+        tier: { type: "string", description: "Tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE) to disambiguate further." },
+        collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Defaults to the active page's collection." },
+      },
+      required: [],
     },
   },
   {
@@ -714,7 +737,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -804,6 +827,16 @@ If the active collection is Disney Pinnacle, FMV and listings live in the pinnac
 
 ## Tool routing for price-comparison queries
 "Should I buy at $X" / "is $X fair" / "is $X a deal" → first call get_fmv or search_catalog_deals (catalog answers "what is it worth"). Only after that mention live availability via search_live_deals. If search_live_deals returns nothing AND the question implies a price comparison, you MUST chain search_catalog_deals or get_fmv before responding.
+
+## "Is this one for sale / what's the cheapest?" about a SPECIFIC edition → get_edition_listings
+CRITICAL — search_live_deals, search_catalog_deals and search_serial_deals are DEAL boards. Every one of them requires a discount below FMV, so an edition listed at or above FMV returns nothing from all three, and that empty result tells you NOTHING about whether it is for sale. An empty deal board is NEVER evidence that an edition is unlisted. Use get_edition_listings for any question about one named moment's floor, cheapest listing, ask, or where to buy it — including as the follow-up after search_catalog or get_fmv has identified the edition.
+
+Read "listings_status" before writing a single word about availability. It has THREE values:
+- "listed" → quote floor_ask (and listings_count), and link edition_url.
+- "none_listed" → the marketplace answered and there are no asks. Say that plainly; it is a real answer.
+- "unavailable" → the live check FAILED. Say the live check failed and link edition_url so they can see the floor themselves. NEVER report this as "nothing is listed", and NEVER offer fmv as a substitute price — fmv is a modelled estimate, not an ask.
+
+Never narrate our indexing to the user. "The feed doesn't filter by set name", "it's not in the current snapshot", "it may be priced above the feed's cutoff" are all descriptions of our plumbing, not answers to their question — call get_edition_listings and answer, or say the check failed. If the user asked about a specific moment, always hand back edition_url; if a chase serial is listed, hand back its buy_url too.
 
 ## CRITICAL — Special serials: "for sale" vs "who owns it" (Top Shot)
 These are two DIFFERENT tools and you must pick the right one:
@@ -1158,9 +1191,17 @@ async function executeTool(
       });
       if (!res.ok) throw new Error(`Sniper feed returned ${res.status}`);
       const data = await res.json();
-      const deals = (data.deals || data || []).filter((d: any) =>
-        toolInput.player ? d.playerName?.toLowerCase().includes(toolInput.player.toLowerCase()) : true
-      );
+      // The feed has no set dimension server-side, so set filtering is done
+      // here on the returned rows — this is what "the live sniper feed doesn't
+      // filter by set name directly" meant when the bot said it to a user.
+      // ⚠ It filters the DEAL board, so an empty result means "no discounted
+      // listing in this set", NEVER "nothing in this set is listed" — that
+      // question belongs to get_edition_listings.
+      const deals = (data.deals || data || []).filter((d: any) => {
+        if (toolInput.player && !d.playerName?.toLowerCase().includes(String(toolInput.player).toLowerCase())) return false;
+        if (toolInput.setName && !d.setName?.toLowerCase().includes(String(toolInput.setName).toLowerCase())) return false;
+        return true;
+      });
       if (deals && deals.length > 0) {
         const results = deals.slice(0, toolInput.limit || 5).map((d: any) => ({
           player: d.playerName,
@@ -1187,6 +1228,7 @@ async function executeTool(
         .limit(toolInput.limit || 10);
       if (effectiveCollectionUuid) query = query.eq("collection_id", effectiveCollectionUuid);
       if (toolInput.player) query = query.ilike("player_name", `%${toolInput.player}%`);
+      if (toolInput.setName) query = query.ilike("set_name", `%${toolInput.setName}%`);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       if (toolInput.maxPrice) query = query.lte("ask_price", toolInput.maxPrice);
       if (toolInput.minDiscount) query = query.gte("discount", toolInput.minDiscount);
@@ -1949,6 +1991,168 @@ async function executeTool(
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "get_special_serial_owners failed").error });
+    }
+  }
+
+  if (toolName === "get_edition_listings") {
+    try {
+      const slug = effectiveCollectionId ?? "nba-top-shot";
+      const collUuid = COLLECTION_UUID_BY_SLUG[slug] ?? null;
+      let editionKey = String(toolInput.editionKey ?? "").trim() || null;
+
+      // ── Resolve the edition when the caller gave names instead of a key ────
+      let edition: any = null;
+      if (editionKey) {
+        const { data, error } = await supabase
+          .from("editions")
+          .select("external_id, player_name, set_name, tier, circulation_count, collection_id")
+          .eq("external_id", editionKey)
+          .eq("collection_id", collUuid)
+          .limit(1);
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error, "get_edition_listings lookup failed").error });
+        edition = (data ?? [])[0] ?? null;
+        if (!edition) {
+          return JSON.stringify({
+            status: "no_results",
+            message: `No edition ${editionKey} in ${slug}. Check the key, or call again with playerName + setName.`,
+          });
+        }
+      } else {
+        const player = String(toolInput.playerName ?? "").trim();
+        const setName = String(toolInput.setName ?? "").trim();
+        const tier = String(toolInput.tier ?? "").trim().toUpperCase();
+        if (!player && !setName) {
+          return JSON.stringify({ status: "error", message: "Provide editionKey, or playerName and/or setName." });
+        }
+        let q = supabase
+          .from("editions")
+          .select("external_id, player_name, set_name, tier, circulation_count, collection_id")
+          .eq("collection_id", collUuid);
+        if (player) q = q.ilike("player_name", `%${player}%`);
+        if (setName) q = q.ilike("set_name", `%${setName}%`);
+        if (tier) q = q.eq("tier", tier);
+        const { data, error } = await q.limit(25);
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error, "get_edition_listings lookup failed").error });
+        const rows = data ?? [];
+        if (rows.length === 0) {
+          return JSON.stringify({
+            status: "no_results",
+            message: `No edition in ${slug} matching that player/set. This is a CATALOG miss, not a market claim — do not say it isn't listed.`,
+          });
+        }
+        // Ambiguous: hand the candidates back rather than silently picking one.
+        // Picking the first would attach a real floor to the wrong moment.
+        if (rows.length > 1) {
+          return JSON.stringify({
+            status: "ambiguous",
+            message: "More than one edition matches. Ask the user which, then call again with that editionKey.",
+            candidates: rows.slice(0, 10).map((r: any) => ({
+              editionKey: r.external_id,
+              player: r.player_name,
+              set: r.set_name,
+              tier: r.tier,
+              circulation: r.circulation_count,
+            })),
+            total_matches: rows.length,
+          });
+        }
+        edition = rows[0];
+        editionKey = String(edition.external_id);
+      }
+
+      const circulation = edition.circulation_count ?? null;
+
+      // ── FMV (catalog) — independent of listings, so it stands even when the
+      // live check fails. It is NOT a price anything is offered at.
+      let fmv: number | null = null;
+      let confidence: string | null = null;
+      try {
+        const { data: f } = await supabase
+          .from("fmv_current")
+          .select("fmv_usd, confidence, edition_id, editions!inner(external_id)")
+          .eq("editions.external_id", editionKey)
+          .limit(1);
+        const row = (f ?? [])[0] as any;
+        if (row) {
+          fmv = row.fmv_usd != null ? Number(row.fmv_usd) : null;
+          confidence = row.confidence ?? null;
+        }
+      } catch { /* FMV is supplementary; absence is reported as null, never as 0 */ }
+
+      // ── Live floor. Top Shot only — /api/edition-floor reads the Top Shot
+      // marketplace, so for other collections we have no live book and say so
+      // rather than implying we checked.
+      let floorOk = false;
+      let floorAsk: number | null = null;
+      let listingsCount = 0;
+      let fetchedAt: string | null = null;
+      if (slug === "nba-top-shot") {
+        try {
+          const res = await fetch(`${base}/api/edition-floor?editionKey=${encodeURIComponent(editionKey!)}`, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(9000),
+          });
+          if (res.ok) {
+            const j = await res.json();
+            // `ok` is the transport flag: it says we reached the marketplace,
+            // NOT that rows came back. Deriving it from the count would
+            // re-create the failure-reads-as-empty bug this tool exists to fix.
+            floorOk = j?.ok === true;
+            floorAsk = j?.topShotFloor ?? null;
+            listingsCount = j?.topShotListingCount ?? 0;
+            fetchedAt = j?.fetchedAt ?? null;
+          }
+        } catch { /* leaves floorOk false -> listings_status 'unavailable' */ }
+      }
+
+      const status = listingsStatus(floorOk, listingsCount, floorAsk);
+
+      // ── Chase serials currently listed for this edition.
+      let specialSerials: any[] = [];
+      if (slug === "nba-top-shot") {
+        try {
+          const { data: sl } = await supabase
+            .from("topshot_active_listings")
+            .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key")
+            .eq("edition_key", editionKey)
+            .eq("active", true)
+            .limit(50);
+          const marked = markSpecialSerials(
+            (sl ?? []) as any[],
+            circulation,
+            (nftId) => (nftId != null ? marketplaceMomentUrl("nba-top-shot", String(nftId)) : null),
+          );
+          specialSerials = marked.filter((s) => s.is_first_mint || s.is_perfect_mint).slice(0, 10);
+        } catch { /* supplementary */ }
+      }
+
+      return JSON.stringify({
+        status: "ok",
+        edition: {
+          editionKey,
+          player: edition.player_name,
+          set: edition.set_name,
+          tier: edition.tier,
+          circulation,
+        },
+        listings_status: status,
+        listings_note: listingsNote(status, slug === "nba-top-shot" ? "the Top Shot marketplace" : "a live marketplace"),
+        floor_ask: status === "listed" ? floorAsk : null,
+        listings_count: status === "listed" ? listingsCount : null,
+        fmv,
+        fmv_confidence: confidence,
+        fmv_note: "fmv is a modelled catalog estimate, NOT an ask. Never present it as a price something is listed at.",
+        discount_pct: status === "listed" ? discountPct(floorAsk, fmv) : null,
+        edition_url: absoluteEditionPageUrl(base, slug, editionKey!),
+        special_serials_listed: specialSerials,
+        special_serials_note:
+          specialSerials.length > 0
+            ? "Chase serials with a live ask. Each buy_url goes straight to that moment on the Top Shot marketplace."
+            : "No #1 or perfect-mint serial has a live ask in our serial feed. That feed refreshes every few hours and covers chase serials only — it is NOT the full order book, so this does not mean the edition is unlisted.",
+        fetched_at: fetchedAt,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "get_edition_listings failed").error });
     }
   }
 

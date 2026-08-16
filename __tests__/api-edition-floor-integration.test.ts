@@ -2,16 +2,31 @@ import { describe, it, expect, afterEach } from "vitest"
 import { NextRequest } from "next/server"
 import { installFetchMock, jsonRoute, type InstalledFetchMock } from "./helpers/route-harness"
 
-// PROOF-OF-CONCEPT: route-integration test driving the ACTUAL handler body, not
-// just its guards. GET/POST /api/edition-floor (non-persist) resolve each edition
-// through two live fetches — Top Shot GQL + Flowty — and no Supabase, so the
-// harness stubs exactly those two seams and we assert the real cross-market
-// merge the handler produces. This exercises fetchTopShotFloor, fetchFlowtyFloor,
-// resolveEditionFloor, selectCrossMarketFloor, and the GET/POST orchestration —
-// the ~18%->happy-path body the guard-only test never reached.
+// Route-integration test driving the ACTUAL handler body, not just its guards.
 //
-// This is the template the other flagship routes (sniper-feed, pack-ev, ...)
-// can follow: declare fetch fixtures, call the handler, assert the response.
+// ⚠ THREE ASSERTIONS IN THIS FILE PINNED THE DEFECT AND WERE REPOINTED
+// (2026-08-16). Recorded here so nobody "restores" them:
+//
+//   1. `flowtyFloor === 15` from a two-listing fixture, and
+//   2. `crossMarketFloor === 9 / crossMarketSource === "flowty"`.
+//      `fetchFlowtyFloor` took setID/playID and used NEITHER — it asked the
+//      collection-wide endpoint for the 48 cheapest TopShot listings on Flowty
+//      and returned the minimum as though it were THIS edition's floor. The
+//      fixtures fed it two arbitrary prices and asserted it picked the smaller,
+//      so the tests were green precisely BECAUSE they reproduced the bug: they
+//      encoded "min of whatever came back" as the contract. The leg is now
+//      unimplemented (see the route's comment for why it cannot be fixed here),
+//      so Flowty is reported absent rather than guessed.
+//
+//   3. `reports null floors when a venue endpoint errors (best-effort, still 200)`.
+//      A 502 from the marketplace was served to callers as a 200 whose body is
+//      byte-identical to a genuinely unlisted edition — the failure-renders-as-
+//      data class. "best-effort, still 200" reads as leniency; what it actually
+//      bought was the concierge telling a collector "nothing may be listed right
+//      now" about an edition it had never managed to look up. Now a 503.
+//
+// The handler resolves each edition through the Top Shot GQL seam and no
+// Supabase, so the harness stubs exactly that.
 
 import { GET, POST } from "@/app/api/edition-floor/route"
 
@@ -30,17 +45,6 @@ function tsFloor(lowestAsk: number | null, forSaleCount: number) {
   }
 }
 
-// Flowty listings response — LISTED orders become candidate prices; floor = min.
-function flowtyListings(prices: number[], livetoken?: number) {
-  return {
-    nfts: prices.map((salePrice, i) => ({
-      id: `nft-${i}`,
-      orders: [{ salePrice, state: "LISTED", nftID: `n${i}` }],
-      valuations: i === 0 && livetoken ? { livetoken: { usdValue: livetoken } } : undefined,
-    })),
-  }
-}
-
 let harness: InstalledFetchMock | null = null
 afterEach(() => {
   harness?.restore()
@@ -55,56 +59,75 @@ describe("GET /api/edition-floor — integration (real handler, stubbed venues)"
     expect(harness.calls).toHaveLength(0)
   })
 
-  it("merges Top Shot + Flowty floors and picks the lower as cross-market", async () => {
-    harness = installFetchMock([
-      jsonRoute("nbatopshot.com", tsFloor(12.5, 3)),
-      jsonRoute("flowty.io", flowtyListings([20, 15], 18)),
-    ])
+  it("returns the Top Shot floor as the cross-market floor", async () => {
+    harness = installFetchMock([jsonRoute("nbatopshot.com", tsFloor(12.5, 3))])
     const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
     expect(res.status).toBe(200)
     const body = await res.json()
+    expect(body.ok).toBe(true)
     expect(body.topShotFloor).toBe(12.5)
     expect(body.topShotListingCount).toBe(3)
-    expect(body.flowtyFloor).toBe(15) // min(20,15)
-    expect(body.flowtyListingCount).toBe(2)
-    expect(body.crossMarketFloor).toBe(12.5) // TS is lower
+    expect(body.crossMarketFloor).toBe(12.5)
     expect(body.crossMarketSource).toBe("topshot")
-    expect(body.livetokenFmv).toBe(18)
-    // exactly the two venue calls were made
-    expect(harness.calls).toHaveLength(2)
+    // Only the Top Shot venue is called now; Flowty is not contacted at all.
+    expect(harness.calls).toHaveLength(1)
   })
 
-  it("falls back to Flowty as the cross-market source when Top Shot has no ask", async () => {
-    harness = installFetchMock([
-      jsonRoute("nbatopshot.com", tsFloor(null, 0)),
-      jsonRoute("flowty.io", flowtyListings([9])),
-    ])
-    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
-    const body = await res.json()
-    expect(body.topShotFloor).toBeNull()
-    expect(body.crossMarketFloor).toBe(9)
-    expect(body.crossMarketSource).toBe("flowty")
-  })
-
-  it("reports null floors when a venue endpoint errors (best-effort, still 200)", async () => {
-    harness = installFetchMock([
-      jsonRoute("nbatopshot.com", {}, { status: 502 }),
-      jsonRoute("flowty.io", {}, { status: 500 }),
-    ])
+  it("never reports a Flowty floor it cannot attribute to this edition", async () => {
+    // The regression guard for defects 1+2 above. Top Shot says nothing is
+    // listed; the answer must be "no floor", NOT some other edition's price.
+    harness = installFetchMock([jsonRoute("nbatopshot.com", tsFloor(null, 0))])
     const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
     expect(res.status).toBe(200)
     const body = await res.json()
+    expect(body.ok).toBe(true) // we DID reach the marketplace
+    expect(body.topShotFloor).toBeNull()
+    expect(body.flowtyFloor).toBeNull()
+    expect(body.flowtyListingCount).toBe(0)
+    expect(body.livetokenFmv).toBeNull()
     expect(body.crossMarketFloor).toBeNull()
     expect(body.crossMarketSource).toBeNull()
+  })
+
+  it("503s when the marketplace cannot be reached — an outage is not an empty order book", async () => {
+    harness = installFetchMock([jsonRoute("nbatopshot.com", {}, { status: 502 })])
+    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.code).toBe("floor_unavailable")
+    // Must not carry a floor field a careless caller could render as a price.
+    expect(body.topShotFloor).toBeUndefined()
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  it("distinguishes an empty order book from an outage", async () => {
+    // The pair that must never collapse: same null floor, different status.
+    harness = installFetchMock([jsonRoute("nbatopshot.com", tsFloor(null, 0))])
+    const empty = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
+    harness.restore()
+
+    harness = installFetchMock([jsonRoute("nbatopshot.com", {}, { status: 500 })])
+    const outage = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
+
+    expect(empty.status).toBe(200)
+    expect(outage.status).toBe(503)
+  })
+
+  it("treats a GQL errors[] payload as an outage, not as an empty book", async () => {
+    // HTTP 200 with a GraphQL error is the shape a blocked/misconfigured proxy
+    // returns most often, so it must not read as "nothing is listed".
+    harness = installFetchMock([
+      jsonRoute("nbatopshot.com", { errors: [{ message: "not authorized" }] }),
+    ])
+    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2"))
+    expect(res.status).toBe(503)
   })
 })
 
 describe("POST /api/edition-floor — integration (batch, non-persist)", () => {
   it("resolves each editionKey and returns a results array", async () => {
-    harness = installFetchMock([
-      jsonRoute("nbatopshot.com", tsFloor(5, 1)),
-      jsonRoute("flowty.io", flowtyListings([7])),
-    ])
+    harness = installFetchMock([jsonRoute("nbatopshot.com", tsFloor(5, 1))])
     const res = await POST(
       new NextRequest("https://t/api/edition-floor", {
         method: "POST",
@@ -114,7 +137,23 @@ describe("POST /api/edition-floor — integration (batch, non-persist)", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.results).toHaveLength(1)
-    expect(body.results[0].crossMarketFloor).toBe(5) // min(5,7) -> TS
+    expect(body.results[0].crossMarketFloor).toBe(5)
+    // The batch path keeps per-row `ok` so a caller can tell which rows are
+    // answers and which are failures, rather than failing the whole batch.
+    expect(body.results[0].ok).toBe(true)
+  })
+
+  it("marks a failed row ok:false instead of reporting it as unlisted", async () => {
+    harness = installFetchMock([jsonRoute("nbatopshot.com", {}, { status: 502 })])
+    const res = await POST(
+      new NextRequest("https://t/api/edition-floor", {
+        method: "POST",
+        body: JSON.stringify({ editionKeys: ["1:2"] }),
+      }),
+    )
+    const body = await res.json()
+    expect(body.results[0].ok).toBe(false)
+    expect(body.results[0].crossMarketFloor).toBeNull()
   })
 
   it("returns an empty results array for an empty editionKeys list (no fetch)", async () => {

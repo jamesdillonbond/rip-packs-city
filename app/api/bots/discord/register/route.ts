@@ -30,6 +30,65 @@ function authed(req: NextRequest): boolean {
   return a === `Bearer ${process.env.INGEST_SECRET_TOKEN}` || a === `Bearer ${process.env.CRON_SECRET}`;
 }
 
+// GET — read back what Discord ACTUALLY has registered, without ever handling
+// the token yourself.
+//
+// Why this exists: a plain DM to the bot produces NO request to this app at
+// all (Discord delivers message events over a Gateway websocket, which a
+// serverless deployment cannot hold — only slash commands reach an
+// Interactions endpoint). So the only way a user can talk to the concierge on
+// Discord is `/ask`, and the only way `/ask` appears in their client is if the
+// PUT below has been run SINCE `ask` was added to COMMANDS. When it hasn't,
+// the symptom is indistinguishable from a broken bot: the user types, and
+// nothing happens.
+//
+// `registered` is the live list; `missing` is the gap against COMMANDS. Never
+// returns the token or any secret — names and statuses only.
+export async function GET(req: NextRequest) {
+  if (!authed(req)) return NextResponse.json({ ok: false }, { status: 401 });
+
+  const appId = process.env.DISCORD_APPLICATION_ID;
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!appId || !token) {
+    return NextResponse.json({ ok: false, error: "missing discord env" }, { status: 500 });
+  }
+
+  const res = await fetch(`https://discord.com/api/v10/applications/${appId}/commands`, {
+    headers: {
+      Authorization: `Bot ${token}`,
+      "User-Agent": "DiscordBot (https://www.rippackscity.com, 1.0)",
+    },
+  });
+  const body = await res.json().catch(() => null);
+
+  if (!res.ok || !Array.isArray(body)) {
+    return NextResponse.json(
+      { ok: false, status: res.status, error: "could not read registered commands" },
+      { status: 502 },
+    );
+  }
+
+  const registered: string[] = body.map((c: any) => String(c.name));
+  const expected = COMMANDS.map((c) => c.name);
+  const missing = expected.filter((n) => !registered.includes(n));
+
+  return NextResponse.json({
+    ok: true,
+    registered,
+    // Commands defined in the repo that Discord has never been told about.
+    // A non-empty `missing` means a user typing "/" in Discord will NOT see
+    // them — POST this route to fix.
+    missing,
+    // DM-capability is per command: without contexts 1 (BOT_DM) the command
+    // exists but is invisible in a DM, which looks identical to a dead bot.
+    dm_capable: body
+      .filter((c: any) => Array.isArray(c.contexts) && c.contexts.includes(1))
+      .map((c: any) => String(c.name)),
+    note:
+      "A plain (non-slash) Discord DM is never delivered to this app — Discord sends message events over a Gateway socket, which serverless cannot hold. /ask is the only concierge path on Discord.",
+  });
+}
+
 export async function POST(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ ok: false }, { status: 401 });
 

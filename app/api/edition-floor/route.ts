@@ -17,21 +17,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { selectCrossMarketFloor } from "@/lib/cross-market-floor";
 
-const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
-const GQL_HEADERS = {
-  "Content-Type": "application/json",
-  Origin: "https://nbatopshot.com",
-  Referer: "https://nbatopshot.com/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-};
+// ⚠ Cloudflare blocks Vercel egress to public-api.nbatopshot.com, so this MUST
+// go through the topshot-proxy worker like every other server-side TS GQL
+// caller in the repo (TS_PROXY_URL + X-Proxy-Secret). Until 2026-08-16 this
+// route posted to the apex host with no proxy and no secret, so the Top Shot
+// leg returned `{ floor: null, count: 0 }` from its catch on EVERY production
+// call — the route answered 200 with an all-null body, which reads exactly like
+// "nothing is listed" rather than "we never reached the marketplace". The
+// literal stays as the dev fallback, matching the sibling routes.
+const TOPSHOT_GQL_DEFAULT = "https://public-api.nbatopshot.com/graphql";
 
-const FLOWTY_ENDPOINT = "https://api2.flowty.io/collection/0x0b2a3299cc857e29/TopShot";
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  "Origin": "https://www.flowty.io",
-  "Referer": "https://www.flowty.io/",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146 Safari/537.36",
-};
+function tsGqlUrl(): string {
+  return process.env.TS_PROXY_URL || TOPSHOT_GQL_DEFAULT;
+}
+
+function tsGqlHeaders(): Record<string, string> {
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    Origin: "https://nbatopshot.com",
+    Referer: "https://nbatopshot.com/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+  };
+  if (process.env.TS_PROXY_SECRET) h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET;
+  return h;
+}
 
 // Top Shot: search active listings for a specific edition by setID + playID
 const SEARCH_EDITIONS_QUERY = `
@@ -60,6 +69,13 @@ const SEARCH_EDITIONS_QUERY = `
 
 export interface EditionFloorResult {
   editionKey: string;
+  /**
+   * Did we actually REACH the marketplace? `false` means the answer below is
+   * absence-of-knowledge, not absence-of-listings — see the note on
+   * `fetchTopShotFloor`. Callers must branch on this before rendering "nothing
+   * is listed"; `/api/edition-floor` itself 503s rather than serving `ok:false`.
+   */
+  ok: boolean;
   topShotFloor: number | null;
   topShotListingCount: number;
   flowtyFloor: number | null;
@@ -70,11 +86,25 @@ export interface EditionFloorResult {
   fetchedAt: string;
 }
 
-async function fetchTopShotFloor(setID: string, playID: string): Promise<{ floor: number | null; count: number }> {
+/**
+ * ⚠ `ok` distinguishes "the marketplace answered and this edition has no live
+ * ask" from "we never got an answer". Every failure exit used to return the
+ * same `{ floor: null, count: 0 }` as a genuinely unlisted edition, so a
+ * blocked proxy, a GQL error and an empty order book were byte-identical to
+ * every caller — the failure-renders-as-data class this repo keeps paying for.
+ * It is the direct cause of the concierge telling a collector "nothing may be
+ * listed right now" about an edition it had simply failed to look up.
+ *
+ * `ok: true, floor: null` is a real, honest answer and must stay one.
+ */
+async function fetchTopShotFloor(
+  setID: string,
+  playID: string
+): Promise<{ floor: number | null; count: number; ok: boolean }> {
   try {
-    const res = await fetch(TOPSHOT_GQL, {
+    const res = await fetch(tsGqlUrl(), {
       method: "POST",
-      headers: GQL_HEADERS,
+      headers: tsGqlHeaders(),
       body: JSON.stringify({
         operationName: "SearchEditionListings",
         query: SEARCH_EDITIONS_QUERY,
@@ -85,82 +115,61 @@ async function fetchTopShotFloor(setID: string, playID: string): Promise<{ floor
           },
         },
       }),
+      signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return { floor: null, count: 0 };
+    if (!res.ok) return { floor: null, count: 0, ok: false };
     const json = await res.json();
-    if (json.errors?.length) return { floor: null, count: 0 };
+    if (json.errors?.length) return { floor: null, count: 0, ok: false };
     const editions = json?.data?.searchEditions?.data?.searchSummary?.data?.data;
     const edition = Array.isArray(editions) ? editions[0] : null;
-    if (!edition) return { floor: null, count: 0 };
+    // No edition row back = the marketplace has no record of this key. That is
+    // an answer, not a failure, so it stays ok:true with a null floor.
+    if (!edition) return { floor: null, count: 0, ok: true };
     const floor = edition.lowestAsk != null ? parseFloat(String(edition.lowestAsk)) : null;
     const count = edition.forSaleCount ?? 0;
-    return { floor: floor && floor > 0 ? floor : null, count };
+    return { floor: floor && floor > 0 ? floor : null, count, ok: true };
   } catch {
-    return { floor: null, count: 0 };
+    return { floor: null, count: 0, ok: false };
   }
 }
 
-async function fetchFlowtyFloor(
-  setID: string,
-  playID: string
-): Promise<{ floor: number | null; count: number; livetokenFmv: number | null }> {
-  try {
-    // Flowty API doesn't accept setID:playID directly — query recent listings
-    // and filter client-side by matching the edition via traits
-    // Since we can't filter by edition key on Flowty's endpoint, we use
-    // the broader collection endpoint and filter by matching the Top Shot
-    // edition key format. This is best-effort.
-    const res = await fetch(FLOWTY_ENDPOINT, {
-      method: "POST",
-      headers: FLOWTY_HEADERS,
-      body: JSON.stringify({
-        address: null,
-        addresses: [],
-        collectionFilters: [{ collection: "0x0b2a3299cc857e29.TopShot", traits: [] }],
-        from: 0,
-        includeAllListings: true,
-        limit: 48,
-        onlyUnlisted: false,
-        orderFilters: [{ conditions: [], kind: "storefront", paymentTokens: [] }],
-        sort: { direction: "asc", listingKind: "storefront", path: "salePrice" },
-      }),
-    });
-    if (!res.ok) return { floor: null, count: 0, livetokenFmv: null };
-    const data = await res.json();
-    const nfts = (data.nfts ?? []) as Array<{
-      id: string;
-      orders: { salePrice: number; state: string; nftID: string }[];
-      valuations?: { livetoken?: { usdValue: number }; blended?: { usdValue: number } };
-    }>;
-
-    // Filter to LISTED orders and get the floor
-    const prices: number[] = [];
-    let livetokenFmv: number | null = null;
-
-    for (const nft of nfts) {
-      const order = nft.orders?.find(o => o.state === "LISTED");
-      if (!order?.salePrice || order.salePrice <= 0) continue;
-      prices.push(order.salePrice);
-      // Capture LiveToken FMV from first result with it
-      if (!livetokenFmv) {
-        const lt = nft.valuations?.livetoken?.usdValue ?? nft.valuations?.blended?.usdValue;
-        if (lt && lt > 0) livetokenFmv = lt;
-      }
-    }
-
-    if (!prices.length) return { floor: null, count: 0, livetokenFmv };
-    prices.sort((a, b) => a - b);
-    return { floor: prices[0], count: prices.length, livetokenFmv };
-  } catch {
-    return { floor: null, count: 0, livetokenFmv: null };
-  }
+// ⚠ THE FLOWTY LEG IS DELIBERATELY NOT IMPLEMENTED — do not "restore" the old
+// body without reading this first (removed 2026-08-16).
+//
+// It took `setID` / `playID` and USED NEITHER. It posted the collection-wide
+// endpoint sorted by salePrice ascending with limit 48 and returned
+// `prices[0]` — i.e. the cheapest TopShot listing on Flowty ANYWHERE — as
+// though it were this edition's floor, and `livetokenFmv` off whichever NFT
+// happened to come back first. Both numbers are real; neither is about the
+// edition asked for. `selectCrossMarketFloor` then took min(tsFloor, thatFloor),
+// so for any edition worth more than the collection's cheapest common the
+// answer was the global floor labelled `crossMarketSource: "flowty"`, which the
+// sniper depth panel renders as "Cross-market $X on Flowty".
+//
+// A wrong floor is worse than no floor: "—" reads as unknown, a number reads as
+// measured. There is no fix available here — that endpoint has no per-edition
+// filter (`collectionFilters[].traits` is unexplored and untestable from the
+// sandbox, which is proxy-blocked to api2.flowty.io), and Flowty blocks Vercel
+// egress anyway, which is why every listing-cache route goes through the
+// flowty-proxy edge function instead. Routing this through that proxy would
+// still leave the attribution problem, so the venue is reported as absent
+// rather than guessed. `selectCrossMarketFloor` stays wired (it is unit-tested
+// and correct) so restoring an attributable Flowty floor is a one-line change.
+async function fetchFlowtyFloor(): Promise<{
+  floor: number | null;
+  count: number;
+  livetokenFmv: number | null;
+}> {
+  return { floor: null, count: 0, livetokenFmv: null };
 }
 
 async function resolveEditionFloor(editionKey: string): Promise<EditionFloorResult> {
   const [setID, playID] = editionKey.split(":");
   if (!setID || !playID) {
+    // A malformed key is a caller error, not an outage: we can answer it
+    // definitively without asking anyone, so it is ok:true.
     return {
-      editionKey, topShotFloor: null, topShotListingCount: 0,
+      editionKey, ok: true, topShotFloor: null, topShotListingCount: 0,
       flowtyFloor: null, flowtyListingCount: 0,
       crossMarketFloor: null, crossMarketSource: null, livetokenFmv: null,
       fetchedAt: new Date().toISOString(),
@@ -169,13 +178,14 @@ async function resolveEditionFloor(editionKey: string): Promise<EditionFloorResu
 
   const [ts, flowty] = await Promise.all([
     fetchTopShotFloor(setID, playID),
-    fetchFlowtyFloor(setID, playID),
+    fetchFlowtyFloor(),
   ]);
 
   const { crossMarketFloor, crossMarketSource } = selectCrossMarketFloor(ts.floor, flowty.floor);
 
   return {
     editionKey,
+    ok: ts.ok,
     topShotFloor: ts.floor,
     topShotListingCount: ts.count,
     flowtyFloor: flowty.floor,
@@ -302,6 +312,21 @@ export async function GET(req: NextRequest) {
   }
 
   const result = await resolveEditionFloor(editionKey);
+
+  // A failed lookup must not be served as a floor of "—". 503 lets the sniper
+  // panel show its existing "Could not load floor data" and lets the concierge
+  // say we could not check, instead of both reporting an empty order book.
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        editionKey,
+        error: "Could not reach the Top Shot marketplace to read this edition's floor.",
+        code: "floor_unavailable",
+      },
+      { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "30" } }
+    );
+  }
 
   if (persist) {
     const supabase = createClient(

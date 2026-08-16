@@ -1,0 +1,211 @@
+import { describe, it, expect } from "vitest"
+import {
+  listingsStatus,
+  listingsNote,
+  discountPct,
+  editionPageUrl,
+  absoluteEditionPageUrl,
+  markSpecialSerials,
+} from "@/lib/concierge/edition-listings"
+
+// The whole point of this module is that "we could not check" and "nothing is
+// listed" are DIFFERENT answers. The concierge told a real collector that a
+// Lillard Archive Set moment was "not showing a current listing in the live
+// feed — meaning nothing may be listed right now" when what had actually
+// happened is that the floor lookup never reached the marketplace. Every test
+// below exists to keep those two apart.
+
+describe("listingsStatus — the three-way distinction", () => {
+  it("reports 'unavailable' when the marketplace was not reached, whatever the counts say", () => {
+    expect(listingsStatus(false, 0, null)).toBe("unavailable")
+    // ⚠ Even if stale/garbage counts come back alongside the failure, a lookup
+    // we could not complete can never be an answer about the market.
+    expect(listingsStatus(false, 7, 12.5)).toBe("unavailable")
+  })
+
+  it("reports 'none_listed' ONLY when the marketplace answered with an empty book", () => {
+    expect(listingsStatus(true, 0, null)).toBe("none_listed")
+  })
+
+  it("reports 'listed' when there are asks", () => {
+    expect(listingsStatus(true, 3, 12.5)).toBe("listed")
+  })
+
+  it("treats a floor with no count (and vice versa) as listed, not empty", () => {
+    // forSaleCount and lowestAsk are populated independently upstream; a
+    // missing one is not evidence of an empty book, and calling it 'none_listed'
+    // would be a false market claim.
+    expect(listingsStatus(true, 0, 12.5)).toBe("listed")
+    expect(listingsStatus(true, 2, null)).toBe("listed")
+  })
+
+  it("does not treat a zero/negative floor as a real ask", () => {
+    expect(listingsStatus(true, 0, 0)).toBe("none_listed")
+  })
+})
+
+describe("listingsNote — the wording cannot drift from the measurement", () => {
+  it("forbids the false claim on 'unavailable' and names the required disclosure", () => {
+    const note = listingsNote("unavailable", "the Top Shot marketplace")
+    expect(note).toMatch(/could NOT reach/i)
+    expect(note).toMatch(/do NOT say nothing is listed/i)
+    // Must also block the other tempting substitution: quoting FMV as a price.
+    expect(note).toMatch(/do NOT present fmv as a listing price/i)
+  })
+
+  it("licenses the plain answer on 'none_listed'", () => {
+    const note = listingsNote("none_listed", "the Top Shot marketplace")
+    expect(note).toMatch(/NO live asks/i)
+    expect(note).toMatch(/real answer/i)
+    // Must NOT carry the unavailable-case prohibition, or the model will hedge
+    // a genuine, useful answer into uselessness.
+    expect(note).not.toMatch(/could NOT reach/i)
+  })
+
+  it("marks a live floor as a snapshot rather than a quote", () => {
+    expect(listingsNote("listed", "the Top Shot marketplace")).toMatch(/snapshot, not a quote/i)
+  })
+
+  it("names the venue it is talking about", () => {
+    expect(listingsNote("none_listed", "a live marketplace")).toContain("a live marketplace")
+  })
+})
+
+describe("discountPct", () => {
+  it("computes percent below FMV to one decimal", () => {
+    expect(discountPct(75, 100)).toBe(25)
+    expect(discountPct(66.67, 100)).toBe(33.3)
+  })
+
+  it("returns null rather than a fabricated number when either side is missing", () => {
+    expect(discountPct(null, 100)).toBeNull()
+    expect(discountPct(75, null)).toBeNull()
+  })
+
+  it("returns null on a zero/negative FMV instead of dividing by it", () => {
+    // The `|| 1` divide-by-zero guard this repo has already been bitten by
+    // would turn a $0 basis into a 7,400% discount.
+    expect(discountPct(75, 0)).toBeNull()
+    expect(discountPct(75, -5)).toBeNull()
+    expect(discountPct(0, 100)).toBeNull()
+  })
+
+  it("reports a negative discount when the ask is ABOVE FMV rather than clamping", () => {
+    // An over-FMV ask is exactly the case the deal boards silently drop; the
+    // whole reason this tool exists is to surface it honestly.
+    expect(discountPct(150, 100)).toBe(-50)
+  })
+})
+
+describe("edition links", () => {
+  it("percent-encodes the colon in a Top Shot edition key", () => {
+    // A raw colon in a path segment is what produced the half-escaped URLs in
+    // earlier bot replies.
+    expect(editionPageUrl("nba-top-shot", "48:1652")).toBe("/nba-top-shot/edition/48%3A1652")
+  })
+
+  it("builds an absolute URL without doubling the slash", () => {
+    expect(absoluteEditionPageUrl("https://www.rippackscity.com/", "nba-top-shot", "48:1652")).toBe(
+      "https://www.rippackscity.com/nba-top-shot/edition/48%3A1652",
+    )
+    expect(absoluteEditionPageUrl("https://www.rippackscity.com", "nba-top-shot", "48:1652")).toBe(
+      "https://www.rippackscity.com/nba-top-shot/edition/48%3A1652",
+    )
+  })
+})
+
+describe("markSpecialSerials", () => {
+  const buy = (id: string | null) => (id ? `https://nbatopshot.com/moment/${id}` : null)
+
+  it("labels #1 and perfect mints and attaches a buy link", () => {
+    const out = markSpecialSerials(
+      [
+        { serial_number: 1, ask_usd: "10", serial_fmv_usd: "20", nft_id: "a" },
+        { serial_number: 50, ask_usd: "30", serial_fmv_usd: "25", nft_id: "b" },
+      ],
+      50,
+      buy,
+    )
+    const first = out.find((s) => s.serial === 1)!
+    const perfect = out.find((s) => s.serial === 50)!
+    expect(first.is_first_mint).toBe(true)
+    expect(first.is_perfect_mint).toBe(false)
+    expect(first.discount_pct).toBe(50)
+    expect(first.buy_url).toBe("https://nbatopshot.com/moment/a")
+    expect(perfect.is_perfect_mint).toBe(true)
+    expect(perfect.discount_pct).toBe(-20) // listed above serial FMV, stated honestly
+  })
+
+  it("never claims a perfect mint when circulation is unknown", () => {
+    // is_perfect_mint is the claim that makes a moment worth many multiples of
+    // floor — a false positive here is a false valuation.
+    const out = markSpecialSerials(
+      [{ serial_number: 50, ask_usd: "30", serial_fmv_usd: null, nft_id: "b" }],
+      null,
+      buy,
+    )
+    expect(out[0].is_perfect_mint).toBe(false)
+    expect(out[0].serial_fmv).toBeNull()
+    expect(out[0].discount_pct).toBeNull()
+  })
+
+  it("drops rows with no serial rather than inventing one", () => {
+    const out = markSpecialSerials(
+      [{ serial_number: null, ask_usd: "5", serial_fmv_usd: "5", nft_id: "c" }],
+      100,
+      buy,
+    )
+    expect(out).toHaveLength(0)
+  })
+
+  it("sorts chase serials first so a truncated list never drops the #1", () => {
+    const out = markSpecialSerials(
+      [
+        { serial_number: 900, ask_usd: "1", serial_fmv_usd: "2", nft_id: "cheap" },
+        { serial_number: 1, ask_usd: "999", serial_fmv_usd: "2000", nft_id: "one" },
+      ],
+      1000,
+      buy,
+    )
+    expect(out[0].serial).toBe(1)
+  })
+
+  it("sorts by price, and an unpriced row does not present as the cheapest", () => {
+    // ⚠ The null-ask row must be NON-chase, or the chase-first comparator sorts
+    // it to the front anyway and the assertion proves nothing about null
+    // handling. A first draft put the null on the #1 and `?? Infinity` -> `?? 0`
+    // survived mutation because of exactly that.
+    const out = markSpecialSerials(
+      [
+        { serial_number: 10, ask_usd: null, serial_fmv_usd: null, nft_id: "unpriced" },
+        { serial_number: 11, ask_usd: "5", serial_fmv_usd: "9", nft_id: "y" },
+        { serial_number: 12, ask_usd: "3", serial_fmv_usd: "9", nft_id: "z" },
+      ],
+      1000,
+      buy,
+    )
+    expect(out.map((s) => s.buy_url?.split("/").pop())).toEqual(["z", "y", "unpriced"])
+  })
+
+  it("keeps the chase row first even when it is the most expensive AND unpriced rows exist", () => {
+    const out = markSpecialSerials(
+      [
+        { serial_number: 10, ask_usd: null, serial_fmv_usd: null, nft_id: "unpriced" },
+        { serial_number: 1, ask_usd: "999", serial_fmv_usd: "2000", nft_id: "one" },
+        { serial_number: 12, ask_usd: "3", serial_fmv_usd: "9", nft_id: "z" },
+      ],
+      1000,
+      buy,
+    )
+    expect(out.map((s) => s.buy_url?.split("/").pop())).toEqual(["one", "z", "unpriced"])
+  })
+
+  it("tolerates a null nft_id without emitting a broken link", () => {
+    const out = markSpecialSerials(
+      [{ serial_number: 1, ask_usd: "10", serial_fmv_usd: "20", nft_id: null }],
+      100,
+      buy,
+    )
+    expect(out[0].buy_url).toBeNull()
+  })
+})
