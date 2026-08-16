@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { readSite } from "./helpers/page-source"
 import {
   DEFAULT_AVATAR_URL,
   resolveAvatarUrl,
@@ -97,8 +98,14 @@ describe("every avatar render site goes through the shared default", () => {
     "components/profile/ProfileHeaderPreview.tsx",
   ]
 
+  // ⚠ `readSite`, not `readFileSync`. This list MIXES a client component, a
+  // collection page, an OG route and a preview component, and the `page.tsx`
+  // entry is the one that silently stops covering anything the day that page is
+  // split into a sibling `*Client.tsx` — which happened to
+  // `[collection]/profile/[username]` on 2026-08-16 and reddened this guard on a
+  // refactor that moved `resolveAvatarUrl` rather than removing it.
   it.each(SITES)("%s resolves through resolveAvatarUrl", (rel) => {
-    const src = fs.readFileSync(path.join(process.cwd(), rel), "utf8")
+    const src = readSite(rel)
     expect(src).toContain("resolveAvatarUrl")
   })
 
@@ -107,8 +114,7 @@ describe("every avatar render site goes through the shared default", () => {
     // `src={bio.avatar_url}` in the comment explaining the change, and this
     // repo has repeatedly had guards trip on their own documentation.
     for (const rel of SITES) {
-      const src = fs
-        .readFileSync(path.join(process.cwd(), rel), "utf8")
+      const src = readSite(rel)
         .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/\S/g, " "))
         .replace(/\/\/[^\n]*/g, (m) => m.replace(/\S/g, " "))
       expect(src, `${rel} passes a raw avatar_url to an img src`).not.toMatch(

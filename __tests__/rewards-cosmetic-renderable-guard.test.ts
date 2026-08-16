@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
+import { pageSource } from "./helpers/page-source"
 import { join } from "node:path"
 
 // Source guard: the rewards page must not sell or equip a cosmetic it cannot draw.
@@ -31,6 +32,11 @@ import { join } from "node:path"
 // where an already-bought one would still be equipped onto a profile.
 
 function read(...parts: string[]): string {
+  // A `page.tsx` request reads the page as a unit (shell + sibling `*Client.tsx`).
+  // `/rewards` is still a single client `page.tsx`, so this is identical today —
+  // written this way so its eventual conversion is a no-op here rather than a red
+  // build inviting the assertion to be loosened. See helpers/page-source.ts.
+  if (parts[parts.length - 1] === "page.tsx") return pageSource(...parts.slice(0, -1))
   return readFileSync(join(process.cwd(), ...parts), "utf8")
 }
 

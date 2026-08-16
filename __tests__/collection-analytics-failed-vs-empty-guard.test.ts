@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { pageSource } from "./helpers/page-source"
 
 // Source guard for the failed-vs-empty split on the per-collection Analytics tab.
 //
@@ -34,10 +33,11 @@ import { join } from "node:path"
 // explaining exactly this distinction. It was understood, and applied to one
 // section out of six.
 
-const SRC = readFileSync(
-  join(process.cwd(), "app", "(collections)", "[collection]", "analytics", "page.tsx"),
-  "utf8",
-)
+// The page AS A UNIT — shell plus any sibling `*Client.tsx`. This tab is still a
+// single `page.tsx` today, so this reads identically; it is written this way so
+// the `*Client.tsx` conversion (which reddened four sibling guards on 2026-08-16
+// by moving their subject, not by changing behaviour) lands here as a no-op.
+const SRC = pageSource("app", "(collections)", "[collection]", "analytics")
 
 /** The components that fetch their own section data and must track failure. */
 const SECTIONS = [

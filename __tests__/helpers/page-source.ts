@@ -62,3 +62,20 @@ export function pageSource(...dirParts: string[]): string {
     .map((f) => readFileSync(f, "utf8"))
     .join("\n")
 }
+
+/**
+ * Reads one repo-relative SITE, where a site is whatever a guard asserts about:
+ * a `page.tsx` is read as the page unit (shell + sibling `*Client.tsx`), and
+ * anything else — a component, a `route.tsx`, an already-extracted `*Client.tsx`
+ * — is read as the single file it is.
+ *
+ * Exists because guards routinely hold a MIXED list (`profile-default-avatar`
+ * checks a client component, a collection page, an OG route and a preview
+ * component in one array). Without this, the `page.tsx` entry in such a list is
+ * the one that silently stops covering anything the day that page is split.
+ */
+export function readSite(rel: string): string {
+  const abs = join(process.cwd(), rel)
+  if (rel.endsWith("page.tsx")) return pageSource(rel.slice(0, -"page.tsx".length))
+  return readFileSync(abs, "utf8")
+}
