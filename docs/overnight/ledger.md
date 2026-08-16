@@ -8,6 +8,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `dashboard/alerts` + `[collection]/profile/[username]` converted; the interesting part is what the GATE cost
+
+Both moved into `DashboardAlertsClient.tsx` / `CollectionProfileClient.tsx`, covered by
+`__tests__/component-DashboardAlertsAndCollectionProfile.test.tsx` (**79 tests**). Neither
+carried a new defect — both were already hardened — and both carry a claim about the
+READER'S OWN ACCOUNT, the worst version of the failed-read class.
+
+⚠ **THE MEASURED COST OF A CONVERSION, WHICH IS THE DURABLE PART.** These two pages are 860
+and 867 lines and my first pass covered ~50% of each. **That FAILED the component gate on
+all four metrics** — a conversion adds its whole file to the denominator, so a
+half-covered one is a net regression however many tests come with it. It took **three
+further rounds** (the create-alert modal, the row/status rendering, the trophy-slab and
+avatar surface, the per-wallet FMV chart) to get from 4 red thresholds to
+90.62/81.88/89.26/93.47. **Budget the coverage before converting a page over ~800 lines, or
+expect to write ~60 more tests than you planned.**
+
+⚠ **Four fixture-shaped mistakes of mine, all the same family and all cheap to avoid: read
+the component's own interface first.** An invented `Alert` shape rendered no rows; the
+sniper panel reads a **camelCase DTO** (`playerName`/`askPrice`/`discount`) where every
+other panel uses snake_case, so a wrong key threw and the WHOLE page rendered empty; the
+"LOAD →" affordance is a **Link to the collection page**, not the chart trigger (the chart
+mounts on its own for `wallets[0]`); and `/api/profile/portfolio-history?wallet=` matches a
+naive `url.includes("wallet")` route **before** the portfolio check, so the chart silently
+received the saved-wallets payload. Each failure read as a selector or routing fault.
+
+⚠ **Two mutation survivors, handled differently on purpose.** The stale-matches one was a
+FIXTURE GAP — a failed FIRST search leaves `matches` null, so both implementations render
+nothing; it needed a two-search fixture and is now killed. The `if (!data) setLoadFailed`
+guards are genuinely REDUNDANT behind their `.catch` (a null `data` throws on
+`data.snapshots`), so they are documented rather than contrived away, with the composite
+(guard + catch removed together) verified to redden.
+
+⚠ **And one assertion of mine was vacuous in exactly the way it was written to prevent**: it
+searched for `/hasn't pinned|no trophies yet/`, a phrase this page never emits, so BOTH
+profile mutations survived. **Grep the component for the sentence before asserting its
+absence.**
+
+Ratchets: client-page-gate 13 → 11, fetch-honesty 16 → 14. `tsc` clean; the six guards whose
+subject these conversions moved all re-run green.
+
+Revert: `git revert <sha>` — restores both monolithic `page.tsx` files and both budgets. No
+behaviour change to revert. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — "fix any issues you encounter") — CI was RED on `main` because three guards' SUBJECT moved out from under a hard-coded path; repaired without weakening a single assertion
 
 - **Test-only: 3 guard files repaired + 1 new helper (`__tests__/helpers/page-source.ts`). No app code, no DB, no migration, no cron.** Revert: `git revert` the commit `fix(guards): read a page as page.tsx + its sibling Client.tsx`. A docs-only tip is deliberate here — nothing user-facing changed, so `vercel.json`'s `ignoreCommand` correctly skips the build.
