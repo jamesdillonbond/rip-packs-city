@@ -58,7 +58,7 @@ const USE_CLIENT = /^\s*["']use client["']/
 // sibling BAN is supposed to forbid — and the ban's regex required parentheses
 // around the arrow parameter, so it read a population of ZERO while that site
 // stood outside it. Both were fixed together.
-const BUDGET = 34
+const BUDGET = 33
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

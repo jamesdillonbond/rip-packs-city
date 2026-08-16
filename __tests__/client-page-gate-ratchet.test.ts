@@ -45,7 +45,7 @@ const APP_DIR = join(process.cwd(), "app")
  * The ceiling. Lower it when you convert a page to the `*Client.tsx` split;
  * NEVER raise it. 33 when this landed.
  */
-const BUDGET = 33
+const BUDGET = 32
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
