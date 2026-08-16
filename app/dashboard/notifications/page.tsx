@@ -1,5 +1,7 @@
 "use client"
 
+import { fetchJson } from "@/lib/analytics/fetch-json"
+
 // app/dashboard/notifications/page.tsx
 //
 // Email subscription preferences. Hits /api/email/subscribe (GET to hydrate,
@@ -66,11 +68,21 @@ function NotificationsPage() {
   const [dealTiers, setDealTiers] = useState<string[]>([])
 
   useEffect(() => {
-    fetch("/api/email/subscribe", { credentials: "include" })
-      .then(r => r.json())
-      .then(j => {
+    // ⚠ Was `.then(r => r.json())` with no status check. It degraded correctly
+    // only BY ACCIDENT: `apiErrorResponse` happens to put an `error` field in the
+    // envelope, and the next line throws on it. A failure body without that field
+    // — a 500 from a layer that does not use the helper, or an HTML error page —
+    // would fall straight through, leaving `j.subscriber` undefined and rendering
+    // a subscribed collector as not subscribed. fetchJson gates the parse on the
+    // status so the accident is not load-bearing.
+    fetchJson<{ error?: string; subscriber?: Subscriber | null }>("/api/email/subscribe", {
+      credentials: "include",
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Couldn't load your notification settings")
+        const j = res.json ?? {}
         if (j.error) throw new Error(j.error)
-        const s = j.subscriber as Subscriber | null
+        const s = (j.subscriber ?? null) as Subscriber | null
         setSub(s)
         if (s) {
           setDigestWeekly(s.digest_weekly)

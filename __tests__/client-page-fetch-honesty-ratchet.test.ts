@@ -53,7 +53,12 @@ const USE_CLIENT = /^\s*["']use client["']/
  * The ceiling. Lower it when you convert a page to `fetchJson`; NEVER raise it.
  * 35 when this landed.
  */
-const BUDGET = 35
+// 35 → 34 on 2026-08-15: app/dashboard/notifications/page.tsx moved onto
+// fetchJson. It was carrying `.then(r => r.json())` — the raw-parse shape the
+// sibling BAN is supposed to forbid — and the ban's regex required parentheses
+// around the arrow parameter, so it read a population of ZERO while that site
+// stood outside it. Both were fixed together.
+const BUDGET = 34
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

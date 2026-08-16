@@ -68,10 +68,21 @@ function stripComments(src: string): string {
     .replace(/\/\*[\s\S]*?\*\//g, "")
 }
 
+// ⚠ THE PARENTHESES ARE OPTIONAL, and they were NOT when this ban shipped.
+// The first version required `(r) =>` and so was blind to `r => r.json()` —
+// the identical defect written without parens. It reported a population of ZERO
+// while `app/dashboard/notifications/page.tsx:70` carried exactly that shape,
+// so the ban was announced as closed while one site stood outside it. Found by
+// opening an unrelated file, not by the guard.
+//
+// A guard's own derivation decides what it can observe — this file already says
+// that about the SERVER/CLIENT split, and it turned out to be true one level
+// further down, about arrow-function syntax.
+//
 // The backreference is what makes this precise: it matches `.then((r) => r.json())`
 // only when the parameter and the receiver are the SAME identifier, so a genuine
 // `.then((res) => other.json())` is not swept up.
-const RAW_JSON_RX = /\.then\(\s*\(\s*(\w+)\s*\)\s*=>\s*\1\.json\(\)\s*\)/
+const RAW_JSON_RX = /\.then\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\.json\(\)\s*\)/
 
 function clientFiles(): string[] {
   return [...walk(join(process.cwd(), "components")), ...walk(join(process.cwd(), "app"))].filter(
@@ -113,6 +124,8 @@ describe("client code never parses a response body without checking the status",
     // walk() or regex would leave the ban passing forever over nothing.
     expect(RAW_JSON_RX.test("fetch(url).then((r) => r.json())")).toBe(true)
     expect(RAW_JSON_RX.test("  .then((res) => res.json())")).toBe(true)
+    // The form the shipped ban missed.
+    expect(RAW_JSON_RX.test(".then(r => r.json())")).toBe(true)
     // ...and it must not fire on the correct shapes.
     expect(RAW_JSON_RX.test("fetchJson<T>(url)")).toBe(false)
     expect(RAW_JSON_RX.test(".then((r) => (r.ok ? r.json() : null))")).toBe(false)
