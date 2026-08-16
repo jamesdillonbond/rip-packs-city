@@ -74,9 +74,9 @@ export type Coverage = {
 const usd = (x: number | null | undefined) =>
   x == null || isNaN(Number(x)) || Number(x) <= 0
     ? "—"
-    : "$" + Number(x).toLocaleString(undefined, { maximumFractionDigits: Math.abs(Number(x)) < 100 ? 2 : 0 });
+    : "$" + Number(x).toLocaleString("en-US", { maximumFractionDigits: Math.abs(Number(x)) < 100 ? 2 : 0 });
 const num = (x: number | null | undefined, d = 0) =>
-  x == null || isNaN(Number(x)) ? "—" : Number(x).toLocaleString(undefined, { maximumFractionDigits: d });
+  x == null || isNaN(Number(x)) ? "—" : Number(x).toLocaleString("en-US", { maximumFractionDigits: d });
 
 const CSS = `
 .psq-wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px;color:var(--rpc-text-primary,#ECEAE3)}

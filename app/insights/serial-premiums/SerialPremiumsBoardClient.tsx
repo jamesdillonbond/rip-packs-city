@@ -82,7 +82,7 @@ function fmtDate(iso: string | null): string {
   if (!iso) return "—"
   const t = new Date(iso).getTime()
   if (!Number.isFinite(t)) return "—"
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
 }
 
 function tierColor(tier: string | null): string {

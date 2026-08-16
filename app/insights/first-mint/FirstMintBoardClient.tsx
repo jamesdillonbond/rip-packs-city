@@ -65,7 +65,7 @@ function fmtMult(n: number | null | undefined): string {
 }
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
 function tierColor(tier: string | null): string {
