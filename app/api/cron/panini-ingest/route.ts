@@ -1,11 +1,29 @@
 // app/api/cron/panini-ingest/route.ts
 //
-// SHIPPED 2026-07-16 as INERT infrastructure — receives nothing until the residential
-// runner (scripts/ingest-panini-runner.mjs) runs on Trevor's logged-in box. No cron wired.
+// ⚠ THIS ROUTE IS LIVE AND IS THE WRITE PATH FOR A PUBLIC BOARD — do not read a silence
+// here as expected. Its header said "SHIPPED 2026-07-16 as INERT infrastructure — receives
+// nothing until the residential runner runs on Trevor's logged-in box. No cron wired." until
+// 2026-08-16; that was true at ship and has been false since 2026-07-25, when the Windows
+// Task Scheduler job went live. Measured 2026-08-16: 1,030 runs / 0 failures / 2,396 rows
+// written, last tick 28 min before this edit, feeding 4,609 panini_editions + 26,990
+// panini_fmv_snapshots — and `/insights/panini-squeeze` has been PUBLIC since the 2026-08-01
+// PANINI_PUBLIC flip. The stale "inert / no cron wired" claim is exactly what would license a
+// future session to dismiss a stall on this pipeline as by-design.
+//
+// The runner is NOT on a cron in this repo — it is the 5th scheduler (Trevor's residential
+// box, every 4h on the hour at 01/05/09/13/17/21 UTC, in ~120-run bursts). So the liveness
+// instrument is the `pipeline_cadence_watchlist` row (`panini-ingest`, is_active=true,
+// max_silent_minutes=360, severity=info). ⚠ That severity is a KNOWN outstanding item, not an
+// oversight to "fix" here: the row's own note says to raise it to medium/high at go-live, that
+// was missed on 2026-08-01, and it is deliberately parked at info pending Trevor because the
+// box drops ~15% of ticks by design and a chronically-red arm trains operators to skim past it.
+//
 // Tables applied via audit_20260716_panini_schema_inert. See docs/strategy/panini-roadmap-2026-07-16.md.
 //
 // PUSH ingest for Panini Plane-A: receives batches captured by the residential runner
-// (docs/drafts/panini/ingest-panini-runner.mjs) and writes panini_editions /
+// (scripts/ingest-panini-runner.mjs — the LIVE producer; the superseded draft under
+// docs/drafts/panini/ carries a stale pack list and a psku format whose last two fields are
+// swapped, so do not read the contract off it) and writes panini_editions /
 // panini_pack_state / panini_fmv_snapshots. The runner does all auth + signing in a
 // real logged-in browser; this route only normalizes + upserts (service-role).
 //
