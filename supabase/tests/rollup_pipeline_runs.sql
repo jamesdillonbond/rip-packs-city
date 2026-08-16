@@ -162,13 +162,39 @@ END;
 $function$;
 -- <<< END verbatim rollup_pipeline_runs <<<
 
+-- ⚠ FIXTURE TIMESTAMPS ARE ANCHORED TO THE START OF THE UTC DAY, NOT TO now().
+-- They used to be `now() - interval 'N hours'`, which made this file fail for a
+-- ~3-HOUR WINDOW AFTER UTC MIDNIGHT EVERY DAY — and `db-tests` is a BLOCKING CI
+-- job, so it reddened unrelated pushes. Caught 2026-08-15 at 00:09 UTC.
+--
+-- The mechanism: the rollup groups on `(started_at AT TIME ZONE 'UTC')::date`.
+-- Just after midnight, `now() - interval '2 hours'` lands on YESTERDAY while
+-- `now()` lands on today, so `pipeline_runs_daily WHERE pipeline='alpha'` starts
+-- returning TWO rows and every single-row subquery below dies with "more than
+-- one row returned by a subquery used as an expression" — an error that reads
+-- like a logic bug in the function and is not one. Same family as the PGTZ=UTC
+-- pin in scripts/run-db-tests.sh: a clock assumption that is invisible until the
+-- clock moves.
+--
+-- ⚠ Do NOT "fix" a future instance by widening an assertion to `LIMIT 1` — that
+-- hides the straddle instead of preventing it, and the day-splitting behaviour it
+-- would mask is exactly what this test exists to check. Keep every fixture inside
+-- one UTC day.
+--
+-- Anchoring FORWARD from midnight is safe because the rollup's window filter is
+-- `started_at >= v_cutoff` with NO upper bound, so a row a few minutes ahead of
+-- now() is still aggregated into today. Offsets preserve the original relative
+-- ORDER, which is load-bearing: last_error is
+-- `array_agg(error ORDER BY started_at DESC)[1]`.
+\set utcday 'date_trunc(''day'', now() AT TIME ZONE ''UTC'') AT TIME ZONE ''UTC'''
+
 -- Three runs of one pipeline today, one failing.
 INSERT INTO public.pipeline_runs
   (pipeline, started_at, finished_at, duration_ms, rows_found, rows_written, rows_skipped, ok, error, collection_slug, extra)
 VALUES
-  ('alpha', now() - interval '3 hours', now() - interval '3 hours', 100, 10, 5, 1, true,  NULL,      'nba_top_shot', '{"a":1}'::jsonb),
-  ('alpha', now() - interval '2 hours', now() - interval '2 hours', 200, 20, 6, 2, false, 'boom',    'nfl_all_day',  '{"a":1,"b":2}'::jsonb),
-  ('alpha', now() - interval '1 hour',  now() - interval '1 hour',  300, 30, 7, 3, true,  NULL,      NULL,           '{"b":2}'::jsonb);
+  ('alpha', :utcday + interval '1 min', :utcday + interval '1 min', 100, 10, 5, 1, true,  NULL,      'nba_top_shot', '{"a":1}'::jsonb),
+  ('alpha', :utcday + interval '2 min', :utcday + interval '2 min', 200, 20, 6, 2, false, 'boom',    'nfl_all_day',  '{"a":1,"b":2}'::jsonb),
+  ('alpha', :utcday + interval '3 min', :utcday + interval '3 min', 300, 30, 7, 3, true,  NULL,      NULL,           '{"b":2}'::jsonb);
 
 SELECT _assert_eq((public.rollup_pipeline_runs() ->> 'upserted'), '1',
   'one (pipeline, day) row is written');
@@ -210,8 +236,8 @@ SELECT _assert_eq((SELECT rows_written::text FROM public.pipeline_runs_daily WHE
 INSERT INTO public.pipeline_runs
   (pipeline, started_at, finished_at, duration_ms, rows_found, rows_written, rows_skipped, ok, error, collection_slug, extra)
 VALUES
-  ('alpha', now() - interval '30 minutes', now(), 400, 40, 8, 4, true, NULL, 'ufc_strike', '{"c":3}'::jsonb),
-  ('alpha', now() - interval '20 minutes', now(), 500, 50, 9, 5, true, NULL, NULL,          '{"c":3}'::jsonb);
+  ('alpha', :utcday + interval '4 min', :utcday + interval '4 min', 400, 40, 8, 4, true, NULL, 'ufc_strike', '{"c":3}'::jsonb),
+  ('alpha', :utcday + interval '5 min', :utcday + interval '5 min', 500, 50, 9, 5, true, NULL, NULL,          '{"c":3}'::jsonb);
 SELECT public.rollup_pipeline_runs();
 SELECT _assert_eq((SELECT runs::text FROM public.pipeline_runs_daily WHERE pipeline='alpha'), '4',
   'a day that GREW is updated (2 surviving + 2 new)');
@@ -223,8 +249,8 @@ DELETE FROM public.pipeline_runs WHERE error IS NOT NULL;
 INSERT INTO public.pipeline_runs
   (pipeline, started_at, finished_at, duration_ms, rows_found, rows_written, rows_skipped, ok, error, collection_slug, extra)
 VALUES
-  ('alpha', now() - interval '10 minutes', now(), 600, 60, 10, 6, true, NULL, NULL, '{"c":3}'::jsonb),
-  ('alpha', now() - interval '5 minutes',  now(), 700, 70, 11, 7, true, NULL, NULL, '{"c":3}'::jsonb);
+  ('alpha', :utcday + interval '6 min', :utcday + interval '6 min', 600, 60, 10, 6, true, NULL, NULL, '{"c":3}'::jsonb),
+  ('alpha', :utcday + interval '7 min', :utcday + interval '7 min', 700, 70, 11, 7, true, NULL, NULL, '{"c":3}'::jsonb);
 SELECT public.rollup_pipeline_runs();
 SELECT _assert_eq((SELECT last_error FROM public.pipeline_runs_daily WHERE pipeline='alpha'), 'boom',
   'a recorded last_error survives a later error-free pass');
@@ -236,9 +262,9 @@ SELECT _assert_eq((SELECT last_error FROM public.pipeline_runs_daily WHERE pipel
 INSERT INTO public.pipeline_runs
   (pipeline, started_at, finished_at, duration_ms, rows_found, rows_written, rows_skipped, ok, error, collection_slug, extra)
 VALUES
-  ('beta', now() - interval '1 hour', now(), 10, 1, 1, 0, true, NULL, NULL, '"a bare string"'::jsonb),
-  ('beta', now() - interval '2 hour', now(), 10, 1, 1, 0, true, NULL, NULL, '[1,2,3]'::jsonb),
-  ('beta', now() - interval '3 hour', now(), 10, 1, 1, 0, true, NULL, NULL, '{"ok":1}'::jsonb);
+  ('beta', :utcday + interval '3 min', :utcday + interval '3 min', 10, 1, 1, 0, true, NULL, NULL, '"a bare string"'::jsonb),
+  ('beta', :utcday + interval '2 min', :utcday + interval '2 min', 10, 1, 1, 0, true, NULL, NULL, '[1,2,3]'::jsonb),
+  ('beta', :utcday + interval '1 min', :utcday + interval '1 min', 10, 1, 1, 0, true, NULL, NULL, '{"ok":1}'::jsonb);
 SELECT public.rollup_pipeline_runs();
 SELECT _assert_eq((SELECT runs::text FROM public.pipeline_runs_daily WHERE pipeline='beta'), '3',
   'a non-object `extra` does not abort the rollup');

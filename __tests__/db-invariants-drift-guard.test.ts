@@ -912,6 +912,48 @@ const PINS = [
     migration:
       "supabase/migrations/20260810030734_audit_20260809_unmapped_backlog_growth_precompute_cache.sql",
   },
+  {
+    // pg_cron `25 9 * * *`. One of only TWO scheduled SECDEF functions that
+    // DELETE and were unpinned as of 2026-08-15 (measured: 169 SECDEF writers in
+    // public, 36 on an active schedule, 17 of those unpinned). Deleters were
+    // pinned first because over-deletion produces an ABSENCE, not an error, so
+    // nothing downstream reports it — and this one rebuilds the cache behind the
+    // thin-sale ask DISCLOSURE, the copy that tells a collector an FMV came from
+    // an ask rather than from sales. A silently-empty cache does not break a
+    // page; it removes a caveat from a price.
+    //
+    // Pins the delete-then-insert-in-one-transaction property (a reader must
+    // never observe the table empty), that it rebuilds FROM THE VIEW rather than
+    // from a re-derived predicate (else the disclosure drifts from the clamp it
+    // describes — how the Pinnacle FMV drift guard went tautological), and that
+    // a zero-row rebuild is REPORTED rather than silent.
+    fn: "fmv_thin_sale_ask_disclosure_refresh",
+    test: "supabase/tests/fmv_thin_sale_ask_disclosure_refresh.sql",
+    migration:
+      "supabase/migrations/20260805125830_audit_20260805_thin_sale_disclosure_refresh_cron_heavy_and_timeout.sql",
+  },
+  {
+    // pg_cron `23 */6 * * *` (jobid 62, via rpc-remap-misattributed-sales) AND
+    // step 5 of /api/cron/drain-conflated-subeditions. The second of the two
+    // unpinned scheduled deleters, and the higher-stakes one:
+    // `topshot_deals_vs_fmv` EXCLUDES the editions this table holds, so an
+    // under-populated rebuild publishes CONFLATED editions on the PUBLIC deals
+    // board as genuine deals, priced off a serial that belongs to two different
+    // moments. It fails in the direction of showing MORE rows.
+    //
+    // ⚠ Its migration is a SNAPSHOT — the function was MCP-applied with no
+    // committed file, which is what made it unpinnable. The file was pulled from
+    // live via pg_get_functiondef (md5 511458579340501cbb8f7e608f4877f1) and is
+    // a no-op to apply.
+    //
+    // ⚠ The two callers matter: deep-audit R7 reasoned from the dead drain route
+    // alone that this guard must be ~15 days stale; measured live it is 0.0 days
+    // stale over 931 rows, because jobid 62 calls it independently.
+    fn: "refresh_topshot_conflated_editions_detector_only",
+    test: "supabase/tests/refresh_topshot_conflated_editions_detector_only.sql",
+    migration:
+      "supabase/migrations/20260815180000_audit_20260815_snapshot_refresh_topshot_conflated_editions_detector_only.sql",
+  },
 ]
 
 /**
