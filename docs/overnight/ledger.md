@@ -33,6 +33,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - ⚠ **What not to conclude from tomorrow's tick:** `realign` still missing from `extra.step_ms` is NOT this fix failing. Split and realign fail for different reasons and only split's was tunable. Knots is still predicted to run (~261 s elapsed against a 471 s start-cutoff).
 - **Filed, not taken:** realign's real repair is to bound the DRIVING side (drive from `topshot_moment_subeditions` with the LIMIT before the union/joins) — a migration on TopShot keying, which every edition-keyed FMV derives from. `docs/overnight/inbox/2026-08-15T2350Z-realign-is-scan-bound-not-row-bound.md`.
 - **Verified:** `tsc` clean; drain ordering guard 6/6 green. **Revert:** `git revert <sha>` restores `p_limit: 8000` on split (and with it the nightly rollback).
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "analyze test coverage → do all of them") — the error-vs-absent guard was an ALLOWLIST and two live instances were hiding behind it, one because its case is named for a different page
+
+**What shipped.** Fixed the two remaining server pages that answered `notFound()` on a FAILED read, and replaced the 4-page hand-written allowlist with a directory-driven sweep whose population is now zero.
+
+- `/analytics/wallets/[address]` — all three loaders returned a bare `null` for both "no such wallet" and "the RPC failed". Explicitly SEO-indexable, served under ISR `revalidate=600`, so one statement timeout did not 404 a single request — it **CACHED that 404 for ten minutes** for every visitor and crawler, while `generateMetadata` published "Wallet not found" beside it. Extracted to `lib/analytics/wallets/detail-fetchers.ts` (`{data, ok}`, bounded 12s), failed read now renders an unavailable card + `noindex, follow`.
+- `app/pinnacle/moment/[id]/page.tsx` — **none** of its reads destructured `error` at all, so a timeout fell through `if (!ed)` into `notFound()` on the shareable Pinnacle pin URL. Same class fixed on `/moment/[id]`; the Pinnacle sibling was never swept.
+
+⚠ **WHY THE WALLET ONE SURVIVED FOUR SWEEPS — the transferable part.** The existing guard's case is titled *"analytics/wallets does not report a failed read as 'no activity'"* and reads `analytics/wallets/page.tsx`, the **directory index**. The detail page one segment down was never in it, and `lib/analytics/sets/detail-fetchers.ts` even cites "/analytics/wallets" as already-pinned — which reads as covering it. **Two pages sharing a path prefix is all an allowlist needs to fail silently.**
+
+⚠ **A SOURCE SWEEP ALONE WAS NOT ENOUGH, proved by a mutation that survived.** The sweep bans the bad SHAPE, so it catches a revert to `return null`. It does NOT catch a loader that keeps `{data, ok}` and returns the WRONG `ok` — flipping the error branch to `ok:true` left every source guard green while restoring the defect exactly. Hence `__tests__/lib-analytics-wallets-detail-fetchers.test.ts` (17 cases). **Shapes can be grepped; semantics need a behavioural test.**
+
+⚠ One mutation exposed a vacuous fixture of my own: "a successful read with no activity stays ok:true" used a non-null empty payload, so deriving `ok` as `data != null` passed. Only a fixture where `data` IS null separates a real 404 from a failed read.
+
+- Server-page data-access ratchet **18 → 17**, lowered in the same commit that earned it.
+- Guard carries a not-vacuous check, and its comment-stripper **preserves line numbers** — the decoration opt-out marker lives in a comment while the offending read is only visible stripped, so a naive strip drifts the two numberings apart and the marker silently misses.
+
+**Verified:** `tsc` clean; 853 tests across 84 affected suites green; 7 mutations each reddening only their own assertion.
+
+**Revert:** `git revert <code-sha>` — restores both pages' original loaders, the ratchet at 18, and removes the sweep + fetcher module. No DB change, no migration, no cron, no auth/`proxy.ts`, no FMV/pricing math.
+
 
 ### 2026-08-15 · SHIPPED (Claude Code, deep-audit handoff run 2) — R4's page half: an unnameable sale is no longer published as an absent one, and the test that pinned the false claim is corrected
 
