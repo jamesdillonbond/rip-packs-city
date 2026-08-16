@@ -21,6 +21,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - ⚠ **R8 re-pointed, NOT closed** — closing buries two real defects: 481 editions render `name = set_name` (real, but the repair is a better upstream TITLE, not a player), and every consumer treating `wmc.player_name` as a person.
 - ⚠ **Measurement note: the instance was saturating throughout and several of these queries timed out at 120 s** before completing when re-scoped or chunked — the same lever the D8 drain landed on earlier today. A `LIMIT` with an `ORDER BY` timed out where the identical query without the sort returned instantly.
 - **Revert:** ⚠ **none recorded for the D25 write, deliberately.** The prior values were the known-bad stale snapshots, they were not captured, and restoring them would mean re-writing provably wrong data; `backfill_wmc_metadata_from_editions` cannot undo it either (COALESCE fill-only). Docs/register/inbox: `git revert <sha>`.
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "do all of them", item 5/5) — pinned the serial-premium MULTIPLIERS (the old tests would not have noticed a 13% drift) and drove the wallet-backfill error classifiers
+
+**What shipped.** Targeted branch coverage on the two worst-covered files in the primary gate, chosen by **uncovered-branch count** rather than percentage.
+
+⚠ **`lib/market-analytics.ts` — the existing serial-premium tests asserted only RELATIVE ordering.** Both cases were `expect(special.fmvMid).toBeGreaterThan(base.fmvMid)`, which **any** multiplier > 1 satisfies. So `#1 Serial` could drift **1.35 → 1.53** — a 13% move on every #1 in the catalogue — with the whole suite green. These are FMV-moving constants on a platform whose own rules make a pricing change Trevor's call, so each of the five is now pinned exactly. **A legitimate re-fit SHOULD have to edit the test; that is the point, not friction.** Also pinned: stacking is **multiplicative, not additive** (1.35 × 1.18 = 1.593 vs an additive 1.53 — a 4% gap the ordering assertions cannot distinguish), and an **unrecognised** trait flips `fmvMethod` to "special serial premium model" while moving the price by exactly 1× (`hasSpecialSerialPremium` is `traits.length > 0`, but only five NAMED traits multiply).
+
+⚠ **`lib/chains/flow/wallet-backfill-helpers.ts` (84 uncovered branches, the largest cluster) — three of the five error classifiers had NO non-`Error` case**, so the `String(err)` half was dark. **The consequence is inverted from what it looks like:** these classifiers exist to stop unfixable mega-wallets counting as pipeline failures (`ok:true` + `terminated_reason`), so a miss puts a permanently-unfixable wallet back in the failure count **forever**, where it reads as a regression nobody can clear.
+
+⚠ **The object-shaped gap is FILED, NOT FIXED** — [inbox 2026-08-16T0025Z](docs/overnight/inbox/2026-08-16T0025Z-wallet-backfill-error-classifiers-miss-object-shaped-rejections.md). `String({message:…})` is `"[object Object]"`, so an object-shaped 1106 is unclassified. Reading `.message` off a non-`Error` **changes retry-vs-abort on production wallet ingest** and belongs with a before/after count of how many wallets re-classify — not as a side effect of a coverage pass. Current behaviour is pinned in BOTH directions, and mutating the classifiers to widen reds that test, so whoever ships the fix gets pointed at the note.
+
+⚠ **An existing gate was asserting less than it appeared to:** `isNoCollectionCapabilityError`'s `elapsedMs > 10_000` was fixtured at 4s and 20s, which pass whether the comparison is `>` or `>=` and whether the constant is 10s or 15s. Now asserted ON the boundary (10,000 classifies, 10,001 does not).
+
+**Verified:** `tsc` clean; primary gate **91.76 / 79.12 / 93.51 / 93.84** against thresholds 91.3/78.6/93.1/93.4 (unchanged — these additions cover branches inside already-measured files); 8 mutations across the two files, each reddening only its own assertion, including one that proves the documented-limitation test is load-bearing rather than decorative.
+
+**Revert:** `git revert <sha>` — removes the added test cases and the inbox note. No source behaviour changed in this commit at all: `market-analytics.ts` and `wallet-backfill-helpers.ts` are untouched. No DB, no prod state.
+
 
 ### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — swept the sibling-key driver-message leak to ZERO user-reachable sites and widened the shared guard, so all three guards now catch a spelling that had been invisible to every one of them
 
