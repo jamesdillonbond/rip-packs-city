@@ -1229,9 +1229,166 @@ const PINS = [
     migration:
       "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
   },
-]
-
-/**
+  // ── The scheduled MV-refresh wrappers (2026-08-16) ───────────────────────
+  // Nine near-identical one-liners sharing ONE test file. Their bodies hold no
+  // logic, but two real invariants live OUTSIDE them:
+  //   • CONCURRENTLY REQUIRES A UNIQUE INDEX on the view. Drop that index — in a
+  //     different migration, touching a different object — and every one of
+  //     these crons fails at runtime. The test proves the coupling rather than
+  //     asserting it in prose.
+  //   • Each wrapper must name the view its own name implies. Five share a body
+  //     differing only in the view name, and a copy-paste slip is SILENT: one
+  //     view refreshes twice a cycle, another never does and goes stale behind
+  //     whatever reads it, with nothing erroring.
+  // refresh_topshot_misattrib_candidates deliberately does NOT use CONCURRENTLY
+  // (internal MV, no public read path, so the exclusive lock is free and it
+  // needs no unique index) — asserted as an exception so a "harmonising"
+  // tidy-up has to make that call on purpose.
+  {
+    fn: "refresh_sets_summary",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_mv_pack_ev_latest",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_allday_pack_realized",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_allday_pack_sales_agg",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_pack_sales_agg",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_pack_rip_values",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_edition_median",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_mv_topshot_set_play_catalog",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_misattrib_candidates",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `14 * * * *`. Denormalizes each All Day rip's TOTAL pull value.
+    //
+    // ⚠ ALL-OR-NOTHING: written only when EVERY pull is priced. A partial sum is
+    // a SMALLER number that reads exactly like a real one — a 5-moment rip with
+    // 2 priced pulls would publish those 2 as the pack's value, making a good
+    // pull look like a bad pack, and it fails in the reassuring direction so
+    // nothing reports it.
+    //
+    // ⚠ Its watermark is captured BEFORE the read, so a pull changed mid-run is
+    // re-processed next tick rather than skipped forever; and `updated_at >= w`
+    // is inclusive, because re-processing is free (change-detection) while
+    // skipping is not. The inclusive half is asserted; the before-vs-after half
+    // needs a concurrent writer and is documented as a harness limit.
+    fn: "rollup_allday_rip_pull_value",
+    test: "supabase/tests/rollup_allday_rip_pull_value.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
+    //
+    // ⚠ THE 18-MONTH WINDOW IS ANCHORED TO THE CATALOGUE'S OWN MAX game_date,
+    // NOT now(). That is what stops the window sliding off the end of the data
+    // through an offseason, an ingest stall, or a closed market — the same class
+    // as the panini gate whose denominator was a rolling window of the series it
+    // watched. Pinned with every fixture date years in the past, so a
+    // now()-anchored window would make the whole file inert.
+    //
+    // Also pins latest-appearance-wins, and that a teamless edition cannot BLANK
+    // a team already known.
+    fn: "refresh_players_current_team",
+    test: "supabase/tests/refresh_players_current_team.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `24 * * * *`. Copies All Day minted/opened totals onto
+    // pack_distributions, which drive the depletion figure a collector reads
+    // before buying.
+    //
+    // ⚠ `coalesce(packnft_total,0) > 0` refuses to write a ZERO minted total:
+    // that is the indexer saying "not yet", not the chain saying "none", and
+    // copying it publishes a depletion percentage computed against a supply of
+    // nothing. Note the guard is on MINTED only — zero OPENS is a real state and
+    // must still be written, or every never-ripped pack freezes forever.
+    fn: "sync_allday_pack_dist_totals",
+    test: "supabase/tests/sync_allday_pack_dist_totals.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `2-59/5 * * * *`. Labels wmc rows with their FMV confidence.
+    //
+    // ⚠ VALUE AND LABEL COME FROM THE SAME SNAPSHOT ROW — one LATERAL selects
+    // both. Two separate lookups, even two correct ones, would let a row carry
+    // one snapshot's price under another's confidence: a STALE price wearing a
+    // HIGH label is a number a collector has no way to distrust.
+    //
+    // ⚠ Also pins that its CROSS JOIN (not LEFT) leaves an edition with no
+    // priced snapshot unlabelled forever, and that `LIMIT` bounds rows EXAMINED
+    // rather than written — together those are the mechanism behind the
+    // permanent backlog floor and behind this job becoming the instance's #1
+    // disk reader once its queue drained.
+    fn: "backfill_wmc_fmv_confidence",
+    test: "supabase/tests/backfill_wmc_fmv_confidence.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `13 4,16 * * *`.
+    //
+    // ⚠ ITS NAME SAYS TOPSHOT AND IT REFRESHES **TWO** MVs — Top Shot AND All
+    // Day. Someone auditing All Day's special serials for a refresh job will not
+    // find one, because it lives inside a function named for another collection.
+    // Pinned so the pairing cannot be silently halved: dropping the All Day line
+    // leaves the Top Shot board fine and the All Day one frozen, with the run
+    // still reporting ok.
+    //
+    // Also pins the `enable_nestloop=off` PLANNER HINT baked into the function
+    // definition — invisible from every call site, and nothing would notice its
+    // removal until the job started timing out at its 200s budget — and that its
+    // NAMED-ARGUMENT log_pipeline_run call really resolves and lands a row, the
+    // failure mode where one wrong argument name makes a pipeline vanish from
+    // telemetry entirely.
+    fn: "refresh_topshot_special_serial_owners_mv",
+    test: "supabase/tests/refresh_topshot_special_serial_owners_mv.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
  * of a function commented out (e.g. in a REVERT note), so a naive indexOf would
