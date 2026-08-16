@@ -79,3 +79,84 @@ describe("concierge system prompt separates a failed tool from an empty one", ()
     ).toEqual([])
   })
 })
+
+// ── PER-HANDLER, not just per-FILE ──────────────────────────────────────────
+//
+// ⚠ The "the tools really do emit status:error" case below counts occurrences
+// across the WHOLE 3,996-line file, so it is satisfied by any 33 of them. A
+// 34th tool could ship able to say `no_results` and nothing else, and that
+// global check would still pass — the guard-scope shape this repo keeps paying
+// for, met here on a count instead of a directory walk.
+//
+// Measured 2026-08-16: 33 handlers, and EVERY one that can return `no_results`
+// also carries an error path. So this pins a property that currently holds
+// rather than fixing a defect — which is the point. The prompt rule tells the
+// model the two statuses mean different things; that instruction is worthless
+// for any tool physically incapable of producing the first one.
+
+/** Split executeTool into its per-tool `if (toolName === "x")` blocks. */
+function toolHandlers(): Array<{ name: string; body: string }> {
+  const starts = [...SRC.matchAll(/if \(toolName === "([a-z_]+)"\)/g)]
+  return starts.map((m, i) => ({
+    name: m[1],
+    body: SRC.slice(m.index!, i + 1 < starts.length ? starts[i + 1].index! : SRC.length),
+  }))
+}
+
+describe("every concierge tool that can say 'nothing' can also say 'I could not look'", () => {
+  const handlers = toolHandlers()
+
+  it("finds the handler blocks (not vacuously passing)", () => {
+    // ⚠ Asserts the PARSE works, not that many handlers are dirty — a threshold
+    // on a defect count goes red the moment the population reaches zero, which
+    // this repo shipped once already in server-page-data-access-ratchet.
+    expect(handlers.length, "executeTool must still be a toolName ladder").toBeGreaterThan(25)
+    expect(handlers.map((h) => h.name)).toContain("get_fmv")
+  })
+
+  it("no handler can return no_results without an error path of its own", () => {
+    const offenders = handlers
+      .filter((h) => h.body.includes('status: "no_results"') && !h.body.includes('status: "error"'))
+      .map((h) => h.name)
+    expect(
+      offenders,
+      `These tools can tell the model "nothing matched" but have no way to say the lookup FAILED,\n` +
+        `so the prompt's error-vs-empty rule is unreachable for them and an outage renders as a finding:\n` +
+        offenders.map((n) => `  - ${n}`).join("\n"),
+    ).toEqual([])
+  })
+
+  it("every handler that READS can report a failure", () => {
+    // ⚠ `escalate_to_human` is the one legitimate exception and is asserted
+    // separately below: it does not return `status: "error"` because its whole
+    // contract is a delivery report, and it carries a stricter honesty property
+    // than the generic one.
+    const reading = handlers.filter((h) =>
+      /await (?:\(supabase as any\)|supabase)\.|await fetchAllPaged|await fetch\(/.test(h.body),
+    )
+    const silent = reading
+      .filter((h) => !h.body.includes('status: "error"') && h.name !== "escalate_to_human")
+      .map((h) => h.name)
+    expect(silent, "a tool that reads must be able to report a failed read").toEqual([])
+  })
+
+  it("escalate_to_human never reports a page it did not deliver", () => {
+    // ⚠ The highest-stakes honesty claim in the file, and the inverse of every
+    // other one here: not "we found nothing" but "we DID something". Telling a
+    // user with a live emergency "the team has been paged" when both channels
+    // refused makes the failure invisible to BOTH sides — they stop escalating
+    // and nobody was told.
+    const h = toolHandlers().find((x) => x.name === "escalate_to_human")!
+    expect(h.body, "delivery must be tracked, not assumed").toContain("let pageDelivered = false")
+    // Set ONLY inside the 2xx branch of each channel — a dead token resolves a
+    // response object, so `await fetch(...)` succeeding proves nothing.
+    expect((h.body.match(/if \(res\.ok\) pageDelivered = true;/g) ?? []).length).toBe(2)
+    // The confirmation copy must be gated on it...
+    expect(h.body).toContain("paged: pageDelivered")
+    expect(h.body).toMatch(/pageDelivered\s*\n?\s*\?\s*"The team has been paged/)
+    // ...and an undelivered HIGH page must leave a trace an operator can find,
+    // or a broken pager is silent until someone notices they were never called.
+    expect(h.body).toContain('p_pipeline: "support-chat-escalation"')
+    expect(h.body).toContain("p_ok: false")
+  })
+})
