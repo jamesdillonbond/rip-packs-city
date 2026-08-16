@@ -67,22 +67,30 @@ export default defineConfig({
       // pass. The ONE legitimate reason to move a number down is that files LEFT
       // the measured set (a worker was retired) — say so in this comment when
       // you do, the way vitest.components.config.ts records the 17738436 case.
-      // Measured baseline 2026-08-15: 68.71 st / 59.54 br / 73.14 fn / 71.25 ln
-      // over all 24 worker source files.
+      // Measured 2026-08-15 (second pass, same day): 73.79 st / 62.79 br /
+      // 76.38 fn / 76.37 ln over all 24 worker source files.
       //
-      // ⚠ The aggregate is dragged down by exactly TWO files, and the spread is
-      // the useful part — do not read 68% as "the workers are half-tested":
-      //   topshot-moments-hydrator/index.ts  26.3 st / 29.9 br
-      //   pack-events-ingest/index.ts        46.9 st / 34.1 br
-      // Every other file is 81-100% statements, and 8 are at 100%. Those two are
-      // the long inline `fetch()` bodies — cursor loops that fan out to Flow REST
-      // and the TopShot GQL proxy — the same shape the primary gate's own header
-      // explains cannot be cleanly driven. They are where the next real work is.
+      // Raised from 68.2/59.0/72.6/70.7 by driving the DEEP path of
+      // topshot-moments-hydrator, which was the worst file in the tree at
+      // **26.3 st / 29.9 br** and is now **90.6 / 80.4**
+      // (__tests__/worker-moments-hydrator-deep.test.ts). Re-seated in the SAME
+      // pass that measured the gain — "keep the buffer for later" is exactly how
+      // the component gate accumulated a ~13-point unguarded branch margin.
+      //
+      // ⚠ The aggregate is still dragged down by ONE file, and the spread is the
+      // useful part — do not read 74% as "the workers are three-quarters tested":
+      //   pack-events-ingest/index.ts        46.9 st / 34.1 br   <- the remaining work
+      // Every other file is now 81-100% statements, and 8 are at 100%. That one
+      // is the long inline `fetch()` body — a cursor loop fanning out to Flow
+      // REST — the same shape the primary gate's own header explains cannot be
+      // cleanly driven. The hydrator proved it CAN be driven with a table-aware
+      // supabase stub plus a service-binding fetch mock; the same approach should
+      // work there, and it owns `event_kind`, so it is worth the effort.
       thresholds: {
-        statements: 68.2,
-        branches: 59.0,
-        functions: 72.6,
-        lines: 70.7,
+        statements: 73.3,
+        branches: 62.3,
+        functions: 75.9,
+        lines: 75.9,
       },
     },
   },
