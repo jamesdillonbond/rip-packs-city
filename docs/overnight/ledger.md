@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "keep going") — lowered the raw-parse ratchet 17 → 15, and the two conversions were NOT of equal severity: one PUBLIC board was showing one filter's rows under another filter's label
+
+**What (2 client files + 2 test files + the ratchet; no DB / migration / cron / auth / FMV-math):** worked down the ratchet installed hours earlier, per its own rule (*lower the number in the same commit that converts a file*). Population **17 sites / 5 files → 15 / 3**.
+
+⚠ **A RAW-PARSE COUNT FINDS CANDIDATES; IT DOES NOT RANK THEM — and this pass is the proof.** Both converted files carried the identical unchecked `r.json()`, and what each RENDERED was worlds apart:
+- **`/insights/parallel-premiums` (PUBLIC) published a FALSE CLAIM.** Its refetch wrote rows only `if (Array.isArray(j?.rows))`, and an error envelope has no `rows` — so a failed filter-change left the **PREVIOUS filter's rows on screen under the NEW filter's label**. Every row visible is real; it simply answers a question the reader did not ask. **Worse than an empty state**, and the reason the fix CLEARS rather than keeps: stale rows here are not last-good data, they are an answer to a different query. Same shape as the analytics player-search defect a concurrent session fixed the same day.
+- **`WalletsHubOverview` merely rendered NOTHING.** Its `j.totals && j.segments` shape guard genuinely kept the error envelope out of state, so the `|| 0` sums below never manufactured a zero — the whole section just vanished from `/analytics/wallets`. Worth fixing, not urgent.
+
+**The two remaining census pages were CHECKED AND NOT FIXED, deliberately:** `LoansDashboard` / `SalesDashboard` / `SetsDashboard` still hold the raw parse and stay on the ratchet.
+
+⚠ **AN EXISTING TEST'S FIXTURE WAS UNDER-SPECIFIED AND INVISIBLY SO.** `component-WalletsHubOverview` stubbed `fetch` as `{ json: async () => body }` with **no `ok`** — which passed only because the component did `.then((r) => r.json())` and never read the status, so the fixture *could not have distinguished a 200 from a 503 even in principle*. Moving to `fetchJson` surfaced it as two failures. **An under-specified fixture is invisible while the code shares its blind spot** — corrected to a real 200, with the malformed-body case deliberately left `ok: true` so it still exercises the SHAPE guard rather than silently becoming a status test.
+
+⚠ **TWO SELF-INFLICTED TEST BUGS, both caught by the tests failing against CORRECT code.** (1) `getByText(/All confidence|High confidence/i)` matched the board's explanatory FOOTNOTE, not the filter chip — nothing was clicked, no refetch fired. Fixed with `getByRole("button", { name: … })`. (2) `getByText("Damian Lillard")` threw *"Found multiple elements"* because this board renders every row **twice** (top-3 highlight strip + table), so the assertion died before reaching the behaviour under test; `getAllByText` / `queryAllByText` cover both renders, which is also what makes the "row is gone" assertion meaningful.
+
+**Verified:** `tsc` clean · primary **12,319 passed / 1,236 files**, gate 91.73/79.11/93.4/93.82 vs 91.3/78.6/93.1/93.4 · component **1,729 passed**, 90.67/82.22/89.5/93.65 vs 90.3/81.6/89.1/93.2 · workers **369 passed**. **4 mutations, each redding only its own assertion:** the parallel board keeping stale rows again (the ORIGINAL defect); its render branch removed; clearing rows but never flagging (a silent blank — a distinct wrong answer from either the claim or the notice); `WalletsHubOverview` returning `null` again. Merged over 6 concurrent commits, zero overlap.
+
+⚠ **The ratchet's own header was updated in the same commit** — it still read "17 sites across 5 files" and "these 5 files" against a budget of 15. A guard whose prose contradicts its own number is the drift this session keeps finding elsewhere; it should not start inside the guard.
+
+**Left open:** the ratchet's 3 files (`LoansDashboard` ×7, `SalesDashboard` ×5, `SetsDashboard` ×3), and the page census's `dashboard/page.tsx` + `[collection]/market`.
+
+**Revert:** `git revert <sha>` (code) — restores the mislabeled-rows board and the vanishing section. Docs commit is a separate sha. No DB unwind.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, interactive, cont. ×3 — "keep going") — Pinnacle can answer "is this one listed?" too, and the reason it could not is that 16,231 open listings carry a NULL edition_id
 
 **Closes the gap the entry below named as next.** `get_edition_listings` now covers all five published collections.
