@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-15 · DOCS (Claude Code, interactive — Trevor ran the Discord diagnostic) — registration was COMPLETE all along; my "probably unregistered" hypothesis was wrong and the diagnostic is what caught it
+
+**Result of the `GET /api/bots/discord/register` I shipped earlier today**, run by Trevor against prod: `registered` = `link, soldpacks, alerts, ask`; **`missing` = []**; `dm_capable` = all four. So `/ask` has been registered and DM-capable the whole time.
+
+⚠ **I had called the missing-registration hypothesis "probably your actual experience". It was wrong.** The entire cause was the architectural one: a plain Discord DM is a **Gateway** event and the endpoint is an **Interactions** webhook, so the message produces **no request to the app at all**. The bot never heard it. **The POST was NOT run** — the read-only diagnostic is what stopped us "fixing" something that was not broken, which is the whole reason it exists.
+
+⚠ **A SECOND FINDING FROM THE SAME EXCHANGE, worth more than the first: a wrong bearer on that route returns the LOGIN PAGE AT HTTP 200, not a 401.** Trevor's first attempt pasted my `<your INGEST_SECRET_TOKEN>` placeholder literally. The route is reachable only through `proxy.ts`'s token bypass, so an invalid token falls through to the auth wall, which **302s to `/login`** — and the caller follows the redirect and receives a full HTML page at status 200. **This is the same trap this repo already documents for `/fonts/*.ttf`**: the wall does not 404, so every naive "did it respond?" check passes. The corrected operator command now asserts the body is JSON and says plainly that HTML means the token was wrong.
+
+**Docs shipped** (no code, no DB, no prod state): a new CLAUDE.md subsection under AI Concierge — *"The concierge on Telegram vs Discord — the asymmetry is PERMANENT"*. CLAUDE.md previously **did not mention the Discord bot at all**, so its input model, the `/ask`-only constraint, the registration check, the measured-complete state, and the HTML-at-200 trap were all undocumented and would have been re-derived by the next session. It says to re-run the GET rather than trust the recorded state, and not to run the POST speculatively.
+
+**Open, unchanged and NOT a bug:** plain-DM support needs an always-on gateway process on a separate host (real monthly cost, own failure modes). That is a product and spend decision; not scoped, not started.
+
+**Revert:** `git revert <sha>` — docs only.
+
 ### 2026-08-16 · DOCS (Claude Code, interactive) — Panini lost 3 of 6 walks overnight: the box doze-hibernated to S4 and `WakeToRun` is INERT on battery
 
 Docs-only, operator action surfaced. `panini-ingest` last ran **2026-08-15 18:58 PT** and the **22:00 / 02:00 / 06:00 walks never fired** — zero `pipeline_runs` rows, a **12.8 h** outage, and **2026-08-16 is a live zero-day**. Measured the chain end to end on the box: the scheduled task is **innocent** (`WakeToRun: True`, `StartWhenAvailable: True`, battery-permissive, `LastTaskResult: 0`), but the power event log shows **`S4 Doze to Hibernate` at 21:26 PT** resuming only at 07:41 on a human wake, `HIBERNATEIDLE` is **45 min on DC / never on AC**, and **`RTCWAKE` ("Allow wake timers") is DISABLED on DC / enabled on AC** — with the box on battery.

@@ -903,6 +903,19 @@ Escalations: Telegram + Resend. Rate limit: 25/hr.
 Env vars needed: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ALERT_EMAIL`.
 Telegram sentinel bot: `@rpc_sentinel_bot`, chat_id `1755958876`.
 
+### The concierge on Telegram vs Discord — the asymmetry is PERMANENT, and it reads as a dead bot
+
+Both bots reach the same concierge through `lib/alerts/concierge-bridge.ts`, but they receive user input in fundamentally different ways, and this has already cost a real "the Discord bot didn't respond" report (Trevor, 2026-08-15).
+
+- **Telegram** (`app/api/bots/telegram/route.ts`) — its webhook delivers **plain text**, so any non-command message routes straight to the concierge. Just typing a question works.
+- **Discord** (`app/api/bots/discord/route.ts`) — this is an **Interactions webhook**. Discord sends it `PING` and `APPLICATION_COMMAND` and **nothing else**. Ordinary DM messages are **Gateway** events (`MESSAGE_CREATE`, behind the privileged `MESSAGE_CONTENT` intent) delivered over a persistent websocket that serverless cannot hold. ⚠ **A plain Discord DM therefore produces NO REQUEST TO THIS APP AT ALL** — the bot does not fail to answer, it never hears it. `/ask` is the only concierge path on Discord, and no code change to this repo can alter that; it needs an always-on gateway process (separate host, real cost), which is a product decision, not a bug fix.
+
+⚠ **DIAGNOSING "the Discord bot is dead" — check registration BEFORE assuming the above, and do not guess.** A command defined in `lib/alerts/discord-commands.ts` does nothing until it is REGISTERED with Discord by a one-time `POST /api/bots/discord/register`. If `ask` was added after the last registration run, it is absent from every user's client — **indistinguishable from a dead bot**. `GET` on that same route (added 2026-08-15) reports `registered` / `missing` / `dm_capable` using the server's own bot token, so the token never leaves Vercel. ⚠ **Measured 2026-08-15: registration is COMPLETE** — all four of `link` / `soldpacks` / `alerts` / `ask` are registered AND DM-capable, so the plain-DM architecture above was the entire cause. **Re-run the GET rather than trusting this line**, and do not run the POST speculatively.
+
+⚠ **A WRONG BEARER ON THAT ROUTE RETURNS THE LOGIN PAGE AT HTTP 200, NOT A 401.** The route is reachable only via `proxy.ts`'s token bypass; an invalid token falls through to the auth wall, which **302s to `/login`**, and the caller follows the redirect and gets HTML at status 200. This is the same trap documented for `/fonts/*.ttf` — every naive "did it respond?" check passes. **When hand-calling any bearer-gated route, assert the body is JSON**; HTML means the token was wrong (or a placeholder was pasted literally), not that the endpoint is broken.
+
+Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells the user to reply with `/ask` and that plain messages don't reach the bot — that DM is the message a user is most likely to reply to. Guarded by `__tests__/discord-alert-dm-tells-users-how-to-reply.test.ts`, which also pins the Telegram side as deliberately carrying no such caveat.
+
 ### Concierge non-negotiable rules
 
 1. **Pinnacle FMV**: NEVER join by `edition_key` alone — always triple (`character_name`, `set_name`, `variant_type`) per `92aab30`. Cadence uses `Int` not `UInt64`.
