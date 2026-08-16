@@ -20,6 +20,8 @@
 // collector over a transient failure. The job here is to make the problem
 // VISIBLE, which is the whole of what was missing.
 
+import { canDisplayAvatarUrl } from "@/lib/media/avatar-proxy"
+
 /**
  * Marketplace/NFT hosts whose item URLs are HTML pages, not images.
  *
@@ -54,6 +56,8 @@ export type AvatarUrlVerdict =
   | { kind: "not-a-url"; message: string }
   | { kind: "marketplace-page"; message: string }
   | { kind: "insecure"; message: string }
+  /** A valid image URL on a host our CSP will not paint. */
+  | { kind: "unsupported-host"; message: string }
 
 /**
  * Classify what the collector has typed into the avatar field.
@@ -117,6 +121,21 @@ export function classifyAvatarUrl(raw: string | null | undefined): AvatarUrlVerd
       message:
         "This works on your profile, but link previews on X and Discord will fall back to your initials — " +
         "they only accept https:// images. Use the https:// version of this link if there is one.",
+    }
+  }
+
+  // ⚠ LAST, AND IT IS NOT PEDANTRY: `proxy.ts` sends an ENUMERATED `img-src`
+  // CSP, so a perfectly valid image on an unlisted host is refused by the
+  // browser before a byte moves — indistinguishable on screen from a dead link.
+  // Until this check existed, the editor told collectors such a URL was fine.
+  // Hosts we PROXY (lib/media/avatar-proxy.ts) are fine, because those bytes
+  // come from our own origin and satisfy 'self'.
+  if (!canDisplayAvatarUrl(value)) {
+    return {
+      kind: "unsupported-host",
+      message:
+        "We can't display images from that site — your profile would fall back to your initials. " +
+        "Use \"Choose from your Moments\" above, or an image from OpenSea's CDN (i.seadn.io).",
     }
   }
 

@@ -14,6 +14,7 @@ import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
+import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -133,7 +134,13 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", border: ringWidth + "px solid " + ringColor, boxShadow, flexShrink: 0 }}>
       <img
-        src={resolveAvatarUrl(bio?.avatar_url)}
+        // ⚠ avatarDisplayUrl, not the raw value: proxy.ts's enumerated
+        // img-src CSP does not list the NFT image hosts, so a third-party
+        // avatar is refused by the BROWSER before a byte moves and falls
+        // through to the monogram below. Same-origin bytes satisfy 'self'.
+        // Pass-through for hosts already in the CSP, so nothing that works
+        // today gains a hop or a dependency.
+        src={avatarDisplayUrl(resolveAvatarUrl(bio?.avatar_url))}
         alt={username}
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
         onError={function(e) {

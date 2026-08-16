@@ -1,0 +1,160 @@
+// lib/media/avatar-proxy.ts
+//
+// Which third-party avatar hosts we serve through our own origin, and how the
+// proxied URL is built.
+//
+// ⚠ THE REASON THIS EXISTS IS NOT PRIVACY OR CACHING — IT IS THAT THE IMAGE DOES
+// NOT RENDER AT ALL (found 2026-08-16). `proxy.ts` sets an ENUMERATED
+// `img-src` CSP listing our catalogue CDNs, and it does not include the NFT
+// image hosts. A collector whose avatar is `https://i2c.seadn.io/...` therefore
+// gets it refused by the browser before a byte is fetched — indistinguishable
+// on screen from a dead link, and it falls through to the monogram. Serving the
+// bytes from our own origin satisfies `'self'`, which is in EVERY policy we
+// send, so a proxied avatar renders regardless of which CSP a response carries.
+// (There are two: a permissive one from `next.config.ts` and the restrictive one
+// from `proxy.ts`. Browsers enforce multiple CSP headers as an INTERSECTION, so
+// the restrictive `img-src` governs. Same-origin sidesteps the whole question.)
+//
+// Privacy (no visitor IP handed to a third party), edge caching, and a size
+// ceiling all come along for free, but they are not why this is here.
+//
+// ⚠ THE HOST ALLOWLIST IS THE SSRF GUARD, and that is deliberate rather than
+// lazy. It is the same shape as `/api/public/ipfs-media/[cid]`, where the header
+// says outright that the CID regex "is the SSRF guard" because the upstream host
+// is fixed. An avatar has no fixed host, so the bound has to come from an
+// allowlist instead. The alternative — accept any host and validate the resolved
+// IP at request time — is a materially harder problem (DNS rebinding: the name
+// resolves public when you check it and private when `fetch` re-resolves it),
+// and mitigating it properly needs IP-pinned connections that `fetch` does not
+// expose. An allowlist has no such failure mode.
+
+/**
+ * Third-party image hosts we are willing to fetch and re-serve.
+ *
+ * ⚠ DELIBERATELY THE COMPLEMENT OF THE CSP `img-src` LIST. Hosts already named
+ * there (assets.nbatopshot.com, media.nflallday.com, ipfs.io, …) render fine
+ * hotlinked, so routing them through here would add a hop and a dependency for
+ * no gain — and would break avatars that work today if this route ever faults.
+ * `__tests__/avatar-proxy-hosts.test.ts` asserts the two sets stay disjoint by
+ * parsing proxy.ts, so adding a host to one and forgetting the other is caught.
+ *
+ * Exact hostnames, not suffix matches: `(^|\.)seadn\.io$` would also admit any
+ * subdomain an attacker can get delegated. Add entries as real collectors need
+ * them — this is expected to grow, and growing it is a one-line change.
+ */
+export const PROXYABLE_AVATAR_HOSTS: readonly string[] = [
+  // OpenSea's image CDNs — what "copy image address" yields on an OpenSea item.
+  "i.seadn.io",
+  "i2c.seadn.io",
+  "raw.seadn.io",
+  "openseauserdata.com",
+  "i.seadn.io.ipns.dweb.link",
+  // Arweave, common for NFT art that is not on IPFS.
+  "arweave.net",
+]
+
+/** Image types we will re-serve. */
+export const PROXY_CONTENT_TYPES: readonly string[] = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]
+
+/**
+ * ⚠ SVG IS EXCLUDED ON PURPOSE AND MUST STAY EXCLUDED. An SVG is a document: it
+ * can carry `<script>`, and serving one from OUR origin makes it same-origin
+ * with the session — a stored XSS delivered through a profile picture. Every
+ * other image type here is inert. This is the single most important line in the
+ * file, and it is the reason the content-type list is an ALLOWLIST rather than
+ * a `startsWith("image/")` test, which would have admitted `image/svg+xml`.
+ */
+export const SVG_IS_DELIBERATELY_UNSUPPORTED = true
+
+/** Is this a URL we can serve through our own origin? */
+export function isProxyableAvatarUrl(raw: string | null | undefined): boolean {
+  if (typeof raw !== "string") return false
+  const value = raw.trim()
+  if (value === "") return false
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  // https only. An http upstream would be fetched by us over cleartext and then
+  // re-served over TLS, which launders a downgraded fetch into something that
+  // looks secure to the visitor.
+  if (url.protocol !== "https:") return false
+  return PROXYABLE_AVATAR_HOSTS.includes(url.hostname.toLowerCase())
+}
+
+/**
+ * The same-origin URL for a proxyable avatar, or the input unchanged.
+ *
+ * Unchanged is the right answer for both "already CSP-allowed" and "we do not
+ * proxy this host": in the first case hotlinking works, and in the second the
+ * proxy could not have helped anyway. Neither is made worse by passing through.
+ */
+export function avatarDisplayUrl(raw: string | null | undefined): string {
+  const value = (raw ?? "").trim()
+  if (!isProxyableAvatarUrl(value)) return value
+  return `/api/public/avatar-media?src=${encodeURIComponent(value)}`
+}
+
+/**
+ * Image hosts our CSP `img-src` already permits, so they render hotlinked.
+ *
+ * ⚠ A MIRROR OF `proxy.ts`, NOT THE SOURCE OF TRUTH — and it is kept in sync by
+ * `__tests__/avatar-proxy-hosts.test.ts`, which parses the real directive out of
+ * that file and fails if the two disagree. It is duplicated rather than
+ * imported because `proxy.ts` is middleware: importing from it would drag
+ * middleware code into any client bundle that asks whether a URL will render.
+ */
+export const CSP_ALLOWED_IMAGE_HOSTS: readonly string[] = [
+  "assets.nbatopshot.com",
+  "asset-preview.nbatopshot.com",
+  "assets.nflallday.com",
+  "asset-preview.nflallday.com",
+  "media.nflallday.com",
+  "assets.laligagolazos.com",
+  "asset-preview.laligagolazos.com",
+  "assets.disneypinnacle.com",
+  "asset-preview.disneypinnacle.com",
+  "asset-preview.ufcstrike.com",
+  "ipfs.dapperlabs.com",
+  "ipfs.io",
+  "cloudflare-ipfs.com",
+  "storage.googleapis.com",
+  "cdn.nba.com",
+  "cdn.wnba.com",
+]
+
+/** Our own origin — `'self'`, so always renderable. */
+const OWN_HOSTS = ["www.rippackscity.com", "rippackscity.com"]
+
+/**
+ * Will a browser actually paint this avatar?
+ *
+ * ⚠ THE QUESTION IS NOT "IS IT A VALID IMAGE URL" — it is whether our own CSP
+ * permits it. `proxy.ts` sends an ENUMERATED `img-src`, so an arbitrary https
+ * image host is refused before a byte moves, and the failure looks exactly like
+ * a dead link. Any host that is neither proxyable, nor already in the CSP, nor
+ * our own origin cannot be displayed however correct the URL is.
+ */
+export function canDisplayAvatarUrl(raw: string | null | undefined): boolean {
+  const value = (raw ?? "").trim()
+  if (value === "") return true // blank is the RPC-logo default
+  if (value.startsWith("/")) return true // same-origin path
+  if (isProxyableAvatarUrl(value)) return true
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol !== "https:") return false
+  const host = url.hostname.toLowerCase()
+  return OWN_HOSTS.includes(host) || CSP_ALLOWED_IMAGE_HOSTS.includes(host)
+}

@@ -15,6 +15,7 @@ import {
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
 import { getCollection } from "@/lib/collections";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
+import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -223,7 +224,7 @@ function Avatar(props: {
   // would leave an EMPTY circle where the monogram used to be — a fallback that
   // was adequate only while "no avatar" skipped the <img> entirely.
   const [imgFailed, setImgFailed] = useState(false);
-  const avatarUrl = resolveAvatarUrl(bio?.avatar_url);
+  const avatarUrl = avatarDisplayUrl(resolveAvatarUrl(bio?.avatar_url));
   const initials = username ? username.slice(0, 2).toUpperCase() : "?";
 
   // A new URL deserves a fresh attempt — otherwise one broken value pins the

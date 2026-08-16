@@ -49,8 +49,11 @@ describe("marketplace page URLs — the case this exists for", () => {
     // URLs frequently carry no extension, and that is the only shape where the
     // apex-only host pattern is load-bearing.
     expect(classifyAvatarUrl("https://assets.nbatopshot.com/resize/media/abc123").kind).toBe("ok")
-    // And an explicit image extension wins even on the page host itself.
-    expect(classifyAvatarUrl("https://opensea.io/static/logo.png").kind).toBe("ok")
+    // And an explicit image extension wins even on the page host itself — it is
+    // not reported as a "that's a page" mistake. It is still flagged, because
+    // opensea.io is not an image host our CSP paints, but with the accurate
+    // reason rather than the wrong one.
+    expect(classifyAvatarUrl("https://opensea.io/static/logo.png").kind).not.toBe("marketplace-page")
   })
 })
 
@@ -90,12 +93,34 @@ describe("it stays quiet while you are still typing", () => {
   })
 })
 
+describe("a host we cannot paint is not 'ok', however valid the URL", () => {
+  // ⚠ THIS CORRECTS AN EARLIER VERSION OF THIS FILE, WHICH ASSERTED THAT
+  // `https://example.com/me.png` WAS FINE. It is not: proxy.ts sends an
+  // ENUMERATED `img-src` CSP, so an image on an unlisted host is refused by the
+  // browser before a byte moves and the profile falls back to initials. The
+  // validator was telling collectors a URL was good when it could never render
+  // — the same shape of false reassurance the whole module exists to remove.
+  it("warns for an arbitrary https image host", () => {
+    for (const url of ["https://example.com/me.png", "https://cdn.example.com/a/b/c.jpg?v=2"]) {
+      expect(classifyAvatarUrl(url).kind, url).toBe("unsupported-host")
+      expect(avatarUrlWarning(url), url).toMatch(/can't display images from that site/i)
+    }
+  })
+
+  it("points at the two things that DO work", () => {
+    const msg = avatarUrlWarning("https://example.com/me.png") ?? ""
+    expect(msg).toMatch(/Choose from your Moments/i)
+    expect(msg).toMatch(/i\.seadn\.io/i)
+  })
+})
+
 describe("a good URL passes silently", () => {
-  it("returns ok with no message for a plain https image", () => {
+  it("returns ok for a host the CSP allows or we proxy", () => {
     for (const url of [
-      "https://example.com/me.png",
-      "https://cdn.example.com/a/b/c.jpg?v=2",
-      "https://ipfs.io/ipfs/bafyabc123",
+      "https://ipfs.io/ipfs/bafyabc123",            // in the CSP
+      "https://assets.nbatopshot.com/media/x.png",  // in the CSP
+      "https://i2c.seadn.io/ethereum/0xabc/d.png",  // proxied by us
+      "https://www.rippackscity.com/rip-packs-city-logo.png", // 'self'
     ]) {
       expect(classifyAvatarUrl(url).kind, url).toBe("ok")
       expect(avatarUrlWarning(url), url).toBeNull()
