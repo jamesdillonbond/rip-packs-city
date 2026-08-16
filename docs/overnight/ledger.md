@@ -68,6 +68,27 @@ Fixed **per LEG** (the `/alerts` precedent — one flag would blank the trophy c
 - ✅ **Verified rather than assumed: the ledger's `## Queued` section is already retitled** `Queued — ARCHIVE (frozen 2026-07-01; do NOT read this as the live queue)`. The handoff lists it as open; it is done. No action.
 - **Revert:** `git revert <sha>` for the docs. The watchlist change is append-only text — trim the trailing `2026-08-15 (LATER, Claude Code …)` paragraph from `pipeline_cadence_watchlist.notes WHERE pipeline='candy-listings-indexer'` to undo it; severity and thresholds were not touched.
 
+### 2026-08-15 · SHIPPED (Claude Code, interactive — "address anything unresolved") — pinned the two Pinnacle COST-BASIS backfills, and corrected my own count of what is left
+
+**Repo only — NOTHING APPLIED to prod.** One snapshot migration holding both live definitions (byte-identical, a no-op to apply). Pins **141 → 143** over **140 → 142** distinct fns; DB test files 139 → 141.
+
+⚠ **FIRST, A CORRECTION TO MY OWN MEASUREMENT.** I reported "17 unpinned scheduled SECDEF writers" and then "15 remaining". Both were inflated: the query used `cron.job.command LIKE '%'||proname||'%'`, which **matches a PREFIX** — so `rpc_trust_health_precompute_refresh` counted as scheduled when what is actually scheduled is `..._refresh_p`, the procedure. (CLAUDE.md already documents that exact name-trap from the other direction.) Re-measured with a word boundary (`command ~ '\m'||proname||'\M'`): **33 scheduled SECDEF writers, 19 pinned, 14 unpinned** before this entry — **12 after**. Use the word-boundary form; a `LIKE` on a function name over-reports.
+
+**Why these two, out of the 14.** They are the pair that writes `moment_acquisitions` — the **COST BASIS** table. Every P&L figure a Pinnacle collector sees on their own moments derives from these rows. A defect does not throw; it shows someone the wrong profit on their own collection.
+
+⚠ **THE PAIR IS DELIBERATELY ASYMMETRIC, AND BOTH HALVES LOOK LIKE BUGS TO A TIDIER.** That is precisely why they are pinned:
+- The **mint** path writes **NO `buy_price`** — the column is simply absent from the INSERT list, so it lands NULL. A `0` would render as a **100%-profit moment forever**.
+- The **mint** path's `NOT EXISTS` is scoped on **`nft_id` alone**, not the table's `(nft_id, wallet, transaction_hash)` conflict key. Narrowing it to match the conflict key looks like a fix and would let a mint row be inserted retroactively **beneath** a later marketplace purchase by a different wallet.
+- The **marketplace** path has **no such gate at all**, deliberately — a moment changes hands, so each owner needs their own basis. Adding the mint gate "for consistency" would leave **every buyer after the first with no cost basis**.
+- Reached from the other direction, the marketplace path gets the same protection as the mint's NULL via **`sale_price_usd > 0`**: a zero- or NULL-priced sale is not written at all.
+
+⚠ Also recorded rather than normalised: the two join wallets **differently** — the mint path `lower(...) = lower(...)`, the marketplace path exactly. Pinned as-is. If the exact join is ever found to miss rows in prod, that is a behaviour change to make with a measurement.
+
+**Verified:** all **141** DB test files pass on a throwaway `postgres:16` **at 00:42 UTC** — still inside the post-midnight window that broke the suite before the earlier fix in this thread. 4 mutations, each reddening only its own assertion: adding `buy_price` to the mint INSERT; narrowing the mint gate to `(nft_id, wallet)`; relaxing `> 0` to `>= 0`; adding the nft_id gate to the marketplace path. `tsc` clean.
+
+**Revert:** `git revert <sha>` — removes two `.sql` tests, the snapshot migration file, and two PINS entries. **Nothing to unwind in prod:** no migration applied, no data mutated, no cron touched.
+
+
 ### 2026-08-15 · SHIPPED (Claude Code, deep-audit handoff run 2 cont.) — D25's fixable class DRAINED (128 → 62, AllDay to zero); R8's prescribed heal MEASURED AND REFUTED before running it, because it would have written TEAM NAMES into `player_name`
 
 - **1 prod DB data change (66 rows, no DDL, no migration)** + register re-points + an inbox filing. The two items are opposite outcomes and that is the point: one filed remedy was exactly right, the neighbouring one was corrupting.
