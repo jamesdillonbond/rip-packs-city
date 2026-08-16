@@ -167,6 +167,87 @@ describe("PackSimulatorClient — the simulation", () => {
     expect(document.body.textContent).toMatch(/—/)
   })
 
+  // ── The rip aggregate ──────────────────────────────────────────────────────
+  // ⚠ THE FMV-COVERAGE LINE IS THE HONEST HALF OF THE WHOLE SIMULATOR. Slots pulled without
+  // an FMV count as $0 toward the pack value, so an un-priced pool produces a simulated
+  // value that is a FLOOR, not an estimate — and a collector reading "Avg pack value $2.50"
+  // against a $9 retail decides not to buy. The disclosure is what makes that number
+  // interpretable.
+  it("discloses how many simulated pulls carried an FMV", async () => {
+    await mount(SIM({
+      pool: [{ ...POOL[0], fmv_usd: null }, { ...POOL[1], fmv_usd: null }],
+      metrics: { ...SIM().metrics, fmv_coverage_pct: 0 },
+    }))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/0 \/ 2 pulls had FMV/))
+  })
+
+  it("does not print the coverage caveat when every pull was priced", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate/))
+    expect(document.body.textContent).not.toMatch(/pulls had FMV/)
+  })
+
+  // ⚠ 10 and 100 rips take a DIFFERENT animation path from a single rip (the 1–10 branch
+  // steps the flip index one slot at a time; above 10 it jumps straight to the end), so a
+  // test that only ever rips once leaves the whole large-run path unmeasured.
+  it("aggregates a 100-rip run and reports the slot count", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 100/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate · 100 rips · 200 slots/))
+    expect(document.body.textContent).toMatch(/Avg pack value/)
+    expect(document.body.textContent).toMatch(/Std dev/)
+  })
+
+  it("uses the singular for a single rip", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate · 1 rip · 2 slots/))
+    expect(document.body.textContent).not.toMatch(/1 rips/)
+  })
+
+  // ⚠ "% beat retail" is the buy/no-buy number, and it MUST be withheld when the pack has no
+  // retail price — a reward pack has none, and computing against 0 would report that every
+  // rip beat retail.
+  it("withholds the beat-retail rate for a pack with no retail price", async () => {
+    await mount(SIM({ pack: { ...SIM().pack, retail_price_usd: null } }))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate/))
+    expect(document.body.textContent).not.toMatch(/% beat retail/)
+  })
+
+  it("reports the beat-retail rate when the pack has one", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 10\b/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/% beat retail/))
+  })
+
+  it("counts threshold and tier hits across a run", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 100/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate/))
+    // The pool is one $600 LEGENDARY and one $5 COMMON at equal weight, so a 200-slot run
+    // must record legendary and $500+ hits; a run recording none would mean the sampler is
+    // returning one edition only.
+    expect(document.body.textContent).toMatch(/Legendary/)
+    expect(document.body.textContent).toMatch(/\$500\+/)
+  })
+
+  it("resets the run", async () => {
+    await mount()
+    fireEvent.click(screen.getAllByRole("button").find((b) => /rip 1 pack/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Aggregate/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /^reset$/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).not.toMatch(/Aggregate/))
+  })
+
+  it("renders the pool note and the computed-at stamp when the payload carries them", async () => {
+    await mount(SIM({ note: "pool sampled at index time", computed_at: new Date().toISOString() }))
+    expect(document.body.textContent).toMatch(/pool sampled at index time/)
+    expect(document.body.textContent).toMatch(/Pool computed:/)
+  })
+
   it("rips a pack and reports as many pulls as the pack has slots", async () => {
     await mount()
     const rip = screen.getAllByRole("button").find((b) => /^rip 1\b/i.test(b.textContent ?? ""))

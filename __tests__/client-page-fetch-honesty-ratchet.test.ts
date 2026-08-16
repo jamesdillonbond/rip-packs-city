@@ -94,7 +94,13 @@ const USE_CLIENT = /^\s*["']use client["']/
  * Both carried a fabricated ZERO: the rewards console published "Outstanding liability 0"
  * from `num()` coercing an absent value, and fast-break published "0.00 FP" as the Total
  * Projected directly above its own "couldn't load the optimizer" line. */
-const BUDGET = 18
+/* 18 -> 16: `dashboard/packs` and `[collection]/overview` moved into
+ * `PackHistoryClient.tsx` / `CollectionOverviewClient.tsx`, covered by
+ * `__tests__/component-PackHistoryAndOverviewClients.test.tsx`. NEITHER carried a new defect
+ * — both were already hardened — so this pair is coverage, recorded so nobody re-sweeps
+ * them. The overview's three-way sales claim (read failed / no rows / no NAMEABLE rows) was
+ * pinned only by source greps until now. */
+const BUDGET = 16
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

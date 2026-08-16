@@ -16,10 +16,6 @@ import React from "react"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, waitFor, cleanup } from "@testing-library/react"
 
-vi.mock("next/navigation", () => ({
-  useParams: () => ({ collection: "nba-top-shot" }),
-}))
-
 // Child panels do their own fetching and are not under test here.
 vi.mock("@/components/InsiderSignalsPanel", () => ({
   default: () => <div data-testid="insider-signals" />,
@@ -28,7 +24,11 @@ vi.mock("@/components/marketplace-status", () => ({
   MarketplaceStatusBanner: () => null,
 }))
 
-import OverviewPage from "@/app/(collections)/[collection]/overview/page"
+// ⚠ Re-pointed at the CLIENT (2026-08-16). The page is now a server shell that awaits
+// `params`; rendering it directly from a jsdom test would need a promise fixture and would
+// measure nothing, since the shell holds no logic. The slug arrives as a plain prop, which
+// also removed this file's `useParams` mock.
+import OverviewPage from "@/app/(collections)/[collection]/overview/CollectionOverviewClient"
 
 const EMPTY_BUT_SUCCESSFUL = {
   edition_count: 19769,
@@ -64,7 +64,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
 
   it("503 from /api/collection-stats renders 'couldn't load', NEVER 'No sales in the last 24h'", async () => {
     mockFetch(() => jsonResponse({ error: "the database is under heavy load", code: "timeout" }, 503))
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getAllByText(/Couldn.t load this right now/i).length).toBeGreaterThanOrEqual(2)
@@ -79,7 +79,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
     // The route returns 503 today, but this second path exists so no future
     // 200-with-error-body can resurrect the bug (same reasoning as D11).
     mockFetch(() => jsonResponse({ error: "boom" }, 200))
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getAllByText(/Couldn.t load this right now/i).length).toBeGreaterThanOrEqual(2)
@@ -89,7 +89,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
 
   it("a SUCCESSFUL read with zero rows still renders the honest empty state", async () => {
     mockFetch(() => jsonResponse(EMPTY_BUT_SUCCESSFUL, 200))
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getByText(/No sales in the last 24h/i)).toBeTruthy()
@@ -128,7 +128,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
         200,
       ),
     )
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getByText(/5 recent sales not yet matched to a moment/i)).toBeTruthy()
@@ -163,7 +163,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
         200,
       ),
     )
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getByText(/Moment 1/)).toBeTruthy()
@@ -193,7 +193,7 @@ describe("overview panels: a failed read must not render as a market fact", () =
         200,
       ),
     )
-    render(<OverviewPage />)
+    render(<OverviewPage collection="nba-top-shot" />)
 
     await waitFor(() => {
       expect(screen.getByText(/Moment 0/)).toBeTruthy()

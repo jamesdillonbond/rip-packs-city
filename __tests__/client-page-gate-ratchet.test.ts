@@ -173,7 +173,13 @@ const APP_DIR = join(process.cwd(), "app")
  * Both carried a fabricated ZERO: the rewards console published "Outstanding liability 0"
  * from `num()` coercing an absent value, and fast-break published "0.00 FP" as the Total
  * Projected directly above its own "couldn't load the optimizer" line. */
-const BUDGET = 15
+/* 15 -> 13: `dashboard/packs` and `[collection]/overview` moved into
+ * `PackHistoryClient.tsx` / `CollectionOverviewClient.tsx`, covered by
+ * `__tests__/component-PackHistoryAndOverviewClients.test.tsx`. NEITHER carried a new defect
+ * — both were already hardened — so this pair is coverage, recorded so nobody re-sweeps
+ * them. The overview's three-way sales claim (read failed / no rows / no NAMEABLE rows) was
+ * pinned only by source greps until now. */
+const BUDGET = 13
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
