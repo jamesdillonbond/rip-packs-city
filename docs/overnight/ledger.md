@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, interactive — final wrap-up) — the CSP finding committed to memory, and my own stale entry corrected
+
+**What shipped.** `CLAUDE.md` only. Security posture gains the finding behind the avatar proxy: **`proxy.ts` sends an ENUMERATED `img-src`, so an image on an unlisted host does not render and fails looking exactly like a dead link** — with the sub-facts that two CSP headers are sent and browsers enforce the **intersection** (so reading the permissive `next.config.ts` one and concluding any host works is wrong), that the fix is same-origin rather than widening `img-src` host by host, that the proxy's **host allowlist is its SSRF guard** and why an any-host proxy was rejected on merit, that **`image/svg+xml` must never be re-served from our origin**, and that hostnames must match **exactly** — with `evilarweave.net` as the `endsWith` bypass that survived the first test suite. The avatars bullet becomes four modules and points there first.
+
+⚠ **The third edit is a CORRECTION, not an addition, and it is the one worth noting.** My own "left open" bullet from earlier today asked whether tomwagmi's avatar rendered and attributed the risk to the **4 MB OG cap**. The real answer was that it **could never render, because of the CSP**. Leaving that standing would have been a stale open item pointing at the wrong subsystem — the exact drift this file warns about — so it now records the supersession and the lesson: **when an image does not render, check the CSP before the URL; every other explanation is more interesting and less likely.**
+
+**Final state of the thread — nothing left half-done.** 20 profiles: **19 on the RPC-logo default, 1 own avatar (tomwagmi, proxied, `?w=500`), 0 pointing at a marketplace page.** All three avatar paths regression-checked (default untouched · picked-Moment thumbnails untouched · third-party proxied). 0 ERROR deploys across the session, no new Sentry issues, both gates EXIT 0, tree clean, ledger 1,558 headings with swallowed steady at 3.
+
+**Revert:** `git revert <sha>` — docs only.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive — "set up the image proxy for third party avatars") — and the reason it was needed turned out to be CSP, not privacy or caching
 
 **What shipped.** New `lib/media/avatar-proxy.ts` + `app/api/public/avatar-media/route.ts`, wired into the two BROWSER avatar renders, plus a new `unsupported-host` verdict in `lib/profile/avatar-url.ts` and 2 test files. **No DB change.**
