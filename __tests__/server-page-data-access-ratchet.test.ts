@@ -102,8 +102,22 @@ const APP_DIR = join(process.cwd(), "app")
  * what let a behavioural test drive both branches; the ratchet entry falling off
  * is a side effect, and this line records that the budget was lowered in the
  * SAME commit that earned it rather than banked as slack.
+ *
+ * 2026-08-16: 14 -> 13 -> 12, both for the same reason as the wallets page —
+ * the extraction was the way to REACH a defect, not the goal.
+ *   • /[collection]/set/[slug]: `fetchFullTierMix` returned a bare `[]` on a
+ *     query error, and `[]` was already the page's signal for a LEGITIMATE
+ *     fallback to the first-100 sample. The tier bar prints ABSOLUTE COUNTS, so
+ *     a failed read on a ~3,600-edition set rendered "COMMON · 62 · 62.0%"
+ *     against a true ~2,200, identically to the accurate bar.
+ *   • /pinnacle/moment/[id]: the densest page here (13 query sites, six in one
+ *     Promise.all) published `Number(count ?? 0)` as "Tracked holders", so a
+ *     statement timeout rendered a hard 0 — a claim about our own cache
+ *     manufactured from our own outage, on a shareable pin URL.
+ * ⚠ Both were already covered by comments asserting the right behaviour. The
+ * comment is not the check; moving the code somewhere a test can drive it is.
  */
-const BUDGET = 13
+const BUDGET = 12
 
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
