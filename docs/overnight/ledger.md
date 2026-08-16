@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the listing-retry-queue reported the queue CLEAR out of its own failed read; found by converting two admin pages for coverage
+
+`app/admin/analytics` and `app/admin/listing-retry-queue` moved their bodies into
+`AdminAnalyticsClient.tsx` / `ListingRetryQueueClient.tsx` so the component gate measures
+them (~1,100 lines of operator-facing branching that matched neither gate's include), covered
+by `__tests__/component-AdminAnalyticsAndRetryQueue.test.tsx` (37 tests).
+
+⚠ **THE DEFECT.** `ListingRetryQueueClient`'s rows table rendered **"No rows for this
+filter"** on a FAILED read: `fetchRows` returns early on a failure, so `rows` stays at `[]`
+and the emptiness branch fires. The retry queue reported as CLEAR, out of our own outage, on
+the single screen an operator uses to decide whether the drain is working — and the error
+banner rendered directly above it, so the page contradicted itself. Same shape as the
+`/insights/pack-reality` case: one site consulted `error`, the claim site did not. Fixed by
+gating the empty state on `error` and giving a failed read its own copy; a failed REFRESH
+still shows the previous rows (last-good beats a blank operations board) but no longer as a
+claim that the queue is empty. Pinned in BOTH directions — a successful read of zero rows is
+an honest answer and must keep reading as one.
+
+⚠ **A vacuous assertion of mine was caught by mutation and is worth repeating**: the
+"absent figures render as an em-dash, not 0" test searched the WHOLE PAGE for an em-dash, so
+turning `fmtInt`'s absent case into `"0"` left it green — other formatters on the same board
+still emit one. Re-asserted PER TILE, plus the mirror case (a genuine 0 must stay `0`, or a
+working metric hides behind the same glyph as a missing block).
+
+Ratchets: client-page-gate 21 → 19, fetch-honesty 24 → 22, both re-derived from their own
+no-slack assertions. Gates: component 90.55/82.26/89.30/93.40 vs 90.3/81.6/89.1/93.2,
+`tsc` clean.
+
+Revert: `git revert <sha>` — restores both monolithic `page.tsx` files, the original empty
+state, and both budgets. No DB, migration, cron, auth, or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — three more client pages converted to `*Client.tsx`; ratchets 24 → 21 and 27 → 24
 
 `app/dashboard/history`, `app/(collections)/panini-blockchain/overview` and
