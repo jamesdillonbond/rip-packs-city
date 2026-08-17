@@ -36,7 +36,7 @@ A first pass diagnosed 08-16 as a kill at the wall and **that was refuted the sa
 
 ## ✅ NARROWED SAME SESSION — (3) is substantially weakened, and a kill is now the best-supported reading
 
-Measured `pipeline_runs` either side of candy's last write (08:54:06.286). **Other processes' `log_pipeline_run` calls were succeeding continuously through that exact window** — 08:53:20 (−46 s), then **08:54:08.86 (+3 s)**, 08:54:14, 08:54:18 ×2, 08:54:37, 08:54:43, and on through 08:56. So **the telemetry write path was demonstrably healthy in the very second candy's own `logRun` should have fired.** A general saturation outage of that path is not the explanation.
+Measured `pipeline_runs` either side of candy's last write (08:54:06.286). **Other processes' `log_pipeline_run` calls were succeeding continuously through that exact window** — 08:53:20 (-46 s), then **08:54:08.86 (+3 s)**, 08:54:14, 08:54:18 ×2, 08:54:37, 08:54:43, and on through 08:56. So **the telemetry write path was demonstrably healthy in the very second candy's own `logRun` should have fired.** A general saturation outage of that path is not the explanation.
 
 ⚠ **This does NOT fully eliminate (3)** — a different pooled connection could still have failed in isolation, and no evidence here speaks to candy's own call. But it removes the mechanism that made (3) plausible, so **(1)/(2) — the invocation being killed — is now the best-supported reading**, and my original "killed" instinct was right for a reason I had not established at the time.
 
