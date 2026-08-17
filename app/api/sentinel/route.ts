@@ -651,12 +651,16 @@ export async function POST(req: NextRequest) {
   // ⚠ THE WINDOW MUST STAY WIDER THAN THE SLOWEST WATCHLISTED CADENCE, and today it
   // is — measured 2026-08-17, the longest `max_silent_minutes` on the ACTIVE
   // watchlist is 1800 (1.3 days), so every current entry fits inside 24-48h with
-  // margin. A pipeline slower than the window is not merely uncovered, it FLAPS:
-  // it has `runs > 0` only on the day it runs and drops out as `runs = 0` (out of
-  // scope, correctly, since that is Pipeline Silence's question) for the rest of
-  // its period — so the arm would report it one day in seven and read clean on the
-  // other six. That is worse than not covering it, because the clean readings look
-  // like a statement about the pipeline.
+  // margin. A pipeline slower than the window FLAPS: it has `runs > 0` only on the
+  // day it runs and drops out as `runs = 0` (out of scope, correctly, since that is
+  // Pipeline Silence's question) for the rest of its period — so the arm reports it
+  // one day in seven and says nothing on the other six.
+  // ⚠ That is an ERGONOMIC weakness, NOT a dishonest one, and the distinction is
+  // load-bearing because the fix differs. The healthy detail below is scoped to
+  // "pipelines THAT RAN since <day>", so on the silent days the arm makes no claim
+  // about the absent pipeline — it is not vouching for it. The cost is that you
+  // hear about a weekly failure once a week with a six-day gap, which is weaker
+  // than continuous coverage but strictly better than no coverage.
   // If a weekly/monthly pipeline is ever watchlisted, take the window from
   // `max_silent_minutes` (e.g. max(48h, 2x cadence)) rather than widening this
   // constant for everyone; the rollup is indefinite so a longer window costs only

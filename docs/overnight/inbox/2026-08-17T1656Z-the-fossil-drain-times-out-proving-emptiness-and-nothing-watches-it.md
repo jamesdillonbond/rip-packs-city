@@ -88,9 +88,23 @@ one guaranteed no-op** — do not reach for it.
   `(collection_id, edition_key)` — returned **empty, instantly**. Every canonical Top Shot key is
   digit-leading, so any key sorting at or after `'a'` would be a fossil. This rules out roughly 10 of the
   16 possible leading hex characters of a UUID.
-- ✅ **That same seek proves option 3 below is cheap.** It used `idx_wmc_coll_ek_serial_cover`
-  (leading `collection_id`) and returned in well under a second on the *same saturated instance* where the
-  production query times out. The index the function needs already exists; it simply is not being chosen.
+- ✅ **That same seek proves option 3 below is cheap, and it is now QUANTIFIED.** `EXPLAIN (ANALYZE,
+  BUFFERS)` on one seek, taken on the saturated instance:
+  ```
+  Limit (actual time=6.138..6.140 rows=1 loops=1)  Buffers: shared hit=4 read=1
+    -> Index Only Scan using idx_wmc_coll_ek_serial_cover
+         Index Cond: ((collection_id = '95f28a17-…') AND (edition_key > '1:1'))
+         Heap Fetches: 0
+  Execution Time: 6.216 ms
+  ```
+  **6.2 ms, 5 buffers, zero heap fetches, a true two-column index cond.** The index the function needs
+  already exists and is perfectly shaped for it; it is simply not being chosen, because the negated regex
+  is not a range and the `ORDER BY moment_id` makes the *other* index look free.
+- ✅ **And that number explains the failed loose scan rather than leaving it a mystery.** At 6.2 ms per
+  seek, walking ~13–20k distinct Top Shot keys costs **~80–124 s** — at or over the 120 s global budget,
+  which is exactly why the recursive-CTE attempt died. So the loose scan is *correctly shaped but too
+  slow at this seek latency*; it is not a planning failure. **The production query is far worse still: it
+  walks ~445k ROWS, not ~20k keys.**
 
 **Not answered — the residual is digit-leading UUIDs** (e.g. `0f3a1b2c-…`), which interleave with canonical
 keys and cannot be isolated by a range seek. Three attempts timed out: `limit 5000` on the matching set at
@@ -135,6 +149,15 @@ on the platform's hottest table; if it is non-empty, the drain has never drained
 Adding a `pipeline_cadence_watchlist` row makes it visible, but the new arm's window is **24–48 h** while
 this pipeline is **weekly**. It would therefore fire on the day it runs and fall silent for six days
 (`runs = 0` puts it out of scope), so the arm's reading would flap rather than state a stable fact.
+
+⚠ **CORRECTION to my own first draft of this section, which said the flapping is "worse than absence
+because the clean readings read as a verdict". That is WRONG, and I checked the copy rather than trusting
+the reasoning.** The arm's healthy detail is scoped explicitly — *"All N watchlisted pipelines **that ran
+since `<day>`** produced at least one success or wrote rows"* — so on the six silent days it makes **no
+claim at all** about a pipeline that did not run in the window. It is not dishonest. The real cost is
+**ergonomic**: you hear about the failure one day in seven, with a six-day gap in which nothing reminds
+you, which is materially weaker than continuous coverage but strictly better than the zero coverage it has
+today. I had reasoned about the shape instead of reading the string.
 
 ⚠ **That mismatch does not affect anything watchlisted today** — measured 2026-08-17, the longest
 `max_silent_minutes` on the active watchlist is **1800 (1.3 days)**, so every current entry sits inside the
