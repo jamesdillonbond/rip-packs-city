@@ -102,3 +102,54 @@ instance whose saturation is the root cause.
 
 ⚠ Not investigated: `raise_impossible_parallel_circ`, the other outlier from the same sweep —
 19.0 M blocks read at a **6.3% buffer hit ratio**, mean 45.8 s, 120 calls. Near-total disk.
+
+---
+
+## RESOLVED 2026-08-17 ~15:2xZ (Claude Code, docs pass) — the experiment was run, and BOTH of this filing's framings were wrong
+
+**The blocker was not real.** This filing said the decisive test needs an HTTP call with the
+service-role key and "cannot be tested from an MCP connection". It can. A PostgREST RPC is just
+`SELECT fn(...)` as a **top-level statement**, and there is no way to call a function *except* from
+a top-level statement — so the "timer already armed by an outer `SELECT`" caveat does not describe
+a distinct case, it describes every case.
+
+Probed in **`pg_temp`** deliberately: `extensions.pgrst_ddl_watch()` and `pgrst_drop_watch()` both
+skip `pg_temp` explicitly, so the probe caused **no schema-cache reload** and none of the
+user-facing 500s a `public` probe would have.
+
+On a **SECURITY DEFINER** function executing **as `service_role`**:
+
+| probe | session budget | function declares | sleep | result |
+|---|---|---|---|---|
+| higher declaration (this filing's shape) | 2 s | 60 s | 5 s | **canceled at 2 s** |
+| lower declaration | 120 s | 2 s | 5 s | **ran to completion** |
+
+**`proconfig` is inert in both directions. The rule holds for the route path.**
+
+### The counter-evidence dissolves — and it is not what this filing thought
+
+`service_role`'s **30 s never binds on the PostgREST path at all**. `rolconfig` applies at LOGIN;
+PostgREST logs in as `authenticator` and only `SET LOCAL ROLE`s, and a `SET ROLE` does not inherit
+the target role's config. Measured: `SET ROLE service_role` leaves `statement_timeout` at **`2min`**.
+
+At scale (`pg_stat_statements` is keyed per user, so it names the caller) — of **871** distinct
+`service_role` PostgREST statements: **244 > 8 s, 39 > 30 s, 28 > 60 s, 10 > the 120 s global**,
+worst **352,318 ms**, several with a *mean* over 100 s. The 297–300 s cluster is Vercel
+`maxDuration`. **No Postgres timeout bounds a `supabaseAdmin` RPC.**
+
+So the 58.2 s runtime needs no explanation, and **its match to the declared 60 s is a coincidence**
+that came within one inference of overturning a correct rule.
+
+⚠ A tidy hypothesis of mine was also wrong and worth recording: I expected the 58.2 s max to be a
+`postgres` diagnostic call under the 120 s global — the investigation manufacturing its own
+counter-evidence. It is genuine `service_role` PostgREST traffic.
+
+### Still open
+
+- **The ~60 s client-side bound on this route is UNIDENTIFIED** — not `maxDuration` (the route
+  declares **120**), not `rpcWithRetry`'s 45 s, not any role ceiling. Leading candidate is the
+  Supabase API gateway's own request timeout; **unverified** (this sandbox has no egress to
+  `*.supabase.co` and no service-role key).
+- **This filing's actual recommendation is UNCHANGED and still correct**: profile and bound
+  `wallet_usernames_unresolved`. ⛔ Do not raise the declared timeout — now proven inert, not merely
+  suspected.
