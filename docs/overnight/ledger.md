@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, session close) — promoted the two-accent brand split into CLAUDE.md
+
+- **Shipped.** CLAUDE.md **Brand system** section, which had no idea the second accent existed.
+- **Why it belongs in memory rather than only the ledger.** That section is four lines and canonical, and it stated one rule ("never hardcode `#E03A2F`") that is *true but incomplete* — a reader following it exactly would still ship the defect found today, because the defect was hardcoding a DIFFERENT red. Now recorded: **web `#E03A2F` (`--rpc-red`; `--por-red` is the same value) vs email `#E55A4C`**, the email one hardcoded on purpose because email clients support no CSS custom properties, so it is correct in email and wrong on any web surface.
+- **Also promoted:** the guard's blind spot (`LITERAL` matches only the CORRECT red, so the wrong one passed silently) and its fix walking `app/**` + `components/**` rather than a curated list; the warning NOT to simplify it into a blanket ban (measured: fires on all 7 legitimate email uses); that **`--rpc-black` / `--rpc-text-primary` are theme-aware**, so a hardcoded dark hex is a light-mode black slab, not just an untokenized value; and that the brand and light-mode halves are SEPARATE lists, so a file can be in one and not the other.
+- **Recorded as a negative result so it is not re-swept:** the auth funnel is CLEAN on the failed-read class — an outage cannot tell a real user they are on the waitlist.
+- **Verified.** `tsc` EXIT 0; brand guard EXIT 0; the three guards touched today 39/39. Canonical ratchet figure re-checked against live `const BUDGET` and still correct at **6 / 8 / 39**. ⚠ The `8 / 29 / 32 / 39` further down is inside a DATED session entry and was deliberately left — those are point-in-time samples, and rewriting one falsifies history.
+- **Revert:** `git revert <sha>`. Docs only.
+
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — `drain-fmv-cold-tail` reported `rows_found: 0, rows_written: 0` on every run while repricing 5–71 editions a tick
 
 **Telemetry-only fix. No pricing behaviour changed** — the diff adds two columns to a `pipeline_runs` insert; the drain RPC and every FMV write path are untouched.
