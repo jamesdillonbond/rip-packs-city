@@ -8,6 +8,68 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `/dashboard` converted; the client-page gate ratchet reaches 2, and the only page left is a hard 404
+
+**What shipped.** `app/dashboard/page.tsx` (2,545 lines — the largest client page in the repo)
+moved into `DashboardClient.tsx` behind a server shell, so the component coverage gate now
+measures it. New suite: `component-DashboardClient.test.tsx`, **132 tests**. Ratchets:
+client-page gate **3 → 2**, fetch-honesty **6 → 5**. Component gate
+**90.59/81.64/89.22/93.49** against 90.3/81.6/89.1/93.2, `tsc` clean.
+
+**NO new defect, and that IS the finding.** Every honesty branch on this page already carried
+a comment naming the incident that produced it — `meFailed` (a failed `/api/profile/me`
+rendering "Not signed in" on the one page that proves you are), `statsFailed` (the 2026-08-05
+incident: a statement timeout produced a false **$0 on a 19,213-moment wallet**), the hero
+picker's `loadFailed`, the "empty slabs mean two different things" gate, and the trophy
+removal's optimistic rollback. **What none of them had was a test.** A source grep proves a
+string is present; it cannot prove the branch is REACHABLE, that it precedes the empty state,
+or that a later edit has not made it unreachable. Twelve mutations across those branches, all
+killed.
+
+**⚠ THE COST OF THE CONVERSION, MEASURED, because it decides whether the next one is
+affordable.** Landing a 2,545-line file at 34% coverage took the gate DOWN ~2.5 points on
+every metric. Reaching green needed **132 tests** and six measure-then-target rounds; the
+binding metric was FUNCTIONS, not statements, because a page this size is mostly small inline
+handlers. **A page over ~2,000 lines is a day of test-writing, not an afternoon.**
+
+**⚠ MY OWN TEST BUGS, and the two that matter both PASSED while asserting nothing.**
+- **A wrong route key.** The stats fixtures used `/api/collection-stats`; the page calls
+  `/api/profile/collection-stats`. Every stats test fell through to the catch-all, so the
+  `statsFailed` honesty test — the one pinning the false-$0 incident — **passed for the wrong
+  reason and never reached the branch it exists to protect.**
+- **`if (btn)` guards.** Four clicks were wrapped in existence checks, and coverage showed
+  `handleRemoveTrophy` and `addWallet` were **never executed**. The guard turns "I could not
+  find the control" into a silent pass. Replaced with the labels the page really renders,
+  which is what made the paths reachable at all.
+- Also: the prop is `slab` not `data`; `TrophySlabData` needs `id` (the reorder buttons call
+  `moveBy(s.id, …)`); the poll interval is 10s and the ceiling 60s, so advancing 6s reads as
+  "the poll never started"; and two forms share one `usernameError`, so the message renders
+  twice and `findByText` throws on it.
+
+**⚠ TWO MUTATIONS SURVIVED AND LEAVING THEM WOULD HAVE BEEN WRONG EITHER WAY.**
+`occupantOfSlot(slabs, pinSlot)` vs `slabs[pinSlot - 1]`, and `s.slot === slot` vs
+`i === slot - 1`, are **indistinguishable given every state this page can currently produce** —
+both write paths keep array position and the persisted `slot` aligned. Contriving a divergent
+fixture would assert a state the app cannot reach; deleting the assertion would drop a
+property feeding a DESTRUCTIVE confirmation ("this replaces X"), where naming the wrong trophy
+is worse than naming none. Resolved with SOURCE assertions plus a guards-the-guard case on
+`occupantOfSlot` itself, and a recorded note on what would make the distinction load-bearing
+again. Both mutations are now killed.
+
+**⚠ Three flaky assertions fixed this session shared one root cause: a count of EVERYTHING is
+a clock measurement.** Total-fetch-count and offers-call-count assertions passed in isolation
+and failed under full-suite load, because the page's background legs keep ticking. Each was
+re-stated as a property of the REQUEST (which endpoint, which body) rather than of the tally.
+The last one also exposed a real minor leak: the collection tab never clears its 2s offer
+timer on unmount, so a previous test's flush fires into the next test's fetch mock.
+
+**Remaining on the gate ratchet: 2.** One is `app/rewards/page.tsx` — a **hard 404**
+(`app/rewards/layout.tsx` calls `notFound()` unconditionally), so converting it would add
+~1,244 lines of denominator measuring code no visitor can reach. Deliberately not converted.
+
+**Revert:** `git revert <code sha>` restores `app/dashboard/page.tsx` with its body inline and
+removes the suite. No DB, migration, cron, auth or prod-state change.
+
 ### 2026-08-16 · CLAUDE.md — `rows_written = 0` has three meanings, `ok = false` has two, and Known issues #8 is re-opened (docs-only)
 
 - **What shipped:** docs-only update to `CLAUDE.md`. No product, DB, migration, cron, auth, hot-wallet or pricing change.
