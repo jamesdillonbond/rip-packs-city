@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — retired TWO cron schedules for a COMPLETED backfill pair (Vercel crons 39 → 37); the filed "resolver stuck in December" finding is CORRECTED
+
+**What shipped.** Removed two `vercel.json` cron entries. Both routes, their kill switches and their revert paths are KEPT — the documented `sync-sales-ingest-dune` / `evm-transfers-ingest` disposition (retire the schedule, keep the route).
+
+- `/api/cron/topshot-flowty-unmapped-drain` (`9,29,49 * * * *`, ~73 ticks/day)
+- `/api/cron/topshot-flowty-sales-history-backfill` (`27 */3 * * *`, ~8 ticks/day)
+
+**Evidence they are COMPLETE, not broken (measured live 2026-08-16).** The producer walks BACKWARD and has reached its own documented terminal condition: `event_cursor.topshot_flowty_backfill` = **137,390,146 = exactly `SPORK_FLOOR_HINT`**, unmoved since 2026-08-04 06:27Z, with runs reporting `note: "reached_spork_floor_hint"`. Its last day of output was **2026-08-04** (1,097 found / 461 written); every day since is 0/0. The consumer's queue is **24,583 of 24,583 resolved — open population ZERO**, last row ingested 2026-08-04 03:28Z. A cursor pinned at the floor cannot yield another row, so no new rows can ever arrive.
+
+⚠ **The saving is real, not cosmetic — an EMPTY result is the most expensive case here.** No index matches the drain's `(collection_id, resolved_at IS NULL, marketplace, source) ORDER BY ingested_at ASC` (the closest, `unmapped_sales_unresolved_idx`, is keyed `(collection_id, sold_at DESC)`), so proving emptiness walked the **entire Top Shot open backlog every tick**. That surfaced as **8–19 failed ticks/day** with `candidate select: canceling statement due to statement timeout`, each burning a full statement timeout on the 2 GB IO-throttled instance whose saturation is a platform-wide problem. Roughly **860 no-op invocations and ~100 timeouts** since 08-05. Same "the arm that matches nothing is the one that scans everything" mechanism documented in `lib/unmapped-rotating-window.ts`.
+
+⚠ **This does NOT abandon the Flowty tail.** The deep 2022 → 2025-12-29 history sits BELOW the spork floor and was never reachable from this route; it needs `spork-proxy`, which the route header already records as a separate gated workstream. Unaffected and still open.
+
+⚠ **CORRECTION to [inbox 2026-08-16T2145Z](inbox/2026-08-16T2145Z-unmapped-resolver-is-stuck-in-december.md) — its structural conclusion does not apply to the live drain path, and its preferred remedy is ALREADY SHIPPED.** The filing's own figures reproduce EXACTLY (candidate window 2,000 rows, 2025-12-29 14:42:59Z → 2025-12-30 01:39:29Z, **10.94 h**, 86.9% unpriced), so the measurement is sound. What does not hold is the attribution:
+- `get_unmapped_resolver_targets` has **exactly ONE caller in the repo** — the manually-invoked admin route `/api/admin/allday-unmapped-fill`. It is on **no** cron: not `vercel.json`, not GHA, not pg_cron. So its December window is not what drains the backlog, and "it re-scans the same December slice every 30 minutes" is false of the scheduled path.
+- The live cron resolvers (`allday-resolve-unmapped` + `-tail`) **already walk a ROTATING window** via `lib/unmapped-rotating-window.ts` — never-attempted first (`last_onchain_attempt_at` NULLS FIRST, `sold_at DESC` tiebreak). That is precisely the filing's **Option 1 ("change the ORDERING, not the population — smallest fix, forfeits nothing")**, shipped earlier in `0c554695` + `8f3589f4`.
+- **Falsified directly, not by reading code:** of the **87** All Day NFTs attempted in the trailing 2 h, **0** anchor in December — their oldest open row spans **2026-01-03 → 2026-02-01**. Per-month attempt coverage is Jan 31.3% / Feb 49.2% / Mar 100% / Apr 100%, with newest attempts minutes old. The resolver is working January–February right now.
+- ⚠ The collateral-stamping alternative (an attempt stamping every open row of the same NFT, making Jan/Feb look worked while selection stayed December-anchored) was **tested and rejected** by that same anchor query — which is why the anchor, not the stamp, is the right instrument.
+
+**This is the name-trap class CLAUDE.md already documents** ("read `cron.job.command` to learn what a schedule actually calls; never infer the callee from the name"), met on a FUNCTION name: a plausibly-named function was measured accurately and attributed to a path that does not call it. **Do not ship Option 1 — it exists.** The filing's Option 2 (exclude frozen rows by reason, ~30,331-NFT blast radius) is untouched and remains Trevor's call.
+
+**The real constraint is throughput, and it is unchanged by this commit:** `allday-unmapped-resolver` writes ~200/day against inflow ~230-240/day. Separately, ⚠ **`allday-unmapped-resolver-tail` has written ZERO rows in 4 days** (8 runs/day, ~50% failing `upstream request timeout`, p95 190–320 s) — filed below, NOT fixed here.
+
+**Revert path (sha-independent):** re-add the two entries to `vercel.json`:
+- `{ "path": "/api/cron/topshot-flowty-unmapped-drain", "schedule": "9,29,49 * * * *" }`
+- `{ "path": "/api/cron/topshot-flowty-sales-history-backfill", "schedule": "27 */3 * * *" }`
+
+or `git revert <sha>` on this commit, which also restores the route-header notes. **No DB change was made**, so there is nothing to unwind in Supabase. ⚠ If the drain is ever revived, FIX THE SELECT FIRST (order by `sold_at` to ride the existing partial index, or add a matching partial index) or it immediately re-acquires the timeout above.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — three client-page ratchets were undercounting, hiding the entire auth funnel from every gate
 
 - **Shipped.** New `__tests__/helpers/client-directive.ts` + its own guard-the-guard suite; four guards repointed at it (`client-page-gate-ratchet`, `client-page-fetch-honesty-ratchet`, `client-failure-collapses-to-empty-ratchet`, `insights-gate-include-completeness`).
