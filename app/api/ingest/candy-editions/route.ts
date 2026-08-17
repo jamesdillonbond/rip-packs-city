@@ -133,8 +133,19 @@ async function handleIngest(req: NextRequest) {
   //       catch — a plausible casualty of the same DB saturation.
   // ⚠ This heartbeat does NOT separate those three; it separates "reached"
   // from "never reached", which was the state genuinely unavailable before.
-  // Do not cite it as evidence of a maxDuration kill. Narrowing (a)/(b)/(c)
-  // needs a post-walk phase marker or a retry on logRun, neither taken here.
+  //
+  // ✅ NARROWED by measurement: (c) is substantially weaker than it looks.
+  // Other processes' log_pipeline_run calls succeeded continuously through that
+  // window — 08:53:20 (-46 s), 08:54:08.86 (+3 s), :14, :18, :37, :43 — so the
+  // telemetry write path was healthy in the very second this route's own logRun
+  // should have fired. A general saturation outage of that path is ruled out
+  // (an isolated failure on one pooled connection is not, so (c) is weakened,
+  // not eliminated). **A kill — (a)/(b) — is the best-supported reading.**
+  // ⚠ The arithmetic only works with cron jitter: `40 8 * * *` + 800 s puts the
+  // wall at 08:53:20, BEFORE the observed 08:54:06 write, so the invocation must
+  // have started after 08:40:00. **This heartbeat now records that start time,
+  // so the next missing terminal row settles it: heartbeat.started_at + 800 s
+  // against the last data write.** Check that before building anything.
   //
   // ⚠ SEPARATE pipeline name, never an extra `candy-editions-ingest` row — this
   // pipeline is on pipeline_cadence_watchlist (1800 min), so a marker under its

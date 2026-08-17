@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · NARROWED (Claude Code, interactive) — the telemetry path was healthy 3 seconds after `candy-editions-ingest`'s last write, so a kill is the best-supported reading after all
+
+**Docs + comment only. No code behaviour, DB, cron or prod change.** Narrows the three-way ambiguity filed minutes earlier; the heartbeat is unchanged.
+
+**The measurement.** `pipeline_runs` either side of candy's final data write (08:54:06.286) shows other processes' `log_pipeline_run` calls **succeeding continuously through that exact window** — 08:53:20 (-46 s), then **08:54:08.86 (+3 s)**, 08:54:14, 08:54:18 ×2, 08:54:37, 08:54:43, on through 08:56. **The telemetry write path was healthy in the very second this route's own `logRun` should have fired**, which removes the mechanism that made "the logging RPC failed under saturation" plausible.
+
+**Where that leaves it.** ⚠ **(c) is WEAKENED, not eliminated** — an isolated failure on one pooled connection is untouched by this evidence, and nothing here speaks to candy's own call. But **a kill is now the best-supported reading**, which means my original instinct was right for a reason I had not established when I published it. ⚠ **The correction that withdrew it was still correct**: the claim was unsupported at the time, and the difference between "right" and "supported" is the whole point. Three positions in one session — asserted, withdrawn, re-supported — and only the third rests on a measurement.
+
+⚠ **The arithmetic only closes with cron jitter, which is worth stating rather than glossing.** `40 8 * * *` + `maxDuration` 800 s puts the wall at **08:53:20 — BEFORE the observed 08:54:06 write**. The write happened, so the invocation must have started later than 08:40:00, and a start around 08:40:46+ puts the wall almost exactly on the final write. Consistent with a kill landing between the walk's last write and the post-walk denorm/`logRun`.
+
+✅ **The heartbeat that shipped hours earlier now records the invocation start time, so the NEXT missing terminal row settles this outright** — compare `heartbeat.started_at + 800 s` against the last data write. Recorded in the route comment and the filing as the check to run before building anything. **The instrument shipped this session answers the question this session could not.**
+
+**Also folded into the filing:** prefer PROGRESSIVE marking over a single post-walk row, per `drain-conflated-subeditions` (`80e99d4d`), which hit the identical "the diagnostic is destroyed by the failure it diagnoses" problem.
+
+**Revert:** `git revert <sha>` — comment, filing and ledger text only.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — three more `page.tsx` conversions; `admin/feedback` is the THIRD console in one workstream whose failed read reported an empty queue
 
 **What shipped.** `admin/flowty-analytics` (1,054 lines), `admin/feedback` (1,077) and
