@@ -63,19 +63,65 @@ describe("PipelineHealthBadge", () => {
     await waitFor(() => expect(container.textContent).toContain("1 pipeline lagging"))
   })
 
-  it("soft-fails to the loading caption when the fetch is not ok", async () => {
+  // ⚠ THE TWO CASES BELOW WERE INVERTED, NOT DELETED. They asserted that a failed
+  // read "stays on the loading caption", which was a fair description of the code
+  // and a defect in the product: the summary hardcoded `status: "healthy"` when
+  // `data` was null, so a live ops badge that had just FAILED to read pipeline
+  // status rendered a GREEN dot under a caption claiming it was still loading —
+  // on /analytics, where the badge exists precisely to say when something broke.
+  // "Soft-fail" is right about the render (never throw, never vanish) and wrong
+  // about the claim. What survives from the originals is that the component keeps
+  // rendering; what changed is what it says while it does.
+  it("says the status is UNAVAILABLE — not loading, not healthy — when the fetch is not ok", async () => {
     fetchMock.mockReturnValue(mockResp(null, false))
     const { container } = render(<PipelineHealthBadge />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    // No pipelines payload set -> summary stays on the loading caption.
-    expect(container.textContent).toContain("Loading status…")
+    await waitFor(() => expect(container.textContent).toContain("Status unavailable"))
+    expect(container.textContent).not.toContain("Loading status…")
+    expect(container.textContent).not.toContain("All systems healthy")
   })
 
-  it("stays on the loading caption when the fetch rejects (soft-fail catch)", async () => {
+  it("says the status is UNAVAILABLE when the fetch rejects (soft-fail catch)", async () => {
     fetchMock.mockReturnValue(Promise.reject(new Error("boom")))
     const { container } = render(<PipelineHealthBadge />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(container.textContent).toContain("Loading status…")
+    await waitFor(() => expect(container.textContent).toContain("Status unavailable"))
+    expect(container.textContent).not.toContain("Loading status…")
+  })
+
+  it("does NOT paint the dot green when it has no answer", async () => {
+    // The colour is the part a reader actually takes in at a glance, and green
+    // is the one thing an unmeasured status must never be. Emerald is the
+    // healthy palette; asserting its absence is what makes this load-bearing.
+    fetchMock.mockReturnValue(mockResp(null, false))
+    const { container } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("Status unavailable"))
+    expect(container.innerHTML).not.toContain("bg-emerald-400")
+    // ...and it must not pulse like an alert either — we do not know of trouble.
+    expect(container.innerHTML).not.toContain("animate-ping")
+  })
+
+  it("still paints green, and never pulses, when the platform really is healthy", async () => {
+    // The other direction: the fix must not turn a genuine all-clear into a
+    // muted "unknown", or it cries wolf on a healthy platform.
+    fetchMock.mockReturnValue(mockResp(payload("healthy", {})))
+    const { container } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("All systems healthy"))
+    expect(container.innerHTML).toContain("bg-emerald-400")
+    expect(container.innerHTML).not.toContain("animate-ping")
+  })
+
+  it("still pulses for real trouble", async () => {
+    fetchMock.mockReturnValue(mockResp(payload("stale", { fmv: "stale" })))
+    const { container } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("1 pipeline stale"))
+    expect(container.innerHTML).toContain("animate-ping")
+  })
+
+  it("the open panel distinguishes a failed read from a pending one", async () => {
+    fetchMock.mockReturnValue(mockResp(null, false))
+    const { container, getByRole } = render(<PipelineHealthBadge />)
+    await waitFor(() => expect(container.textContent).toContain("Status unavailable"))
+    fireEvent.click(getByRole("button", { name: /pipeline health/i }))
+    expect(container.textContent).toContain("says nothing about the pipelines")
   })
 })
 

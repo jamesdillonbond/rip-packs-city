@@ -19,12 +19,27 @@ const PIPELINE_ORDER: Array<keyof PipelineHealthResponse["pipelines"]> = [
   "listings",
 ]
 
+/**
+ * ⚠ `unknown` is NOT a shade of healthy. Both of these functions fall through to
+ * GREEN, which is right for "healthy" and wrong for "we have no idea" — and this
+ * badge's whole job is to say when something is broken, so defaulting an absent
+ * answer to green is the one direction it must never fail in. The unknown branch
+ * is deliberately NEUTRAL rather than red: a failed read is not an outage, and
+ * painting it red would cry wolf on the reader's own connection.
+ */
 function statusColor(status: string): { dot: string; ring: string; text: string } {
   if (status === "stale") {
     return { dot: "bg-rose-400", ring: "ring-rose-400/30", text: "text-rose-300" }
   }
   if (status === "degraded") {
     return { dot: "bg-amber-400", ring: "ring-amber-400/30", text: "text-amber-300" }
+  }
+  if (status === "unknown") {
+    return {
+      dot: "bg-[color:var(--rpc-text-muted)]",
+      ring: "ring-[color:var(--rpc-border)]",
+      text: "text-[color:var(--rpc-text-muted)]",
+    }
   }
   return { dot: "bg-emerald-400", ring: "ring-emerald-400/30", text: "text-emerald-300" }
 }
@@ -35,6 +50,9 @@ function statusBadgeClass(status: string): string {
   }
   if (status === "degraded") {
     return "border-amber-500/30 bg-amber-500/10 text-amber-300"
+  }
+  if (status === "unknown") {
+    return "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]"
   }
   return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
 }
@@ -50,6 +68,11 @@ function fmtLag(min: number): string {
 
 export default function PipelineHealthBadge() {
   const [data, setData] = useState<PipelineHealthResponse | null>(null)
+  // ⚠ Did a load attempt SETTLE? Without this, "no data" conflates "the first
+  // request is still in flight" with "the request finished and we got nothing",
+  // and the badge sits on "Loading status…" forever — a caption that is false
+  // the moment the fetch resolves, and stays false through every 60s retry.
+  const [attempted, setAttempted] = useState(false)
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
@@ -60,12 +83,15 @@ export default function PipelineHealthBadge() {
         .then((r) => (r.ok ? r.json() : null))
         .then((j) => {
           if (cancelled) return
+          setAttempted(true)
           if (j && (j as PipelineHealthResponse).pipelines) {
             setData(j as PipelineHealthResponse)
           }
         })
         .catch(() => {
-          // soft-fail
+          // Soft-fail the RENDER, not the FACT: the badge must not disappear or
+          // throw, but it also must not keep claiming to be loading.
+          if (!cancelled) setAttempted(true)
         })
     }
     load()
@@ -88,7 +114,16 @@ export default function PipelineHealthBadge() {
   }, [open])
 
   const summary = useMemo(() => {
-    if (!data) return { caption: "Loading status…", status: "healthy" as const }
+    // ⚠ NEVER `status: "healthy"` HERE. This branch is reached when we have no
+    // data at all — before the first response, and after any failed one — and
+    // hardcoding "healthy" painted a GREEN dot on a live ops badge that had just
+    // failed to read the pipeline status. A monitor that reports health it has
+    // not measured is worse than no monitor: the reader stops checking.
+    if (!data) {
+      return attempted
+        ? { caption: "Status unavailable", status: "unknown" as const }
+        : { caption: "Loading status…", status: "unknown" as const }
+    }
     const pipelines = data.pipelines
     const status = data.overall_status
     if (status === "healthy") {
@@ -107,7 +142,7 @@ export default function PipelineHealthBadge() {
     }
     const n = counts.degraded
     return { caption: `${n} pipeline${n === 1 ? "" : "s"} lagging`, status }
-  }, [data])
+  }, [data, attempted])
 
   const colors = statusColor(summary.status)
 
@@ -122,7 +157,7 @@ export default function PipelineHealthBadge() {
       >
         <span className="relative inline-flex">
           <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
-          {summary.status !== "healthy" ? (
+          {summary.status === "stale" || summary.status === "degraded" ? (
             <span
               className={`absolute inset-0 inline-flex animate-ping rounded-full opacity-60 ${colors.dot}`}
             />
@@ -142,7 +177,11 @@ export default function PipelineHealthBadge() {
             ) : null}
           </div>
           {!data ? (
-            <div className="py-3 text-xs text-[color:var(--rpc-text-muted)]">Loading…</div>
+            <div className="py-3 text-xs text-[color:var(--rpc-text-muted)]">
+              {attempted
+                ? "Couldn't load pipeline status — this says nothing about the pipelines, only that the read failed."
+                : "Loading…"}
+            </div>
           ) : (
             <ul className="space-y-2">
               {PIPELINE_ORDER.map((key) => {
