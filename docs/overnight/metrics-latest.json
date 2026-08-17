@@ -1,43 +1,45 @@
 {
-  "captured_at_utc": "2026-08-16T14:46:07Z",
-  "run": "rpc-nightly-autonomous-pass (07:46 PT Aug 16; OFF-HOURS + MONITOR + NO-PUSH, 9th consecutive night)",
-  "mode": "Real time from DB (now() 14:44Z, corroborated by max sales.ingested_at 14:44Z + fmv computed_at 14:40Z, no clock skew). 14:44Z = 07:44 PT = OUTSIDE 00:00-06:00 -> late/morning launch -> OFF-HOURS monitor: queue, do not ship. ALSO sandbox shell DOWN (useradd exit 12, /sessions no-space, failed identically twice) -> git unavailable -> NO-PUSH. DB/Vercel/Sentry MCP + mount file access all GREEN. Shipped 0 / reverted 0 / repaired 0. Outputs on MOUNT, UNPUSHED.",
+  "captured_at_utc": "2026-08-17T08:10:00Z",
+  "run": "rpc-nightly-autonomous-pass (01:10 PT Aug 17; genuine OVERNIGHT window, NO-PUSH, shell GREEN)",
+  "mode": "Real time from DB (now() 08:03Z == shell 08:03Z, corroborated by max sales.ingested_at 08:03Z + fmv computed_at 07:56Z; NO clock skew). 08:03Z = 01:03 PT = inside 00:00-06:00 -> genuine overnight, normal shipping allowed. Shell GREEN (9-night /sessions outage CLOSED; public clone succeeded). git PUSH DEAD (pushurl has no credential) -> NO-PUSH: DB migrations + artifact repairs would apply, code deploys queued. DB/Vercel/Sentry MCP + mount all GREEN. Shipped 0 / reverted 0 / repaired 0.",
   "capabilities": {
-    "device_bash": "DOWN (useradd exit 12, /sessions no-space; failed identically twice)",
-    "git": "UNAVAILABLE (no shell -> no clone, no push)",
-    "supabase_mcp": "GREEN (rpc_ops_snapshot ran full this time; pg_cron failures + security all queried clean)",
-    "vercel_mcp": "GREEN (20 recent: 14 READY / 6 CANCELED / 0 ERROR)",
-    "sentry_mcp": "GREEN (0 new / 0 regressed / 48h)",
+    "device_bash": "GREEN (9-night outage closed)",
+    "git_clone": "GREEN (public clone ok)",
+    "git_push": "DEAD (mounted remote.origin.pushurl has no embedded credential; push --dry-run = 'could not read Username')",
+    "supabase_mcp": "GREEN (rpc_ops_snapshot TIMED OUT under saturation -> used individual checks)",
+    "vercel_mcp": "GREEN (20 recent: 10 READY / 10 CANCELED / 0 ERROR)",
+    "sentry_mcp": "GREEN (6 issues, all smoke-couldNotRun/saturation; 0 real)",
     "cowork_artifacts": "GREEN (11 artifacts, none flagged broken)",
     "mount_file_access": "GREEN"
   },
-  "prod_deploy": "1073691d (test(guard): freeze the account-level empty-collapse idiom) READY = current production tip, the Aug-16 Claude Code server-page honesty sweep. 0 ERROR deploys in last 20.",
+  "prod_deploy": "current prod tip = the jobid-215 cadence migration commit (65e841fc, READY). 0 ERROR deploys in last 20. The docs-only 7fdc8436 tip was correctly CANCELED by ignoreCommand.",
   "shipped_this_run": 0,
   "reverted_this_run": 0,
   "repaired_this_run": 0,
-  "security": { "invariants": [], "anon_write_holes": [], "rls_off_base_tables": [], "secdef_anon_violations": [] },
-  "db_size_mb": 13074,
+  "security": { "invariants_rows": 0, "anon_write_rows": 0, "rls_off_base_tables": 0, "secdef_anon_drift_len": 0 },
+  "db_size_mb": 13114,
+  "editions_est": 27193,
   "sentry_new_or_regressed_48h": 0,
-  "sentinel_ts_uuid_editions_48h": 0,
-  "editions_by_collection": { "nba_top_shot": 19773, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125 },
-  "fmv_high_med": { "nba_top_shot": 7496, "nfl_all_day": 1672, "laliga_golazos": 5, "ufc_strike": 0 },
+  "sentry_note": "6 issues all 'smoke check could not run: ...' from /api/smoke-test = couldNotRun-under-saturation honest degradation; security independently verified clean.",
+  "fmv_high_med_share_pct": { "nba_top_shot": 52.8, "nfl_all_day": 24.5, "candy_mlb": 60.0, "laliga_golazos": 0.9, "disney_pinnacle": 40.7, "ufc_strike": 0.0 },
   "trust_health_breaches": {
-    "fmv_sweep_wedge_hours": { "value": 7.97, "breach_at": 3, "class": "KNOWN - saturation collateral, OSCILLATING (7.40 08-15 15:20PT -> 9.35 evening peak 00:15Z -> 7.97 now, eased back)." },
-    "trust_precompute_max_age_hours": { "value": 13.78, "breach_at": 13, "class": "KNOWN - board watching itself; trust-precompute-refresh (jobid 287) leg timing out -> partial refresh. Eased from 17.09 (00:15Z) to just-over-breach." },
-    "public_board_slow_count": { "value": 12, "breach_at": 1, "class": "KNOWN - saturation collateral, oscillating 9-14 band. public_board_empty_count 0 -> no board broken/empty." },
-    "panini_sale_price_capture_dry_days": { "value": 19, "breach_at": 3, "class": "KNOWN - home-box Panini runner outage; operator. +1/day expected (18->19)." },
-    "unmapped_resolution_backlog_max": { "value": 258, "breach_at": 100, "class": "KNOWN - AllDay permanent-class floor; net-draining (inflow 242/24h < outflow 293/24h)." }
+    "panini_sale_price_capture_dry_days": { "value": 20, "breach_at": 3, "class": "KNOWN - home-box Panini runner outage; operator. +1/day (19->20)." },
+    "public_board_slow_count": { "value": 5, "breach_at": 1, "class": "KNOWN - saturation collateral, oscillating DOWN 12->5." },
+    "unmapped_resolution_backlog_max": { "value": 291, "breach_at": 100, "class": "KNOWN - AllDay permanent-class floor." }
   },
-  "fmv_sweep_stall_pct_24h": 44.9,
-  "pipeline_alerts_summary": "ALL saturation-class (statement/pool/upstream timeouts): allday-buyer-backfill 60%, allday-unmapped-resolver-tail 50%, populate-pinnacle-wmc-fmv 61%, reconcile-saved-wallet-stats 71%, wallet-username-resolver 78%, compute-pinnacle-pack-ev 67% (deterministic ON CONFLICT, fix bd53bb3a UNDEPLOYED), topshot-active-listings-ingest 67% (egress_blocked WAF), + medium fmv-recalc/lock-check/refresh_wmc_fmv_*/run-insider-detectors/topshot-fmv-populate. Documented disk-IO burst-credit throttle class; NOT logic defects, NOT traced to any ship; MVs left STALE not broken.",
-  "pgcron_failures": "10 jobs, ALL 'canceling statement due to statement timeout' (trust-health-precompute-refresh, allday-pack-realized MV, public-board-liveness-sweep, misattrib-candidates MV, pinnacle-fmv-recalc-backstop, serial-fmv-multipliers-weekly [BY DESIGN weekly], thin-sale-ask-disclosure, candy-wmc-ghost-purge, allday-ev-corrected-refresh, serial-fmv-jersey-weekly). Same saturation root cause; none post-fix.",
-  "candy_editions_ingest": "cron_silent 1806m - 08-16 08:40Z daily tick missing, likely the documented 300s timeout-kill under saturation. Editions change slowly; operator/CC maxDuration bump. QUEUED.",
-  "post_ship_watch": "PASS - 0 reverts. Concurrent CC Aug-16 server-page honesty sweep (fix trophy-picker/profile/api-count/dashboard/my-teams/pinnacle/wallet-search/set + refactor insights) landed since prior run; frontend read-honesty fixes with own tests/reverts. 0 ERROR deploys, 0 new/regressed Sentry 48h, security [], public_board_empty_count 0, saturation is DB disk-IO unrelated to these frontend changes. Nothing attributable, nothing to revert.",
-  "queued_new": "The :13 cron stagger (jobs 71/109 off minute 13) - ready-to-run, reversible, corrected-mechanism filed 2026-08-16T0030Z (cron_heavy jobs reschedulable via SET LOCAL ROLE cron_heavy + cron.schedule in-place). NOT shipped: off-hours + cannot ledger a prod DB-state change without git. Operator/genuine-overnight window.",
-  "escalation": "Sandbox shell down 9th consecutive night blocks ALL overnight git push + daytime-monitor inbox archival (~66 files accumulated). Operator: free /sessions volume (delete old Cowork sessions) per docs/handoff-2026-08-09-cowork-shell-recovery.md.",
+  "trust_health_cleared_since_prior": {
+    "fmv_sweep_wedge_hours": { "now": 0.39, "breach_at": 3, "was": 7.97, "class": "fmv-recalc sweep recovered/advancing." },
+    "trust_precompute_max_age_hours": { "now": 10.39, "breach_at": 13, "was": 13.78, "class": "8-way leg split holding; freshness view names the one stale leg (jobid 327 serial-supply failed 03:48Z, isolated)." }
+  },
+  "fmv_sweep_stall_pct_24h": 39.7,
+  "stalled_pipelines": "2, both KNOWN: candy-editions-ingest silent 2847m (300s timeout-kill under saturation, missed 08-16 daily tick, QUEUE code fix); allday-pack-opens-backfill silent 122m vs 90m (finite spork-floor backfill, expected to slow/stop).",
+  "pgcron_failures": "~7, ALL saturation-class ('canceling statement due to statement timeout' + one 'job startup timeout' on leg 327); includes 2 weekly-by-design (serial-fmv-multipliers/jersey). None post-fix.",
+  "post_ship_watch": "PASS - 0 reverts. apply-fmv-haircut per-collection split CONFIRMED (08-17 06:30Z run ok, 65 rows, 109.9s vs prior 2 days fail@125s). drain-fmv-cold-tail telemetry fix CONFIRMED (08-17 rows_written 33 vs 0). 8-way leg split HOLDING (age 10.39, freshness view isolated the one failed leg 327). fmv-recalc wedge RECOVERED (0.39). jobid 215 cadence migration LIVE/registered. dashboard/profile honesty fixes frontend-only, no DB state to watch.",
+  "queued_new": "candy-editions timeout (now missed 2 ticks); success-coverage monitoring arm (0320Z - operator decision, warn notifies hourly, needs suppression story); sync-nba-projections 403 with Oct deadline (0320Z); topshot-wmc-fossil-drain targets-query bound; ownership-sync-dune HTTP 402 credits; backfill-historical-pack-ev starved (Trevor data-quality call, 0225Z).",
+  "escalation": "git PUSH dead (pushurl has no credential) - blocks overnight code deploys + inbox archival. Shell outage CLOSED but push-credential must be restored separately (re-embed PAT in mounted pushurl or restore cloud credential injection). ~35 consumed inbox files (Aug 9-14) still un-archived pending push.",
   "outputs": [
-    "docs/handoff-2026-08-16-overnight-pass.md (mount, unpushed)",
+    "docs/handoff-2026-08-17-overnight-pass.md (mount, unpushed)",
     "docs/overnight/metrics-latest.json (mount, unpushed)"
   ],
-  "not_written": "ledger.md + inbox archive - both need git. Nothing shipped needs a revert-path entry; append-at-top splice against an origin advanced ~20 commits by the concurrent CC sweep is the destroyed-revert-path hazard. Deferred until push restored."
+  "not_written": "ledger.md splice + inbox archive - deferred to push restoration. Nothing shipped needs a revert-path entry; splicing against an origin advanced ~20 commits by concurrent CC is the destroyed-revert-path hazard."
 }
