@@ -1,5 +1,30 @@
 # `topshot-wmc-fossil-drain` times out proving emptiness — and it is on no watchlist, so neither arm sees it
 
+> ✅ **RESOLVED 2026-08-17 18:19Z — the blocking measurement was taken and it chose option 2, NOT option 1.**
+> The fossil population is **exactly ZERO**: a chunked recursive loose index scan enumerated **all 11,799
+> distinct Top Shot `edition_key`s** in `wallet_moments_cache` (4,000 + 4,500 + 3,299 — the recursion
+> **exhausted**, and nothing sorts after the terminator `99:3765` or before `1`); **none is non-canonical**.
+> Corroborated by the two cheap proofs already in this doc plus a third: **0 of the 6,561 non-canonical
+> `editions.external_id` are present in wmc**. So the weekly `?wmc=1&rekey=1` cron entry was removed from
+> `vercel.json` (**37 → 36**) and the route KEPT — this doc's own decision rule ("if the population is zero,
+> option 2 is free and options 1/3 are wasted work on the platform's hottest table").
+>
+> ⚠ **The open question in "What I could NOT establish" is answered, and by neither hypothesis offered
+> there.** The recursive-CTE loose scan **is** correctly planned as a two-column index seek — but each seek
+> costs **10.1 ms** with **`Heap Fetches: 1054/1999`**, because the visibility map does not pay off on the
+> platform's most write-heavy table. 11,799 seeks ≈ 120 s: correctly shaped and genuinely too slow, not a
+> planning failure. ⚠ **The asymmetry that made the measurement possible at all: an ABSENT key is a cheap
+> seek, a PRESENT one is not** — 6,561 absent-key probes returned instantly.
+>
+> ⚠ Two corrections to this doc's framing: the **~13–20k distinct-key estimate was high** (11,799 actual),
+> and its "the production query walks ~445k ROWS" remains right — that is why the direct scan still exceeded
+> 55 s even in a quiet window. ⚠ **NULL `edition_key` rows exist but are NOT fossils** (`NULL !~ pattern` is
+> NULL, so the targets RPC already excludes them) — worth stating, since it reads like a hole in the proof.
+>
+> Guard: `__tests__/fossil-drain-schedule-is-retired.test.ts` (8/8 mutations killed). The "nothing watches
+> it" half is **accepted, not fixed** — see the ledger entry for why a watchlist row would make the
+> `Pipeline Success Coverage` arm flap at a weekly cadence.
+
 Filed 2026-08-17 09:56 PT / 16:56Z (Claude Code, interactive). Found while auditing the coverage of the
 `Pipeline Success Coverage` sentinel arm shipped in the same session.
 
