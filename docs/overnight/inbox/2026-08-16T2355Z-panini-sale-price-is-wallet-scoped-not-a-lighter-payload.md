@@ -71,6 +71,49 @@ rather than retire: something should still watch Panini sale capture, and the `n
 its own failure mode — it depends on the runner **clicking the sales-history tab**, so a UI change
 upstream silences it.
 
+### The threshold, derived rather than chosen
+
+Share of newly-captured serials carrying a `last_sale_usd`, by capture day, over 30 days. **Three
+clean regimes:**
+
+| regime | days | range |
+|---|---|---|
+| pre-switch (`brought_at_price`, listing-gated denominator) | 07-18 → 07-26 | **40.5 – 59.5%** |
+| **the outage** | 07-28 → 08-08 | **1.7 – 6.3%** |
+| **post-replacement (`nftSalesData`)** | 08-09 → 08-16 | **21.1 – 38.9%** |
+
+The outage band and the healthy band are separated by ~**4×** and do not overlap, so a gate at
+**10%** fires on every one of the 12 outage days and clears every post-fix day with >2× margin.
+
+⚠ **It needs a MINIMUM-SAMPLE FLOOR, for the reason the concierge outcome check needed one.** The
+denominator swings from **280** rows (08-13, 38.9%) to **17,809** (08-16, 22.9%) — the runner walks in
+bursts — so a percentage on a thin day is noise. Suggest **≥500 captured serials** for a day to count,
+the same shape as that check's 5-conversation floor.
+
+⚠ **Keep the CONSECUTIVE-DAYS form; do not gate on a single day.** 07-27 reads 21.9% — inside the
+healthy band — because the switch happened mid-day, so a one-day gate would have missed the first day
+of a 12-day outage. `rpc_thp_leg_panini`'s existing `runs`/`bool_or … ORDER BY capture_day DESC`
+construction already computes consecutive-dry-days-from-today correctly; **re-point its INPUT and
+leave that logic alone.**
+
+### Why this is filed and not applied
+
+Not squeamishness — three specific risks, each of which this session watched bite something:
+
+1. It needs **two** objects changed: `rpc_thp_leg_panini` (1,622 chars, tractable) **and**
+   `v_rpc_trust_health`, which must carry the new metric's `breach_at` + `catches`. ⚠ That view is
+   large and `CREATE OR REPLACE VIEW` **silently strips `security_invoker`** — a footgun this repo has
+   hit **four** times. It wants `ALTER VIEW` discipline plus a post-apply
+   `check_public_security_invariants()`.
+2. The threshold above rests on **8 post-fix days** — enough to separate the regimes, not enough to
+   characterise seasonality. This arm **pages an operator**, and the repo has already paid twice for a
+   cry-wolf threshold.
+3. A precompute leg cannot be meaningfully validated in a rolled-back transaction against real capture
+   data, so "it applies cleanly" would not be the same as "it measures the right thing."
+
+**Everything needed to apply it is above. What is missing is a threshold review by whoever owns the
+pager — which is a judgement call, not a measurement.**
+
 ## 3. What the first version got right, kept because the arm's text is still wrong
 
 The arm's `catches` still names the leading reading as *"an `all_cards` bulk variant returning a
