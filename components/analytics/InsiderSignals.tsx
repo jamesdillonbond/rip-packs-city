@@ -60,6 +60,18 @@ export default function InsiderSignals() {
   const visibleBuybacks = buybacks.filter(
     (b) => b.player_name != null && String(b.player_name).trim() !== ""
   )
+  // ⚠ A NAME FILTER IS NOT AN EMPTINESS TEST. Rendering "No recent buybacks
+  // detected." off `visibleBuybacks.length === 0` collapses two different facts:
+  // the market was quiet (a claim about the MARKET, and true), and we read rows
+  // we could not name (a claim about OUR catalogue, and the opposite of what
+  // that copy says). Same defect this repo already fixed on the Pinnacle
+  // top-sales panel, reached from the other direction.
+  //   Not hypothetical for this feed: the buyback source is the one that
+  // published ~161k fabricated `direct_transfer` rows, and a wallet's 43,675
+  // rows resolving to no edition at all is still open — so unnameable rows are
+  // exactly what it produces when it goes wrong. The failed-READ case is already
+  // honest (the `!resp` guard above renders nothing).
+  const unnamedBuybacks = buybacks.length - visibleBuybacks.length
 
   return (
     <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
@@ -109,8 +121,13 @@ export default function InsiderSignals() {
             Recent Buybacks
           </h3>
           {visibleBuybacks.length === 0 ? (
-            <p className="text-[12px] text-[color:var(--rpc-text-muted)]">No recent buybacks detected.</p>
+            <p className="text-[12px] text-[color:var(--rpc-text-muted)]">
+              {unnamedBuybacks > 0
+                ? `${unnamedBuybacks} recent buyback${unnamedBuybacks === 1 ? "" : "s"} not yet matched to a moment.`
+                : "No recent buybacks detected."}
+            </p>
           ) : (
+            <>
             <ul className="space-y-2">
               {visibleBuybacks.map((b) => (
                 <li key={b.id} className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-2.5">
@@ -129,6 +146,12 @@ export default function InsiderSignals() {
                 </li>
               ))}
             </ul>
+            {unnamedBuybacks > 0 ? (
+              <p className="mt-2 text-[10px] text-[color:var(--rpc-text-muted)]">
+                {`+${unnamedBuybacks} not yet matched to a moment`}
+              </p>
+            ) : null}
+            </>
           )}
         </div>
 

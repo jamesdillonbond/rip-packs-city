@@ -71,9 +71,66 @@ describe("InsiderSignals", () => {
     )
     const { container } = render(<InsiderSignals />)
     await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
-    // Both buybacks are blank-named -> empty-state copy, no "buyback detected" cards.
-    expect(container.textContent).toContain("No recent buybacks detected.")
+    // ⚠ INVERTED, NOT DELETED. This case used to assert "No recent buybacks
+    // detected." here, and it was a well-reasoned test: the cards must not
+    // render, which is still true and still asserted below. But the copy it
+    // pinned makes a claim about the MARKET out of a gap in OUR CATALOGUE —
+    // these two rows WERE read, we simply could not name them — so the
+    // assertion held the defect in place. A name filter is not an emptiness
+    // test; deleting the case would lose the half that was right.
     expect(container.textContent).not.toContain("Insider buyback detected")
+    expect(container.textContent).not.toContain("No recent buybacks detected.")
+    expect(container.textContent).toContain("2 recent buybacks not yet matched to a moment.")
+  })
+
+  it("says NOTHING WAS DETECTED only when the feed really returned no buybacks", async () => {
+    // The other side of the same distinction: an empty array is an honest
+    // market claim and must keep reading as one, or the fix just moves the
+    // dishonesty and cries wolf on a quiet market.
+    fetchMock.mockReturnValue(
+      mockResp({ has_data: true, alerts: [], buybacks: [], announcements: [] })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    expect(container.textContent).toContain("No recent buybacks detected.")
+    expect(container.textContent).not.toContain("not yet matched to a moment")
+  })
+
+  it("singularises the unnameable count", async () => {
+    fetchMock.mockReturnValue(
+      mockResp({
+        has_data: true,
+        alerts: [],
+        buybacks: [{ id: "b1", player_name: null, set_name: "s", serial_number: 1, price_usd: 100, sold_at: null }],
+        announcements: [],
+      })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    expect(container.textContent).toContain("1 recent buyback not yet matched to a moment.")
+  })
+
+  it("discloses a PARTIAL drop instead of silently serving a shorter list", async () => {
+    // The named row renders, so the panel looks complete — which is exactly why
+    // the dropped one has to be stated. A list silently missing rows is a
+    // truncated ranking served as the whole set.
+    fetchMock.mockReturnValue(
+      mockResp({
+        has_data: true,
+        alerts: [],
+        buybacks: [
+          { id: "b1", player_name: "Ja Morant", set_name: "Base", serial_number: 7, price_usd: 100, sold_at: null },
+          { id: "b2", player_name: "", set_name: "s", serial_number: 2, price_usd: 200, sold_at: null },
+        ],
+        announcements: [],
+      })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    expect(container.textContent).toContain("Ja Morant")
+    expect(container.textContent).toContain("+1 not yet matched to a moment")
+    // Still not an emptiness claim — rows DID render.
+    expect(container.textContent).not.toContain("No recent buybacks detected.")
   })
 
   it("shows per-section empty states when arrays are empty", async () => {
