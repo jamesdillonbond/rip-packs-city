@@ -88,6 +88,22 @@ function greenFixtures(): Fixtures {
     },
     // Per-collection + per-source ingest health — all within their ceilings.
     "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
+    // Pipeline Success Coverage: two watchlisted pipelines, both with at least one
+    // success in the window. NOTE the arm reports INCONCLUSIVE (warn) on an EMPTY
+    // watchlist by design — "we measured nothing" is not "everything is fine" — so
+    // a green battery has to model the watchlist, not omit it.
+    pipeline_cadence_watchlist: {
+      data: [{ pipeline: "topshot-sales-indexer" }, { pipeline: "fmv-recalc" }],
+      error: null,
+    },
+    pipeline_alert_suppression: { data: [], error: null },
+    pipeline_runs_daily: {
+      data: [
+        { pipeline: "topshot-sales-indexer", runs: 70, ok_count: 68, rows_written: 4200, last_error: null, refreshed_at: new Date().toISOString() },
+        { pipeline: "fmv-recalc", runs: 40, ok_count: 25, rows_written: 19000, last_error: null, refreshed_at: new Date().toISOString() },
+      ],
+      error: null,
+    },
   }
 }
 

@@ -589,6 +589,180 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
   }
 
+  // Pipeline Success Coverage — the COMPLEMENT of Pipeline Silence above, and the
+  // reason it exists is that the two questions are not the same one.
+  //
+  // ⚠ A cadence arm watches SILENCE, and a FAILING run still writes a
+  // pipeline_runs row. So a watchlisted pipeline can fail 100% of its runs for
+  // days with every cadence instrument green — the cron fired exactly on time, it
+  // just produced nothing once it got there. Measured 2026-08-17: `apply-fmv-
+  // haircut` and `match-topshot-players` were BOTH on the active watchlist and
+  // BOTH failed every run for 3+ days with nothing firing. `Ownership Index
+  // Freshness` above is this same gap solved one pipeline wide; this is that
+  // generalized to every watchlisted pipeline.
+  //
+  // ⚠ THE PREDICATE IS "ZERO SUCCESSES **AND** ZERO ROWS WRITTEN", NOT
+  // "fail_count > 0", AND NOT ZERO-SUCCESSES ALONE. Both weaker forms were
+  // measured against 20 days of history before this shipped:
+  //   - `fail_count > 0` fires constantly on pipelines that are WORKING
+  //     (`refresh_wmc_fmv_changed` runs at a 32.6% failure rate and writes
+  //     409,110 rows). Useless.
+  //   - zero-successes alone produced 4 false positives in 20 days, every one a
+  //     pipeline degrading gracefully BY DESIGN: `reconcile-saved-wallet-stats`
+  //     reports ok=false on a soft-deadline partial sweep whose work is committed
+  //     (wrote 7 and 19 rows on the two days it fired), and `candy-offers-indexer`
+  //     likewise (12 and 14 rows).
+  // Adding the rows_written guard removed 4 of 4 of those and kept 5 of 5 genuine
+  // outages (`match-topshot-players`, `apply-fmv-haircut`, `compute-pinnacle-pack-ev`
+  // — all zero-row). That is the same `rows_written > 0` discriminator the
+  // Ownership arm turns on, and it is what makes this arm quiet enough to read.
+  //
+  // ⚠ rows_written is a null instrument ON ITS OWN (dispatchers, heartbeats and MV
+  // refreshers legitimately write 0), which is why it is an AND with zero-successes
+  // and never a standalone test. A heartbeat that writes nothing but SUCCEEDS
+  // cannot fire this arm.
+  //
+  // Scope is `pipeline_cadence_watchlist WHERE is_active` deliberately — it
+  // inherits the operator's existing curation, so the arm cannot fire on something
+  // nobody chose to monitor. A pipeline that did not run AT ALL is out of scope by
+  // construction (runs = 0): that is Pipeline Silence's job, above.
+  //
+  // SUPPRESSION is `pipeline_alert_suppression` — the existing, expiring, curated
+  // mechanism, reused rather than reinvented, so a known-broken-but-blocked
+  // pipeline can be acknowledged for a bounded window:
+  //   insert into pipeline_alert_suppression (pipeline, reason, expires_at)
+  //   values ('<name>', '<why>', now() + interval '90 days');
+  // ⚠ Check what SURVIVES a suppression before writing one: suppressing here does
+  // NOT silence Pipeline Silence for that pipeline, so cadence coverage remains.
+  //
+  // ⚠ SOURCE IS THE ROLLUP, AND IT LAGS. pipeline_runs holds ~3k rows over 24h,
+  // which is OVER PostgREST's 1000-row cap — aggregating it directly would
+  // silently truncate and make the arm UNDER-report. pipeline_runs_daily is the
+  // indefinite rollup, but it refreshes only every 6h (`11 */6 * * *`), so per the
+  // standing rule its `refreshed_at` age is stated in the detail on every reading.
+  // Consequence: a pipeline that recovered within the last ~6h can still read
+  // broken here. Do NOT use this arm to confirm a recovery — read pipeline_runs
+  // directly for that.
+  //
+  // The window is `day >= yesterday`, i.e. 24-48h of wall clock depending on the
+  // hour. Wider is the SAFE direction: more elapsed time means more chances for a
+  // healthy pipeline to have succeeded once, so the arm gets quieter, never noisier.
+  try {
+    const scWarn = thr("Pipeline Success Coverage", "warn_at", 1);
+    // 3 = one above the worst 48h window observed in the 20 days to 2026-08-17
+    // (max 2, and 0 on 11 of those days) — i.e. "worse than anything yet seen".
+    // ⚠ critical FAILS the GHA job, and this repo has already learned what a
+    // permanently-red scheduled workflow costs (edge-fn-drift went unread for a
+    // week while correctly reporting a real defect). Keep this above the observed
+    // ceiling; a single blocked pipeline must never escalate to a red build.
+    const scCrit = thr("Pipeline Success Coverage", "crit_at", 3);
+
+    const { data: wlRows, error: wlErr } = await supabase
+      .from("pipeline_cadence_watchlist")
+      .select("pipeline")
+      .eq("is_active", true);
+    if (wlErr) throw new Error(`watchlist read: ${wlErr.message}`);
+    const watched: string[] = (wlRows ?? []).map((r: any) => r.pipeline).filter(Boolean);
+
+    if (watched.length === 0) {
+      // An empty watchlist is not "everything is fine" — it is "we measured
+      // nothing". Saying ok here would be the failed-read-renders-as-an-answer
+      // class on a monitoring arm.
+      checks.push({
+        name: "Pipeline Success Coverage",
+        status: "warn",
+        detail: "INCONCLUSIVE — pipeline_cadence_watchlist returned no active rows, so success coverage was not evaluated",
+      });
+    } else {
+      const { data: supRows } = await supabase
+        .from("pipeline_alert_suppression")
+        .select("pipeline, expires_at");
+      // expires_at NULL = permanent suppression; a past expiry is spent.
+      const suppressed = new Set<string>(
+        (supRows ?? [])
+          .filter((r: any) => !r.expires_at || new Date(r.expires_at).getTime() > now.getTime())
+          .map((r: any) => r.pipeline)
+      );
+
+      const fromDay = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+      const { data: rollRows, error: rollErr } = await supabase
+        .from("pipeline_runs_daily")
+        .select("pipeline, runs, ok_count, rows_written, last_error, refreshed_at")
+        .gte("day", fromDay)
+        .in("pipeline", watched);
+      if (rollErr) throw new Error(`rollup read: ${rollErr.message}`);
+
+      const rows: any[] = rollRows ?? [];
+      if (rows.length >= 1000) {
+        // The documented PostgREST cap. At 2 days x ~83 watched pipelines the real
+        // ceiling is ~166, so hitting 1000 means the shape changed underneath this
+        // arm and the aggregate below would be computed from a truncated read.
+        // Report that rather than publish a count derived from partial data.
+        checks.push({
+          name: "Pipeline Success Coverage",
+          status: "warn",
+          detail: `INCONCLUSIVE — pipeline_runs_daily read hit the 1000-row cap (${rows.length}); aggregate would be truncated`,
+        });
+      } else if (rows.length === 0) {
+        checks.push({
+          name: "Pipeline Success Coverage",
+          status: "warn",
+          detail: `INCONCLUSIVE — no pipeline_runs_daily rows since ${fromDay} for ${watched.length} watchlisted pipelines`,
+        });
+      } else {
+        const agg = new Map<string, { runs: number; oks: number; rw: number; err: string | null }>();
+        let refreshedAt = 0;
+        for (const r of rows) {
+          const cur = agg.get(r.pipeline) ?? { runs: 0, oks: 0, rw: 0, err: null };
+          cur.runs += Number(r.runs ?? 0);
+          cur.oks += Number(r.ok_count ?? 0);
+          cur.rw += Number(r.rows_written ?? 0);
+          cur.err = r.last_error ?? cur.err;
+          agg.set(r.pipeline, cur);
+          const t = r.refreshed_at ? new Date(r.refreshed_at).getTime() : 0;
+          if (t > refreshedAt) refreshedAt = t;
+        }
+
+        // ⚠ The watchedSet re-check is deliberate belt-and-braces, not redundancy.
+        // Scope is applied server-side by the .in() above, so today this filters
+        // nothing — but that makes the arm's ENTIRE scope rest on one clause, and
+        // widening or dropping it (or a truncated .in() list) would silently start
+        // firing on pipelines nobody chose to monitor. Enforcing membership here
+        // too makes the scope a property of the arm rather than of the transport.
+        const watchedSet = new Set(watched);
+        const dead = [...agg.entries()]
+          .filter(([p, a]) => watchedSet.has(p) && a.runs > 0 && a.oks === 0 && a.rw === 0 && !suppressed.has(p))
+          .sort((a, b) => b[1].runs - a[1].runs);
+
+        // Stated on every reading, healthy or not — the rollup's recency is part
+        // of the answer, not a footnote (a 6h-stale "all clear" is a weaker claim
+        // than a fresh one, and the reader cannot tell without this).
+        const ageMin = refreshedAt ? Math.round((now.getTime() - refreshedAt) / 60_000) : null;
+        const ageNote = ageMin === null ? "rollup age unknown" : `rollup ${ageMin}m old`;
+        const suppNote = suppressed.size > 0 ? `, ${suppressed.size} suppressed` : "";
+
+        checks.push({
+          name: "Pipeline Success Coverage",
+          status: dead.length >= scCrit ? "critical" : dead.length >= scWarn ? "warn" : "ok",
+          detail:
+            dead.length === 0
+              ? `All ${agg.size} watchlisted pipelines that ran since ${fromDay} produced at least one success or wrote rows (${ageNote}${suppNote})`
+              : `${dead
+                  .map(([p, a]) => `${p} 0/${a.runs} ok, 0 rows${a.err ? ` — ${String(a.err).slice(0, 60)}` : ""}`)
+                  .join("; ")} (since ${fromDay}, ${ageNote}${suppNote})`,
+          value: dead.length,
+        });
+      }
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: "Pipeline Success Coverage",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+    });
+  }
+
   // Trust health (2026-07-16): surface v_rpc_trust_health (23 metrics as of
   // 2026-07-27, when the three Candy arms landed) in the
   // sentinel digest — per-collection FMV staleness, impossible-parallel serials,
