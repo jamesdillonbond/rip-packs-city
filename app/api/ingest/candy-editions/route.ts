@@ -104,6 +104,53 @@ async function handleIngest(req: NextRequest) {
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()
 
+  // Invocation heartbeat. The real work runs inside `after()` and logs ONLY on
+  // completion, so a killed invocation writes nothing at all and a HARD FAILURE
+  // PRESENTS AS AN ABSENCE — the exact ambiguity the maxDuration note at the top
+  // of this file describes, and the reason the sentinel reported this route as
+  // "silent" when it was in fact being killed at the wall.
+  //
+  // That was not a one-off. It recurred on 2026-08-16 at the RAISED 800 s
+  // ceiling: `pipeline_runs` held nothing newer than 08-15 08:40Z (39.5 h,
+  // against an 1800 min cadence arm) while `editions.updated_at` for candy_mlb
+  // read 08-16 08:54Z — i.e. the 08-16 tick ran, did its work, and died before
+  // logging. Reconciling those two facts needed a hand query against a table
+  // nobody watches; this marker makes it a lookup.
+  //
+  //   heartbeat + candy-editions-ingest row -> ran to completion
+  //   heartbeat only                        -> after() dropped / killed at the wall
+  //   neither                               -> route never reached (cron / auth)
+  //
+  // ⚠ SEPARATE pipeline name, never an extra `candy-editions-ingest` row — this
+  // pipeline is on pipeline_cadence_watchlist (1800 min), so a marker under its
+  // own name would refresh `last_run` every tick and silence
+  // detect_stalled_pipelines() on the very outage this exists to expose.
+  // ⚠ `duration_ms` on these heartbeat rows is MEANINGLESS — read `extra`/`ok`,
+  // never the duration. `log_pipeline_run` has no `p_finished_at` parameter, so
+  // the row takes `finished_at DEFAULT now()` and the GENERATED `duration_ms`
+  // becomes this insert's own latency. Both sibling Candy heartbeats have the
+  // identical property; matching them beats diverging here.
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: `${PIPELINE_NAME}-heartbeat`,
+      p_started_at: startedAtIso,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: true,
+      p_error: null,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { phase: "invoked" },
+    })
+  } catch (e) {
+    // Non-fatal: the heartbeat is diagnostic. Never let it break the ingest.
+    console.log(
+      `[${PIPELINE_NAME}] heartbeat log failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+
   if (!candyDiscoveryReady()) {
     await logRun(startedAtIso, 0, 0, true, null, {
       skip_reason: "discovery_pending",

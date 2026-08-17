@@ -16,6 +16,7 @@ const st = vi.hoisted(() => ({
   packUpsert: { data: [{ token_mint: "p1" }] as { token_mint: string }[] | null, error: null as any },
   jerseyUpsert: { data: [{ external_id: "ed1" }] as { external_id: string }[] | null, error: null as any },
   paginateThrows: false,
+  heartbeatThrows: false,
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
 }))
@@ -26,7 +27,13 @@ vi.mock("next/server", async (importOriginal) => {
 })
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async (_name: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
+    rpc: async (_name: string, args: any) => {
+      if (st.heartbeatThrows && String(args?.p_pipeline).endsWith("-heartbeat")) {
+        throw new Error("heartbeat insert failed")
+      }
+      st.runs.push(args)
+      return { data: null, error: null }
+    },
     from(table: string) {
       return {
         upsert: () => ({
@@ -64,6 +71,14 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
 
 import { GET, POST } from "@/app/api/ingest/candy-editions/route"
 
+// Select telemetry rows by PIPELINE NAME, never by index. The invocation
+// heartbeat is written before the after() walk, so it occupies terminal() on
+// every accepted request — a positional read silently retargets these
+// assertions at the heartbeat, where `p_ok` is always true and `p_extra`
+// carries none of the fields under test.
+const terminal = () => st.runs.find((r) => r.p_pipeline === "candy-editions-ingest")
+const heartbeat = () => st.runs.find((r) => r.p_pipeline === "candy-editions-ingest-heartbeat")
+
 beforeEach(() => {
   vi.unstubAllEnvs()
   vi.stubEnv("CRON_SECRET", "")
@@ -74,6 +89,7 @@ beforeEach(() => {
   st.packUpsert = { data: [{ token_mint: "p1" }], error: null }
   st.jerseyUpsert = { data: [{ external_id: "ed1" }], error: null }
   st.paginateThrows = false
+  st.heartbeatThrows = false
   st.runs = []
   st.captured = null
 })
@@ -116,7 +132,7 @@ describe("candy-editions — accept + discovery gate", () => {
     expect(body.skipped).toBe("discovery_pending")
     expect(st.captured).toBeNull() // after() never scheduled
     // logRun recorded the skip
-    expect(st.runs[0].p_extra.skip_reason).toBe("discovery_pending")
+    expect(terminal().p_extra.skip_reason).toBe("discovery_pending")
   })
 })
 
@@ -129,7 +145,7 @@ describe("candy-editions — the after() DAS walk", () => {
   it("filters burnt+pack, upserts editions + serials, and logs a success run", async () => {
     await accept()
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.assets_seen).toBe(3)
     // Renamed 2026-07-26: these are upsert ROWS TOUCHED, not catalog size — the
@@ -155,7 +171,7 @@ describe("candy-editions — the after() DAS walk", () => {
     st.edUpsert = { data: null, error: { message: "ed err" } } // edition upsert error branch
     await accept()
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.edition_rows_touched).toBe(0)
     expect(run.p_extra.serial_rows_touched).toBe(0)
@@ -169,8 +185,8 @@ describe("candy-editions — the after() DAS walk", () => {
     st.paginateThrows = true
     await accept()
     await st.captured!()
-    expect(st.runs[0].p_ok).toBe(false)
-    expect(st.runs[0].p_error).toContain("DAS down")
+    expect(terminal().p_ok).toBe(false)
+    expect(terminal().p_error).toContain("DAS down")
   })
 })
 
@@ -187,7 +203,7 @@ describe("candy-editions — sealed-pack inventory", () => {
     st.packUpsert = { data: [{ token_mint: "p9" }], error: null }
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     // The pack was counted as a pack, NOT as a burnt card...
     expect(run.p_extra.packs_skipped).toBe(1)
@@ -206,7 +222,7 @@ describe("candy-editions — sealed-pack inventory", () => {
     st.packUpsert = { data: null, error: { message: "pack err" } }
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.pack_rows_touched).toBe(0)
     expect(run.p_extra.packs_distinct).toBe(0)
@@ -232,7 +248,7 @@ describe("candy-editions — jersey numbers", () => {
     st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "Mike Trout", jersey: 27 }]]
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.jerseys_distinct).toBe(1)
     expect(run.p_extra.editions_distinct).toBe(1)
@@ -243,7 +259,7 @@ describe("candy-editions — jersey numbers", () => {
     st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "No Number", jersey: null }]]
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.jerseys_distinct).toBe(0)
     expect(run.p_extra.editions_distinct).toBe(1)
@@ -259,8 +275,73 @@ describe("candy-editions — jersey numbers", () => {
     st.edUpsert = { data: null, error: { message: "editions err" } }
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    const run = st.runs[0]
+    const run = terminal()
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.edition_rows_touched).toBe(0)
+  })
+})
+
+// The invocation heartbeat exists to separate three states that were previously
+// one. All the route's work runs inside after(), which logs ONLY on completion,
+// so a killed invocation wrote nothing at all and a hard failure presented as an
+// absence — the sentinel reported "silent 2337m" for a route that was in fact
+// running and being killed at the wall, twice (300 s in Aug 2026, then again at
+// the raised 800 s ceiling on 2026-08-16, when pipeline_runs held nothing newer
+// than 08-15 while editions.updated_at proved the 08-16 tick had done its work).
+//
+// `after` is captured rather than executed in this harness, so NOT calling
+// st.captured() is exactly the killed-invocation case.
+describe("candy-editions — invocation heartbeat", () => {
+  it("writes the heartbeat under a SEPARATE pipeline name, never an extra own-name row", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+
+    expect(heartbeat()).toBeTruthy()
+    expect(heartbeat().p_extra.phase).toBe("invoked")
+    expect(heartbeat().p_collection_slug).toBe("candy_mlb")
+
+    // The name must differ from the watched pipeline. A marker under
+    // "candy-editions-ingest" would refresh last_run every tick and silence
+    // detect_stalled_pipelines() on the very outage this exists to expose —
+    // so exactly ONE own-name row per completed run, not two.
+    expect(st.runs.filter((r) => r.p_pipeline === "candy-editions-ingest")).toHaveLength(1)
+  })
+
+  it("KILLED invocation leaves the heartbeat and NO terminal row (the state that used to be invisible)", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    // after() never runs — the invocation was killed at the wall.
+
+    expect(heartbeat()).toBeTruthy()
+    expect(terminal()).toBeUndefined()
+  })
+
+  it("is written BEFORE the discovery gate, so a skipped tick still proves the route was reached", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.ready = false
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+
+    expect(heartbeat()).toBeTruthy()
+    expect(terminal().p_extra.skip_reason).toBe("discovery_pending")
+  })
+
+  it("an unauthorized request writes NO heartbeat — 'neither row' must keep meaning 'never reached'", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer wrong" }))
+
+    expect(st.runs).toHaveLength(0)
+  })
+
+  it("a failing heartbeat is NON-FATAL — diagnostics must never break the ingest", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.heartbeatThrows = true
+    const res = await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    expect(res.status).toBe(202)
+    await st.captured!()
+
+    // The walk still completed and still logged its own terminal row.
+    expect(heartbeat()).toBeUndefined()
+    expect(terminal().p_ok).toBe(true)
   })
 })
