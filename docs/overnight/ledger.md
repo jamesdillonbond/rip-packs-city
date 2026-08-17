@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, docs pass #2 of the day) — two canonical "committed UNAPPLIED" claims were both false; one had been promoted into evidence
+
+**Docs-only. No code, DB, cron, auth or prod change.** Tip `2be47780`; CLAUDE.md had been refreshed 12 minutes earlier by a concurrent session and only 5 commits had landed since (4 docs).
+
+Corrected in CLAUDE.md:
+- **`v_rpc_trust_health_freshness` is APPLIED AND LIVE** — `20260816173845_audit_20260816_trust_health_freshness_companion_view`, in `schema_migrations`, answering with 19 rows / per-metric age 0.20–5.85 h. The file said "committed UNAPPLIED" in one place and, in another, cited its **absence from live as confirmation** that it was unapplied. That was true at 16:41Z and false by 23:57Z. A "committed UNAPPLIED" note has a shelf life; turning the absence into proof makes the stale claim read as verified. Bonus: the 5.85 h max independently corroborates the 8-way split's predicted ~5.7 h steady state, from per-metric ages rather than the max-age arm.
+- **`v_pack_pipeline_health`'s rebuild is APPLIED too** (`20260816185749`) — same class, found only by checking it after the first. Live carries the post-rebuild column list (`collection_slug` first, `rows_attributable`, `status`), which is itself the evidence. Note the direction: CLAUDE.md already warns that *absence* from `schema_migrations` is not proof a migration never ran; these two are the inverse and were unguarded.
+- **Ratchets 30/33/39 → 9/12/38.** Not a redefinition — twelve commits between 07:58 and 16:49 PT walked the client-page gate 32→9 and fetch-honesty 31→12. A ratchet is a countdown someone is actively working, so a figure written at 16:15Z was wrong by 21 five hours later. Canonical bullets now record the rate, not just the value.
+- **pg_cron 92 → 93** (jobid 332 `rpc-refresh-special-serial-owners-mv`, 333 `rpc-refresh-topshot-buyback-daily`) and public **views 135 → 136** (the freshness view — so these two drifts are one event). Added: never derive the job count from the highest jobid; jobids never decrease and are never reused.
+- **DB pins 169/168 over 160 files → 180 pins / 179 fns / 172 `.sql` files**, with the reason files ≠ pins in both directions.
+
+Verified current (negative result): trust board **unchanged at 3 breached, same set and values** as the 23:40Z reading (panini 19 · public_board_slow_count 9 · unmapped backlog 291); 9 CI jobs (enumerated, not grepped); 38 Vercel crons; 20 GHA workflows / 17 scheduled; 17 worker dirs; 33 concierge tools; 44 OG cards; 47 edge inline-copy pins; 367 tables; 0 RLS-off; both security invariants 0 rows; all three coverage gates unchanged; server-page ratchet 8.
+
+**Not verified:** no suite was run (`node_modules` absent in a fresh cloud sandbox), so the test COUNTS in CLAUDE.md are carried forward, not re-confirmed. Stated explicitly in the entry rather than implied.
+
+**Revert:** `git revert <sha>` (docs-only; nothing to unwind in the DB).
+
 ### 2026-08-16 · CORRECTION (Claude Code, cont.) — I asked for an A/B that had already been run, and missed that the arm is CRYING WOLF on a field abandoned 8 days ago
 
 - **Docs only: corrects my own entry from ~30 min earlier in this section, plus its inbox filing and the CLAUDE.md cell. Nothing shipped, no migration.** Revert: `git revert` the commit `docs(panini): correction — the A/B was already run and the arm is crying wolf`.
