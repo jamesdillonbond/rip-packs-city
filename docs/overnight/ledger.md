@@ -23,6 +23,8 @@ Verified current (negative result): trust board **unchanged at 3 breached, same 
 
 **Not verified:** no suite was run (`node_modules` absent in a fresh cloud sandbox), so the test COUNTS in CLAUDE.md are carried forward, not re-confirmed. Stated explicitly in the entry rather than implied.
 
+**One more, found while resolving this entry's own rebase conflict:** the blank-line-before-`###` rule added hours earlier must be checked as a **DELTA, not absolutely** — **303 headings in the ledger already lack the blank line**, so an absolute assertion fires on a correct resolution. Mine did exactly that. It is the same shape as the incident that added the rule (a safety check firing on a good resolution), one resolution later; the write and the `git add` were both correctly gated on the resolver's exit code, so nothing broken was staged. Assert `noblank(out) <= noblank(theirs)`. Generalized in CLAUDE.md as: measure the baseline before choosing between `== 0` and `<= before`.
+
 **Revert:** `git revert <sha>` (docs-only; nothing to unwind in the DB).
 
 ### 2026-08-16 · CORRECTION (Claude Code, cont.) — I asked for an A/B that had already been run, and missed that the arm is CRYING WOLF on a field abandoned 8 days ago
