@@ -59,6 +59,13 @@ That is not a bug in the watchlist — it is what a cadence arm *is*. It watches
 
 ⚠ **Do NOT implement it as "fail_count > 0"** — that fires constantly on the saturation-class pipelines (`refresh_wmc_fmv_changed` runs at a 32.6% failure rate and is *working*, writing 409,110 rows). The signal is **zero successes**, not the presence of failures. Filing this rather than shipping it because choosing the threshold and the paging severity is an operator judgement, and a badly-chosen one adds noise to a board this repo has twice had to rescue from cry-wolf arms.
 
+### ⚠ Design constraints measured 2026-08-17 04:55Z, before writing it — two of them kill the obvious implementation
+
+1. **`warn` IS NOT SOFT. It notifies, and the sentinel runs HOURLY.** `app/api/sentinel/route.ts` computes `shouldNotify = hasCritical || hasWarn || isScheduledReport` and sends **Telegram + email** on that. So "just add it as a warn so it reports without paging" — my own first instinct — is wrong: a persistently-broken pipeline produces an **hourly notification until someone fixes it**. Given the arm would fire *today* on `match-topshot-players` (a genuinely broken but low-impact once-daily job), shipping it as-is buys hourly noise for weeks. **It needs a suppression story before it needs code** — the route already has a `[check disabled via config]` mechanism and a `thr()` threshold helper, which is where that belongs.
+2. **`pipeline_runs` cannot be aggregated over 24 h through PostgREST.** It holds ~9.5 k rows over ~73 h, so a 24 h window is ~3 k — **over the 1000-row cap**, which would silently truncate and make the arm under-report (the documented cap trap). The alternatives: read **`pipeline_runs_daily`** and accept that it is a **six-hourly** rollup — in which case the detail MUST state its `refreshed_at` age, per the standing rule never to read that table's recency without it, and a recovered pipeline can read broken for up to 6 h — or add a small aggregating RPC, which turns this from a route change into a migration.
+
+**The `Ownership Index Freshness` check (`app/api/sentinel/route.ts:374`) is the template to copy** — same gap, one pipeline wide, and its header already documents the mechanism ("the cron fired exactly on time and a FAILING run still writes a `pipeline_runs` row"). This arm is that check generalized to every watchlisted pipeline. ⚠ **Scope it to `pipeline_cadence_watchlist` where `is_active`** — that inherits the operator's existing curation of what is worth watching, so it cannot fire on something nobody chose to monitor.
+
 ---
 
 ## Verified NOT defects (recorded so nobody re-derives them)
