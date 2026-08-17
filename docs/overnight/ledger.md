@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `drain-fmv-cold-tail` reported `rows_found: 0, rows_written: 0` on every run while repricing 5–71 editions a tick
+
+**Telemetry-only fix. No pricing behaviour changed** — the diff adds two columns to a `pipeline_runs` insert; the drain RPC and every FMV write path are untouched.
+
+The route's `pipeline_runs` insert simply **omitted `rows_found` and `rows_written`**, so both defaulted to 0 forever. The real count was present the whole time but only by hand-reading `extra.results[].data.processed` — live samples across recent ticks: **63, 16, 12, 11, 9, 5, 2, 0**.
+
+⚠ **The cost is that a live FMV WRITER looked inert in every instrument.** `drain_fmv_cold_tail` inserts `algo_version = 'cold-tail-1.0'` rows into `fmv_snapshots` carrying `SALES_ONLY` / `LOW` / `ASK_ONLY` / `STALE` / `NO_DATA` confidence labels — the labels feeding the roadmap's **headline HIGH/MEDIUM-share accuracy metric**. Reporting 0/0 made it indistinguishable from a dead cron in `pipeline_runs_daily` and in any sweep for zero-output pipelines.
+
+⚠ **This is not hypothetical: the sweep that found it had already flagged it as waste.** Hunting retirable crons the same session (the `topshot-flowty` retirement entered above), a `sum(rows_written) = 0 over 14 days` query returned `drain-fmv-cold-tail` at **614 runs / 120 minutes** near the top of the "inert" list. It is not inert. **`rows_written = 0` is a null instrument — read `extra` before concluding a pipeline does nothing**, which is exactly what the standing note says and is easy to skip when a sweep returns a tidy ranking.
+
+**The mapping is a MEASUREMENT, not an estimate.** Every branch of `drain_fmv_cold_tail`'s loop performs exactly one `INSERT INTO fmv_snapshots` (`with_sales` / `ask_only` / `stale` / `no_data`) and *then* increments `v_processed`, so `processed` is simultaneously the candidate count and the write count. Both columns therefore carry the same number honestly.
+
+**Pinned by `__tests__/api-admin-drain-fmv-cold-tail-telemetry.test.ts`** (6 cases). The sibling suite could never have caught this — it stubs `after` to a **no-op**, so the drain body and its insert never execute; the new file captures the `after()` callback and invokes it.
+
+⚠ **Mutation results, including one that says a clause of mine is NOT load-bearing:**
+- Reverting to the defect (omit both fields) **kills 4 of 6**. The "reports 0 honestly when there is nothing to reprice" case correctly SURVIVES — it is the both-directions pin, so the fix cannot degenerate into "always report something".
+- Dropping the optional chain (`(r.data as …)?.processed` → `.processed`) **kills the failed-leg case**. That guard is real: a hard RPC failure (pool timeout under saturation — the case the route's own try/catch exists for) leaves `data` null, and without `?.` the throw happens *inside* `after()`, losing the `pipeline_runs` row entirely — the run would vanish rather than report.
+- ⚠ Weakening the `typeof`/`isFinite` check to a bare `?? 0` **SURVIVES every test**, so that clause is **defensive only and is documented as such in place rather than dressed up with a contrived fixture**. It is unreachable from the RPC's contract: `jsonb_build_object('processed', v_processed)` with `v_processed INT` is always a JSON number, and the only other return path (the `unknown collection` guard) omits the key — which `?.` plus `?? 0` already covers. That key-less payload IS reachable and is pinned as its own case.
+
+**Verified:** 29 tests green across the new file plus both existing suites that touch this route; `tsc --noEmit` clean.
+
+**Revert:** `git revert <sha>` — restores the omitted columns (and the pipeline goes back to reporting 0/0). No DB change; nothing to unwind in Supabase.
+
 ### 2026-08-16 · CLAUDE.md refreshed to current state (docs-only, third pass of the day)
 
 - **What shipped:** docs-only update to `CLAUDE.md` on tip `fc4c1a96`. No product, DB, migration, cron, auth, hot-wallet or pricing change.
