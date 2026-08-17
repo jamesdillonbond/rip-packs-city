@@ -1,6 +1,28 @@
 # The saturation self-throttle fails OPEN on a returned error — 9 routes, and it fails open exactly when it is needed
 
-**Filed 2026-08-17 12:11Z (05:11 PT). NOT SHIPPED — the reason is in §5, and it is a deliberate call, not an oversight.**
+✅ **SHIPPED the same session — all 9 routes fixed, with a source guard and a
+behavioural test. §5 below is KEPT because its reasoning was wrong in an
+instructive way, not because it still applies. Do not read it as current.**
+
+⚠ **§5's decisive argument was a COST ESTIMATE I never measured, and it was
+wrong.** I claimed nine bespoke Supabase stubs would each need per-file
+sequencing to make *only* the throttle read fail. They do not: **the throttle is
+the first read and it RETURNS EARLY**, so on the failing path the route never
+reaches another query and a blanket-error stub cannot be ambiguous. One
+representative behavioural test plus a directory-driven source guard covers all
+nine and any tenth. **I spent this session testing other people's unmeasured
+claims and very nearly shipped a filing built on one of my own.**
+
+⚠ **The fix also turned out to be uniform in a way §6 did not anticipate**: rather
+than replicate each route's differing `logRun` arity, it `throw`s the returned
+error into the `catch` the author already wrote — so both failure shapes share one
+path and no per-route signature knowledge is needed.
+
+⚠ **And the sweep proved its own point about half-done sweeps.** A scripted edit
+matched 8 of 9 and **silently skipped `ufc-studio-sales-history-backfill`, which
+names its constant `PIPELINE` instead of `PIPELINE_NAME`.** Only the per-file
+occurrence assert caught it. That is why the shipped guard walks the tree instead
+of naming routes.
 
 Found while sweeping the `?? 0`-on-a-count class after the `stale-fmv-monitor`
 fail-open fix (`36c1356f`). Same expression, same failure direction, different
@@ -84,7 +106,7 @@ topshot-sales-history-backfill:682
 
 Measured: **0 of 9 destructure the error.**
 
-## 5. Why it is filed and not shipped
+## 5. Why it was ALMOST filed instead of shipped (superseded — see the header)
 
 Not severity — it is real. Three specific reasons:
 

@@ -359,12 +359,23 @@ async function run(req: NextRequest): Promise<NextResponse> {
   // ── Self-throttle ────────────────────────────────────────────────────────────
   try {
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-    const { count } = await supabaseAdmin
+    const { count, error: throttleErr } = await supabaseAdmin
       .from("pipeline_runs")
       .select("id", { count: "exact", head: true })
       .eq("ok", false)
       .neq("pipeline", PIPELINE_NAME)
       .gte("finished_at", since)
+    // ⚠ AN UNREADABLE SATURATION SIGNAL IS NOT AN ALL-CLEAR. The catch below
+    // already abandons the tick when this read THROWS — but supabase-js RETURNS
+    // `{ count: null, error }` for a statement timeout instead of throwing, and
+    // `count ?? 0` then reads as "no recent failures" and lets the tick proceed.
+    // So the guard failed OPEN on the one shape production actually produces, and
+    // it is a `count: exact` over `pipeline_runs` — the table every pipeline is
+    // writing to — so it is likeliest to fail during the very saturation it
+    // exists to detect. Routed into the existing catch so both failure shapes
+    // share one path; a plain `throw throttleErr` would log "[object Object]",
+    // because a PostgREST error is not an Error instance.
+    if (throttleErr) throw new Error(throttleErr.message || "throttle count read failed")
     if ((count ?? 0) > SATURATION_FAIL_THRESHOLD) {
       await logRun(startedAt, startedMs, true, 0, 0, 0, null, { skipped: "saturation", recent_fails: count })
       return NextResponse.json({ ok: true, skipped: "saturation", recent_fails: count, pipeline: PIPELINE_NAME }, { status: 200 })
