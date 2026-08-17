@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, docs pass 4 of the day) — a `max()` over a `text` cursor column reported a wedged FMV sweep as recovered
+
+**CLAUDE.md refreshed on tip `969bff49`.** Five commits since the last write, three of them docs — so the yield should have been nothing.
+
+⚠ **The headline is my own measurement error, caught before publishing.** `pipeline_runs.cursor_before` / `cursor_after` are **`text`**, so `max(cursor_after)` is a **lexicographic** max: over the last 7 h of `fmv-recalc` it returns `'9500'` where `max(cursor_after::numeric)` returns `11500`, because `'9500' > '11500'` as a string. Combined with an `ok`-count over a window straddling the PREVIOUS cycle's successes, it produced a confident and wrong "the wedge cleared". **The failure direction is the dangerous one — it makes a stalled sweep look like an advancing one.** Corrected reading: still wedged at cursor 2500, **4.33 h / 29 invocations / 2 terminal rows / 0 successes / 27 killed (93.1%)**, worse than the 3.65 h / 91% recorded four hours earlier. Cast to numeric, or read rows in `started_at` order.
+
+⚠ **Trust board back to 4 breached**, and the two `fmv_sweep_*` arms **disagreed** — the wedge arm breached at 4.32 while `fmv_sweep_stall_pct_24h` sat at 40.4/ok, correctly, because a sweep stuck at an INTERIOR offset never restarts at `cursor_before = 0`. The "treat them as one signal" note earned from their clearing together does not generalize to their breaching.
+
+✅ **The freshness companion view caught a single-leg failure the max-age arm structurally cannot.** Max per-metric age 7.68 h, and it named the metric: **jobid 327 `rpc-thp-leg-serial-supply` failed at 03:48Z while all seven siblings succeeded on their own minutes** — the 8-way split's isolation demonstrated in production, where the monolith would have frozen legs N..8. `trust_precompute_max_age_hours` correctly did not breach (7.68 vs 13), which is the point: one failed leg does not move the arm far enough to notice. Leg 324 re-timed at **265 s** against the recorded 367 s.
+
+Folded in the two code commits' lessons: the DashboardClient test that was **named exactly right and asserted `expect(fetchMock).toHaveBeenCalled()`** (certifying the defect it was named to prevent), and the `|| 1` divide-guard's copy-pasted sibling plus the new ban at population zero.
+
+**Revert path:** `git revert <sha>` — docs-only, no code, DB, migration, cron or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — a failed saved-wallets read told a collector to add the wallet they already added, and zeroed their portfolio while doing it
 
 **`/dashboard`, the primary signed-in surface.** A failed `/api/profile/saved-wallets` left `walletList` at `[]`, and an empty list is indistinguishable from *"this collector has added no wallets"*. One failed read produced **three false claims at once**:
