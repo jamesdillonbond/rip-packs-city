@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · CLAUDE.md refreshed to current state (docs-only, third pass of the day)
+
+- **What shipped:** docs-only update to `CLAUDE.md` on tip `fc4c1a96`. No product, DB, migration, cron, auth, hot-wallet or pricing change.
+- **Corrected drift:** all three client-side ratchet numbers in the CANONICAL bullets were stale — 9 / 12 / 38 against a live 6 / 8 / 39. Commit `17f04231` had re-derived them from the failing no-slack assertion but edited only the dated session-entry sentence, so the canonical text (where a reader goes for the authoritative number) stayed wrong for three commits. Note the collapse ratchet moved UP (38 -> 39), so "ratchets only fall" would have mis-corrected it.
+- **New canonical finding (the headline):** the function-level `SET statement_timeout` trap, recorded three times in this file as an anecdote, has a measured population — **195 `public` functions declare one, 47 declare MORE than the global 120 s, and one (`fmv_thin_sale_ask_disclosure_refresh`, 900 s) declares more than any role ceiling can supply.** Binding budget comes from the caller's role (anon 3 s / authenticated 8 s / service_role 30 s / cron_heavy 600 s) or the global 120 s. Deliberately NOT mass-stripped.
+- **New canonical finding:** `match-topshot-players` has failed 100% of its daily runs since 2026-08-14 (`rpc_failed: upstream request timeout`, ~126 s) and is on no cadence watchlist. Its `rows_written = 0` is the CORRECT steady state, which is exactly why the failure was invisible on throughput. Verified independently from `pipeline_runs_daily`.
+- **New canonical finding:** the "resolver is stuck in December" filing measured accurately and attributed to a function with one caller that is on no scheduler — the name-trap generalized from pg_cron callees to function names. Its real lead (the tail resolver) is a cost/benefit question, not a defect.
+- **Verified unchanged:** trust board still 3 breached, same set/values; 37 Vercel crons, 9 CI jobs, 93/93 pg_cron, 367 tables / 136 views / 0 RLS-off, 180 DB pins over 179 fns, 172 `.sql` files, 47 edge pins, 33 concierge tools, both security invariants 0 rows.
+- **Revert path:** `git revert <sha>` — docs-only, nothing to unwind in the DB or on Vercel.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the email accent was rendering on the magic-link landing page, and the brand guard could not see it
 
 - **Shipped.** `app/auth/confirm/page.tsx` + `app/login/page.tsx` tokenized; all three auth-funnel pages added to `PROTECTED`; a new email-accent-in-web-UI ban in `scripts/check-brand-tokens.mjs`.
