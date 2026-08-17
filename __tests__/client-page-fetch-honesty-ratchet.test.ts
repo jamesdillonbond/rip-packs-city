@@ -181,7 +181,17 @@ const APP_DIR = join(process.cwd(), "app")
  * because the stale-result guard protecting it was a tautology — see the
  * sibling gate ratchet for the mechanism. `fetchJson` would not have caught it;
  * only rendering the component against a failing fixture did. */
-const BUDGET = 5
+/* 5 -> 4: `app/(collections)/[collection]/sniper` moved into `SniperClient.tsx`.
+ * It fetches five auxiliary legs directly (owned-flow-ids, edition stats,
+ * relative-deals, tier benchmarks, edition-floor) and could not adopt
+ * `fetchJson` either: its main feed goes through `useWarmCache`, and each
+ * auxiliary leg has its OWN failure policy — owned-ids fails silent because an
+ * empty set is the safe fallback, relative-deals must set a failure FLAG
+ * because its empty state is a diagnosis, and the floor/listings legs render
+ * two independent error strings. A single helper returning one shape would
+ * force those five policies into one, which is how the "Benchmark data may be
+ * too thin" defect happened in the first place. Pinned per-leg instead. */
+const BUDGET = 4
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

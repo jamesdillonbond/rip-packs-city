@@ -25,7 +25,7 @@ import { readFileSync, readdirSync } from "node:fs";
 const PROTECTED = [
   "app/(collections)/[collection]/overview/page.tsx",
   "app/(collections)/[collection]/collection/page.tsx",
-  "app/(collections)/[collection]/sniper/page.tsx",
+  "app/(collections)/[collection]/sniper/SniperClient.tsx",
   "app/(collections)/[collection]/profile/[username]/page.tsx",
   "app/(collections)/[collection]/analytics/page.tsx",
   // Phase 2 — Batch 1 (public marketing/legal/share/pricing/profile)
@@ -143,7 +143,7 @@ const NEUTRAL_PROTECTED = [
   "app/dashboard/page.tsx",
   "app/(collections)/[collection]/collection/page.tsx",
   "app/(collections)/[collection]/analytics/page.tsx",
-  "app/(collections)/[collection]/sniper/page.tsx",
+  "app/(collections)/[collection]/sniper/SniperClient.tsx",
   "components/packs/PackShareButton.tsx",
   // Light-mode Batch 2 (2026-06-14) — full close of the remaining neutral-class
   // debt: the top-level /analytics dashboard (pages + components), the /packs

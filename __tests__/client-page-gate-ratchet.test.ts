@@ -269,7 +269,25 @@ const APP_DIR = join(process.cwd(), "app")
  *     the gate less meaningful. It stays on the ratchet as honest debt rather
  *     than being excluded, because the day rewards ships is the day it becomes
  *     real work. */
-const BUDGET = 2
+/* 2 -> 1: `app/(collections)/[collection]/sniper` moved into `SniperClient.tsx`
+ * (1,817 lines) — the last real conversion on this ratchet.
+ *
+ * NO new defect. Unlike every earlier conversion in this list, this page was
+ * ALREADY hardened: the Verified-FMV gate that names the real cause instead of
+ * blaming "your filters", the `relativeFailed` flag that keeps a failed read
+ * out of "benchmark data may be too thin", the empty state gated on `data` so a
+ * dead feed cannot render "THE FLOOR IS QUIET". Each carries a comment naming
+ * the incident that produced it. What none of them had was a TEST — and a
+ * source grep proves a string is present, never that the branch is reachable
+ * or that it precedes the empty state. 17 tests, 6 mutations, all killed.
+ *
+ * ⚠ THE ONE REMAINING PAGE IS `app/rewards/page.tsx`, AND IT IS DELIBERATELY
+ * NOT CONVERTIBLE WORK — see the note above. So this ratchet is now at its
+ * FLOOR for as long as `/rewards` stays a hard 404. Do not read `1` as "one
+ * conversion left"; read it as "the population is drained, and the residue is
+ * a page that cannot honestly be measured". If rewards ever ships, that is the
+ * day this becomes real work again. */
+const BUDGET = 1
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
