@@ -5,15 +5,28 @@
 // DISCORD_PUBLIC_KEY before any work — Discord requires this and rejects the
 // endpoint at registration if an invalid signature isn't 401'd.
 //
-// Slash commands (register once, see registerCommands() below):
+// Slash commands. The canonical schema is COMMANDS in
+// lib/alerts/discord-commands.ts; this list must name every one of them, which
+// __tests__/discord-commands.test.ts pins — it went stale once, omitting /ask
+// while the timeout note below discussed /ask at length:
 //   /link code:<code>        -> claim_channel_link('discord', user.id, …)  (inline reply)
-//   /soldpacks wallet:<addr> -> pack report (deferred; follow-up via webhook)
-//   /alerts                  -> link to /alerts
+//   /soldpacks wallet:<addr> -> pack report            (deferred; follow-up via webhook)
+//   /alerts                  -> link to /alerts                            (inline reply)
+//   /ask question:<text>     -> concierge answer       (deferred; follow-up via webhook)
 //
-// One-time command registration (run with real ids/token):
-//   PUT https://discord.com/api/v10/applications/<DISCORD_APPLICATION_ID>/commands
-//   Authorization: Bot <DISCORD_BOT_TOKEN>
-//   body: see COMMANDS below.
+// ⚠ A command in COMMANDS DOES NOTHING until it is REGISTERED with Discord —
+// it is absent from every user's client, which is INDISTINGUISHABLE FROM A DEAD
+// BOT. Registration is POST /api/bots/discord/register (there is no
+// registerCommands() in this file; that reference was dangling). GET on that
+// same route reports registered / missing / dm_capable using the server's own
+// bot token, so the token never leaves Vercel — run it before concluding the
+// bot is broken.
+//
+// ⚠ A plain Discord DM reaches NOTHING here. This is an Interactions webhook:
+// Discord sends it PING and APPLICATION_COMMAND only. Ordinary DM messages are
+// Gateway events (MESSAGE_CREATE, privileged MESSAGE_CONTENT intent) over a
+// persistent socket serverless cannot hold, so /ask is the only concierge path
+// on Discord and no change to this repo can alter that.
 
 // ⚠ THIS MUST OUTLIVE /api/support-chat, WHICH CAPS ITSELF AT 60s.
 //
