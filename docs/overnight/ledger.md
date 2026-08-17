@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code) — CLAUDE.md brought to the workstream's terminal state: the client-page ratchet is at its FLOOR, not merely low
+
+**Why this is not just a number bump.** Both canonical ratchet bullets said **5** and **7**;
+live is **1** and **4**. But the important edit is the FRAMING, because a reader who correctly
+distrusts the prose and reads `const BUDGET` still gets `1` and `4` and concludes there is work
+left. There is not:
+
+- The gate ratchet's remaining **1** is `app/rewards/page.tsx`, a hard 404 (`layout.tsx` calls
+  `notFound()` unconditionally). Converting it would add ~1,244 lines of denominator measuring
+  code no user can run. **Do not open a session to finish it.**
+- The fetch-honesty ratchet's remaining **4** are that same 404 plus the three `/insights` pages
+  (`pack-reality`, `squeeze-check`, `tc-report`) that are **already inside the component gate's
+  `include` with their own suites** — they simply do not use `fetchJson`. Adopting it there is a
+  fetch-layer refactor on PUBLIC boards, not a `*Client.tsx` conversion, and `pack-reality` is
+  the page whose honesty defect was fixed on 08-15. **A deliberate, separately-scoped decision,
+  not leftover work.**
+
+Both bullets now say so in place, so the terminal state cannot be misread as a work queue —
+which is the same failure mode this file already records for the ratchets twice (a correction
+landing in a dated session entry and not in the canonical bullet).
+
+**Also:** a prior session's dated entry read *"STILL OPEN … the client-page conversion
+workstream stands at ratchets 5 / 7 / 39"*. **Annotated as CLOSED rather than rewritten** — the
+figure was true when written, and rewriting history would falsify the record; its other three
+items are genuinely still open. Plus a Recent-sessions entry carrying the session's transferable
+findings (the tautological stale-result guard, the gate exiting 1 with zero coverage errors, the
+dead sniper modal, the six-round conversion cost, and four fixture bugs of one family).
+
+**Revert:** `git revert <sha>`. Docs-only — no code, DB or prod-state change, and no deploy
+(`vercel.json`'s `ignoreCommand` correctly skips a docs-only tip).
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the copy sweep is COMPLETE across all 39 collapse sites: 2 real defects, and the second painted a GREEN "healthy" dot out of a failed read
 
 - **The sweep is now EXHAUSTED — all 29 files / 39 sites read, not sampled.** Two live defects found and fixed; everything else is recorded CLEAN below so the next session does not re-derive it.
