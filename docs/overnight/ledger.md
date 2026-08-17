@@ -8,6 +8,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — three more `page.tsx` conversions; `admin/feedback` is the THIRD console in one workstream whose failed read reported an empty queue
+
+**What shipped.** `admin/flowty-analytics` (1,054 lines), `admin/feedback` (1,077) and
+`[collection]/market` (1,170) each moved their body into a `*Client.tsx` with a server shell,
+so all three are now measured by the component coverage gate — `app/**/page.tsx` matches
+neither gate's include, so ~3,300 lines of behaviour were unmeasured by construction. New
+suites: `component-FlowtyAnalyticsClient.test.tsx` (50), `component-AdminFeedbackClient.test.tsx`
+(58), `component-MarketClient.test.tsx` (55). Ratchets: client-page gate **8 → 5**,
+fetch-honesty **10 → 8**, both re-derived from their own no-slack assertions.
+
+**Two live defects, and the flowty one is a shape not previously recorded.**
+
+1. **`admin/flowty-analytics` — a failed read rendering not as an EMPTY answer but as the
+   WRONG one.** `load()` returns early on failure without touching `data`, so switching the
+   collection pill to "Top Shot" and having that request fail left every chart, KPI tile and
+   all five leaderboards showing the PREVIOUS filter's numbers under the new filter's label.
+   The error banner renders above them, so the page contradicted itself — and unlike a blank
+   panel, wrong numbers read as a real answer. Fixed by comparing `data.meta.collection` /
+   `data.meta.period` against the pills and naming the mismatch. ⚠ **The second half would
+   have survived a copy-only fix**: `lineCollections` derived from the PILLS, so a stale
+   all-collections payload rendered a single Top Shot line — silently dropping four
+   collections out of every chart. It now derives from the payload on screen.
+
+2. **`admin/feedback` — the same empty-queue defect for the THIRD time in this workstream**
+   (after listing-retry-queue and allow-list). A failed read left `rows` at `[]` and the page
+   stated "No feedback in this view." — telling an operator nobody has reported a bug, out of
+   our own outage, on the one screen used to decide whether anything is broken. Gated on
+   `error && rows.length === 0` so a failed REFRESH still shows last-good rows.
+
+**`[collection]/market` carried NO defect and is recorded as the shape to copy** — a strict
+`loading : error : empty` ladder, so the error branch is consulted before the empty state; its
+`?? 0` on `pagination.total` sits inside the non-error branch and cannot manufacture a zero;
+and the thin-volume notice is gated on `healthRow != null`, so a failed `/api/ready` declines
+to characterise the market rather than calling it thin. All four pinned in both directions.
+
+**⚠ A sibling ratchet's not-vacuous check punished its own success, exactly as the gate
+ratchet's did.** `client-page-fetch-honesty-ratchet` asserted `pages.length > 10` and the
+population reached 10. A not-vacuous check must be satisfiable at a population of ZERO,
+because zero is the goal — it now asserts the WALK finds pages and that the detector
+discriminates, and its four named pages are checked only while they are still unconverted.
+
+**⚠ Two of my own assumptions were wrong and were corrected by a failing assertion, not by
+review.** Market's default sort is **`price_asc`, not "recent"**, so the canonical no-filter
+URL is `?sort=price_asc` and asserting a bare `?` fails against correct code. And the internal
+confidence vocabulary (HIGH/MEDIUM/LOW) is **deliberately never rendered** on a public surface
+(`lib/fmv-basis.ts` policy) — the reader gets "⚠ thin data" instead, so an assertion on /LOW/
+also fails against correct code.
+
+**⚠ A debounce mutation SURVIVED microtask flushes.** A test awaiting two resolved promises
+could not tell a 300 ms debounce from a 0 ms one, because `setTimeout(_, 0)` is a macrotask
+either way. Waiting real time well inside the window is what makes the delay observable.
+
+Verified: `tsc` clean · component gate green · 10 mutations across the three clients, all
+killed · ratchets re-derived, not chosen.
+
+**Revert:** `git revert <code sha>` restores all three `page.tsx` files with their bodies
+inline and removes the three suites. No DB, migration, cron, auth or prod-state change.
+
 ### 2026-08-16 · DOCS (Claude Code, session wrap-up) — the heartbeat truth table had a third state nobody had written down, and the `after()` set is now closed at 4 of 4
 
 **Docs + inbox only. No code, DB, cron or prod change.** Closes out the `candy-editions-ingest` thread.
