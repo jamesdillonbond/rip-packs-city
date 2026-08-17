@@ -647,6 +647,23 @@ export async function POST(req: NextRequest) {
   // The window is `day >= yesterday`, i.e. 24-48h of wall clock depending on the
   // hour. Wider is the SAFE direction: more elapsed time means more chances for a
   // healthy pipeline to have succeeded once, so the arm gets quieter, never noisier.
+  //
+  // ⚠ THE WINDOW MUST STAY WIDER THAN THE SLOWEST WATCHLISTED CADENCE, and today it
+  // is — measured 2026-08-17, the longest `max_silent_minutes` on the ACTIVE
+  // watchlist is 1800 (1.3 days), so every current entry fits inside 24-48h with
+  // margin. A pipeline slower than the window is not merely uncovered, it FLAPS:
+  // it has `runs > 0` only on the day it runs and drops out as `runs = 0` (out of
+  // scope, correctly, since that is Pipeline Silence's question) for the rest of
+  // its period — so the arm would report it one day in seven and read clean on the
+  // other six. That is worse than not covering it, because the clean readings look
+  // like a statement about the pipeline.
+  // If a weekly/monthly pipeline is ever watchlisted, take the window from
+  // `max_silent_minutes` (e.g. max(48h, 2x cadence)) rather than widening this
+  // constant for everyone; the rollup is indefinite so a longer window costs only
+  // rows, and the 1000-row cap guard below already covers that.
+  // The live case that would trip this: `topshot-wmc-fossil-drain` (weekly, 3
+  // consecutive zero-output failures, deliberately NOT watchlisted yet) —
+  // docs/overnight/inbox/2026-08-17T1656Z-the-fossil-drain-times-out-proving-emptiness-and-nothing-watches-it.md
   try {
     const scWarn = thr("Pipeline Success Coverage", "warn_at", 1);
     // 3 = one above the worst 48h window observed in the 20 days to 2026-08-17
