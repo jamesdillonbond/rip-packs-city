@@ -603,9 +603,27 @@ export default function CollectionProfileClient({
 
   // Sparkline data
   const sparkData = snapshots.map(function(s) { return s.total_fmv; });
-  const sparkChange = sparkData.length >= 2
-    ? ((sparkData[sparkData.length - 1] - sparkData[0]) / (sparkData[0] || 1)) * 100
-    : null;
+  // ⚠ A percentage change from a ZERO baseline is UNDEFINED, not enormous. The
+  // `|| 1` guard this replaces silently substituted a $1 baseline, so a collector
+  // whose first snapshot was $0 — a new wallet, or one snapshotted before the FMV
+  // populate ran — had a rise to $500 rendered as "↑ 50000.0% / 30D".
+  //   ⚠ THIS IS THE COPY-PASTED SIBLING of `app/profile/[username]/ProfileClient.tsx`,
+  // where the same defect was found and fixed; the fix landed on that file only and
+  // this one kept the raw `|| 1`. Same lesson as the two `saved_wallets` loaders and
+  // the 15 OG cards: when you fix one of these, GREP FOR THE EXPRESSION, not the file.
+  const sparkBase = sparkData.length >= 2 ? sparkData[0] : null;
+  const sparkChange =
+    sparkBase != null && Number.isFinite(sparkBase) && sparkBase > 0
+      ? ((sparkData[sparkData.length - 1] - sparkBase) / sparkBase) * 100
+      : null;
+  // ⚠ Direction is knowable even when the percentage is not. The sparkline colour
+  // used to key on `sparkChange != null && sparkChange >= 0`, so simply nulling the
+  // ratio would paint a genuine 0 -> $500 GAIN in the loss colour — the half of this
+  // fix that is easy to miss, because it only bites on the very rows the null is for.
+  const sparkUp =
+    sparkChange != null
+      ? sparkChange >= 0
+      : sparkData.length >= 2 && sparkData[sparkData.length - 1] >= sparkData[0];
 
   const basePath = "/" + collection;
   // Registry-derived, never hardcoded. `getCollection` returns undefined for an
@@ -691,7 +709,7 @@ export default function CollectionProfileClient({
           </div>
           {sparkData.length >= 2 && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
-              <Sparkline data={sparkData} width={120} height={24} color={sparkChange != null && sparkChange >= 0 ? "#34D399" : "#F87171"} />
+              <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
               {sparkChange != null && (
                 <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.1em" }}>
                   {sparkChange >= 0 ? "\u2191" : "\u2193"} {Math.abs(sparkChange).toFixed(1)}% / 30D

@@ -895,6 +895,64 @@ describe("CollectionProfileClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
   })
 
+  // ── 30-day portfolio change ────────────────────────────────────────────────
+  // ⚠ THIS PAGE IS THE COPY-PASTED SIBLING of app/profile/[username]/ProfileClient,
+  // where the `|| 1` divide-by-zero guard was found and fixed. The fix landed on
+  // that file only; this one still substituted a $1 baseline. Same lesson as the two
+  // saved_wallets loaders and the 15 OG cards — grep for the EXPRESSION, not the file.
+  const SNAPS = (first: number, last: number) => [
+    { snapshot_date: "2026-07-18", total_fmv: first, moment_count: 30 },
+    { snapshot_date: "2026-08-16", total_fmv: last, moment_count: 34 },
+  ]
+
+  it("omits the 30D percentage when the baseline is ZERO rather than inventing one", async () => {
+    // $0 -> $500 through `(500 - 0) / (0 || 1) * 100` reads "↑ 50000.0% / 30D".
+    // A ratio against zero is UNDEFINED, not enormous.
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(0, 500) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).not.toMatch(/50000/)
+    expect(document.body.textContent).not.toMatch(/%\s*\/\s*30D/)
+  })
+
+  it("still paints a zero-baseline GAIN in the up colour, not the loss colour", async () => {
+    // ⚠ The half of this fix that is easy to miss: the sparkline colour keyed on
+    // `sparkChange != null && sparkChange >= 0`, so merely nulling the ratio would
+    // render a genuine 0 -> $500 gain RED — and only on the rows the null exists for.
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(0, 500) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    const stroke =
+      document.body.querySelector("polyline")?.getAttribute("stroke") ??
+      document.body.querySelector("svg path")?.getAttribute("stroke")
+    expect(stroke).toBe("#34D399")
+  })
+
+  it("still reports a real percentage when the baseline is positive", async () => {
+    // The other direction: the fix must not swallow a legitimate change, or it
+    // trades a false number for a missing one.
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(100, 150) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).toMatch(/50\.0%\s*\/\s*30D/)
+  })
+
+  it("marks a real LOSS as down", async () => {
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(200, 100) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).toMatch(/50\.0%\s*\/\s*30D/)
+    expect(document.body.textContent).toContain("\u2193")
+  })
+
   it("renders sniper deals when the feed has them", async () => {
     mount({
       sniper: () => json(200, {
