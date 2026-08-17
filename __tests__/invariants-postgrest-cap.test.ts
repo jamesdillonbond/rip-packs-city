@@ -73,7 +73,12 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     // must request an exact head count and assign from `count`, not `.length`.
     expect(src).toMatch(/count:\s*["']exact["']/)
     expect(src).toMatch(/head:\s*true/)
-    expect(src).toMatch(/snapshotsToday\s*=\s*count\s*\?\?\s*0/)
+    // ⚠ Assigned from `count` — the FALLBACK is deliberately not pinned. This read
+    // `count \?\? 0` and was widened when that `?? 0` was fixed to `?? null`: a
+    // failed count published a hard 0, i.e. "nothing was snapshotted today", from
+    // our own outage. The property this guard exists for is count-not-.length, and
+    // pinning the exact fallback made it fire on a strictly better spelling.
+    expect(src).toMatch(/snapshotsToday\s*=\s*(?:\w+\s*\?\s*null\s*:\s*)?count\s*\?\?\s*(?:0|null)/)
     // guard the specific regression: snapshotsToday must never be set from a
     // .length read of a fetched snapshot array.
     expect(src).not.toMatch(/snapshotsToday\s*=\s*\w*[Ss]naps?\w*\.length/)

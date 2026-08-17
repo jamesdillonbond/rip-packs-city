@@ -28,7 +28,21 @@ export async function GET(req: NextRequest) {
   try {
     // FMV snapshots in last 24h. When we know the collection uuid, join through
     // editions via edition_id; otherwise return the global count for back-compat.
-    let snapshotsToday = 0;
+    // ⚠ NULL, not 0. These two are counts of OUR OWN index, and a failed count
+    // published as `0` is a claim that the index is empty — manufactured from our
+    // own outage. Note the failure object at the bottom of this route already
+    // returns `commonFloor: null` etc.: the route knew how to say "unknown" and
+    // used it for the floors only.
+    //   ⚠ supabase-js RETURNS errors rather than throwing, so the surrounding
+    // `try/catch` never fires for the realistic failure (a 57014 statement
+    // timeout) — which is exactly how `?? 0` hid this.
+    //   ⚠ MEASURED, correcting the obvious reading of the fix: the `error ? null :`
+    // branch below is REDUNDANT. A failed count nulls `count` too, so `count ??
+    // null` alone already yields null, and a mutation dropping the error branch
+    // SURVIVES the suite. The load-bearing change is `?? 0` -> `?? null`; the
+    // branch is kept as intent, and becomes load-bearing only if a client ever
+    // returns a count alongside an error.
+    let snapshotsToday: number | null = null;
     try {
       if (collectionUuid) {
         // editions has collection_id; fmv_snapshots has edition_id. Use an
@@ -37,37 +51,37 @@ export async function GET(req: NextRequest) {
         // length, which PostgREST clamps at 1,000: Top Shot computes ~4,200
         // snapshots/day and AllDay ~1,200, so the old `snaps.length` capped
         // this index-health number at exactly 1,000 (a silent ~4x undercount).
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("fmv_snapshots")
           .select("edition_id, editions!inner(collection_id)", { count: "exact", head: true })
           .eq("editions.collection_id", collectionUuid)
           .gte("computed_at", new Date(Date.now() - 86400000).toISOString());
-        snapshotsToday = count ?? 0;
+        snapshotsToday = error ? null : count ?? null;
       } else {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from("fmv_snapshots")
           .select("*", { count: "exact", head: true })
           .gte("computed_at", new Date(Date.now() - 86400000).toISOString());
-        snapshotsToday = count ?? 0;
+        snapshotsToday = error ? null : count ?? null;
       }
     } catch {
-      // non-fatal; keep snapshotsToday=0
+      // Non-fatal, but "we could not count" is NOT "there were none": leave null.
     }
 
     // Count editions indexed for this collection (not all editions).
-    let indexedEditions = 0;
+    let indexedEditions: number | null = null;
     try {
       if (collectionUuid) {
-        const { count } = await (supabase as any)
+        const { count, error } = await (supabase as any)
           .from("editions")
           .select("*", { count: "exact", head: true })
           .eq("collection_id", collectionUuid);
-        indexedEditions = count ?? 0;
+        indexedEditions = error ? null : count ?? null;
       } else {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from("fmv_snapshots")
           .select("*", { count: "exact", head: true });
-        indexedEditions = count ?? 0;
+        indexedEditions = error ? null : count ?? null;
       }
     } catch {
       // non-fatal
@@ -126,8 +140,9 @@ export async function GET(req: NextRequest) {
       commonFloor: null,
       rareFloor: null,
       legendaryFloor: null,
-      indexedEditions: 0,
-      snapshotsToday: 0,
+      // Consistent with the floors directly above: unknown reads as null.
+      indexedEditions: null,
+      snapshotsToday: null,
       updatedAt: new Date().toISOString(),
     });
   }
