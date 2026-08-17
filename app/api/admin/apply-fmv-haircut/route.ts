@@ -95,40 +95,151 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date().toISOString();
   after(async () => {
     const startedAt = Date.now();
-    // 2026-06-11: the haircut RPC previously sat OUTSIDE a try/catch, so a THROW
-    // (pool timeout under saturation, not a returned error) rejected the after()
-    // before any log_pipeline_run — a silent run while cron-job.org acked green.
-    // Capture the thrown case alongside the existing returned-error path.
-    let data: any = null;
-    let error: { message: string } | null = null;
-    try {
-      const res = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
-        p_collection_id: collectionId,
-        p_dry_run: false,
-      });
-      data = res.data;
-      error = res.error;
-    } catch (e) {
-      error = { message: e instanceof Error ? e.message : String(e) };
+
+    // ── PER-COLLECTION SPLIT (2026-08-16) ────────────────────────────────────
+    // The un-scoped call (p_collection_id NULL = every collection in ONE
+    // statement) failed 100% of its daily runs from at least 2026-08-14, each
+    // at ~125.17s. That is the global `statement_timeout` of 120s plus the
+    // documented overshoot under IO throttle — NOT this route's maxDuration of
+    // 300s, and NOT the RPC's own declared `statement_timeout=300s`, which is
+    // INERT (a function-level SET does not bind the statements inside it; see
+    // the 195-function inert-timeout population). So no clock available here
+    // can fix it: the lever is the WORK.
+    //
+    // The cost is `SELECT DISTINCT ON (edition_id) * FROM fmv_snapshots` over
+    // ~1.15M rows, whose collection filter is the non-sargable
+    // `(p_collection_id IS NULL OR collection_id = p_collection_id)`. Splitting
+    // by collection gives each leg its OWN 120s budget. Measured share of
+    // fmv_snapshots: topshot 67.3%, allday 31.2%, golazos 0.9%, ufc 0.3%,
+    // candy_mlb 0.2% — so the four small legs become trivial and finish, where
+    // today a single over-budget statement discards all five.
+    //
+    // ⚠ This is output-identical to the un-scoped call, not a policy change:
+    // the RPC, its haircut predicate and its confidence gate are untouched, and
+    // the union of per-collection runs covers exactly the same rows. What DOES
+    // change is that a failure is now PARTIAL — the collections that fit still
+    // get their haircut instead of being discarded alongside the one that
+    // didn't.
+    //
+    // ⚠ The list is derived from `collections`, NOT from COLLECTION_UUID above.
+    // That map omits `candy_mlb` (2,815 live snapshots) and includes `pinnacle`
+    // (ZERO — Pinnacle FMV lives in pinnacle_fmv_history, not fmv_snapshots), so
+    // splitting on it would have silently dropped Candy from the haircut while
+    // looking complete. A hardcoded member list is exactly what goes stale when
+    // a collection is added.
+    //
+    // ⚠ Top Shot is the one leg without comfortable headroom: at 67.3% of a
+    // workload that needs ~125s unsplit, it lands near ~85s of its own 120s.
+    // It should fit, and it will still be the first to fail under a saturation
+    // spike — but it will then fail ALONE.
+    let legs: Array<{ id: string | null; slug: string }>
+    if (collectionId) {
+      legs = [{ id: collectionId, slug: collectionParam ?? "unknown" }]
+    } else {
+      const { data: rows, error: listErr } = await (supabaseAdmin as any)
+        .from("collections")
+        .select("id, slug")
+        .order("slug", { ascending: true })
+      if (listErr || !Array.isArray(rows) || rows.length === 0) {
+        // Fall back to the original single un-scoped call rather than skipping
+        // the run: a failed catalogue read must not silently narrow the sweep.
+        legs = [{ id: null, slug: "all" }]
+      } else {
+        legs = rows.map((r: { id: string; slug: string }) => ({ id: r.id, slug: r.slug }))
+      }
     }
+
+    const legResults: Array<{
+      slug: string
+      ok: boolean
+      rows_examined: number
+      rows_haircut: number
+      dollars_removed: number
+      error: string | null
+    }> = []
+
+    for (const leg of legs) {
+      // 2026-06-11: the haircut RPC previously sat OUTSIDE a try/catch, so a
+      // THROW (pool timeout under saturation, not a returned error) rejected
+      // the after() before any log_pipeline_run — a silent run while
+      // cron-job.org acked green. Capture the thrown case alongside the
+      // existing returned-error path. Per-leg now, so one bad leg cannot
+      // discard the legs that already succeeded.
+      let legData: any = null
+      let legError: { message: string } | null = null
+      try {
+        const res = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
+          p_collection_id: leg.id,
+          p_dry_run: false,
+        })
+        legData = res.data
+        legError = res.error
+      } catch (e) {
+        legError = { message: e instanceof Error ? e.message : String(e) }
+      }
+
+      const legRow = Array.isArray(legData) && legData.length > 0 ? legData[0] : null
+      legResults.push({
+        slug: leg.slug,
+        ok: !legError,
+        rows_examined: Number(legRow?.rows_examined ?? 0),
+        rows_haircut: Number(legRow?.rows_haircut ?? 0),
+        dollars_removed: Number(legRow?.total_dollars_removed ?? 0),
+        error: legError?.message ?? null,
+      })
+    }
+
+    const failedLegs = legResults.filter((r) => !r.ok)
+    // Every leg failing is the old whole-run failure and reports as one; a
+    // partial failure must NOT read as success, because the un-run collections
+    // did not get their haircut.
+    const error: { message: string } | null =
+      failedLegs.length === 0
+        ? null
+        : {
+            message: `${failedLegs.length}/${legResults.length} legs failed: ${failedLegs
+              .map((r) => `${r.slug}: ${r.error}`)
+              .join(" | ")}`,
+          }
+    const data = [
+      {
+        rows_examined: legResults.reduce((s, r) => s + r.rows_examined, 0),
+        rows_haircut: legResults.reduce((s, r) => s + r.rows_haircut, 0),
+        total_dollars_removed: legResults.reduce((s, r) => s + r.dollars_removed, 0),
+      },
+    ]
 
     if (error) {
       console.error(
         `[apply-fmv-haircut] mode=live collection=${collectionParam ?? "all"} error: ${error.message}`
       );
       try {
+        // ⚠ Report what the SURVIVING legs actually did, not 0. Hardcoding 0
+        // here predates the split, when any failure meant the whole statement
+        // rolled back and nothing was written. With per-collection legs a
+        // failure is partial, and publishing 0 would understate real applied
+        // haircuts — the mirror of the drain-fmv-cold-tail defect fixed the
+        // same day, where a working pipeline reported nothing.
+        const partialExamined = legResults.reduce((s, r) => s + r.rows_examined, 0)
+        const partialHaircut = legResults.reduce((s, r) => s + r.rows_haircut, 0)
         await (supabaseAdmin as any).rpc("log_pipeline_run", {
           p_pipeline: "apply-fmv-haircut",
           p_started_at: startedAtIso,
-          p_rows_found: 0,
-          p_rows_written: 0,
-          p_rows_skipped: 0,
+          p_rows_found: partialExamined,
+          p_rows_written: partialHaircut,
+          p_rows_skipped: Math.max(0, partialExamined - partialHaircut),
           p_ok: false,
           p_error: error.message,
           p_collection_slug: collectionParam ?? null,
           p_cursor_before: null,
           p_cursor_after: null,
-          p_extra: { mode, total_dollars_removed: 0 },
+          p_extra: {
+            mode,
+            total_dollars_removed: legResults.reduce((s, r) => s + r.dollars_removed, 0),
+            legs: legResults,
+            legs_failed: failedLegs.length,
+            legs_total: legResults.length,
+          },
         });
       } catch (logErr) {
         console.warn(
@@ -162,7 +273,13 @@ export async function POST(req: NextRequest) {
         p_collection_slug: collectionParam ?? null,
         p_cursor_before: null,
         p_cursor_after: null,
-        p_extra: { mode, total_dollars_removed: totalDollarsRemoved },
+        p_extra: {
+          mode,
+          total_dollars_removed: totalDollarsRemoved,
+          legs: legResults,
+          legs_failed: 0,
+          legs_total: legResults.length,
+        },
       });
     } catch (logErr) {
       console.warn(
