@@ -665,8 +665,13 @@ export async function POST(req: NextRequest) {
   // `max_silent_minutes` (e.g. max(48h, 2x cadence)) rather than widening this
   // constant for everyone; the rollup is indefinite so a longer window costs only
   // rows, and the 1000-row cap guard below already covers that.
-  // The live case that would trip this: `topshot-wmc-fossil-drain` (weekly, 3
-  // consecutive zero-output failures, deliberately NOT watchlisted yet) —
+  // ⚠ There is NO live case today. `topshot-wmc-fossil-drain` was the one candidate
+  // (weekly, 3 consecutive zero-output failures) and it was UNSCHEDULED on
+  // 2026-08-17 once its fossil population was measured at exactly zero, so it can
+  // no longer produce runs at all. The rule above is retained as guidance for the
+  // next long-cadence pipeline, NOT as a description of anything currently watched —
+  // every active watchlist entry sits inside the window (longest max_silent_minutes
+  // measured 2026-08-17: 1800, i.e. 1.3 days).
   // docs/overnight/inbox/2026-08-17T1656Z-the-fossil-drain-times-out-proving-emptiness-and-nothing-watches-it.md
   try {
     const scWarn = thr("Pipeline Success Coverage", "warn_at", 1);

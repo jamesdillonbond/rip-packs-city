@@ -62,10 +62,6 @@
       "schedule": "0 11 * * *"
     },
     {
-      "path": "/api/admin/drain-topshot-misattribution?wmc=1&rekey=1",
-      "schedule": "30 11 * * 1"
-    },
-    {
       "path": "/api/admin/drain-conflated-subeditions",
       "schedule": "30 20 * * *"
     },

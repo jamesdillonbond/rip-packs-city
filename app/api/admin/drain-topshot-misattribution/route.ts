@@ -25,6 +25,30 @@
 //   ?rekey=1    after resolution, run remap_topshot_from_onchain_map()
 //   ?probe=1    resolve WITHOUT writing the map; return a sample (shape check)
 //   ?wmc=1      swap target pool to the TS wmc UUID fossils + the wmc re-key leg
+//               ⚠ UNSCHEDULED 2026-08-17 — the fossil population is measured ZERO.
+//               The route is KEPT and this leg still works on demand; only the
+//               weekly `?wmc=1&rekey=1` vercel.json entry was removed. It had
+//               failed 3 of 3 observable runs on `targets: canceling statement due
+//               to statement timeout`, burning ~120s of connection time a week on
+//               an IO-throttled instance to prove emptiness — the same disposition
+//               as topshot-flowty-unmapped-drain, and the same "an empty result is
+//               the most expensive case" shape.
+//               THE MEASUREMENT (2026-08-17, quiet window — 3 IO waits, not the 15
+//               that confounded the earlier attempts): a chunked loose index scan
+//               over idx_wmc_coll_ek_serial_cover enumerated ALL 11,799 distinct TS
+//               edition_keys in wmc (the recursion exhausted: the final chunk
+//               returned 3,299 of a requested 4,500, and nothing sorts after the
+//               terminator '99:3765' or before '1'). ZERO are non-canonical.
+//               Corroborated three ways: zero letter-leading keys; zero of the 6,561
+//               non-canonical `editions.external_id` present in wmc; and zero in the
+//               10 digit-then-hex-letter ranges where only a UUID can sort.
+//               ⚠ NULL edition_key rows exist but are NOT fossils — `NULL !~ pattern`
+//               is NULL, so topshot_wmc_fossil_targets already excludes them.
+//               ⚠ Do NOT "fix" this by raising the declared statement_timeout (the
+//               documented inert-proconfig rule) or by adding the partial index: on a
+//               provably empty predicate that is wasted write cost on the platform's
+//               most write-heavy table. Re-check with the enumeration above before
+//               rescheduling; nothing watches this leg now, which is the accepted cost.
 //   ?p8=1       swap target pool to the P8 corrupt source-moments (F1 parallel
 //               mis-attribution inherited into `moments`: edition_id on a ::parallel
 //               with serial>parallel circulation). Reuses the SAME on-chain map +
