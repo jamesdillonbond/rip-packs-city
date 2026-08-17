@@ -166,7 +166,22 @@ const APP_DIR = join(process.cwd(), "app")
  * picker's `loadFailed`, the trophy-removal rollback). What none of them had was a TEST.
  * Re-derived from this file's own no-slack assertion after a rebase; see the sibling gate
  * ratchet for why the number moved differently than a local measurement suggested. */
-const BUDGET = 7
+/* 7 -> 5: the auth funnel batch — `app/login`, `app/early-access` and
+ * `app/auth/confirm` moved into `*Client.tsx`. Two of the three fetch directly
+ * (`/api/profile/touch`, `/api/wallet-search`, `/api/early-access/submit`) and
+ * none of them can adopt `fetchJson`, which is why the SPLIT rather than the
+ * helper is what closes them: `lib/analytics/fetch-json` returns board-shaped
+ * data for a dashboard, whereas these three need the raw status to distinguish
+ * outcomes that must never merge — a magic-link deny-list 403 from a transient
+ * 5xx, a duplicate signup from a rejected one, a failed on-chain probe from a
+ * genuine zero.
+ *
+ * ⚠ THE THIRD OF THOSE IS NOW A TEST RATHER THAN A CONVENTION. The on-chain
+ * nudge would have warned "this wallet shows 0 Top Shot moments" out of a 503,
+ * because the stale-result guard protecting it was a tautology — see the
+ * sibling gate ratchet for the mechanism. `fetchJson` would not have caught it;
+ * only rendering the component against a failing fixture did. */
+const BUDGET = 5
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

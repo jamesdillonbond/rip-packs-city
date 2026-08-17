@@ -241,7 +241,35 @@ const APP_DIR = join(process.cwd(), "app")
  * This is why the rule is to re-derive from the assertion rather than to keep the smaller
  * number — on a shared ratchet, "take mine" is silently wrong exactly as often as
  * "take theirs". */
-const BUDGET = 5
+/* 5 -> 2: the whole AUTH FUNNEL converted in one batch — `app/login` ->
+ * `LoginClient.tsx`, `app/early-access` -> `EarlyAccessClient.tsx`,
+ * `app/auth/confirm` -> `AuthConfirmClient.tsx`. These are the three the
+ * directive fix had just revealed, i.e. the pages this list already called
+ * "least able to afford sitting outside both coverage gates".
+ *
+ * The conversion found a LIVE DEFECT in the third: `EarlyAccessClient`'s
+ * stale-result guard read `wallet.trim() === w`, where `w` is computed FROM
+ * `wallet` at the top of the same function and both are the render-scoped const
+ * the closure captured — a value compared against itself, so the guard could
+ * never be false. A slow /api/wallet-search answer about the PREVIOUS address
+ * therefore rendered as a verdict on the address now in the box: "this wallet
+ * shows 0 Top Shot moments" about a wallet we never checked. Same tautological-
+ * guard shape as the Pinnacle FMV drift guard that compared `pinnacle_catalog`
+ * to itself. Fixed with a latest-value ref; pinned by the stale-result case in
+ * `__tests__/component-EarlyAccessClient.test.tsx`, which reds if it comes back.
+ *
+ * ⚠ Two pages remain and they are NOT equivalent work:
+ *   - `app/(collections)/[collection]/sniper/page.tsx` (1,818 lines) — a real
+ *     conversion, and the last big one.
+ *   - `app/rewards/page.tsx` (1,244 lines) — DELIBERATELY NOT CONVERTED. The
+ *     route is a hard 404: `app/rewards/layout.tsx` calls `notFound()`
+ *     unconditionally, so every line of it is unreachable in production.
+ *     Converting it would add ~1,244 lines of denominator to the component gate
+ *     measuring code no user can run — a smaller number here bought by making
+ *     the gate less meaningful. It stays on the ratchet as honest debt rather
+ *     than being excluded, because the day rewards ships is the day it becomes
+ *     real work. */
+const BUDGET = 2
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([

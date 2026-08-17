@@ -82,9 +82,15 @@ const PROTECTED = [
   // Phase 2 — Batch 6 (the auth funnel, 2026-08-16). These three were invisible
   // to the client-page ratchets until the directive detector was fixed, and the
   // sweep that followed found the email accent leaking into two of them.
-  "app/login/page.tsx",
-  "app/early-access/page.tsx",
-  "app/auth/confirm/page.tsx",
+  //
+  // ⚠ Repointed `page.tsx` -> `*Client.tsx` when the three were converted for
+  // the component coverage gate. This list is CURATED, so it cannot self-heal —
+  // but it does fail LOUDLY (a missing entry counts a violation, see the
+  // readFileSync catch below) rather than silently dropping the file, which is
+  // what makes repointing a forced step instead of an easily-forgotten one.
+  "app/login/LoginClient.tsx",
+  "app/early-access/EarlyAccessClient.tsx",
+  "app/auth/confirm/AuthConfirmClient.tsx",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;
@@ -188,7 +194,7 @@ const NEUTRAL_PROTECTED = [
   "components/packs/PackPageClient.tsx",
   "components/packs/PackTable.tsx",
   "components/profile/TrophyPickerModal.tsx",
-  "app/early-access/page.tsx",
+  "app/early-access/EarlyAccessClient.tsx",
 ];
 
 // white-alpha, near-black surface rgba (13,13,13 / 8,8,8), and neutral bg/text
