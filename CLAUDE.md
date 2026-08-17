@@ -23,7 +23,7 @@ All under `docs/reference/`:
 - **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness and go-lives, chain-abstraction Phases A–F.
 - **`routes-and-surfaces.md`** — route structure, per-collection `pages`, notable API endpoints, global search.
 - **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, per-collection Cadence gotchas.
-- **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`**.
+- **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
 - **`schema-truth.md`** — generated from the live DB; **wins on any disagreement with prose.**
 
 ---
