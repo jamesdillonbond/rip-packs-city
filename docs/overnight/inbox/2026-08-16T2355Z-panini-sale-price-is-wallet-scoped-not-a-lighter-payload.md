@@ -1,51 +1,91 @@
-# `panini_sale_price_capture_dry_days`: the mechanism is WALLET SCOPING, and the leading hypothesis is refuted
+# `panini_sale_price_capture_dry_days` is CRYING WOLF — it watches a field abandoned on 2026-08-08 while the live replacement works
 
-**Filed 2026-08-16 16:55 PDT / 23:55Z (Claude Code, read-only investigation). Nothing shipped.**
+**Filed 2026-08-16 16:55 PDT / 23:55Z, CORRECTED 17:2x PDT (Claude Code, read-only). Nothing shipped.**
 
-The arm has read "MECHANISM NOT YET ESTABLISHED" since 2026-08-04 and is at **19 dry days**. Its
-own text names the leading reading as *"an `all_cards` bulk variant returning a lighter per-serial
-shape"*, and says settling it "needs a live A/B across `listType` values on the residential runner
-box — interactive work, not a code read."
-
-**Two of those premises are wrong, and the mechanism is now established from data we already hold.**
+> ## ⚠ CORRECTION TO THE FIRST VERSION OF THIS FILING — read this before the rest
+>
+> The first version of this file asked for a live A/B on the runner box and said *"on 2026-07-27 the
+> runner began sending a wallet-scoped session."* **Both were wrong, and the real headline is
+> different and more actionable.**
+>
+> 1. **The A/B WAS ALREADY RUN, on 2026-08-08** (commit `521ee89f`). It found `listType` **INERT** —
+>    a nonsense control returned the same 10 rows / 10 nulls as all four real values — and that **a
+>    fully signed request from Panini's own front end gets the same nulls we do.** Its conclusion:
+>    *"No request-shape fix exists."* Asking for that test again was asking for finished work.
+> 2. **"The runner began sending a wallet-scoped session" is unsupported.** The runner contains **no
+>    Panini auth code at all** — its only `Authorization` header is our own `INGEST_SECRET_TOKEN` for
+>    the ingest route; Panini requests are signed natively by the logged-in browser. The only runner
+>    commits near the switch (`16a600e6`, `9bd991b3`, 2026-07-26) are a **DOM psku-harvest
+>    enumeration fallback** that touches no auth, no headers and no navigation. **The change was
+>    upstream, not ours.**
+> 3. **THE ACTUAL HEADLINE: `brought_at_price` was deliberately abandoned and REPLACED on 2026-08-08,
+>    and the replacement is working — but the arm still counts dry days on the dead field, so it
+>    can never go green.**
+>
+> What survives from the first version, and is still worth having: the **key-set diff** (refutes the
+> "lighter payload" reading the arm STILL names as leading) and the **wallet-scoping biconditional**
+> (the mechanism, which the 08-08 A/B could not see because it varied `listType`, the wrong axis).
 
 ---
 
-## 1. "There is no pre-switch payload on disk to diff" — there is, in our own DB
+## 1. The replacement shipped 2026-08-08 and is healthy
 
-That statement is true of the **runner box's** ops captures. It is not true of
-`panini_card_serials.raw`, which is our own stored copy of the per-serial payload:
+`521ee89f` re-pointed sale capture at **`nftSalesData`**, whose `url_key` is byte-identical to
+`panini_card_serials.sku`. The op does not fire on page load — it fires only when the SALES HISTORY
+tab is activated, so the runner now clicks it and lets the SPA sign the request natively.
 
-| | rows |
-|---|---|
-| total, all with `raw` | **82,511** |
-| captured **before** 2026-07-27 | **5,876** |
-| captured **on/after** 2026-07-29 | **73,378** |
+Share of newly-captured serials carrying a `last_sale_usd`, by capture day:
 
-So a pre/post payload diff was available the whole time.
+| day | captured | with sale price | % |
+|---|---|---|---|
+| 08-07 | 2,059 | 103 | **5.0** |
+| **08-08** (replacement ships) | 1,672 | 148 | **8.9** |
+| **08-09** | 4,241 | 963 | **22.7** |
+| 08-10 | 11,634 | 2,837 | 24.4 |
+| 08-12 | 6,626 | 1,399 | 21.1 |
+| 08-15 | 690 | 212 | 30.7 |
+| **08-16** | **17,809** | **4,073** | **22.9** |
 
-## 2. The "lighter payload" hypothesis is REFUTED — the key set is identical
+Totals: **15,346** rows carry `last_sale_usd`, **18,753** carry `last_sale_at`, newest sale
+**2026-08-16 21:16Z** (hours ago), **1,033** sales in the last 7 days.
 
-20% deterministic hash sample, `jsonb_object_keys` over both eras:
+**Panini sale-price capture is not dry. It is running at 21–39% and has been for 8 days.**
 
-- **45 distinct top-level keys, and every one appears on 100% of rows in BOTH eras**
-  (pre 1,180/1,180 · post 14,729/14,729). Not one key is missing post-switch.
+## 2. So the arm is the `ufc_fmv_stale_hours` failure mode, again
 
-A lighter variant would drop keys. **The response shape did not change at all.** `brought_at_price`
-is present as a key in both eras, exactly as the arm records — what changed is only its VALUE.
+`panini_sale_price_capture_dry_days` counts consecutive capture days on which
+`v_panini_serial_sale_field_supply` saw `raw_supplied_sale_price = 0` — i.e. it measures
+**`brought_at_price`**, the field the 08-08 A/B proved unfixable and which we deliberately stopped
+relying on.
 
-## 3. What DID change: `my_public_wallet` inverted, and it is a perfect biconditional
+It reads **19 and +1/day, forever**, because nobody intends to populate that field again. This repo
+has already paid for exactly this shape: `ufc_fmv_stale_hours` grew without bound against a closed
+market, went **permanently red**, and the recorded cost was that it **trains the operator to skim
+past every arm on the board**. It was re-pointed, not merely re-thresholded, to
+`ufc_flow_revival_sales_30d`.
 
-| field | pre (1,180) | post (14,729) |
-|---|---|---|
-| `brought_at_price` null | **0%** | **100%** |
-| `brought_at_time` null | **0%** | **100%** |
-| `my_public_wallet` null | **100%** | **0%** |
-| `owner` null | 0% | 0% |
-| `is_owner = true` | **0** | **0** |
+**Recommendation: re-point this arm the same way** — at the live path. Candidates: freshness of
+`max(last_sale_at)`, or the share of newly-captured serials carrying a `last_sale_usd` (breach if it
+falls near zero for N days, which is the question an operator actually wants answered). ⚠ Re-point
+rather than retire: something should still watch Panini sale capture, and the `nftSalesData` path has
+its own failure mode — it depends on the runner **clicking the sales-history tab**, so a UI change
+upstream silences it.
 
-Day by day across the transition — **identical COUNTS, not merely identical percentages**, including
-both partial ramp days:
+## 3. What the first version got right, kept because the arm's text is still wrong
+
+The arm's `catches` still names the leading reading as *"an `all_cards` bulk variant returning a
+lighter per-serial shape"* and still says *"there is no pre-switch payload on disk to diff."*
+
+**Both are false, and `panini_card_serials.raw` — our own stored copy — settles them:** it holds
+**5,876 pre-07-27 rows** of 82,511, all with `raw`.
+
+**a) The key set is IDENTICAL across eras**, 20% deterministic hash sample: **45 top-level keys,
+every one on 100% of rows in BOTH eras** (pre 1,180/1,180 · post 14,729/14,729). A lighter variant
+drops keys. The shape never changed — only a value went null. **The lighter-payload reading is
+refuted.**
+
+**b) `my_public_wallet` set ⟺ `brought_at_price` null is a perfect biconditional.** Identical
+COUNTS every day through the transition, including both partial ramp days:
 
 | day | rows | `brought_at_price` null | `my_public_wallet` SET |
 |---|---|---|---|
@@ -58,60 +98,41 @@ both partial ramp days:
 | 07-30 | 2,046 | 2,046 | 2,046 |
 | 07-31 | 779 | 779 | 779 |
 
-And the strongest available test — the two ramp days, where BOTH states coexist on the same box in
-the same walk (n = 3,257):
+On the two ramp days, where both states coexist on the same box in the same walk (n = 3,257):
+**wallet-set-but-price-present 0 · wallet-null-but-price-null 0**, one distinct wallet,
+`is_owner = true` on **0** rows.
 
-- rows with wallet SET but price PRESENT: **0**
-- rows with wallet NULL but price NULL: **0**
-- `distinct my_public_wallet`: **1**   ·   `is_owner = true`: **0**
+**Mechanism: `brought_at_price` / `brought_at_time` are WALLET-SCOPED** — *"what did **you** pay"* —
+correctly null for every card the runner does not own, and it owns none of the 82,511. This is
+**consistent with and explanatory of** the 08-08 A/B: a fully signed front-end request is *also*
+wallet-scoped, so of course it returned nulls too. The A/B varied `listType`; the live axis was
+scope.
 
-**Zero exceptions in either direction.** `my_public_wallet` set ⟺ `brought_at_price` null.
+⚠ It also explains the two fields the arm correctly set aside: post-switch `buy_now_price` null is
+76% and `best_offer` 16%, which is the documented DOM-harvest coverage fix ending listing-gating —
+unlisted cards have no buy-now price. **Not part of this defect.**
 
-## 4. The mechanism
+## 4. Suggested actions (none taken)
 
-`brought_at_price` / `brought_at_time` are **WALLET-SCOPED**: with a wallet-scoped session the API
-answers *"what did **you** pay for this"*, which is correctly null for every card the runner does not
-own — and `is_owner` is true on **zero** of 82,511 rows. Unscoped, the same field carries the public
-last-sale price.
-
-**The capture is not broken and upstream did not stop sending. On 2026-07-27 the runner began
-sending a wallet-scoped session, and the field silently changed meaning.**
-
-This fits every observation the arm already records: key present with null value (same shape,
-different semantics); every parallel family collapsing ~30× uniformly (it is global, not
-compositional); `getCardMarketStats` firing 2,412 times at HTTP 200 (the request succeeds — it is
-answering a different question); and the 07-27 → 07-29 ramp (session rollout across pages).
-
-⚠ It also explains the two fields the arm correctly set aside: `buy_now_price` null rose to 76% and
-`best_offer` to 16% post-switch, which is the documented DOM-harvest coverage fix ending
-listing-gating — unlisted cards have no buy-now price. Those are **not** part of this defect.
-
-## 5. What is proven vs. what still needs the A/B
-
-- **PROVEN:** identical key set (refutes "lighter shape"); the biconditional above, 10,056 rows
-  across the transition, zero exceptions.
-- **STRONGLY IMPLIED:** the field is wallet-scoped, so the lever is the session, not the parser.
-- **STILL NEEDS ONE TEST:** that sending the sale-price request **unscoped** makes the price return.
-  The A/B the arm asks for is still the right test — but it now has a specific, cheap prediction to
-  falsify, rather than a search across `listType` values.
-
-## 6. Suggested next actions (none taken)
-
-1. **Runner (operator, Trevor's box):** capture `getCardMarketStats` once with the wallet-scoped
-   session and once without, on the same psku. Prediction: unscoped returns a non-null
-   `brought_at_price`; scoped returns null.
-2. **Arm text (small migration, batch it):** the `catches` text still names the refuted
-   lighter-payload reading as leading. It should record the biconditional instead. ⚠ Its own
-   standing instruction — *do not install a mechanism without the A/B* — is why this is **filed and
-   not applied**: what is offered here is a refutation plus a measured association, and the causal
-   claim still wants the one confirmatory test.
-3. **Do not** re-derive the ruled-out branches (a) upstream outage, (b) walk abandoning detail
-   pages, (c) `price_usd`/`best_offer_usd` loss — the arm disproved all three and this filing does
-   not disturb them.
+1. **Re-point the arm** (small migration, batch it) at the live `nftSalesData` path, per §2.
+2. **Correct the arm's `catches` text** in the same migration: drop the refuted lighter-payload
+   reading and the false "no pre-switch payload on disk" claim; record the biconditional and that
+   the field is dead-and-replaced.
+3. **Do NOT re-run the `listType` A/B** — done 2026-08-08, settled, `listType` inert.
+4. **Do NOT re-derive** the three branches the arm already disproved.
+5. *Optional, low value now:* the one untested axis is scoped-vs-**UNSCOPED** (the 08-08 A/B did not
+   try it). It would confirm the mechanism, but the replacement already supplies the data, so this
+   is curiosity rather than need.
 
 ## Reproduce
 
 ```sql
+-- the live replacement is healthy
+select captured_at::date d, count(*) captured,
+       count(*) filter (where last_sale_usd is not null) with_sale_price
+from panini_card_serials where captured_at > now() - interval '10 days'
+group by 1 order by 1 desc;
+
 -- the biconditional, on the two days where both states coexist
 select count(*) rows,
   count(*) filter (where raw->'my_public_wallet' <> 'null'::jsonb
