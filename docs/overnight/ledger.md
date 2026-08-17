@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — watchlist coverage audit: 62 of 149 live pipelines are unwatched, and the success arm we shipped is blind to 4 of the 5 that are failing
+
+⚠ **This exists because THREE unrelated investigations in one session each ended at "…and it is on no watchlist"** (`topshot-wmc-fossil-drain`, `sync-nba-projections`, the UFC pipelines). **Three anecdotes is a pattern, so I replaced them with an enumeration**, which is this file's own "prefer a directory/tree walk over a curated list" rule with a number attached.
+
+| quantity | value |
+|---|---|
+| distinct pipelines that RAN in 7 days | **149** |
+| `pipeline_cadence_watchlist` rows / active | 102 / **83** |
+| **ran but on NO watchlist row** | **62 (41.6%)** |
+| …of those, zero successes in 7 days | **5** |
+| watchlisted but did NOT run at all in 7 days | **15** |
+
+⚠ **A curated list drifts in BOTH directions at once** — 62 live pipelines it cannot see, and 15 entries aimed at pipelines that no longer run. **The durable fix is the DERIVATION, not the membership:** adding 62 rows by hand recreates the drift in a month. Derive candidates from `pipeline_runs` and make *suppression* the curated list — a ban-at-zero shape instead of an allowlist.
+
+**The 5 unwatched-and-failing:** `sync-nba-projections` (17 runs, 0 rows, `all_upstreams_failed`) · `drain-conflated-subeditions` (4 runs, **1,999 rows**, statement timeout, plus 6 straight days of *"started (no completion recorded — killed at maxDuration?)"*) · `topshot-misattrib-drain` (**888 rows**, `rekey: upstream request timeout`) · `ownership-sync-dune` (**114,083 rows**, `HTTP 402`) · `topshot-wmc-fossil-drain` (retired earlier today).
+
+⚠ **FOUR OF THE FIVE WRITE ROWS WHILE FAILING — which is the honest coverage boundary of the `Pipeline Success Coverage` arm, and it was never written down.** That arm requires `runs > 0 AND zero successes AND **zero rows written**`; the `rows_written` term was added deliberately because zero-successes alone gave 4 false positives, every one graceful degradation. **The same term makes it blind to "writes rows and never completes."** Watchlisting all five would surface only `sync-nba-projections`. ⚠ **This is NOT an argument to drop the term** — it earned its place on measurement. It is the boundary, and it belongs beside the arm's documentation.
+
+⚠ **`ownership-sync-dune` is the standout, and it is perfectly camouflaged.** Weekly; **`HTTP 402 — Payment Required` on 08-10 and 08-17** after succeeding 08-03, i.e. an exhausted paid-API quota with no engineering fix. **`rows_written = 114,083` on the success AND on both failures — byte identical.** Any `rows_written`-based health read shows a flawless pipeline. **An identical row count across a success and a failure is the signature of a stale cache being rewritten** — the same shape as the documented "byte-identical response is as much a cache hit as a correct change".
+
+⚠ **DO NOT escalate that as "TopShot ownership is going stale" — I checked the OUTCOME and it is not.** `topshot_ownership` is **267,742 rows, newest `observed_at` 0.4 days old**, carrying both `dune` and `onchain_walk`. The **on-chain walk half recovered** (it had failed 08-15/08-16 per `docs/code-todos.md`) and is carrying the data alone. **The true state is degraded REDUNDANCY, not an outage** — but the surviving leg is shaky at **1 ok of 3 runs** in 7 days. **A two-leg design is down to one flaky leg and nothing watches either.** Inferring the outage from the pipeline failures would have been wrong; the outcome measure is what settled it.
+
+- **Nothing shipped** — the fix is a derivation change to alerting plus a Dune billing decision, both owner calls. Filed: `docs/overnight/inbox/2026-08-17T2320Z-watchlist-coverage-audit-62-of-149-pipelines-are-unwatched.md`. All probes read-only.
+
 ### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — the panini arm everyone watches is CORRECT; its sibling is mathematically incapable of firing, and its own comment states a value that has never been true
 
 ⚠ **Re-derived the premise under the long-deferred `panini_sale_price_capture_dry_days` re-point. The breached arm is RIGHT — do not re-point it.** `v_panini_serial_sale_field_supply` shows `raw_supplied_sale_price = 0` on **every** capture day for 12+ (the arm counts **20** consecutive). Upstream genuinely sends no `brought_at_price`. Its +1/day climb is a correct reading of a real supplier outage owned by someone else.
