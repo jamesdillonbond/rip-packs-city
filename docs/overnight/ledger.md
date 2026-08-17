@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — CLAUDE.md restructured to fit the memory-file char limit: 713k → 39k, bulk moved VERBATIM to docs/reference/*
+
+**CLAUDE.md was 713,368 chars against a limit of `max(40000, contextWindow × 0.05 × charsPerToken)` — i.e. 40,000 on a standard 200k-context session, which is what the nightly pass, Cowork and every subagent run at** (constants read out of the `claude.exe` bundle: floor 40000, fraction 0.05; the separate hard-skip limit is 4 MB). It is now **39,182 chars**. Nothing was deleted:
+
+- **17 new `docs/reference/*.md` files** hold the extracted sections **verbatim** (key-files-and-honesty, database, testing-and-ci, known-issues, cron-and-schedulers, trust-board-and-safety, chain-strategy, routes-and-surfaces, apis-and-cadence, concierge, brand-auth-proxy, tooling-gotchas, packs, architecture-notes, ledger-discipline, autonomous-tasks, roadmap-status). CLAUDE.md carries a pointer index plus the cross-cutting rules a session needs *before* it knows which topic it is in.
+- **26 session entries** (Aug 17 → Aug 15) moved verbatim to `docs/sessions/2026-08.md`; archive headings 98 → 124.
+- Accounting: 39,182 (CLAUDE.md) + 489,758 (reference docs) + ~216k (sessions delta) vs the original 742,473 — the surplus is the 17 per-file provenance headers.
+
+⚠ **The restructure was DONE ONCE AGAINST A STALE FILE AND REDONE.** I was 22 commits behind `origin/main` and CLAUDE.md had 39 upstream lines I would have clobbered — including two corrections that contradicted what I had just written (**the sports-proxy 403 is NOT operator-only and involves no secret**, and **the success-coverage gap is CLOSED**). Reset to `origin/main`, re-extracted against the fresh file, and folded both corrections in. **A whole-file rewrite is the one edit shape where being behind is silently destructive** — check `git rev-list --count HEAD..origin/main` before starting one.
+
+⚠ **CLAUDE.md now carries an explicit maintenance rule**: check `wc -c CLAUDE.md` before committing an edit to it; a durable rule that does not fit goes in the matching `docs/reference/*.md` with at most a one-line pointer, and session entries go to `docs/sessions/`, never inline. **Over the limit the whole file is flagged and stops being trustworthy context** — which costs more than any single rule is worth.
+
+**Revert:** `git revert <this sha>` restores the 742k CLAUDE.md and removes the 17 reference files + the session archive move. No DB, migration, cron, auth, hot-wallet or pricing change; docs-only, so the Vercel build is correctly skipped.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — cut the impossible-parallel self-heal from hourly to 6-hourly: ~23 GB/day of disk reads returned to the instance whose saturation is the documented root cause
 
 **pg_cron jobid 219 `rpc-selfheal-impossible-parallel-circ`: `52 * * * *` → `52 */6 * * *`.** Schedule ONLY — `public.raise_impossible_parallel_circ()` is untouched, so no pin, no DDL, no behaviour change. Applied via `apply_migration` with `SET LOCAL ROLE cron_heavy` … `RESET ROLE`; record `supabase/migrations/20260817185500_audit_20260817_impossible_parallel_selfheal_cadence_cut.sql`, and **REGISTERED in `schema_migrations`** — deliberately not the `execute_sql` path, which is what left the 8-way split a committed-but-absent record and a parity blind spot.
