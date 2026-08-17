@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — a Top-Shot-specific guard applied collection-blind excluded 100% of UFC Strike from the FMV cold-tail drain, and had been reporting `processed: 0` in its own output for months
+
+⚠ **THE BUG, and it is the "blanket rule corrupts another collection" shape this file already warns about for the series 0/1 remap.** `drain_fmv_cold_tail`'s candidate filter carried a Top-Shot phantom guard with no collection scope:
+
+```sql
+AND NOT (e.external_id LIKE '%-%' AND e.set_id_onchain IS NULL)
+```
+
+It exists to skip Top Shot's UUID-keyed phantoms (a UUID has hyphens; those rows have no resolved `set_id_onchain`). **UFC Strike's `external_id` is a human-readable slug** — `KHAMZAT-CHIMAEV-UFC-267-SUBMISSION-23970` — where hyphens are the natural separator, and UFC legitimately has NO `set_id_onchain` because it has no set/play scheme. **The predicate matches every UFC row by construction.**
+
+**MEASURED share of each collection's editions the guard excluded:** `ufc_strike` **518 / 518 = 100.0%** · `nba_top_shot` 6,561 / 19,791 = 33.2% (intended) · `nfl_all_day` 0 · `laliga_golazos` 0. ⚠ **The 6,561 independently reproduces the non-canonical Top Shot `external_id` count measured earlier the same day during the fossil-drain work** — so the guard does exactly its job for Top Shot and is preserved there byte-for-byte.
+
+⚠ **The symptom was in every run's own output the whole time:** `"collection_slug": "ufc_strike", "processed": 0` on EVERY tick, beside non-zero counts for the other collections. **A per-collection ZERO inside an otherwise-succeeding run is not "nothing to do" — it is the shape a collection-blind filter makes.** Nothing alerted, because the run was `ok: true` and `rows_written > 0` from the other three.
+
+**STATE IT UNBLOCKS (latest snapshot per UFC edition, measured):** `NO_DATA` **316 editions, avg 75.9 days old, `fmv_usd` NULL on all 316** · `STALE` 149, avg 51.2 days · **zero UFC editions at HIGH / MEDIUM / LOW / SALES_ONLY / ASK_ONLY.** 366 have sales behind them; the most-traded has **20,339**. The drain cannot do worse than the NULL that 316 of them carry today.
+
+⚠ **SCOPED HONESTLY — this does NOT make UFC prices current and must not be reported as that.** UFC Strike has **ZERO sales in the last 90 days** (newest 2026-05-13, 813,934 historical), so `v_sales_count_30d = 0` for every row and the drain writes `ASK_ONLY` (from `badge_editions.low_ask`) or `STALE` (median of the last 30 historical sales, carrying `days_since_sale`) — **an honest labelled price replacing a NULL, not freshness.**
+
+⚠ **The 96-day UFC sales gap is a SEPARATE and larger question, filed not fixed:** `ufc-sales-indexer` shows **113 runs / 112 ok / 0 rows written in 7 days** — the documented `rows_written = 0` null instrument with three incompatible meanings. **Do not read this migration as having addressed it.**
+
+**Pre-flight was a DRY RUN, not a hope:** the new predicate's candidate counts are `ufc_strike` **518**, `nba_top_shot` **0**, `nfl_all_day` **0**, `laliga_golazos` **0** — everything else is already fresh inside the 7-day threshold, so **the only behavioural effect of this change is unblocking UFC.** At `limit=200` and a ~30-min cadence the 518 drain in ~3 ticks.
+
+**Verified post-apply:** the Top Shot UUID is present in the new `prosrc` (guard scoped) · `has_function_privilege` **false** for both `anon` and `authenticated` · `check_secdef_anon_exec_drift()` **array length 0** (⚠ read as LENGTH, not `count(*)` — this is one of the jsonb-array-returning checks) · migration **registered** in `schema_migrations` · function is **not DB-pinned**, so no `supabase/tests` copy needed updating.
+
+- **Revert:** re-apply the previous definition, replacing the scoped block with `AND NOT (e.external_id LIKE '%-%' AND e.set_id_onchain IS NULL)`. Prior definition also recoverable from `supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql:581`. Record: `supabase/migrations/20260817221500_audit_20260817_cold_tail_drain_scope_phantom_guard_to_topshot.sql`.
+
 ### 2026-08-17 · DOCS (Claude Code, interactive cont.) — the restructure left CLAUDE.md 350 chars under its own limit, and two reference files unreachable from the index
 
 ⚠ **MEASURED, and it is the finding rather than the edit: `CLAUDE.md` is 39,650 chars against a 40,000 limit — a 0.9% margin.** The restructure earlier today achieved its goal, but the file's own instruction is *"a new durable rule that does not fit goes in the matching `docs/reference/*.md`"* — and at 350 chars spare, **essentially every future rule now falls in the "does not fit" branch.** That is the correct outcome by design, but it is not obvious from reading the header, and a session that adds a paragraph without running `wc -c` will silently push the whole file past the point where it "stops being trustworthy context". **Re-derive the margin before editing; do not quote the number above.**
