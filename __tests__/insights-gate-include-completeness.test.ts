@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "fs"
+import { isClientSource } from "./helpers/client-directive"
 import path from "path"
 
 // Rot-guard for the app/insights/ CLIENT `page.tsx` blind spot.
@@ -49,8 +50,10 @@ function clientInsightsPages(dir: string): string[] {
       if (statSync(full).isDirectory()) {
         stack.push(full)
       } else if (entry === "page.tsx") {
-        const head = readFileSync(full, "utf8").slice(0, 200)
-        if (/^\s*["']use client["']/.test(head)) {
+        // Shared detector: a 200-char prefix scan hid three client pages from
+        // the sibling gate ratchet (their directive sat behind a header
+        // comment). Same latent bug here — fixed at the source, not per guard.
+        if (isClientSource(readFileSync(full, "utf8"))) {
           out.push(path.relative(ROOT, full).split(path.sep).join("/"))
         }
       }

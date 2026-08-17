@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { isClientSource } from "./helpers/client-directive"
 import { join, relative, sep } from "node:path"
 
 // RATCHET on the client half of "a failed read must not render as an answer".
@@ -47,7 +48,6 @@ import { join, relative, sep } from "node:path"
 // least visible in a coverage number.
 
 const APP_DIR = join(process.cwd(), "app")
-const USE_CLIENT = /^\s*["']use client["']/
 
 /**
  * The ceiling. Lower it when you convert a page to `fetchJson`; NEVER raise it.
@@ -148,7 +148,18 @@ const USE_CLIENT = /^\s*["']use client["']/
  * ecosystem — most metrics are directional only.": a claim about the MARKET manufactured
  * from OUR outage, and an actionable one. D12 added `marketFailed` for the KPI band directly
  * above it and this derived notice was never gated on it. */
-const BUDGET = 6
+/* ⚠ 6 -> 8 (2026-08-16): AN INCREASE, AND NOT BACKSLIDING — nothing regressed
+ * and nothing was un-converted. The DETECTOR was undercounting: it decided
+ * "is this a client file?" from a truncated prefix (the first 3 LINES) with an anchored pattern, so a page whose
+ * `"use client"` sits behind a header comment classified as a SERVER file and
+ * never entered the population. Detection now goes through
+ * `__tests__/helpers/client-directive.ts`, which skips whitespace and comments
+ * and checks the first STATEMENT. Measurement expanding is the one legitimate
+ * reason a ratchet number moves the wrong way (same precedent as widening the
+ * coverage-gate `include`). THE RULE IS UNCHANGED — down only from here.
+ * ⚠ RE-DERIVED from the failing no-slack assertion after a rebase collision
+ * with a concurrent session's conversions: neither side's number was right. */
+const BUDGET = 8
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -164,7 +175,7 @@ function unhelpedClientPages(): string[] {
   return pageFiles(APP_DIR)
     .filter((f) => {
       const src = readFileSync(f, "utf8")
-      if (!USE_CLIENT.test(src.split("\n").slice(0, 3).join("\n"))) return false
+      if (!isClientSource(src)) return false
       // `fetch(` rather than a bare `fetch` so `prefetch`/`refetch` identifiers
       // and prose in comments do not enrol a page that never makes a request.
       if (!/\bfetch\(/.test(src)) return false
@@ -202,7 +213,7 @@ describe("client-page fetch-honesty ratchet", () => {
       if (!existsSync(p)) continue
       const src = readFileSync(p, "utf8")
       const stillUnconverted =
-        USE_CLIENT.test(src.split("\n").slice(0, 3).join("\n")) &&
+        isClientSource(src) &&
         /\bfetch\(/.test(src) &&
         !src.includes("fetchJson")
       if (stillUnconverted) expect(pages, `${p} must still be counted`).toContain(p)

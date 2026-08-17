@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
+import { isClientSource } from "./helpers/client-directive"
 import { join, relative, sep } from "node:path"
 
 // RATCHET on the SECOND unmeasured surface: `"use client"` page.tsx files.
@@ -206,7 +207,29 @@ const APP_DIR = join(process.cwd(), "app")
 /* 7 -> 5: `admin/feedback` and `[collection]/market` moved into `*Client.tsx`. */
 /* 5 -> 4: `[collection]/collection` moved into `CollectionTabClient.tsx`. */
 /* 4 -> 3: `[collection]/analytics` moved into `CollectionAnalyticsClient.tsx`. */
-const BUDGET = 3
+/* ⚠ 3 -> 6 (2026-08-16): THIS IS THE ONE INCREASE IN THIS LIST, AND IT IS NOT
+ * BACKSLIDING — nothing regressed and no page was un-converted. The DETECTOR
+ * was undercounting. It read `src.slice(0, 200)` with an anchored pattern, so a
+ * page whose `"use client"` sits behind a header comment classified as a SERVER
+ * file and never entered the population: `app/login/page.tsx` (directive at
+ * char 780), `app/early-access/page.tsx` (245) and `app/auth/confirm/page.tsx`
+ * (631). ⚠ Because this ratchet asserts NO SLACK, the undercount read as
+ * EXHAUSTIVE — `BUDGET = 5` looked like "five pages left" while eight were.
+ * ⚠ RE-DERIVED FROM THE FAILING no-slack ASSERTION after a rebase collision:
+ * a concurrent session converted two pages (5 -> 3) while this fix revealed
+ * three hidden ones. Neither 3 nor 8 was right; the assertion said 6.
+ * ⚠ And the three it hid are the entire auth funnel (sign-in, signup,
+ * magic-link confirmation), i.e. the pages least able to afford sitting outside
+ * both coverage gates AND this ratchet.
+ *
+ * Detection now goes through `__tests__/helpers/client-directive.ts`, which
+ * skips whitespace and comments and then checks the first STATEMENT, so no
+ * header length can hide a directive and a comment merely mentioning one cannot
+ * fake it. Same precedent as the coverage-gate `include` widening: measurement
+ * expanding is the one legitimate reason a ratchet number moves the wrong way,
+ * and it must be recorded as such. THE RULE IS UNCHANGED — this number may only
+ * go DOWN from here. */
+const BUDGET = 6
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
@@ -215,7 +238,6 @@ const GATED_BY_PATH = new Set([
   "app/insights/pack-reality/page.tsx",
 ])
 
-const USE_CLIENT = /^\s*["']use client["']/
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -232,7 +254,7 @@ function pageFiles(dir: string, out: string[] = []): string[] {
 
 function ungatedClientPages(): string[] {
   return pageFiles(APP_DIR)
-    .filter((p) => USE_CLIENT.test(readFileSync(p, "utf8").slice(0, 200)))
+    .filter((p) => isClientSource(readFileSync(p, "utf8")))
     .map((p) => relative(process.cwd(), p).split(sep).join("/"))
     .filter((rel) => !GATED_BY_PATH.has(rel))
     .sort()
@@ -256,7 +278,7 @@ describe("client-page gate ratchet", () => {
     // success (the mistake the server-page ratchet made and had corrected).
     for (const rel of pages) {
       const src = readFileSync(join(process.cwd(), ...rel.split("/")), "utf8")
-      expect(USE_CLIENT.test(src.slice(0, 200)), `${rel} should be a client page`).toBe(true)
+      expect(isClientSource(src), `${rel} should be a client page`).toBe(true)
     }
   })
 

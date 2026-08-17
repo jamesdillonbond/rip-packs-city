@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
+import { isClientSource } from "./helpers/client-directive"
 import { join, relative, sep } from "node:path"
 
 // RATCHET on the single idiom behind every account-level honesty defect found
@@ -67,7 +68,17 @@ const ROOTS = ["app", "components"]
  * shared population, and concurrent sessions move it: two sessions each
  * subtracting their own work from 33 both wrote a wrong number on 2026-08-16.
  */
-const BUDGET = 38
+/* ⚠ 38 -> 39 (2026-08-16): AN INCREASE, AND NOT BACKSLIDING — nothing regressed
+ * and nothing was un-converted. The DETECTOR was undercounting: it decided
+ * "is this a client file?" from a truncated prefix (`slice(0, 300)`) using `.includes`, which ALSO false-positives on a
+ * comment that merely mentions the directive, so a page whose
+ * `"use client"` sits behind a header comment classified as a SERVER file and
+ * never entered the population. Detection now goes through
+ * `__tests__/helpers/client-directive.ts`, which skips whitespace and comments
+ * and checks the first STATEMENT. Measurement expanding is the one legitimate
+ * reason a ratchet number moves the wrong way (same precedent as widening the
+ * coverage-gate `include`). THE RULE IS UNCHANGED — down only from here. */
+const BUDGET = 39
 
 /**
  * A failure funnelled into the success-with-nothing value.
@@ -90,8 +101,7 @@ const COLLAPSE_SITE = new RegExp(
 )
 
 function isClientFile(src: string): boolean {
-  const head = src.slice(0, 300)
-  return head.includes('"use client"') || head.includes("'use client'")
+  return isClientSource(src)
 }
 
 function walk(dir: string, out: string[] = []): string[] {
