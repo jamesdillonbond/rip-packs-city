@@ -189,7 +189,16 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     expect(body.stats.badge_data_age_hours).toBeUndefined()
   })
 
-  it("coalesces null orphan counts to 0 and passes non-null counts through in order", async () => {
+  // ⚠ INVERTED, AND THE OLD TITLE WAS THE DEFECT SPELLED OUT: "coalesces null
+  // orphan counts to 0". A null count means the read produced no number; reporting
+  // it as 0 states "there are no orphans" — a measurement — out of a failed read.
+  // The ordering half was correct and is kept.
+  //   Unlike the sibling `stale-fmv-monitor` (where the same `?? 0` made
+  // `dataIntegrityOk` true and SUPPRESSED an alert), nothing here is gated on these,
+  // so this was cosmetic. It is fixed anyway because this file's own convention two
+  // blocks up is "on error, reported null, never flagged", and the log line beside
+  // it already prints `?? "?"` for an unknown badge age.
+  it("passes non-null counts through in order, and reports an unread count as UNKNOWN", async () => {
     cfg.counts = [{ count: 5 }, { count: 7 }]
     const res = await GET(authedReq())
     const body = await res.json()
@@ -200,8 +209,12 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     cfg.counts = [{ count: null }, { count: null }]
     const res2 = await GET(authedReq())
     const body2 = await res2.json()
-    expect(body2.stats.editions_no_set).toBe(0)
-    expect(body2.stats.editions_no_player_real).toBe(0)
+    expect(body2.stats.editions_no_set).toBeNull()
+    expect(body2.stats.editions_no_player_real).toBeNull()
+    // ⚠ Still informational: an unreadable orphan count must NOT start flagging an
+    // issue, or a transient count failure pages ops on a daily cron.
+    expect(body2.status).toBe("ok")
+    expect(body2.issue_count).toBe(0)
   })
 
   it("aggregates multiple issues into one ops page", async () => {

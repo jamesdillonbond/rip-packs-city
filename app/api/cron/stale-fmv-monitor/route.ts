@@ -185,10 +185,26 @@ export async function GET(request: NextRequest) {
         ? `${lastSaleAge} min ago`
         : `none in the last ${LAST_SALE_WINDOW_DAYS}d`;
 
-    const totalEditions = editionsCountRes.count ?? 0;
-    const orphanSet = orphanSetRes.count ?? 0;
-    const orphanPlayer = orphanPlayerRes.count ?? 0;
-    const dataIntegrityOk = orphanSet === 0 && orphanPlayer === 0;
+    // ⚠ THIS MONITOR USED TO FAIL OPEN, WHICH IS THE ONE DIRECTION A MONITOR MUST
+    // NOT FAIL. These were `count ?? 0`, and `dataIntegrityOk` is derived from them
+    // being ZERO — so a FAILED orphan count (a 57014 statement timeout on a 19k-row
+    // `editions` count is the realistic case) became `0`, which reads as "no
+    // orphans", which suppressed the integrity alert. The check concluded the data
+    // was sound from a read it never performed, and its output is SILENCE, so
+    // nothing about it is falsifiable from the outside.
+    //   ⚠ `Promise.all` above does NOT protect against this: supabase-js RESOLVES
+    // with `{ count: null, error }` rather than throwing, so the all-settles and the
+    // outer catch never fires.
+    //   Three states now. `null` = we could not evaluate, which is neither "ok" nor
+    // "violated" — the same `couldNotRun` distinction the Pinnacle FMV drift guard
+    // was rebuilt around after it manufactured incidents out of its own failed read.
+    const totalEditions = editionsCountRes.error ? null : editionsCountRes.count ?? null;
+    const orphanSet = orphanSetRes.error ? null : orphanSetRes.count ?? null;
+    const orphanPlayer = orphanPlayerRes.error ? null : orphanPlayerRes.count ?? null;
+    const integrityChecked = orphanSet != null && orphanPlayer != null;
+    const dataIntegrityOk: boolean | null = integrityChecked
+      ? orphanSet === 0 && orphanPlayer === 0
+      : null;
 
     if (isStale) {
       console.error(
@@ -208,13 +224,23 @@ export async function GET(request: NextRequest) {
       });
     } else {
       console.log(
-        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions} editions, last sale ${lastSaleText}`
+        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions ?? "unknown"} editions, last sale ${lastSaleText}`
       );
     }
 
-    if (!dataIntegrityOk) {
+    if (dataIntegrityOk === false) {
       console.warn(
         `[ALERT] DATA INTEGRITY — ${orphanSet} editions missing set, ${orphanPlayer} editions missing player`
+      );
+    } else if (dataIntegrityOk === null) {
+      // ⚠ Deliberately NOT an ops page. A transient count failure on a 30-minute
+      // cron would page on noise, which is how an arm trains its operator to skim
+      // (the `ufc_fmv_stale_hours` cost). But it must not be SILENT either, or it is
+      // indistinguishable from a clean run — so it says so here and, more usefully,
+      // in `pipeline_runs.extra` below, where it is queryable after the fact.
+      console.warn(
+        "[stale-fmv-monitor] DATA INTEGRITY CHECK COULD NOT RUN — orphan count read failed; " +
+          "this says nothing about the data, only that we could not look."
       );
     }
 
@@ -227,6 +253,9 @@ export async function GET(request: NextRequest) {
       threshold_minutes: STALE_THRESHOLD_MINUTES,
       total_editions: totalEditions,
       data_integrity_ok: dataIntegrityOk,
+      // Lets a consumer tell "checked and clean" from "could not check" without
+      // having to know that `null` is meaningful on the field above.
+      data_integrity_checked: integrityChecked,
     }, null);
 
     return NextResponse.json({
@@ -238,7 +267,9 @@ export async function GET(request: NextRequest) {
       // with the value so a consumer can tell those apart.
       last_sale_age_minutes: lastSaleAge,
       last_sale_window_days: LAST_SALE_WINDOW_DAYS,
+      // null = the check could not be evaluated (NOT "ok", NOT "violated").
       data_integrity_ok: dataIntegrityOk,
+      data_integrity_checked: integrityChecked,
       editions_no_set: orphanSet,
       editions_no_player: orphanPlayer,
       checked_at: new Date(now).toISOString(),

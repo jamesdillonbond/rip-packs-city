@@ -88,17 +88,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Informational only (NOT flagged — stable baselines, see header).
-    const { count: noSet } = await supabaseAdmin
+    // ⚠ null on error, matching this file's own convention for the security
+    // invariant above ("on error, reported null, never flagged"). These were
+    // `?? 0`, which reports "0 orphans" — a measurement — from a failed count.
+    // Unlike the sibling `stale-fmv-monitor`, nothing here is GATED on them, so
+    // this was cosmetic rather than a fail-open verdict; the log line directly
+    // below already prints `?? "?"` for an unknown badge age, so the honest
+    // spelling was already in scope.
+    const { count: noSet, error: noSetErr } = await supabaseAdmin
       .from("editions")
       .select("id", { count: "exact", head: true })
       .is("set_id", null);
-    const { count: noPlayer } = await supabaseAdmin
+    const { count: noPlayer, error: noPlayerErr } = await supabaseAdmin
       .from("editions")
       .select("id", { count: "exact", head: true })
       .is("player_id", null)
       .not("name", "like", "Unknown%");
-    stats.editions_no_set = noSet ?? 0;
-    stats.editions_no_player_real = noPlayer ?? 0;
+    stats.editions_no_set = noSetErr ? null : noSet ?? null;
+    stats.editions_no_player_real = noPlayerErr ? null : noPlayer ?? null;
 
     if (issues.length > 0) {
       console.warn(
@@ -122,7 +129,7 @@ export async function GET(request: NextRequest) {
           `Security violations: ${stats.security_invariant_violations}, ` +
           `FMV coverage: ${stats.fmv_coverage_pct}%, ` +
           `Badge age: ${stats.badge_data_age_hours ?? "?"}h, ` +
-          `(orphans informational: ${stats.editions_no_set} no-set / ${stats.editions_no_player_real} no-player)`
+          `(orphans informational: ${stats.editions_no_set ?? "?"} no-set / ${stats.editions_no_player_real ?? "?"} no-player)`
       );
     }
 

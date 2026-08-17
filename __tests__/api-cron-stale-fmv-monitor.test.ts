@@ -193,6 +193,68 @@ describe("GET /api/cron/stale-fmv-monitor — degrade + alert branches", () => {
     expect(body.total_editions).toBe(24000)
   })
 
+  // ⚠ THE FAIL-OPEN CASE, WHICH NOTHING COVERED. `dataIntegrityOk` is derived from
+  // the orphan counts being ZERO, and they were read with `count ?? 0` — so a FAILED
+  // count became 0, read as "no orphans", and SUPPRESSED the integrity alert. The
+  // monitor concluded the data was sound from a read it never performed, and because
+  // its output is silence there was nothing to notice.
+  //   ⚠ `Promise.all` does not save it: supabase-js RESOLVES with
+  // `{ count: null, error }`, so nothing rejects and the outer catch never fires.
+  // That is why this fixture returns an error alongside a null count rather than
+  // throwing — a throwing fixture would exercise a path the real client never takes.
+  it("reports data_integrity_ok:null — never true — when an orphan count FAILS", async () => {
+    resState.queue = [
+      { data: [{ computed_at: RECENT_ISO }], count: null, error: null }, // latestFmv fresh
+      { data: [{ sold_at: RECENT_ISO }], count: null, error: null }, // latestSale
+      { data: null, count: 24000, error: null }, // total editions
+      { data: null, count: null, error: { message: "canceling statement due to statement timeout" } }, // orphan set FAILED
+      { data: null, count: 0, error: null }, // orphan player
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // The FMV staleness check did run, so the route is still healthy overall...
+    expect(body.status).toBe("ok")
+    // ...but integrity must read as UNEVALUATED, not as clean.
+    expect(body.data_integrity_ok).toBeNull()
+    expect(body.data_integrity_ok).not.toBe(true)
+    expect(body.data_integrity_checked).toBe(false)
+    // And the count itself must not be published as a measured zero.
+    expect(body.editions_no_set).toBeNull()
+  })
+
+  it("still reports data_integrity_ok:true when both counts really are zero", async () => {
+    // The other direction: the fix must not turn a genuinely clean check into
+    // "unknown", or the monitor stops being able to say anything is fine.
+    resState.queue = [
+      { data: [{ computed_at: RECENT_ISO }], count: null, error: null },
+      { data: [{ sold_at: RECENT_ISO }], count: null, error: null },
+      { data: null, count: 24000, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    const body = await res.json()
+    expect(body.data_integrity_ok).toBe(true)
+    expect(body.data_integrity_checked).toBe(true)
+  })
+
+  it("a failed TOTAL-editions count is unknown, not zero", async () => {
+    resState.queue = [
+      { data: [{ computed_at: RECENT_ISO }], count: null, error: null },
+      { data: [{ sold_at: RECENT_ISO }], count: null, error: null },
+      { data: null, count: null, error: { message: "statement timeout" } }, // total editions FAILED
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    const body = await res.json()
+    expect(body.total_editions).toBeNull()
+    // ...and it must not drag the integrity verdict down with it: those are
+    // separate reads, and this one succeeded.
+    expect(body.data_integrity_ok).toBe(true)
+  })
+
   it("carries last_sale_age_minutes:null when no sale landed inside the window", async () => {
     resState.queue = [
       { data: [{ computed_at: RECENT_ISO }], count: null, error: null }, // latestFmv fresh
