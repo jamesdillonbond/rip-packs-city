@@ -8,6 +8,72 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the SNIPER converted; the client-page gate ratchet is DRAINED to its floor, and the one page left is a hard 404
+
+**What shipped.** `app/(collections)/[collection]/sniper` (1,817 lines — the last big client
+page outside both coverage gates) moved into `SniperClient.tsx` behind a thin server shell that
+carries the Suspense boundary. 85 tests; 6 mutations across the honesty branches, all killed.
+Client-page gate ratchet **2 -> 1**, fetch-honesty **5 -> 4**, both re-derived from their own
+no-slack assertions.
+
+**NO new defect, and that is the finding.** Unlike every earlier conversion in this workstream
+this page was ALREADY hardened — the Verified-FMV gate that names the real cause instead of
+blaming "your filters", the `relativeFailed` flag keeping a failed read out of "benchmark data
+may be too thin", the empty state gated on `data` so a dead feed cannot print "THE FLOOR IS
+QUIET", the listing-suggestions panel that refuses to CONCLUDE your moments are fairly priced
+when it never compared anything. Each carries a comment naming the incident that produced it.
+What none had was a test, and a source grep proves a string is present, never that the branch
+is reachable or that it precedes the empty state.
+
+⚠ **THE RATCHET IS NOW AT ITS FLOOR, NOT MERELY LOW.** The one remaining page is
+`app/rewards/page.tsx`, and it is a hard 404 — `app/rewards/layout.tsx` calls `notFound()`
+unconditionally — so converting it would add ~1,244 lines of denominator measuring code no
+user can run: a smaller number bought by making the gate less meaningful. Read `1` as "the
+population is drained and the residue cannot honestly be measured", not as "one conversion
+left". Recorded in the ratchet itself so the next reader does not spend a session on it.
+
+⚠ **A DEAD MODAL, reported rather than fixed.** `setSelectedDeal` is called in exactly one
+place — `onClose={() => setSelectedDeal(null)}` — so nothing ever sets it to a deal and the
+`MomentDetailModal` on this page can never open; the row click navigates instead. Left alone
+deliberately: wiring it would CHANGE row-click behaviour (a product decision), and deleting it
+would discard a latent feature. Filed here so it is discoverable.
+
+⚠ **THE GATE COST IS THE REAL LESSON, AND IT IS BIGGER THAN THE DOCUMENTED ONE.** This file
+already records that a conversion moves `% Funcs` DOWN because a page is many small handlers.
+At 1,817 lines it took ALL FOUR thresholds red at once (89.37 / 80.53 / 87.68 / 92.35 against
+90.3 / 81.6 / 89.1 / 93.2) and needed **six** measure-then-target rounds to recover — the file
+went 48.7 -> 88.2 statements and 31.8 -> 86.9 functions. Thresholds were never lowered. Budget
+a conversion of this size as real test-writing, not as a rename.
+
+⚠ **AND THE GATE EXITED 1 WITH ZERO COVERAGE ERRORS AND EVERY METRIC PASSING.** A deep-link
+test schedules `scrollIntoView` inside a `requestAnimationFrame`; jsdom does not implement it,
+the frame fires AFTER the scheduling test finishes, and it surfaces as an UNHANDLED ERROR
+attributed to whatever test happened to be running at the time — which is a completely
+unrelated case. Vitest's own warning is that this "might cause false positive tests". **Read
+the exit code, not the coverage table**: all four numbers were green while the run was failing.
+
+**Also repointed:** `scripts/check-brand-tokens.mjs` (2 curated entries naming the old
+`page.tsx` path). It fails LOUDLY on a missing file, which is what makes the rename a forced
+repoint rather than a silent loss of coverage.
+
+**Verified.** `tsc` clean · component gate **90.62 / 81.79 / 89.25 / 93.54** vs 90.3 / 81.6 /
+89.1 / 93.2, **exit 0 on two consecutive runs** with zero unhandled errors · 2,906 component
+tests green · brand-token guard 54 + 69 clean · all four ratchets green (**1 / 4 / 39 / 8**).
+
+⚠ **Four of my own test bugs, each caught by a failure rather than review, and all one family
+— READ THE INTERFACE, DO NOT INVENT IT.** The `SniperDeal` fixture guessed `price` / `fmv` /
+`discountPct` / `serialNumber` / `fmvConfidence` where the real fields are `askPrice` /
+`adjustedFmv` / `discount` / `serial` / `confidence`; `RelativeDeal` in the SAME file is
+snake_case, not camelCase; the `getOwnerKey` mock returned `"owner-1"` and the effect
+early-returns on `!key.startsWith("0x")`, so the fetch under test never ran **and the test
+asserting only that the board still rendered passed vacuously**; and `localStorage` is real in
+jsdom, so one test's 10-minute owned-ids cache made the next take the early-return branch. An
+invented shape does not error — it renders blanks, and every assertion fails looking like a
+missing element.
+
+**Revert:** `git revert <code sha>` restores `sniper/page.tsx`, the two brand-token entries and
+the previous ratchet budgets. No DB or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the copy sweep found instance EIGHT of the name-filter-is-not-an-emptiness-test class, on `/analytics`, with a test pinning it
 
 - **Found by the documented method, not by a grep for broken code**: enumerate the 39 `client-failure-collapses-to-empty` sites, then read the empty-state COPY of each and ask whether it makes a CLAIM. Most of the 39 are not defects; the copy is what separates them.
