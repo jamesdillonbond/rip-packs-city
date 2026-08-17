@@ -1,7 +1,11 @@
 "use client";
 
-// app/admin/flowty-analytics/page.tsx
+// app/admin/flowty-analytics/FlowtyAnalyticsClient.tsx
 // Trevor-only Flowty marketplace + lending intelligence dashboard.
+//
+// Split out of page.tsx so the component coverage gate measures it — a
+// `page.tsx` matches neither gate's include, so ~1,050 lines of chart and
+// leaderboard logic were unmeasured by construction.
 // HISTORICAL: Flowty's NFT marketplace shut down ~2026-05-13 and its loan
 // indexer went cold on 2026-05-11. Data shown here is the frozen archive
 // (kept by retention decision); it does not represent live marketplace
@@ -142,7 +146,7 @@ const intFormatter = ((value: unknown) => fmtInt(Number(value))) as never;
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function FlowtyAnalyticsPage() {
+export default function FlowtyAnalyticsClient() {
   const [token, setToken] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -302,10 +306,25 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
   }, [load]);
 
   // Per-collection or single-collection lines depending on filter.
+  //
+  // ⚠ Derived from the RENDERED PAYLOAD, not from the pills. When a refresh
+  // fails, `data` keeps the previous filter's rows — drawing a Top Shot-only
+  // line set over an all-collections payload would silently drop four
+  // collections' data from every chart while the header still claims it.
+  const shownCollection = data?.meta.collection ?? collection;
   const lineCollections = useMemo<readonly string[]>(
-    () => (collection === "all" ? COLLECTIONS_FOR_LINES : [collection]),
-    [collection]
+    () => (shownCollection === "all" ? COLLECTIONS_FOR_LINES : [shownCollection]),
+    [shownCollection]
   );
+
+  // ⚠ A failed REFRESH is not a failed read — the previous payload is still on
+  // screen, and it answers a DIFFERENT question than the pills now show. The
+  // charts, the KPI strip and every leaderboard below would be read as the
+  // newly-selected filter's numbers. The payload states which filter it is
+  // for, so say so rather than let the labels lie.
+  const staleFilter =
+    data != null &&
+    (data.meta.collection !== collection || data.meta.period !== period);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 60 }}>
@@ -402,6 +421,30 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
             }}
           >
             {err}
+          </div>
+        )}
+
+        {staleFilter && data && (
+          <div
+            data-testid="stale-filter-notice"
+            style={{
+              padding: "10px 14px",
+              background: "rgba(245, 158, 11, 0.08)",
+              border: "1px solid rgba(245, 158, 11, 0.4)",
+              color: "#FBBF24",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              borderRadius: "var(--radius-md)",
+              lineHeight: 1.5,
+            }}
+          >
+            Everything below is still the{" "}
+            <strong>
+              {COLLECTION_LABEL[data.meta.collection] ?? data.meta.collection} ·{" "}
+              {data.meta.period}
+            </strong>{" "}
+            data — the newly-selected filter did not load. These are not the
+            numbers for the filter shown above.
           </div>
         )}
 

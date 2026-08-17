@@ -1,6 +1,6 @@
 "use client";
 
-// app/admin/feedback/page.tsx
+// app/admin/feedback/AdminFeedbackClient.tsx
 // Trevor-only beta-feedback triage dashboard. Bearer-token-gated against
 // RPC_ADMIN_TOKEN via /api/admin/feedback. Intentionally does NOT import
 // SupportChatConnected or any wallet/auth surface — this page must not
@@ -138,7 +138,7 @@ function fmtIso(iso: string | null): string {
   return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
-export default function AdminFeedbackPage() {
+export default function AdminFeedbackClient() {
   const [token, setToken] = useState<string>("");
   const [authed, setAuthed] = useState<boolean>(false);
   const [authChecked, setAuthChecked] = useState<boolean>(false);
@@ -658,6 +658,25 @@ function Dashboard({
               }}
             >
               Loading…
+            </div>
+          ) : error && rows.length === 0 ? (
+            // ⚠ A failed read must not report the triage queue as clear. Without
+            // this branch `rows` stays at `[]` and the page states "No feedback
+            // in this view." — telling an operator that nobody has reported a
+            // bug, manufactured entirely from our own outage, on the one screen
+            // used to decide whether anything is broken. Gated on the EMPTY case
+            // so a failed refresh still shows last-good rows.
+            <div
+              style={{
+                fontFamily: monoFont,
+                fontSize: 12,
+                color: "#d6a13a",
+                textAlign: "center",
+                padding: 24,
+              }}
+            >
+              Couldn&apos;t load feedback — this says nothing about what has been
+              reported.
             </div>
           ) : rows.length === 0 ? (
             <div

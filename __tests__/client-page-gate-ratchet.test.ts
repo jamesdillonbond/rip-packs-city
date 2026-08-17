@@ -202,7 +202,9 @@ const APP_DIR = join(process.cwd(), "app")
  * "Nothing in this view." (no signups waiting, from our own outage), and an action response
  * carrying no `row` wrote `undefined` into state and WHITE-SCREENED the console right after
  * reporting success. */
-const BUDGET = 8
+/* 8 -> 7: `admin/flowty-analytics` moved into `FlowtyAnalyticsClient.tsx`. */
+/* 7 -> 5: `admin/feedback` and `[collection]/market` moved into `*Client.tsx`. */
+const BUDGET = 5
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([

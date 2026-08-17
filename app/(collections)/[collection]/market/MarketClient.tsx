@@ -1,6 +1,11 @@
 "use client"
 
-// Phase 4 — Market page.
+// Phase 4 — Market page (client body; the server shell is page.tsx).
+//
+// Split out of page.tsx so the component coverage gate measures it — a
+// `page.tsx` matches neither gate's include, so the filter/sort/pagination
+// state machine and the listing renderers were unmeasured by construction.
+//
 // Sortable / filterable browser of every listing in the active collection.
 // Distinct from /sniper (deal-focused) and /collection (wallet-focused).
 //
@@ -1160,7 +1165,7 @@ function MarketSection() {
 }
 
 // ── Page wrapper ────────────────────────────────────────────────────────
-export default function MarketPage() {
+export default function MarketClient() {
   return (
     <Suspense fallback={<div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>Loading market…</div>}>
       <MarketSection />

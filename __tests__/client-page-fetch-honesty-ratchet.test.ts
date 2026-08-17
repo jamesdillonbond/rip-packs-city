@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 
 // RATCHET on the client half of "a failed read must not render as an answer".
@@ -123,7 +123,18 @@ const USE_CLIENT = /^\s*["']use client["']/
  * "Nothing in this view." (no signups waiting, from our own outage), and an action response
  * carrying no `row` wrote `undefined` into state and WHITE-SCREENED the console right after
  * reporting success. */
-const BUDGET = 11
+/* 11 -> 10: `admin/flowty-analytics` moved into `FlowtyAnalyticsClient.tsx`, covered by
+ * `__tests__/component-FlowtyAnalyticsClient.test.tsx`. The conversion found a live defect
+ * of a shape not previously recorded here: a failed read rendering not as an EMPTY answer
+ * but as the WRONG one. A failed refresh left every chart, KPI tile and leaderboard showing
+ * the PREVIOUS filter's numbers under the newly-selected filter's label. */
+/* 10 -> 8: `admin/feedback` and `[collection]/market` moved into `AdminFeedbackClient.tsx` /
+ * `MarketClient.tsx`, covered by `__tests__/component-AdminFeedbackClient.test.tsx` and
+ * `__tests__/component-MarketClient.test.tsx`. Feedback carried the SAME defect for the
+ * third time in this workstream — a failed read rendering "No feedback in this view.", a
+ * triage console reporting an empty queue out of our own outage. Market was already the
+ * shape to copy (a strict `loading : error : empty` ladder) and is pinned as such. */
+const BUDGET = 8
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -152,16 +163,35 @@ function unhelpedClientPages(): string[] {
 describe("client-page fetch-honesty ratchet", () => {
   const pages = unhelpedClientPages()
 
-  it("is not vacuous: it finds client pages that fetch directly", () => {
-    expect(pages.length).toBeGreaterThan(10)
-    // The four largest, named so a rename cannot quietly drop them from the set.
+  it("is not vacuous: the walk finds page.tsx files and the detector discriminates", () => {
+    // ⚠ THE WALK, NOT THE POPULATION. This asserted `pages.length > 10` and went
+    // RED at exactly 10 — the guard punishing its own success, the identical
+    // failure the sibling gate ratchet already paid for. A not-vacuous check has
+    // to be satisfiable at a population of ZERO, because zero is the goal.
+    expect(pageFiles(APP_DIR).length, "the enumerator must find page.tsx files at all").toBeGreaterThan(20)
+
+    // The detector must actually discriminate: a server page, and a client page
+    // that already routes through the helper, must both stay out of the set.
+    const all = pageFiles(APP_DIR).map((f) => relative(process.cwd(), f).split(sep).join("/"))
+    expect(all.length).toBeGreaterThan(pages.length)
+
+    // The four largest are named so a rename cannot quietly drop them — but only
+    // while they are still unconverted client pages. Converting one is the point
+    // of this ratchet, so the check reads their current state rather than
+    // asserting a population that is meant to shrink.
     for (const p of [
       "app/dashboard/page.tsx",
       "app/(collections)/[collection]/sniper/page.tsx",
       "app/(collections)/[collection]/analytics/page.tsx",
       "app/(collections)/[collection]/collection/page.tsx",
     ]) {
-      expect(pages, `${p} must still be counted`).toContain(p)
+      if (!existsSync(p)) continue
+      const src = readFileSync(p, "utf8")
+      const stillUnconverted =
+        USE_CLIENT.test(src.split("\n").slice(0, 3).join("\n")) &&
+        /\bfetch\(/.test(src) &&
+        !src.includes("fetchJson")
+      if (stillUnconverted) expect(pages, `${p} must still be counted`).toContain(p)
     }
   })
 
