@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · DOCS (Claude Code, docs pass continuation) — the FMV sweep is not "wedged"; it advances every ~12 min and stalls rarely, and I published the opposite six hours earlier
+
+**Correcting my own headline.** The 05:24Z entry said the `fmv-recalc` sweep was *"STILL WEDGED AND STILL WORSENING … it has not self-cleared this time"*. **It resumed at 05:28Z — four minutes after the measurement** — and ran 2500 → 3000 → 3500 → 4000 before stalling again. Having warned in that same entry that a `text`-column `max()` had manufactured a false *recovery*, I then published a false *non*-recovery from a different one-instant read. **Both are the same mistake: a directional claim from a snapshot.**
+
+⚠ **The 24 h measurement inverts the framing.** Gaps between successive cursor ADVANCES: **median 11.6 min · p90 25.3 min · max 260 min, with exactly ONE gap over 3 h in the whole day**, on **176 invocations / 59 terminal rows / 35 ok / 35 advances / 19,176 rows written**. So "wedged" is not a state this pipeline sits in — it is a rare isolated multi-hour stall against a normal ~12-minute advance.
+
+⚠ **Throughput is FLAT, not degrading** — 19,176 rows/24 h against 18,720 (08-15) and ~19,216 (08-16) — so the chronic ~66% kill rate is background cost and must not be conflated with the stall mechanism.
+
+⚠ **`fmv_sweep_wedge_hours` is correct and will FLICKER.** `breach_at = 3 h` is ~7× the p90 gap, so it fires only on genuine stalls; but those stalls last ~4 h and **self-clear unaided** (three recorded). Any single reading is a coin-flip on whether you caught the stall or the recovery. **Judge by the gap distribution and 24 h `rows_written`, never by hours-since-advance at one instant.**
+
+✅ **Leg 327's failure was absorbed as the 8-way split predicts** — freshness view back to 19 rows / max **5.86 h**, so `sales_serial_supply_worst_pct` recovered on its next tick. One failed leg cost one metric ~2 h of age and nothing else.
+
+⚠ **`v_rpc_trust_health` timed out at the 60 s MCP budget on the re-read** — the documented fallback earned its place. **A timeout is not a clean board.**
+
+⚠ **A commit message contradicts CLAUDE.md about `migration-parity.yml`, and the file is right.** `65e841fc` calls its case "the direction parity is silent about"; the workflow's header says it checks that every migration APPLIED TO PRODUCTION has a committed file — exactly that case. Parity never fired only because the file was committed at 05:58Z, before the 07:40Z run. **Its clean record does not prove the class is absent.**
+
+**Revert path:** `git revert <sha>` — docs-only, no code, DB, migration, cron or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — jobid 215's cadence cut was live in prod with its migration file uncommitted; landed the file and closed the parity gap
 
 - **What was already applied, and why it did not look it.** `rpc-allday-nem-from-sales-backfill` (pg_cron jobid 215) was moved `*/30 * * * *` → `37 * * * *` by a NO-PUSH Cowork cloud session at ~01:53Z. The migration was applied but its FILE was never committed, so the repo showed it untracked and it read as un-applied. Verified live before touching anything: schedule `37 * * * *`, jobid still **215**, owner still **cron_heavy**, `md5(command)` **c7ea2df3c66232e984f4ce5839649a2b**, length 196, exactly **one** job by that name — i.e. every post-check the file specifies, passing. Registered as `20260817015354` in `schema_migrations`.
