@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · DOCS (Claude Code, docs pass continuation) — I endorsed someone else's unmeasured decision NOT to ship, and it was wrong within the hour
+
+**Correcting a canonical bullet I wrote an hour earlier.** I recorded the nine-route saturation-throttle fail-open as **"correctly filed, not shipped"**, quoting the filing's reasoning. It shipped the same session (`5eda629f`, all 9 routes — verified here: `error: throttleErr` destructure + `if (throttleErr)` guard present in each), and **both the filing's rationale and my endorsement of it were wrong.**
+
+⚠ **The decisive argument was a COST ESTIMATE NOBODY MEASURED** — that nine bespoke Supabase stubs would each need per-file sequencing to make *only* the throttle read fail. They do not: **the throttle is the FIRST read and it RETURNS EARLY**, so on the failing path the route never reaches another query and a blanket-error stub cannot be ambiguous. One behavioural test plus a directory-driven source guard covers all nine and any tenth.
+
+⚠ **The general lesson, and it is the most useful thing in this pass: CLAUDE.md tells you to re-derive a filed FINDING before acting on it, and is silent about a filed DECISION NOT TO ACT.** A not-shipped rationale is exactly as much a hypothesis — and it is the one nobody re-checks, because declining to act reads as the conservative option. I had spent two stretches testing other people's unmeasured claims and then took one of theirs on sight.
+
+⚠ **The sweep proved its own half-done-sweep argument while refuting it.** A scripted edit matched **8 of 9** and silently skipped `ufc-studio-sales-history-backfill`, which names its constant **`PIPELINE`** instead of `PIPELINE_NAME`. Only a per-file occurrence assert caught it — the "assert the occurrence count before replacing" rule earning its place on a production edit. The shipped guard therefore walks the tree instead of naming routes.
+
+⚠ **My own verification probe was the unreliable instrument.** A backwards-search from the threshold comparison for the nearest `const {` reported NO_ERROR on all 9 *after* the fix landed, because its window was too small for the 11-line comment the fix inserts. Reading one file settled it in seconds.
+
+**Also recorded:** `50aa0438` — the Cadence escrow test-dependency fetch had no retry, so a transient upstream **429 reddened `main` on an unrelated commit**.
+
+**Revert path:** `git revert <sha>` — docs-only, no code, DB, migration, cron or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — CI went red on `main` from an HTTP 429 fetching a test dependency; the fetch had no retry, so any commit could trip it
 
 - ⚠ **A commit that touched NO Cadence reddened the blocking `cadence-escrow-tests` job.** Run `32037307518` on `5eda629f`: `fetch NonFungibleToken.cdc` → `curl: (22) The requested URL returned error: 429` on the FIRST of seven fetches. `scripts/fetch-cadence-escrow-test-deps.sh` pulls seven files from `raw.githubusercontent.com` unauthenticated with a bare `curl -fsSL` and **no retry**, so a single rate-limit reds the build regardless of the diff.
