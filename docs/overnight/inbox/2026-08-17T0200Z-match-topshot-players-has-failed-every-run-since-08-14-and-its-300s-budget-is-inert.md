@@ -50,11 +50,29 @@ Execution Time: 32704.997 ms
 
 That is why duration swung 12.8 s → 113.4 s across healthy days: it was always near the edge, and tracked whatever else was competing for IO. **It did not "break" on 08-14; it crossed a line it had been approaching for weeks.** Expect it to stay failing, because `wallet_moments_cache` only grows.
 
-## Fix options (NOT taken — the obvious one has a real cost)
+## ⛔ CORRECTION 2026-08-17 03:40Z — MY OWN "PREFERRED" FIX IS REFUTED BY MEASUREMENT. DO NOT IMPLEMENT IT.
 
-1. **Restructure the function (preferred).** `owners` is a `COUNT(DISTINCT wallet_address)` computed for **every** distinct player name, but it is only ever consumed for the `needs_review` ordering and its `owners >= 5` filter. Get the distinct-name list cheaply, resolve against `nba_players`/`nba_player_aliases` first, and compute owner counts **only for the small unresolved remainder**. No schema change, no write cost.
-2. **Index `wallet_moments_cache (collection_id, player_name, wallet_address)`.** Would remove both the seq scan and the disk sort. ⚠ **But wmc already carries 14 indexes over ~1.6 GB and is the most write-heavy table on the platform** — CLAUDE.md records `fmv_confidence` being left deliberately unindexed for exactly this reason. This buys a read win with a write tax on the hot path.
+The option-1 below said: *"`owners` is only consumed by `needs_review`, so get the distinct-name list cheaply and compute owner counts only for the unresolved remainder — no schema change, no write cost."* The premise about `owners` is correct — the alias INSERT genuinely never reads it. **The conclusion is wrong**, because the count is not what costs.
+
+Measured back to back on the same instance:
+
+| query | execution | buffers read |
+|---|---|---|
+| `player_name, count(distinct wallet_address) … group by player_name` | **32,705 ms** | 105,799 |
+| `select distinct player_name …` (the proposed cheap version) | **84,564 ms** | 104,404 |
+
+⚠ **The "cheap" rewrite measured 2.6× SLOWER**, and it went *parallel* with a `HashAggregate` in 177 kB and no disk sort at all. **The buffers are the tell: ~105k either way (~820 MB off disk).** The dominant cost is the **parallel seq scan of 1.67 M `wallet_moments_cache` rows**, not the aggregation or the 70 MB sort; the 32.7 s vs 84.6 s spread is IO-saturation noise between two runs of the same scan. Removing the `COUNT(DISTINCT)` would have changed nothing and could easily have looked like a regression.
+
+**This is the file's own standing rule biting the person applying it: a plausible mechanism is not a measurement.** The saving grace is that it was measured before shipping, which cost one query.
+
+## Fix options — REVISED
+
+The real problem is reading 1.67 M rows off disk once a day, so only two things actually move it:
+
+1. **Give it a bigger budget instead of making it cheaper (preferred, no write tax).** The scan needs ~30–85 s depending on saturation, and the whole function needs more than the **120 s global** it currently gets. `cron_heavy` carries `statement_timeout = 600s`, and CLAUDE.md documents the proven mechanism: a pg_cron job owned by `cron_heavy` inherits that budget (`SET LOCAL ROLE cron_heavy; SELECT cron.schedule(...)`, which keeps the jobid). Moving this off the daily edge-function call and onto a `cron_heavy` pg_cron entry fits the work inside the budget **without touching the query, the matching logic, or wmc's write path**. ⚠ It needs a home for the telemetry the edge function currently writes (`log_pipeline_run`) and for `needs_review`, so it is not a one-liner.
+2. **Index `wallet_moments_cache (collection_id, player_name)`.** Would convert the seq scan into an index-only scan over ~40 MB instead of ~820 MB. ⚠ **Probably the WRONG trade and I am recommending against it**: wmc is the most write-heavy table on the platform, already carries **~1.58 GB across 12+ indexes**, and CLAUDE.md records `fmv_confidence` being deliberately left unindexed for exactly this reason. Paying a permanent write tax on the hot path to rescue a **once-daily, low-impact** job is the wrong direction on an IO-budgeted instance.
 3. ⛔ **Do NOT raise the declared `statement_timeout`** — proven inert above.
+4. ⛔ **Do NOT substitute `editions.player_name` for the wmc scan.** It looks equivalent and is not: wmc stores values that are not names at all (`Team Moment`, `Unknown`, **`Unknown (error loading)`**), which is precisely the population this job exists to triage.
 
 ## Impact, stated honestly
 
