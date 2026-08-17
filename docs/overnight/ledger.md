@@ -8,6 +8,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the three biggest client pages converted; the market page silently discarded its own `?page=` deep link, and the analytics page carried deep-audit D12's defect one derivation lower
+
+**What shipped.** `[collection]/collection` (1,332 lines), `[collection]/analytics` (1,790) and
+`[collection]/market` (1,170, converted earlier this session) each moved their body into a
+`*Client.tsx` behind a server shell, so all three are now measured by the component coverage
+gate. New suites: `component-CollectionTabClient.test.tsx` (96),
+`component-CollectionAnalyticsClient.test.tsx` (63), plus 77 on `component-MarketClient`.
+Ratchets: client-page gate **5 → 3**, fetch-honesty **8 → 6**, both re-derived from their own
+no-slack assertions. Component gate **90.55/81.65/89.25/93.48** against 90.3/81.6/89.1/93.2.
+
+**Two live defects.**
+
+1. **`[collection]/analytics` — deep-audit D12's own defect, one derivation lower.**
+   `thinVolumeEcosystem` is computed from `marketData?.totals?.totalSales ?? 0` with `period`
+   defaulting to `"30d"`, so a **failed** market read rendered *"Thin-volume ecosystem — most
+   metrics are directional only."* — a specific claim about the MARKET manufactured from OUR
+   outage, and an actionable one (it tells a collector not to trust figures we simply failed
+   to fetch). D12 added `marketFailed` for the KPI band **directly above it** and this derived
+   notice was never gated on it. *A page is not made honest by fixing the component that
+   failed.* Now `!marketFailed && marketData != null && …`.
+
+2. **`[collection]/market` — the `?page=` deep link was discarded on every load.** The "snap
+   back to page 1 when a filter changes" effect also fires on MOUNT, so `useState` read page 3
+   out of the URL and the effect immediately set it back to 1 — after which the URL-sync effect
+   **rewrote the address without the param**, so a shared link silently lost its page and
+   nothing on screen said so. This page advertises deep-linking as a feature, which is exactly
+   why the param has to survive the mount. Fixed with a first-run ref guard; the snap-back on a
+   real filter change is pinned in the same pass so the guard cannot disable it.
+
+**`[collection]/collection` carried no defect** and is recorded as such: its claims are
+rendered by `CollectionMomentTable` / `PortfolioSummary`, which the gate already measured.
+What was unmeasured is the ORCHESTRATION, and that is where its honesty property lives — a
+failed read leaves **`hasSearched` FALSE**, so the table renders its pre-search state plus an
+error banner rather than "this wallet holds nothing".
+
+**⚠ Four of my own test bugs, each caught by mutation or by a failing assertion, not review.**
+- **A vacuous assertion with two survivors.** My `kpiValue` helper read the whole KPI tile, and
+  `ChangeBadge` renders its own em-dash whenever `pct` is null — which it always is on a failed
+  read. So `toContain("—")` passed no matter what the value said, and mutations dropping the
+  dash-guard AND treating an `{ error }` body at HTTP 200 as success both survived. Scoping the
+  read to the value node killed both.
+- **A count-based assertion that a replace-instead-of-append mutation survived**, because both
+  pages were the same size. Asserting the row IDS is the fix — and there turned out to be
+  **TWO** accumulation sites (an auto-paginate effect with its own `prev.concat`), so mutating
+  only the Load-More one leaves the effect appending: **a mutation-harness artifact that reads
+  exactly like a coverage gap.**
+- **A debounce mutation that survived microtask flushes** — `setTimeout(_, 0)` is a macrotask
+  either way, so only waiting real time inside the window makes the delay observable.
+- **Three flaky assertions, all the same shape: a claim whose truth depended on how busy the
+  machine was.** The last one exposed a real (minor) leak — the collection tab never clears its
+  2 s offer timer on unmount, so a previous test's flush fires into the next test's fetch mock.
+  Fixed by identifying the batch by its CONTENTS rather than by call count.
+
+**⚠ Assumptions of mine that were wrong and were corrected by a failing test, not by review.**
+Market's default sort is `price_asc`, not `"recent"`; the internal confidence vocabulary is
+deliberately never rendered publicly (`lib/fmv-basis.ts`), so a reader gets "⚠ thin data";
+collection filters are applied CLIENT-side and reach the server only on the next search;
+`useWarmCache` is a data hook returning `{ data }`, so a `{ read, write }` mock never invokes
+the fetcher; and the API query always carries `page=N` while the browser URL omits page 1.
+
+**Revert:** `git revert <code sha>` restores all three `page.tsx` files with their bodies
+inline and removes the three suites. No DB, migration, cron, auth or prod-state change.
+
 ### 2026-08-16 · DOCS (Claude Code, post-ship check) — the withDeadline abort/RPC_TIMEOUT split is GONE from the board, confirming `b0cebf90` in production
 
 - **Post-ship check on today's two pushes: ZERO new Sentry issues** (`firstSeen:-2h`, covering both deploys). ⚠ Verified NOT vacuous — the same search at `is:unresolved` returns 6, all first seen **8–22 h ago**, i.e. all predating the deploys. Both are comment-only changes, so this is confirmation rather than a surprise.
