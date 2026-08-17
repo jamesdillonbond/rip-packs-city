@@ -121,6 +121,41 @@ export async function POST(req: NextRequest) {
     const allOk = results.every((r) => r.ok)
     const durationMs = Date.now() - startedAt
 
+    // `processed` is the edition count this tick actually repriced, and it is
+    // ALSO the write count: every branch of drain_fmv_cold_tail's loop performs
+    // exactly one `INSERT INTO fmv_snapshots` (with_sales / ask_only / stale /
+    // no_data) before incrementing v_processed, so processed == rows inserted.
+    // Mapping it to both columns is therefore a measurement, not an estimate.
+    //
+    // ⚠ These were previously OMITTED from the insert, so they defaulted to 0
+    // and this pipeline reported `rows_found: 0, rows_written: 0` on EVERY run
+    // while doing real work (5-71 editions/tick, visible only by hand-reading
+    // `extra.results[].data.processed`). That made a live FMV WRITER — it
+    // stamps algo_version 'cold-tail-1.0' snapshots whose confidence labels
+    // feed the roadmap's headline HIGH/MEDIUM-share metric — look inert in
+    // `pipeline_runs_daily` and in any sweep for zero-output pipelines. A
+    // 2026-08-16 sweep for retirable crons flagged it as waste on exactly that
+    // signal; it is not waste.
+    //
+    // The optional chain is load-bearing and mutation-proven: a hard RPC failure
+    // (pool timeout under saturation — the case the try/catch above exists for)
+    // leaves `data` null, and without `?.` this throws inside after(), losing the
+    // pipeline_runs row entirely. Counting a failed leg as 0 is correct rather
+    // than unknown; `ok` already carries the failure.
+    //
+    // ⚠ The `typeof`/`isFinite` check, by contrast, is DEFENSIVE ONLY and is not
+    // reachable from this RPC's contract: drain_fmv_cold_tail returns
+    // `jsonb_build_object('processed', v_processed)` with v_processed INT, so
+    // `processed` is always a JSON number, and its only other return path (the
+    // 'unknown collection' guard) omits the key entirely — which `?.` plus `?? 0`
+    // already handles. Mutating it away leaves every test green; it is kept as
+    // cheap insurance, NOT asserted, and would become load-bearing only if that
+    // function started returning a non-numeric `processed`.
+    const totalProcessed = results.reduce((sum, r) => {
+      const processed = (r.data as { processed?: unknown } | null)?.processed
+      return sum + (typeof processed === "number" && Number.isFinite(processed) ? processed : 0)
+    }, 0)
+
     try {
       // started_at is NOT NULL on pipeline_runs. The 2026-05-17 pg_log
       // "null value in column started_at violates not-null constraint"
@@ -132,6 +167,8 @@ export async function POST(req: NextRequest) {
         started_at: new Date(startedAt).toISOString(),
         finished_at: new Date().toISOString(),
         ok: allOk,
+        rows_found: totalProcessed,
+        rows_written: totalProcessed,
         extra: {
           collection_filter: collection,
           limit,
