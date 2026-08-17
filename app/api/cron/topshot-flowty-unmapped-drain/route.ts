@@ -43,6 +43,45 @@ import crypto from "crypto"
 //    resolved_sale_id=NULL WHERE (resolution_hint->>'backfill')='topshot_flowty_history'.)
 //
 // Kill switch: disable the cron OR set TOPSHOT_FLOWTY_UNMAPPED_DRAIN_DISABLED=1
+//
+// ⚠ COMPLETE — SCHEDULE RETIRED 2026-08-16. The route is KEPT; only the
+// `vercel.json` cron entry (`9,29,49 * * * *`) was removed. This mirrors the
+// documented `sync-sales-ingest-dune` / `evm-transfers-ingest` disposition:
+// retire the schedule, keep the route, so reviving it is a one-line diff.
+//
+// THE QUEUE IS EMPTY AND CANNOT REFILL — measured live 2026-08-16:
+//   • Of the 24,583 rows that have EVER carried this route's class
+//     (collection=topshot, marketplace='flowty', source='onchain'),
+//     24,583 are resolved. Open population: ZERO. Last row ingested
+//     2026-08-04 03:28Z, last resolved 2026-08-04 16:09Z.
+//   • The sole PRODUCER, `topshot-flowty-sales-history-backfill`, has reached
+//     its own terminal condition: `event_cursor.topshot_flowty_backfill` sits
+//     at exactly SPORK_FLOOR_HINT (137,390,146) and its runs report
+//     `note: "reached_spork_floor_hint"`. It walks BACKWARD, so a cursor at the
+//     floor cannot produce another row. Its schedule was retired in the same
+//     commit.
+//
+// ⚠ DO NOT READ ITS `rows_found: 0` HISTORY AS A BREAK — that is this route
+// reporting honestly that there is nothing left to do. `pipeline_runs_daily`
+// shows 0 found / 0 written on EVERY day from 2026-08-05 onward, across ~71-73
+// ticks/day, i.e. ~860 no-op invocations.
+//
+// WHY RETIRING IT IS A SAVING, NOT JUST TIDINESS: an EMPTY result is the most
+// expensive case for the candidate select below. No index matches
+// `(collection_id, resolved_at IS NULL, marketplace, source) ORDER BY
+// ingested_at ASC` — the closest, `unmapped_sales_unresolved_idx`, is keyed
+// `(collection_id, sold_at DESC)` — so proving emptiness walks the entire Top
+// Shot open backlog on every tick. That is the same "the arm that matches
+// nothing is the one that scans everything" mechanism documented at length in
+// `lib/unmapped-rotating-window.ts`. It showed up as 8-19 failed ticks/day with
+// `candidate select: canceling statement due to statement timeout`, burning a
+// full statement timeout each, on the 2 GB IO-throttled instance whose
+// saturation is a platform-wide problem.
+//
+// TO REVIVE (only if a new Flowty-venue history source appears): re-add the
+// vercel.json entry. If you do, FIX THE SELECT FIRST — either order by
+// `sold_at` to ride `unmapped_sales_unresolved_idx`, or add a partial index
+// matching the filter; otherwise it re-acquires the timeout above.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic"

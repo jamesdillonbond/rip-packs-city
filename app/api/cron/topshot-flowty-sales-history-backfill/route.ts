@@ -34,6 +34,32 @@ import crypto from "crypto"
 //   • Dynamic spork-floor detection (404 "is less than" → stop + report).
 //
 // Kill switch: disable the cron OR set TOPSHOT_FLOWTY_HISTORY_BACKFILL_DISABLED=1
+//
+// ⚠ COMPLETE — SCHEDULE RETIRED 2026-08-16. The route is KEPT; only the
+// `vercel.json` cron entry (`27 */3 * * *`) was removed, mirroring the
+// documented `sync-sales-ingest-dune` / `evm-transfers-ingest` disposition.
+//
+// IT REACHED ITS OWN DOCUMENTED TERMINAL CONDITION — the one this header
+// describes four paragraphs up as "this route stops + reports at the floor":
+//   • `event_cursor.topshot_flowty_backfill.last_processed_block` = 137,390,146
+//     = exactly SPORK_FLOOR_HINT, last moved 2026-08-04 06:27Z.
+//   • Live runs report `extra.note = "reached_spork_floor_hint"`.
+//   • `pipeline_runs_daily`: last day with output was 2026-08-04 (1,097 found /
+//     461 written); every day from 2026-08-05 onward is 0 found / 0 written
+//     across 7-8 ticks/day, 0 failures.
+// The walk is BACKWARD, so a cursor pinned at the floor cannot yield another
+// row — the remaining ticks were pure no-ops. Its downstream consumer
+// `topshot-flowty-unmapped-drain` was retired in the same commit (its queue is
+// 24,583/24,583 resolved).
+//
+// ⚠ THIS IS NOT THE END OF THE FLOWTY TAIL, AND RETIRING THIS SCHEDULE DOES NOT
+// ABANDON IT. The deep 2022 → 2025-12-29 Flowty history lives BELOW the spork
+// floor and was never reachable from here — it needs `spork-proxy`, which this
+// header already records as a separate gated workstream. That work is
+// unaffected and still open.
+//
+// TO REVIVE: re-add the vercel.json entry. Only useful once the spork-proxy
+// lane can lower the floor; until then it will short-circuit on tick one.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic"

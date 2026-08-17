@@ -78,10 +78,6 @@
       "schedule": "13 */3 * * *"
     },
     {
-      "path": "/api/cron/topshot-flowty-sales-history-backfill",
-      "schedule": "27 */3 * * *"
-    },
-    {
       "path": "/api/cron/golazos-sales-history-backfill",
       "schedule": "34 */3 * * *"
     },
@@ -112,10 +108,6 @@
     {
       "path": "/api/cron/allow-list-reconcile",
       "schedule": "14 * * * *"
-    },
-    {
-      "path": "/api/cron/topshot-flowty-unmapped-drain",
-      "schedule": "9,29,49 * * * *"
     },
     {
       "path": "/api/cron/sales-serial-backfill",
