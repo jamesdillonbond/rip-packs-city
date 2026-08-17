@@ -127,8 +127,8 @@ export default function ConfirmPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0a0a0a",
-        color: "#fafafa",
+        background: "var(--rpc-black)",
+        color: "var(--rpc-text-primary)",
         fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
@@ -148,12 +148,12 @@ export default function ConfirmPage() {
             width: "32px",
             height: "32px",
             borderRadius: "50%",
-            border: "3px solid rgba(229, 90, 76, 0.25)",
-            borderTopColor: "#e55a4c",
+            border: "3px solid var(--rpc-red-glow)",
+            borderTopColor: "var(--rpc-red)",
             animation: "rpc-spin 0.9s linear infinite",
           }}
         />
-        <p style={{ margin: 0, color: "#e55a4c", fontWeight: 600, letterSpacing: "0.02em" }}>
+        <p style={{ margin: 0, color: "var(--rpc-red)", fontWeight: 600, letterSpacing: "0.02em" }}>
           {message}
         </p>
         <style>{`@keyframes rpc-spin { to { transform: rotate(360deg); } }`}</style>

@@ -79,6 +79,12 @@ const PROTECTED = [
   "app/admin/feedback/page.tsx",
   "app/admin/beta-activity/page.tsx",
   "app/admin/allow-list/page.tsx",
+  // Phase 2 — Batch 6 (the auth funnel, 2026-08-16). These three were invisible
+  // to the client-page ratchets until the directive detector was fixed, and the
+  // sweep that followed found the email accent leaking into two of them.
+  "app/login/page.tsx",
+  "app/early-access/page.tsx",
+  "app/auth/confirm/page.tsx",
 ];
 
 const LITERAL = /#E03A2F|'Barlow Condensed'|'Share Tech Mono'/i;
@@ -207,6 +213,24 @@ const VAR_FALLBACK = /var\(\s*--[a-z0-9-]+\s*,\s*(?:[^()]|\([^()]*\))*\)/gi;
 // (bg|text|border|divide|ring)-zinc-N in a protected file is a regression.
 const TAILWIND_NEUTRAL = /\b(?:text-white|bg-white|border-white|bg-black|text-black|(?:bg|text|border|divide|ring)-zinc-\d+)\b/;
 
+// ── Email accent must not leak into web UI (2026-08-16) ────────────────────
+// #E55A4C is the RPC *email* accent. It is hardcoded on purpose in email HTML
+// (lib/emails/**, lib/alerts/format.ts, the alert/subscribe API routes) because
+// email clients do not support CSS custom properties at all — var(--rpc-red)
+// would render as nothing. `__tests__/welcome-email.test.ts` pins it there.
+//
+// On a RENDERED WEB SURFACE it is simply the wrong red: the web brand red is
+// #E03A2F (var(--rpc-red) / var(--por-red)), so the two differ visibly. Found
+// on `app/auth/confirm/page.tsx` (the magic-link landing — 3 sites, including
+// the spinner) and `app/login/page.tsx`, while `login` used var(--por-red) for
+// the SAME role a few lines away.
+//
+// ⚠ Scoped to page/client/component files, which is what makes it a ban with no
+// allowlist: measured 2026-08-16, all 7 remaining uses are email HTML or its
+// test, and the web population is ZERO. A blanket ban would fire on all seven.
+const EMAIL_ACCENT = /#e55a4c|rgba?\(\s*229\s*,\s*90\s*,\s*76\b/i;
+const WEB_SURFACE = /^(?:app\/.*\/(?:page|layout|.*Client)\.tsx|components\/.*\.tsx)$/;
+
 let violations = 0;
 
 for (const file of PROTECTED) {
@@ -227,6 +251,24 @@ for (const file of PROTECTED) {
     const window = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
     if (/brand-exception/.test(window)) continue;
     console.error(`  ✗ ${file}:${i + 1}  ${line.trim().slice(0, 100)}`);
+    violations++;
+  }
+}
+
+for (const file of [...new Set([...PROTECTED, ...NEUTRAL_PROTECTED])]) {
+  if (!WEB_SURFACE.test(file)) continue;
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    continue; // missing-file is already reported by the loops above
+  }
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!EMAIL_ACCENT.test(lines[i])) continue;
+    console.error(
+      `  \u2717 ${file}:${i + 1}  email accent #E55A4C in web UI — use var(--rpc-red)`
+    );
     violations++;
   }
 }

@@ -180,7 +180,7 @@ function LoginInner() {
               <div style={{
                 marginBottom: 18,
                 padding: "14px 16px",
-                background: "rgba(229, 90, 76, 0.08)",
+                background: "var(--rpc-red-bg)",
                 border: "1px solid var(--rpc-red)",
                 borderRadius: "var(--radius-sm)",
                 textAlign: "left",
