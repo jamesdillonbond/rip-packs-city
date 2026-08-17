@@ -158,11 +158,22 @@ describe("AuthConfirmClient — a failed touch must not cost the user their sign
   })
 
   it("still redirects when reading the failed touch's BODY itself fails", async () => {
-    // ⚠ The `.text()` here exists only to put a detail in the log. A diagnostic
-    // read must never be able to break the flow it is diagnosing — an unguarded
-    // reject would escape into the outer catch and bounce a user who is, by
-    // then, genuinely signed in, and it would do so ONLY when the body is
-    // unreadable, i.e. rarely and unreproducibly.
+    // ⚠ The `.text()` here exists only to put a detail in the log, and a diagnostic
+    // read must never break the flow it is diagnosing — but the MECHANISM is not the
+    // one this comment originally gave, and the correction is the useful part.
+    //
+    // It said an unguarded reject "would escape into the outer catch". It would not:
+    // the `.text()` call sits INSIDE the `try { … } catch (touchErr)` that already
+    // wraps the whole touch block, so that catch takes it first. Measured by mutation
+    // against this exact file — dropping `.catch(() => "")` ALONE leaves every case
+    // here green; dropping it AND the surrounding catch is what reds them.
+    //
+    // So `.catch(() => "")` is redundant behind another guard in the same statement,
+    // and this case is a COMPOSITE assertion ("a touch failure of any shape still
+    // signs the user in") rather than a pin on that clause. It stays because the
+    // composite is what matters, and the clause becomes load-bearing again the moment
+    // the surrounding catch narrows to a specific error type or the `.text()` read
+    // moves outside the try — both plausible future edits.
     fetchMock.mockResolvedValue({
       ok: false,
       status: 502,
