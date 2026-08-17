@@ -229,7 +229,19 @@ const APP_DIR = join(process.cwd(), "app")
  * expanding is the one legitimate reason a ratchet number moves the wrong way,
  * and it must be recorded as such. THE RULE IS UNCHANGED — this number may only
  * go DOWN from here. */
-const BUDGET = 6
+/* 6 -> 5: `/dashboard` moved into `DashboardClient.tsx` (2,545 lines, the largest client page
+ * in the repo).
+ *
+ * ⚠ RE-DERIVED FROM THE FAILING NO-SLACK ASSERTION AFTER A REBASE, AND THE REASON IS WORTH
+ * RECORDING. A concurrent session replaced this file's naive `USE_CLIENT.test(src.slice(0,
+ * 200))` with the shared `isClientSource` helper — so the detector now catches three
+ * `app/insights/*` client pages the 200-character window had been BLIND to. The population did
+ * not grow; the instrument got more accurate. A budget of 2, which is what my own branch
+ * measured, was simply wrong: it was derived from a detector that under-counted by three.
+ * This is why the rule is to re-derive from the assertion rather than to keep the smaller
+ * number — on a shared ratchet, "take mine" is silently wrong exactly as often as
+ * "take theirs". */
+const BUDGET = 5
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([

@@ -159,7 +159,14 @@ const APP_DIR = join(process.cwd(), "app")
  * coverage-gate `include`). THE RULE IS UNCHANGED — down only from here.
  * ⚠ RE-DERIVED from the failing no-slack assertion after a rebase collision
  * with a concurrent session's conversions: neither side's number was right. */
-const BUDGET = 8
+/* 8 -> 7: `/dashboard` moved into `DashboardClient.tsx`, covered by
+ * `__tests__/component-DashboardClient.test.tsx` (132 tests). NO new defect — every honesty
+ * branch on that page already carried a comment naming the incident that produced it
+ * (`meFailed`, `statsFailed` and the 2026-08-05 false-$0 on a 19,213-moment wallet, the hero
+ * picker's `loadFailed`, the trophy-removal rollback). What none of them had was a TEST.
+ * Re-derived from this file's own no-slack assertion after a rebase; see the sibling gate
+ * ratchet for why the number moved differently than a local measurement suggested. */
+const BUDGET = 7
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

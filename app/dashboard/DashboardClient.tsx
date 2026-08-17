@@ -160,7 +160,7 @@ interface ChallengeRow {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ProfilePage() {
+export default function DashboardClient() {
   // Next 16 requires a Suspense boundary above any tree that reads
   // useSearchParams. The inner component handles its own loading state.
   return (
