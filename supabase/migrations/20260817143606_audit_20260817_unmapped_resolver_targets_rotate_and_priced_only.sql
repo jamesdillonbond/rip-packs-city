@@ -6,6 +6,14 @@
 -- Signature, return type, STABLE/SECURITY DEFINER, search_path and the 300s statement_timeout
 -- are all UNCHANGED, so no new overload is created and the existing ACL survives.
 --
+-- anon-exec: already-revoked — get_unmapped_resolver_targets is SECURITY DEFINER and is NOT
+--   anon-reachable. Measured live 2026-08-17: has_function_privilege is FALSE for both `anon`
+--   and `authenticated`, TRUE for `service_role` (its one caller is a manually-invoked admin
+--   route holding the service-role key). The MARKER is used rather than a REVOKE deliberately:
+--   this is a CREATE OR REPLACE, which does not reset a function's ACL, so adding a revoke to
+--   an already-applied migration would change production while pretending to be a record of
+--   what ran. Per __tests__/migration-new-function-states-its-anon-exec-decision.test.ts.
+--
 -- ⛔ WHY — the resolver was pinned to 2025-12-29 and 82% of its window was unworkable
 --
 -- `ORDER BY us.sold_at ASC LIMIT 2000` made the candidate window a fixed slice of the OLDEST
