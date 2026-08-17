@@ -8,8 +8,10 @@
 --
 -- anon-exec: already-revoked — get_unmapped_resolver_targets is SECURITY DEFINER and is NOT
 --   anon-reachable. Measured live 2026-08-17: has_function_privilege is FALSE for both `anon`
---   and `authenticated`, TRUE for `service_role` (its one caller is a manually-invoked admin
---   route holding the service-role key). The MARKER is used rather than a REVOKE deliberately:
+--   and `authenticated`, TRUE for `service_role`. ⚠ Do NOT restate CLAUDE.md's "its one caller
+--   is a manually-invoked admin route" here — migration 20260817154154 refuted that the same
+--   day: the function is an ORPHAN (no pg_stat_statements calls, no prosrc caller, no cron, no
+--   view, no repo reference). The MARKER is used rather than a REVOKE deliberately:
 --   this is a CREATE OR REPLACE, which does not reset a function's ACL, so adding a revoke to
 --   an already-applied migration would change production while pretending to be a record of
 --   what ran. Per __tests__/migration-new-function-states-its-anon-exec-decision.test.ts.
