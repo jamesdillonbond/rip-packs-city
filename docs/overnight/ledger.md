@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · CLAUDE.md — `rows_written = 0` has three meanings, `ok = false` has two, and Known issues #8 is re-opened (docs-only)
+
+- **What shipped:** docs-only update to `CLAUDE.md`. No product, DB, migration, cron, auth, hot-wallet or pricing change.
+- **New canonical rule:** `rows_written = 0` is a NULL INSTRUMENT with three incompatible meanings, all three found on 2026-08-16 by the same "find inert crons" sweep — `match-topshot-players` (0 correct, pipeline BROKEN), `drain-fmv-cold-tail` (0 WRONG via an omitted column, pipeline HEALTHY at 5–71 editions/tick), `sync-nba-projections` (0 correct, pipeline genuinely FAILING). ⚠ The near-miss is the point: that sweep had ranked `drain-fmv-cold-tail` near the top of its retirement list, and it is a live FMV writer feeding the roadmap's headline HIGH/MEDIUM-share metric.
+- **Extended to `ok`:** `reconcile-saved-wallet-stats` reports `ok: false` on 78.1% of runs, every one `soft_deadline_reached_partial_sweep_committed` on a run that WROTE rows — designed graceful degradation, so the mirror sweep (rank by failure rate) mis-reads too.
+- **Measured the surface:** 139 pipelines ran in 14 days, 86 on a `pipeline_cadence_watchlist` arm (61.9%). Of the 7 unwatched ones failing >=25%, three are already documented as expected and a fourth is the soft-deadline case — ~57% false positives, which is why the ranking gets ignored.
+- **RE-OPENED Known issues #8** (`sync-nba-projections`), which this file marked RESOLVED. 100% failure for 13 days, projections 27.4 days stale, on no watchlist arm. Verified the 2026-08-08 `no_slate` vs `all_upstreams_failed` fix IS deployed and working (`function_version: 9`) rather than assuming the drift hypothesis — the live payload carries the real cause, `rolling_upstream_status: 403` on the sports-proxy. Impact is nil until NBA preseason (~October), so it is deferred, not absent. **Operator-only** (proxy secret).
+- **Recorded as a CANDIDATE, not a finding:** `pinnacle-listings-retry` may be a fourth telemetry case (`rowsWritten++` tracks only the `cached_listings_v2` backfill while two other tables are updated per tick), explicitly not established.
+- **Revert path:** `git revert <sha>` — docs-only, nothing to unwind in the DB or on Vercel.
+
 ### 2026-08-16 · DOCS (Claude Code, session close) — promoted the two-accent brand split into CLAUDE.md
 
 - **Shipped.** CLAUDE.md **Brand system** section, which had no idea the second accent existed.
