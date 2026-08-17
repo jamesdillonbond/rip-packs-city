@@ -1,5 +1,20 @@
 # `unmapped-sales-nfl_all_day` — the resolver is stuck in December, and the approved lever is NOT lossless
 
+> ⛔ **CORRECTED 2026-08-16 18:15 PT / 2026-08-17 01:15Z (Claude Code, interactive). DO NOT SHIP OPTION 1 — IT ALREADY EXISTS. The measurements below are sound; the ATTRIBUTION is not.**
+>
+> Every figure in this filing reproduces exactly (candidate window 2,000 rows, 2025-12-29 14:42:59Z → 2025-12-30 01:39:29Z, **10.94 h**, 86.9% unpriced, 76.7% frozen). What does not hold is the claim that this is *"why the backlog does not drain"*:
+>
+> 1. **`get_unmapped_resolver_targets` has exactly ONE caller in the repo** — the manually-invoked admin route `/api/admin/allday-unmapped-fill`. It is on **no** scheduler: not `vercel.json`, not GitHub Actions, not pg_cron (all three swept). So its December window is not the scheduled drain path, and "it re-scans the same December slice every 30 minutes" is false of anything on a schedule.
+> 2. **The live cron resolvers already rotate.** `allday-resolve-unmapped` and `allday-resolve-unmapped-tail` both load candidates through `lib/unmapped-rotating-window.ts` — never-attempted first (`last_onchain_attempt_at` NULLS FIRST, `sold_at DESC` tiebreak). That IS this filing's **Option 1** ("change the ORDERING, not the population — smallest fix, forfeits nothing"), shipped earlier in `0c554695` + `8f3589f4`, and iterated once more for an index-steering bug.
+> 3. **Falsified by measurement, not by reading code.** Of the **87** All Day NFTs attempted in the trailing 2 h, **0** anchor in December — their oldest open row spans **2026-01-03 → 2026-02-01**. Per-month attempt coverage: Jan **31.3%**, Feb **49.2%**, Mar **100%**, Apr **100%**, with the newest attempts minutes old. The resolver is working January–February right now.
+> 4. ⚠ **The obvious alternative explanation was tested and rejected.** "An attempt stamps every open row of the same NFT, so Jan/Feb only *look* worked while selection stays December-anchored" would reconcile both observations — it is wrong. Grouping the recently-attempted NFTs by their **oldest open row** (the value the resolver would order on) puts 0 of 87 in December. **Anchor, not stamp, is the correct instrument here.**
+>
+> **This is the name-trap class CLAUDE.md documents** ("read `cron.job.command` to learn what a schedule actually calls; never infer the callee from the name"), met on a FUNCTION name: a plausibly-named function was measured accurately and attributed to a path that does not call it.
+>
+> **What survives:** Option 2 (exclude frozen rows by reason, re-measured ~**30,331**-NFT blast radius, not the ~50,213 originally filed) is untouched and remains Trevor's call. The backlog genuinely is not draining — but the constraint is **throughput**, not ordering: `allday-unmapped-resolver` writes ~200/day against inflow ~230–240/day. ⚠ And its sibling **`allday-unmapped-resolver-tail` has written ZERO rows in 4 days** (8 runs/day, ~50% failing `upstream request timeout`, p95 190–320 s) — a separate, better lead than anything in this filing.
+>
+> Ledger: 2026-08-16 topshot-flowty cron-retirement entry.
+
 Filed 2026-08-16 14:45 PT / 21:45Z (Claude Code, interactive). **QUEUED — nothing shipped. Trevor's call.**
 
 Origin: a cloud Cowork triage pass proposed "halve the scanned population" as an approved lever.
