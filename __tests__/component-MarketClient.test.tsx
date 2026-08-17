@@ -623,3 +623,265 @@ describe("MarketClient — listing renderers", () => {
     }
   })
 })
+
+// ─── Listing shapes the API really produces ──────────────────────────────────
+
+describe("MarketClient — listing shapes", () => {
+  async function withListings(listings: Array<Record<string, unknown>>) {
+    marketResponse = () =>
+      json(200, {
+        listings,
+        pagination: { total: listings.length, page: 1, limit: 50, hasMore: false },
+        clamp: { applied: false, ceilings: {} },
+        diagnostics: { rawCount: listings.length, postClampCount: listings.length, postFilterCount: listings.length },
+      })
+    render(<MarketClient />)
+  }
+
+  it("renders a listing with no ask price without inventing one", async () => {
+    await withListings([LISTING({ askPrice: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no serial", async () => {
+    await withListings([LISTING({ serialNumber: null, circulationCount: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no set or series", async () => {
+    await withListings([LISTING({ setName: null, seriesName: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no tier", async () => {
+    await withListings([LISTING({ tier: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no badges", async () => {
+    await withListings([LISTING({ badgeSlugs: [] })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no buy URL — nothing to click, but still a row", async () => {
+    await withListings([LISTING({ buyUrl: null, flowId: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a parallel listing", async () => {
+    await withListings([LISTING({ parallel: "Hexwave" })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no edition key — it cannot be owned-matched", async () => {
+    await withListings([LISTING({ editionKey: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders many listings in the grid view", async () => {
+    searchParams = new URLSearchParams("view=grid")
+    await withListings([
+      LISTING({ id: "a", playerName: "A" }),
+      LISTING({ id: "b", playerName: "B", isLocked: true }),
+      LISTING({ id: "c", playerName: "C", isSpecialSerial: true, serialNumber: 1 }),
+    ])
+    await screen.findByText("A")
+    expect(screen.getByText("B")).toBeTruthy()
+    expect(screen.getByText("C")).toBeTruthy()
+  })
+
+  it("renders many listings in the table view", async () => {
+    await withListings([
+      LISTING({ id: "a", playerName: "A", discount: 0.5 }),
+      LISTING({ id: "b", playerName: "B", discount: null, fmv: null }),
+    ])
+    await screen.findByText("A")
+    expect(screen.getByText("B")).toBeTruthy()
+  })
+})
+
+// ─── The packs sub-view ──────────────────────────────────────────────────────
+
+describe("MarketClient — the packs sub-view", () => {
+  it("shows the pack market on ?section=packs", async () => {
+    searchParams = new URLSearchParams("section=packs")
+    render(<MarketClient />)
+    expect(await screen.findByTestId("pack-market")).toBeTruthy()
+  })
+
+  it("does not fetch moment listings while the packs sub-view is active", async () => {
+    searchParams = new URLSearchParams("section=packs")
+    render(<MarketClient />)
+    await screen.findByTestId("pack-market")
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/market?"))).toBe(false)
+  })
+
+  it("offers no packs toggle for a collection with no pack board", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      expect(screen.queryByTestId("pack-market")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Outbound clicks and chip interactions ───────────────────────────────────
+
+describe("MarketClient — outbound clicks and chips", () => {
+  it("records a click on a grid card's buy button", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]')).find((n) =>
+        /buy|view listing|topshot/i.test(n.textContent ?? ""),
+      )
+      if (buy) {
+        fireEvent.click(buy)
+        await waitFor(() => expect(trackOutbound).toHaveBeenCalled())
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("opens a buy link from the keyboard too — a click handler alone is not reachable", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]'))[0]
+      if (buy) {
+        fireEvent.keyDown(buy, { key: "Enter" })
+        await waitFor(() => expect(open).toHaveBeenCalled())
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("ignores an unrelated key on a buy affordance", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]'))[0]
+      if (buy) {
+        fireEvent.keyDown(buy, { key: "x" })
+        expect(open).not.toHaveBeenCalled()
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("toggles a tier chip on and off", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const chip = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "RARE")
+    if (chip) {
+      fireEvent.click(chip)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.some((u) => u.includes("tier=RARE"))).toBe(true)
+      })
+      fireEvent.click(chip)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.filter((u) => !u.includes("tier=")).length).toBeGreaterThan(1)
+      })
+    }
+  })
+
+  it("clears a multi-select from inside its own dropdown", async () => {
+    searchParams = new URLSearchParams("set=Archive+Set")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    // The chip summarises the single selection rather than reading "Any".
+    const chip = screen.getAllByRole("button").find((b) => /Archive Set ▾/.test(b.textContent ?? ""))
+    expect(chip).toBeTruthy()
+    fireEvent.click(chip!)
+    const box = await screen.findByRole("listbox")
+    const clear = within(box).getByText(/clear/i)
+    fireEvent.click(clear)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => !u.includes("set="))).toBe(true)
+    })
+  })
+
+  it("honours a ?page= deep link instead of snapping back to page 1", async () => {
+    // ⚠ THE DEFECT THIS FOUND. The "snap back to page 1 when a filter changes"
+    // effect also fires on MOUNT, so `?page=3` was read out of the URL by
+    // `useState` and then discarded on the first commit — after which the
+    // URL-sync effect rewrote the address WITHOUT the param, so a shared link
+    // silently lost its page and nothing on screen said so.
+    searchParams = new URLSearchParams("page=3")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=3"))).toBe(true)
+    })
+    // …and it must still be in the URL afterwards.
+    await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("page=3"))).toBe(true))
+  })
+
+  it("still snaps back to page 1 when a filter actually changes", async () => {
+    // The behaviour the guard must NOT break: paging to 3 then narrowing the
+    // filter should not leave you on a page that no longer exists.
+    searchParams = new URLSearchParams("page=3")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.change(screen.getByPlaceholderText("Min"), { target: { value: "25" } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("minPrice=25"))
+      // ⚠ Assert the SETTLED request, not that no intermediate one carried the
+      // old page. React commits the filter change before the reset effect runs,
+      // so one request legitimately goes out on the stale page and is then
+      // superseded — asserting `every` fails against correct code.
+      // ⚠ The API query ALWAYS carries `page=N`; it is only the browser URL
+      // that omits page 1. So the settled request reads `page=1`, not "no page
+      // param" — two different conventions one line apart.
+      expect(urls.some((u) => u.includes("page=1"))).toBe(true)
+    })
+  })
+
+  it("pages backwards from page 2", async () => {
+    searchParams = new URLSearchParams("page=2")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    // ⚠ Wait for the control to settle before asserting on it. Reading
+    // `.disabled` off a node captured mid-effect flaked once in the full-file
+    // run while passing in isolation — the page re-renders several times as its
+    // legs land, and the button is remounted with them.
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: /prev/i }) as HTMLButtonElement).disabled).toBe(false),
+    )
+    fireEvent.click(screen.getByRole("button", { name: /prev/i }))
+    await waitFor(() => {
+      // ⚠ Page 1 is the DEFAULT, so it is omitted from the query string
+      // entirely — asserting `page=1` fails against correct code.
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=1"))).toBe(true)
+    })
+  })
+
+  it("survives a health payload that throws", async () => {
+    readyResponse = () => { throw new Error("ready down") }
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+})

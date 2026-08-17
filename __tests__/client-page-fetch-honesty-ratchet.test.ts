@@ -134,7 +134,21 @@ const USE_CLIENT = /^\s*["']use client["']/
  * third time in this workstream — a failed read rendering "No feedback in this view.", a
  * triage console reporting an empty queue out of our own outage. Market was already the
  * shape to copy (a strict `loading : error : empty` ladder) and is pinned as such. */
-const BUDGET = 8
+/* 8 -> 7: `[collection]/collection` moved into `CollectionTabClient.tsx`, covered by
+ * `__tests__/component-CollectionTabClient.test.tsx`. No new defect — the RENDERING of this
+ * page's claims already lives in `CollectionMomentTable` / `PortfolioSummary`, which the
+ * component gate measures. What was unmeasured is the ORCHESTRATION, and that is where the
+ * honesty property lives: a failed read leaves `hasSearched` FALSE, so the table renders its
+ * pre-search state plus an error banner rather than "this wallet holds nothing". */
+/* 7 -> 6: `[collection]/analytics` moved into `CollectionAnalyticsClient.tsx`, covered by
+ * `__tests__/component-CollectionAnalyticsClient.test.tsx`. ⚠ THE CONVERSION FOUND A LIVE
+ * DEFECT ON THE PAGE THIS FILE CALLS THE MOST HARDENED IN THE REPO — and it is deep-audit
+ * D12's own defect, one derivation lower. `thinVolumeEcosystem` reads
+ * `marketData?.totals?.totalSales ?? 0`, so a failed market read rendered "Thin-volume
+ * ecosystem — most metrics are directional only.": a claim about the MARKET manufactured
+ * from OUR outage, and an actionable one. D12 added `marketFailed` for the KPI band directly
+ * above it and this derived notice was never gated on it. */
+const BUDGET = 6
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

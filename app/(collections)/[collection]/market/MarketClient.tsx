@@ -17,7 +17,7 @@
 //   - New filters: Set / Series / Player typeahead / Owned-or-not / Team /
 //     Tier / Specific Badges / Special Serials, all URL-persisted
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
@@ -205,8 +205,21 @@ function MarketInner() {
     return () => clearTimeout(h)
   }, [playerQuery])
 
-  // Any time an active filter changes, snap back to page 1.
-  useEffect(() => { setPage(1) }, [
+  // Any time an active filter CHANGES, snap back to page 1.
+  //
+  // ⚠ Skip the first run. A `useEffect` fires on mount as well as on change, so
+  // without this guard the reset discarded the `?page=` deep link on every
+  // load: `useState` read page 3 out of the URL, the effect immediately set it
+  // back to 1, and the URL-sync effect below then REWROTE the address without
+  // the param — so a shared link silently lost its page and nothing on screen
+  // said so. This page advertises deep-linking as a feature ("Push filter/sort/
+  // page state into the URL so deep-links work"), which is precisely why the
+  // param has to survive the mount.
+  const filtersMountedRef = useRef(false)
+  useEffect(() => {
+    if (!filtersMountedRef.current) { filtersMountedRef.current = true; return }
+    setPage(1)
+  }, [
     tiersSel.join(","), setsSel.join(","), seriesSel.join(","), teamsSel.join(","), badgesSel.join(","),
     minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, sort,
   ])

@@ -1317,7 +1317,7 @@ function CollectionSection() {
   )
 }
 
-export default function CollectionPage() {
+export default function CollectionTabClient() {
   return (
     <Suspense
       fallback={

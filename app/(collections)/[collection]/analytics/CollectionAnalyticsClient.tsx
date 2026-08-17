@@ -1045,9 +1045,18 @@ function AnalyticsInner() {
   const hidePinnacleSeriesAndBadge = isPinnacle && seriesEmpty && badgeEmpty
 
   // Thin-volume mode (ecosystem-wide): both totalSales < 50 and the active period is 30d.
+  //
+  // ⚠ MUST be gated on `!marketFailed`, and this is the SAME defect deep-audit
+  // D12 fixed one derivation higher. `totalSales` falls back to 0 and `period`
+  // to "30d" when the read failed, so without the gate a 503 renders
+  // "Thin-volume ecosystem — most metrics are directional only." — a specific
+  // claim about the MARKET manufactured from OUR outage, and an actionable one
+  // (it tells a collector not to trust figures we simply failed to fetch).
+  // D12 added `marketFailed` for the KPI band and this derived notice was never
+  // gated on it: a page is not made honest by fixing the component that failed.
   const totalSales = marketData?.totals?.totalSales ?? 0
   const period = marketData?.period ?? "30d"
-  const thinVolumeEcosystem = period === "30d" && totalSales < 50
+  const thinVolumeEcosystem = !marketFailed && marketData != null && period === "30d" && totalSales < 50
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -1780,7 +1789,7 @@ function AnalyticsInner() {
   )
 }
 
-export default function AnalyticsPage() {
+export default function CollectionAnalyticsClient() {
   return (
     <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-6 text-[color:var(--rpc-text-muted)]">Loading…</div>}>
       <AnalyticsInner />

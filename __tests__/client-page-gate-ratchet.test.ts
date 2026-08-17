@@ -204,7 +204,9 @@ const APP_DIR = join(process.cwd(), "app")
  * reporting success. */
 /* 8 -> 7: `admin/flowty-analytics` moved into `FlowtyAnalyticsClient.tsx`. */
 /* 7 -> 5: `admin/feedback` and `[collection]/market` moved into `*Client.tsx`. */
-const BUDGET = 5
+/* 5 -> 4: `[collection]/collection` moved into `CollectionTabClient.tsx`. */
+/* 4 -> 3: `[collection]/analytics` moved into `CollectionAnalyticsClient.tsx`. */
+const BUDGET = 3
 
 /** Client pages already named in the component gate's include, by path. */
 const GATED_BY_PATH = new Set([
