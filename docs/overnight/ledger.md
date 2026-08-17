@@ -8,6 +8,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — the AUTH FUNNEL converted for the component gate; found a TAUTOLOGICAL stale-result guard that warned about a wallet we never checked
+
+**What shipped.** `app/login`, `app/early-access` and `app/auth/confirm` moved into
+`LoginClient.tsx` / `EarlyAccessClient.tsx` / `AuthConfirmClient.tsx` behind thin server
+shells, so the component coverage gate (`app/**/*Client.tsx`) now measures all three. 69 new
+tests. Client-page gate ratchet **5 -> 2**, fetch-honesty ratchet **7 -> 5**, both re-derived
+from their own no-slack assertions rather than decremented by hand.
+
+**The live defect.** `EarlyAccessClient`'s on-blur on-chain nudge guarded against a stale
+answer with `wallet.trim() === w` — but `w` is computed FROM `wallet` at the top of the same
+function, and both are the render-scoped const that closure captured, so it is a value
+compared against itself and **can never be false**. A slow `/api/wallet-search` answer about
+the address the user had already corrected therefore rendered as a verdict on the address now
+in the box: *"this wallet shows 0 Top Shot moments on-chain — double-check it"* about a wallet
+we never checked. Actionable in the wrong direction — it tells someone to "fix" a correct
+address. Same shape as the Pinnacle FMV drift guard that compared `pinnacle_catalog` to
+itself: a guard that reads as present while doing nothing. Fixed with a latest-value ref.
+
+**Also repointed, because both would otherwise have failed silently.**
+`scripts/check-brand-tokens.mjs` keeps a CURATED list and all four entries named the old
+`page.tsx` paths; it fails LOUDLY on a missing file (`violations++`), which is what makes a
+rename a forced repoint rather than a silent loss of coverage — worth noting as the design to
+copy. And `__tests__/helpers-client-directive.test.ts` NAMED those same three paths as its
+real-world instances, so the conversion killed it with ENOENT — the canary-dies-on-its-own-
+success mistake the client-page ratchet already made and had corrected. Re-derived by WALKING
+the app tree and cross-checking `isClientSource` against an independent line-scan oracle:
+satisfiable at a population of zero, survives any rename, and covers every file rather than
+three. Mutating the detector back to its old prefix scan reds it.
+
+**`/rewards` is deliberately NOT converted** and stays on the ratchet as honest debt: the
+route is a hard 404 (`app/rewards/layout.tsx` calls `notFound()` unconditionally), so
+converting it would add ~1,244 lines of denominator measuring code no user can run — a
+smaller ratchet number bought by making the gate less meaningful.
+
+**Verified.** `tsc` clean · component gate **90.66 / 81.77 / 89.26 / 93.55** vs thresholds
+90.3 / 81.6 / 89.1 / 93.2 · 2,821 component tests green (was 2,753) · brand-token guard 54 + 69
+clean · all four ratchets green (2 / 5 / 39 / 8) · 23 mutations across the three components,
+all killed. Four of those survived first time and every one was a FIXTURE gap, not a code
+defect — a 503 whose empty body let `typeof tm === "number"` mask the status check; a
+wallet-only payload that could not observe the wallet's own `|| null`; an edit to a malformed
+address that hid the warning via the VALIDITY gate rather than the clear; and a success-path
+assertion for `setError("")` that could not see it because success unmounts the whole form.
+
+⚠ **A note for the next writer, because this bit again while WRITING this entry.** My
+pre-write conflict-marker check was `assert "<<<<<<<" not in out` — UNANCHORED — and it fired
+on a perfectly clean file, because this ledger *quotes* the markers in prose at line ~602
+while describing a previous marker incident. That is the third recorded instance, and the
+recipe already says to anchor it: use `^<<<<<<< ` / `^=======$` / `^>>>>>>> `, exactly as the
+splice itself is anchored to `^### `. Anchoring the splice and leaving the verification
+unanchored is the easy half-fix.
+
+**Revert:** `git revert <code sha>` restores the three `page.tsx` bodies, the four
+brand-token list entries and the previous ratchet budgets. No DB or prod-state change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — `apply-fmv-haircut` had failed EVERY daily run since ≥08-14 at the 120 s wall; split per collection so each leg gets its own budget
 
 **Restores a broken FMV writer.** The thin-sale haircut has not been applied to any collection for at least three days — every run `ok:false`, `rows_written: 0`, dying at **~125.17 s** (08-14 125,164 ms · 08-15 125,188 ms · 08-16 125,169 ms).
