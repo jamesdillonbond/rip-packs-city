@@ -195,6 +195,21 @@ function ProfilePageInner() {
   // 2026-08-05 incident (get_wallet_collection_stats crossed its statement
   // timeout -> 503 -> false $0 on a 19,213-moment wallet).
   const [statsFailed, setStatsFailed] = useState<string[]>([]);
+  // Did the SAVED-WALLETS read itself fail this pass? Distinct from statsFailed,
+  // which covers per-wallet holdings once the list is known — and load-bearing
+  // for the same reason one step earlier.
+  //
+  // ⚠ A failed `/api/profile/saved-wallets` leaves `walletList` at [], and an
+  // empty list is indistinguishable from "this collector has added no wallets".
+  // That drove THREE false claims at once on the primary signed-in surface:
+  // the hero rendered `SignInBanner` — the onboarding "add a wallet" prompt —
+  // to someone who has already added one (a claim about the reader's OWN
+  // account, and ACTIONABLE: it asks them to redo finished work), and because
+  // `refreshStats([])` early-returns and CLEARS `statsFailed`, the tiles fell
+  // through to a confident "0 moments / $0" with no incomplete notice — the
+  // exact false-$0 the statsFailed comment above exists to prevent, reached by
+  // an upstream route it does not cover.
+  const [walletsFailed, setWalletsFailed] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -417,6 +432,7 @@ function ProfilePageInner() {
         setBio(b?.bio ?? null);
       }
       let walletList: SavedWallet[] = [];
+      setWalletsFailed(!walletsRes.ok);
       if (walletsRes.ok) {
         const w = await walletsRes.json();
         walletList = w?.wallets ?? [];
@@ -715,11 +731,24 @@ function ProfilePageInner() {
   // At least one wallet's stats could not be loaded, so every headline figure is
   // a PARTIAL sum. An unavailable answer must render as unavailable — never as a
   // number the collector would read as "you own this much".
-  const statsIncomplete = statsFailed.length > 0;
+  // ⚠ `walletsFailed` counts too. When the saved-wallets read fails the list is
+  // [], so `refreshStats([])` early-returns and CLEARS statsFailed — leaving
+  // every headline figure at a confident 0 with nothing marking it unavailable.
+  // The totals are just as unknowable there as when a per-wallet stats call
+  // fails; the failure simply happened one route earlier.
+  const statsIncomplete = statsFailed.length > 0 || walletsFailed;
   const retryStats = useCallback(() => {
+    // ⚠ When the WALLETS read is what failed, `wallets` is empty, so retrying
+    // stats alone would call refreshStats([]) — which early-returns and changes
+    // nothing. A Retry button that cannot fix the state it is offered for is its
+    // own dishonesty, so re-run the whole refresh to re-fetch the list first.
+    if (walletsFailed) {
+      refresh().catch(() => {});
+      return;
+    }
     const uniqueAddrs = Array.from(new Set(wallets.map((w) => w.wallet_addr.toLowerCase())));
     refreshStats(uniqueAddrs);
-  }, [wallets, refreshStats]);
+  }, [wallets, refreshStats, walletsFailed, refresh]);
 
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.
@@ -858,7 +887,29 @@ function ProfilePageInner() {
         )}
 
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
-        {wallets.length === 0 ? (
+        {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means
+            either "has added none" or "we could not read the list" — and only
+            the first of those justifies an onboarding prompt. Asking a collector
+            who already added a wallet to add one is a false claim about their
+            own account that also tells them to redo finished work. */}
+        {walletsFailed ? (
+          <div
+            role="status"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
+              borderRadius: 10, padding: "14px 16px",
+            }}
+          >
+            <span style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
+              Couldn&apos;t load your saved wallets. This is a loading problem, not an
+              empty account — nothing has been removed.
+            </span>
+            <button type="button" onClick={() => { refresh().catch(() => {}); }} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
+              Retry
+            </button>
+          </div>
+        ) : wallets.length === 0 ? (
           <SignInBanner
             usernameInput={usernameInput}
             setUsernameInput={setUsernameInput}
@@ -910,9 +961,27 @@ function ProfilePageInner() {
             }}
           >
             <span style={{ fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.4 }}>
-              Couldn&apos;t load holdings for {statsFailed.length}{" "}
-              {statsFailed.length === 1 ? "wallet" : "wallets"}. These totals are incomplete —
-              this is a loading problem, not an empty collection.
+              {/* ⚠ Two different failures land here and they are not the same
+                  sentence. statsFailed = "we know your wallets, N of them
+                  wouldn't load" (a PARTIAL sum). walletsFailed = "we couldn't
+                  read the wallet list at all", where statsFailed is 0 and the
+                  older copy would have said "holdings for 0 wallets". */}
+              {statsFailed.length > 0 ? (
+                <>
+                  Couldn&apos;t load holdings for {statsFailed.length}{" "}
+                  {statsFailed.length === 1 ? "wallet" : "wallets"}. These totals are incomplete —
+                  this is a loading problem, not an empty collection.
+                </>
+              ) : (
+                <>
+                  {/* ⚠ Deliberately does NOT repeat the hero notice's opening
+                      sentence. Both regions fail together on this path, and two
+                      panels leading with the same words reads as a broken page
+                      rather than one explained state. */}
+                  Totals are unavailable until your saved wallets load — this is a
+                  loading problem, not an empty collection.
+                </>
+              )}
             </span>
             <button type="button" onClick={retryStats} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
               Retry

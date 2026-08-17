@@ -313,10 +313,87 @@ describe("DashboardClient — per-wallet collection stats", () => {
 // ─── Wallets ─────────────────────────────────────────────────────────────────
 
 describe("DashboardClient — wallets", () => {
-  it("survives a failed saved-wallets read without claiming none are saved", async () => {
+  // ⚠ THIS CASE EXISTED AND WAS VACUOUS, AND THAT IS WHY THE DEFECT SHIPPED.
+  // It was named exactly right — "without claiming none are saved" — and its
+  // entire body was `await waitFor(() => expect(fetchMock).toHaveBeenCalled())`,
+  // which passes whatever the page renders. Same family as the /insights/
+  // pack-reality case: a test that STATES the contract and enforces something
+  // weaker. Assert the ABSENCE of the false claim, not that a fetch happened.
+  it("does not show the onboarding banner when the saved-wallets read FAILED", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(503, {})
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    // The honest notice appears...
+    expect(await screen.findByText(/Couldn't load your saved wallets/i)).toBeTruthy()
+    // ...and the onboarding prompt — a claim about the reader's OWN account,
+    // actionable in the worst way (it asks them to re-add a wallet they have) —
+    // must NOT.
+    expect(screen.queryByText(/Welcome to Rip Packs City/i)).toBeNull()
+  })
+
+  it("still shows the onboarding banner when the read SUCCEEDS and there genuinely are none", async () => {
+    // Both directions. A fix that blanks the banner on every empty list would
+    // break real onboarding, which is the mirror-image defect.
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    expect(await screen.findByText(/Welcome to Rip Packs City/i)).toBeTruthy()
+    expect(screen.queryByText(/Couldn't load your saved wallets/i)).toBeNull()
+  })
+
+  it("marks the headline totals unavailable when the saved-wallets read failed", async () => {
+    // refreshStats([]) early-returns and CLEARS statsFailed, so before the fix
+    // the tiles fell through to a confident "0 moments / $0" with no notice --
+    // the same false-$0 the 2026-08-05 incident produced, reached one route
+    // earlier. The copy must not say "holdings for 0 wallets".
     routes["/api/profile/saved-wallets"] = () => json(503, {})
     render(<DashboardClient />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(await screen.findByText(/totals are unavailable/i)).toBeTruthy()
+    expect(screen.queryByText(/holdings for 0/i)).toBeNull()
+  })
+
+  it("re-reads the wallet list on Retry and RECOVERS, not just re-fetching stats", async () => {
+    // A Retry that calls refreshStats([]) changes nothing, because the empty
+    // list IS the failure. An action offered for a state it cannot fix is its
+    // own dishonesty.
+    //
+    // ⚠ Asserted by RECOVERY rather than by a call count, for two reasons: it
+    // proves the retry reaches the failing route (a count only proves something
+    // was requested), and it lets the whole refresh chain settle INSIDE this
+    // test. `cleanup()` unmounts but does not cancel in-flight promises, and
+    // `beforeEach` installs a fresh fetchMock — so a still-pending refresh
+    // resolves into the NEXT test's mock and inflates its call counts. That is
+    // exactly what broke the sibling "groups the same address" case, which
+    // asserts an upper bound on collection-stats calls.
+    routes["/api/profile/saved-wallets"] = () => json(503, {})
+    render(<DashboardClient />)
+    await screen.findByText(/Couldn't load your saved wallets/i)
+
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET()] })
+    fireEvent.click(screen.getAllByText(/Retry/i)[0])
+
+    await waitFor(() => expect(screen.queryByText(/Couldn't load your saved wallets/i)).toBeNull())
+  })
+
+  it("the TOTALS panel's Retry also re-reads the list, not just the stats", async () => {
+    // ⚠ Two Retry buttons render on this path and they call DIFFERENT things:
+    // the hero notice calls refresh() directly, the totals notice calls
+    // retryStats(). The first version of the test above clicked
+    // getAllByText(/Retry/i)[0] — the hero one — so the retryStats branch was
+    // MASKED: deleting it left every test green. Caught by mutation, not review.
+    // This clicks the totals button specifically.
+    routes["/api/profile/saved-wallets"] = () => json(503, {})
+    render(<DashboardClient />)
+    await screen.findByText(/Totals are unavailable until your saved wallets load/i)
+
+    const retries = screen.getAllByText(/Retry/i)
+    expect(retries.length).toBeGreaterThan(1) // not vacuous: both notices are up
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET()] })
+    fireEvent.click(retries[retries.length - 1])
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Totals are unavailable until your saved wallets load/i)).toBeNull()
+    )
   })
 
   it("groups the same address across collections into one card", async () => {
