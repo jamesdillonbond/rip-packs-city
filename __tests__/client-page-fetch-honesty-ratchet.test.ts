@@ -117,7 +117,13 @@ const USE_CLIENT = /^\s*["']use client["']/
  * state on that page is a claim about the READER'S OWN account and one shared flag would
  * blank all three whenever any one hiccuped. The three legs are now driven independently,
  * which is the only way to prove they really are independent. */
-const BUDGET = 12
+/* 12 -> 11: `admin/allow-list` moved into `AdminAllowListClient.tsx`, covered by
+ * `__tests__/component-AdminAllowListClient.test.tsx`. The conversion found TWO live
+ * defects on the screen that gates who gets into the product: a failed read rendered
+ * "Nothing in this view." (no signups waiting, from our own outage), and an action response
+ * carrying no `row` wrote `undefined` into state and WHITE-SCREENED the console right after
+ * reporting success. */
+const BUDGET = 11
 
 function pageFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
