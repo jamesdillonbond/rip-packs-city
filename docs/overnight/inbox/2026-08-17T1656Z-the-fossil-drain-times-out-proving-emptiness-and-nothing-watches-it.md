@@ -80,12 +80,30 @@ one guaranteed no-op** — do not reach for it.
 
 ## What I could NOT establish, stated rather than guessed
 
-**The actual fossil count.** Three bounded probes all timed out under the live saturation spell:
-`limit 5000` on the matching set at 25 s; a scan bounded to 150,000 rows at 40 s; and the plain count.
-The same sentinel run that verified the new arm showed `Sales Ingest`, `FMV Confidence` and `Sniper Feed`
-all going `INCONCLUSIVE (db saturated)` in that window, so **these timings are confounded and must not be
-quoted as the query's cost** — CLAUDE.md's own warning that your profiling is itself saturation. Re-measure
-in a quiet window before sizing any fix.
+**The actual fossil count.** Five probes; the two cheap ones answered, the three scans did not.
+
+**Answered, and they narrow the question usefully:**
+
+- ✅ **There are ZERO letter-leading fossils.** An index *seek* — `edition_key >= 'a'` ordered by
+  `(collection_id, edition_key)` — returned **empty, instantly**. Every canonical Top Shot key is
+  digit-leading, so any key sorting at or after `'a'` would be a fossil. This rules out roughly 10 of the
+  16 possible leading hex characters of a UUID.
+- ✅ **That same seek proves option 3 below is cheap.** It used `idx_wmc_coll_ek_serial_cover`
+  (leading `collection_id`) and returned in well under a second on the *same saturated instance* where the
+  production query times out. The index the function needs already exists; it simply is not being chosen.
+
+**Not answered — the residual is digit-leading UUIDs** (e.g. `0f3a1b2c-…`), which interleave with canonical
+keys and cannot be isolated by a range seek. Three attempts timed out: `limit 5000` on the matching set at
+25 s; a scan bounded to 150,000 rows at 40 s; and a **recursive-CTE loose index scan over DISTINCT keys** at
+45 s (the cheapest correct shape, ~1 seek per distinct key — that it still timed out means either the
+distinct-key count is far above the ~20k assumed, or the correlated subquery is not being planned as a seek;
+worth re-checking, since if the loose scan CAN be made to work it answers this in about a second).
+
+⚠ **These timings are confounded and must not be quoted as the query's cost.** Measured in the same window:
+25 active connections with **15 in IO wait**, and the sentinel run that verified the new arm showed
+`Sales Ingest`, `FMV Confidence` and `Sniper Feed` all going `INCONCLUSIVE (db saturated)`. That is
+CLAUDE.md's own warning that your profiling is itself saturation. Re-measure in a quiet window before
+sizing any fix.
 
 ## Options, with the trade-off each carries
 
