@@ -110,16 +110,31 @@ async function handleIngest(req: NextRequest) {
   // of this file describes, and the reason the sentinel reported this route as
   // "silent" when it was in fact being killed at the wall.
   //
-  // That was not a one-off. It recurred on 2026-08-16 at the RAISED 800 s
-  // ceiling: `pipeline_runs` held nothing newer than 08-15 08:40Z (39.5 h,
-  // against an 1800 min cadence arm) while `editions.updated_at` for candy_mlb
-  // read 08-16 08:54Z — i.e. the 08-16 tick ran, did its work, and died before
-  // logging. Reconciling those two facts needed a hand query against a table
-  // nobody watches; this marker makes it a lookup.
+  // That was not a one-off. It recurred on 2026-08-16: `pipeline_runs` held
+  // nothing newer than 08-15 08:40Z (39.5 h, against an 1800 min cadence arm)
+  // while the candy_mlb data was plainly fresh. Reconciling those two facts
+  // needed a hand query against tables nobody watches; this marker makes it a
+  // lookup.
   //
   //   heartbeat + candy-editions-ingest row -> ran to completion
-  //   heartbeat only                        -> after() dropped / killed at the wall
+  //   heartbeat only                        -> after() died, or logRun failed
   //   neither                               -> route never reached (cron / auth)
+  //
+  // ⚠ WHAT THE 08-16 TICK ACTUALLY SHOWS — and it REFUTES the obvious reading.
+  // The first version of this comment said the tick "died before logging",
+  // i.e. was killed at the wall. Measured, that is not established: the LAST
+  // write of the walk (the wmc upsert below) landed at 08:54:06.286, just
+  // 130 ms after the editions write at 08:54:06.156. **The walk ran to
+  // completion.** So the failure is at or AFTER the walk, and three mechanisms
+  // are consistent with the evidence and indistinguishable from it:
+  //   (a) killed during the wmc metadata denorm that follows the walk,
+  //   (b) killed during logRun itself,
+  //   (c) logRun's RPC failed and was swallowed by its deliberately non-fatal
+  //       catch — a plausible casualty of the same DB saturation.
+  // ⚠ This heartbeat does NOT separate those three; it separates "reached"
+  // from "never reached", which was the state genuinely unavailable before.
+  // Do not cite it as evidence of a maxDuration kill. Narrowing (a)/(b)/(c)
+  // needs a post-walk phase marker or a retry on logRun, neither taken here.
   //
   // ⚠ SEPARATE pipeline name, never an extra `candy-editions-ingest` row — this
   // pipeline is on pipeline_cadence_watchlist (1800 min), so a marker under its

@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · CORRECTION (Claude Code, interactive) — my own "killed at the wall" claim on `candy-editions-ingest` is REFUTED; the walk completed and the failure is at or after `logRun`
+
+**Corrects the `candy-editions-ingest` heartbeat entry pushed minutes earlier.** No behaviour change; the heartbeat ships as-is and is still right. What changes is the diagnosis attached to it, in the route comment and here.
+
+**The claim.** I wrote that the 08-16 tick "ran, did its work, and died before logging", i.e. was killed at the raised 800 s wall — and put it in the commit message, the route header and the ledger.
+
+**The measurement that kills it.** The LAST write of the walk is the `wallet_moments_cache` upsert, and it landed at **08:54:06.286** — **130 ms after** the `editions` write at 08:54:06.156 that I had used as my evidence. **The walk ran to completion.** I had read the first of two adjacent writes and inferred a mid-walk death from it.
+
+**What is actually established, and what is not.** Established: the tick ran, completed its data work, and wrote no terminal `pipeline_runs` row. NOT established: why. Three mechanisms are consistent with the evidence and indistinguishable from it — (a) killed during the wmc metadata denorm that runs after the walk, (b) killed during `logRun`, (c) **`logRun`'s RPC failed and was swallowed by its deliberately non-fatal catch**, a plausible casualty of the same DB saturation. ⚠ (c) is the one I never considered, and it is the one where the pipeline is entirely healthy and only the telemetry is lost — the opposite operational conclusion to the one I published.
+
+⚠ **The heartbeat separates "reached" from "never reached", which is the state that was genuinely unavailable. It does NOT separate (a)/(b)/(c), and my entry implied it did.** Narrowing them needs a post-walk phase marker or a retry on `logRun`; neither is taken here.
+
+⚠ **The transferable part: I asserted a mechanism from ONE timestamp when a second, 130 ms away, was one query further.** The duration table I quoted (61 s … 507.6 s, two kills) is real and the trend is real, and it made the kill story fit so well that I stopped measuring. **A mechanism that explains the evidence is not the same as a mechanism the evidence selects.**
+
+**Revert:** `git revert <sha>` — comment and ledger text only.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — `candy-editions-ingest` was killed at the raised 800 s wall and it presented as an absence again; it was the one Candy route with no invocation heartbeat
 
 **What shipped.** `app/api/ingest/candy-editions/route.ts` now writes an invocation heartbeat under the separate pipeline name `candy-editions-ingest-heartbeat` before entering `after()`, matching `candy-offers-indexer`, `candy-listings-indexer` and `fmv-recalc`. It was the only one of the four missing it.
