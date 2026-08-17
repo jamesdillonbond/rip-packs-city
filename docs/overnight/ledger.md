@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `admin/allow-list` carried TWO live defects, and one of them WHITE-SCREENED the console right after reporting success
+
+`admin/allow-list` moved into `AdminAllowListClient.tsx` so the component gate measures it,
+covered by `__tests__/component-AdminAllowListClient.test.tsx` (41 tests). Both defects are
+on the screen that gates **who gets into the product at all**.
+
+⚠ **DEFECT 1 — the familiar one.** The loader returns early on a failure, so `rows` stayed at
+`[]` and the list rendered **"Nothing in this view."**: an operator is told there are no
+signups waiting to be approved, produced entirely by our own outage, with the error banner
+rendering above it so the page contradicted itself. Gated on `error && rows.length === 0`,
+**not on `error` alone** — a failed REFRESH keeps the previous rows and last-good beats a
+blank queue; it is only the EMPTY case that must stop claiming the queue is clear.
+
+⚠ **DEFECT 2 — a WHITE SCREEN, and the way it surfaced is the transferable part.** The action
+handler did `setRows(prev => prev.map(r => r.id === id ? data.row : r))`, so a **200 that
+carries no `row`** wrote `undefined` into state and the next render crashed on `r.id`,
+taking the whole console down immediately after an action that had just reported success —
+leaving the operator no way to tell whether the approval landed. It now falls back to a full
+refetch, which shows the row's REAL state rather than an optimistic guess about a response
+we did not understand.
+  ⚠ **It appeared as a vitest "Unhandled Error" while every test PASSED.** A crash outside an
+assertion does not redden a test, it reddens the RUN — so the suite read green while the
+component was throwing. **Check the run's error count, not just the test count.**
+
+⚠ **A DOM-ordering trap cost two rounds and generalizes: the STATUS FILTER buttons are
+labelled "Hold ()" / "Rejected ()" and precede the row actions**, so `find(/^hold/i)` picks
+the filter, the click merely changes the view, and no request goes out — which reads as the
+action being broken. Match the label EXACTLY. Same family: Deny confirms separately from its
+reason prompt, so a test stubbing only `prompt` silently exercises the decline path.
+
+⚠ **Also recorded rather than converted: `/rewards` is a hard 404** (`app/rewards/layout.tsx`
+calls `notFound()` unconditionally). Converting it would add ~1,244 lines of denominator to
+measure code no one can reach, so it stays on the ratchet deliberately.
+
+Ratchets: client-page-gate 9 → 8, fetch-honesty 12 → 11. Gates: component
+90.37/81.76/89.18/93.25 vs 90.3/81.6/89.1/93.2, `tsc` clean.
+
+Revert: `git revert <sha>` — restores the monolithic `page.tsx`, the un-gated empty state,
+the un-guarded row replacement, and both budgets. No DB, migration, cron, auth, or
+prod-state change.
+
 ### 2026-08-16 · DOCS (Claude Code, docs pass #2 of the day) — two canonical "committed UNAPPLIED" claims were both false; one had been promoted into evidence
 
 **Docs-only. No code, DB, cron, auth or prod change.** Tip `2be47780`; CLAUDE.md had been refreshed 12 minutes earlier by a concurrent session and only 5 commits had landed since (4 docs).
