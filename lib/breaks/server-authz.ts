@@ -22,7 +22,8 @@
 //
 // configureFcl() is idempotent — call at the top of any route that uses
 // fcl.mutate / fcl.query so the access node is set even on cold serverless
-// invocations where lib/flow.ts hasn't been imported.
+// invocations where lib/chains/flow/flow.ts hasn't been imported. (Named
+// lib/flow.ts here until 2026-08-16; that shim was deleted 2026-07-25.)
 
 import * as fcl from "@onflow/fcl"
 import { ec as EC } from "elliptic"

@@ -4,7 +4,7 @@
 // components/**. No React/JSX, no browser globals — behavior is identical to
 // the inline code it replaced.
 
-// LoanWindow mirrors the union exported by components/analytics/FilterbBar.tsx.
+// LoanWindow mirrors the union exported by components/analytics/FilterBar.tsx.
 // Redeclared here (structurally identical string-literal union) so this pure
 // module doesn't import a "use client" component. Values assign both ways.
 export type LoanWindow = "l7" | "l30" | "l90" | "ytd" | "y2026" | "y2025" | "all"

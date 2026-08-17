@@ -72,7 +72,7 @@ const EXPECTED_FAILURE_REASONS = new Set([
 // Single-NFT borrow on the Pinnacle public collection. Builds the
 // composite edition_key (royaltyCode:variant:printing) from on-chain
 // MetadataViews traits exactly the way GET_PINNACLE_UNLOCKED_DETAILS in
-// lib/cadence/pinnacle-wallet.ts does — that's the format every
+// lib/chains/flow/cadence/pinnacle-wallet.ts does — that's the format every
 // downstream join (pinnacle_nft_map, wmc, editions.external_id) expects.
 //
 // Pinnacle does NOT expose MetadataViews.ResolverCollection at
