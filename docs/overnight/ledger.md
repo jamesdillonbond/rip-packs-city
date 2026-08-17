@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — re-derived the fmv-recalc kill rate: it is WASTEFUL, not BROKEN, and the "treadmill" reading it invites is wrong
+
+⚠ **The standing characterization is "~66% background kill rate, un-diagnosed by deliberate decision after two failed diagnoses." Re-measured 2026-08-17 it is slightly WORSE on the rate and much BETTER on the outcome — and the two are not in tension.**
+
+**Measured over 24 h, using `fmv-recalc-heartbeat` as the denominator** (the true invocation counter; `fmv-recalc` itself only logs on terminal completion, so filtering to that name is a SAMPLE, not a census):
+
+| quantity | value |
+|---|---|
+| heartbeats (true invocations) | **172** |
+| runs that wrote a terminal row | **47** (27.3%) |
+| of those, `ok` | **34** |
+| **killed at the 300 s `maxDuration` wall** | **125 / 172 = 72.7%** |
+| rows written | **17,535** |
+| **distinct editions repriced** | **13,835** |
+
+⚠ **I formed the treadmill hypothesis — "no `cursor_after` is ever persisted, so every run restarts at offset 0 and reprocesses the same 500 editions" — and it is REFUTED.** The route's own header warns about exactly that failure, every run's `extra` carries `has_more: true` with NO cursor keys at all, and every success writes a suspiciously uniform 496–499 rows. It looked conclusive. **The outcome measure killed it: 13,835 DISTINCT editions in 24 h, not ~500.** The selection is staleness-ordered, which self-advances without needing a cursor. **A convincing mechanism plus a matching-looking symptom is still not a measurement.**
+
+**So the honest characterization is a COST problem, not a correctness one:** ~125 invocations/day × 300 s ≈ **10.4 hours/day of Lambda compute that writes nothing**, plus its DB load on the instance whose IO saturation is the documented common cause behind several other failures. The surviving ~27% is sufficient to cover the catalogue. ⚠ **Do not "fix" this by chasing the cursor** — it is not the defect.
+
+⚠ **Catalogue-wide FMV freshness, which nobody had stated as a distribution:** `≤2 days` **14,659** · `2–30 d` 5,641 · `30–90 d` **6,711** · `>90 d` **0** · never priced 188, of 27,199 editions. ⚠ **The 25%-stale figure that reads as an accuracy problem is mostly NOT one:** of the 6,899 in the 30-day-plus tail, **6,398 are Top Shot editions of which only THREE have any sale at all** — structurally unpriceable by any algorithm, correctly excluded rather than missed. **The genuinely actionable remainder was 501 UFC editions**, and that turned out to be the collection-blind phantom-guard bug fixed in the entry above. ⚠ **`>90 d = 0` is the tripwire worth keeping:** if the tail is ever not being drained, that bucket becomes non-zero. It is currently a real zero, not an empty instrument.
+
+- **No change shipped from this entry** — it is a re-characterization. Nothing to revert; every probe was read-only.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — a Top-Shot-specific guard applied collection-blind excluded 100% of UFC Strike from the FMV cold-tail drain, and had been reporting `processed: 0` in its own output for months
 
 ⚠ **THE BUG, and it is the "blanket rule corrupts another collection" shape this file already warns about for the series 0/1 remap.** `drain_fmv_cold_tail`'s candidate filter carried a Top-Shot phantom guard with no collection scope:
@@ -32,7 +55,7 @@ It exists to skip Top Shot's UUID-keyed phantoms (a UUID has hyphens; those rows
 
 **Verified post-apply:** the Top Shot UUID is present in the new `prosrc` (guard scoped) · `has_function_privilege` **false** for both `anon` and `authenticated` · `check_secdef_anon_exec_drift()` **array length 0** (⚠ read as LENGTH, not `count(*)` — this is one of the jsonb-array-returning checks) · migration **registered** in `schema_migrations` · function is **not DB-pinned**, so no `supabase/tests` copy needed updating.
 
-✅ **CONFIRMED IN PRODUCTION at the 22:17Z tick, and the effect matches the dry-run prediction exactly.** `ufc_strike` went from `processed: 0` on every prior run to **`processed: 200`** (saturating the `limit=200` cap), with **`stale: 118`, `no_data: 82`, `with_sales: 0`** — the zero `with_sales` is the predicted consequence of UFC having no 30-day sales, not a failure. **Measured outcome after ONE tick:** UFC editions carrying a real price went **149 → 267 (28.8% → 51.5% of 518)**, average age **51.2 → 28.6 days**, and `NO_DATA`-with-NULL fell **316 → 251**. The +118 reconciles exactly with the run's own `stale: 118`. ⚠ **Two more ticks cover the remaining 318; re-derive the split then rather than quoting these numbers**, which are a one-tick sample mid-drain.
+✅ **CONFIRMED IN PRODUCTION at the 22:17Z tick, and the effect matches the dry-run prediction exactly.** `ufc_strike` went from `processed: 0` on every prior run to **`processed: 200`** (saturating the `limit=200` cap), with **`stale: 118`, `no_data: 82`, `with_sales: 0`** — the zero `with_sales` is the predicted consequence of UFC having no 30-day sales, not a failure. **Measured outcome after ONE tick:** UFC editions carrying a real price went **149 → 267 (28.8% → 51.5% of 518)**, average age **51.2 → 28.6 days**, and `NO_DATA`-with-NULL fell **316 → 251**. The +118 reconciles exactly with the run's own `stale: 118`. ✅ **DRAIN NOW COMPLETE — final measured state:** **518 / 518 UFC editions carry a snapshot (100%, was 465)**, **381 carry a real non-NULL price (73.6%, was 149 / 28.8%)**, **400 are fresh inside 7 days**, and average FMV age fell **68.7 → 10.8 days**. The residual **137 with no price are genuinely `NO_DATA`** — no sales history at all — which is the honest floor, not a remaining defect. ⚠ These are still a DATED SAMPLE: UFC has no incoming sales, so this coverage will age from here rather than stay put. **Re-derive before quoting.**
 
 - **Revert:** re-apply the previous definition, replacing the scoped block with `AND NOT (e.external_id LIKE '%-%' AND e.set_id_onchain IS NULL)`. Prior definition also recoverable from `supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql:581`. Record: `supabase/migrations/20260817221500_audit_20260817_cold_tail_drain_scope_phantom_guard_to_topshot.sql`.
 

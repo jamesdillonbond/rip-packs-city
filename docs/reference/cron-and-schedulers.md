@@ -46,3 +46,30 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 
 ---
 
+
+---
+
+## `fmv-recalc` — RE-CHARACTERIZED 2026-08-17: wasteful, not broken
+
+⚠ **The long-standing "~66% background kill rate, un-diagnosed" line understated the rate and badly overstated the harm.** Re-measured 2026-08-17 over 24 h, using **`fmv-recalc-heartbeat` as the denominator** (the true invocation counter — `fmv-recalc` only logs on terminal completion, so filtering to that name is a SAMPLE, not a census):
+
+| quantity | value |
+|---|---|
+| heartbeats (true invocations) | **172** |
+| runs that wrote a terminal row | **47** (27.3%) |
+| of those, `ok` | **34** |
+| **killed at the 300 s `maxDuration` wall** | **125 / 172 = 72.7%** |
+| rows written | **17,535** |
+| **distinct editions repriced** | **13,835** |
+
+⚠ **The "treadmill" reading is REFUTED, and it is a trap worth naming because the evidence for it looks conclusive.** The hypothesis — *no `cursor_after` is ever persisted, so every run restarts at offset 0 and reprocesses the same 500 editions* — is supported by the route's own header warning about exactly that, by every run's `extra` carrying `has_more: true` with **no cursor keys at all**, and by every success writing a uniform 496–499 rows. **The outcome measure kills it: 13,835 DISTINCT editions in 24 h, not ~500.** The selection is staleness-ordered and therefore self-advancing; it does not need a cursor. ⛔ **Do not "fix" the cursor — it is not the defect.**
+
+**The real shape is a COST problem:** ~125 invocations/day × 300 s ≈ **10.4 h/day of Lambda compute that writes nothing**, plus its DB load on the instance whose IO saturation is the documented common cause behind the insights board-warm failures, the entity-page pool timeouts and the pgcron startup timeouts. The surviving ~27% is sufficient to cover the catalogue.
+
+### Catalogue-wide FMV freshness (2026-08-17) — and why the stale share is mostly not an accuracy problem
+
+`≤2 days` **14,659** · `2–30 d` 5,641 · `30–90 d` **6,711** · `>90 d` **0** · never priced 188, of **27,199** editions.
+
+⚠ **Of the 6,899 in the 30-day-plus tail, 6,398 are Top Shot editions of which only THREE have any sale at all** — structurally unpriceable by any algorithm, correctly excluded rather than missed. **Do not report the ~25% stale share as a pricing defect.** The genuinely actionable remainder was 501 UFC Strike editions, which turned out to be the collection-blind phantom-guard bug in `drain_fmv_cold_tail` (fixed 2026-08-17).
+
+⚠ **`>90 d = 0` is a live tripwire, not an empty instrument** — it is currently a true zero. If the cold tail ever stops being drained, that bucket becomes non-zero. Re-derive it rather than quoting these counts.
