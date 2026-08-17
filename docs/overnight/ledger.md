@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — a failed saved-wallets read told a collector to add the wallet they already added, and zeroed their portfolio while doing it
+
+**`/dashboard`, the primary signed-in surface.** A failed `/api/profile/saved-wallets` left `walletList` at `[]`, and an empty list is indistinguishable from *"this collector has added no wallets"*. One failed read produced **three false claims at once**:
+
+1. the hero rendered **`SignInBanner`** — the onboarding "Welcome to Rip Packs City / paste your Dapper address" prompt — to someone who has already added one;
+2. **Total Moments `0`**;
+3. **Portfolio FMV `$0`**.
+
+⚠ **Worst-version shape, and it is ACTIONABLE**: it asks a collector to redo work they have already done, on the one page that disproves the claim. Same family as the `/dashboard/history` + `/dashboard/packs` fix and the `/my-teams` case.
+
+⚠ **THE CASCADE IS THE PART WORTH REMEMBERING — the page's existing honesty machinery could not see this, and its own comment says why it should have.** `DashboardClient` already carries `meFailed` (consulted correctly at the email line: *"Account details unavailable"* vs *"Not signed in"*) and `statsFailed`, whose comment cites the 2026-08-05 incident where a statement timeout produced a **false $0 on a 19,213-moment wallet**. Neither covers this, because **`refreshStats([])` early-returns and CLEARS `statsFailed`** — so when the failure happens one route EARLIER, the very flag built to prevent a false $0 is reset to empty and the tiles fall through to a confident zero with no notice. **A guard that keys on the inner read is blind to the outer one failing.**
+
+**Fix mirrors the two patterns already in the file:** new `walletsFailed`, set from `!walletsRes.ok`; the hero branches on it **before** `wallets.length === 0`; `statsIncomplete` becomes `statsFailed.length > 0 || walletsFailed`.
+
+⚠ **The Retry button had to change too, or it would have been inert in exactly the new case.** The totals notice's Retry calls `retryStats()`, which rebuilds addresses from `wallets` — empty precisely when the wallets read failed — so it would have called `refreshStats([])` and changed nothing. **An action offered for a state it cannot fix is its own dishonesty.** It now re-runs the full `refresh()`.
+
+⚠ **Copy deliberately differentiated.** Both notices fire together on this path; leading both with the same sentence reads as a broken page rather than one explained state. Hero: *"Couldn't load your saved wallets. This is a loading problem, not an empty account."* Totals: *"Totals are unavailable until your saved wallets load."* The old totals string would also have rendered **"holdings for 0 wallets"** here.
+
+⚠ **A TEST FOR THIS ALREADY EXISTED AND WAS VACUOUS — that is why it shipped.** `component-DashboardClient.test.tsx` carried `it("survives a failed saved-wallets read without claiming none are saved")`, named exactly right, whose entire body was `await waitFor(() => expect(fetchMock).toHaveBeenCalled())` — satisfied by whatever the page renders. Same family as the `/insights/pack-reality` case: **a test that STATES the contract and enforces something weaker.** Replaced with assertions on the ABSENCE of the false claim.
+
+**Six cases, all three guards mutation-proven** (`component-DashboardClient.test.tsx`, 130 → 136):
+- reverting the hero gate → kills the banner case;
+- dropping `walletsFailed` from `statsIncomplete` → kills the totals case;
+- removing `retryStats`'s re-read → kills the totals-Retry case.
+⚠ **BOTH DIRECTIONS PINNED**: a genuinely-empty list must STILL show the onboarding banner, or the fix breaks real first-run onboarding — the mirror-image defect.
+
+⚠ **MY FIRST RETRY TEST WAS MASKED AND MUTATION CAUGHT IT.** Two Retry buttons render on this path and they call **different** things — the hero's calls `refresh()` directly, the totals' calls `retryStats()`. Clicking `getAllByText(/Retry/i)[0]` exercised only the hero, so deleting the `retryStats` branch left every test green. Fixed by targeting the totals button specifically.
+
+⚠ **AND MY FIRST VERSION BROKE A SIBLING TEST IN THE FULL SUITE ONLY — a real cross-test leak, not flake.** "groups the same address across collections into one card" asserts an upper bound on `collection-stats` calls and started failing at 2. Isolated against a clean tree (235/235 green) rather than assumed: `cleanup()` unmounts but **does not cancel in-flight promises**, and `beforeEach` installs a FRESH `fetchMock`, so my Retry test's still-pending `refresh()` resolved into the NEXT test's mock. Fixed by asserting **recovery** instead of a call count, which settles the chain inside the test — a better assertion anyway.
+
+**Verified:** component gate **235 files / 2,917 tests green**, coverage 90.68/81.83/89.28/93.60 against 90.3/81.6/89.1/93.2; `tsc --noEmit` clean.
+
+**Revert:** `git revert <sha>` — restores the un-gated `wallets.length === 0` hero branch and the false-zero totals. No DB change.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the `|| 1` divide-guard fix had a copy-pasted sibling nobody fixed; found by sweeping the CLASS, and the class is now BANNED at zero
 
 - **Method: with the copy sweep exhausted, I swept the SIBLING class this file documents separately and which had NO detector — "a number the data cannot support" (`|| 1` divide guards, `?? 0` on counts).** That is what turned it up; no amount of re-reading the fixed file would have.
