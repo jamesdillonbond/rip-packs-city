@@ -191,3 +191,44 @@ describe("check-brand-tokens: the PROTECTED lists are not stale", () => {
     expect(missing, "Stale NEUTRAL_PROTECTED entries in scripts/check-brand-tokens.mjs.").toEqual([])
   })
 })
+
+describe("check-brand-tokens: the EMAIL-ACCENT-in-web-UI detector", () => {
+  const EMAIL_ACCENT = regexFromScript("EMAIL_ACCENT")
+  const WEB_SURFACE = regexFromScript("WEB_SURFACE")
+
+  // #E55A4C is the RPC *email* accent, hardcoded on purpose in email HTML
+  // because email clients do not support CSS custom properties at all. On a
+  // rendered web surface it is simply the wrong red — the web brand red is
+  // #E03A2F — and it shipped on /auth/confirm, the magic-link landing page.
+  it("catches both spellings of the email accent", () => {
+    expect(EMAIL_ACCENT.test('color: "#e55a4c"')).toBe(true)
+    expect(EMAIL_ACCENT.test('color: "#E55A4C"')).toBe(true) // case-insensitive
+    expect(EMAIL_ACCENT.test("border: 3px solid rgba(229, 90, 76, 0.25)")).toBe(true)
+    expect(EMAIL_ACCENT.test("background: rgb(229,90,76)")).toBe(true)
+  })
+
+  it("does not flag the web brand red or its token", () => {
+    // Flagging the correct answer trains people to add exceptions.
+    expect(EMAIL_ACCENT.test("color: var(--rpc-red)")).toBe(false)
+    expect(EMAIL_ACCENT.test("color: var(--por-red)")).toBe(false)
+    expect(EMAIL_ACCENT.test('color: "#E03A2F"')).toBe(false)
+    // A near-miss that is a different colour entirely must not match.
+    expect(EMAIL_ACCENT.test("rgba(229, 90, 176, 0.25)")).toBe(false)
+  })
+
+  it("scopes to rendered web files, which is what keeps email HTML legal", () => {
+    // The seven legitimate uses are email HTML + its test. If this kind filter
+    // matched them the guard would be unusable, so the scope IS the rule.
+    expect(WEB_SURFACE.test("app/auth/confirm/page.tsx")).toBe(true)
+    expect(WEB_SURFACE.test("app/(collections)/layout.tsx")).toBe(true)
+    // ⚠ An ORDINARY component counts too — it renders the same pixels. The
+    // first draft of this case asserted false and pinned a real gap in the
+    // guard I had just written.
+    expect(WEB_SURFACE.test("components/profile/AvatarMomentPicker.tsx")).toBe(true)
+    expect(WEB_SURFACE.test("app/insights/deals/DealsClient.tsx")).toBe(true)
+
+    expect(WEB_SURFACE.test("lib/emails/welcome-email.ts")).toBe(false)
+    expect(WEB_SURFACE.test("lib/alerts/format.ts")).toBe(false)
+    expect(WEB_SURFACE.test("app/api/alerts/channels/route.ts")).toBe(false)
+  })
+})

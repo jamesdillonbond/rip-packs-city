@@ -18,7 +18,7 @@
 //     CSS var()
 //   - the var(--rpc-red, #E03A2F) fallback form
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 // Files cleaned in Phase 1 — these MUST stay token-only (minus annotated
 // brand-exception lines). Add files here as Phase 2 cleans them.
@@ -225,11 +225,38 @@ const TAILWIND_NEUTRAL = /\b(?:text-white|bg-white|border-white|bg-black|text-bl
 // the spinner) and `app/login/page.tsx`, while `login` used var(--por-red) for
 // the SAME role a few lines away.
 //
-// ⚠ Scoped to page/client/component files, which is what makes it a ban with no
-// allowlist: measured 2026-08-16, all 7 remaining uses are email HTML or its
-// test, and the web population is ZERO. A blanket ban would fire on all seven.
+// ⚠ Scoped by FILE KIND, not by a list, and that is deliberate. Measured
+// 2026-08-16 the web population is ZERO repo-wide, so this is a ban with no
+// allowlist — and it WALKS THE TREE rather than iterating PROTECTED, because a
+// guard that derives its inputs from a curated list is silent about every file
+// outside it by construction. That is the exact failure this repo keeps paying
+// for; the first draft of this very check had it. A blanket ban on the literal
+// would instead fire on all seven legitimate email uses, hence the kind filter.
 const EMAIL_ACCENT = /#e55a4c|rgba?\(\s*229\s*,\s*90\s*,\s*76\b/i;
-const WEB_SURFACE = /^(?:app\/.*\/(?:page|layout|.*Client)\.tsx|components\/.*\.tsx)$/;
+const WEB_SURFACE = /^components\/.*\.tsx$|(?:^|\/)(?:page|layout)\.tsx$|Client\.tsx$/;
+// ⚠ ALL of components/** counts, not just *Client.tsx — an ordinary component
+// renders the same pixels. Narrowing this to page/layout/*Client was a real
+// gap, and the first version of the test PINNED it by asserting false.
+
+/** Every rendered web file under app/ and components/ (email HTML lives in lib/ and app/api/). */
+function webSurfaceFiles(dir, out = []) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const full = `${dir}/${e.name}`;
+    if (e.isDirectory()) {
+      if (dir === "app" && e.name === "api") continue; // route tree: email HTML lives here
+      webSurfaceFiles(full, out);
+    } else if (e.name.endsWith(".tsx") && WEB_SURFACE.test(full)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
 
 let violations = 0;
 
@@ -255,13 +282,17 @@ for (const file of PROTECTED) {
   }
 }
 
-for (const file of [...new Set([...PROTECTED, ...NEUTRAL_PROTECTED])]) {
-  if (!WEB_SURFACE.test(file)) continue;
+const webSurfaces = [...webSurfaceFiles("app"), ...webSurfaceFiles("components")];
+if (webSurfaces.length === 0) {
+  console.error("  ! email-accent guard found no web surfaces to scan (walk broken?)");
+  violations++;
+}
+for (const file of webSurfaces) {
   let text;
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    continue; // missing-file is already reported by the loops above
+    continue;
   }
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
