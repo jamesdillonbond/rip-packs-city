@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — `apply-fmv-haircut` had failed EVERY daily run since ≥08-14 at the 120 s wall; split per collection so each leg gets its own budget
+
+**Restores a broken FMV writer.** The thin-sale haircut has not been applied to any collection for at least three days — every run `ok:false`, `rows_written: 0`, dying at **~125.17 s** (08-14 125,164 ms · 08-15 125,188 ms · 08-16 125,169 ms).
+
+⚠ **That number is the diagnosis: it is the GLOBAL `statement_timeout` of 120 s plus the documented IO-throttle overshoot — the identical signature to `drain-conflated-subeditions` and to `match-topshot-players` (filed separately today).** Neither clock on this path can help:
+- the route's `maxDuration` is **300 s** — not the binding limit,
+- `fmv_apply_thin_sale_haircut` declares `statement_timeout=300s` in its own `proconfig` — and **that is INERT**, because a function-level `SET` does not bind the statements *inside* the function. This is a live member of the 195-function inert-timeout population recorded the same day.
+
+**So the lever is the WORK.** The cost is one statement: `SELECT DISTINCT ON (edition_id) * FROM fmv_snapshots` over **~1.15 M rows**, filtered by the non-sargable `(p_collection_id IS NULL OR collection_id = p_collection_id)`. The cron calls it once with NULL — every collection in a single statement — so one over-budget statement discards all of them.
+
+**The fix: call it once per collection.** Measured share of `fmv_snapshots`: **topshot 67.3% (772,495) · allday 31.2% (358,424) · golazos 0.9% · ufc 0.3% · candy_mlb 0.2%**. Each leg now gets its own 120 s, so the four small legs finish trivially instead of being thrown away with the big one.
+
+⚠ **Output-identical, not a pricing change.** The RPC, its haircut multipliers and its `confidence IN ('LOW','ASK_ONLY')` gate are untouched; the union of per-collection runs covers exactly the rows the un-scoped run did. What changes is that a failure is now **PARTIAL** — collections that fit still get their haircut.
+
+⚠ **THE TRAP THIS AVOIDED, AND IT WOULD HAVE BEEN SILENT: the route's own `COLLECTION_UUID` map is the wrong list to split on.** It omits **`candy_mlb`** — which has **2,815 live `fmv_snapshots` rows** currently covered by the NULL call — and includes **`pinnacle`**, which has **ZERO** (Pinnacle FMV lives in `pinnacle_fmv_history`, not `fmv_snapshots`). Splitting on that map would have quietly shrunk the sweep while every instrument read healthy. **The legs are therefore derived from `collections` at run time**, so a new collection is covered the day it is added — the hardcoded-member-list lesson this file keeps paying for.
+
+⚠ **A failed catalogue read falls back to the original un-scoped call** rather than skipping: a failed read must not silently narrow a sweep to nothing.
+
+⚠ **Partial failure reports `ok:false` AND the surviving legs' real counts.** The pre-split error path hardcoded `rows_found: 0, rows_written: 0`, which was correct when any failure rolled the whole statement back and is wrong now — publishing 0 would understate haircuts that really were applied. That is the mirror of the `drain-fmv-cold-tail` defect fixed the same day. `extra.legs` carries the per-collection breakdown plus `legs_failed`/`legs_total`.
+
+⚠ **HONEST LIMIT — Top Shot is the one leg without comfortable headroom, and it may still fail.** At 67.3% of a workload that needs ~125 s unsplit it lands near **~85 s of its own 120 s**, and a dry-run probe of the Top Shot leg alone **timed out at a 50 s bound**, which is consistent with that estimate but does not prove it fits. **If Top Shot keeps failing, the split is still a win** (four collections restored, and it now fails ALONE), and the next lever is the query itself — narrow `SELECT *` to the seven columns used, add `computed_at <= now()` for runtime partition pruning, or read `fmv_current`. **Judge this by `extra.legs`, never by `ok` alone.**
+
+**Pinned by `__tests__/api-admin-apply-fmv-haircut-split.test.ts` (8 cases), mutation-proven both ways:**
+- splitting on `COLLECTION_UUID` instead of `collections` **kills 4 cases**, including the dedicated candy-scope one;
+- `break`-ing the loop on the first failed leg **kills the partial-progress case**.
+Also pinned: `p_dry_run` stays `false` on the live path (a silent flip would report `rows_haircut` while applying nothing), an explicit `?collection=` still does NOT fan out, and a partial failure never reads as `ok`.
+
+**Verified:** 34 tests green across this file plus both sibling admin-route suites; `tsc --noEmit` clean.
+
+**Revert:** `git revert <sha>` — restores the single un-scoped call (and with it the 100% failure). No DB change; the RPC was not modified.
+
 ### 2026-08-16 · CLAUDE.md — the NBA reference plane is one incident, not three; `match-topshot-players` has NEVER auto-aliased (docs-only)
 
 - **What shipped:** docs-only update to `CLAUDE.md`. No product, DB, migration, cron, auth, hot-wallet or pricing change. **A perf fix was investigated and deliberately NOT shipped** — see below.
