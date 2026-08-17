@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — the panini arm everyone watches is CORRECT; its sibling is mathematically incapable of firing, and its own comment states a value that has never been true
+
+⚠ **Re-derived the premise under the long-deferred `panini_sale_price_capture_dry_days` re-point. The breached arm is RIGHT — do not re-point it.** `v_panini_serial_sale_field_supply` shows `raw_supplied_sale_price = 0` on **every** capture day for 12+ (the arm counts **20** consecutive). Upstream genuinely sends no `brought_at_price`. Its +1/day climb is a correct reading of a real supplier outage owned by someone else.
+
+⚠ **I nearly filed the opposite, and the near-miss is the transferable part.** `panini_card_serials` shows **832 sales in 7 days, 100% carrying `last_sale_usd`, newest two hours ago** — which reads as a flat refutation of "20 dry days". It is not: the arm measures the **raw upstream payload field**, while `last_sale_usd` is a **stored column that survives across captures** (there is a `last_sale_preserved_at` mechanism for exactly that). **Pairing a count from one table with a property sampled from another** is the documented trap, and the only thing that caught it was reading the metric's DEFINITION before believing my own refutation.
+
+⚠ **THE ACTUAL DEFECT — the sibling arm cannot fire.** `panini_sale_field_mapping_shortfall` is
+
+```
+count(upstream supplied a price) − count(we stored one, non-preserved)
+```
+
+and its documented purpose is *"OUR ingest dropped a price upstream DID send. **Reads 0**; a defect we own and can fix."* **It does not read 0 — it reads −19**, with per-day values to **−3,362**. ⚠ **And it is ≤ 0 BY CONSTRUCTION while the supply is dry:** the minuend is the count of upstream-supplied prices, currently **0 every day**, so the expression is `0 − (a non-negative count)` and can never be positive. **An arm firing on `> 0` is provably dead for the whole outage.**
+
+**That is the wrong half to lose.** The two were designed as a pair — *their* outage vs *our* bug — and the one we can actually fix goes blind **precisely when the other is breached**, i.e. exactly when you most want to know whether your own mapping is broken too. ⚠ It is the standing *"a permanently-green instrument is indistinguishable from a broken one"* rule in its least visible form: **not permanently green but permanently NEGATIVE, which reads as healthy and comfortably so.**
+
+⚠ **Why nobody caught it: the value was asserted in a code comment and never re-read.** The metric is precomputed, so it surfaces only on breach — and it cannot breach. **A metric whose only reader is its own threshold is unfalsifiable when the threshold cannot be met.**
+
+- **Nothing shipped, deliberately — this is alerting semantics, a threshold judgement rather than a measurement.** Three candidate redefinitions (clamp at zero / rate over supplied-only rows / split out an explicit `supply_present` so it can report NO_DATA instead of a negative number) differ in what they *claim*, and choosing is an owner call. ⚠ **Whichever is picked, the "Reads 0" comment must be corrected in the same change** — a future session will trust it the way this one nearly did. Filed: `docs/overnight/inbox/2026-08-17T2245Z-the-panini-mapping-shortfall-arm-cannot-fire-while-its-sibling-is-breached.md`. No revert needed; every probe was read-only.
+
 ### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — re-derived the fmv-recalc kill rate: it is WASTEFUL, not BROKEN, and the "treadmill" reading it invites is wrong
 
 ⚠ **The standing characterization is "~66% background kill rate, un-diagnosed by deliberate decision after two failed diagnoses." Re-measured 2026-08-17 it is slightly WORSE on the rate and much BETTER on the outcome — and the two are not in tension.**
