@@ -1785,6 +1785,18 @@ describe("DashboardClient — modal callbacks", () => {
     routes["/api/profile/verify-challenge/check"] = () => json(200, { ok: true, matched: true, moment: "9001" })
     searchParams = new URLSearchParams("verify=0xmine")
     render(<DashboardClient />)
+    // ⚠ SYNCHRONISE ON THE CHALLENGE FETCH BEFORE QUERYING FOR THE BUTTON.
+    // Without this the case races `findByRole`'s 1000ms default against render
+    // + the verify-challenge round trip, which is comfortable in isolation and
+    // NOT comfortable inside the full 231-file component run — it was the sole
+    // failure of that suite on `main`, passing every time the file ran alone.
+    // That shape (green solo, red in the suite) reads like a flake and is a
+    // missing await: every sibling in this file already waits here, either via
+    // the `openVerify` helper or, as in the test directly above, this exact
+    // line. Widening the timeout would only make the race slower to lose.
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(true),
+    )
     fireEvent.click(await screen.findByRole("button", { name: /I've listed it/ }))
     await screen.findByText(/Wallet verified/)
   })
