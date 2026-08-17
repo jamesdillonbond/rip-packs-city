@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · DOCS (Claude Code, session close) — the one-query test that decides whether a "heartbeat only" tick is a kill or lost telemetry
+
+**Docs only. No code, DB, cron or prod change.** Final memory commit for this session.
+
+**What went into memory.** The canonical `after()`-heartbeat bullet already said "heartbeat only" is three states and that a kill must not be reported without separate evidence. It did not say what that evidence *is*. It does now, because the case that produced the rule also produced a cheap test:
+
+**Ask whether OTHER processes' `log_pipeline_run` calls succeeded in the same window.** Every pipeline writes the same row to the same table through the same pooler, so a saturation outage of the telemetry path is visible platform-wide rather than per-route. On the 2026-08-16 `candy-editions-ingest` tick it was decisive in one query — writes at 08:53:20 (-46 s), **08:54:08.86 (+3 s from that route's own final data write)**, :14, :18 x2, :37, :43 — so the telemetry path was healthy in the very second its `logRun` should have fired. ⚠ Recorded as **weakening** the lost-telemetry mechanism, not eliminating it: an isolated failure on one pooled connection is untouched by this evidence. **First thing to run on any heartbeat-only tick; it costs one query and decides which half of the problem you have.**
+
+**Closed this session, previously flagged as open:** CI is **green on all nine of my commits**, including the two that were still queued when I last reported (`e93c7b0e`, `bbbebd1e`) — that caveat is now resolved rather than left standing.
+
+**Checked and needed no action:** a concurrent session took Vercel crons 38 -> 39 (`/api/smoke-test`) and had already corrected the canonical bullet. The six remaining "38 Vercel crons" strings all sit inside Recent sessions (lines 171-422, within 140-453), i.e. dated samples, which the file's own convention keeps as history — verified by line number rather than assumed.
+
+**Final health, unchanged from the start of the session:** trust board **3 breached** (same set), `check_public_security_invariants()` **0 rows**, `check_anon_write_surface()` **0 rows**, pg_cron **93/93 active**, RLS-off **0**.
+
+**Revert:** `git revert <sha>` — one paragraph in CLAUDE.md; nothing to unwind.
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — the smoke SUITE had no guaranteed cadence: 4.5–9.3 h blind windows every day, fixed with a Vercel cron
 
 - **Shipped:** `vercel.json` gains `{"path": "/api/smoke-test", "schedule": "17 */4 * * *"}` (**38 → 39 crons**) plus `__tests__/smoke-test-has-a-guaranteed-cadence.test.ts`. **Revert:** `git revert` the commit `feat(smoke): give the smoke suite a guaranteed cadence` (read the sha AFTER the push — a rebase rewrites it). No DB, no migration, no route logic.
