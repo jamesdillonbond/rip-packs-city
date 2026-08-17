@@ -8,6 +8,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-16 · SHIPPED (Claude Code, interactive) — deactivated the two cadence-watchlist arms for the retired `topshot-flowty` pair; without this the retirement would have paged forever
+
+**Prod DB mutation (data, not DDL — applied via `execute_sql`).** Follow-on to the `topshot-flowty` cron retirement entered above. ⚠ **Retiring a schedule is only half the job when the pipeline is on `pipeline_cadence_watchlist`** — I nearly shipped the first half alone.
+
+Both retired pipelines were on the watchlist and **ACTIVE**:
+
+| pipeline | `max_silent_minutes` | severity |
+|---|---|---|
+| `topshot-flowty-unmapped-drain` | **90** | medium |
+| `topshot-flowty-sales-history-backfill` | **600** | medium |
+
+So `detect_stalled_pipelines()` would have begun reporting the drain stalled **~90 minutes after the deploy** and the producer ~10 h later, permanently and by construction — **an arm that can never go green again**. That is precisely the `ufc_fmv_stale_hours` cry-wolf class this file already documents twice: a permanently-red arm trains the operator to skim the whole board. **The retirement would have traded ~52 min/day of wasted compute for a monitor that lies every hour.**
+
+Both rows set `is_active = false` with a `[RETIRED 2026-08-16 — …]` note prefix stating the evidence and the re-activation condition — **the exact convention already used by the five 2026-05-24 Flowty rows in that table**, which is how the precedent was found.
+
+✅ **Verified after the write:** `detect_stalled_pipelines()` returns **zero** flowty rows.
+
+⚠ **The durable rule: `vercel.json` is not the only consumer of a cron's existence.** Before retiring any schedule, check `pipeline_cadence_watchlist` (and any trust arm keyed on that pipeline) in the same pass — the caller sweep this file mandates covers *who invokes it*, and this is the mirror question of *who watches it*. A schedule and its monitor are one unit.
+
+**Revert (exact):**
+
+```sql
+UPDATE pipeline_cadence_watchlist
+SET is_active = true,
+    notes = regexp_replace(notes, '^\[RETIRED 2026-08-16[^\]]*\] ', '')
+WHERE pipeline IN ('topshot-flowty-unmapped-drain','topshot-flowty-sales-history-backfill');
+```
+
+(Re-activate only alongside restoring the `vercel.json` entries, or the arms page immediately.)
+
 ### 2026-08-16 · SHIPPED (Claude Code, interactive) — retired TWO cron schedules for a COMPLETED backfill pair (Vercel crons 39 → 37); the filed "resolver stuck in December" finding is CORRECTED
 
 **What shipped.** Removed two `vercel.json` cron entries. Both routes, their kill switches and their revert paths are KEPT — the documented `sync-sales-ingest-dune` / `evm-transfers-ingest` disposition (retire the schedule, keep the route).
