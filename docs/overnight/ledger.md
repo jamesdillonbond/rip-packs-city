@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — the future-date ledger guard had no test; added one, and the patch that carried it was WRONG on its headline number
+
+**Applied the live half of `ledger-guard-test-2026-08-17.patch`** (a Cowork cloud patch, which cannot push). ⚠ **It arrived pasted underneath the tombstone header of a DIFFERENT file, `claude-md-char-limit-2026-08-17.patch`** — the tombstone says "do not apply", but it tombstones the CLAUDE.md-size patch, not this one. **Check which file a tombstone names before you honour it**; a tombstone is not a property of the directory. This patch's test half was genuinely unapplied (`__tests__/find-future-dated-ledger-headings.test.ts` absent); its ledger half no longer applied at all (`git apply --check` failed — two newer entries had landed), so the entry was re-spliced by hand per the discipline above rather than `git am`'d.
+
+⚠ **`git apply --check … 2>&1 | head -20 && echo CLEAN` PRINTED "CLEAN" ON A PATCH THAT DOES NOT APPLY** — `&&` reads `head`'s status, not `git apply`'s. The exact pipe-exit-code trap CLAUDE.md records, hit here on the first command that used it. Read `${PIPESTATUS[0]}`, or run bare.
+
+**What shipped:** 14 tests pinning `scripts/find-future-dated-ledger-headings.mjs` (a hard failure in the `ledger-guard` CI job since `4fa75eb`, and until now untested — the same gap its sibling `find-swallowed-ledger-headings.awk` carried). Two decisions are pinned because both are invisible when they break:
+
+- **The PT conversion, asserted against PACIFIC-TOMORROW computed at run time — NOT a constant.** ⚠ A constant like `2099-01-01` is future in every timezone, so it passes a host-clock implementation just as happily; it reads as coverage and tests nothing. **Verified here by mutation, not quoted:** deleting `timeZone: "America/Los_Angeles"` from the script fails exactly those **2** tests and leaves the other **12** green — and the `2099` test is *among the 12 that survive*, which is the vacuity demonstrated rather than asserted. Script restored via `git checkout --`, `git status` clean.
+- **The strict `\d{4}-\d{2}-\d{2}` shape**, i.e. the false positives it declines to raise.
+
+⚠ **The patch claimed a loose "sorts above today" rule would flag "690 `### audit_2026…` headings". RE-DERIVED: it flags 39.** The 690 is `grep -c 'audit_2026'` — **lines mentioning the string anywhere in the file (877 occurrences)** — not headings; there are **25** `^### audit_` headings. A substring count was reported as a heading count, inflating the figure ~27×. **The argument survives (39 false positives still kills a guard) but the number was never measured**, and it would have been copied forward verbatim. Ledger figures are dated samples: re-derive, do not quote.
+
+**Timing note, self-demonstrating:** written at **19:48 PT**, when the host UTC date was already **2026-08-18**. The guard's own `--show` printed the skew. A `date -u` stamp in this session would have written the fifth future-dated heading this week.
+
+**Verified:** 14/14 green · red-on-demand under mutation (2 fail / 12 pass) · `npx tsc --noEmit` exit 0 · `npx eslint` exit 0 · headings 1661→1662 · swallowed-heading detector still **3** · future-dated **0**.
+
+**Revert:** `git revert <sha of the test commit>` — one new test file, no existing file modified. No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-17 · DOCS (Claude Code, interactive) — test-coverage analysis: the gates are healthy, the risk is in what they are structurally silent about
 
 Filed `docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md`. All three gates re-measured live from a fresh `npm ci` on `a690b507`: primary **91.78/79.23/93.56/93.86**, components **90.68/81.86/89.25/93.60**, workers **85.59/72.61/84.25/88.53** — all green, all inside their designed 0.15-0.6pt band. **No threshold change proposed**; the component gate's functions margin is **0.15pt**, thin enough that a partly-tested `*Client.tsx` conversion would red it.
