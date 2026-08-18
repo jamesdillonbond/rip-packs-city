@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RESEARCH (Cowork cloud) — the four-source caller rule is BLIND to Cowork artifacts: 8 live DB objects read as dead, and the `v_tracked_wallet_fmv_confidence` item closes as NOT a cost
+
+✅ **Open item disposed without a rewrite.** `v_tracked_wallet_fmv_confidence` carries the same `FROM fmv_snapshots … GROUP BY` shape as `drain_fmv_cold_tail`, but **its only consumer is the Cowork artifact `rpc-tracked-fmv-confidence`, which re-queries it when a human opens the board.** No cron, no function, no view, no route. ⛔ **Optimising it would repeat the `get_unmapped_resolver_targets` mistake** — a fix shipped for a thing nothing calls. **Closed on the caller check, not on a rewrite.**
+
+⛔ **The general defect:** CLAUDE.md requires four sources — `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, full-repo grep. **A Cowork artifact is none of them.** It lives outside the repo *and* outside the DB catalogue, so an artifact-only object reads as **zero callers by every documented source** — wrong in both directions: read as *dead* a sweep deletes it and breaks a live board; read as *expensive* someone optimises a query that runs on human open.
+
+**Derived (not sampled): staged all 11 artifacts' HTML, extracted every `.from(…)` / `.rpc(…)` / inline-SQL `FROM …`, intersected with real `pg_class`/`pg_proc` objects, cross-checked all four sources. 8 objects have NOTHING:**
+
+`panini_deal_board` · `panini_nation_board` · `panini_pack_ev_board` · `panini_player_board` · `panini_special_serials_board` (all → `rpc-panini-squeeze-v2`) · `v_topshot_pack_lifecycle` · `v_topshot_pack_lifecycle_global` (→ `rpc-pack-lifecycle`) · `v_tracked_wallet_fmv_confidence` (→ `rpc-tracked-fmv-confidence`).
+
+**A "drop the unreferenced views" sweep against the documented sources would delete all 8 and break 3 live boards. Treat that list as the exclusion set until the rule is amended.** ⚠ The check discriminates rather than flagging everything: `panini_squeeze_totals`, `v_rewards_economy`, `v_rewards_user_balances` each have exactly **one** repo caller and survive; `topshot_market_index_daily` has a **cron** caller.
+
+⛔ **METHOD NOTE THAT IS LOAD-BEARING: `supabase/migrations/**` MUST be excluded from the repo grep.** Every object is named by the migration that creates it, so including migrations makes **every** object look called and the check returns nothing. That one exclusion is what makes the result non-vacuous. ⚠ Also: the extraction reads artifact **HTML**, not descriptions — a first pass off descriptions found only **5 of the 8**. ⚠ **Lower bound, not proof** — a dynamically-constructed table name would be missed, and this covers the 11 artifacts on this device.
+
+**Recommended amendment: add a fifth source — `list_artifacts` + the artifact HTML** (`device_stage_files` with `artifact_ids`). It is one call and it is the only source that sees this class. ⚠ **Not added to CLAUDE.md from here** — the file is at its size equilibrium, so it must DISPLACE something rather than append, and that is Trevor's call. The four-source list lives in **Measurement discipline**.
+
+Detail: [inbox/2026-08-18T1620Z-…](inbox/2026-08-18T1620Z-the-four-source-caller-rule-is-blind-to-cowork-artifacts.md).
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='four-source caller rule is BLIND to Cowork artifacts'`. One inbox file; read-only otherwise. No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-18 · SHIPPED (Claude Code, interactive) — four anonymously-reachable probes were inventing their answers, and the leak guard excluded all four by construction
 
 **The guard's exclusion is a claim about a FILE; the surface is per HANDLER.** `anon-api-no-driver-message-leak-guard` skips `app/api/admin/**` and `app/api/cron/**` wholesale, on the stated reasoning that the route's own bearer check turns an unauthenticated caller away before the query runs — and it asserts that exclusion with a **file-level grep** for `INGEST_SECRET_TOKEN|CRON_SECRET|…`. That reasoning is sound for a handler that can READ the bearer. **`export async function GET()` takes no parameters, so it cannot read a header, a cookie or a query param** — and `isPublicPath` returns true for both prefixes, so the proxy steps aside and every anonymous caller reaches the body. One gated POST vouched for the ungated GET beside it.
