@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — session archived to `docs/sessions/2026-08.md`, and the resolver's own stale guard written up in `ledger-discipline.md`
+
+**Closing out the CLAUDE.md verification session.** Full detail is in the session entry; this is the ledger stub plus one durable promotion.
+
+- **Session entry prepended to `docs/sessions/2026-08.md`** (124 → 125 headings): the `wc -c`-counts-bytes headline, the three CLAUDE.md corrections (4-not-5 honesty layers, `boardUnavailable()`'s real path, the missing Panini UUID), the live-DB verification that held, and the filed-not-fixed Top Shot series label split.
+- ⚠ **Promoted to `docs/reference/ledger-discipline.md`: the resolver's OWN guards go stale, twice in one session.** (1) An **unanchored** marker check fired on a correct resolution because ledger entries quote markers in prose — the sixth instance of the substring-vs-line-start class. (2) **NEW: a title assertion pinned to a literal from the previous run** rejected a correct splice on the next push. **Both were survivable only because `git add` was gated on the resolver's exit code.** The generalization is one this repo already holds for tests — **a guard that names its instances dies on a rename; assert the PROPERTY, never last run's spelling** — and the baseline-relative delta checks (`headings +1`, `noblank <= theirs`) stayed correct across both rebases while the content-pinned one did not.
+- **Verified this turn:** Vercel project `prj_YBJ6…` + team `team_YWGC…` and Supabase project `bxcqstmqfzmuolpuynti` all match CLAUDE.md. Latest production deployment is `CANCELED` — the documented `ignoreCommand` behaviour for docs-only commits, confirming **no code shipped this session**. CLAUDE.md steady at **39,824 chars** (176 under).
+
+**Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — verified CLAUDE.md's quick-reference facts against the live DB: 3 corrections, and Top Shot series 6/7/8 carry TWO display labels
 
 **Checked the facts a session ACTS on directly rather than the prose around them.** Everything load-bearing held: all five published collection UUIDs, `chain_type`, `fmv_confidence` (7 labels), `nba_player_projections.confidence` (3-letter `MED`), and the `flowty_*` six-value CHECK (`topshot|allday|golazos|ufc|pinnacle|unknown`) match the file exactly. **The `0 ↔ 1` series footgun is fully confirmed**: `nba_top_shot` has no series 1, and `ufc_strike` really does carry BOTH 0 and 1.
