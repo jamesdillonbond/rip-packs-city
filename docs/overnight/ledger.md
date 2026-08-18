@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — VERIFIED the CLAUDE.md restructure is lossless: 4 dropped facts restored, verbatim backstop added, 49 broken links fixed
+
+**Asked to verify nothing got dropped, and the first check found that something had.** The earlier byte-sum accounting was too weak — a summed total cannot detect a dropped line range. Two real checks now pass and both are re-runnable:
+
+1. **Line membership** — every one of the original 1,618 CLAUDE.md lines (tip `8ede4749`) is present byte-identically across the 24 destination files. **UNACCOUNTED = 0.**
+2. **Contiguity** — all 17 extracted sections are exact contiguous copies of their source ranges, and the 26 archived session entries form one contiguous 231,133-char block.
+
+**Four genuine losses, one of them a broken promise:** the **Concierge non-negotiable rules 3–6** were dropped while CLAUDE.md pointed at `concierge.md` for them — they were in neither file. Also the `/api/wallet-backfill?force=true` ad-hoc curl, two code-pattern bullets, and the `schema-truth.md` regeneration note. Each restored to its topical doc.
+
+⚠ **Spot-checking then found more small facts trimmed inside sections I had CONDENSED rather than moved** (`npm run test:cadence:escrow`, the payer-wallet **0.05 FLOW** alert threshold and **Flow error 1118**, "`wmc.series_number`, when present, still wins"). **Chasing them one at a time is the wrong shape** — `docs/reference/claude-md-condensed-originals.md` now holds the verbatim pre-restructure text of all **11** condensed sections, which is what lets the membership check prove 100% coverage rather than argue it. Plus `session-and-archive-conventions.md` for the date-stamping history and the archive map.
+
+⚠ **MOVING CONTENT ONE DIRECTORY DEEPER SILENTLY BROKE 49 MARKDOWN LINKS** — they were written relative to the repo root (CLAUDE.md's location) and `](docs/…)` inside `docs/reference/` resolves to `docs/reference/docs/…`. Rewritten to `../../` and **every one verified to resolve on disk**. ⚠ `docs/sessions/2026-08.md` has the same defect on 43 links, but **17 of them predate this work** — it is a pre-existing convention in that file, so it was left consistent rather than half-fixed. **Any bulk file move needs a link-resolution pass; nothing warns you.**
+
+✅ **The restructure is already being used by other sessions** — a concurrent pass appended ~980 chars to `docs/reference/cron-and-schedulers.md` and added two reference docs of its own. ⚠ The rebase conflicted on the reference index and **neither side was right**: theirs listed `parallels-variants-data-model` + `revert-map-2026-07-25`, mine listed the two new ones. Resolved to **both** — the same "a shared list is a count, not an opinion" rule this repo already records for ratchets.
+
+**Revert:** `git revert <this sha>` (restores the 4 dropped facts back out and reverts the link rewrite); the parent restructure commit is `git log --grep='restructure to fit the memory-file char limit'`. No DB, migration, cron, auth, hot-wallet or pricing change; docs-only.
+
 ### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — the 2026-08-15 conflated-subedition reorder FIXED the drain, and its `ok` flag has been hiding the recovery ever since
 
 ⚠ **This CORRECTS MY OWN ENTRY from two hours earlier**, which listed `drain-conflated-subeditions` among "5 unwatched pipelines with zero successes". It has zero *successes*. **It does not have zero success.**
