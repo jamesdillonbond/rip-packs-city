@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — answered the daytime monitor's team-roster honesty check: NO defect, the alert IS the policy working
+
+**The monitor filed a user-facing `get_team_players` 45 s timeout on `/[collection]/team/[slug]` and correctly called the honesty angle the higher-value one** — *"verify the page renders an HONEST degraded state, not a false 'roster unavailable'/empty-roster that reads as a fact about the team."* **Traced end to end: it does, by design, and the design is test-pinned. Do not re-investigate.**
+
+1. `page.tsx:84` fetches the roster through `sectionRows<PlayerTile>("team roster", "get_team_players", …, { structural: true })`.
+2. `lib/entity-section-rpc.ts` retries via `rpcWithRetry`, then **THROWS** for a structural section — `throw new Error(\`${tag} unavailable: ${error.message}\`)`. ⚠ **The Sentry string the monitor quoted — "team roster unavailable: rpc get_team_players timed out after 45000ms" — IS that throw.** The alert is the policy firing, not evidence of a lie.
+3. It reaches `app/global-error.tsx` (no nearer `error.tsx`; only **2** boundaries exist app-wide), which renders *"Something went wrong / An unexpected error occurred. Our team has been notified."* + a **Try Again** button and re-captures to Sentry.
+
+**At no point is an empty roster rendered.** ⚠ The helper's own header records this as precisely the defect it was built to close on 2026-07-26: the prior shape was `if (error) return []`, which *"renders a PLAUSIBLE EMPTY STATE — a Miami Heat page with an empty roster looks exactly like a team we have no data for."* **This is the ~20-instance honesty class, already closed on this surface and holding under a real production failure.**
+
+**Pinned:** `__tests__/entity-section-rpc.test.ts` — **13/13 passing**, including *"THROWS for a structural section once retries are exhausted"*, *"degrades to empty for a decorative section"*, and — the three-state distinction the canon requires — *"an empty result is NOT an error — a genuinely empty section stays empty"*.
+
+⚠ **So the residual is PURELY performance** — `get_team_players` at the 45 s client ceiling under saturation. The monitor's own guidance stands: **shrink the RPC's work, do not raise the ceiling**, and that is an owner call. ⚠ **The monitor's item 1 (`compute-golazos-pack-ev` silent 17.5 h) is NOT covered by this and remains open** — it is a pack-EV route, an off-limits class for autonomous shipping.
+
+⚠ **The transferable point: a Sentry event on a surface that has ALREADY been hardened is evidence the hardening WORKS, and reads identically to a new defect.** The discriminator is the error STRING — an honest throw names its section and says "unavailable"; a silent lie produces no event at all. **Check whether the surface is already on the honest-degradation helper before treating its alert as a finding.**
+
+- **Nothing shipped.** The monitor's filing is annotated in place with the verdict so the night pass does not chase it. All probes read-only; the test run was local.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — the CLAUDE.md char-limit measurement table, plus a correction: `wc -m` and Node disagree by one per ASTRAL char, in a PLATFORM-DEPENDENT direction
 
 **Landed the one genuinely-new part of an inbound patch and dropped the rest as superseded.** `claude-md-char-limit-2026-08-17.patch` (base `7b2ac88`) proposed the size-check fix, a ledger entry, and a tooling-gotchas table. Two of the three had **already shipped hours earlier** as `6cc7b2e1` (ledger) and `8e057eb8` (CLAUDE.md) — same discovery, same `40,086 → 39,610` numbers. Applying it would have written a **duplicate ledger entry** and reverted the landed `LC_ALL=C.UTF-8 wc -m` recipe to a competing one; `git apply --3way --check` conflicted on **all three** files, and the base's "ledger 1646" was 7 entries stale. ⚠ **A patch verified to apply cleanly onto a pristine base says nothing about whether its CONTENT is still needed** — check whether the fix landed by another route before resolving conflicts.

@@ -12,6 +12,33 @@ Filed by `rpc-daytime-monitor` 2026-08-17 17:1x PT / 2026-08-18 00:1xZ. READ-ONL
 
 ## 2. `get_team_players` timed out after 45,000ms — team roster pages (MED, user-facing)
 
+> ✅ **ITEM 2's HONESTY CHECK ANSWERED 2026-08-18 (Claude Code) — NO DEFECT. Do not re-investigate.** The
+> monitor asked to *"verify the page renders an HONEST degraded state on this timeout, not a false
+> 'roster unavailable'/empty-roster that reads as a fact about the team."* **It does, by design, and the
+> design is test-pinned.** Chain traced end to end:
+> 1. `app/(collections)/[collection]/team/[slug]/page.tsx:84` fetches the roster via
+>    `sectionRows<PlayerTile>("team roster", "get_team_players", …, { structural: true })`.
+> 2. `lib/entity-section-rpc.ts` retries through `rpcWithRetry`, then **THROWS** for a structural section:
+>    `throw new Error(\`${tag} unavailable: ${error.message}\`)`. **The Sentry string the monitor quoted —
+>    "team roster unavailable: rpc get_team_players timed out after 45000ms" — IS that throw.** The alert is
+>    the policy working, not evidence of a lie.
+> 3. It reaches `app/global-error.tsx` (no nearer `error.tsx`; only 2 boundaries exist app-wide), which
+>    renders *"Something went wrong / An unexpected error occurred. Our team has been notified."* plus a
+>    **Try Again** button, and re-captures to Sentry.
+>
+> **At no point is an empty roster rendered.** ⚠ The helper's header records that this is exactly the
+> defect it was built to close on 2026-07-26 — the prior shape was `if (error) return []`, which *"renders a
+> PLAUSIBLE EMPTY STATE — a Miami Heat page with an empty roster looks exactly like a team we have no data
+> for."*
+>
+> **Pinned:** `__tests__/entity-section-rpc.test.ts`, **13/13 passing**, including *"THROWS for a structural
+> section once retries are exhausted"* and — the three-state distinction the canon requires — *"an empty
+> result is NOT an error — a genuinely empty section stays empty"*.
+>
+> ⚠ **So the residual is PURELY performance**: `get_team_players` hitting the 45 s client ceiling under
+> saturation. The monitor's own guidance stands — **shrink the RPC's work, do not raise the ceiling** — and
+> that is an owner call. ⚠ **Item 1 (golazos pack-EV) is NOT covered by this note and remains open.**
+
 - **Source:** Sentry `JAVASCRIPT-NEXTJS-2J` — "team roster unavailable: rpc get_team_players timed out after 45000ms with no response", culprit `GET /[collection]/team/[slug]`. First seen ~10h ago, last seen ~2h ago, 2 events / 1 user.
 - **Why it matters:** a real user hit a team roster page that could not render. Saturation-class RPC timeout (`get_team_players` at the 45s client ceiling). Not in ledger/inbox.
 - **Honesty check for the night pass (the higher-value angle):** verify the page renders an HONEST degraded state on this timeout, not a false "roster unavailable"/empty-roster that reads as a *fact* about the team. Per the honesty canon a failed read must not render as an answer — the fix, if any, is the degradation branch, not the timeout value.
