@@ -51,6 +51,31 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     coverage: {
       provider: "v8",
+      // ⚠ DISTINCT PER GATE, AND LOAD-BEARING. All three gates defaulted to
+      // `coverage/`, so any two run at once fight over `coverage/.tmp`.
+      // `.gitignore` has documented this invariant since it was written — "the
+      // two gates must run into SEPARATE reportsDirectory dirs or they corrupt
+      // each other's coverage/.tmp" — while NO config implemented it.
+      //
+      // ⚠ The two failure modes are NOT symmetric, and the second is the
+      // dangerous one. Measured 2026-08-17 running the primary and component
+      // gates concurrently:
+      //   * one dies loudly: "Something removed the coverage directory ...
+      //     Make sure you are not running multiple Vitests with the same
+      //     coverage.reportsDirectory at the same time" — correct, diagnostic.
+      //   * THE OTHER DOES NOT CRASH. It loses the deleted `.tmp` chunks and
+      //     reports what is left as a MEASURED RESULT: 82.27 st / 80.61 fn
+      //     against true values of 90.68 / 89.25, failing as a THRESHOLD
+      //     violation. That reads as "you broke coverage" and names the
+      //     author's own diff as the culprit.
+      // A lost read rendered as a number, blaming the wrong thing — the same
+      // class as the `?? 0` counts, in the tooling instead of the product.
+      //
+      // CI is unaffected (separate jobs); this is for local + agent runs.
+      // Names must stay under `/coverage` or `/coverage-*` so .gitignore covers
+      // them, and distinctness is pinned by
+      // __tests__/vitest-gates-have-distinct-coverage-dirs.test.ts.
+      reportsDirectory: "coverage-workers",
       reporter: ["text", "html"],
       include: ["workers/**/*.ts", "workers/**/*.js"],
       exclude: [
