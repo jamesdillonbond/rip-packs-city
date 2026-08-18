@@ -73,3 +73,49 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 ⚠ **Of the 6,899 in the 30-day-plus tail, 6,398 are Top Shot editions of which only THREE have any sale at all** — structurally unpriceable by any algorithm, correctly excluded rather than missed. **Do not report the ~25% stale share as a pricing defect.** The genuinely actionable remainder was 501 UFC Strike editions, which turned out to be the collection-blind phantom-guard bug in `drain_fmv_cold_tail` (fixed 2026-08-17).
 
 ⚠ **`>90 d = 0` is a live tripwire, not an empty instrument** — it is currently a true zero. If the cold tail ever stops being drained, that bucket becomes non-zero. Re-derive it rather than quoting these counts.
+
+---
+
+## Reading a pipeline's health signals — four shapes learned 2026-08-17
+
+These are generalisations of specific incidents from one session. Each names the instance so it can be
+re-checked, and each is a way a pipeline's *own reporting* misleads. **All four were found by measuring the
+OUTCOME rather than trusting the pipeline's status.**
+
+### 1. A per-collection ZERO inside an otherwise-succeeding run is the shape a collection-blind filter makes
+
+`drain-fmv-cold-tail` reported `"collection_slug": "ufc_strike", "processed": 0` on every run **for months**,
+beside non-zero counts for the other three collections, inside an `ok: true` run with `rows_written > 0`.
+Nothing alerted, because the run genuinely succeeded. The cause was a Top-Shot phantom guard
+(`NOT (external_id LIKE '%-%' AND set_id_onchain IS NULL)`) applied with **no collection scope**, which
+matched **518/518** UFC rows by construction. ⚠ **"Nothing to do" and "structurally excluded" produce the
+identical number.** When one member of a per-entity breakdown is persistently zero while its siblings are
+not, suspect the FILTER before the data.
+
+### 2. An identical `rows_written` across a SUCCESS and a FAILURE is the signature of a stale cache
+
+`ownership-sync-dune` wrote **exactly 114,083 rows** on its 2026-08-03 success *and* on its 2026-08-10 and
+2026-08-17 failures (`HTTP 402 — Payment Required`, an exhausted paid quota). Any `rows_written`-based health
+read shows a flawless weekly pipeline. ⚠ Same family as the documented *"a byte-identical HTTP response is as
+much the signature of a CACHE HIT as of a correct change"* — **the tell is the identity of the number, not
+its size.** Diff the value against prior runs; a constant is a hypothesis, not health.
+
+### 3. An `ok` that ANDs every step's error slot can never be true if any step is EXPECTED to be cut off
+
+`drain-conflated-subeditions` computes `ok = !fatal && !seed_error && !seed_recent_error && …`. Its design
+deliberately runs the seed steps **last, behind a budget guard**, so they are routinely truncated and
+`seed_recent_error` is set on essentially every run — pinning `ok` false forever. ⚠ **This hid a successful
+REPAIR:** the 2026-08-15 "DRAIN before SEED" reorder took knot resolutions from **76 total / none since
+2026-07-31** to **272 total with 196 in three days**, and rows/run from **0 → ~1,000** — and every one of
+those runs still reported `ok: false`. ⛔ **Do not fix this by dropping the term from the conjunction** (that
+trades a false negative for a false positive on TopShot keying). **A step stopped by design is not an error;
+drain-success and seed-truncation are two different claims and need two fields.**
+
+### 4. An ABSENT key is a cheap index seek; a PRESENT one is not — and that asymmetry makes "prove it is empty" tractable
+
+Measuring the Top Shot fossil population looked impossible: five probes had timed out. The unlock was that
+**6,561 absent-key probes returned instantly while enumerating 2,000 present keys took 20 s** (10.1 ms/seek,
+`Heap Fetches: 1054/1999` — the visibility map does not pay off on a write-heavy table). ⚠ **So a
+non-existence proof over a large table is often cheap even when the corresponding existence scan is not** —
+seek for what should be absent rather than scanning for what is present. That plus a chunked loose index scan
+enumerated all **11,799** distinct keys across three calls and settled a question recorded as unmeasurable.
