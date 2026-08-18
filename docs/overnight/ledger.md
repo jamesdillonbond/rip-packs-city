@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RETRACTION (Cowork cloud) — Top Shot is NOT losing ground. I read a burst as a trend, from two points across an unknown interval
+
+⛔ **CORRECTS `9508ef96`, which is already on `main`.** That entry (mine, ~2 h old) concluded **"Top Shot is a FLOW, not a STOCK"** and **"still losing ground"** off two counts. **A third reading refutes it.**
+
+| reading | time PT | Top Shot NULL-confidence |
+|---|---|---|
+| `21ab85ef` (Trevor) | ~11:30 | 452,789 |
+| `9508ef96` (mine) | 12:20 | **454,316** ↑ |
+| this note | **13:49** | **449,320** ↓ |
+
+**Net −3,469 from the original baseline — the drain is winning.** My **+1,527 was a burst my window straddled**; two points, an unknown interval, called a direction. ⚠ **That is the rule I quoted at Trevor one message earlier** — *a directional claim needs a distribution, not a snapshot.*
+
+⛔ **The inferred ~5,000/hr inflow was wrong by an order of magnitude, and wrong BECAUSE it was derived from the reading that was itself the artifact.** Measured directly off `created_at` on the same predicate: **last 1 h = 0 · last 6 h = 58 · last 24 h = 10,710** ⇒ **~446/hr, bursty.** ⛔ Do not quote the 5,000; it is retracted with the conclusion it supported. **Oldest NULL row `2026-04-05`** — this is a **4.5-month accumulated STOCK, not a steady-state flow.** The framing was backwards.
+
+✅ **What stands, better supported: the rotation fix works for Top Shot too**, not only All Day.
+
+✅ **Top Shot's backlog is FULLY CONVERTIBLE — the Pinnacle problem does not apply.** Sampling the head the backfill actually selects: **1,000 of 1,000** rows have a matching `editions` row, on `external_id` alone AND correctly scoped by `collection_id` — against the recorded Pinnacle head of **6 of 1,000**. Its head is concentrated: **24 distinct `edition_key`s across 1,000 rows** (~42 wallet rows/edition), which is why a 1,000-row tick clears real ground.
+
+✅ **The inflow IS structural — that half was right.** Neither writer sets confidence: `upsert_wallet_moments` and `upsert_wmc_batch` **never mention `fmv_confidence`**, the column has **no default**, and the table's only triggers are `normalize_tier` + the two destructive-op guards. **Rows enter NULL by construction**, so the backfill is a permanent converter with no terminal state — **but at ~446/hr it is far under the drain, so the stock still clears.**
+
+⚠ **Projection INFERRED, do not quote:** ~3,000/hr drain vs ~446/hr inflow ⇒ ~449k clears in ~7 days. Every term but the two counts is an assumption, and long ticks eat rotation slots (11:27 ran 370 s and swallowed 11:32). **The honest claim is "draining, and convertible."**
+
+⚠ **The lesson, on myself: the interval between the two readings was UNKNOWN to me** — I did not know when Trevor's count was taken. **A delta across an unknown interval is not a rate and not even a sign.** A third reading cost one query. 💡 **And the cheap instrument existed the whole time** — `created_at` on the same predicate answers "is there inflow, and how much" with no differencing and no interval assumption. **When a stock looks like it is moving, measure the FLOW, not the difference between two stocks.**
+
+Detail: [inbox/2026-08-18T2100Z-…](inbox/2026-08-18T2100Z-RETRACTION-top-shot-is-not-losing-ground-i-read-a-burst-as-a-trend.md).
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='read a burst as a trend'`. One inbox file; read-only otherwise. No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-18 · SHIPPED (Claude Code, interactive) — `get_fmv_coverage()` stops paying twice for one answer, the Top Shot series filter stops silently doing nothing, and the UFC "outage" gets its controls
 
 Three items taken in one pass. **Two shipped, one deliberately not — and the one that shipped biggest also REFUTES the filing that requested it.**
