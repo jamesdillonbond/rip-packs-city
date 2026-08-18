@@ -33,19 +33,20 @@ CREATE TABLE public.rpc_trust_health_precompute (
 CREATE TABLE public._panini_supply (
   capture_day            date,
   raw_supplied_sale_price int,
+  column_last_sale_usd    int,
   mapping_shortfall      numeric
 );
 CREATE VIEW public.v_panini_serial_sale_field_supply AS
-  SELECT capture_day, raw_supplied_sale_price, mapping_shortfall FROM public._panini_supply;
+  SELECT capture_day, raw_supplied_sale_price, column_last_sale_usd, mapping_shortfall FROM public._panini_supply;
 
 -- Newest first: two dry days, then a day WITH supply, then two more dry days behind it.
 -- The current dry STREAK is 2. A total would be 4.
-INSERT INTO public._panini_supply (capture_day, raw_supplied_sale_price, mapping_shortfall) VALUES
-  (current_date,              0,  12),   -- dry (today)
-  (current_date - 1,          0,  40),   -- dry
-  (current_date - 2,          7,  95),   -- SUPPLY — the streak stops here
-  (current_date - 3,          0,   5),   -- dry, but BEHIND the supply day
-  (current_date - 4,          0,   1);   -- dry, but BEHIND the supply day
+INSERT INTO public._panini_supply (capture_day, raw_supplied_sale_price, column_last_sale_usd, mapping_shortfall) VALUES
+  (current_date,              0, 0,  12),   -- dry (today)
+  (current_date - 1,          0, 0,  40),   -- dry
+  (current_date - 2,          0, 7,  95),   -- SUPPLY — the streak stops here
+  (current_date - 3,          0, 0,   5),   -- dry, but BEHIND the supply day
+  (current_date - 4,          0, 0,   1);   -- dry, but BEHIND the supply day
 
 -- >>> BEGIN verbatim rpc_thp_leg_panini (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.rpc_thp_leg_panini()
@@ -56,11 +57,11 @@ DECLARE t1 timestamptz := clock_timestamp(); v_short numeric; v_dry numeric;
 BEGIN
   BEGIN
     WITH src AS (
-      SELECT v.capture_day, v.raw_supplied_sale_price, v.mapping_shortfall
+      SELECT v.capture_day, v.column_last_sale_usd, v.mapping_shortfall
       FROM public.v_panini_serial_sale_field_supply v
     ),
     runs AS (
-      SELECT bool_or(s.raw_supplied_sale_price > 0) OVER (
+      SELECT bool_or(s.column_last_sale_usd > 0) OVER (
                ORDER BY s.capture_day DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
              ) AS seen_supply
       FROM src s

@@ -926,10 +926,18 @@ const PINS = [
   // Dry days is a CURRENT-STREAK counter (running bool_or from the newest day backwards),
   // not a total — which is why +1/day on the breached arm is the outage continuing rather
   // than new information, and why one captured day resets it to 0 immediately.
+  // Re-pinned 2026-08-18: the streak counted on raw_supplied_sale_price, i.e.
+  // raw->>'brought_at_price' — an upstream field ABANDONED and replaced 2026-08-08. It read 0 on
+  // every one of the last 30 days, so the arm could only climb (+1/day, at 20 when fixed) and could
+  // never clear. Re-pointed to column_last_sale_usd, live at a steady 22-24% since 08-09; the arm
+  // reset to 0 on the next leg run. The fixture below now keeps the DEAD column all-zero and carries
+  // the signal in the live one, so a revert yields dry_days=5 and FAILS rather than passing quietly.
+  // NOTE mapping_shortfall is still built on the dead field and publishes negatives - untouched on
+  // purpose, because fixing it is a semantic decision, not a re-point.
     fn: "rpc_thp_leg_panini",
     test: "supabase/tests/rpc_thp_leg_panini.sql",
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260818052724_audit_20260818_repoint_panini_dry_days_arm_to_live_last_sale_usd.sql",
   },
   {
   // Thin by design; pinned for the one thing it cannot express — an empty view and a view
