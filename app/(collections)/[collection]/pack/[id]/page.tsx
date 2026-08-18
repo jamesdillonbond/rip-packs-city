@@ -44,6 +44,7 @@ import {
   StatsFooter,
 } from "./PackLifecycleClient"
 import type { PackLifecycle, PackPull } from "./types"
+import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 
 export const dynamic = "force-dynamic"
 
@@ -189,6 +190,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     description,
     alternates: { canonical },
     openGraph: {
+      ...OG_INHERITED,
       title: metaTitle,
       description,
       url: canonical,
@@ -196,6 +198,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
       images: [{ url: ogImage, width: 1200, height: 630, alt: packLabel }],
     },
     twitter: {
+      ...TWITTER_INHERITED,
       card: "summary_large_image",
       title: metaTitle,
       description,

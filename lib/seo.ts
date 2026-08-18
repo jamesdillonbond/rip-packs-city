@@ -163,8 +163,17 @@ const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
 // the fix was never generalised to here. Spread these into every block rather
 // than restating the literals, so a future field added at the root only has to
 // be added in one more place.
-const OG_INHERITED = { type: 'website', locale: 'en_US', siteName: 'Rip Packs City' } as const
-const TWITTER_INHERITED = { card: 'summary_large_image', site: '@RipPacksCity', creator: '@RipPacksCity' } as const
+//
+// ⚠ EXPORTED (2026-08-17). The instruction three lines up — "spread these into
+// every block rather than restating the literals" — had only ever been applied
+// to the three helpers below. 43 `app/**` files build their metadata inline and
+// so bypassed them entirely; 31 of those were the /insights board layouts, which
+// set `creator` and omitted `site`, dropping the very byline this block was
+// added to restore. They now spread these, and
+// __tests__/metadata-inline-blocks-inherit-root-fields.test.ts walks the tree
+// rather than naming the helpers, so a new inline block cannot reopen it.
+export const OG_INHERITED = { type: 'website', locale: 'en_US', siteName: 'Rip Packs City' } as const
+export const TWITTER_INHERITED = { card: 'summary_large_image', site: '@RipPacksCity', creator: '@RipPacksCity' } as const
 
 export function pageMetadata(page: string, collectionLabel: string, collectionId: string): Metadata {
   const override = PAGE_META_OVERRIDES[`${page}:${collectionId}`]

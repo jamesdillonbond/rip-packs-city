@@ -9,6 +9,7 @@ import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import SiteFooter from "@/components/SiteFooter"
 import WalletSearchBand from "@/components/WalletSearchBand"
+import { TWITTER_INHERITED } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -35,6 +36,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Public Insights — Rip Packs City",
     description:

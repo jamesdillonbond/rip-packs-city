@@ -7,6 +7,7 @@
 // not a live feed — which is the whole point of the post.
 
 import Link from "next/link"
+import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
@@ -16,6 +17,7 @@ export const metadata = {
   description:
     "53 Star Wars editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
   openGraph: {
+    ...OG_INHERITED,
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:
       "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
@@ -23,6 +25,7 @@ export const metadata = {
     type: "article",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:

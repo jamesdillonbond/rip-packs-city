@@ -7,6 +7,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { buildSeriesBars, closedMarketNote } from "@/lib/share-card-view"
+import { OG_INHERITED } from "@/lib/seo"
 
 interface SnapshotData {
   wallet: string
@@ -143,6 +144,7 @@ export async function generateMetadata(
     alternates: { canonical },
     description: `View the NBA Top Shot collection for wallet ${params.wallet} on Rip Packs City.`,
     openGraph: {
+      ...OG_INHERITED,
       title: `Collection Card — ${params.wallet}`,
       description: `NBA Top Shot collection snapshot for ${params.wallet}`,
       type: "website",

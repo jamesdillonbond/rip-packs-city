@@ -29,7 +29,7 @@ import PackShareButton from "@/components/packs/PackShareButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
-import { packJsonLd } from "@/lib/seo"
+import { OG_INHERITED, TWITTER_INHERITED, packJsonLd } from "@/lib/seo"
 import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
 import {
   num,
@@ -211,6 +211,7 @@ export async function generateMetadata(
     description: descParts.join(" "),
     alternates: { canonical },
     openGraph: {
+      ...OG_INHERITED,
       title: metaTitle,
       description: descParts.join(" "),
       url: canonical,
@@ -219,6 +220,7 @@ export async function generateMetadata(
       images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
     },
     twitter: {
+      ...TWITTER_INHERITED,
       card: "summary_large_image",
       title: metaTitle,
       description: descParts.join(" "),

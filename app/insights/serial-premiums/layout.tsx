@@ -7,6 +7,7 @@
 // don't index as duplicate content. Mirrors app/insights/top-sales/layout.tsx.
 
 import type { Metadata } from "next"
+import { TWITTER_INHERITED } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Serial Premiums — What the #1 Mint Really Sells For",
     description:

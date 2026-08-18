@@ -7,6 +7,7 @@
 // (12,546 catalog rows; ~80% TS edition-page coverage on the Base join).
 
 import Link from "next/link"
+import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
@@ -16,6 +17,7 @@ export const metadata = {
   description:
     "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
   openGraph: {
+    ...OG_INHERITED,
     title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
     description:
       "Top Shot just pinned every Moment's video to IPFS. What content-addressing guarantees, how to verify a Moment yourself, and what we built with the data.",
@@ -23,6 +25,7 @@ export const metadata = {
     type: "article",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
     description:

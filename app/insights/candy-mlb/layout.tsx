@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags";
+import { TWITTER_INHERITED } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
 
@@ -50,6 +51,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Candy MLB ICONs — Rip Packs City",
     description:

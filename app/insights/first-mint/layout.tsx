@@ -3,6 +3,7 @@
 // SEO surface for the public Top Shot first-mint trophy tracker.
 
 import type { Metadata } from "next"
+import { TWITTER_INHERITED } from "@/lib/seo"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -41,6 +42,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
+    ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: "Top Shot First-Mint Trophy Tracker",
     description:

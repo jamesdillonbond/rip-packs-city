@@ -468,6 +468,16 @@ const PINS = [
     migration: "supabase/migrations/20260802200000_audit_20260802_snapshot_detect_floor_drops.sql",
   },
   {
+    // The PREVIEW half of the deal-alert pipeline. Pinned 2026-08-17 — it was
+    // the largest unpinned function on the alert path, and an alert's output is
+    // SILENCE, so a defect there is unfalsifiable from the outside: the
+    // 2026-08-16 migration exists because a saved, "live"-looking $0.60 alert
+    // was structurally incapable of firing for weeks.
+    fn: "build_deal_alerts_for_subscription",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql",
+  },
+  {
     fn: "detect_concentration_buys",
     test: "supabase/tests/detect_concentration_buys.sql",
     migration: "supabase/migrations/20260802200500_audit_20260802_snapshot_detect_concentration_buys.sql",

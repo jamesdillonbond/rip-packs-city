@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
+import { OG_INHERITED } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
@@ -9,6 +10,7 @@ export function generateMetadata(): Metadata {
     description:
       "Terms of service for Rip Packs City — service description, acceptable use, disclaimers, limitation of liability, and governing law.",
     openGraph: {
+      ...OG_INHERITED,
       title: "Terms of Service — Rip Packs City",
       description:
         "By using Rip Packs City you agree to these terms. Service description, disclaimers, acceptable use, and governing law for the platform.",

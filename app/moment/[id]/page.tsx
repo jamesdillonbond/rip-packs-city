@@ -83,6 +83,7 @@ import {
 } from "@/lib/moment-detail-seo"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
+import { OG_INHERITED } from "@/lib/seo"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -375,6 +376,7 @@ export async function generateMetadata(
     description,
     alternates: { canonical: canonicalPath },
     openGraph: {
+      ...OG_INHERITED,
       title,
       description,
       // ⚠ WIDTH/HEIGHT/ALT ARE NOT DECORATION ON THIS PAGE. /moment/<id> is the

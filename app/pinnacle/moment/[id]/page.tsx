@@ -33,6 +33,7 @@ import SupportChatConnected from "@/components/SupportChatConnected"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 import { load, decodeId, type LegacyData } from "@/lib/pinnacle/moment-detail"
+import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 
 export async function generateMetadata({
   params,
@@ -95,6 +96,7 @@ export async function generateMetadata({
     description,
     alternates: { canonical },
     openGraph: {
+      ...OG_INHERITED,
       title,
       description,
       url: canonical,
@@ -102,7 +104,8 @@ export async function generateMetadata({
       type: "website",
       images: [{ url: ogImage, width: 512, height: 512, alt: charName ?? "Pinnacle pin" }],
     },
-    twitter: { card: "summary_large_image", title, description, images: [ogImage] },
+    twitter: {
+    ...TWITTER_INHERITED, card: "summary_large_image", title, description, images: [ogImage] },
   }
 }
 

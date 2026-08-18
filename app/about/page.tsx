@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
+import { OG_INHERITED } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
@@ -9,6 +10,7 @@ export function generateMetadata(): Metadata {
     description:
       "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland, Oregon by an active community member.",
     openGraph: {
+      ...OG_INHERITED,
       title: "About — Rip Packs City",
       description:
         "Born in Rip City. Built for every Flow blockchain digital collectible community — NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
