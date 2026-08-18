@@ -19,8 +19,12 @@ improve our tests." Everything below is **re-derived live in this session**, not
 - **§5 — SHIPPED.** The live smoke went **6 → 31** `/insights` entries, with a **bidirectional**
   completeness guard (`__tests__/e2e-smoke-covers-public-insights-boards.test.ts`) so a launch-flag
   flip fails in a sub-second vitest case rather than on the 6-hourly monitor.
-- **§3 — first pin landed:** `build_deal_alerts_for_subscription`, verified byte-identical to LIVE
-  `prosrc` and killed by three separate mutations. **273 substantial functions remain unpinned.**
+- **§3 — TWO pins landed:** `build_deal_alerts_for_subscription` and `dispatch_due_deal_alerts` (the
+  preview and sending halves of the alert pipeline), both verified byte-identical to LIVE `prosrc`
+  before pinning and each killed by multiple mutations. Pins 180 → 182, DB suite 171 → 174 files.
+  **272 substantial functions remain unpinned.** ⚠ The dispatcher's first fixture let **two of five
+  mutations survive** — see §3 for both shapes; the assertions were fine, the fixture could not
+  distinguish the implementations.
 - **§4 is untouched and remains the largest gap.**
 
 ⚠ **§0's read of the component gate's margin was too kind and is corrected immediately below.**
@@ -343,8 +347,10 @@ itself: if one fails, triage it; do not delete the line.
 2. **§4 edge-fn cursor extraction** — the largest gap, and the only one that is a real project. Start
    with the two `event_cursor` ingesters: a cursor that advances past a failed write is silent
    permanent loss, and nothing today can catch it.
-3. **§3, the remaining 273 pins** — next is `dispatch_due_deal_alerts`, in the same migration file the
-   first pin used, so the verbatim source is already to hand.
+3. **§3, the remaining 272 pins.** `dispatch_due_deal_alerts` is done; next are
+   `get_collection_stats` and `get_wallet_pack_summary` (a claim about the market and one about the
+   reader's own account), then `rpc_search_catalog`. ⚠ `rebuild_flowty_loans` is BLOCKED, not next: it
+   has no committed migration, so there is no verbatim source for the drift guard to compare against.
 4. **§6 smaller items** — `app/global-error.tsx` (zero tests, neither gate),
    `components/entity/PopularOnCollection.tsx` (29/29/7.7, and outside the server-page ratchet),
    `workers/sports-proxy` (44.53 br, and the subject of the top open item).
