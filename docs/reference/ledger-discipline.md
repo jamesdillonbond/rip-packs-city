@@ -12,3 +12,17 @@ Cowork has a push-capable git clone, Supabase MCP (read+write), Vercel/Sentry, C
 
 🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve, in this file and in the ledger.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: **11 of 12** spot-checked shas are gone (`4d1b74c7`→ now `3809425b`, `e719e5e5`, `8d1b9827`, `cb46a406`, `abe40f79`, `c1d25139`, `1a4c77a7`, `f1c20d0c`, `49b92983`, `2c5c9ad2`, `b4328b17`, …). **A missing sha does NOT mean the commit never existed** — find it by its commit MESSAGE (`git log --grep=`), or recover old→new from the Vercel deployment list, which still stores each old sha beside its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas). Any sha you cite from here on is post-purge and fine.
 
+---
+
+## The resolver's OWN guards go stale — two live instances, 2026-08-17
+
+⚠ **Both of these fired on CORRECT splices, and both were survivable only because the `git add` was gated on the resolver's exit code.** That gating is the load-bearing part of the recipe above; without it each of these would have staged a bad file instead of refusing.
+
+1. **The unanchored marker check, reproduced within an hour of reading the rule that documents it.** A resolver verifying its output with `'<<<<<<<' in out` aborted a correct resolution, because ledger entries **quote** conflict markers in prose — including the entries describing previous marker incidents. **Anchor to line start** (`^<<<<<<< `, `^=======$`, `^>>>>>>> `), exactly as the splice itself is anchored. This is now the **sixth** recorded instance of the substring-vs-line-start class in this file.
+
+2. **⚠ NEW — a title assertion pinned to a literal from the PREVIOUS run.** The resolver asserted the spliced entry's heading contained a fixed string (`'CLAUDE.md refresh'`) as a sanity check that it had grabbed the right block from `:3`. That is correct exactly once: the **next** push, with a different entry, it rejected a perfectly good splice. **Parameterize it** — pass the expected title in (`sys.argv[1]`), or assert the shape (`^### 2026-`) rather than the content.
+
+⚠ **The generalization is one this repo already holds for tests, and it applies to the write path too: a guard that NAMES its instances dies on a rename.** Three CI guards have died that way. A resolver is a guard; the same rule binds. **Assert the PROPERTY (a line-start heading, a +1 delta, no line-start markers), never a spelling you happened to use last time.**
+
+⚠ **And keep the delta checks, which is what makes a stale guard survivable:** `headings(out) == headings(theirs) + 1` and `noblank(out) <= noblank(theirs)` are both baseline-relative, so they stayed correct across two rebases while the content-pinned assertion did not.
+
