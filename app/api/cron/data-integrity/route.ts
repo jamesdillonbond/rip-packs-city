@@ -1,21 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendOpsAlert } from "@/lib/ops-alert";
-import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry";
+import { rpcWithRetry, withQueryDeadline } from "@/lib/analytics/rpc-with-retry";
 
-// Per-RPC budgets. maxDuration is 30s, so the two RPCs must not be able to spend
-// it between them: 10 + 8 = 18s worst case, leaving headroom for the three table
-// reads (measured 2026-08-18 at ~0.5s each, index-backed) and the response.
+// EVERY DB leg is bounded, and the budgets are chosen so their SUM fits inside
+// maxDuration=30: 6 + 8 + 3 + 3 + 3 = 23s worst case, leaving headroom for cold
+// start and the response.
 //
-// ⚠ These exist because an UNBOUNDED leg took the whole endpoint down. Measured
+// ⚠ These exist because UNBOUNDED legs took the whole endpoint down. Measured
 // 2026-08-18 during a saturation spell: get_fmv_coverage() did not finish in 55s,
 // so the 30s lambda died with FUNCTION_INVOCATION_TIMEOUT and the route returned
 // NOTHING — including the security-invariant result, which is the one check here
-// that must never go dark. `timeoutMs` is a TOTAL budget across attempts (shared
-// deadline in rpc-with-retry), so it bounds the call regardless of retries, and a
-// timeout is terminal rather than retried.
-const SECURITY_RPC_TIMEOUT_MS = 8_000;
-const COVERAGE_RPC_TIMEOUT_MS = 10_000;
+// that must never go dark.
+//
+// ⚠ BOUNDING ONLY THE TWO RPCs WAS NOT ENOUGH — verified against production, the
+// route still 504'd at exactly 30s with both RPCs capped at 8+10. The three table
+// reads were left unbounded on the strength of their SQL being fast (461ms/503ms/
+// 9.5ms, measured). That was the wrong inference: those timings came from a direct
+// SQL connection, while the route reaches them through PostgREST, where a request
+// can sit in an acquire queue for far longer than its statement takes to run. A
+// leg is bounded or it is not; "the query is fast" is not a bound.
+//
+// `timeoutMs` is a TOTAL budget across attempts (shared deadline in
+// rpc-with-retry), so it bounds each call regardless of retry settings, and a
+// timeout is terminal rather than retried. Genuine throws still propagate.
+const SECURITY_RPC_TIMEOUT_MS = 6_000;
+const COVERAGE_RPC_TIMEOUT_MS = 8_000;
+const TABLE_READ_TIMEOUT_MS = 3_000;
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,12 +114,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Badge data freshness.
-    const { data: badgeFreshness } = await supabaseAdmin
-      .from("badge_editions")
-      .select("updated_at")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single();
+    const { data: badgeFreshness } = await withQueryDeadline<{ updated_at: string }>(
+      supabaseAdmin
+        .from("badge_editions")
+        .select("updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single(),
+      "badge_editions.latest",
+      TABLE_READ_TIMEOUT_MS
+    );
     if (badgeFreshness?.updated_at) {
       const badgeAge = Math.round(
         (Date.now() - new Date(badgeFreshness.updated_at).getTime()) / 3600000
@@ -127,15 +142,23 @@ export async function GET(request: NextRequest) {
     // this was cosmetic rather than a fail-open verdict; the log line directly
     // below already prints `?? "?"` for an unknown badge age, so the honest
     // spelling was already in scope.
-    const { count: noSet, error: noSetErr } = await supabaseAdmin
-      .from("editions")
-      .select("id", { count: "exact", head: true })
-      .is("set_id", null);
-    const { count: noPlayer, error: noPlayerErr } = await supabaseAdmin
-      .from("editions")
-      .select("id", { count: "exact", head: true })
-      .is("player_id", null)
-      .not("name", "like", "Unknown%");
+    // ⚠ Bounded like every other leg. A timeout arrives as `error`, which the
+    // null-on-error spelling below already handles — it reports UNKNOWN, never a
+    // measured "0 orphans".
+    const { count: noSet, error: noSetErr } = (await withQueryDeadline(
+      supabaseAdmin.from("editions").select("id", { count: "exact", head: true }).is("set_id", null),
+      "editions.no_set",
+      TABLE_READ_TIMEOUT_MS
+    )) as { count?: number | null; error: any };
+    const { count: noPlayer, error: noPlayerErr } = (await withQueryDeadline(
+      supabaseAdmin
+        .from("editions")
+        .select("id", { count: "exact", head: true })
+        .is("player_id", null)
+        .not("name", "like", "Unknown%"),
+      "editions.no_player",
+      TABLE_READ_TIMEOUT_MS
+    )) as { count?: number | null; error: any };
     stats.editions_no_set = noSetErr ? null : noSet ?? null;
     stats.editions_no_player_real = noPlayerErr ? null : noPlayer ?? null;
 

@@ -28,6 +28,9 @@ const cfg = vi.hoisted(() => ({
   // When set, get_fmv_coverage never settles — the shape that took the whole
   // route down on 2026-08-18 (FUNCTION_INVOCATION_TIMEOUT at maxDuration).
   hangCoverage: false,
+  // When set, EVERY db leg hangs — RPCs, the badge single, and the count reads.
+  // Bounding only the two RPCs was verified insufficient against production.
+  hangAll: false,
 }))
 
 const alertSpy = vi.hoisted(() => vi.fn(async (_opts: any) => ({ suppressed: false })))
@@ -36,11 +39,13 @@ const sb = vi.hoisted(() => {
   const s: any = {}
   for (const m of ["from", "select", "eq", "in", "order", "limit", "gte", "lte", "is", "not"]) s[m] = () => s
   s.single = async () => {
+    if (cfg.hangAll) return new Promise(() => {})
     if (cfg.throwSingle) throw new Error("badge single boom")
     return { data: cfg.badge.data, error: cfg.badge.error }
   }
   s.maybeSingle = async () => ({ data: cfg.badge.data, error: cfg.badge.error })
   s.rpc = async (name: string) => {
+    if (cfg.hangAll) return new Promise(() => {}) // every RPC hangs, not just coverage
     if (name === "get_fmv_coverage") {
       if (cfg.hangCoverage) return new Promise(() => {}) // never settles
       return { data: cfg.coverage.data, error: cfg.coverage.error }
@@ -51,6 +56,7 @@ const sb = vi.hoisted(() => {
   // Terminal awaited reads (the two editions count queries, in order) resolve to
   // the configured counts; default 0.
   s.then = (resolve: any) => {
+    if (cfg.hangAll) return undefined // thenable that never settles
     const c = cfg.counts[cfg.countIdx] ?? { count: 0 }
     cfg.countIdx++
     return resolve({ data: [], error: null, count: c.count })
@@ -71,6 +77,7 @@ function resetCfg() {
   cfg.countIdx = 0
   cfg.throwSingle = false
   cfg.hangCoverage = false
+  cfg.hangAll = false
   alertSpy.mockClear()
 }
 
@@ -183,6 +190,39 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
       // The property the bound exists for: the OTHER checks still reported.
       expect(body.stats.security_invariant_violations).toBe(0)
       // A hung dependency is not an integrity issue — it must not page ops.
+      expect(body.issues).toEqual([])
+      expect(alertSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Regression pin for the SECOND production failure, 2026-08-18: with both RPCs
+  // bounded at 8+10s the route STILL 504'd at exactly 30s. The three table reads
+  // had been left unbounded because their SQL measured fast (461ms / 503ms /
+  // 9.5ms) — but those numbers came off a direct SQL connection, while the route
+  // reaches them through PostgREST, where a request can sit in an acquire queue
+  // far longer than its statement takes to run.
+  //
+  // ⚠ "The query is fast" is NOT a bound. This pins the property that matters:
+  // no combination of hung legs can push the handler past its budget.
+  it("returns within budget even when EVERY db leg hangs", async () => {
+    cfg.hangAll = true
+    vi.useFakeTimers()
+    try {
+      const pending = GET(authedReq())
+      // Past the sum of every budget (6 + 8 + 3 + 3 + 3 = 23s), still under the
+      // 30s maxDuration this route died at in production.
+      await vi.advanceTimersByTimeAsync(25_000)
+      const res = await pending
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      // Everything unknown — and every one of them says UNKNOWN, not a measured 0.
+      expect(body.stats.fmv_coverage_pct).toBeNull()
+      expect(body.stats.security_invariant_violations).toBeNull()
+      expect(body.stats.editions_no_set).toBeNull()
+      expect(body.stats.editions_no_player_real).toBeNull()
+      // A wholly unreachable DB is not an integrity finding, and must not page.
       expect(body.issues).toEqual([])
       expect(alertSpy).not.toHaveBeenCalled()
     } finally {
