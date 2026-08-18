@@ -2,7 +2,7 @@
 
 > **HOW THIS FILE WORKS (restructured 2026-08-17).** It had grown to 713,000 chars — far past the memory-file limit (`max(40000, contextWindow × 0.05 × charsPerToken)`, i.e. **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at). It now carries only what a session needs *before* it knows its topic; the rest moved **verbatim** to `docs/reference/*.md`. Nothing was deleted — a rule that feels missing is in one of those files.
 >
-> **KEEPING IT UNDER: the limit is on CHARACTERS and `wc -c` counts BYTES.** ⚠ Measured 2026-08-17: this file runs **~475 bytes longer than it is characters** (every `⚠ — ·` is multi-byte), so `wc -c` read **40,086 — apparently over — when the true length was 39,610**, and a session nearly emergency-trimmed a file that was fine. Bare `wc -m` also lies when the sandbox locale is unset ([tooling-gotchas.md](docs/reference/tooling-gotchas.md)). **Measure with `LC_ALL=C.UTF-8 wc -m CLAUDE.md`.** A durable rule that does not fit goes in the matching `docs/reference/*.md` with a one-line pointer from here — **over the limit the whole file is flagged and stops being trustworthy context**. Session entries go to `docs/sessions/`, never here.
+> **KEEPING IT UNDER: the limit is on CHARACTERS and `wc -c` counts BYTES.** ⚠ Measured 2026-08-17: this file runs **~475 bytes longer than it is characters** (every `⚠ — ·` is multi-byte), so `wc -c` read **40,086 — apparently over — when the true length was 39,610**, and a session nearly emergency-trimmed a file that was fine. Bare `wc -m` also lies when the sandbox locale is unset, and `wc -m` vs Node disagree by one per ASTRAL char ([tooling-gotchas.md](docs/reference/tooling-gotchas.md) has the 4-instrument table). **The BINDING number is the JS harness's: `node -e "console.log(require('fs').readFileSync('CLAUDE.md','utf8').length)"`.** ⚠ **The file is at its size EQUILIBRIUM (~100 chars of margin), so a new durable rule must DISPLACE one** — put it in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.** Session entries go to `docs/sessions/`, never here.
 >
 > ⚠ **Two rules govern every number in this file and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life** (a documented "this grep over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it). **Re-derive; do not quote.**
 
@@ -19,7 +19,7 @@ All under `docs/reference/`:
 - **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, saturation findings.
 - **`trust-board-and-safety.md`** — trust board (38 arms as of 2026-08-17 — re-count, and diff the breached SET, not its size), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
 - **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness, chain-abstraction Phases A–F.
-- **`routes-and-surfaces.md`** — route structure, per-collection `pages`, notable API endpoints, search.
+- **`routes-and-surfaces.md`** — route structure, per-collection `pages`, API endpoints, search.
 - **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, Cadence gotchas.
 - **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`session-and-archive-conventions.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
 - **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing**; CLAUDE.md is the rule, this is the archive.
@@ -79,7 +79,7 @@ Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles 
 
 Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
 
-**Repo map** (counts 2026-08-17 — re-derive, do not quote): `app/` App Router — **119** `page.tsx`, **456** `route.ts` under `app/api/**` · `lib/` **291** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **156** · `workers/` **10** Cloudflare egress proxies + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge functions · `scripts/` **94** ops scripts · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Surface detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
+**Repo map** (counts 2026-08-17 — re-derive, do not quote): `app/` App Router — **119** `page.tsx`, **456** `route.ts` under `app/api/**` · `lib/` **291** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **156** · `workers/` **10** Cloudflare egress proxies + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **94** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
 **Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
 
@@ -92,7 +92,7 @@ Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase 
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
 
-Both Vercel IDs are required on every single Vercel API or MCP tool call — never omit teamId.
+Both Vercel IDs are required on every Vercel API/MCP call — never omit teamId.
 
 ---
 
@@ -167,7 +167,7 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 
 ### Timestamps
 
-**DATES ARE PACIFIC (Trevor operates in PT).** ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents have come from a plausible timestamp produced by a clock whose zone was assumed.** `TZ=<anything> date` in Trevor's Git Bash silently returns **UTC labelled `GMT`** for every zone; plain `date` there has read a full calendar DAY ahead; and the Claude Code **web sandbox is PDT, not UTC**, so the reflexive "subtract 7h from `date -u`" lands a day early there. The trustworthy commands are `date '+%Z'` first, then PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` (it prints the offset, so it cannot lie silently) or a `zoneinfo` conversion in Python. Convert to PT before stamping any `### <date>` here or in the ledger.
+**DATES ARE PACIFIC (Trevor operates in PT).** ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents have come from a plausible timestamp produced by a clock whose zone was assumed.** `TZ=<anything> date` in Trevor's Git Bash silently returns **UTC labelled `GMT`** for every zone; plain `date` there has read a full calendar DAY ahead; and the Claude Code **web sandbox is PDT, not UTC**, so the reflexive "subtract 7h from `date -u`" lands a day early there. Trustworthy: `date '+%Z'` first, then PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` (it prints the offset, so it cannot lie silently) or a `zoneinfo` conversion in Python. Convert to PT before stamping any `### <date>` here or in the ledger.
 
 ### Windows / Git Bash
 
@@ -242,16 +242,16 @@ TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1a
 1. **Pinnacle FMV**: NEVER join by `edition_key` alone — always the triple (`character_name`, `set_name`, `variant_type`) per `92aab30`. Cadence uses `Int` not `UInt64`.
 2. **Memory-FMV banned** (`a910745`) — must tool-call in the same turn.
 3. **RPC is READ-ONLY** — no cart, no gifting, no trading. Never offer an action the product lacks.
-4. **An errored tool is NOT an empty result** — `status:"error"` and `status:"no_results"` are distinct claims and their prompt rules must stay distinct.
+4. **An errored tool is NOT an empty result** — `status:"error"` and `status:"no_results"` are distinct claims; their prompt rules must stay distinct.
 5. **A tool cannot observe its own health** — it can only report how old its data is. Never let copy reassure that a feed is fine.
 
-Remaining rules (`get_fmv` shape, `.eq` not `.ilike`, the `updated_at` trigger, the `feedback_type` filter), the tool list and the honesty constraints: [concierge.md](docs/reference/concierge.md).
+Remaining rules (`get_fmv` shape, `.eq` not `.ilike`, the `updated_at` trigger, `feedback_type` filter), the tool list and honesty constraints: [concierge.md](docs/reference/concierge.md).
 
 ---
 
 ## Code patterns and conventions
 
-- Full file replacements only — never snippets or diffs. Claude Code prompts: plain text, no markdown code blocks (iPhone copy-paste).
+- Full file replacements only — never snippets or diffs. Claude Code prompts: plain text, no code blocks (iPhone copy-paste).
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
 - `useSearchParams` requires a Suspense wrapper.
@@ -274,7 +274,7 @@ Remaining rules (`get_fmv` shape, `.eq` not `.ilike`, the `updated_at` trigger, 
 
 **Open items, stated rather than quietly dropped:**
 
-- **The sports-proxy `403` — still the highest-value open item.** ⚠ **Its "operator-only, it's a secret" label was REFUTED 2026-08-17: no secret is involved** (502 not 401, the env guard never fires, and the ESPN lane uses no proxy or secret and is ALSO 403ing) — **three providers across two independent egress networks**, i.e. providers tightening bot-blocking, not one stale fingerprint. ✅ **Decisive test DONE 2026-08-17 (residential): TWO causes, not one.** ESPN 200 here / 403 from Supabase ⇒ proxy it. `cdn.nba.com` 403 here too (Akamai, every path, any UA) ⇒ ⛔ UA-refresh and 403-retry are measured useless. ONE root cause behind three symptoms triaged apart — projections ~27 d stale, `nba_players` **101 d stale at 174 players / 19 of 30 teams**, `match-topshot-players` **zero** auto-aliases ever, and **Fast Break on a 19-team roster**. Full refutation: Known issues #8 in [known-issues.md](docs/reference/known-issues.md).
+- **The sports-proxy `403` — highest-value open item, and NOT one secret, one cause, or one fix.** ⚠ **The "operator-only, it's a secret" label was REFUTED 2026-08-17** (502 not 401; the ESPN lane uses no secret and is ALSO 403ing). ✅ **Residential decisive test DONE: TWO causes.** ESPN 200 residential / 403 from Supabase ⇒ proxy it. `cdn.nba.com` 403 residentially too (Akamai, every path, any UA) ⇒ ⛔ **UA-refresh and 403-retry are measured useless.** ⚠ **And restoring ESPN alone will NOT refill `nba_players`: the roster fetch is SLATE-GATED** (`teamPlan` comes from the day's scoreboard) and the season ended 08-04 — a healthy lane yields **zero rows until ~October**, then only teams that play, so do NOT read a flat catalogue as the fix having failed. The unbuilt cheap fix is a slate-independent sweep of the 30 team IDs. Symptoms: projections ~27 d stale, `nba_players` **102 d stale at 174 players / 19 of 30 teams**, `match-topshot-players` **zero** auto-aliases ever, **Fast Break on a 19-team roster**. Known issues #8 in [known-issues.md](docs/reference/known-issues.md).
 - The `match-topshot-players` perf restructure — correct, but it follows the 403; it cannot produce an alias while the catalogue is starved.
 - `fmv-recalc` — **RE-CHARACTERIZED 2026-08-17: wasteful, NOT broken** (72.7% wall-kills, 13,835 editions/day). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - `atlas-proxy` needs an operator `wrangler deploy` + a Cloudflare-egress probe; ~60% of `topshot-active-listings-ingest` sweeps fail `egress_blocked` meanwhile.
