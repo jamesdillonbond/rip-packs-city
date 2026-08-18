@@ -1,5 +1,25 @@
 # The 2026-08-15 conflated-subedition reorder FIXED the drain — and its `ok` flag makes the recovery invisible
 
+> ## ✅ SHIPPED 2026-08-18 — option 2, `ok` is reachable again
+>
+> A step Postgres cancels at `statement_timeout` (SQLSTATE **57014** / the
+> `canceling statement due to statement timeout` text) no longer populates an
+> `*_error` slot. It is recorded as `extra.truncated_steps` with the message
+> under `<step>_truncated` — the same contract `skipped_steps` already carried
+> (visible, never silent, never red). **The `ok` conjunction is UNCHANGED**, so
+> the false-positive risk this filing warned about does not arise: every other
+> error still reds the run.
+>
+> ⚠ A **gateway** timeout is NOT reclassified — same ~2 minutes, different
+> meaning — and that discriminator is pinned by a test.
+>
+> Pinned by five cases in `__tests__/api-admin-drain-conflated-subeditions.test.ts`,
+> all five verified red against the pre-fix route, including a source-derived
+> sweep so a tenth step cannot opt out of the classification.
+>
+> ⚠ The `conflated_editions_remaining` 961 → 974 question at the bottom is
+> **still open** — it was two points then and nothing here re-measured it.
+
 Filed 2026-08-17 16:45 PT / 23:45Z (Claude Code, interactive). **This corrects my own framing from two hours
 earlier**, where the watchlist audit listed `drain-conflated-subeditions` among "5 unwatched pipelines with
 zero successes." It has zero *successes*. It does not have zero *success*.
