@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — pinned `dispatch_due_deal_alerts`, and TWO of its five mutations survived the first fixture
+
+Second pin in the §3 lane (`supabase/tests/dispatch_due_deal_alerts.sql`; pins 180 → 182 across two commits, DB suite now **173 files**, drift guard 186 green). This is the SENDING half of the alert pipeline — the function that writes rows a human then receives — and its preview sibling was pinned an hour earlier. Verified byte-identical to LIVE `prosrc` before pinning (md5 `24ab9e7953c0005b10e987cbea62307e`, 13,203 chars).
+
+Six invariants: the raw-ask pool is built **only** when an active sub is price-only and only up to the largest such `max_price`; a price-only sub actually receives the $0.33 ask (**the defect the 2026-08-16 migration exists for**); an ordinary discount sub does not; a second run in the same `dedup_bucket` enqueues **0** and `enqueued` counts WRITES not matches; an unverified channel is skipped rather than written with a null target; and an empty active set returns `skipped: 'no_active_subscriptions'` rather than a silent zero.
+
+⚠ **THE REUSABLE PART IS THAT THE FIRST FIXTURE COULD NOT DISTINGUISH THE TWO IMPLEMENTATIONS — TWICE — AND ONLY RUNNING THE MUTATIONS SHOWED IT.** Both survivors read as thorough coverage:
+
+1. **Dropping `COALESCE(min_discount, 25) = 0` from the price-cap predicate survived**, because the only subscription in the fixture carrying a `max_price` WAS the price-only one, so widening the predicate selected the same row. Fixed by giving the ordinary sub a `max_price` too — "at least 25% off AND under $50" is an entirely normal subscription, and it is the only shape that separates the two predicates.
+2. **Replacing the per-sub pool guard with `pool IN ('price','deals')` survived**, because the one deals row was $20 against a $0.60 cap — **the PRICE FILTER excluded it whatever the pool guard did.** Fixed by adding a second deals row at $0.50, inside the cap, so the pool guard is the only thing keeping it away.
+
+**Both now fail a named assertion**, along with the unverified-channel, dedupe-counter and empty-run mutations. ⚠ **A sixth mutation SURVIVES ON PURPOSE and is documented in the file:** `IF v_price_cap IS NOT NULL` → `IF true` changes nothing, because the INSERT it guards filters on `low_ask <= v_price_cap` and `<= NULL` is NULL. The `IF` saves a scan; it does not decide the outcome. Recorded rather than chased with a contrived assertion — the load-bearing predicate is the one selecting `v_price_cap`, and that one is killed.
+
+⚠ Three dependency stubs were needed (`pinnacle_catalog`, `sales`, `get_edition_badges_unified`) for branches **no case exercises** — plpgsql plans the whole statement, so a missing relation fails on PLANNING rather than on the invariant, which reads like a broken test rather than a missing table.
+
+**Verified:** full DB-invariant suite **173 files green** against a throwaway Postgres 16; drift guard 186 green.
+
+- **Revert:** `git revert <sha>`. Test-only — one new `supabase/tests/*.sql` and one `PINS` entry. No product code, DB, migration, cron or data change.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — a docs-only commit reddened `main`, and the cause was a test that slept 90ms of WALL CLOCK inside a 300ms debounce window
 
 ⚠ **`c9923296` changed only markdown and its blocking `unit-tests` job FAILED**, between two passing runs of the same code (`272b6ce1` before, `0b112c0f` after). Not a threshold — `component-AdminFeedbackClient.test.tsx:363`, *"does not fire a request per keystroke"*, **`expected 2 to be 1`**. It slept **90ms of real time** inside a **300ms** debounce and asserted nothing had fired. **A `setTimeout` is a FLOOR on the delay, never a ceiling**: under runner contention the sleep outlasts the window, the debounce fires, and the branch is blocked for everyone over a component nobody touched.
