@@ -29,6 +29,44 @@ Evidence this has already bitten: `inbox/archive/2026-08-10T0515Z-…md` cites `
 
 Every monitor + night-pass health sweep, also run `SELECT * FROM check_pgcron_recent_failures();` — this surfaces the pg_cron-internal failure class that `detect_stalled_pipelines()` CANNOT see (it watches `pipeline_runs`, not `cron.job_run_details`). Empty array = all pg_cron healthy. A listed job is a real finding **only if its `last_run` is AFTER the relevant same-day fix landed**; a failure timestamp that predates a fix is a STALE pre-fix run that clears on the job's next tick — do NOT alarm on it. A genuinely-recent pg_cron failure = HIGH-PRIORITY inbox candidate. (Also permanent in both task SKILL.md health-sweep sections; this note is belt-and-suspenders.)
 
+## SENTINEL DECISION-QUEUE (2026-08-17 PT) — dispositions, so nobody re-derives these
+
+The queue's own warning was that **re-derivation is this project's recurring cost**, and three of its five
+items had already been measured elsewhere. Current state:
+
+- ✅ **Item 5 (`pinnacle-nft-resolver`, ~900 null-edition rows) is CLOSED — it is the 08-15 catalog gap.**
+  `pinnacle_sales.edition_id` FKs to `pinnacle_editions` (551 rows); the editions live only in
+  `pinnacle_catalog` (2,561). Re-measured 08-18T0112Z: `distinct_editions=161 · in_editions=0 ·
+  in_catalog=161`, up from 114 on 08-15 (**+41 % in three days**). Filed:
+  `inbox/2026-08-18T0112Z-pinnacle-null-edition-pool-is-the-catalog-gap-…md`.
+  ⛔ **Do NOT "park the unresolvable rows"** — they are not permanently unresolvable, and parking them
+  hides a widening gap. ⚠ The resolver's `failed: 0` means it **never reaches** these rows (946 of 954
+  have `resolution_attempts = 0`), not that it declines them gracefully.
+- ⏸ **Item 1 (pack-EV `fmv_current` JOIN) — mechanism CONFIRMED, still correctly unshipped.** Fully
+  measured already in `inbox/2026-08-16T1829Z-fmv-current-does-not-push-down-through-distinct-on.md`
+  (~3,100× — 335 buffers vs 1,046,192). The three callers are `compute_pack_ev_from_pool`,
+  `…_from_pool_tier_weighted`, `…_per_edition_weighted`. **The blocker is not analysis, it is that two of
+  the three are unmeasured — and they cannot be measured during a saturation spell.** Measure in a quiet
+  window first. ⛔ Never `CREATE OR REPLACE VIEW fmv_current` (resets `security_invoker`); fix the
+  CALLERS via a lateral accessor.
+- 🔑 **Item 2 (`wallet-username-resolver`) is OPERATOR-ONLY — it is not pg_cron.** Caller enumerated
+  08-18: absent from `vercel.json` (36 crons), pg_cron (94 jobs), GHA and in-repo fetches. It is
+  **cron-job.org**, firing `POST /api/cron/resolve-wallet-usernames` 2×/hour. Trevor chose lever (a),
+  cut the cadence → **every 3 h**. Sizing: 72.3 % of runs fail, and the failures still pay the full
+  21-day `sales` scan before `wallet_usernames_unresolved`'s `statement_timeout=60s` kills them, for
+  ~31 usernames/day. ⚠ Cadence only — **do not narrow the 21-day window** (breaks the 14-day retry).
+- 🔍 **Item 3's lever is NOT the index alone.** The cost is in `aggregate_saved_wallet_stats`, whose
+  `top_tier` **correlated subquery re-scans `wallet_moments_cache` once per `collection_id`**, and no
+  index carries `tier` (confirmed: 14 indexes, none include it; `idx_wmc_cohort_cover` is now **464 MB**,
+  not 458). Fold the subquery into the existing `GROUP BY` before considering a wider index — a fold
+  costs no write amplification on a 98 %-non-HOT table.
+
+⚠ **Measurement hygiene, learned the hard way 08-18:** the Supabase MCP 60 s cap abandons the RESULT, not
+the query — a "timed out" EXPLAIN keeps running (seen at 86 s) and retrying it stacks copies onto the
+saturation being measured. Take a positive control first (`count(*) FILTER (WHERE wait_event_type='IO')`
+over `pg_stat_activity`); if most active sessions are in IO wait, **every duration that hour is
+uninterpretable** — compare Buffers, never wall time.
+
 ## RETIRED STEERS — these were in this file and are now WRONG; do not re-add
 
 - ⛔ **"TS on-chain unmapped spike — do NOT skip/retire this class."** `topshot-flowty-unmapped-drain` was **deliberately RETIRED 2026-08-16** (schedule removed from `vercel.json`, verified absent) because its queue reached **0 open** and proving emptiness cost a full backlog scan on ~73 ticks/day. The old steer now argues against a decision that was correctly made.
