@@ -478,6 +478,15 @@ const PINS = [
     migration: "supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql",
   },
   {
+    // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
+    // sibling above pins what a subscriber WOULD get; this pins what is actually
+    // written — pool gating, per-subscription pool exclusivity, dedupe, and the
+    // rule that `enqueued` counts writes rather than matches.
+    fn: "dispatch_due_deal_alerts",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql",
+  },
+  {
     fn: "detect_concentration_buys",
     test: "supabase/tests/detect_concentration_buys.sql",
     migration: "supabase/migrations/20260802200500_audit_20260802_snapshot_detect_concentration_buys.sql",
