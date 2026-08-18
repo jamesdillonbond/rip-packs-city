@@ -25,7 +25,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** 14/14 green · red-on-demand under mutation (2 fail / 12 pass) · `npx tsc --noEmit` exit 0 · `npx eslint` exit 0 · headings 1661→1662 · swallowed-heading detector still **3** · future-dated **0**.
 
-**Revert:** `git revert <sha of the test commit>` — one new test file, no existing file modified. No DB, migration, cron, auth, hot-wallet or pricing change.
+**Revert:** `git revert 403a514d` — one new test file, no existing file modified. No DB, migration, cron, auth, hot-wallet or pricing change.
 
 ### 2026-08-17 · DOCS (Claude Code, interactive) — test-coverage analysis: the gates are healthy, the risk is in what they are structurally silent about
 
