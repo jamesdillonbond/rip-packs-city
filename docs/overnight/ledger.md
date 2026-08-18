@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — corrected FOUR future-dated ledger stamps and made the trap mechanically detectable; the warning had been in place the whole time
+
+**Four entries were stamped `2026-08-18` on the 17th**, all authored 17:46–18:21 PT, all interleaved with correctly-dated 08-17 entries: `4b32934` (18:21), `a18c39a` (18:09), `b7ec40b` (18:04), `2892f29` (17:46). Verified via `git log --date=format-local` before touching anyone's entry; all four corrected to `2026-08-17`, heading count unchanged at 1657, swallowed steady at 3. Between 17:00 PT and midnight PT the UTC clock is already on tomorrow, so a `date -u` stamp writes a day that has not happened.
+
+⚠ **The warning was already in BOTH the ledger header and CLAUDE.md, and it happened four times inside 35 minutes anyway. Four repeats past a documented warning is the signal to stop writing warnings.** Shipped `scripts/find-future-dated-ledger-headings.mjs`, wired into the `ledger-guard` CI job as a **ban at population zero** (the four are corrected, so any hit is new).
+
+⚠ **The guard does its OWN UTC→PT conversion, which is the entire point.** A check that asks the runner for "today" computes *the same wrong date the bug did* and passes — reproducing the exact defect it exists to catch. **Proved by measurement, not assertion:** the guard scores 2 on a poisoned fixture under `TZ=UTC`, `Asia/Tokyo`, `Pacific/Kiritimati` and `America/New_York`, while a naive host-clock version scored **1** and reported it "thought today was 2026-08-18". That is also why it is Node and not awk beside its sibling — awk has no tz database, and both Git Bash `date` forms are already documented liars here.
+
+**Two defects found in my own guard before it shipped, both by control rather than review:** (1) `Intl.DateTimeFormat("en-CA", …)` for a `YYYY-MM-DD` shape is a trap — on a small-ICU Node build every non-`en-US` locale silently falls back to `en-US`'s `M/D/YYYY` and the comparison never fires; now assembled from `formatToParts`, with an asserted shape and **exit 2 rather than a silent pass** if it cannot derive a date. (2) A loose future-date comparison fires on `### <date>` (quoted as a format example in the ledger's own header) and on every `### audit_20260705_*` heading, since both sort above a numeric date as strings; the match is now a strict `^### <ISO date>` and all three shapes are in the fixture. The CI step also **fails loudly if `node` is absent** rather than skipping — a guard that silently no-ops is indistinguishable from a passing one.
+
+**Also:** patch-file housekeeping. `freshness-view-applied-2026-08-16` and `push-setup-doc-fix-2026-08-16` both `git apply --reverse --check` cleanly, i.e. applied — deleted. `claude-md-char-limit-2026-08-17` gutted to a tombstone in the existing convention (pointing at `76d3e9d9`/`ee9c4db9` and naming the double-write failure mode); the two 08-13 tombstones left untouched. All are gitignored (`.gitignore:92`), so none of this touches the repo.
+
+**Dated sample 2026-08-17 18:4x PT: CLAUDE.md is 39,887 chars — margin 113.** ⚠ It read 389 → 91 → 176 → 137 → 207 → 113 across one evening on other sessions' commits, so a margin is only true at the instant it is measured. **Re-measure at the moment you commit; never quote one from earlier in the turn.**
+
+**Revert:** `git revert <this sha>` and the following commit — docs + one new script + one CI step. No DB, migration, cron, auth, hot-wallet or pricing change. Reverting restores the four wrong date stamps.
+
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — CLAUDE.md would not hold the slate-gate rule, so the concierge block was DISPLACED to its reference doc rather than shaved further
 
 **This is the equilibrium rule being applied to itself for the first time.** Adding the slate-gate qualifier (~250 chars) on top of upstream's fuller header put the file **158 over**. I trimmed five passages to get to **3 chars under**, which is not a stopping point — so I stopped shaving adjectives and displaced a section, which is what the file's own rule prescribes.
@@ -32,7 +49,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state.
 
-### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — answered the daytime monitor's team-roster honesty check: NO defect, the alert IS the policy working
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — answered the daytime monitor's team-roster honesty check: NO defect, the alert IS the policy working
 
 **The monitor filed a user-facing `get_team_players` 45 s timeout on `/[collection]/team/[slug]` and correctly called the honesty angle the higher-value one** — *"verify the page renders an HONEST degraded state, not a false 'roster unavailable'/empty-roster that reads as a fact about the team."* **Traced end to end: it does, by design, and the design is test-pinned. Do not re-investigate.**
 
@@ -63,7 +80,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Revert:** `git revert` this commit and `docs(reference): the char-limit measurement table` — docs-only. No DB, migration, cron, auth, hot-wallet or pricing change.
 
 
-### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — answered #8's open question: restoring ESPN alone will NOT refill `nba_players`, because the roster fetch is SLATE-GATED and the season is over
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — answered #8's open question: restoring ESPN alone will NOT refill `nba_players`, because the roster fetch is SLATE-GATED and the season is over
 
 ⚠ **First, a correction to MY OWN filing from earlier today.** I framed the sports-proxy 403 as *"three providers, two independent egress networks — the providers are tightening bot-blocking, not our infrastructure."* **The residential decisive test refutes the single-cause part:** `site.api.espn.com` returns **HTTP 200 residentially** while 403ing from Supabase edge (⇒ genuine **egress blocking**, fixable with a Worker route and no secret), whereas `cdn.nba.com` **403s residentially too**, on every path, identically with a current Chrome UA and a full browser header set. **Two causes, not one.** My "do not ship the UA refresh" call held and is now measured correct — but my causal model was wrong in the way that matters: **the ESPN lane IS fixable**, and "the providers are tightening" would have discouraged the cheap fix.
 
@@ -81,7 +98,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - **Nothing shipped.** Filed: `docs/overnight/inbox/2026-08-18T0120Z-restoring-espn-alone-will-not-refill-nba_players-the-roster-fetch-is-slate-gated.md`. All probes read-only.
 
-### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — the board-liveness SWEEP completes only half the time, and `cron.job_run_details.status` under-reports that by 40%
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — the board-liveness SWEEP completes only half the time, and `cron.job_run_details.status` under-reports that by 40%
 
 ⚠ **I started to re-file the 999s and STOPPED — grepping `docs/` first is what caught it.** `trust-board-and-safety.md` already documents them in more depth than I had: they are the **deliberate `budget_exhausted` branch, NOT the exception sentinel**; cron says `succeeded` because that branch returns normally; and `WHEN OTHERS` cannot catch a timeout at all because PostgreSQL excludes `QUERY_CANCELED`. **This entry adds only the thing that analysis lacked: the root cause, with a rate on it.**
 
@@ -139,7 +156,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state. All DB probes read-only.
 
-### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — `topshot-misattrib-drain` resolves fine but has applied NO re-key since 08-07, and my first severity read was 6.5x too high
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — `topshot-misattrib-drain` resolves fine but has applied NO re-key since 08-07, and my first severity read was 6.5x too high
 
 **Last of the five unwatched zero-success pipelines from the same session's coverage audit. It splits cleanly in half:** resolve → `topshot_misattrib_onchain_map` is **healthy (48,201 rows, +888 in 2 days, newest 2026-08-17 11:00Z)**; apply → `remap_topshot_from_onchain_map()` has written **nothing since 2026-08-07 11:01Z** in either audit table. **The authoritative map keeps growing and nothing is re-keyed from it.** Every run ends `rekey: upstream request timeout`.
 
