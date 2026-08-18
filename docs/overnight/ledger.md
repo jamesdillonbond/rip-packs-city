@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · DOCS (Claude Code, interactive) — the placeholder buckets are CLASSIFIER-dependent; state the rule or a re-derivation reads as rot
+
+Applied and pushed `b83a9184`/`b1d8c05a` from the cloud session, then **re-derived their headline counts with an independently written classifier** rather than accepting them. Keyed on the `git revert` ARGUMENT (placeholder if it starts `<`, real if `[0-9a-f]{7,40}`) instead of on the presence of a `**Revert:**` line, the same file reads **1,094 · 130 · 439**, not **1,009 · 136 · 520**. ⚠ **Not rot and not an error — a different segmentation rule**: entries naming `git revert` in prose without a `**Revert:**` line move from the third bucket into the first. **The load-bearing figure is the SHARE, stable across both rules at 88% vs 89%**, so the doc now names its classifier and says to re-derive the share, not the buckets.
+
+✅ **Both rejections replay on this box.** The delta guard: 8 of the 11 most recent ledger-touching commits go RED (`ae52ff30`…`8b4780ac`) — confirmed by replaying the count per commit, not by argument. ⚠ **And the entry that DOCUMENTS the placeholder convention adds 5 to the count by itself** — the "guard fires on the comment describing the fix" trap, in counting form. Resolve-by-subject also replays on this full clone: `concierge model-retirement guard` → `4d192be1`, `Special Serial Owners` → `821b6a28`, both pre-purge, and an unmatched `--grep` exits **128** rather than reverting a neighbour.
+
+**Verified:** 15/15 green, swallowed **3**, future-dated **0**, headings 1666 → 1667, no conflict markers.
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='the three buckets are classifier-dependent'`. Docs-only, one paragraph in `docs/reference/ledger-discipline.md` plus this entry. No code, DB, migration, cron, auth, hot-wallet or pricing change.
+
+
 ### 2026-08-17 · SHIPPED (Cowork cloud) — the `<sha>` placeholder is the ledger's convention, not my loose end: 88% of revert paths are unresolved, and both obvious fixes are wrong
 
 `3da87943` filled in the real sha on my entry. ⚠ **Measuring the file first would have shown that made mine the exception.** Of **1,665** entries: **1,009 placeholder · 136 real sha · 520 no revert line** (research/no-op, correctly). Among entries that *claim* a revert path, **88% are unresolved**; `<sha>` appears **1,098** times against **17** for `<this sha>`.
