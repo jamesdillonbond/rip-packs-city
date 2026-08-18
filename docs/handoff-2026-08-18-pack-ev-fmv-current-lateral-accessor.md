@@ -172,3 +172,45 @@ One commit on `main` carrying the migration, the restructured pgTAP test (byte-i
 PINS repoint; pgTAP + drift guard green; dist 4184 computing at all; a small dist's pool query reading
 thousands of buffers instead of the full `fmv_snapshots_2026` partition; jobid 71's ~100 min/week of
 `cron_heavy` for zero rows collapsing.
+
+---
+
+## ADDENDUM 2026-08-18 ~05:00Z — the blast radius is TWO cron jobs, not one
+
+Found by running the standing `SELECT * FROM check_pgcron_recent_failures();` sweep. `focus.md` credits
+**jobid 71** as the caller; there is a **second**, and it is not recorded anywhere:
+
+| jobid | jobname | command | owner | schedule | fails / runs (24h) |
+|---:|---|---|---|---|---:|
+| **71** | `rpc-backfill-historical-pack-ev` | `SELECT public.backfill_topshot_historical_pack_ev(15)` | `cron_heavy` | `13 * * * *` | **6 / 24 (25 %)** |
+| **217** | `rpc-atlas-pack-ev` | `SELECT public.refresh_atlas_pack_ev()` | `cron_heavy` | `25 * * * *` | **5 / 24 (21 %)** |
+
+Both fail with `canceling statement due to statement timeout`, and both timeout `CONTEXT` strings are
+the **pool CTE of `compute_pack_ev_per_edition_weighted`, verbatim**:
+
+```
+CONTEXT:  SQL statement "WITH pool AS (
+    SELECT
+      CASE WHEN v_use_original THEN COALESCE(pdp.orig_drop_weight, 0) ELSE pdp.drop_weight END A…
+```
+
+### Attribution is unique — checked, not assumed
+
+| function | `WITH pool AS` | exact `v_use_original … orig_drop_weight` CASE | reads `fmv_current` |
+|---|---|---|---|
+| `compute_pack_ev_per_edition_weighted` | **YES** | **YES** | yes |
+| `compute_pack_ev_from_pool` | no | no | yes |
+| `compute_pack_ev_from_pool_tier_weighted` | no | no | yes |
+
+Only the pinned function carries that CTE, so the `CONTEXT` identifies it unambiguously. Confirmed from
+the other direction too: `prosrc` of **both** `backfill_topshot_historical_pack_ev` and
+`refresh_atlas_pack_ev` contains `compute_pack_ev_per_edition_weighted`, and **neither** calls
+`compute_pack_ev_from_pool`.
+
+👉 **So fixing the pinned function alone repairs two hourly `cron_heavy` jobs**, each currently burning
+its full budget ~1 run in 4 before being killed. That strengthens the case for shipping it on its own
+and is additional to the ~100 min/week already attributed to jobid 71.
+
+⚠ All three functions read `fmv_current`, so the other two carry the same defect via a different query
+shape — consistent with `dac95c8e`'s "scope is 3 functions". They still need measurement and still must
+not gate this.
