@@ -8,6 +8,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — CLAUDE.md would not hold the slate-gate rule, so the concierge block was DISPLACED to its reference doc rather than shaved further
+
+**This is the equilibrium rule being applied to itself for the first time.** Adding the slate-gate qualifier (~250 chars) on top of upstream's fuller header put the file **158 over**. I trimmed five passages to get to **3 chars under**, which is not a stopping point — so I stopped shaving adjectives and displaced a section, which is what the file's own rule prescribes.
+
+- ⚠ **Moved VERBATIM into `docs/reference/concierge.md` first, then compressed** — CLAUDE.md's inline concierge rules 3–5 (READ-ONLY, errored-≠-empty, a-tool-cannot-observe-its-own-health) were **NOT duplicates of that doc's numbered 1–6**; the doc's own note said CLAUDE.md held them inline by design, so deleting them would have lost three honesty rules. They are now in concierge.md under a heading that says where they came from. **CLAUDE.md keeps READ-ONLY (it binds every surface, not just the concierge) and the Pinnacle join triple.** Section 813 → 610 chars; net file **39,793**, margin **207**.
+- ⚠ **Adopted the BINDING measure from the char-limit table upstream shipped an hour ago** (`ee9c4db9`): `wc -m` and Node disagree by one per ASTRAL char, and this file carries one `🚨`. CLAUDE.md's `KEEPING IT UNDER` now prescribes **Node `.length`, not `wc`** — matching that commit's own conclusion, which its CLAUDE.md line had not yet caught up with. Every figure in this entry is the Node count.
+- **Merged rather than clobbered on the header conflict.** Upstream had rewritten the same block; I took THEIR text as the base (better measured) and re-applied only my two deltas on top — the Node prescription and the equilibrium clause. The archaeology trim I had made was dropped because upstream's margin made it unnecessary.
+- **The substance this was all in service of:** restoring ESPN alone will NOT refill `nba_players` — `sync-nba-projections` builds `teamPlan` from the day's scoreboard and the season ended 08-04, so a healthy lane yields zero rows until ~October, then only teams that play. **Do not read a flat catalogue as the fix having failed.**
+
+**Verified:** node `.length` **39,793** (207 under), every markdown link resolves, the three moved rules present in `concierge.md`, no code touched.
+
+**Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — folded the slate-gate finding into CLAUDE.md's top open item: restoring ESPN alone will NOT refill `nba_players`
 
 **The daytime filings landed while I was working, and one of them changes what "fix the sports-proxy 403" MEANS.** Another session had already shipped the residential decisive-test result (TWO causes, not one) into the same bullet; this adds the qualifier that arrived after it.
