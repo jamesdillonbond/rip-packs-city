@@ -1,5 +1,13 @@
 -- audit_20260818_repoint_panini_dry_days_arm_to_live_last_sale_usd
 --
+-- anon-exec: intentional — already revoked at creation; this snapshot does not reset it (rpc_thp_leg_panini)
+-- The marker rather than a REVOKE, per the guard's own rule for a snapshot migration.
+-- rpc_thp_leg_panini was REVOKED FROM PUBLIC, anon, authenticated at creation
+-- (20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql:284) and GRANTed only
+-- to cron_heavy (20260811010305_..._m3b_grant_cron_heavy_exec.sql:19). This is a SNAPSHOT:
+-- CREATE OR REPLACE FUNCTION does not reset a function ACL, so the existing revoke stands and
+-- re-issuing one here would be the change-production case the guard warns about.
+--
 -- WHAT: rpc_thp_leg_panini — the `panini_sale_price_capture_dry_days` streak now counts on
 -- `column_last_sale_usd` (the LIVE field) instead of `raw_supplied_sale_price` (the DEAD one).
 -- Two token changes inside the src/runs CTEs. Signature, SECDEF, search_path, the 60s
