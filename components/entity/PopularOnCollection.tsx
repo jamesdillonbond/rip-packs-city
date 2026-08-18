@@ -14,8 +14,8 @@
 // pe.id, so those link to /disney-pinnacle/edition/<id>.
 
 import Link from "next/link"
-import { supabaseAdmin } from "@/lib/supabase"
-import { getCollection, getCollectionUuid } from "@/lib/collections"
+import { getCollection } from "@/lib/collections"
+import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
 import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { tileSubject } from "./_shared"
@@ -42,9 +42,6 @@ interface Hubs {
 }
 
 const EMPTY_HUBS: Hubs = { sets: [], players: [], teams: [], series: [] }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb = supabaseAdmin as any
 
 // Dedupe a list of raw entity names into the first `cap` distinct hub links.
 // Slugs use slugifyName so they roundtrip with the sitemap + the entity RPCs.
@@ -77,81 +74,41 @@ export function distinctSlugLinks(
 // fan-out only. Sourced from a single bounded, recency-ordered editions sample
 // (diverse coverage, cheap) plus collection_series — the layout ISR-caches the
 // segment hourly so these queries don't run per request.
-async function loadHubs(collection: string): Promise<Hubs> {
-  if (collection === "disney-pinnacle") return EMPTY_HUBS
-  const uuid = getCollectionUuid(collection)
-  if (!uuid) return EMPTY_HUBS
-  try {
-    const [edRes, seriesRes] = await Promise.all([
-      sb
-        .from("editions")
-        .select("set_name, player_name, team_name")
-        .eq("collection_id", uuid)
-        .order("last_updated_at", { ascending: false, nullsFirst: false })
-        .limit(1000),
-      sb
-        .from("collection_series")
-        .select("display_label")
-        .eq("collection_id", uuid)
-        .limit(60),
-    ])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows: any[] = Array.isArray(edRes?.data) ? edRes.data : []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seriesRows: any[] = Array.isArray(seriesRes?.data) ? seriesRes.data : []
-    return {
-      sets: distinctSlugLinks(rows.map((r) => r.set_name), collection, "set", 12),
-      players: distinctSlugLinks(rows.map((r) => r.player_name), collection, "player", 12),
-      teams: distinctSlugLinks(rows.map((r) => r.team_name), collection, "team", 10, true),
-      series: distinctSlugLinks(seriesRows.map((r) => r.display_label), collection, "series", 12),
-    }
-  } catch {
-    return EMPTY_HUBS
+async function loadHubs(collection: string): Promise<{ hubs: Hubs; ok: boolean; reason?: string }> {
+  if (collection === "disney-pinnacle") return { hubs: EMPTY_HUBS, ok: true }
+  const { data, ok, reason } = await fetchHubRows(collection)
+  if (!ok) return { hubs: EMPTY_HUBS, ok: false, reason }
+  return {
+    hubs: {
+      sets: distinctSlugLinks(data.editions.map((r) => r.set_name), collection, "set", 12),
+      players: distinctSlugLinks(data.editions.map((r) => r.player_name), collection, "player", 12),
+      teams: distinctSlugLinks(data.editions.map((r) => r.team_name), collection, "team", 10, true),
+      series: distinctSlugLinks(data.series.map((r) => r.display_label), collection, "series", 12),
+    },
+    ok: true,
   }
 }
 
-async function loadLinks(collection: string): Promise<EntityLink[]> {
-  try {
-    if (collection === "disney-pinnacle") {
-      const { data, error } = await sb
-        .from("pinnacle_editions")
-        .select("id, character_name, set_name")
-        .not("thumbnail_url", "is", null)
-        .not("character_name", "is", null)
-        .order("mint_count", { ascending: true, nullsFirst: false })
-        .limit(18)
-      if (error || !Array.isArray(data)) return []
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return data.map((r: any) => ({
-        href: `/disney-pinnacle/edition/${encodeURIComponent(r.id)}`,
+async function loadLinks(collection: string): Promise<{ links: EntityLink[]; ok: boolean; reason?: string }> {
+  const { data, ok, reason } = await fetchLinkRows(collection)
+  if (!ok) return { links: [], ok: false, reason }
+  if (collection === "disney-pinnacle") {
+    return {
+      links: data.map((r) => ({
+        href: `/disney-pinnacle/edition/${encodeURIComponent(String(r.id))}`,
         name: r.character_name as string,
         sub: (r.set_name as string) ?? null,
-      }))
+      })),
+      ok: true,
     }
-
-    const uuid = getCollectionUuid(collection)
-    if (!uuid) return []
-    // Team moments (player_name null — WNBA Skyline, Season Rewind, ...) carry a
-    // team_name + play_type instead of a player; allow them in and render via
-    // tileSubject as "{team} {play}". Player moments keep player_name.
-    const { data, error } = await sb
-      .from("editions")
-      .select("external_id, player_name, team_name, play_type, set_name")
-      .eq("collection_id", uuid)
-      .not("thumbnail_url", "is", null)
-      .or("player_name.not.is.null,team_name.not.is.null")
-      .not("external_id", "is", null)
-      .order("circulation_count", { ascending: true, nullsFirst: false })
-      .limit(18)
-    if (error || !Array.isArray(data)) return []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return data.map((r: any) => ({
-      href: `/${collection}/edition/${encodeURIComponent(r.external_id)}`,
+  }
+  return {
+    links: data.map((r) => ({
+      href: `/${collection}/edition/${encodeURIComponent(String(r.external_id))}`,
       name: tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name }),
       sub: (r.set_name as string) ?? null,
-    }))
-  } catch {
-    return []
+    })),
+    ok: true,
   }
 }
 
@@ -192,7 +149,20 @@ function HubRow({ label, links }: { label: string; links: HubLink[] }) {
 export default async function PopularOnCollection({ collection }: { collection: string }) {
   const coll = getCollection(collection)
   if (!coll) return null
-  const [links, hubs] = await Promise.all([loadLinks(collection), loadHubs(collection)])
+  const [linkRes, hubRes] = await Promise.all([loadLinks(collection), loadHubs(collection)])
+  const links = linkRes.links
+  const hubs = hubRes.hubs
+
+  // ⚠ A FAILED READ AND AN EMPTY CATALOGUE BOTH RENDER NOTHING HERE, and that
+  // is the right call — an anonymous crawler has no use for a degraded notice
+  // and there is no honest user-facing claim to make about absent internal
+  // links. But the two must remain DISTINGUISHABLE somewhere, or a timeout
+  // silently deletes the crawl path from a page that still returns 200 and
+  // still looks complete. This log is that somewhere: it makes an SEO
+  // regression falsifiable instead of invisible.
+  if (!linkRes.ok) console.warn(`[popular-on-collection] links read failed collection=${collection}: ${linkRes.reason}`)
+  if (!hubRes.ok) console.warn(`[popular-on-collection] hubs read failed collection=${collection}: ${hubRes.reason}`)
+
   const hasHubs = hubs.sets.length + hubs.players.length + hubs.teams.length + hubs.series.length > 0
   if (links.length === 0 && !hasHubs) return null
 

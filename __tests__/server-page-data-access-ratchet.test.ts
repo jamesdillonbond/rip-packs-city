@@ -150,13 +150,26 @@ const BUDGET = 8
  * not done for the ratchet — the layout FAILS OPEN on an unreadable answer so a
  * transient RPC error cannot 404 an indexed moment out of Google, a contract its
  * comment asserted and nothing checked because nothing could reach the code.
- * Lower this by extracting, never by raising it.
+ *
+ * 1 -> 0 immediately after: `components/entity/PopularOnCollection`'s four
+ * queries moved to `lib/entity/popular-on-collection-fetchers.ts`. ⚠ **This is
+ * now a BAN AT POPULATION ZERO, which this repo prefers to a ratchet** — it
+ * costs no allowlist, so the next `layout.tsx` or server component that reaches
+ * for a client reds on the spot. Lower by extracting, NEVER raise: at zero,
+ * raising it is not loosening a budget, it is deleting the guard.
+ *
+ * ⚠ That extraction was also not for the count. `loadHubs` never destructured
+ * `error` (the documented `Array.isArray(data) ? data : []` fabricated-empty
+ * shape) and `loadLinks` collapsed error and empty into one `[]`, so a
+ * statement timeout silently deleted the internal-link block the component
+ * exists to provide — from a page that still returned 200 and still looked
+ * complete. It cannot lie in words; it could vanish without trace.
  *
  * ⚠ Client components are NOT excluded. Today none match, and if one ever
  * imports `@/lib/supabase` that is a service-role client in the browser — the
  * loudest possible reason to be counted, not an exemption.
  */
-const NON_PAGE_BUDGET = 1
+const NON_PAGE_BUDGET = 0
 
 const COMPONENTS_DIR = join(process.cwd(), "components")
 
@@ -336,6 +349,14 @@ describe("server-page data-access ratchet", () => {
     for (const f of everything) {
       expect(pageSet.has(f) || nonPageSet.has(f), `${f} is in neither budget — the walks leave a gap`).toBe(true)
     }
+  })
+
+  it("the converted PopularOnCollection reads through lib/, not a client of its own", () => {
+    // At NON_PAGE_BUDGET 0 the count assertion alone would pass if this file
+    // were simply deleted, so pin the shape that earned the zero.
+    const src = readFileSync(join(COMPONENTS_DIR, "entity", "PopularOnCollection.tsx"), "utf8")
+    expect(src).toContain('from "@/lib/entity/popular-on-collection-fetchers"')
+    expect(DIRECT_CLIENT.some((rx) => rx.test(src))).toBe(false)
   })
 
   it("the converted moment layout reads through lib/, not a client of its own", () => {
