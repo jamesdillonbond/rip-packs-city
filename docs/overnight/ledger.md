@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · SHIPPED (Claude Code, interactive) — four anonymously-reachable probes were inventing their answers, and the leak guard excluded all four by construction
+
+**The guard's exclusion is a claim about a FILE; the surface is per HANDLER.** `anon-api-no-driver-message-leak-guard` skips `app/api/admin/**` and `app/api/cron/**` wholesale, on the stated reasoning that the route's own bearer check turns an unauthenticated caller away before the query runs — and it asserts that exclusion with a **file-level grep** for `INGEST_SECRET_TOKEN|CRON_SECRET|…`. That reasoning is sound for a handler that can READ the bearer. **`export async function GET()` takes no parameters, so it cannot read a header, a cookie or a query param** — and `isPublicPath` returns true for both prefixes, so the proxy steps aside and every anonymous caller reaches the body. One gated POST vouched for the ungated GET beside it.
+
+⚠ **THE FIRST MEASUREMENT WAS WRONG AND IS NOT THE NUMBER BELOW.** A static "which handlers reach a gate" sweep reported **22** file-gated-but-handler-ungated handlers. Spot-reading five of them found **four gated** — via a module-level `const TOKEN = process.env.INGEST_SECRET_TOKEN` the walker did not follow, or via `export const GET = handler`. That number was discarded, not published. The replacement predicate is decidable from the declaration alone (**an empty parameter list**), and every hit was then read by hand.
+
+⚠ **Zero-arg does NOT imply unauthenticatable on its own** — `cookies()`/`headers()` from `next/headers` are ambient in the App Router, so a zero-arg handler importing them CAN authenticate. That check is in the guard, and it is the false positive this pass nearly shipped.
+
+**Measured 2026-08-18: exactly FOUR unauthenticatable handlers under the two excluded prefixes, all four dishonest.**
+
+| handler | what it published on a failed read |
+|---|---|
+| `/api/cron/price-snapshots` GET | `total_snapshots: count ?? 0` — a **measured zero** — plus null bucket/staleness, all stamped `status: "ok"`; and `err.message` on a throw |
+| `/api/cron/offers-sweep` GET | `{ error: error.message }` — Postgres's own text, to anyone |
+| `/api/cron/topshot-deal-floor-serials` GET | same |
+| `/api/admin/backfill-offer-fill-sales` GET | error **discarded** ⇒ `ok: true, cursor: null`, byte-identical to "the backfill has not started yet" — the exact state the probe exists to report |
+
+**All four now end their failure path at `apiErrorResponse()`** (503 + `Retry-After` on a timeout, `no-store`, stable code, driver text logged and never published). `price-snapshots` also moved `.single()` → `.maybeSingle()`, because **`.single()` errors on an empty table** and so could not tell "no snapshots yet" from "the read failed" — the three states are now read failed · ok+empty · ok. A `count` that is null with no error is treated as the third state, not as zero. Its vestigial `count: "exact"` on the latest-bucket read (requested, never read — an exact count over the table on every probe) is gone.
+
+⚠ **A TEST WAS PINNING THE FABRICATION UNDER A NAME THAT READ LIKE CORRECTNESS.** `"reports nulls/zero when no snapshots exist yet"` set `count: null` and asserted `total_snapshots === 0`. A genuinely empty table returns `count: 0`; **`count: null` is what a FAILED read returns.** Inverted rather than deleted, per the standing rule, and split into the empty-table control plus four failure mirrors.
+
+**Guard widened, and proven against a failure in both directions.** A new arm scans the BODY of each unauthenticatable admin/cron handler (sliced to the next top-level `export` so a leak in an authenticated sibling cannot be attributed to it). Reverting the four routes reds it, naming exactly the three leaking handlers; the fourth is a fabrication rather than a leak and is pinned by its own route test, also verified two-way. The not-vacuous assertion is on the **walk**, never on a dirty count, so it stays satisfiable at zero.
+
+**Verified:** `tsc --noEmit` clean; full suite **1,312 files / 14,157 tests** green.
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='cannot authenticate'`. Four route files + three test files. No DB, migration, cron, auth-policy, secret, hot-wallet or pricing change; **no handler gained or lost a gate** — only the failure path changed. Reverting restores the fabricated zero and the three driver-message leaks.
+
 ### 2026-08-18 · SHIPPED (Claude Code, interactive) — `wallet_moments_cache`'s every-5-min full seq scan is dead: `idx_wmc_fmv_conf_null` built CONCURRENTLY via pg_cron, and `CREATE INDEX CONCURRENTLY` turns out to be reachable from here after all
 
 **Landed the 08-18 daytime-monitor handoff** (`docs/handoff-2026-08-18-wmc-backfill-seqscan.md` + the 15:45Z inbox filing). `public.idx_wmc_fmv_conf_null` on `wallet_moments_cache (collection_id, edition_key) WHERE fmv_confidence IS NULL AND edition_key IS NOT NULL` is **valid / ready / 4,400 kB**. The backfill's target query went from `Seq Scan` over the 874 MB heap (`cost=0.00..134684.18`, ~288 scans/day) to **`Index Scan using idx_wmc_fmv_conf_null`**; one tick of `backfill_wmc_fmv_confidence(NULL, 1000)` now runs in **46 ms–3.0 s** instead of 32 s+.
