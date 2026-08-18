@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · SHIPPED (Claude Code, interactive) — CLAUDE.md refreshed to current state: five durable rules promoted, the repo map re-derived, and the file held at its size equilibrium by DISPLACING text verbatim
+
+**The ask was "analyze this repository and create a comprehensive CLAUDE.md … if one already exists, update it with the most recent state."** The file was structurally sound (restructured 08-17), so this was refresh + promotion, not authoring.
+
+**Re-derived the repo map instead of quoting it — every count had drifted inside one day.** `route.ts` **456 → 454** under `app/api/**` (the old figure was the `app/`-wide count; both are now stated), `lib/` **291 → 295**, `components/` **156 → 161**, `scripts/` **94 → 95**, and `workers/` **10 → 17** — the old label said "10 Cloudflare egress proxies" and the tree holds **14 `*-proxy` + 3 ingest/backfill**, all 17 with a wrangler config. `page.tsx` **119** and edge functions **39** unchanged.
+
+**Five durable rules promoted out of the last ~14 h of ledger entries, each checked against the tree rather than quoted:**
+
+1. **`try/catch` cannot catch a `maxDuration` kill** — heartbeat written BEFORE the work, kills read by CORRELATION, a marker row's `rows_*` **NULL, not 0**. Folded into the existing `after()` bullet, which already demanded a heartbeat and did not say why a `try/catch` is not one.
+2. **Ask what RUNS a guard** — and a staged-only guard inspects nothing on a CI checkout, so **assert the count it inspected** (verified live in `ci.yml:434-442`).
+3. **Every CI `run:` block is `bash -e`**, so a fallible command in an ASSIGNMENT aborts the step — a retry loop after it is dead code, and **`jq` counts** (verified in `ops-monitor.yml`, both call sites now `|| VAR=""`).
+4. **Diagnose a push failure from the ERROR STRING** — `non-fast-forward` means BEHIND ORIGIN, not denied.
+5. **A `LIMIT` bounds a query's OUTPUT, not its COST** — so "lower the limit" is often not a lever.
+
+Plus the two measured-but-unshipped DB fixes (`drain_fmv_cold_tail`'s unscoped aggregate, the pack-EV lateral) which had no slot in the open-items list.
+
+⚠ **Every addition was paid for by a DISPLACEMENT, and the displaced text moved VERBATIM rather than being deleted.** The file re-entered at **42,000 chars — 2,000 over** — and came back to **39,897 / 40,000 (103 headroom, Node `.length`, the binding instrument)**. Moved out: the success-coverage "recently closed" paragraph → `trust-board-and-safety.md` (with the 67-of-150 membership half recorded beside it), and the `nba_players` slate-gating mechanism + the unbuilt 30-team-ID sweep → `known-issues.md` #8. ⚠ **Every compression was checked against its reference home FIRST** — `ownership-sync-dune`'s 114,083 (cron-and-schedulers.md), the role-timeout numbers (database.md), the doc-archive layout (session-and-archive-conventions.md), the `bash -e` case study (testing-and-ci.md), the `INSIGHTS_DIR` guard example (testing-and-ci.md) — so nothing was shortened here that did not already exist downstream.
+
+⚠ **THE ARM COUNT COULD NOT BE RE-DERIVED AND IS NOT RESTATED AS CURRENT.** `select … from v_rpc_trust_health` **timed out at the 60 s MCP budget** (2026-08-18 ~15:45Z) — the documented failure mode, re-confirmed. The reference index still says "38 arms as of 2026-08-17 — re-count", now with the timeout and the sentinel `Trust Health` fallback named, rather than a number this session did not measure.
+
+**Verified:** all relative links in CLAUDE.md resolve (0 broken, scripted check); Node `.length` = 39,897.
+
+**Revert:** `git revert <sha>` — docs only (`CLAUDE.md` + 2 reference files). No code, DB, migration, cron, auth, secret, hot-wallet or prod-state change.
+
 ### 2026-08-18 · SHIPPED (Claude Code, interactive) — `drain-conflated-subeditions` can report success again: a statement-timeout cutoff is no longer an error
 
 **Landing the 2026-08-17 23:45Z filing** (`docs/overnight/inbox/2026-08-17T2345Z-the-conflated-subedition-drain-fix-WORKED-and-its-ok-flag-hides-it.md`), which measured that the 08-15 DRAIN-before-SEED reorder **worked** — `topshot_collision_knot_resolutions` 76 → 272 (196 in three days, after none for three weeks), `rows_written` 0 → ~1,000/run — **and that no instrument could see it.** `ok` in that route is an AND over all ten `*_error` slots, and several steps are *expected* to be cancelled at their own 120 s `statement_timeout` (`seed_recent` most reliably; `realign` is scan-bound and times out at any `p_limit`). So a slot was populated on essentially every tick and **`ok` was pinned false forever** — a pipeline that cannot report success is indistinguishable from a broken one, and here that hid a successful repair. `rows_written > 0` also kept it out of the `Pipeline Success Coverage` arm's third term, so **both detectors were blind on a healthy pipeline.**
