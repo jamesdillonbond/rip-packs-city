@@ -772,8 +772,18 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "row-count>0",
         soft: true,
       };
-      const { count } = await (svc.from("cached_listings") as any)
+      const { count, error } = await (svc.from("cached_listings") as any)
         .select("*", { count: "exact", head: true });
+      if (error) {
+        // couldNotRun: the check never evaluated, so its assertion must not be
+        // restated as though it had been violated. supabase-js RETURNS
+        // `{ count: null, error }` for a statement timeout rather than throwing,
+        // so time()'s catch never sees it — and `count ?? 0` would then publish
+        // a MEASURED ZERO, rendering `detail: "null rows (frozen Flowty-era
+        // cache)"` and `notes.count: 0` as facts about the table when the read
+        // simply failed. A failed read is not an answer.
+        return { ...meta, passed: false, couldNotRun: true, detail: `query error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
       const passed = (count ?? 0) > 0;
       return {
         ...meta,

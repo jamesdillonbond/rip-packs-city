@@ -508,6 +508,58 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     )
   })
 
+  // ── The cached_listings COUNT read (the `?? 0` fabricated-zero shape) ──────
+  //
+  // supabase-js RETURNS `{ count: null, error }` for a statement timeout rather
+  // than throwing, so time()'s catch never sees it. Before this pin the check
+  // read `const { count } = await ...` and fell through to `(count ?? 0) > 0`,
+  // publishing a MEASURED ZERO: `detail: "null rows (frozen Flowty-era cache)"`
+  // and `notes.count: 0` — a failed read rendered as a fact about the table.
+  it("a cached_listings count ERROR is flagged couldNotRun and states no row count", async () => {
+    const f = greenFixtures()
+    f.cached_listings = {
+      count: null,
+      error: { message: "canceling statement due to statement timeout" },
+    } as unknown as { data?: unknown; error?: unknown }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const listings = findResult(env, "cached_listings has rows")
+
+    expect(listings.passed).toBe(false)
+    expect(listings.couldNotRun).toBe(true)
+
+    // The load-bearing assertions: the ABSENCE of the false claim. A failed read
+    // must not publish a count — neither in the human-read detail string nor in
+    // the persisted notes, which feed smoke_test_results.
+    expect(listings.detail).not.toMatch(/\brows\b/)
+    expect(listings.detail).not.toContain("frozen Flowty-era cache")
+    expect(listings.notes?.count).toBeUndefined()
+
+    // ...and the error is still reported, so the failure is not silent.
+    expect(listings.detail).toContain("canceling statement due to statement timeout")
+  })
+
+  // Positive control for the test above — the three states are read failed /
+  // read ok + genuinely empty / read ok + rows, and only the FIRST is
+  // couldNotRun. Without this, the error test would also pass against a check
+  // that flagged every zero as unreadable.
+  it("a cached_listings count of ZERO is an honest empty, NOT couldNotRun", async () => {
+    const f = greenFixtures()
+    f.cached_listings = { count: 0, error: null } as unknown as { data?: unknown; error?: unknown }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const listings = findResult(env, "cached_listings has rows")
+
+    expect(listings.passed).toBe(false) // expected row-count>0, so an empty table fails...
+    expect(listings.couldNotRun).toBeFalsy() // ...but it was measured, not unreadable
+    expect(listings.detail).toBe("0 rows (frozen Flowty-era cache)")
+    expect(listings.notes?.count).toBe(0)
+  })
+
   // ── The Pinnacle FMV drift guard's COMPARISON fetch ───────────────────────
   //
   // Sentry JAVASCRIPT-NEXTJS-14: 54 occurrences since 2026-05-11, still firing.
