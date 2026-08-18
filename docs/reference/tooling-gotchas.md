@@ -45,3 +45,16 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+---
+
+## Pushing from a sandbox — the full case history (moved verbatim from CLAUDE.md 2026-08-17)
+
+### Pushing from a sandbox — BOTH sandbox paths are dead, for DIFFERENT reasons
+
+- **CLOUD: there is no credential fix, and looking for one is wasted time.** Since 2026-08-11 the git proxy refuses at the **repository-authorization layer, before any credential is evaluated** — `access denied by the git proxy: … is not in this session's authorized repository set, so the proxy will not inject a credential for it`. Probed directly: an embedded `x-access-token:<PAT>@github.com` returns the **identical 403**. Upstream `anthropics/claude-code#76248`, open.
+- **DESKTOP Cowork: the old pushurl-harvest recipe is DEAD and fails QUIETLY.** That `remote.origin.pushurl` is **absent** (verified on Trevor's box 2026-08-17: `credential.helper = manager`, gh 2.90.0 — push works there via the **Git Credential Manager / gh helper**, whose credential lives in the **Windows credential store, not the repo**, so a mount cannot see it). The old command now substitutes an empty string and yields a broken remote rather than an error.
+- ⛔ **Do NOT "fix" either by re-embedding a PAT.** It was removed deliberately on 2026-08-16 because merely *reading* it (`git config --get remote.origin.pushurl`, `git remote -v`) prints a live `github_pat_…` into the transcript — that burned a real PAT once. The gh helper also carries the `workflow` scope an embedded PAT lacks.
+- **What restores push:** (a) **`/web-setup` in a REAL TERMINAL `claude` session** — syncs the local gh token to claude.ai; ⚠ a built-in CLI command, so it does **not** fire in a VSCode-extension session (it arrives as plain text), and it authorizes **at session creation** — it fixes future sessions, not a running one. (b) **Create the session with the repo as its source** — `claude --cloud` from inside the repo, or claude.ai/code with the repo selected; the desktop Cowork project picker does not authorize, and the repo is not addable mid-session. (c) **Run the task on the computer** (desktop → "Run this task") — guaranteed while #76248 is open. (d) **`git format-patch`** — the sandbox clone works, so it can do the whole job and emit a patch to `git am`; needs nothing from Anthropic, proven end-to-end.
+- Bash-green does NOT imply push-green. Never commit from the mount itself; always a fresh clone (deploy-split rule).
+
+---
