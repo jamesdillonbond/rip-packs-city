@@ -52,3 +52,11 @@ Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells
 6. `/api/admin/feedback` GET MUST filter `feedback_type IS NOT NULL`.
 
 (CLAUDE.md keeps items 1 and 2 plus the read-only and error-vs-empty rules inline, and points here for the rest.)
+
+### The three rules CLAUDE.md held inline until 2026-08-17 (moved verbatim; CLAUDE.md now keeps only the READ-ONLY one)
+
+⚠ These are numbered 3–5 in CLAUDE.md's old inline list and are **not** duplicates of items 1–6 above — they are the honesty rules, and they generalize past the concierge.
+
+3. **RPC is READ-ONLY** — no cart, no gifting, no trading. Never offer an action the product lacks.
+4. **An errored tool is NOT an empty result** — `status:"error"` and `status:"no_results"` are distinct claims; their prompt rules must stay distinct.
+5. **A tool cannot observe its own health** — it can only report how old its data is. Never let copy reassure that a feed is fine.
