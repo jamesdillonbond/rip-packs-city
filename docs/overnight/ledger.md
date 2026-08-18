@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — `db-tests` was red for TWO more reasons, both the same one: the panini re-point updated the function and left the FIXTURE pointing at the dead column
+
+⚠ **Second and third breaks from the same commit (`f6d025e4`), and the second was HIDDEN BEHIND the first.** After unblocking the vitest side (previous entry), CI still failed — but on a **different job**: `DB invariants (SQL)`, not the suites. All 8 other jobs were green, so reading the run's red badge alone would have sent the next person to the wrong place. **Check the failing JOB, not the run.**
+
+**Reproduced locally rather than diagnosed from the log** — provisioned a throwaway Postgres 16 exactly as the CI job does (⚠ `initdb` refuses to run as root; `su postgres` is required in this sandbox) and ran `scripts/run-db-tests.sh`.
+
+**Break 1 — `rpc_thp_leg_panini.sql:112`:** `ASSERT FAILED: one captured day at the head resets the streak to 0 … got [2], want [0]`. The migration re-pointed the streak onto `column_last_sale_usd`, and the fixture's recovery sub-case still wrote `raw_supplied_sale_price = 3` — the **dead** field. Under the new definition that write is **inert**, so the sub-case set up nothing.
+
+**Break 2 — `:164`, invisible until break 1 was fixed** (the file aborts at the first ERROR, so one fix reveals the next): `a 57014 escapes the leg — WHEN OTHERS does not match QUERY_CANCELED`. The `_cancel()` stub that replaces the view declared only the OLD columns, so after the re-point the leg failed with **`undefined_column` (42703) — which `WHEN OTHERS` DOES catch** — and the 57014 never surfaced. **The probe was silently testing the wrong error.**
+
+⚠ **THE INSTRUCTIVE PART: the migration's header claims "✅ POSITIVE CONTROL — the pinned test now DISCRIMINATES", and it verified the headline value (`dry_days = 2`) and the revert control (`5`).** Both true. **Neither covers the two sub-cases below them** — the RECOVERY direction (how an operator learns the outage ended) and the timeout probe. **A control that proves the number is right does not prove the file still runs**, and a dead-column write is invisible to both: it changes no assertion's expected value, it just stops doing anything.
+
+**Both fixed in the fixture, and both probed as load-bearing:** restoring either one reds again (1 `ASSERT FAILED` each). **173 DB-invariant files pass, exit 0.**
+
+⚠ **Fixture-only. No DDL, no function body, no ACL, no prod state** — the deployed `rpc_thp_leg_panini` is untouched, and the arm's live behaviour is exactly what `f6d025e4` shipped. This entry changes what CI can SEE, not what production does.
+
+**Revert:** `git revert <this sha>` — returns the fixture to the dead column and `db-tests` to red.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — `PopularOnCollection`'s four queries could delete the /overview crawl path without a trace; extracted, and the non-page ratchet is now a BAN AT ZERO
 
 **Closes the surface opened two entries ago.** `components/entity/PopularOnCollection` was an async **server** component holding its own client, which put it outside the server-page ratchet (it walked `page.tsx` only) **and** outside any drivable gate — **jsdom cannot render an async server component**, so its ~29% component-gate number was nominal, not coverage. It was the entire `NON_PAGE_BUDGET`.

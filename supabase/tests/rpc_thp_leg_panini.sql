@@ -104,7 +104,14 @@ SELECT _assert_eq((SELECT value::text FROM public.rpc_trust_health_precompute
 -- The streak resets to zero the instant the newest day captures a price. This is the
 -- direction that matters operationally: it is how an operator learns the outage ended.
 SAVEPOINT recovered;
-UPDATE public._panini_supply SET raw_supplied_sale_price = 3 WHERE capture_day = current_date;
+-- ⚠ MUST write column_last_sale_usd, NOT raw_supplied_sale_price. The 08-18
+-- re-point (audit_20260818_repoint_panini_dry_days_arm_to_live_last_sale_usd)
+-- moved the streak onto the live column; a write to the dead one is INERT, so
+-- this sub-case set up nothing, the streak stayed at 2, and db-tests went red.
+-- The re-point's own header verified the headline value (2) and the revert
+-- control (5) but not this recovery case — the direction that proves the arm
+-- goes GREEN again is exactly the one a dead-column write silently disables.
+UPDATE public._panini_supply SET column_last_sale_usd = 3 WHERE capture_day = current_date;
 SELECT public.rpc_thp_leg_panini();
 SELECT _assert_eq((SELECT value::text FROM public.rpc_trust_health_precompute
                     WHERE metric='panini_sale_price_capture_dry_days'), '0',
@@ -139,7 +146,13 @@ ROLLBACK TO SAVEPOINT generic_err;
 -- (2026-08-15, `255e7d24`) because the timer is not re-armed afterwards. If a change
 -- makes the sentinel reachable, THIS FAILS.
 DROP VIEW public.v_panini_serial_sale_field_supply;
+-- ⚠ The stub's column set must match what the leg actually SELECTS. After the
+-- 08-18 re-point onto column_last_sale_usd, a stub still declaring only the old
+-- columns makes the leg fail with undefined_column (42703) — which WHEN OTHERS
+-- DOES catch — so the 57014 never surfaced and this probe silently tested the
+-- wrong error. Keep every column the leg reads listed here.
 CREATE FUNCTION public._cancel() RETURNS TABLE(capture_day date, raw_supplied_sale_price int,
+                                               column_last_sale_usd int,
                                                mapping_shortfall numeric)
 LANGUAGE plpgsql AS $c$
 BEGIN RAISE EXCEPTION SQLSTATE '57014' USING MESSAGE = 'canceling statement due to statement timeout'; END $c$;
