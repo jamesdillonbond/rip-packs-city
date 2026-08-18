@@ -33,7 +33,7 @@ jobs:
             echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
 
             if [ "$HTTP_CODE" = "200" ]; then
-              STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null)
+              STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null) || STATUS=""
               if [ "$STATUS" = "stale" ]; then
                 echo "::warning::FMV data is stale! $(echo "$BODY" | jq -r '.fmv_staleness_minutes') minutes since last compute."
               fi
@@ -70,7 +70,10 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
 
-          ISSUE_COUNT=$(echo "$BODY" | jq -r '.issue_count' 2>/dev/null)
+          # jq exits 5 on a non-JSON body (an HTML 504 page), which under `bash -e`
+          # aborted the step here -- so it never reached the HTTP_CODE branch below and
+          # died as a bare 5 instead of naming the 504. Verified live 2026-08-18.
+          ISSUE_COUNT=$(echo "$BODY" | jq -r '.issue_count' 2>/dev/null) || ISSUE_COUNT=""
 
           if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
             echo "::warning::$ISSUE_COUNT data integrity issues found"
