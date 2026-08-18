@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendOpsAlert } from "@/lib/ops-alert";
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry";
+
+// Per-RPC budgets. maxDuration is 30s, so the two RPCs must not be able to spend
+// it between them: 10 + 8 = 18s worst case, leaving headroom for the three table
+// reads (measured 2026-08-18 at ~0.5s each, index-backed) and the response.
+//
+// ⚠ These exist because an UNBOUNDED leg took the whole endpoint down. Measured
+// 2026-08-18 during a saturation spell: get_fmv_coverage() did not finish in 55s,
+// so the 30s lambda died with FUNCTION_INVOCATION_TIMEOUT and the route returned
+// NOTHING — including the security-invariant result, which is the one check here
+// that must never go dark. `timeoutMs` is a TOTAL budget across attempts (shared
+// deadline in rpc-with-retry), so it bounds the call regardless of retries, and a
+// timeout is terminal rather than retried.
+const SECURITY_RPC_TIMEOUT_MS = 8_000;
+const COVERAGE_RPC_TIMEOUT_MS = 10_000;
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,8 +58,11 @@ export async function GET(request: NextRequest) {
   try {
     // 1. Security invariants — flag any RLS-off or anon-writable PUBLIC base table.
     //    Clean baseline = 0 rows. Degrades safely: on error, reported null, never flagged.
-    const { data: secViolations, error: secErr } = await supabaseAdmin.rpc(
-      "check_public_security_invariants"
+    const { data: secViolations, error: secErr } = await rpcWithRetry<any[]>(
+      supabaseAdmin,
+      "check_public_security_invariants",
+      {},
+      { timeoutMs: SECURITY_RPC_TIMEOUT_MS }
     );
     const secCount = secErr ? null : Array.isArray(secViolations) ? secViolations.length : 0;
     stats.security_invariant_violations = secCount;
@@ -53,8 +71,22 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.
-    //    Cheap RPC (~1.2s). Flags only on a broad regression (overall <95%).
-    const { data: coverage, error: covErr } = await supabaseAdmin.rpc("get_fmv_coverage");
+    //    Flags only on a broad regression (overall <95%).
+    //
+    // ⚠ The "~1.2s" this comment used to claim was a DATED SAMPLE quoted as a
+    // constant. Re-measured 2026-08-18: the RPC did not finish in 55s. Its plan is
+    // a Seq Scan over ~29,288 editions with the SAME correlated EXISTS planned
+    // TWICE (SubPlan 1 and SubPlan 2 — once for the count, once inside the
+    // percentage), each an Append across three fmv_snapshots partitions: ~58.6k
+    // correlated probes to produce one number. Filed with a measured single-probe
+    // rewrite; NOT fixed here, because bounding the caller is what stops this
+    // route going dark and is the smaller change.
+    const { data: coverage, error: covErr } = await rpcWithRetry<any[]>(
+      supabaseAdmin,
+      "get_fmv_coverage",
+      {},
+      { timeoutMs: COVERAGE_RPC_TIMEOUT_MS }
+    );
     if (!covErr && Array.isArray(coverage) && coverage.length > 0) {
       const totEd = coverage.reduce((s: number, r: any) => s + Number(r.editions || 0), 0);
       const totFmv = coverage.reduce((s: number, r: any) => s + Number(r.fmv_editions || 0), 0);

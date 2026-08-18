@@ -25,6 +25,9 @@ const cfg = vi.hoisted(() => ({
   counts: [] as Array<{ count: number | null }>,
   countIdx: 0,
   throwSingle: false,
+  // When set, get_fmv_coverage never settles — the shape that took the whole
+  // route down on 2026-08-18 (FUNCTION_INVOCATION_TIMEOUT at maxDuration).
+  hangCoverage: false,
 }))
 
 const alertSpy = vi.hoisted(() => vi.fn(async (_opts: any) => ({ suppressed: false })))
@@ -39,6 +42,7 @@ const sb = vi.hoisted(() => {
   s.maybeSingle = async () => ({ data: cfg.badge.data, error: cfg.badge.error })
   s.rpc = async (name: string) => {
     if (name === "get_fmv_coverage") {
+      if (cfg.hangCoverage) return new Promise(() => {}) // never settles
       return { data: cfg.coverage.data, error: cfg.coverage.error }
     }
     // check_public_security_invariants
@@ -66,6 +70,7 @@ function resetCfg() {
   cfg.counts = []
   cfg.countIdx = 0
   cfg.throwSingle = false
+  cfg.hangCoverage = false
   alertSpy.mockClear()
 }
 
@@ -154,6 +159,35 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     const res = await GET(authedReq())
     const body = await res.json()
     expect(body.stats.fmv_coverage_pct).toBeNull()
+  })
+
+  // Regression pin for 2026-08-18: get_fmv_coverage() did not finish in 55s, the
+  // 30s lambda died with FUNCTION_INVOCATION_TIMEOUT, and the route returned
+  // NOTHING — so the security-invariant result went dark because a *coverage*
+  // check was slow. A HANG is not an ERROR: the branch above cannot catch it, and
+  // no amount of error handling in this route ever could. Only the bound can.
+  //
+  // ⚠ Fake timers deliberately — a real 10s wait here would be a CI flake.
+  it("survives a coverage RPC that HANGS, and still reports the security check", async () => {
+    cfg.hangCoverage = true
+    vi.useFakeTimers()
+    try {
+      const pending = GET(authedReq())
+      // Past COVERAGE_RPC_TIMEOUT_MS (10s) so the bound, not the RPC, settles it.
+      await vi.advanceTimersByTimeAsync(11_000)
+      const res = await pending
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      // Coverage is unknown, and says so — it must NOT read as a measured 0%.
+      expect(body.stats.fmv_coverage_pct).toBeNull()
+      // The property the bound exists for: the OTHER checks still reported.
+      expect(body.stats.security_invariant_violations).toBe(0)
+      // A hung dependency is not an integrity issue — it must not page ops.
+      expect(body.issues).toEqual([])
+      expect(alertSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("flags a broad FMV coverage regression (< 95%)", async () => {
