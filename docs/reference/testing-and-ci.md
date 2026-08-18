@@ -214,10 +214,25 @@ guarding both curls showed `fmv-staleness` retrying correctly (`Attempt 1/2/3 �
 while `data-integrity` printed `HTTP Status: 504` and died on **exit code 5** — `jq` exiting non-zero
 on a non-JSON (HTML error page) body:
 
+⚠ **And the obvious candidate was the WRONG line — only a third live run found it.** Guarding the
+`ISSUE_COUNT=$(… jq …)` assignment did not fix it; the step still died on 5. The actual culprit was
+the jq **inside the branch**, which happened to be the branch's LAST command:
+
 ```bash
-ISSUE_COUNT=$(echo "$BODY" | jq -r .issue_count 2>/dev/null)      # exit 5 -> step aborts HERE
-ISSUE_COUNT=$(echo "$BODY" | jq -r .issue_count 2>/dev/null) || ISSUE_COUNT=""   # fixed
+if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
+  echo "::warning::$ISSUE_COUNT data integrity issues found"
+  echo "$BODY" | jq -r '.issues[]' 2>/dev/null      # <- exit 5 aborts the step HERE
+fi
 ```
+
+**Do not reason about which line aborts — re-run and read the log.** I named the wrong line twice.
+
+⚠ **The guard then introduced a fresh honesty bug, which is the reason to re-run rather than
+assume.** With an unparseable body `ISSUE_COUNT` is empty, and empty passes `!= "0"` and
+`!= "null"`, so the step published `::warning:: data integrity issues found` — a blank count
+rendered as a positive finding, off a 504 HTML page. **An empty read is not a count of zero and not
+a count of anything**; the branch now requires `-n "$ISSUE_COUNT"` first. Verified end state:
+`::error::data-integrity returned HTTP 504` then `exit 1`, with no fabricated warning.
 
 ⚠ **`2>/dev/null` hides the MESSAGE, not the EXIT CODE** — it looks defensive and is not. So the
 step still never reached its own `::error::data-integrity returned HTTP 504`. **Audit every
