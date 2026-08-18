@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Floor-listing serial capture for the edition-level deal board.
@@ -311,13 +312,15 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
 }
 
+// ⚠ ANON-REACHABLE — see the note on offers-sweep's GET. Same shape, same
+// prefix exclusion, same leak.
 export async function GET() {
   const { count, error } = await (supabaseAdmin as any)
     .from("edition_offers")
     .select("external_id", { count: "exact", head: true })
     .eq("collection_id", COLLECTION_ID)
     .not("low_ask_serial", "is", null)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return apiErrorResponse(error, "api/cron/topshot-deal-floor-serials")
   return NextResponse.json({
     ok: true,
     note: "POST with Bearer INGEST_SECRET_TOKEN to run the floor-serial sweep",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,22 +53,60 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ── THIS PROBE IS ANONYMOUSLY REACHABLE, AND IT USED TO INVENT ITS ANSWER ──
+//
+// `isPublicPath` returns true for all of /api/cron/*, so the proxy steps aside
+// and lets the route's OWN bearer check be the gate. POST has one. **GET is
+// declared with no parameters at all**, so it cannot read a header, a cookie or
+// a query param — it cannot authenticate anyone, and every caller reaches this
+// body. It is a public endpoint that looks like an internal one.
+//
+// Both reads discarded their `error`. supabase-js RETURNS errors rather than
+// throwing, so the try/catch below never saw them and the failure rendered as
+// DATA: `total_snapshots: count ?? 0` published a measured **zero** out of a
+// statement timeout, `latest_bucket`/`staleness_hours` went null, and the whole
+// thing was stamped `status: "ok"`. A monitor reading this during an outage is
+// told the snapshot table is empty and fresh-unknown, which is worse than an
+// error — an error is actionable.
+//
+// Three states, not two: read FAILED (503, below) · read ok + genuinely EMPTY
+// (count 0, no bucket — `.maybeSingle()` so zero rows is not an error) · read
+// ok. `.single()` errors on an empty table, which is why it could not tell the
+// first two apart and why this now uses `.maybeSingle()`.
+//
+// The catch published `err.message` — Postgres's own text — to anyone. That is
+// the documented driver-message leak; the guard that bans it excludes
+// /api/cron/** on the reasoning that a bearer check turns anon away first,
+// which is true of POST and false of this handler.
 export async function GET() {
   try {
-    const { data } = await supabaseAdmin
+    // `count: "exact"` was requested here and never read — an exact count over
+    // the whole table on every probe, for a value the body does not contain.
+    const { data, error: latestErr } = await supabaseAdmin
       .from("price_snapshots")
-      .select("bucket", { count: "exact", head: false })
+      .select("bucket")
       .order("bucket", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    const { count } = await supabaseAdmin
+    const { count, error: countErr } = await supabaseAdmin
       .from("price_snapshots")
       .select("id", { count: "exact", head: true });
 
+    const readErr = latestErr ?? countErr;
+    if (readErr) return apiErrorResponse(readErr, "api/cron/price-snapshots");
+    // A null count with no error is the third state: the read came back but
+    // carries no measurement. Reporting it as 0 is the same fabrication.
+    if (count == null) {
+      return apiErrorResponse(
+        { message: "price_snapshots count unavailable" },
+        "api/cron/price-snapshots"
+      );
+    }
+
     return NextResponse.json({
       status: "ok",
-      total_snapshots: count ?? 0,
+      total_snapshots: count,
       latest_bucket: data?.bucket ?? null,
       staleness_hours: data?.bucket
         ? Math.round(
@@ -75,10 +114,7 @@ export async function GET() {
           )
         : null,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { status: "error", error: err.message },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    return apiErrorResponse(err, "api/cron/price-snapshots");
   }
 }

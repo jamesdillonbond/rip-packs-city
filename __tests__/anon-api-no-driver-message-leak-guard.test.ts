@@ -80,6 +80,40 @@ const ROUTE_FILES = walk(join(process.cwd(), "app", "api")).map((p) =>
  */
 const SECRET_GATED_PREFIXES = ["app/api/admin/", "app/api/cron/"]
 
+/**
+ * Exported handlers declared with an EMPTY parameter list, e.g.
+ * `export async function GET() {`.
+ *
+ * ⚠ WHY THIS EXISTS — the exclusion above is a claim about a FILE, and the
+ * defect is per-HANDLER. `/api/cron/price-snapshots` gates its POST on
+ * `INGEST_SECRET_TOKEN`, so the gate assertion below (a file-level grep) passed
+ * on it for as long as it has existed — while its GET took no parameters at
+ * all, could therefore not read a header, a cookie or a query param, and served
+ * every anonymous caller. Measured 2026-08-18: FOUR such handlers under the two
+ * excluded prefixes, three of them publishing `error.message` and two
+ * fabricating a success out of a failed read.
+ *
+ * ⚠ ZERO-ARG DOES NOT IMPLY UNAUTHENTICATABLE ON ITS OWN, and assuming it does
+ * is a false positive I nearly shipped: `cookies()` / `headers()` from
+ * `next/headers` are ambient in the App Router, so a zero-arg handler importing
+ * them CAN authenticate. The file's import list is checked too.
+ */
+function unauthenticatableHandlers(src: string): { name: string; body: string }[] {
+  if (/from\s+["']next\/headers["']/.test(src)) return []
+  const re = /^export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\s*\(\s*\)/gm
+  const out: { name: string; body: string }[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    // Slice to the next top-level `export ` (or EOF) so a leak in a NEIGHBOURING
+    // authenticated handler cannot be attributed to this one.
+    const rest = /^export\s/gm
+    rest.lastIndex = m.index + 1
+    const n = rest.exec(src)
+    out.push({ name: m[1], body: src.slice(m.index, n ? n.index : src.length) })
+  }
+  return out
+}
+
 const ANON_ROUTES = ROUTE_FILES.filter((f) => {
   if (SECRET_GATED_PREFIXES.some((p) => f.startsWith(p))) return false
   const url = urlFor(f)
@@ -146,6 +180,52 @@ describe("anon-reachable API routes never publish a driver message", () => {
       "These routes are reachable by ANONYMOUS visitors and put the database's own " +
         "text in the response body (and, at a bare 500, in the hard-5xx budget). " +
         'Replace with `apiErrorResponse(err, "api/<route>")` from lib/api-error.ts.\n\n' +
+        offenders.join("\n\n")
+    ).toEqual([])
+  })
+})
+
+// ── THE PREFIX EXCLUSION IS PER-FILE; THE SURFACE IS PER-HANDLER ───────────
+//
+// The block above skips app/api/admin/** and app/api/cron/** wholesale, on the
+// stated reasoning that the route's own bearer check turns an unauthenticated
+// caller away before the query runs. That reasoning is sound for a handler that
+// can READ the bearer. A handler declared `GET()` cannot, and `isPublicPath`
+// returns true for both prefixes, so it is as anonymous as /api/market.
+//
+// This is the recorded "ask what a passing guard is structurally SILENT about"
+// lesson, in its usual shape: the guard's own derivation fixed its blast radius,
+// and the gate assertion it leans on greps the FILE, so one gated handler
+// vouched for every other handler beside it.
+describe("admin/cron handlers that cannot authenticate are anon surfaces too", () => {
+  const gatedFiles = ROUTE_FILES.filter((f) => SECRET_GATED_PREFIXES.some((p) => f.startsWith(p)))
+
+  it("still enumerates the excluded prefixes (not vacuously passing)", () => {
+    // ⚠ Asserts on the WALK, never on how many handlers are still dirty — a
+    // threshold on the dirty count goes red the moment the population reaches
+    // zero, which is the goal. This must stay satisfiable at zero.
+    expect(gatedFiles.length).toBeGreaterThan(80)
+    const probes = gatedFiles.filter((f) => unauthenticatableHandlers(readFileSync(join(process.cwd(), f), "utf8")).length)
+    // The population is real and non-empty: these handlers exist and are anon.
+    // If this ever hits zero the check below is trivially true, and the honest
+    // response is to delete both, not to leave a green test asserting nothing.
+    expect(probes.length).toBeGreaterThan(0)
+  })
+
+  it("no unauthenticatable admin/cron handler publishes a driver message", () => {
+    const offenders: string[] = []
+    for (const f of gatedFiles) {
+      const src = readFileSync(join(process.cwd(), f), "utf8")
+      for (const h of unauthenticatableHandlers(src)) {
+        const hits = leakSites(h.body)
+        if (hits.length) offenders.push(`${f} -> ${h.name}()\n    ${hits.join("\n    ")}`)
+      }
+    }
+    expect(
+      offenders,
+      "These handlers take no request parameter, so they cannot check the bearer " +
+        "their sibling POST checks — and isPublicPath lets anyone reach them. " +
+        'Use `apiErrorResponse(err, "api/<route>")` from lib/api-error.ts.\n\n' +
         offenders.join("\n\n")
     ).toEqual([])
   })

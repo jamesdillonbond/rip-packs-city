@@ -7,6 +7,7 @@ import {
   type OfferFillEvent,
 } from "@/lib/chains/flow/topshot-offer-fill"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // ── Backfill: recover accepted-offer sales (the OffersV2 fill gap) ────────────
 //
@@ -291,12 +292,19 @@ async function logRun(
   }
 }
 
+// ⚠ ANON-REACHABLE (no parameters, so no bearer check is possible) — and the
+// error was DISCARDED, so a failed cursor read published `ok: true` with
+// `cursor: null`: indistinguishable from "the backfill has not started yet",
+// which is exactly the state an operator would read this probe to check.
+// `.maybeSingle()` already returns `{data: null, error: null}` for no rows, so
+// the genuinely-not-started case does not need the error branch.
 export async function GET() {
-  const { data } = await (supabaseAdmin as any)
+  const { data, error } = await (supabaseAdmin as any)
     .from("event_cursor")
     .select("last_processed_block, updated_at")
     .eq("id", CURSOR_ID)
     .maybeSingle()
+  if (error) return apiErrorResponse(error, "api/admin/backfill-offer-fill-sales")
   return NextResponse.json({
     ok: true,
     note: "POST with Bearer INGEST_SECRET_TOKEN to drain the offer-fill sale backfill",

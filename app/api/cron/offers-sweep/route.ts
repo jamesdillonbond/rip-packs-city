@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top
 // standing offer + lowest ask into edition_offers, keyed on the canonical
@@ -402,10 +403,15 @@ export async function POST(req: NextRequest) {
   )
 }
 
+// ⚠ ANON-REACHABLE. This handler takes no parameters, so it cannot check a
+// bearer the way POST does, and /api/cron/* is public in `isPublicPath` — so
+// `error.message` here published Postgres's own text to anyone. The leak guard
+// excludes /api/cron/** because the route "gates itself", which is a statement
+// about POST.
 export async function GET() {
   const { data, error } = await (supabaseAdmin as any)
     .from("edition_offers")
     .select("collection_id", { count: "exact", head: true })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return apiErrorResponse(error, "api/cron/offers-sweep")
   return NextResponse.json({ ok: true, note: "POST with Bearer INGEST_SECRET_TOKEN to run the sweep", data })
 }
