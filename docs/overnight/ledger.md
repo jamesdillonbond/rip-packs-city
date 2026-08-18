@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Cowork cloud) — the `<sha>` placeholder is the ledger's convention, not my loose end: 88% of revert paths are unresolved, and both obvious fixes are wrong
+
+`3da87943` filled in the real sha on my entry. ⚠ **Measuring the file first would have shown that made mine the exception.** Of **1,665** entries: **1,009 placeholder · 136 real sha · 520 no revert line** (research/no-op, correctly). Among entries that *claim* a revert path, **88% are unresolved**; `<sha>` appears **1,098** times against **17** for `<this sha>`.
+
+⛔ **A delta guard on the placeholder count is WRONG, and I checked before proposing it rather than after.** **8 of the 11 most recent ledger-touching commits would have RED**, because a `SHIPPED` entry legitimately adds a placeholder every time. The count rising *is the convention working* — unlike the swallowed-heading count, which only rises on a defect. **A guard whose trigger is the normal case gets switched off in a week.**
+
+⛔ **A backlog sweep is also wrong.** Only **551** placeholder entries are dated on/after 2026-08-03 and could be resolved at all; the other **460** predate the `filter-repo` purge, so their shas do not exist and nothing can recover them. A 551-entry mechanical diff across an append-at-top file several sessions write concurrently costs more collisions than it buys.
+
+✅ **Kept the placeholder — it is HONEST from a session that cannot push.** The sha is unknowable before the push and `git pull --rebase` rewrites it after, so the alternative is a *guessed* sha, which resolves locally as a dangling object and fails for everyone else. **An admitted blank beats a confident wrong answer.**
+
+✅ **Shipped the thing that actually helps: name the commit SUBJECT beside the placeholder**, so an entry carries its own recovery — `git revert "$(git log -1 --format=%H --grep='<subject>')"`. Written up in [ledger-discipline.md](docs/reference/ledger-discipline.md).
+
+⚠ **A shallow clone nearly made me report the opposite.** My first test of pre-purge resolution returned "no match" and I almost filed it as *"pre-purge entries cannot be recovered"* — the clone held **87 commits, all dated 2026-08-17**. `git fetch --unshallow` (5,788 commits back to 2026-03-21) gives the real answer: ✅ **pre-purge MESSAGES survive and resolve even though the recorded shas are dead** — `concierge model-retirement guard` → `4d192be1` (06-22), `Special Serial Owners` → `821b6a28` (06-19). **Resolve-by-subject is the one recovery path that survives a history rewrite.** ⚠ **`git log --grep` in a shallow clone is an instrument silently scoped to a window, and it answers "not found" identically to a real absence** — check `git rev-parse --is-shallow-repository` before reading any history query as evidence.
+
+✅ **Fails loudly, verified:** an unmatched `--grep` yields an empty string and `git revert ""` exits **128** (`fatal: bad revision ''`) rather than reverting a neighbouring commit.
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='the <sha> placeholder is the ledger convention'`. Docs-only, one section appended to `docs/reference/ledger-discipline.md`; CLAUDE.md untouched (margin **113**, at equilibrium). No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-17 · SHIPPED (Cowork cloud) — corrected the headline number in the guard test I shipped four hours ago: 690 was a substring LINE count, the real figure is 25
 
 ⛔ **`403a514d`'s comment claimed a loose "sorts above today" rule would flag *690* `### audit_2026…` headings. It flags 39, and there are 25 such headings.** The 690 came from `grep -c 'audit_'` — **lines containing the string anywhere**, not headings — reported as an entity count. **~27× inflated, and never measured before being written down.** Caught by Trevor on re-derivation; the argument survives intact, the number was decoration presented as evidence.
