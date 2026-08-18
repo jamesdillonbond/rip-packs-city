@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — folded the slate-gate finding into CLAUDE.md's top open item: restoring ESPN alone will NOT refill `nba_players`
+
+**The daytime filings landed while I was working, and one of them changes what "fix the sports-proxy 403" MEANS.** Another session had already shipped the residential decisive-test result (TWO causes, not one) into the same bullet; this adds the qualifier that arrived after it.
+
+- ⚠ **`sync-nba-projections` builds `teamPlan` from the day's SCOREBOARD, so the roster fetch is SLATE-GATED** — and the season ended **2026-08-04**. Restoring ESPN egress restores the MECHANISM and produces **zero rows until ~October**, then only for teams that play. **A session that proxies ESPN, watches the 102-day-stale catalogue stay flat, and concludes the fix failed would be wrong** — that is exactly the misreading the bullet now blocks. The unbuilt cheap fix is a slate-INDEPENDENT sweep of the 30 team IDs; `fetchEspnRoster(teamId)` already takes an arbitrary ID. Source: `docs/overnight/inbox/2026-08-18T0120Z-…`.
+- **Also corrected a live contradiction in that bullet:** it carried "TWO causes, not one" and "ONE root cause behind three symptoms" in consecutive sentences. The symptom list is now labelled as symptoms, not as a cause count. `nba_players` staleness updated 101 → **102 d**.
+- ⚠ **CLAUDE.md IS NOW AT ITS SIZE EQUILIBRIUM AND THE HEADER SAYS SO.** Every addition this session had to be paid for by a trim, and the remaining trims were reaching adjectives. The `KEEPING IT UNDER` note now states the file sits **~130 chars under the cap, so a new rule must DISPLACE one** rather than implying there is room. Bought the space by cutting the header's own archaeology (the "it had grown to 713,000 chars" story), which is meta-about-the-file, not a rule about the system.
+- **Verified:** **39,865 chars** (135 under, `LC_ALL=C.UTF-8 wc -m`), every markdown link resolves, no code touched.
+
+**Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state.
+
 ### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — answered the daytime monitor's team-roster honesty check: NO defect, the alert IS the policy working
 
 **The monitor filed a user-facing `get_team_players` 45 s timeout on `/[collection]/team/[slug]` and correctly called the honesty angle the higher-value one** — *"verify the page renders an HONEST degraded state, not a false 'roster unavailable'/empty-roster that reads as a fact about the team."* **Traced end to end: it does, by design, and the design is test-pinned. Do not re-investigate.**
