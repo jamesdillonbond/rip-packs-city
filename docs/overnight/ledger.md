@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — CLAUDE.md refresh: the size check measured the wrong unit, plus a repo map and three promotions out of today's findings
+
+⚠ **The file's own `KEEPING IT UNDER` rule told sessions to check `wc -c`, which counts BYTES.** This file runs ~475 bytes longer than it is characters (every `⚠ — ·` is multi-byte), so `wc -c` read **40,086 — apparently over the 40,000 limit — when the true length was 39,610, comfortably under**. I opened this session about to emergency-trim a file that was fine. The rule now prescribes `LC_ALL=C.UTF-8 wc -m` (bare `wc -m` falls back to bytes when the sandbox locale is unset, as it is here). **Same shape as the ledger-check lesson: a check whose unit you have not verified is a check you do not know the meaning of.**
+
+**Shipped in CLAUDE.md:**
+- **The size-check fix** above.
+- **A repo map** — the file had no tree orientation at all: `app/` 119 pages / 456 API routes · `lib/` 291 · `components/` 156 · `workers/` 10 egress proxies · `supabase/functions/` 39 · `scripts/` 94. Counts stamped and marked re-derive.
+- **Promoted, per "a fact left only in a session log stops being read":** (1) the `Pipeline Success Coverage` arm's boundary — its load-bearing `rows_written` term makes it blind to "writes rows and never completes", which is 4 of the 5 unwatched-and-failing pipelines, so the closed item now states its boundary instead of reading as coverage; (2) **a curated list drifts BOTH ways at once** (62 of 149 live pipelines unwatched, 15 rows for pipelines that no longer run) — filed under the existing tree-walk-over-curated-list rule; (3) **an identical `rows_written` across a success and a failure is a stale cache being rewritten, not health** (`ownership-sync-dune`, 114,083 on the success and both `HTTP 402` failures) — filed on the existing `rows_written = 0` null-instrument rule.
+- **`Pushing from a sandbox` rewritten from "BOTH paths are dead" to "test it, do not assume it"** — verified today that a claude.ai/code session created **with this repo as its source** can push; the 403 is a repository-authorization property of the session, not a universal. One-command test: `git push --dry-run origin main`. **Its 2,291 chars of case history moved VERBATIM to `docs/reference/tooling-gotchas.md`** — nothing deleted.
+
+**Size discipline:** 39,610 → **39,684 chars** (316 under the limit) while adding the above, by compressing seven passages whose full text already lives in `docs/reference/*.md`. Verified: every markdown link in CLAUDE.md resolves.
+
+**Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state.
+
 ### 2026-08-17 · RESEARCH (Claude Code, interactive) — a filed `proconfig` rule-correction was REFUTED before it landed, and my own first refutation was misattributed
 
 **Nothing shipped to prod. Docs only.** A paste-ready ledger entry + CLAUDE.md bullet rewrite was handed to me claiming that a `SET statement_timeout` in `proconfig` **BINDS** on the PostgREST path and overrides `service_role`'s 30 s, with "at least 15 functions depend on it". It is wrong, and it would have overwritten a canonical rule settled the same day by direct experiment.
