@@ -70,14 +70,21 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
 
-          # jq exits 5 on a non-JSON body (an HTML 504 page), which under `bash -e`
-          # aborted the step here -- so it never reached the HTTP_CODE branch below and
-          # died as a bare 5 instead of naming the 504. Verified live 2026-08-18.
+          # jq exits 5 on a non-JSON body (an HTML 504 page). Guarded defensively --
+          # though the line that actually aborted the step was the jq inside the branch
+          # below, not this one. Both are the same class; the first fix here was not
+          # enough and only a live re-run showed it.
           ISSUE_COUNT=$(echo "$BODY" | jq -r '.issue_count' 2>/dev/null) || ISSUE_COUNT=""
 
-          if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
+          # -n guard: a body we could not parse leaves ISSUE_COUNT empty, and empty is
+          # NOT a count of issues. Without it this printed "::warning:: data integrity
+          # issues found" off a 504 HTML page -- a failed read rendered as a finding.
+          # The trailing || true is the same -e abort as above: jq exits 5 on that body,
+          # and this was the LAST command in the branch, so it killed the step before the
+          # HTTP_CODE check could name the 504. Verified live 2026-08-18.
+          if [ -n "$ISSUE_COUNT" ] && [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
             echo "::warning::$ISSUE_COUNT data integrity issues found"
-            echo "$BODY" | jq -r '.issues[]' 2>/dev/null
+            echo "$BODY" | jq -r '.issues[]' 2>/dev/null || true
           fi
 
           if [ "$HTTP_CODE" != "200" ]; then
