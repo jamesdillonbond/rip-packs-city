@@ -178,13 +178,26 @@ describe("drain-fmv-cold-tail — collection gating + the deferred drain", () =>
     ])
   })
 
+// The route writes TWO pipeline_runs rows per tick: an invocation heartbeat under
+// `drain-fmv-cold-tail-heartbeat` FIRST (so a killed tick is still visible), then
+// the real run. `find(i => i.table === "pipeline_runs")` returns the FIRST match,
+// which is the heartbeat -- and its ok is unconditionally true, so asserting on it
+// reads a success out of a wholly failed drain. Always select the run by NAME.
+const drainRow = (state: { inserts: Array<{ table: string; row: any }> }) =>
+  state.inserts.find((i) => i.table === "pipeline_runs" && i.row.pipeline === "drain-fmv-cold-tail")!.row
+
   it("drains all four stale collections by default and records each result", async () => {
     await drain.POST(authed(P))
     await runDeferred()
 
     const slugs = state.rpcCalls.filter((c) => c.name === "drain_fmv_cold_tail").map((c) => c.args.p_collection_slug)
-    expect(slugs).toEqual(["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike"])
-    const row = state.inserts.find((i) => i.table === "pipeline_runs")!.row
+    // ⚠ ORDER-INSENSITIVE ON PURPOSE. The route rotates which slug goes first
+    // every tick (2026-08-18), so asserting a fixed order pins the rotation
+    // rather than the drain. What must hold is that all four are attempted
+    // exactly once -- [...].sort() keeps that strict (a dropped or duplicated
+    // slug still fails); it only stops the rotation itself reddening this.
+    expect([...slugs].sort()).toEqual(["laliga_golazos", "nba_top_shot", "nfl_all_day", "ufc_strike"])
+    const row = drainRow(state)
     expect(row).toMatchObject({ pipeline: "drain-fmv-cold-tail", ok: true })
     expect((row.extra as { results: unknown[] }).results).toHaveLength(4)
   })
@@ -205,7 +218,7 @@ describe("drain-fmv-cold-tail — collection gating + the deferred drain", () =>
     await drain.POST(authed(P))
     await runDeferred()
 
-    const row = state.inserts.find((i) => i.table === "pipeline_runs")!.row
+    const row = drainRow(state)
     expect(row.ok).toBe(false)
     const results = (row.extra as { results: Array<{ ok: boolean; error: string }> }).results
     expect(results).toHaveLength(4) // every slug still attempted + recorded
@@ -216,7 +229,7 @@ describe("drain-fmv-cold-tail — collection gating + the deferred drain", () =>
     state.rpc.drain_fmv_cold_tail = { data: null, error: { message: "drain rpc down" } }
     await drain.POST(authed(P, "?collection=nba_top_shot"))
     await runDeferred()
-    expect(state.inserts.find((i) => i.table === "pipeline_runs")!.row.ok).toBe(false)
+    expect(drainRow(state).ok).toBe(false)
 
     state.insertThrows = true
     await drain.POST(authed(P, "?collection=nba_top_shot"))
