@@ -54,3 +54,54 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ⚠ **This state lived only in a dated session entry until 2026-08-15, which is exactly how it went stale**: dated entries roll off to `docs/sessions/` within ~3 days, so "3 breached, all known-class" was still being read as current after a fourth arm had breached and one of the three had tripled. **A breach count belongs here, not in a session log** — and re-measure it rather than quoting this table, which is a dated sample like every other number in this file.
 
+
+
+---
+
+## 🚨 `pack_ev_board_max_stale_days` covers ONE collection, and its name says otherwise (measured 2026-08-18)
+
+**The arm reads `topshot_pack_reality_top_ev` — a Top-Shot-only board of FOUR rows, which has no
+`collection_id` column at all.** From `v_rpc_trust_health`:
+
+```sql
+WITH packev AS (
+  SELECT max(EXTRACT(epoch FROM (now() - snapshotted_at)) / 86400) AS max_stale_days, …
+  FROM topshot_pack_reality_top_ev          -- Top Shot only
+)
+```
+
+Its name carries no collection qualifier and its `catches` text reads *"stale pack-EV board"*, so it
+presents as covering every board. **It is structurally incapable of reporting staleness for
+laliga_golazos, nfl_all_day, disney_pinnacle or candy_mlb.**
+
+Measured side by side, same instant:
+
+| | days |
+|---|---|
+| what the arm publishes (Top-Shot-only source) | **0.94** |
+| Top Shot's own board staleness | 0.19 |
+| **golazos board staleness — invisible to the arm** | **1.35** |
+
+That blindness is why `compute-golazos-pack-ev` could stop for **31 hours** with the board green. ⚠
+**Fixing the pipeline does NOT fix the arm** — a fresh feed makes the board current and leaves the arm
+exactly as blind to the next collection that stops. Widen it to a per-collection max (or add a sibling
+arm per collection). Full working: `docs/overnight/inbox/2026-08-18T1406Z-golazos-pack-ev-…md`.
+
+⚠ **A refuted hypothesis worth not re-deriving:** the first explanation was that golazos packs are
+excluded from the published board. **False.** `pack_ev_latest` is a plain view with **no recency
+cutoff and no collection exclusion** — stale golazos packs ARE published, carrying stale
+`snapshotted_at`. The blindness is in the arm's SOURCE, not in a publish filter.
+
+⚠ **Aggregate mismatch that nearly produced a wrong number here.** `max(now() - snapshotted_at)` is
+board staleness on a CURRENT board (one row per pack) and the age of the OLDEST row on a HISTORY table
+— it read **42.38 days** against a true **1.35** when pointed at `pack_ev_history`. **Board staleness
+is `now() - max(snapshotted_at)`.** Never carry an aggregate across from a board to a history table.
+
+### ⚠ And the general lesson: a blanket root cause needs a per-item control
+
+Both the 0013Z filing and the 2026-08-18 overnight handoff attributed this to *"likely saturation
+collateral"* — the one root cause the focus doc tells sessions not to re-investigate. **A positive
+control refutes it:** `pack_ev_history` newest-per-collection at one instant read golazos **31 h**,
+nfl_all_day **8.4 h**, nba_top_shot **3.6 h**, disney_pinnacle **1.7 h**. Platform-wide IO does not
+stop one collection and spare three. **The standing "it's the saturation" instruction is right in
+general and is exactly what let a separate fault sit for 31 hours wearing a known-class label.**

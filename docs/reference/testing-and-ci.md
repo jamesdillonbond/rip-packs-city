@@ -246,3 +246,79 @@ command that can legitimately fail is unreachable. This is the shell instance of
 that a guard's own construction fixes its blast radius, and of the rule that a permanently-red
 instrument is indistinguishable from a broken one — this monitor's red was real, but its stated
 tolerance was fiction.
+
+
+---
+
+## The 2026-08-17/18 guard sweep — five guards, one shape (promoted from session log)
+
+Five separate guards were found defective in ~12 hours, and **every one failed the same way: the
+DERIVATION was wrong, not the logic.** Recording them together because the individual fixes are far
+less useful than the pattern.
+
+| guard | how it was silent |
+|---|---|
+| `insights-client-dates-are-hydration-safe` | scoped to `ROOTS = ["app/insights","components/insights"]` — the two dirs the same pass had driven to zero, so green by construction everywhere else |
+| `seo-shared-helpers-inherit-og-twitter` | pinned three helpers **BY NAME**; 43 inline metadata blocks called no helper |
+| `server-page-data-access-ratchet` | walked `entry === "page.tsx"`, so a `layout.tsx` or server component was outside it |
+| smoke battery's `cached_listings` check | prior sweeps were scoped by **call-kind** (RPCs); this was the only direct TABLE read |
+| `check-tree-corruption.mjs` | **nothing invoked it at all** — see below |
+
+### ⚠ Ask what RUNS a guard, not whether it passes
+
+`check-tree-corruption.mjs` guards a documented mount-corruption failure. Its header says *"wire it
+as a pre-commit hook"*. **Measured 2026-08-18: no CI job, no `.husky`, no `core.hooksPath`, no
+`.git/hooks/pre-commit`; its only caller in the repo was the manual `scripts/clean-tree.mjs`.** It ran
+when a human remembered. **A guard nobody invokes and a guard that passes are the same colour.**
+Before trusting any `scripts/check-*.mjs`, grep for its callers in `.github/workflows/`, `package.json`
+and hook config — not for its exit code.
+
+### ⚠ And check its DEFAULT MODE before wiring it
+
+That script defaults to inspecting **STAGED** content. On a CI checkout nothing is staged, so it
+prints `0 file(s) checked, clean` and exits **0** — a job that passes by inspecting nothing. **Wiring
+it naively ships the theatre, not the guard.** The `tree-corruption` job therefore runs `--all` **and
+asserts the reported file count** (`>= 1000` against ~4,774 tracked). Removing `--all` makes that
+assertion fire. **Any guard whose scope is a flag needs its scope asserted, not assumed.**
+
+⚠ It earned its place on first run: a literal **NUL byte committed** in `lib/concierge/rich-text.ts`,
+inside a URL sanitiser's control-character class written with three raw control bytes.
+
+### ⚠ A coverage number that MOVES can be a vacuous test, not a noisy gate
+
+`component-tests` sat 0.004pt above its `functions` threshold and oscillated. The cause was not a
+flaky gate: `"appends the next page rather than replacing the loaded rows"` **passed without clicking
+Load More**. An auto-paginate effect (300 ms sleep) raced the click; when it won, the button unmounted,
+`handleLoadMore` never ran, and the id assertion still passed because auto-paginate had appended the
+row itself. **Proved by checking out the pre-fix test, deleting the click entirely, and watching it
+pass.** The only instrument that ever saw it was a coverage count moving by 2.
+
+Two traps found while fixing it, both worth knowing before writing a similar test:
+- **Freezing the clock is not enough** — the effect calls `setLoadingMore(true)` BEFORE its sleep, so
+  holding time under 300 ms leaves the button permanently disabled and unclickable.
+- **Keying a mock on CALL ORDER is not enough** — the initial search issues more than one request on
+  its own, so the dead-end payload lands on the wrong call. Key on a request PARAM plus an occurrence
+  count.
+
+### ⚠ A control that proves the NUMBER is right does not prove the FILE still runs
+
+`audit_20260818_repoint_panini_dry_days_arm…` re-pointed a trust arm onto a live column and verified
+both the headline value (`dry_days = 2`) and the revert control (`5`). Both true. **Neither covered
+the two sub-cases below them**, which still wrote the DEAD column: the recovery assertion (`want 0`,
+got 2) and a 57014 timeout probe whose stub declared only the old columns, so the leg failed with
+`undefined_column` — which `WHEN OTHERS` **does** catch — and the error it was probing for never
+surfaced. **A dead-column write changes no expected value; it just silently stops doing anything.**
+⚠ The second break was invisible until the first was fixed — a pgTAP file aborts at the first ERROR,
+so one fix reveals the next. Budget for a chain, not a fix.
+
+### ⚠ Concurrent coverage runs publish FABRICATED numbers (fixed 2026-08-18)
+
+All three vitest gates defaulted to `coverage/`. `.gitignore` documented the separate-directory
+invariant in prose; **no config implemented it.** Running the primary and component gates at once:
+one dies loudly (`Something removed the coverage directory`), and **the other does NOT crash** — it
+loses the deleted `.tmp` chunks and reports the remainder as a measured result (82.27 st / 80.61 fn
+against true 90.68 / 89.25), failing as a **threshold violation** that reads as *"your diff broke
+coverage"*. Now `coverage` / `coverage-components` / `coverage-workers`, pinned by
+`__tests__/vitest-gates-have-distinct-coverage-dirs.test.ts`, which **globs `vitest*.config.*`** so a
+fourth gate is covered the day it lands. CI was never affected (separate jobs); the cost was entirely
+on local and agent runs.

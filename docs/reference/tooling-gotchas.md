@@ -79,3 +79,65 @@ The 509-byte gap, censused: `—` ×132, `⚠` ×63, `·` ×58, `→` ×10, `…
 - ⚠ **`wc -m`'s locale trap is environment-shaped, so the two boxes disagree about whether it is safe.** On **Trevor's Windows box** `LANG=en_US.UTF-8` is already set, so bare `wc -m` is correct. In the **Claude Code sandbox** `LANG` is empty, so bare `wc -m` returns the byte answer — it fails in exactly the environment where you would reach for it. `LC_ALL=C.UTF-8 wc -m` is correct in both; bare `wc -m` is correct in only one.
 - ⚠ **`wc -m` and Node disagree by one per ASTRAL character, and which is "right" is platform-dependent.** Measured directly against a one-emoji file: MSYS/Git Bash `wc -m` counts `🚨` as **2** (UTF-16 units, matching Node `.length`); GNU `wc -m` on Linux counts **1** (codepoints). CLAUDE.md carries exactly one astral char — `[...s].length` = 39,804 codepoints vs `.length` = 39,805 units — so the same command reads 1 LOWER from the sandbox than from this box. **Prefer Node `.length`**: the limit is enforced by a JS harness, which measures UTF-16 units.
 - The same trap applies to any char-limit check over these docs, skill files, or other `docs/reference/*.md`. Count with Node, not `wc`.
+
+
+---
+
+## Sandbox + CI gotchas learned 2026-08-17/18 (promoted from session log)
+
+### 🚨 `git checkout -- <file>` DISCARDS UNCOMMITTED WORK — it is not an undo for your last edit
+
+Used to revert a one-line probe mid-session; it restored the file from the index and **destroyed the
+entire uncommitted fix**, not just the probe. It surfaced two steps later as a test failing on code I
+believed was in place. **Copy the file first (`cp x /tmp/x.bak`) and restore from the copy.**
+`git checkout --` has no notion of "just the change I made a minute ago".
+
+### ⚠ Read the failing JOB, not the run's red badge
+
+Twice in one session a red CI run was **8 of 9 jobs green**, with the failure in a job unrelated to
+the obvious suspect (`DB invariants (SQL)`, not the vitest suites). Reading the run status alone sends
+you to the wrong subsystem. `actions_list` with `method: list_workflow_jobs` and
+`workflow_jobs_filter: {filter: "latest"}` names it in one call.
+
+### ⚠ Reproducing `db-tests` locally: `initdb` refuses to run as root
+
+The CI job provisions a throwaway Postgres from the runner's binaries. In this sandbox the shell is
+root and `initdb` **hard-refuses** (`cannot be run as root`). Recipe that works:
+
+```bash
+PGBIN=/usr/lib/postgresql/16/bin; PGDATA=/tmp/…/pgdata
+mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" /tmp/…
+su postgres -s /bin/bash -c "$PGBIN/initdb -D $PGDATA -U postgres --auth=trust"
+su postgres -s /bin/bash -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /tmp/…' -l /tmp/…/pg.log -w start"
+DATABASE_URL=postgres://postgres@localhost:5433/postgres bash scripts/run-db-tests.sh
+```
+
+Worth the two minutes: it turns a CI log into a local reproduce-and-probe loop, and it is how the
+08-18 panini fixture breaks were diagnosed and both fixes proved load-bearing.
+
+### ⚠ The anon-exec marker must sit on ONE line with the function name
+
+`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` accepts a marker only when a
+**single line** matches `/anon-exec:\s*\S+/i` **and** contains the function name. A multi-line
+justification (marker on line 1, function named on line 2) stays red. The error message shows the
+one-line shape; the format is `-- anon-exec: intentional — <why> (<fn>)`.
+
+⚠ **And prefer the marker to a REVOKE for a `CREATE OR REPLACE` snapshot.** Replacing a function does
+NOT reset its ACL, so a revoke there is a live production change. Check whether the function is
+genuinely new (`grep` prior migrations) before reaching for the revoke — on 2026-08-18
+`rpc_thp_leg_panini` had been created *and revoked* on 08-10, so the revoke would have been the
+change, not the fix.
+
+### ⚠ Bash tool: literal control characters in a command are rejected
+
+Writing a probe that embedded a raw `0x00`/`0x1f`/`0x7f` (e.g. pasted back from `cat -v` output) is
+refused with *"command contains control characters"*. Build such strings from escapes inside a script
+file (`String.fromCharCode(0)`, `\u0000`) and run the file.
+
+### ⚠ Supabase MCP: a 60 s cap, and views that recompute
+
+`execute_sql` abandons the RESULT at 60 s, not the query. Under a saturation spell this hit repeatedly
+on `pack_ev_latest` — which turned out to be a plain **VIEW** doing `DISTINCT ON` over ~203k rows on
+every call (despite a cron named `rpc-refresh-mv-pack-ev-latest`). **Read `pg_views.definition` /
+`pg_proc.prosrc` instead of executing the object** when the question is about shape rather than data;
+it is instant and it answered what three timed-out queries could not.
