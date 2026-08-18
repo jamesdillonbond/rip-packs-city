@@ -47,6 +47,43 @@ describe("safeHref — scheme allow-list", () => {
     expect(safeHref("https://example.com/a\tb")).toBeNull()
   })
 
+  it("rejects EVERY control character, not just the two sampled above", () => {
+    // ⚠ Pins the CLASS, not two members of it. Until 2026-08-18 the filter was
+    // written with LITERAL 0x00 / 0x1f / 0x7f bytes in the source
+    // (`[<NUL>-<0x1f><DEL>]`), invisible in every diff and review. Escaping them
+    // is behaviour-preserving — verified over 0x0000-0x2000, zero differences —
+    // but the reason to pin the range is what the measurement showed about the
+    // failure modes, which are NOT symmetric:
+    //
+    //   * strip the raw NUL  -> the range start becomes a literal '-', the class
+    //     stops catching 0x00-0x1e. The two assertions above DO catch this,
+    //     because LF and TAB are inside the lost span.
+    //   * strip the raw DEL  -> LF and TAB are still rejected, and 0x7f is
+    //     silently allowed through. **Nothing above catches that**, which is
+    //     exactly why sampling two characters is not the same as pinning a class.
+    //
+    // This is a URL sanitiser feeding hrefs the concierge did not author, so a
+    // silently narrowed control-character filter is a header-splitting /
+    // scheme-smuggling hole, not a style issue.
+    const banned: number[] = [...Array(0x20).keys(), 0x7f]
+    for (const cp of banned) {
+      const url = "https://example.com/a" + String.fromCharCode(cp) + "b"
+      expect(safeHref(url), `codepoint 0x${cp.toString(16).padStart(2, "0")} must be rejected`).toBeNull()
+    }
+  })
+
+  it("does NOT reject the printable characters just outside that class", () => {
+    // The other half: a class that rejects everything is not a filter. 0x20 and
+    // 0x7e bracket the banned range, so this fails if someone "fixes" a miss by
+    // widening the class instead of correcting it.
+    for (const cp of [0x20, 0x21, 0x7e]) {
+      const url = "https://example.com/a" + String.fromCharCode(cp) + "b"
+      const out = safeHref(url)
+      if (cp === 0x20) continue // a space is separately disallowed by the link grammar
+      expect(out, `codepoint 0x${cp.toString(16)} must be allowed`).not.toBeNull()
+    }
+  })
+
   it("returns null for empty input", () => {
     expect(safeHref("")).toBeNull()
     expect(safeHref("   ")).toBeNull()

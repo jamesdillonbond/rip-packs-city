@@ -403,6 +403,46 @@ jobs:
   # findings; the ~15 residual style findings (require-await, no-unused-vars,
   # no-empty, no-inner-declarations) are pre-existing and low-value, so lint is
   # informational (|| true) and never gates.
+  # Tree-corruption guard — WIRED 2026-08-18, having previously been wired to
+  # NOTHING. scripts/check-tree-corruption.mjs guards the documented
+  # Windows<->sandbox mount failure (NUL injection, mid-file truncation). Its own
+  # header says "wire it as a pre-commit hook"; measured 2026-08-18, nobody had:
+  # no CI job, no .husky, no core.hooksPath, no .git/hooks/pre-commit, and its
+  # only caller was the manual scripts/clean-tree.mjs. An unreachable monitor and
+  # a green build look identical.
+  #
+  # ⚠ --all IS LOAD-BEARING. The default mode inspects STAGED content, and on a
+  # CI checkout nothing is staged, so it prints "0 file(s) checked, clean" and
+  # exits 0 forever — a job that passes by inspecting nothing. The file count is
+  # therefore asserted below rather than trusted.
+  #
+  # ⚠ It earned its place on first run: over the whole tree it found a real hit,
+  # a literal NUL byte committed inside lib/concierge/rich-text.ts's
+  # control-character URL filter (fixed in the same commit that added this job).
+  tree-corruption:
+    name: Tree corruption (NUL / truncation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit every tracked file for NUL bytes and truncation
+        run: |
+          if ! command -v node >/dev/null 2>&1; then
+            echo "::error::node unavailable, so the corruption guard cannot run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+            exit 1
+          fi
+          set -o pipefail
+          node scripts/check-tree-corruption.mjs --all | tee /tmp/corruption.out
+          # Non-vacuity: the guard reports how many files it inspected, and the
+          # number is the whole difference between this job working and this job
+          # being theatre. 1000 is far below the ~4,700 tracked today and far
+          # above the 0 the staged mode would report.
+          COUNT=$(sed -n 's/.*guard: \([0-9]\+\) file(s) checked.*/\1/p' /tmp/corruption.out)
+          echo "files inspected: ${COUNT:-unknown}"
+          if [ -z "$COUNT" ] || [ "$COUNT" -lt 1000 ]; then
+            echo "::error::The corruption guard reported ${COUNT:-no} inspected files. That is the vacuous-pass shape (staged mode on a clean checkout reports 0) — it did not audit the tree."
+            exit 1
+          fi
+
   edge-deno:
     name: Edge functions (deno check + lint)
     runs-on: ubuntu-latest
