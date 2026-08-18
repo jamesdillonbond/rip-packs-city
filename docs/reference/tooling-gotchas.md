@@ -58,3 +58,23 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 - Bash-green does NOT imply push-green. Never commit from the mount itself; always a fresh clone (deploy-split rule).
 
 ---
+
+## Measuring a file against the memory-file char limit — `wc -c` LIES, and `wc -m` is platform-dependent (added 2026-08-17, NOT part of the verbatim extraction)
+
+The memory-file limit counts **characters**; `wc -c` counts **bytes**. CLAUDE.md is dense in multi-byte punctuation, so the byte count runs several hundred ahead of the real figure and **the file spends its whole life inside that gap** — a session following a `wc -c` recipe reads OVER and starts cutting rules out of a file that has room to spare.
+
+Dated sample, 2026-08-17 PT, CLAUDE.md immediately after the boilerplate trim:
+
+| instrument | value | verdict |
+|---|---|---|
+| `node -e "…readFileSync('CLAUDE.md','utf8').length"` | 39,805 | **the binding number** — UTF-16 units, what a JS harness measures |
+| `wc -m` (this box, `LANG=en_US.UTF-8`) | 39,805 | agrees exactly here — but see both caveats below |
+| `wc -c` | 40,314 | **509 too high** — would read OVER on a file that was 195 under |
+| `LC_ALL=C wc -m` | 40,314 | collapses to the byte answer; `wc -m` is only char-aware in a UTF-8 locale |
+
+The 509-byte gap, censused: `—` ×132, `⚠` ×63, `·` ×58, `→` ×10, `…` ×5, `⛔` ×2, `✅` ×2 — 3 bytes and 1 char each — plus one 4-byte `🚨`.
+
+- ⚠ **Do NOT record the gap as a fixed offset** ("wc -c over-counts by ~500"). It scales with how much `⚠`-dense prose the file carries, so a constant silently absorbs real growth — the shelf-life rule at the top of CLAUDE.md, applied to itself. Re-measure, never quote.
+- ⚠ **`wc -m`'s locale trap is environment-shaped, so the two boxes disagree about whether it is safe.** On **Trevor's Windows box** `LANG=en_US.UTF-8` is already set, so bare `wc -m` is correct. In the **Claude Code sandbox** `LANG` is empty, so bare `wc -m` returns the byte answer — it fails in exactly the environment where you would reach for it. `LC_ALL=C.UTF-8 wc -m` is correct in both; bare `wc -m` is correct in only one.
+- ⚠ **`wc -m` and Node disagree by one per ASTRAL character, and which is "right" is platform-dependent.** Measured directly against a one-emoji file: MSYS/Git Bash `wc -m` counts `🚨` as **2** (UTF-16 units, matching Node `.length`); GNU `wc -m` on Linux counts **1** (codepoints). CLAUDE.md carries exactly one astral char — `[...s].length` = 39,804 codepoints vs `.length` = 39,805 units — so the same command reads 1 LOWER from the sandbox than from this box. **Prefer Node `.length`**: the limit is enforced by a JS harness, which measures UTF-16 units.
+- The same trap applies to any char-limit check over these docs, skill files, or other `docs/reference/*.md`. Count with Node, not `wc`.
