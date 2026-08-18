@@ -361,6 +361,25 @@ itself: if one fails, triage it; do not delete the line.
   ⚠ That blind spot is **small — 3 files total** (`PopularOnCollection.tsx`,
   `app/moment/[id]/layout.tsx`, `app/auth/confirm/AuthConfirmClient.tsx`), so widening the ratchet is
   a 3-file conversion, not a programme.
+
+  > ✅ **THE RATCHET IS WIDENED (`196c0e1e` / `35b8a3c0`); `PopularOnCollection` ITSELF IS NOT
+  > CONVERTED.** The walk matched `entry === "page.tsx"`, so a `layout.tsx` or server component was
+  > outside it by construction. Re-derived: 10 files hold a direct client, 8 are `page.tsx`, **2 were
+  > invisible**. A separate `NON_PAGE_BUDGET` now covers them — `BUDGET` was NOT raised to absorb the
+  > widening, which is what that file's header forbids.
+  >
+  > ⚠ **THIS SECTION'S "3 files total" IS WRONG — it is 2.** `app/auth/confirm/AuthConfirmClient.tsx`
+  > is a **`"use client"`** component using `getSupabaseBrowser` from `@/lib/auth/supabase-client` — a
+  > **browser** auth client, not a server data reader. Widening a *server*-data-access ratchet over a
+  > sign-in flow would have been wrong. **Third claim in this file refuted on measurement**, after
+  > `SniperClient` (§0) and `DashboardAlertsClient` (§1).
+  >
+  > ⚠ **So this is a 1-FILE conversion remaining, not 3, and it is the expensive one.**
+  > `app/moment/[id]/layout.tsx` converted in the same commit (one rpc → `lib/moment/resolve-moment-id.ts`,
+  > now 100/85.71/100/100). `PopularOnCollection` holds **four** queries and is the real work. It is
+  > now the entire `NON_PAGE_BUDGET`, so it cannot be joined by a second file in silence — but its own
+  > ~29% is unchanged, and the jsdom-cannot-render-an-async-server-component cause is unaddressed.
+
 - **`workers/sports-proxy/index.ts` is the worst-covered file in the workers gate — 67.15 st /
   44.53 br / 61.11 fn.** It is also the subject of the repo's highest-value open item (the 403). Its
   retry / fallback / error branches are the least-tested code in the gate, which is an awkward place
