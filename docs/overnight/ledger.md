@@ -114,6 +114,27 @@ Detail: [inbox/2026-08-18T1400Z-…](inbox/2026-08-18T1400Z-drain-fmv-cold-tail-
   15/15 green, tsc clean. ⓘ The mock caught me out once here too — the first version of that pin hung
   only the coverage RPC, so `security_invariant_violations` came back `0` and the failure was in my
   TEST, not the route.
+- **SHIPPED — greened `main`, which a CONCURRENT session had left red for ~20 min.** `714f5d65`
+  (drain-fmv-cold-tail heartbeat + deadline guard) updated its own telemetry test but broke three
+  assertions in a SECOND file that also exercises that route,
+  `__tests__/api-admin-deferred-cron-bodies.test.ts`. Not my break — CI was already red at `714f5d65`,
+  before either of my commits — but that session pushed nothing further, so I fixed it.
+  ⚠ **I first read two of the three as a live regression and was WRONG; recording that because the
+  wrong reading was the more alarming one.** The failures said `row.ok` expected `false`, got `true`,
+  which reads exactly like a failed run publishing itself as a success — this repo's number-one defect
+  class, on the `pipeline_runs.ok` flag the health monitors consume. The actual cause is benign and is
+  in the TEST: the route now writes **two** `pipeline_runs` rows per tick — an invocation heartbeat
+  under `drain-fmv-cold-tail-heartbeat` FIRST (deliberate, so a killed tick stays visible), then the
+  real run — and the test selected with `find(i => i.table === "pipeline_runs")`, which returns the
+  **first** match. It was asserting on the heartbeat, whose `ok` is unconditionally `true`. Tests now
+  select the run by NAME via a `drainRow()` helper. The third failure is the deliberate per-tick slug
+  ROTATION against a fixed-order `toEqual`; now compared with `[...].sort()`, which still fails on a
+  dropped or duplicated slug and only stops the rotation itself reddening it. **No route code was
+  touched** — the pins keep their meaning, they just read the right row. 20/20 green.
+  ⓘ **Left for that session, NOT changed here:** `allOk = results.every(r => r.ok)` is vacuously `true`
+  on an empty `results`, and the only thing preventing that is the skip guard's `results.length > 0`.
+  It holds today, but it is a ban-at-population-zero shape one edit away from reporting a green run
+  that did nothing. Revert path: `git revert <sha>` (test-only).
 - **Conditions caveat:** all of the above was measured during a saturation spell — **69% of active sessions in IO wait**, with an hour-long `autovacuum: VACUUM public.wallet_moments_cache` as the main driver. Buffer counts are comparable across shapes; **wall times from this window are not**, and none are quoted as if they were.
 - **SHIPPED — the ops monitor's retry loop was dead code under `bash -e`.** `RPC Ops Monitor` went red at 13:53Z on `exit code 28` — curl's **timeout**, not a bad response. The step comment promises "fail only if all attempts are non-200, so a single blip doesn't red the monitor", but the `RESPONSE=$(curl …)` assignment aborts the whole step under `-e` before the loop can retry, so the protection only ever covered a non-200 *response* and never a *timeout* — precisely the saturation case it was written for. The `data-integrity` step had the same bug, failing as a bare 28 instead of reaching its own `::error::data-integrity returned HTTP …` line. Both curls now `|| true`. **Positive control run both ways:** without it `bash -e` dies at exit 28 and the following line never executes; with it the script continues and `HTTP_CODE` reads `000`, so the loop retries and ends on an honest "after 3 attempts (last: 000)". Revert path: `git revert <sha>` (workflow-only; no DB, no app code). ⚠ **The first fix was INCOMPLETE, and only re-running the monitor showed it:** `fmv-staleness` then logged `Attempt 1/2/3 — HTTP Status: 000` and exited 1 (loop alive, and a real 3x35s outage of `/api/cron/stale-fmv-monitor`), but `data-integrity` printed `HTTP Status: 504` and died on **exit code 5** — `jq` failing on an HTML body, a THIRD `-e` abort in the same file, so it still never reached its own `::error::… returned HTTP 504` line. Both `jq` assignments now guarded too. ⚠ **That was still wrong — the guarded assignment was not the aborting line.** A third run showed `data-integrity` dying on 5 again; the culprit was the jq **inside** the warning branch, which is that branch's LAST command, so `-e` killed the step there. **Naming the aborting line by reading the script failed twice; only re-running and reading the log found it.** The same run exposed a fresh honesty bug the guard itself introduced: an unparseable body leaves `ISSUE_COUNT` empty, empty passes `!= "0"` and `!= "null"`, and the step published `::warning:: data integrity issues found` with a **blank count** off a 504 HTML page — a failed read rendered as a finding, this repo's number-one defect class, in a monitor. Branch now requires `-n` first. ✅ **VERIFIED END STATE (run 32148456025):** `fmv-staleness` → `Attempt 1 — HTTP Status: 200` (passes); `data-integrity` → `::error::data-integrity returned HTTP 504` then `exit 1`, no fabricated warning. The monitor now surfaces a REAL production finding it was hiding: `/api/cron/data-integrity` is returning `FUNCTION_INVOCATION_TIMEOUT`. Lesson promoted to `docs/reference/testing-and-ci.md` (a retry loop after a fallible command is dead code under `-e`), with the two-way control inline so the next reader can re-run it.
 
