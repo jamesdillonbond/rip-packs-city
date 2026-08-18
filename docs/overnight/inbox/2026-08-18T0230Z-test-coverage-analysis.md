@@ -39,6 +39,30 @@ suite is in good shape. What follows is about what the gates cannot see, ranked.
 
 ## 1. The hydration guard is at population ZERO inside its own roots — and blind to 5 live instances outside them
 
+> ✅ **SHIPPED 2026-08-17 (Claude Code, interactive) — §1 is CLOSED. Rule A is now a site-wide ban,
+> Rule B a site-wide ratchet at 101, and the guard walks `app/` + `components/` instead of a
+> two-directory `ROOTS` list.** Counts re-derived independently before acting and they matched:
+> **5 Rule-A, 101 Rule-B across 42 files.**
+>
+> ⚠ **THIS SECTION'S SEVERITY READ WAS WRONG ON ONE SITE — do not act on the table below as written.**
+> It calls `DashboardAlertsClient.tsx:297` *"server-fetched, signed-in surface"* and groups it with
+> Panini as one of *"the first two … the dangerous shape."* Measured: `alerts` is
+> `useState<Alert[] | null>(null)` filled by a client `fetch`, and the table is gated on
+> `alerts && alerts.length > 0` — **it never server-renders.** *Server-fetched data* and
+> *server-rendered markup* are different things, and only the second can mismatch. **Exactly ONE of
+> the five was a live defect** (Panini), and the section's own hedge on the other three — *"probably
+> inert … stated as probably, not verified"* — turned out to cover four, not three.
+>
+> ✅ **And the one real defect was worse than §1 says.** `PANINI_NEWS` is a **module constant** of
+> date-only ISO strings, parsed as UTC midnight: `2026-03-30` renders **`Mar 30` in UTC, `Mar 29` in
+> both US zones**. So it was not only React #418 — it **showed every US reader the wrong date on a
+> public page**. Fixed with `timeZone: "UTC"`.
+>
+> ⛔ **The proposal's "add `timeZone: \"UTC\"`… to the 5 sites" would have been a REGRESSION on four
+> of them.** They are post-mount clocks; pinning a "last updated" clock to UTC shows the viewer UTC.
+> They carry an inline `hydration-safe: <reason>` marker instead — co-located and required to state a
+> reason, deliberately not the central allowlist this repo has watched drift both ways.
+
 `__tests__/insights-client-dates-are-hydration-safe-guard.test.ts` has `const ROOTS = ["app/insights",
 "components/insights"]`. Re-running its own `findUnsafeLocaleCalls` rules over **all** of `app/` +
 `components/`:
