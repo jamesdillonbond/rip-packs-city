@@ -41,3 +41,47 @@ The ledger is dated **Pacific**. Almost every writer runs on **UTC**: CI, the cl
 - ⚠ **Derive the date from `formatToParts`, never from a locale's format string.** Asking `Intl.DateTimeFormat("en-CA", …)` for a YYYY-MM-DD shape is a trap: on a small-ICU Node build every non-`en-US` locale silently falls back to `en-US`, which formats `M/D/YYYY`, and the string comparison then never fires. Parts are locale-independent. The guard also asserts the assembled date matches `[0-9]{4}-[0-9]{2}-[0-9]{2}` and **exits 2 rather than passing** if it cannot derive one.
 - ⚠ **Match `^### <ISO date>` strictly.** A loose "heading dated later than today" comparison fires on `### <date>` (quoted as a format example in the ledger's own header) and on every `### audit_20260705_*` heading, because both sort above a numeric date as strings. All three shapes are in the fixture and must stay silent.
 - ⚠ **The CI step fails loudly if `node` is absent** rather than skipping. A guard that silently no-ops is indistinguishable from a passing one.
+
+## Revert paths: `<sha>` is the convention, and naming the SUBJECT is what makes it usable (2026-08-17)
+
+**Measured on the live ledger**, 1,665 entries: **1,009 record a revert path with an unresolved
+`<sha>` placeholder, 136 carry a real sha, 520 have no revert line at all** (research / no-op
+entries, correctly). So among entries that *claim* a revert path, **88% are unresolved**. `<sha>`
+appears 1,098 times against 17 for `<this sha>` — the placeholder is the house convention, not a
+lapse by one writer.
+
+**Decision: keep the placeholder. Do not sweep, do not gate.**
+
+- ⛔ **Do NOT add a delta guard on the placeholder count.** Measured before proposing it: **8 of the
+  11 most recent ledger-touching commits would have RED**, because a `SHIPPED` entry legitimately
+  adds a placeholder every time. The count rising is the convention working, not damage — unlike the
+  swallowed-heading count, which only rises on a defect. **A guard whose trigger is the normal case
+  gets switched off in a week.**
+- ⛔ **Do NOT sweep the backlog.** Only **551** placeholder entries are dated on/after 2026-08-03 and
+  could be resolved at all; the other **460** predate the `filter-repo` purge, so their shas no
+  longer exist and no sweep can recover them. A ~551-entry mechanical diff across an append-at-top
+  file that several sessions write concurrently costs more collisions than it buys.
+- ✅ **A placeholder is HONEST from a session that cannot push.** The sha is not knowable before the
+  push, and `git pull --rebase` rewrites it afterwards — so the alternative to a placeholder is a
+  *guessed* sha, which resolves locally as a dangling object and fails for everyone else. **That is
+  strictly worse than an admitted blank.**
+
+**What to write instead — name the commit SUBJECT beside the placeholder**, so the entry carries its
+own recovery:
+
+```
+**Revert:** `git revert <sha>` — resolve it with:
+  git revert "$(git log -1 --format=%H --grep='test(ledger-guard): derive the strict-vs-loose counts')"
+```
+
+- ✅ **Verified on full history 2026-08-17** (a shallow clone cannot test this — the first attempt
+  returned "no match" purely because the clone held 87 commits, all from one day). Post-purge:
+  `derive the strict-vs-loose counts` → `0632156`. **Pre-purge, where the recorded SHA is dead, the
+  MESSAGE still resolves:** `concierge model-retirement guard` → `4d192be1` (2026-06-22),
+  `Special Serial Owners` → `821b6a28` (2026-06-19). **Resolve-by-subject is the one recovery path
+  that survives a history rewrite**, which is exactly why it beats a sha that does not.
+- ✅ **It fails LOUDLY on a bad subject rather than reverting the wrong thing:** an unmatched `--grep`
+  yields an empty string and `git revert ""` exits **128** with `fatal: bad revision ''`. A resolver
+  that silently picked a neighbouring commit would be the dangerous version.
+- ⚠ Quote the subject **distinctively enough to be unique** — `--grep` takes the most recent match,
+  and this repo has many commits sharing a prefix like `docs(ledger):`.
