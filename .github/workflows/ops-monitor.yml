@@ -12,6 +12,11 @@ jobs:
     steps:
       - name: Check FMV staleness
         run: |
+          # NOTE: this job runs under `bash -e`. curl's OWN failure (a --max-time
+          # timeout exits 28) would abort the step at the assignment above, so the
+          # retry loop below never ran and a single timeout red the monitor -- the
+          # exact case this retry was written to tolerate. `|| true` keeps the
+          # script alive so HTTP_CODE (empty on timeout) drives the decision.
           # Retry on transient non-200 (the endpoint can 504 during cron-saturation
           # windows). Fail only if all attempts are non-200, so a single blip doesn't
           # red the monitor.
@@ -20,7 +25,7 @@ jobs:
           for attempt in 1 2 3; do
             RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" \
               -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-              "https://www.rippackscity.com/api/cron/stale-fmv-monitor")
+              "https://www.rippackscity.com/api/cron/stale-fmv-monitor") || true
             HTTP_CODE=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -n -1)
 
@@ -57,7 +62,7 @@ jobs:
         run: |
           RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://www.rippackscity.com/api/cron/data-integrity")
+            "https://www.rippackscity.com/api/cron/data-integrity") || true
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)
