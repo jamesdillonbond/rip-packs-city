@@ -172,3 +172,45 @@ other's `coverage/.tmp`"* and ignores `/coverage-*` — but **no config sets `re
 ignore line guards directories nothing creates. Two gates run concurrently kill each other with
 *"Something removed the coverage directory"*. CI is safe (separate jobs); a local parallel run is not.
 **A documented invariant with no implementation and no test is the same shape as an unenforced guard.**
+
+### ⚠ A retry loop placed after a command that can fail is DEAD CODE under `bash -e` — and it reads as coverage
+
+Found 2026-08-18 in `.github/workflows/ops-monitor.yml`. The step carried an explicit, well-written
+three-attempt retry and a comment promising *"Fail only if all attempts are non-200, so a single blip
+doesn't red the monitor."* It had never once retried.
+
+GitHub Actions runs `run:` blocks under `shell: /usr/bin/bash -e`. The loop body opened with
+
+```bash
+RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" ... )
+```
+
+and under `-e` a **non-zero exit from curl itself aborts the whole step at that line**, before any
+retry, any `HTTP_CODE` test, or any diagnostic `echo` below it. So the protection covered exactly one
+failure mode — a **non-200 response**, where curl still exits 0 — and never covered a **timeout**
+(`exit 28`), which is the cron-saturation case the retry was written for. The sibling
+`data-integrity` step had the same shape and failed as a bare `28` instead of reaching its own
+`::error::data-integrity returned HTTP …` line, making the failure undiagnosable from the log.
+
+Fix is `|| true` on the assignment so the script's own logic decides:
+
+```bash
+RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" ... ) || true
+```
+
+⚠ **Verify this class in BOTH directions — the two behaviours are one character apart and look
+identical in review.** The control that settles it:
+
+```bash
+bash -e -c 'R=$(curl -s --max-time 2 -w "\n%{http_code}" http://10.255.255.1/ ); echo "after"'   # exit 28, "after" NEVER prints
+bash -e -c 'R=$(curl -s --max-time 2 -w "\n%{http_code}" http://10.255.255.1/ ) || true; echo "after"'  # prints, code=000
+```
+
+Note the repaired path yields `HTTP_CODE=000`, not empty — curl still writes its `-w` output on
+timeout — so a `!= "200"` test retries correctly and the final message names `last: 000`.
+
+**Generalise it:** in any `-e` block, a conditional, a retry, or an error message placed *after* a
+command that can legitimately fail is unreachable. This is the shell instance of the standing rule
+that a guard's own construction fixes its blast radius, and of the rule that a permanently-red
+instrument is indistinguishable from a broken one — this monitor's red was real, but its stated
+tolerance was fiction.
