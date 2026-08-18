@@ -44,11 +44,21 @@ items had already been measured elsewhere. Current state:
   have `resolution_attempts = 0`), not that it declines them gracefully.
 - ⏸ **Item 1 (pack-EV `fmv_current` JOIN) — mechanism CONFIRMED, still correctly unshipped.** Fully
   measured already in `inbox/2026-08-16T1829Z-fmv-current-does-not-push-down-through-distinct-on.md`
-  (~3,100× — 335 buffers vs 1,046,192). The three callers are `compute_pack_ev_from_pool`,
-  `…_from_pool_tier_weighted`, `…_per_edition_weighted`. **The blocker is not analysis, it is that two of
-  the three are unmeasured — and they cannot be measured during a saturation spell.** Measure in a quiet
-  window first. ⛔ Never `CREATE OR REPLACE VIEW fmv_current` (resets `security_invoker`); fix the
-  CALLERS via a lateral accessor.
+  (~3,100× — 335 buffers vs 1,046,192). ⚠ **The queue framed this as one coordinated migration because
+  "the function is pinned AND two of three are unmeasured". Those two facts are DECOUPLED — verified
+  08-18 — and splitting them makes the expensive half shippable on its own:**
+
+  | function | pinned? | measured? |
+  |---|---|---|
+  | `compute_pack_ev_per_edition_weighted` | **YES** — `supabase/tests/compute_pack_ev_per_edition_weighted.sql`, PINS entry at `__tests__/db-invariants-drift-guard.test.ts:170` | **YES** — jobid 71's callee, confirmed by the timeout CONTEXT; ~100 min/week of `cron_heavy` for zero rows |
+  | `compute_pack_ev_from_pool` | no pin file | no |
+  | `compute_pack_ev_from_pool_tier_weighted` | no pin file | no |
+
+  So the **pinned one is the measured one**, and it is the one actually burning the budget. It can ship
+  alone (migration + pin `.sql` + repoint the PINS migration name); the two unpinned ones need
+  measurement but **no pin work**, and must not gate it. ⛔ Never `CREATE OR REPLACE VIEW fmv_current`
+  (resets `security_invoker`); fix the CALLERS via a lateral accessor. Measure in a quiet window —
+  during a saturation spell no timing is interpretable.
 - 🔑 **Item 2 (`wallet-username-resolver`) is OPERATOR-ONLY — it is not pg_cron.** Caller enumerated
   08-18: absent from `vercel.json` (36 crons), pg_cron (94 jobs), GHA and in-repo fetches. It is
   **cron-job.org**, firing `POST /api/cron/resolve-wallet-usernames` 2×/hour. Trevor chose lever (a),
