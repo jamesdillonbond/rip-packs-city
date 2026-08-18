@@ -50,6 +50,14 @@ entries, correctly). So among entries that *claim* a revert path, **88% are unre
 appears 1,098 times against 17 for `<this sha>` — the placeholder is the house convention, not a
 lapse by one writer.
 
+⚠ **Those three buckets are CLASSIFIER-dependent, so state the rule or the next reader will read a
+re-derivation as rot.** The figures above segment on `^### ` and require a `**Revert…:**` line. An
+independent classifier re-derived on the same file keyed on the `git revert` ARGUMENT instead — placeholder
+if it starts `<`, real if it matches `[0-9a-f]{7,40}` — and read **1,094 · 130 · 439** over 1,666
+entries, because entries naming `git revert` in prose without a `**Revert:**` line move from the
+third bucket into the first. **The load-bearing number is the SHARE, and it is stable across both
+rules: 88% vs 89% unresolved.** Re-derive the share; do not quote the buckets.
+
 **Decision: keep the placeholder. Do not sweep, do not gate.**
 
 - ⛔ **Do NOT add a delta guard on the placeholder count.** Measured before proposing it: **8 of the
