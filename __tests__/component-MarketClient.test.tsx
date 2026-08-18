@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from "@testing-library/react"
 import MarketClient from "@/app/(collections)/[collection]/market/MarketClient"
 
 // `[collection]/market` converted to a `*Client.tsx` so the component gate measures it —
@@ -470,13 +470,36 @@ describe("MarketClient — controls", () => {
   })
 
   it("debounces the player box rather than firing per keystroke", async () => {
+    // ⚠ VIRTUAL TIME, NOT WALL CLOCK. This used to sleep 60ms of real time
+    // inside the component's 350ms window and assert nothing had fired — true
+    // only if fewer than 350ms of real time elapsed, which a loaded CI runner
+    // does not guarantee. Its sibling in component-AdminFeedbackClient reddened
+    // `main` exactly that way on 2026-08-18, on a DOCS-ONLY commit.
+    //
+    // ⚠ act() around both the keystrokes and the advance is load-bearing: without
+    // it the debounce timer is scheduled AFTER the advance, and a 0ms debounce
+    // passes. Verified by mutation — 350 → 0 reds this case.
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
     const before = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/market")).length
     const box = screen.getByPlaceholderText("Search…")
-    for (const v of ["l", "li", "lil"]) fireEvent.change(box, { target: { value: v } })
-    await new Promise((r) => setTimeout(r, 60))
-    expect(fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/market")).length).toBe(before)
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        for (const v of ["l", "li", "lil"]) fireEvent.change(box, { target: { value: v } })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60)
+      })
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/market")).length).toBe(before)
+      // Past the window the trailing edge fires; advanced here so the waitFor
+      // below runs against real timers with the request already in flight.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
       expect(urls.some((u) => u.includes("player=lil"))).toBe(true)

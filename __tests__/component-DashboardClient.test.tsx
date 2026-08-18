@@ -1300,14 +1300,23 @@ describe("DashboardClient — edit-layout mode", () => {
           SLAB({ id: 2, slot: 2, player_name: "B", fmv: 100, tier: "COMMON" }),
         ],
       })
+    // ⚠ THE ASSERTION IS AGAINST ZERO, NOT AGAINST A BASELINE THIS TEST TOOK OF
+    // ITSELF. The earlier version captured `reorders` from the same expression
+    // it later compared to, so if the first click DID persist and the request
+    // simply had not landed inside a 40ms real-time sleep, the baseline
+    // recorded 0 and the comparison was satisfied by the defect — the
+    // self-referential-comparison vacuity shape, where a mutation changes both
+    // sides. The fixture is already sorted by fmv desc, so the honest claim is
+    // absolute: an arrange that changes nothing writes NOTHING, ever.
     render(<DashboardClient />)
     const arrange = await screen.findByRole("button", { name: /Auto-Arrange/ })
+    const reorderCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes("trophy/reorder")).length
     fireEvent.click(arrange)
     await new Promise((r) => setTimeout(r, 40))
-    const reorders = fetchMock.mock.calls.filter((c) => String(c[0]).includes("trophy/reorder")).length
+    expect(reorderCalls()).toBe(0)
     fireEvent.click(arrange)
     await new Promise((r) => setTimeout(r, 40))
-    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("trophy/reorder")).length).toBe(reorders)
+    expect(reorderCalls()).toBe(0)
   })
 })
 

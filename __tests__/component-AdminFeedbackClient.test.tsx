@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
 import AdminFeedbackClient from "@/app/admin/feedback/AdminFeedbackClient"
 
 // `admin/feedback` converted to a `*Client.tsx` so the component gate measures it.
@@ -353,15 +353,53 @@ describe("AdminFeedbackClient — stats, filters and search", () => {
     // ⚠ Microtask flushes CANNOT observe a timer delay — an earlier version of
     // this case awaited two resolved promises, and a mutation cutting the
     // debounce from 300ms to 0 SURVIVED it, because a `setTimeout(_, 0)` is a
-    // macrotask either way. Waiting real time well inside the window is what
-    // makes the delay observable at all.
+    // macrotask either way. The delay has to be advanced, not awaited.
+    //
+    // ⚠ AND IT MUST BE FAKE TIME, NOT REAL TIME. The version that replaced the
+    // microtask flush slept 90ms of WALL CLOCK inside a 300ms window and
+    // asserted nothing had fired — which is only true if fewer than 300ms of
+    // real time elapsed. **It reds on a loaded CI runner**, and did: run
+    // 32097... on `main` (2026-08-18, a DOCS-ONLY commit) failed here with
+    // `expected 2 to be 1`, blocking the branch for everyone over a test whose
+    // subject had not changed. A 90ms `setTimeout` is a floor on the delay, not
+    // a ceiling; under contention the sleep itself outlasts the window and the
+    // debounce fires before the assertion runs.
+    //
+    // Fake timers keep the property AND remove the wall clock: 90 virtual ms
+    // cannot become 300. The mutation the original comment cares about still
+    // dies — with the debounce at 0 the request fires inside the first advance
+    // and the `toBe(before)` reds. Verified by mutation, not asserted.
     await mountDashboard()
     const before = fetchMock.mock.calls.length
     const box = screen.getByPlaceholderText(/search summary/i)
-    for (const v of ["s", "st", "sta"]) fireEvent.change(box, { target: { value: v } })
-    await new Promise((r) => setTimeout(r, 90))
-    expect(fetchMock.mock.calls.length).toBe(before)
-    // …and when it does elapse, three keystrokes cost exactly ONE request.
+
+    vi.useFakeTimers()
+    try {
+      // ⚠ act() around the keystrokes is LOAD-BEARING, and its absence made the
+      // first fake-timer version VACUOUS: without it React had not yet run the
+      // effect that creates the debounce timer, so the timer was scheduled
+      // AFTER the 90ms advance and a 0ms debounce behaved exactly like a 300ms
+      // one. The mutation survived. Caught by running the mutation, not by
+      // reading the code.
+      await act(async () => {
+        for (const v of ["s", "st", "sta"]) fireEvent.change(box, { target: { value: v } })
+      })
+      // Well inside the 300ms window: three keystrokes, no request.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(90)
+      })
+      expect(fetchMock.mock.calls.length).toBe(before)
+      // Past it: the trailing edge fires exactly once.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300)
+      })
+    } finally {
+      // ⚠ In a `finally`, so a failed assertion above cannot leave fake timers
+      // installed for the rest of the file — that turns one red case into a
+      // cascade and buries the real failure.
+      vi.useRealTimers()
+    }
+
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(urls.some((u) => u.includes("q=sta"))).toBe(true)

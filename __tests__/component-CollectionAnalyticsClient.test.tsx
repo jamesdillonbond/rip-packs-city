@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
 import CollectionAnalyticsClient from "@/app/(collections)/[collection]/analytics/CollectionAnalyticsClient"
 
 // `[collection]/analytics` converted to a `*Client.tsx` so the component gate measures it —
@@ -489,13 +489,35 @@ describe("CollectionAnalyticsClient — player search", () => {
   })
 
   it("debounces rather than searching per keystroke", async () => {
+    // ⚠ VIRTUAL TIME, NOT WALL CLOCK. This case used to sleep 120ms of real time
+    // inside the component's 500ms window and assert nothing had fired — true
+    // only if fewer than 500ms of real time elapsed, which a loaded CI runner
+    // does not guarantee. Its sibling in component-AdminFeedbackClient reddened
+    // `main` exactly that way on 2026-08-18, on a DOCS-ONLY commit. A sleep is a
+    // floor on the delay, never a ceiling.
+    //
+    // ⚠ act() around the keystrokes AND around the advance is load-bearing:
+    // without it React has not yet run the effect that schedules the debounce,
+    // so the timer is created after the advance and a 0ms debounce passes the
+    // assertion. Verified by mutation — 500 → 0 reds this case.
     render(<CollectionAnalyticsClient />)
     await waitFor(() => expect(kpiValue("Total Sales")).toBe("89,831"))
     const before = fetchMock.mock.calls.filter((c) => String(c[0]).includes("player=")).length
     const box = screen.getByPlaceholderText(/player/i)
-    for (const v of ["l", "li", "lil"]) fireEvent.change(box, { target: { value: v } })
-    await new Promise((r) => setTimeout(r, 120))
-    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("player=")).length).toBe(before)
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        for (const v of ["l", "li", "lil"]) fireEvent.change(box, { target: { value: v } })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120)
+      })
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("player=")).length).toBe(before)
+    } finally {
+      // In a finally so a failed assertion cannot leave fake timers installed
+      // for the rest of the file — that turns one red case into a cascade.
+      vi.useRealTimers()
+    }
   })
 
   it("clears results when the box is emptied rather than leaving a stale player's rows", async () => {
