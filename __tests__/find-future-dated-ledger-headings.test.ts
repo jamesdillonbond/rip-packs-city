@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -25,8 +25,14 @@ import path from "node:path"
 //      it exists to catch. This suite therefore drives the detector at FIXED instants
 //      through `TZ`, so the assertions do not quietly become "whatever today is".
 //   2. It requires the strict `\d{4}-\d{2}-\d{2}` shape. A looser "heading that sorts above
-//      today" test fires on all 690 `### audit_2026…` headings in the live ledger, because
-//      `a` > `2` as a string. A guard with 690 false positives gets switched off.
+//      today" test fires on 39 headings in the live ledger, because ANY first token
+//      starting above `2` sorts above a date: 25 `### audit_2026…`, the `### <date>`
+//      format example quoted in the ledger header, and 13 word headings (`### FINDING`,
+//      `### Item`, `### Watch`, `### Atlas`…). A guard with 39 false positives gets
+//      switched off. ⚠ Measured 2026-08-17 — the first version of this comment claimed
+//      690, which was `grep -c 'audit_'`: LINES CONTAINING THE STRING ANYWHERE, not
+//      headings. A substring line-count reported as an entity count, inflated ~27x, and
+//      never measured before being written down.
 
 const SCRIPT = path.resolve(__dirname, "../scripts/find-future-dated-ledger-headings.mjs")
 
@@ -112,8 +118,8 @@ describe("find-future-dated-ledger-headings.mjs", () => {
     expect(out).toMatch(/^1: ### 2099-01-01/m)
   })
 
-  // ── The strict date shape, i.e. the 690 false positives it declines to raise ──
-  it("does NOT flag the 690 `### audit_…` headings, which sort above any date as strings", () => {
+  // ── The strict date shape, i.e. the 39 false positives it declines to raise ──
+  it("does NOT flag the 25 `### audit_…` headings, which sort above any date as strings", () => {
     // `a` > `2`, so a loose comparison calls every one of these future-dated.
     const md = "### audit_20260705_secdef_anon_exec · a real heading in this file\n" + `${PAST}\n`
     expect("audit_20260705" > "2026-08-17").toBe(true) // the trap being avoided
@@ -154,6 +160,30 @@ describe("find-future-dated-ledger-headings.mjs", () => {
 })
 
 describe("the live ledger is clean", () => {
+  const LEDGER_MD = path.resolve(__dirname, "../docs/overnight/ledger.md")
+
+  // ⚠ THE STRICT-SHAPE ARGUMENT, MADE EXECUTABLE RATHER THAN ASSERTED IN A COMMENT.
+  // The prose above cites 39 loose hits vs 0 strict ones, measured 2026-08-17. A number in
+  // a comment is exactly what got this file wrong the first time — 690 was a substring
+  // LINE count copied in without being measured. This derives both numbers from the live
+  // file at run time, so the claim cannot rot and cannot be a claim-without-measurement.
+  // Bounds, not equalities: audit headings keep being added, and pinning 39 would make an
+  // ordinary ledger append red for no reason.
+  it("a loose 'sorts above today' rule would flag many live headings; the strict one flags none", () => {
+    const md = readFileSync(LEDGER_MD, "utf8")
+    const today = isoIn("America/Los_Angeles")
+    const loose = md.split("\n").filter((l) => {
+      const m = /^### (\S+)/.exec(l)
+      return m ? m[1] > today : false
+    })
+    const strict = md.split("\n").filter((l) => {
+      const m = /^### (\d{4}-\d{2}-\d{2})\b/.exec(l)
+      return m ? m[1] > today : false
+    })
+    expect(strict).toHaveLength(0)
+    expect(loose.length).toBeGreaterThan(10) // 39 when measured 2026-08-17
+  })
+
   it("has no future-dated heading right now", () => {
     const out = execFileSync(
       process.execPath,
