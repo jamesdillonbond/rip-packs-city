@@ -44,7 +44,34 @@ Ran all three from a fresh `npm ci` on `main` @ `a690b507`.
 
 All three green.
 
-⚠ **CORRECTION, and it is the most actionable single finding in this file: the component gate's
+### ⚠ The gates red on code that did not change — CONFIRMED LIVE, then partly fixed
+
+**`c9923296` is a DOCS-ONLY commit and its `unit-tests` job FAILED on `main`**, between two passing
+runs of essentially the same code (`272b6ce1` before, `0b112c0f` after). Not a threshold — a **flaky
+test**: `component-AdminFeedbackClient.test.tsx:363`, *"does not fire a request per keystroke"*,
+`expected 2 to be 1`. It slept **90ms of WALL CLOCK** inside a **300ms** debounce window and asserted
+nothing had fired. A `setTimeout` is a floor on the delay, never a ceiling: under runner contention the
+sleep itself outlasts the window, the debounce fires, and the count is 2. It blocked the branch for
+everyone over a component nobody had touched.
+
+⚠ **A sweep for the expression rather than the file found five siblings, and they are NOT all the same
+risk** — recorded so nobody blanket-converts them:
+
+| site | window | verdict |
+|---|---|---|
+| `component-AdminFeedbackClient.test.tsx:363` | 300ms, slept 90 | **FIXED** — the one that actually reddened `main` |
+| `component-CollectionAnalyticsClient.test.tsx:497` | 500ms, slept 120 | **FIXED** — identical shape, latent |
+| `component-MarketClient.test.tsx:478` | 350ms, slept 60 | **FIXED** — identical shape, latent |
+| `component-DashboardClient.test.tsx:1309` | no window | **FIXED, different defect** — it compared against a baseline it took of itself, so a persisted no-op that had not landed in 40ms satisfied the assertion. Now absolute (`toBe(0)`). |
+| `component-CollectionTabClient.test.tsx:801`, `component-AdminFeedbackClient.test.tsx:712` | n/a | **LEFT ALONE** — their claims (no saved wallets ⇒ no prefetch; no token ⇒ no request) are true at any elapsed time, so the sleep is a courtesy, not a premise. |
+
+The three real fixes use fake timers with `act()` around both the keystrokes and the advance.
+⚠ **The first fake-timer version was VACUOUS and only the mutation caught it**: without `act()` React
+had not yet run the effect that schedules the debounce, so the timer was created *after* the advance
+and a `0ms` debounce behaved exactly like a `300ms` one. Every one of the three is now mutation-verified
+(window → 0 reds the case).
+
+⚠ **CORRECTION, and the remaining half of this is still open: the component gate's
 `functions` number is NOT 0.15pt above its threshold — it is INSIDE THE RUN-TO-RUN NOISE.** Measured
 across five runs on two trees (all `EXIT=0`): **3484, 3485, 3486, 3488, 3490 covered of 3910** →
 **89.10 / 89.13 / 89.15 / 89.20 / 89.25**, against a threshold of **89.1**. The low sample clears it by
@@ -53,8 +80,21 @@ stashed confirms this predates this pass — baseline measured 89.15 and the cha
 per-file move being `SniperClient.tsx` at +2 covered functions, which is itself the jitter. So
 `component-tests` is currently a coin flip, and the next person to see it red will read it as their own
 regression. ⚠ **The fix is NOT to lower the threshold** (the config's own rule, and the repo has paid
-for the compounding version). It is to find the nondeterministic suite — `SniperClient.tsx` is the
-first candidate — and make its coverage deterministic.
+for the compounding version). It is to find the nondeterministic suite.
+
+🔒 **LANE NOTE — the `SniperClient` half is CLAIMED by another session (see the block at the top of
+§0), and this pass did NOT touch it.** The four flakes fixed above are a disjoint set
+(`AdminFeedbackClient`, `CollectionAnalyticsClient`, `MarketClient`, `DashboardClient`) and were about
+the **primary** gate's red on a docs-only commit, not the component gate's `functions` coin flip. The
+hypothesis below is handed over, not worked.
+
+**Leading hypothesis, stated as a hypothesis:** `SniperClient.tsx` was the only file whose function
+count moved between two runs of the same tree (+2), and it holds a **`setInterval` countdown**
+(`app/(collections)/[collection]/sniper/SniperClient.tsx:509`) plus several `setTimeout` callbacks. A
+timer callback that fires in a slow run and not a fast one is exactly a ±2-function swing. **Not
+measured** — a plausible mechanism is not a measurement, and this one has not been tested. The check is
+cheap: run the SniperClient suite alone under fake timers and see whether the file's function count
+stops moving.
 
 ⚠ **Corrections to `docs/reference/testing-and-ci.md` found while re-deriving:**
 - It says server `page.tsx` is "48,325 LOC" and client `page.tsx` "27,016 LOC / 33 files". Live today:
