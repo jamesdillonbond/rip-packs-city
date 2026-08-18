@@ -97,6 +97,22 @@ single sample; the number that matters is the spread.** ⚠ The remedy is to fin
 suite, **never to lower the threshold** — the config's own rule, and this repo has already paid for the
 compounding version.
 
+⚠ **RESOLVED THE SAME NIGHT, AND THE USEFUL PART IS WHAT THE WOBBLE TURNED OUT TO BE.** The session
+that took this lane localised it with six gate runs across two independent triples — **not** to the
+file the filing named as its leading hypothesis (`SniperClient.tsx`, picked because it was the only
+file that moved between two runs and holds a `setInterval`). **That suspect was refuted on
+measurement.** The varying file was `CollectionTabClient`, and its `"appends the next page rather than
+replacing the loaded rows"` case **was passing without exercising Load More at all**: an auto-paginate
+effect appended the remaining pages by itself after a 300 ms sleep, so whenever it beat the click the
+assertion held anyway. Proved by deleting the click and watching the test still pass. **So an
+oscillating coverage number is worth chasing not because the gate is noisy, but because it is often a
+test that is INTERMITTENTLY VACUOUS** — the coverage delta is the only visible symptom of an assertion
+that sometimes measures nothing. ⚠ The fix's own trap is recorded with it: freezing the clock does not
+work, because the effect sets `loadingMore` *before* its sleep, so a frozen clock leaves the button
+permanently disabled and unclickable. ⚠ And it is **not** a claim that the gate is now deterministic —
+the 3484/3485 low end never reproduced in that session's six runs, so one source was removed, not
+proven to be the only one.
+
 ### ⚠ A guard that NAMES its instances is silent about the population it did not name — the SEO instance
 
 `seo-shared-helpers-inherit-og-twitter` pins three `lib/seo.ts` helpers **by name**. Every `app/**`

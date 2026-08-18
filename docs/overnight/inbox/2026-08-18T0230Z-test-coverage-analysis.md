@@ -341,9 +341,12 @@ itself: if one fails, triage it; do not delete the line.
 
 ## What is left, in order
 
-1. **The component gate's `functions` jitter (§0).** Now the top item: the gate can red on an unchanged
-   tree. Find the nondeterministic suite (start with `SniperClient.tsx`, the only file that moved
-   between two runs of the same tree) rather than touching the threshold.
+1. ~~**The component gate's `functions` jitter (§0).**~~ ✅ **CLOSED the same night by the session that
+   claimed the lane — and the suspect named here (`SniperClient.tsx`) was REFUTED on measurement.** It
+   was `CollectionTabClient`, whose Load More case was passing *without exercising Load More*; the
+   coverage wobble was the symptom of an intermittently-vacuous assertion, not of a noisy gate. ⚠ Not
+   a claim that the gate is now deterministic: the 3484/3485 low end did not reproduce in that
+   session's six runs, so one source was removed, not proven to be the only one.
 2. **§4 edge-fn cursor extraction** — the largest gap, and the only one that is a real project. Start
    with the two `event_cursor` ingesters: a cursor that advances past a failed write is silent
    permanent loss, and nothing today can catch it.

@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · DOCS (Claude Code, interactive) — recorded the refutation of my own named suspect, in the durable files rather than only in the session log
+
+The session that claimed the component-gate lane **closed it, and refuted the leading hypothesis I handed over** (`23302cc1`/`5d0e74a3`). I named `SniperClient.tsx` because it was the only file whose function count moved between two runs of the same tree and it holds a `setInterval` countdown. **Measurement said otherwise:** six gate runs across two independent triples localised it to `CollectionTabClient`.
+
+⚠ **And the finding is sharper than the one I filed.** The wobble was a SYMPTOM: that file's `"appends the next page rather than replacing the loaded rows"` case **was passing without exercising Load More at all** — an auto-paginate effect appended the remaining pages by itself after a 300 ms sleep, so whenever it beat the click the assertion held anyway (proved by deleting the click and watching it still pass). **An oscillating coverage number is worth chasing not because the gate is noisy, but because it is often a test that is INTERMITTENTLY VACUOUS** — the coverage delta is the only visible symptom of an assertion that sometimes measures nothing. Promoted into `docs/reference/testing-and-ci.md` beside the jitter measurement it supersedes, with the fix's own trap (freezing the clock cannot work: the effect sets `loadingMore` BEFORE its sleep, so the button is left permanently disabled) and the boundary that session stated — the 3484/3485 low end never reproduced there, so **one source was removed, not proven to be the only one.**
+
+⚠ **This is the whole reason a hypothesis must be labelled as one.** It was handed over as "not measured — the check is cheap", and the cheap check is exactly what refuted it. Had it been filed as a finding, the next session would have started on the wrong file.
+
+Also updated the session entry and the inbox filing's "what is left" list so neither carries the dead suspect.
+
+- **Docs only** — three files plus this entry. No code, test, DB, migration, cron or prod change. **Revert:** `git revert <sha>`.
+
 ### 2026-08-17 · DOCS (Claude Code, interactive — session close-out) — promoted the coverage pass's lessons out of the session log, and corrected a reference figure that overstated the untested surface by ~3.5×
 
 Session archived to `docs/sessions/2026-08.md` (prepended, newest-first) and the durable lessons promoted into `docs/reference/testing-and-ci.md` rather than left in a dated entry — the failure mode that file documents about itself.
