@@ -337,6 +337,21 @@ itself: if one fails, triage it; do not delete the line.
 
 - **`app/global-error.tsx`** (58 LOC) — the app's last-resort error boundary. **Referenced by zero
   tests, measured by neither gate.** An untested error boundary is the guard-fails-open shape.
+
+  > ✅ **BEHAVIOUR PINNED 2026-08-17 (`65e56ff3` / `51175176`) — `__tests__/component-global-error.test.tsx`,
+  > 5 cases, mutation-tested (3 mutations, all killed).** ⚠ **The contract that mattered was not
+  > "it renders":** *"Our team has been notified"* is a factual claim to a user, and the only thing
+  > making it true is the `captureException` beside it — so the copy and the capture are asserted
+  > TOGETHER, as the implication "never the claim without the report". Also pinned: `reset` is wired
+  > to the button, and the captured object is the error ITSELF with `digest` intact (a
+  > `new Error(error.message)` re-wrap passes a call-count assertion and drops the only link to the
+  > server log line).
+  >
+  > ⚠ **STILL A HALF-FIX — the "measured by neither gate" half is UNCHANGED and deliberately so.**
+  > The file is not in any coverage `include`, so its coverage is still unmeasured and a future edit
+  > moves no number: the component gate went **2,921 → 2,926 tests with percentages unchanged**.
+  > Left for a session that is not also touching the gate's margin — widening an `include` shifts the
+  > denominator, and that is how a margin fix gets blamed for someone else's red.
 - **56 of 60 `layout.tsx`** are referenced by no test; 12 export `generateMetadata`, 10 call
   `notFound()`/`redirect()`. They are in neither gate's `include`.
 - **`components/entity/PopularOnCollection.tsx`** — worst file in the component gate at
