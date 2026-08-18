@@ -263,6 +263,36 @@ less useful than the pattern.
 | `server-page-data-access-ratchet` | walked `entry === "page.tsx"`, so a `layout.tsx` or server component was outside it |
 | smoke battery's `cached_listings` check | prior sweeps were scoped by **call-kind** (RPCs); this was the only direct TABLE read |
 | `check-tree-corruption.mjs` | **nothing invoked it at all** — see below |
+| `anon-api-no-driver-message-leak-guard` | *(a SIXTH, found 2026-08-18)* excluded `app/api/{admin,cron}/**` and asserted that exclusion with a **file-level** grep — see below |
+
+### ⚠ An exclusion asserted per-FILE cannot defend a property that is per-HANDLER
+
+`anon-api-no-driver-message-leak-guard` skips `app/api/admin/**` and `app/api/cron/**` wholesale, and
+it is careful about it: a companion test asserts *"every excluded admin/cron route really does gate
+itself on a secret"*, so the exclusion cannot quietly come to cover an ungated route. **That
+companion greps the FILE.** The surface it is defending is per **handler**.
+
+**`export async function GET()` takes no parameters, so it cannot read a header, a cookie or a query
+param — it cannot authenticate anyone** — and `isPublicPath` returns true for both prefixes, so the
+proxy steps aside and every anonymous caller reaches the body. A gated `POST` in the same file
+satisfied the grep and vouched for the ungated `GET` beside it. Measured 2026-08-18: **four such
+handlers, all four dishonest** — a `count ?? 0` publishing a measured zero out of a timeout, two
+returning `error.message` to anyone, and one discarding its error into `ok: true`.
+
+Two method notes, both bought at the usual price:
+
+- ⚠ **The first measurement said 22 and was mostly false positives.** A static "which handlers reach a
+  gate" walk missed `const TOKEN = process.env.INGEST_SECRET_TOKEN` at module scope and
+  `export const GET = handler`. Spot-reading five found four gated. **Discard a sweep that cannot
+  survive five hand-reads; do not publish its number.** The replacement predicate is decidable from
+  the declaration alone — an empty parameter list.
+- ⚠ **Zero-arg does not imply unauthenticatable.** `cookies()` / `headers()` from `next/headers` are
+  ambient in the App Router, so a zero-arg handler importing them CAN authenticate. The guard checks
+  the import list too; without that it is a false-positive machine.
+
+**Generalise it:** when a guard buys its scope with an exclusion, the assertion defending that
+exclusion must be at the same granularity as the property. A file-level answer to a handler-level
+question is not a weaker guard — it is a guard that reports green on the exact case it excluded.
 
 ### ⚠ Ask what RUNS a guard, not whether it passes
 
