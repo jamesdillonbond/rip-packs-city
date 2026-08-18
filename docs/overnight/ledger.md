@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Cowork cloud) — the watchlist coverage audit measured against rows the monitor ignores: the blind spot is 67, not 62, and two "retired" pipelines are still running
+
+⛔ **`detect_stalled_pipelines` reads `WHERE w.is_active`, and only 83 of the 102 `pipeline_cadence_watchlist` rows are active.** `0e115ca`'s **62 of 149** compared live pipelines against **all** rows. Measured against the predicate the consumer actually applies: **150 live (7d) · 83 active rows · 67 unwatched · 4 live-but-DEACTIVATED · 0 active rows with no runs.** ⚠ **The audit's headline was an instance of the trap it was written about** — a coverage figure taken from the table instead of from the guard's own predicate.
+
+✅ **Half the "drifts BOTH ways" claim is REFUTED.** CLAUDE.md said the list "carries 15 rows for pipelines that no longer run" — those rows exist but are **all already `is_active = false`**, and `active_but_no_runs_7d = 0`. The dead-entry direction costs the monitor nothing; **it drifts ONE way.** CLAUDE.md corrected in place and **length-neutral — margin unchanged at 113** (the file is at equilibrium, so the replacement was sized to the original before writing; a first draft that would have cut margin to 45 was refused by its own guard).
+
+⚠ **Two pipelines are running unmonitored:** `analytics-smoke` (last run **28 min ago**, 150 runs/72h, its row marked `[RETIRED May14]`) and `drain-fmv-cold-tail` (**1 h 54 m ago**, 120/72h). The other two deactivated rows — `topshot-flowty-unmapped-drain`, `topshot-flowty-sales-history-backfill` — **stopped ~26 h ago and are correctly retired.**
+
+⛔ **THE ROLLUP SAID ALL FOUR RAN TODAY, AND I NEARLY FILED THAT.** `pipeline_runs_daily.last_day` read `2026-08-17` for every one, because the UTC bucket still holds each pipeline's final runs; only raw `pipeline_runs` separates *running* from *stopped yesterday*. **Fresh instance of the documented rule — the rollup for VOLUME and TREND, NEVER for RECENCY.**
+
+⚠ **Caller of the two live ones is INFERRED, not read.** `vercel.json` (36 entries), `.github/workflows/` and `cron.job` all return **zero** matches, so by elimination it is cron-job.org or the home box. I did not open the cron-job.org console (its job-edit DOM carries Authorization headers). **Refutation: a matching cron-job.org entry, or an in-repo `fetch` caller I did not grep.**
+
+⛔ **NOT SHIPPED — the derivation fix.** Flipping to derived membership adds **67** pipelines to alerting at once on thresholds nobody has measured, and `max_silent_minutes` is per-pipeline, derived from each one's own measured cadence (2.5× median gap). **A monitor that floods gets muted — strictly worse than one that is blind.** The missing precondition is a blast radius: median gap, implied threshold, and would-it-breach-now for each of the 67. Cheap, but it belongs in a quiet window on a disk-IO-starved instance.
+
+⚠ **`check_pgcron_recent_failures()` TIMED OUT at the 60 s MCP cap, twice.** focus.md requires it every sweep; it currently cannot complete, so **its silence this pass is not evidence of pg_cron health.**
+
+Detail: [inbox/2026-08-18T0450Z-…](docs/overnight/inbox/2026-08-18T0450Z-watchlist-coverage-was-measured-against-rows-the-monitor-ignores.md).
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='coverage is only real against what the guard reads'`. CLAUDE.md line 147 + one inbox file. No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — pinned `dispatch_due_deal_alerts`, and TWO of its five mutations survived the first fixture
 
 Second pin in the §3 lane (`supabase/tests/dispatch_due_deal_alerts.sql`; pins 180 → 182 across two commits, DB suite now **173 files**, drift guard 186 green). This is the SENDING half of the alert pipeline — the function that writes rows a human then receives — and its preview sibling was pinned an hour earlier. Verified byte-identical to LIVE `prosrc` before pinning (md5 `24ab9e7953c0005b10e987cbea62307e`, 13,203 chars).
