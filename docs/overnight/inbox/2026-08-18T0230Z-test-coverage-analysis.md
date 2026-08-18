@@ -4,7 +4,7 @@ Requested: "analyze the test coverage of the codebase and propose some areas in 
 improve our tests." Everything below is **re-derived live in this session**, not quoted from
 `docs/reference/testing-and-ci.md` — several numbers in that file are stale and are corrected here.
 
-## ⚠ STATUS — this file is now part register. §1, §2 and §5 are shipped; §3 has its first pin
+## ⚠ STATUS — this file is now a register, not a proposal. §0, §1, §2, §5 CLOSED; §3 has two of its pins; §4 open
 
 - **§1 — CLOSED by a CONCURRENT SESSION, not by this one.** Two sessions worked it within the hour;
   see the ✅ block inside §1 for what landed. ⚠ **Recorded because the collision is the lesson:** both
@@ -25,7 +25,11 @@ improve our tests." Everything below is **re-derived live in this session**, not
   **272 substantial functions remain unpinned.** ⚠ The dispatcher's first fixture let **two of five
   mutations survive** — see §3 for both shapes; the assertions were fine, the fixture could not
   distinguish the implementations.
-- **§4 is untouched and remains the largest gap.**
+- **§0 — CLOSED by the session that claimed the lane**, and **the suspect this file named was refuted
+  on measurement**: it was `CollectionTabClient`, not `SniperClient`, and the coverage wobble was the
+  symptom of a test that was **intermittently vacuous** rather than of a noisy gate. See §0 below.
+- **§4 is untouched and remains the largest gap** — 13,653 LOC of Deno edge-function bodies holding 46
+  write sites, `deno check`-ed and never executed. **The only item here that is a real project.**
 
 ⚠ **§0's read of the component gate's margin was too kind and is corrected immediately below.**
 
@@ -35,6 +39,11 @@ improve our tests." Everything below is **re-derived live in this session**, not
 > because the two of us just burned a duplicate §2 for want of exactly this line. **§3
 > (`dispatch_due_deal_alerts` and the rest of the DB pins) is the other session's lane — I am not
 > touching it.** If this claim is more than a few hours old, assume it is stale and take it.
+>
+> ✅ **RELEASED — this lane is DONE** (`23302cc1` / `5d0e74a3`, same night). Annotated rather than
+> deleted, because the claim did its job: it is why the second near-collision of the night cost
+> nothing. ⚠ **A claim with no release note becomes a blocker on finished work**, which is the same
+> shape as a guard nobody retires.
 
 ## 0. The three gates, measured today
 
