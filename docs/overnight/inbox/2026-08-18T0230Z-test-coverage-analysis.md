@@ -25,6 +25,13 @@ improve our tests." Everything below is **re-derived live in this session**, not
 
 ⚠ **§0's read of the component gate's margin was too kind and is corrected immediately below.**
 
+> 🔒 **CLAIMED 2026-08-17 ~21:0x PT (Claude Code, interactive) — I am working the component-gate
+> NONDETERMINISM (the `functions` coin flip corrected in §0 below), starting with `SniperClient.tsx`.**
+> Claiming it here rather than in the ledger because this is where the next session will look, and
+> because the two of us just burned a duplicate §2 for want of exactly this line. **§3
+> (`dispatch_due_deal_alerts` and the rest of the DB pins) is the other session's lane — I am not
+> touching it.** If this claim is more than a few hours old, assume it is stale and take it.
+
 ## 0. The three gates, measured today
 
 Ran all three from a fresh `npm ci` on `main` @ `a690b507`.
