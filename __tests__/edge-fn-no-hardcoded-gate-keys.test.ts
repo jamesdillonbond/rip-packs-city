@@ -159,7 +159,18 @@ describe("edge functions carry no hardcoded gate keys", () => {
     // Guards the guard: if extraction silently stopped matching, every function
     // would fall through to the weaker syntactic path and this test would quietly
     // stop executing anything.
-    expect(executed).toBe(8)
+    //
+    // 8 -> 9 on 2026-08-18: resolve-allday-rip-dist-api had NO committed source when
+    // this count was set -- it was one of ~30 deployed edge functions absent from the
+    // repo, so its hardcoded `const GATE` was outside this sweep's reach entirely.
+    // That is NOT a false-green: a literal absent from a public repo does not leak via
+    // the repo. What it did leave behind is a DEPLOYED function that could not be
+    // rotated by the documented procedure -- there was no secret to paste a new key
+    // into -- which is exactly how repointing cron jobid 26 produced a self-inflicted
+    // 403 with no way to fix it. Committing its de-literalised v6 source is what raised
+    // this count. Raise it again ONLY alongside a function that genuinely reads a
+    // *_GATE_KEY secret; a DROP means extraction broke.
+    expect(executed).toBe(9)
   })
 
   it("accepts the outgoing key ONLY while its own _OLD secret is set", () => {

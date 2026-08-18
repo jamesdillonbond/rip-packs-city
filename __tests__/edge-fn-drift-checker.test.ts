@@ -16,7 +16,8 @@ import {
 // The live half needs a Management API PAT, so what is pinned here is the pure
 // core, exercised against the REAL fleet shape measured 2026-08-07: 37 repo
 // functions, 35 using a bare specifier, only 4 of those deployed with an import
-// map -> 31 proven drifted.
+// map -> 31 proven drifted. Tree is 38 as of 2026-08-18 (resolve-allday-rip-dist-api
+// gained a committed source); it is url-only, so the 35/4/31 figures are unchanged.
 
 describe("edge-fn drift detector — specifier classification", () => {
   it("separates bare from relative and url, since only BARE needs an import map", () => {
@@ -102,9 +103,21 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     const deployed = repo.map((r) => ({ slug: r.slug, import_map: WITH_MAP.has(r.slug) }))
     const res = classifyImportMapDrift(repo, deployed)
 
-    // Every function this repo ships is import-map dependent except the two
+    // Every function this repo ships is import-map dependent except the three
     // url-only ones — so a naive mass-deploy without deno.json boot-fails them.
-    expect(res.inapplicable.sort()).toEqual(["flowty-proxy", "sync-nba-games"])
+    //
+    // resolve-allday-rip-dist-api joined this list on 2026-08-18, and it did NOT
+    // change the headline: it is url-only (esm.sh), so tier 1 is INAPPLICABLE to it
+    // and proven stays 31. Its arrival is a repo-tree change, not a drift finding —
+    // the function was deployed all along with no committed source, which is a gap
+    // this detector cannot see either (it compares repo-vs-deployed for slugs the
+    // repo HAS). The count in this file's header comment moved 37 -> 38 for the
+    // same reason.
+    expect(res.inapplicable.sort()).toEqual([
+      "flowty-proxy",
+      "resolve-allday-rip-dist-api",
+      "sync-nba-games",
+    ])
     expect(res.clean.sort()).toEqual([...WITH_MAP].sort())
     // The headline: everything else is provably running non-repo code.
     expect(res.proven.length).toBe(repo.length - res.clean.length - res.inapplicable.length)
