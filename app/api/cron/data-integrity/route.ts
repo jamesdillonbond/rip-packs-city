@@ -50,10 +50,12 @@ export const maxDuration = 30;
 // 0/healthy baselines:
 //   1. security invariants — new RLS-off / anon-writable base tables
 //      (check_public_security_invariants(); replaces the old dead RLS-key check).
-//   2. FMV coverage — overall editions-with-an-fmv-snapshot, via the cheap
-//      get_fmv_coverage() RPC (~1.2s index-only semijoin; replaces the 14.7s
-//      health_check() call). Flags only on overall <95% (99.6% baseline); the thin
-//      UFC market (~90%) is reported per-collection but not flagged.
+//   2. FMV coverage — overall editions-with-an-fmv-snapshot, via the
+//      get_fmv_coverage() RPC (replaces the old health_check() call). Flags only
+//      on overall <95%; the thin UFC market is reported per-collection but not
+//      flagged. ⚠ No latency figure is quoted here ON PURPOSE — see the block at
+//      the call site: the last two numbers in this comment were both dated
+//      samples that went wrong in opposite directions.
 //   3. badge data freshness (>72h).
 // Orphan counts are reported as informational stats only (no flag). Real
 // orphan-regression detection would need stored baselines — a separate feature.
@@ -84,14 +86,30 @@ export async function GET(request: NextRequest) {
     // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.
     //    Flags only on a broad regression (overall <95%).
     //
-    // ⚠ The "~1.2s" this comment used to claim was a DATED SAMPLE quoted as a
-    // constant. Re-measured 2026-08-18: the RPC did not finish in 55s. Its plan is
-    // a Seq Scan over ~29,288 editions with the SAME correlated EXISTS planned
-    // TWICE (SubPlan 1 and SubPlan 2 — once for the count, once inside the
-    // percentage), each an Append across three fmv_snapshots partitions: ~58.6k
-    // correlated probes to produce one number. Filed with a measured single-probe
-    // rewrite; NOT fixed here, because bounding the caller is what stops this
-    // route going dark and is the smaller change.
+    // ⚠ THIS COMMENT HAS NOW BEEN WRONG TWICE, IN OPPOSITE DIRECTIONS, AND BOTH
+    // TIMES BECAUSE A ONE-INSTANT READING WAS WRITTEN DOWN AS A PROPERTY.
+    //
+    //   1. It claimed "~1.2s index-only semijoin". That was a dated sample quoted
+    //      as a constant, and it was not even the right plan shape.
+    //   2. The correction claimed "did not finish in 55s" and blamed the double
+    //      SubPlan. The 55s was real but it was measured DURING a disk-IO
+    //      saturation spell, and the blame was misattributed.
+    //
+    // Re-measured 2026-08-18 in a QUIET window (3 active sessions, 1 in IO wait,
+    // zero autovacuum workers), warm-vs-warm on the same instrument: the OLD
+    // double-SubPlan body ran in 1,470 / 1,609 ms at 196,106 buffers. So the plan
+    // shape NEVER cost 55s — saturation did. The RPC is now a single lateral probe
+    // (migration audit_20260818_get_fmv_coverage_single_probe): 100,014 buffers,
+    // 909 ms, values verified identical across all four active collections.
+    //
+    // ⚠ DO NOT READ THAT AS "the timeout is fixed." It is not the timeout's cause,
+    // so it cannot be its fix: under the next saturation spell this RPC can still
+    // blow any budget, and `timeoutMs` below is what keeps the clean, instant
+    // security-invariant result from going dark with it. The bound is the
+    // load-bearing part; the rewrite just stops paying twice for one answer.
+    //
+    // If you are tempted to put a fresh millisecond figure in this comment: that
+    // is exactly what went wrong the last two times. Measure it yourself.
     const { data: coverage, error: covErr } = await rpcWithRetry<any[]>(
       supabaseAdmin,
       "get_fmv_coverage",
