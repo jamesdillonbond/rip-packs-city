@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
 import CollectionTabClient from "@/app/(collections)/[collection]/collection/CollectionTabClient"
 
 // `[collection]/collection` converted to a `*Client.tsx` so the component gate measures it —
@@ -206,6 +206,36 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/**
+ * Run the component's async work to a FIXED POINT under fake timers.
+ *
+ * ⚠ A fixed point, not a guessed tick count. The chains are several awaits
+ * deep (moments -> badges -> fmv), each of which can start another fetch, and
+ * auto-paginate sleeps 300 ms between pages. Looping until the fetch count
+ * stops changing settles whatever depth the component actually has; a
+ * hardcoded number of ticks is the same guess-the-timing bug in a new costume.
+ *
+ * ⚠ Inside act(): advancing the timers resolves the fetch chains, but without
+ * act() React never flushes the resulting state into the DOM, so the rows land
+ * and the button under test is still not there to click.
+ *
+ * ⚠ Requires vi.useFakeTimers(). Under real timers it returns almost
+ * immediately and guarantees nothing.
+ */
+async function settleAll(maxRounds = 30): Promise<void> {
+  let stable = 0
+  for (let i = 0; i < maxRounds && stable < 2; i++) {
+    const before = fetchMock.mock.calls.length
+    // ⚠ Inside act(): advancing the timers resolves the fetch chains, but
+    // without act() React never flushes the resulting state into the DOM, so
+    // the rows land and the Load More button is still not there to click.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    stable = fetchMock.mock.calls.length === before ? stable + 1 : 0
+  }
+}
+
 // ─── The orchestration failure ───────────────────────────────────────────────
 
 describe("CollectionTabClient — a failed wallet read must not read as an empty wallet", () => {
@@ -373,27 +403,82 @@ describe("CollectionTabClient — results and pagination", () => {
   })
 
   it("appends the next page rather than replacing the loaded rows", async () => {
-    searchParams = new URLSearchParams("wallet=0xmine")
-    render(<CollectionTabClient />)
-    const more = await screen.findByText(/Load More/)
-    momentsResponse = () =>
-      json(200, { moments: [MOMENT({ moment_id: "9002" })], wallet: "0xmine", page: 2, total_count: 137, total_pages: 3 })
-    fireEvent.click(more)
-    // ⚠ Assert the IDS, not the count. A count-only assertion is satisfied by
-    // "page 2 replaced page 1" whenever both pages are the same size, so the
-    // mutation that drops the append survived `data-rows === "2"`. What append
-    // promises is that the first page is STILL THERE.
+    // ⚠ THIS TEST PASSED WITHOUT EXERCISING LOAD MORE AT ALL, and the coverage
+    // gate is how it surfaced. The auto-paginate effect appends the remaining
+    // pages by itself after a 300 ms sleep. On a busy runner that can beat the
+    // click: `paginatedPage` reaches `paginatedTotalPages`, the button unmounts
+    // (the `paginatedPage < paginatedTotalPages` ternary), the click lands on a
+    // detached node, `handleLoadMore` never runs — and the id assertion below
+    // STILL PASSES, because auto-paginate appended 9002 on its own.
     //
-    // ⚠ AND THERE ARE TWO ACCUMULATION SITES, not one: an auto-paginate effect
-    // pulls the remaining pages on its own once `paginatedTotalPages > 1`, with
-    // its own `prev.concat`. Mutating only the Load-More one leaves the effect
-    // appending and the test passes — a MUTATION-HARNESS artifact that reads
-    // exactly like a coverage gap. Both sites must be mutated together; both
-    // sites together are killed by this case.
-    await waitFor(() => {
+    // Measured 2026-08-17 over three full component-gate runs: `handleLoadMore`
+    // and the anonymous append callback were covered 1 / 1 / 0, moving the
+    // gate's `functions` number by 2 and leaving `component-tests` 0.004pt
+    // above its threshold — a coin flip whose next red would have been read as
+    // somebody's own regression.
+    //
+    // ⚠ FREEZING THE CLOCK IS NOT ENOUGH ON ITS OWN, and that is worth knowing
+    // before "simplifying" this: the effect calls `setLoadingMore(true)`
+    // BEFORE its sleep, so holding time below 300 ms leaves the button
+    // permanently disabled and relabelled, and it can never be clicked. The
+    // deterministic route is to let auto-paginate run and drive it into a dead
+    // end: its page-2 read returns NO moments, so the loop breaks without
+    // advancing `paginatedPage`, and Load More is then the only path to page 2.
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      // ⚠ Keyed on the `page` PARAM plus how many page-2 reads have happened —
+      // NOT on raw call order. The initial search issues more than one
+      // `/api/collection-moments` request on its own (a second lands once the
+      // series options resolve), so a plain call counter puts the dead-end
+      // payload on the initial search and auto-paginate then runs to
+      // completion. Measured: that mistake ends at "All 137 moments loaded"
+      // with no button at all.
+      let pageTwoReads = 0
+      const payload = (moments: unknown[], page: number) =>
+        json(200, { moments, wallet: "0xmine", page, total_count: 137, total_pages: 3 })
+      // ⚠ Cast required: getMockImplementation() is typed as a union that
+      // includes a constructor signature, so it is not directly callable.
+      // vitest does not typecheck, so only `tsc --noEmit` catches this.
+      const realFetch = fetchMock.getMockImplementation() as (input: unknown, init?: unknown) => Promise<Response>
+      fetchMock.mockImplementation(async (input: unknown, init?: unknown) => {
+        const url = String(input)
+        if (!url.startsWith("/api/collection-moments")) return realFetch(input, init)
+        const page = Number(new URLSearchParams(url.split("?")[1] ?? "").get("page") ?? "1")
+        if (page === 1) return payload([MOMENT()], 1)
+        if (page !== 2) return payload([], page)
+        pageTwoReads += 1
+        // First page-2 read is auto-paginate's: hand it nothing, so its loop
+        // breaks without advancing `paginatedPage` and Load More survives.
+        // The second is the click, and it is the one that must append.
+        return pageTwoReads === 1 ? payload([], 2) : payload([MOMENT({ moment_id: "9002" })], 2)
+      })
+
+      render(<CollectionTabClient />)
+      await settleAll()
+
+      // Auto-paginate has run and broken on the empty page, so this is the
+      // enabled button and not the disabled "loading" relabel.
+      const more = screen.getByText(/Load More/)
+      expect(pageTwoReads, "auto-paginate did not take its one attempt").toBe(1)
+
+      fireEvent.click(more)
+      await settleAll()
+
+      // The click is what fetched page 2. Without this the test cannot tell a
+      // real Load More from auto-paginate having done the work, which is
+      // exactly how it went green while covering nothing.
+      expect(pageTwoReads, "the click never reached handleLoadMore").toBe(2)
+
+      // ⚠ Assert the IDS, not the count. A count-only assertion is satisfied by
+      // "page 2 replaced page 1" whenever both pages are the same size, so the
+      // mutation that drops the append survived `data-rows === "2"`. What
+      // append promises is that the first page is STILL THERE.
       const ids = screen.getByTestId("moment-table").getAttribute("data-ids") ?? ""
       expect(ids.split(",").filter(Boolean).sort()).toEqual(["9001", "9002"])
-    })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("auto-paginates the rest of the wallet without waiting for a click", async () => {
