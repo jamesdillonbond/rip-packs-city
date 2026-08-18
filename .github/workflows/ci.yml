@@ -270,6 +270,34 @@ jobs:
         run: |
           LEDGER=docs/overnight/ledger.md
           if [ ! -f "$LEDGER" ]; then echo "no ledger file — skip"; exit 0; fi
+          # It tests an absolute property of the file and needs no parent commit.
+          # the ledger — which is how it first shipped, green and never executed.
+          # Below it the check is VACUOUS on any push whose TIP commit does not touch
+          # ⚠ THIS CHECK SITS ABOVE THE "ledger unchanged" EARLY EXIT ON PURPOSE.
+          # A heading can also be stamped in a day that HAS NOT HAPPENED YET. The
+          # ledger is dated PACIFIC, but CI, the cloud sandbox and the nightly pass
+          # all run on UTC — which after 17:00 PT is already tomorrow. FOUR entries
+          # were mis-stamped this way inside 35 minutes on 2026-08-17 (4b32934,
+          # a18c39a, b7ec40b, 2892f29), while the warning was already sitting in
+          # BOTH the ledger header and CLAUDE.md. The warning was not the fix.
+          # ⚠ BAN AT POPULATION ZERO — those four were corrected, so any hit is new.
+          # ⚠ The detector does its OWN UTC->PT conversion, and must. A check that
+          # asks THIS runner for "today" computes the same wrong date the bug did,
+          # so the mis-stamped entry looks like today's and the guard passes —
+          # reproducing the exact defect it exists to catch.
+          FUTD=scripts/find-future-dated-ledger-headings.mjs
+          if ! command -v node >/dev/null 2>&1; then
+            echo "::error::node unavailable, so the future-date ledger guard cannot run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+            exit 1
+          fi
+          FD=$(node "$FUTD" "$LEDGER")
+          echo "future-dated headings: ${FD:-0}"
+          if [ "${FD:-0}" -gt 0 ]; then
+            echo "::error file=docs/overnight/ledger.md::${FD} ledger heading(s) are dated in a day that has not happened in PACIFIC time."
+            node "$FUTD" --show "$LEDGER"
+            echo "::error::FIX: the ledger is dated PT, not UTC. After 17:00 PT the UTC clock is already on tomorrow, so a date -u stamp writes the wrong day. Take the date from PowerShell Get-Date (it prints the offset, so it cannot be wrong silently) or an explicit America/Los_Angeles conversion, correct the heading, re-push."
+            exit 1
+          fi
           if ! git rev-parse HEAD~1 >/dev/null 2>&1; then echo "no parent commit — skip"; exit 0; fi
           if [ -z "$(git diff --name-only HEAD~1 HEAD -- "$LEDGER")" ]; then
             echo "ledger unchanged in this push — nothing to check"; exit 0
@@ -308,30 +336,6 @@ jobs:
             echo "::error file=docs/overnight/ledger.md::A ledger heading was SWALLOWED INTO PROSE (${SW_BEFORE} -> ${SW_AFTER}). Your entry spliced on the substring '### ' and landed mid-sentence, so it has no '^### ' heading of its own and the host line was cut in half."
             awk -v show=1 -f "$SWALL" "$LEDGER"
             echo "::error::FIX: splice at the first line whose FIRST CHARACTERS are '### ' (a line-start anchor), never at a substring match. Re-read the file from disk, put your heading on its own line, re-push."
-            exit 1
-          fi
-          # A heading can also be stamped in a day that HAS NOT HAPPENED YET. The
-          # ledger is dated PACIFIC, but CI, the cloud sandbox and the nightly pass
-          # all run on UTC — which after 17:00 PT is already tomorrow. FOUR entries
-          # were mis-stamped this way inside 35 minutes on 2026-08-17 (4b32934,
-          # a18c39a, b7ec40b, 2892f29), while the warning was already sitting in
-          # BOTH the ledger header and CLAUDE.md. The warning was not the fix.
-          # ⚠ BAN AT POPULATION ZERO — those four were corrected, so any hit is new.
-          # ⚠ The detector does its OWN UTC->PT conversion, and must. A check that
-          # asks THIS runner for "today" computes the same wrong date the bug did,
-          # so the mis-stamped entry looks like today's and the guard passes —
-          # reproducing the exact defect it exists to catch.
-          FUTD=scripts/find-future-dated-ledger-headings.mjs
-          if ! command -v node >/dev/null 2>&1; then
-            echo "::error::node unavailable, so the future-date ledger guard cannot run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
-            exit 1
-          fi
-          FD=$(node "$FUTD" "$LEDGER")
-          echo "future-dated headings: ${FD:-0}"
-          if [ "${FD:-0}" -gt 0 ]; then
-            echo "::error file=docs/overnight/ledger.md::${FD} ledger heading(s) are dated in a day that has not happened in PACIFIC time."
-            node "$FUTD" --show "$LEDGER"
-            echo "::error::FIX: the ledger is dated PT, not UTC. After 17:00 PT the UTC clock is already on tomorrow, so a date -u stamp writes the wrong day. Take the date from PowerShell Get-Date (it prints the offset, so it cannot be wrong silently) or an explicit America/Los_Angeles conversion, correct the heading, re-push."
             exit 1
           fi
           if [ -n "$GONE" ]; then

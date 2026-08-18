@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — the future-date guard shipped GREEN AND NEVER EXECUTED; caught by asking what the passing job was silent about
+
+**`4fa75ebd` went green on the `Ledger no-clobber guard` job without running the check it had just added.** That job's `run:` block opens with `if [ -z "$(git diff --name-only HEAD~1 HEAD -- "$LEDGER")" ]; then echo "ledger unchanged in this push — nothing to check"; exit 0; fi`, and that push's TIP commit touched `scripts/`, `.github/` and `CLAUDE.md` — not the ledger. My check sat below that gate, so the job exited 0 before ever reaching it. **A green badge, a correct-looking guard, and zero execution.**
+
+⚠ **This is the "prove the watcher can see a FAILURE" rule applied to a watcher written in the same turn, and I nearly missed it** — I read `completed/success` on the job and started to report the guard verified. What surfaced it was asking what the passing job was structurally SILENT about, then checking REACHABILITY instead of the badge. The local shell simulation had genuinely passed against the real ledger, which is exactly what made the green plausible.
+
+**Fixed:** the check now sits ABOVE the unchanged-gate, immediately after the file-exists test. It asserts an absolute property of the file and needs no parent commit, so it runs on **every** push. A four-line comment records why, so nobody tidies it back down into the diff-gated section.
+
+⚠ **Pre-existing and NOT fixed here, stated rather than quietly left:** the job's other three checks compare `HEAD~1..HEAD` only, so on a multi-commit push a ledger change in a NON-TIP commit is never inspected. My own `ae52ff30` (the four date-stamp corrections) went unchecked for exactly that reason — it was the parent, not the tip. The job also checks out with `fetch-depth: 2`, so widening it to the true push range needs a deeper fetch plus `github.event.before`. Filed, not silently absorbed.
+
+**Also this turn:** origin moved 3 commits mid-edit (`a690b507`, `7a9bbbcb`, `6073ad07`), two of them touching the ledger. The in-progress entry was **discarded and re-spliced into upstream's copy** rather than rebased — 1660 → 1661, swallowed steady at 3, future-dated 0.
+
+**Revert:** `git revert <this sha>` — one CI step reordered within its block, plus this entry. No DB, migration, cron, auth, hot-wallet or pricing change.
+
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — the smoke battery's one direct table check rendered a failed count read as "null rows", the last un-migrated site of the `?? 0` fabricated-zero shape
 
 **Asked to find and implement a TODO comment. There are ZERO open TODO/FIXME comments in this tree** — `git grep -i '\btodo\b|\bfixme\b'` outside `docs/`/`*.md` returns 5 hits and every one is a historical "TODO_n RESOLVED" note or a `TODO_`-prefixed env sentinel that has since been filled in (`CANDY_MLB_COLLECTION_ADDRESS`, `CANDY_MLB_ME_SYMBOL`, both armed 2026-07-17/19). **Recording that as a measurement, not a shrug:** deferred work in this repo lives in `docs/reference/known-issues.md` + `docs/overnight/inbox/`, not in inline comments, so "grep for TODO" is a null instrument here. Shipped from the honesty canon instead.
