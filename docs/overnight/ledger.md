@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive cont.) — verified CLAUDE.md's quick-reference facts against the live DB: 3 corrections, and Top Shot series 6/7/8 carry TWO display labels
+
+**Checked the facts a session ACTS on directly rather than the prose around them.** Everything load-bearing held: all five published collection UUIDs, `chain_type`, `fmv_confidence` (7 labels), `nba_player_projections.confidence` (3-letter `MED`), and the `flowty_*` six-value CHECK (`topshot|allday|golazos|ufc|pinnacle|unknown`) match the file exactly. **The `0 ↔ 1` series footgun is fully confirmed**: `nba_top_shot` has no series 1, and `ufc_strike` really does carry BOTH 0 and 1.
+
+**Three corrections shipped to CLAUDE.md:**
+- **The reference index claimed "5 layers" of the honesty canon while the body says "Four layers … do not invent a fifth"** and both tables list four. A session reading the index would have gone looking for a fifth helper. Now 4 everywhere.
+- **The helper table put `boardUnavailable()` in `lib/api-error.ts`; it is defined in `lib/insights/board-error.ts`** (verified by export grep). It IS a thin alias of `apiErrorResponse`, so the rule was right and the path was wrong — the worst kind of near-miss in the file's most-used table.
+- **Panini had no UUID here** despite being named throughout: `panini_blockchain` = `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b`, `is_active=false`, chain `ethereum`. Added beside Candy MLB.
+
+⚠ **FILED, NOT FIXED — Top Shot series 6/7/8 have two different display labels and both are user-visible.** The live `collection_series.display_label` says `Series 5 / 6 / 7`; the repo constants (`lib/collection/helpers.ts`, `series-param.ts`, `analytics-sets-dashboard-compute.ts`) say `Series 2023-24 / 2024-25 / 2025-26`. **`collection_series` is not a dead lookup** — `app/api/collection-series/route.ts` serves it and `CollectionTabClient.tsx` builds the series FILTER from it, converting label back to number, so a label minted by one convention and parsed by the other resolves to the wrong series or none. Series 0/2/3/4/5 agree. **Not shipped because it is a product-naming decision** (three `display_label` rows if the season naming wins) and renaming the other direction would touch four code sites. ⚠ Whoever takes it: this is a LABEL change on three rows of ONE collection — do **not** let it become a series-number remap, which dropped 385,734 rows collection-blind on 2026-08-05. Filed: `docs/overnight/inbox/2026-08-18T0045Z-top-shot-series-6-7-8-have-two-different-display-labels-and-both-are-user-visible.md`.
+
+**Size:** 39,684 → **39,824 chars** (176 under), paid for by compressing passages already held verbatim in `docs/reference/*.md`. Links re-verified.
+
+**Revert path:** `git revert <this sha>` — docs-only, no code, no DB, no prod state. All DB probes read-only.
+
 ### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — `topshot-misattrib-drain` resolves fine but has applied NO re-key since 08-07, and my first severity read was 6.5x too high
 
 **Last of the five unwatched zero-success pipelines from the same session's coverage audit. It splits cleanly in half:** resolve → `topshot_misattrib_onchain_map` is **healthy (48,201 rows, +888 in 2 days, newest 2026-08-17 11:00Z)**; apply → `remap_topshot_from_onchain_map()` has written **nothing since 2026-08-07 11:01Z** in either audit table. **The authoritative map keeps growing and nothing is re-keyed from it.** Every run ends `rekey: upstream request timeout`.
