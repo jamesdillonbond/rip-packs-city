@@ -30,6 +30,10 @@ export default function SniperStatsBar(props: {
         )}
         {lastRefreshed && (
           <span className="ml-auto">
+            {/* hydration-safe: `lastRefreshed` comes from SniperClient's
+                useWarmCache `data?.lastRefreshed`, null at SSR, and the span is
+                gated on it — nothing server-renders. Deliberately unpinned:
+                a refresh clock belongs in the VIEWER's timezone. */}
             updated {new Date(lastRefreshed).toLocaleTimeString([], {
               hour: "2-digit", minute: "2-digit", second: "2-digit",
             })}

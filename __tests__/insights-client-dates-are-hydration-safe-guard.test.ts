@@ -34,18 +34,59 @@ import { join, relative, sep } from "node:path"
 // driven to ZERO in the same pass that added this guard (first-mint,
 // serial-premiums, panini-squeeze), so a ban costs no allowlist at all.
 //
-// ⚠ SCOPE IS DELIBERATE AND NARROWER THAN THE DEFECT CLASS. Measured
-// 2026-08-16, the same predicate over ALL of app/ + components/ reports 106
-// sites, of which 17 are date/time. Most are bare Number.toLocaleString()
-// (runtime-locale digit grouping — real, but lower stakes), and several of the
-// date ones are live clocks that render only after mount, which is
-// hydration-safe by construction and which a static check CANNOT distinguish.
-// Banning site-wide would therefore red CI on correct code. The 17 are FILED,
-// not fixed: docs/overnight/inbox/2026-08-16T1706Z-the-418-hydration-class-is-
-// wider-than-insights.md. Widen this scope only with a measurement, never by
-// assumption.
+// ── SCOPE WIDENED 2026-08-17, WITH THE MEASUREMENT THE OLD NOTE DEMANDED ───
+// The previous version scoped both rules to app/insights + components/insights
+// and said "widen this scope only with a measurement, never by assumption."
+// That measurement is now in, and it found the exact failure this repo keeps
+// paying for: THE GUARD WAS GREEN ON A POPULATION IT HAD ITSELF DRIVEN TO ZERO,
+// and structurally blind to every site outside its own two roots. Re-running
+// its own predicate over ALL of app/ + components/ (client files only):
+//
+//   Rule A (date/time, runtime timezone) ...   5 sites
+//   Rule B (runtime locale) ................ 101 sites across 42 files
+//
+// Of the 5 Rule-A sites, exactly ONE was a live defect, and it was worse than a
+// hydration mismatch. PaniniOverviewClient rendered a MODULE CONSTANT's
+// date-only ISO string ("2026-03-30"), which `new Date()` parses as UTC
+// midnight: Vercel (UTC) served "Mar 30" and every US browser hydrated to
+// "Mar 29". React #418 AND a wrong date on a public page. Fixed by pinning
+// timeZone: "UTC".
+//
+// ⚠ THE OTHER FOUR ARE CORRECT CODE AND MUST NOT BE "FIXED". They are
+// post-mount clocks — the formatted value comes from state that is null at SSR
+// (useState(null) / useWarmCache, each gated on the value) — so nothing
+// server-renders and there is no text to mismatch. Pinning them to UTC would
+// not fix a bug; it would SHOW THE VIEWER UTC, a real regression on a "last
+// updated" clock. The old note was right that a static check cannot tell these
+// apart, and wrong that this forces a narrow scope: what it forces is an
+// ESCAPE, and the escape must be co-located with the call, not a central list.
+//
+// ⚠ THE ESCAPE IS AN INLINE `hydration-safe: <reason>` MARKER, DELIBERATELY NOT
+// AN ALLOWLIST. This repo's recorded rule is that a curated list drifts BOTH
+// ways at once — it goes stale on renames and silently absorbs new instances —
+// so the durable fix is the DERIVATION. A tree walk plus a marker that has to
+// sit next to the call keeps the derivation complete: a new violation is
+// visible by default, and suppressing it costs the author a written reason at
+// the site, where the next reader is standing. The marker is read from the RAW
+// source (before stripComments), and a bare `hydration-safe:` with no reason
+// does NOT suppress.
+//
+// ── WHY RULE A IS A BAN AND RULE B IS A RATCHET ────────────────────────────
+// Rule A's population is now ZERO unmarked site-wide, so a ban costs no
+// allowlist. Rule B's is 101 across 42 files — that is a ratchet population,
+// not a ban population, and this repo has already learned that a "ban" shipping
+// a 40-entry allowlist is theatre. Rule B stays a BAN inside the insights roots
+// (where it is genuinely at zero) and a site-wide RATCHET everywhere else.
 
-const ROOTS = ["app/insights", "components/insights"]
+const INSIGHTS_ROOTS = ["app/insights", "components/insights"]
+const SITE_ROOTS = ["app", "components"]
+
+// Site-wide Rule-B population, measured 2026-08-17. ⚠ This is a CEILING, not a
+// target: the assertion is `<=`, so it is satisfiable at zero and does not go
+// red when the population is driven down — the failure mode this repo shipped
+// once as server-page-data-access-ratchet's `pages.length > 10`. Lower it when
+// you drain some; never raise it to make a new violation pass.
+const RULE_B_SITEWIDE_CEILING = 101
 
 /**
  * Blank out comments, preserving offsets.
@@ -125,17 +166,60 @@ export function findUnsafeLocaleCalls(src: string): Violation[] {
   return out
 }
 
-function scan(): { file: string; violations: Violation[] }[] {
-  const out: { file: string; violations: Violation[] }[] = []
-  for (const root of ROOTS) {
+/**
+ * True when the RAW source carries a justified `hydration-safe:` marker for a
+ * call whose head sits on 1-based `line`.
+ *
+ * ⚠ Read from the RAW source on purpose. Everything else here runs on
+ * stripComments() output — because this file's own header quotes the banned
+ * forms — but the marker IS a comment, so stripping first would erase every
+ * escape and red all four correct clocks.
+ *
+ * ⚠ The reason is REQUIRED. A bare `hydration-safe:` suppresses nothing: an
+ * escape that costs nothing to write is an allowlist with extra steps, and the
+ * whole point of putting it at the call site is that the next reader finds the
+ * argument rather than a token.
+ *
+ * The window is the call-head line and the 4 lines above it — enough for a
+ * multi-line JSX comment immediately preceding the call, and too tight to
+ * silently cover a neighbouring call.
+ */
+export function hasHydrationSafeMarker(rawSrc: string, line: number): boolean {
+  const lines = rawSrc.split("\n")
+  const from = Math.max(0, line - 5)
+  const window = lines.slice(from, line).join("\n")
+  const m = /hydration-safe:[ \t]*(\S.*)?/.exec(window)
+  return Boolean(m && m[1] && m[1].trim().length > 0)
+}
+
+type Scanned = { file: string; violations: Violation[] }
+
+function scanRoots(roots: string[], keep: (v: Violation, raw: string) => boolean): Scanned[] {
+  const out: Scanned[] = []
+  const seen = new Set<string>()
+  for (const root of roots) {
     for (const full of walk(join(process.cwd(), root))) {
+      if (seen.has(full)) continue
+      seen.add(full)
       const raw = readFileSync(full, "utf8")
       if (!isClientFile(raw)) continue
-      const violations = findUnsafeLocaleCalls(stripComments(raw))
+      const violations = findUnsafeLocaleCalls(stripComments(raw)).filter((v) => keep(v, raw))
       if (violations.length) out.push({ file: relative(process.cwd(), full).split(sep).join("/"), violations })
     }
   }
   return out
+}
+
+const isRuleA = (v: Violation) => /timezone/.test(v.reason)
+
+function scan(): Scanned[] {
+  return scanRoots(INSIGHTS_ROOTS, () => true)
+}
+
+function report(bad: Scanned[]): string {
+  return bad
+    .flatMap((f) => f.violations.map((v) => f.file + ":" + v.line + " — " + v.reason + "\n    " + v.snippet))
+    .join("\n")
 }
 
 describe("insights client date formatting is hydration-safe", () => {
@@ -145,7 +229,7 @@ describe("insights client date formatting is hydration-safe", () => {
     // driven to zero — which is the goal — and this repo has already shipped
     // that bug once, as server-page-data-access-ratchet's `pages.length > 10`.
     // A not-vacuous check must be satisfiable at a population of ZERO.
-    const clientFiles = ROOTS.flatMap((r) => walk(join(process.cwd(), r))).filter((f) =>
+    const clientFiles = INSIGHTS_ROOTS.flatMap((r) => walk(join(process.cwd(), r))).filter((f) =>
       isClientFile(readFileSync(f, "utf8")),
     )
     expect(clientFiles.length).toBeGreaterThan(15)
@@ -209,5 +293,123 @@ describe("insights client date formatting is hydration-safe", () => {
       'const s = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })',
     ].join("\n")
     expect(findUnsafeLocaleCalls(stripComments(documented))).toHaveLength(0)
+  })
+})
+
+// ── SITE-WIDE (widened 2026-08-17) ─────────────────────────────────────────
+// The block above keeps app/insights + components/insights at zero on BOTH
+// rules. This block covers the tree the old scope was blind to by construction.
+
+describe("client date formatting is hydration-safe site-wide", () => {
+  it("the site-wide enumerator still sees a client tree far larger than insights", () => {
+    // ⚠ Asserts on the WALK, never on a dirty count — the assertion must stay
+    // satisfiable at a population of ZERO. The `>` against the insights count
+    // is the load-bearing half: if someone re-narrows SITE_ROOTS back to the
+    // insights dirs, the ban below would still read green while covering
+    // nothing, which is precisely the failure this widening exists to fix.
+    const clientFiles = (roots: string[]) => {
+      const seen = new Set<string>()
+      for (const r of roots) for (const f of walk(join(process.cwd(), r))) seen.add(f)
+      return [...seen].filter((f) => isClientFile(readFileSync(f, "utf8")))
+    }
+    const site = clientFiles(SITE_ROOTS)
+    const insights = clientFiles(INSIGHTS_ROOTS)
+    expect(site.length).toBeGreaterThan(insights.length)
+    expect(site.length).toBeGreaterThan(60)
+  })
+
+  it("BAN: no client component anywhere renders a date/time in the runtime timezone without a justified marker", () => {
+    const bad = scanRoots(SITE_ROOTS, (v, raw) => isRuleA(v) && !hasHydrationSafeMarker(raw, v.line))
+    const r = report(bad)
+    expect(
+      r,
+      "React #418 hydration risk (Rule A).\n" +
+        "Fix by pinning timeZone, OR — if the value is null at SSR (post-mount\n" +
+        "clock) — add an inline `hydration-safe: <reason>` comment at the call:\n" +
+        r,
+    ).toBe("")
+  })
+
+  it("RATCHET: the site-wide runtime-locale population does not grow", () => {
+    const bad = scanRoots(SITE_ROOTS, (v) => !isRuleA(v))
+    const count = bad.reduce((n, f) => n + f.violations.length, 0)
+    expect(
+      count,
+      "Rule B (runtime locale) grew past its ceiling of " +
+        RULE_B_SITEWIDE_CEILING +
+        ". Pass an explicit locale, e.g. \"en-US\":\n" +
+        report(bad),
+    ).toBeLessThanOrEqual(RULE_B_SITEWIDE_CEILING)
+  })
+
+  // ── guards-the-guard: the MARKER ─────────────────────────────────────────
+  // Without these, the escape hatch is the whole guard's soft underbelly — a
+  // marker that suppressed everything, or that could be written without a
+  // reason, would turn the ban back into the allowlist it exists to avoid.
+
+  it("a justified marker suppresses the call it sits above", () => {
+    const src = [
+      "{/* hydration-safe: null at SSR, gated on the value */}",
+      'updated {new Date(t).toLocaleTimeString([], { hour: "2-digit" })}',
+    ].join("\n")
+    // The detector still SEES it...
+    expect(findUnsafeLocaleCalls(stripComments(src))).toHaveLength(1)
+    // ...and the marker is what excuses it.
+    expect(hasHydrationSafeMarker(src, 2)).toBe(true)
+  })
+
+  it("a BARE marker with no reason suppresses NOTHING", () => {
+    const bare = ["// hydration-safe:", 'x.toLocaleTimeString("en-US")'].join("\n")
+    expect(hasHydrationSafeMarker(bare, 2)).toBe(false)
+    const spaces = ["// hydration-safe:    ", 'x.toLocaleTimeString("en-US")'].join("\n")
+    expect(hasHydrationSafeMarker(spaces, 2)).toBe(false)
+  })
+
+  it("a marker does not reach a call further down the file", () => {
+    const far = [
+      "// hydration-safe: applies to the call right below",
+      'a.toLocaleTimeString("en-US")',
+      "const x = 1",
+      "const y = 2",
+      "const z = 3",
+      "const w = 4",
+      'b.toLocaleTimeString("en-US")',
+    ].join("\n")
+    expect(hasHydrationSafeMarker(far, 2)).toBe(true)
+    expect(hasHydrationSafeMarker(far, 7)).toBe(false)
+  })
+
+  it("the marker excuses Rule A only — it can never suppress Rule B", () => {
+    // Rule B is a separate failure (runtime LOCALE, not zone) and the marker's
+    // stated reason is always about SSR timing, which says nothing about it.
+    // The filter composes them with `isRuleA`, so this is pinned by shape.
+    const v = findUnsafeLocaleCalls("x.toLocaleString(undefined, {})")
+    expect(v).toHaveLength(1)
+    expect(isRuleA(v[0])).toBe(false)
+  })
+
+  it("the four known post-mount clocks are marked, and the Panini date is PINNED not marked", () => {
+    // The one real defect had to be FIXED, not excused. If a later edit swaps
+    // the timeZone pin for a marker, this reds — an escape is not a fix.
+    const panini = readFileSync(
+      join(process.cwd(), "app/(collections)/panini-blockchain/overview/PaniniOverviewClient.tsx"),
+      "utf8",
+    )
+    // Rule A only: this file also carries a bare `n.toLocaleString()` number
+    // format (Rule B), which is inside the site-wide ratchet, not this ban.
+    expect(findUnsafeLocaleCalls(stripComments(panini)).filter(isRuleA)).toHaveLength(0)
+    expect(panini).toContain('timeZone: "UTC"')
+
+    for (const f of [
+      "components/sniper/SniperStatsBar.tsx",
+      "app/admin/analytics/AdminAnalyticsClient.tsx",
+      "app/dashboard/alerts/DashboardAlertsClient.tsx",
+      "app/(collections)/disney-pinnacle/sniper/PinnacleSniperClient.tsx",
+    ]) {
+      const raw = readFileSync(join(process.cwd(), f), "utf8")
+      const ruleA = findUnsafeLocaleCalls(stripComments(raw)).filter(isRuleA)
+      expect(ruleA.length, f + " no longer has the Rule-A call this pin describes").toBeGreaterThan(0)
+      for (const v of ruleA) expect(hasHydrationSafeMarker(raw, v.line), f + ":" + v.line).toBe(true)
+    }
   })
 })

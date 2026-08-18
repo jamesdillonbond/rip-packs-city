@@ -318,10 +318,19 @@ export default function PaniniOverviewClient() {
             {PANINI_NEWS.map((item, i) => (
               <div key={i} className="rpc-card" style={{ padding: "10px 14px" }}>
                 <div className="rpc-label" style={{ marginBottom: 4 }}>
+                  {/* timeZone is REQUIRED, not cosmetic. PANINI_NEWS carries
+                      date-only ISO strings, which `new Date()` parses as UTC
+                      MIDNIGHT — so west of UTC this renders the PREVIOUS day.
+                      Vercel's server is UTC and the visitor's browser is not,
+                      which is both React #418 (server "Mar 30" / client
+                      "Mar 29") and a plainly wrong date for every US reader.
+                      This is a module constant, so it renders at SSR on every
+                      load — there is no post-mount gate to make it safe. */}
                   {new Date(item.date).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
                     year: "numeric",
+                    timeZone: "UTC",
                   })}
                 </div>
                 <div

@@ -294,6 +294,12 @@ export default function DashboardAlertsClient() {
                       )}
                       {a.last_triggered_at && (
                         <div className="rpc-al-last-fired">
+                          {/* `alerts` is useState<Alert[]|null>(null) filled by a
+                              client fetch, and this table is gated on
+                              `alerts && alerts.length > 0` — it never server-renders.
+                              Unpinned on purpose: "Last fired" is a fact about the
+                              reader's own alert and belongs in their zone.
+                              hydration-safe: null at SSR, gated on alerts.length */}
                           Last fired {new Date(a.last_triggered_at).toLocaleDateString("en-US")}
                         </div>
                       )}

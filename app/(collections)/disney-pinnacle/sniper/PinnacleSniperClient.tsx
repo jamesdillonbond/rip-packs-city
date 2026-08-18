@@ -393,6 +393,13 @@ export default function PinnacleSniperClient() {
           {data?.lastRefreshed && (
             <span className="ml-auto">
               updated{" "}
+              {/* `data` is useWarmCache state seeded from a client-only
+                  in-memory cache, so it is null at SSR and this span is gated
+                  on `data?.lastRefreshed` — nothing renders on the server, so
+                  there is no text to mismatch. Do NOT "fix" this by pinning
+                  timeZone: "UTC": a refresh clock must read in the VIEWER's
+                  zone, and pinning it would show them UTC.
+                  hydration-safe: null at SSR, gated on data?.lastRefreshed */}
               {new Date(data.lastRefreshed).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",

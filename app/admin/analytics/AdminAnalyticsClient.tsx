@@ -256,6 +256,10 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
               Single-pane overview · auto-refresh 60s
               {data?.generated_at && <> · snapshot {data.generated_at}</>}
+              {/* hydration-safe: `lastFetched` is useState<Date|null>(null),
+                  set only in the client load(), so it is null at SSR and the
+                  fragment is gated on it. Unpinned on purpose — an operator
+                  reading a fetch clock wants their own zone. */}
               {lastFetched && <> · fetched {lastFetched.toLocaleTimeString("en-US")}</>}
             </div>
           </div>
