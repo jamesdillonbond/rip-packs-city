@@ -209,6 +209,23 @@ bash -e -c 'R=$(curl -s --max-time 2 -w "\n%{http_code}" http://10.255.255.1/ ) 
 Note the repaired path yields `HTTP_CODE=000`, not empty — curl still writes its `-w` output on
 timeout — so a `!= "200"` test retries correctly and the final message names `last: 000`.
 
+⚠ **It is NOT only curl, and the first fix missed the sibling.** Re-running the monitor after
+guarding both curls showed `fmv-staleness` retrying correctly (`Attempt 1/2/3 — HTTP Status: 000`)
+while `data-integrity` printed `HTTP Status: 504` and died on **exit code 5** — `jq` exiting non-zero
+on a non-JSON (HTML error page) body:
+
+```bash
+ISSUE_COUNT=$(echo "$BODY" | jq -r .issue_count 2>/dev/null)      # exit 5 -> step aborts HERE
+ISSUE_COUNT=$(echo "$BODY" | jq -r .issue_count 2>/dev/null) || ISSUE_COUNT=""   # fixed
+```
+
+⚠ **`2>/dev/null` hides the MESSAGE, not the EXIT CODE** — it looks defensive and is not. So the
+step still never reached its own `::error::data-integrity returned HTTP 504`. **Audit every
+command-substitution assignment in an `-e` block, not just the obvious network call**; `jq`, `grep`
+(exit 1 on no match) and `head -n -1` are the usual suspects. ⚠ And the tell that there is a second
+instance is an exit code that is **neither 0 nor the script's own** — a bare `5` or `28` where the
+script only ever writes `exit 1`.
+
 **Generalise it:** in any `-e` block, a conditional, a retry, or an error message placed *after* a
 command that can legitimately fail is unreachable. This is the shell instance of the standing rule
 that a guard's own construction fixes its blast radius, and of the rule that a permanently-red
