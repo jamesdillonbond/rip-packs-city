@@ -4,6 +4,26 @@ Filed by `rpc-daytime-monitor` 2026-08-17 17:1x PT / 2026-08-18 00:1xZ. READ-ONL
 
 ## 1. `compute-golazos-pack-ev` cron-silent 17.5h (MED)
 
+> ⚠ **PARTIALLY ANSWERED 2026-08-18 (Claude Code) — the silence is NOT refuted, and the instrument I first
+> used to refute it CANNOT answer the question.** Recording the wrong turn because it is the reusable part.
+> - **jobid 44 `rpc-compute-golazos-pack-ev` (`37 */6`, active) shows `12 fires / 0 failed` in 3 days, last
+>   00:37Z.** `pipeline_runs` shows **7 rows, newest 2026-08-17 06:37Z**. My first read was *"it fires and
+>   succeeds every time, so the silence is only a logging gap"* — **that is WRONG.**
+> - ⛔ **The job body is `SELECT net.http_get(...)` — pg_net is ASYNCHRONOUS.** It queues the request and
+>   returns a request id immediately, so **`cron.job_run_details.status = 'succeeded'` means THE ENQUEUE
+>   SUCCEEDED, not that the edge function ran or did anything.** For any `net.http_get`/`net.http_post` cron
+>   job, cron status is a **null instrument** — it cannot distinguish a 200 from a total outage.
+> - **So the monitor's flag stands.** `pipeline_runs` remains the only evidence of actual execution, and it
+>   shows a ~19 h gap against a 6-hourly schedule.
+> - **What I could NOT establish:** `net._http_response` retains only ~6 h here (oldest row 19:52Z) and
+>   carries a large `status_code IS NULL` population (399 null vs 286 × 200 across ALL jobs), and rows are not
+>   trivially attributable to one jobid. **The decisive next step is the edge function's own Supabase logs**,
+>   or a `pack_ev_latest` freshness read — I attempted the latter and it **timed out at 60 s** under the
+>   current saturation, which is itself consistent with focus.md #3.
+> - ⚠ **Do not read this as "confirmed broken" either.** It is *unconfirmed either way*, and the honest
+>   summary is: **the health signal everyone would reach for is structurally incapable of answering it.**
+
+
 - **Source:** `detect_stalled_pipelines()` — last run 2026-08-17T06:37:31Z, silent 1049 min vs `max_silent_minutes` 800. Not in ledger, not in today's inbox.
 - **Why it matters:** this is the pipeline that actually covers the `laliga_golazos` pack-EV board. Its sibling `compute-laliga-pack-ev` is the KNOWN-broken-but-not-user-facing one (ledger ~16026: dies daily at route.ts:186 on a `pack_ev_history` schema mismatch; explicitly noted that "`compute-golazos-pack-ev` covers the collection"). So a silence of the *healthy* one is the user-facing risk, not the noisy sibling.
 - **Blast radius so far: not yet breaching.** Trust arm `pack_ev_board_max_stale_days` = 1.27 (breach_at 2) — the golazos board is stale but under threshold. If the silence persists another ~day it will breach.
