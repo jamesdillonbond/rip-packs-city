@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — `global-error.tsx` promises every user "our team has been notified" and nothing checked that it was true
+
+**Shipped a §6 item from [docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md](inbox/2026-08-18T0230Z-test-coverage-analysis.md):** `app/global-error.tsx` (58 LOC) was **referenced by zero tests and measured by neither coverage gate** — verified, not quoted. It is the app's LAST-RESORT boundary: only two error boundaries exist app-wide and this is the outer one, so **an untested one is the guard-fails-open shape** — the thing that catches failures having failed, with nothing left to notice.
+
+⚠ **The load-bearing contract is NOT that it renders. It is that "Our team has been notified" is TRUE.** That sentence is a factual claim to a user about what the system did, and the only thing making it true is the `Sentry.captureException(error)` in the effect beside it. Break that call and the page keeps telling every user they have been heard while nobody has — **a false claim about the reader's own situation, in the sub-class this file's canon rates worst, because an alert's output is silence and its failure is unfalsifiable.** Earlier tonight I *relied* on this boundary while reasoning about the team-roster timeout (`sectionRows` throws → global-error renders honestly); that chain was asserted from source and had nothing pinning its far end.
+
+**Five assertions, and they pin the copy and the capture TOGETHER** rather than as independent facts — the claim without the report is what must never happen, so it is stated as that implication. Also pinned: `reset` is actually wired to Try Again (a decorative button strands the user on a dead page), the captured object is the error **itself** (`digest` intact — Next attaches it to server-thrown errors and it is the only link to the server log line; a `new Error(error.message)` re-wrap satisfies a call-count assertion and silently drops it), and the page **states that something failed** rather than rendering a plausible empty shell.
+
+⚠ **MUTATION-TESTED, all three killed** — the assertions were not trusted on inspection: dropping the capture while keeping the reassurance (**the lie**) kills **3 of 5**; re-wrapping the error kills **2**; making Try Again decorative kills **1**. Component restored byte-identical afterwards (`git diff --stat` empty).
+
+⚠ **DELIBERATELY DID NOT add the file to a coverage `include`, and this is a HALF-FIX until someone does.** The behaviour is now pinned, but **both gates still cannot see the file**, so its coverage remains unmeasured and a future edit to it moves no number. Confirmed empirically: the component gate went **2,921 → 2,926 tests with its percentages UNCHANGED** at 90.68 / 89.25. Left alone on purpose — another session had just stabilised that gate's `functions` margin, and widening an `include` shifts the denominator; **doing both in one night is how a margin fix gets blamed for someone else's red.**
+
+**Also confirms tonight's determinism fix is holding:** `functions` at **3490** again, a fourth consecutive reading.
+
+**Verified:** component gate **2,926 passed, exit 0**; `npx tsc --noEmit` exit 0.
+
+**Revert:** `git revert <this sha>` — drops one test file. No production code, DB, migration, cron, auth, hot-wallet, secret or pricing change.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — the three vitest gates all wrote into `coverage/`; a concurrent run made one CRASH and the other PUBLISH AN ~8-POINT FABRICATED REGRESSION
 
 **Shipped the last open item in §0 of [docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md](inbox/2026-08-18T0230Z-test-coverage-analysis.md)** (the §0 coin-flip half closed earlier tonight). `.gitignore:117-121` has carried this invariant in prose since it was written — *"the two gates must run into SEPARATE reportsDirectory dirs or they corrupt each other's `coverage/.tmp`"* — and **no config implemented it**. All three defaulted to `coverage/`. **A documented invariant with no implementation and no test is the same shape as an unenforced guard**, and this one had been true-on-paper for months.
