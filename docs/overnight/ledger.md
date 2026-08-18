@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — the three vitest gates all wrote into `coverage/`; a concurrent run made one CRASH and the other PUBLISH AN ~8-POINT FABRICATED REGRESSION
+
+**Shipped the last open item in §0 of [docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md](inbox/2026-08-18T0230Z-test-coverage-analysis.md)** (the §0 coin-flip half closed earlier tonight). `.gitignore:117-121` has carried this invariant in prose since it was written — *"the two gates must run into SEPARATE reportsDirectory dirs or they corrupt each other's `coverage/.tmp`"* — and **no config implemented it**. All three defaulted to `coverage/`. **A documented invariant with no implementation and no test is the same shape as an unenforced guard**, and this one had been true-on-paper for months.
+
+⚠ **REPRODUCED RATHER THAN QUOTED, AND IT IS WORSE THAN THE FILING SAYS.** The filing recorded *"one dies with 'Something removed the coverage directory'."* Running the primary and component gates concurrently, **BOTH exited 1, by two DIFFERENT routes, and the second is the dangerous one:**
+
+- **primary died loudly and correctly** — `Something removed the coverage directory ".../coverage/.tmp" … Make sure you are not running multiple Vitests with the same "coverage.reportsDirectory" at the same time`, plus `ENOENT … coverage-220.json`. Diagnostic, names the real cause.
+- 🚨 **the component gate DID NOT CRASH.** It lost the deleted `.tmp` chunks and published what survived as a **measured result** — **82.27 st / 73.80 br / 80.61 fn / 85.01 ln against true values of 90.68 / 81.87 / 89.25 / 93.60** — and failed as a **THRESHOLD violation**. So it reads as *"your diff broke coverage by 8 points"* and **names the author's own work as the culprit.**
+
+⚠ **That second mode is this repo's own top defect class — a failed read rendered as an answer — sitting in the TOOLING rather than the product, and pointing at the wrong cause.** It is also self-obscuring: the natural response to an 8-point coverage failure is to go hunting in your own diff. **CI is unaffected (separate jobs), so the entire cost lands on local and agent runs**, which is exactly where it is least likely to be recognised — and this session had already paid part of it, passing `--coverage.reportsDirectory` by hand three times to get clean numbers.
+
+**Fix:** each gate now declares its own — `coverage` / `coverage-components` / `coverage-workers`, all already covered by `.gitignore`'s `/coverage` and `/coverage-*`. ⚠ **Nothing in the repo references the coverage path** (checked `ci.yml`, `package.json`, `scripts/*.mjs` — no artifact upload, no reader), so the blast radius is nil.
+
+⚠ **PROVED BY THE DECISIVE TEST, not by reasoning.** The identical concurrent invocation that failed both gates now returns **PRIMARY_EXIT=0 / COMP_EXIT=0**, components reporting its **true** 90.68 / 89.25, **zero** corruption signatures in either log.
+
+**Guarded by `__tests__/vitest-gates-have-distinct-coverage-dirs.test.ts`, DERIVED not listed.** It globs `vitest*.config.*` rather than naming the three, so a fourth gate is covered the day it lands — a curated list would be silent by construction about it, which is how two guards fixed earlier tonight went green while blind. Four assertions: every gate declares a directory (**defaulting IS the defect**), no two share one, every declared directory is gitignored (a distinct-but-committed dir trades a corrupt run for a 40 MB commit), and the enumeration is non-vacuous — asserted on the GLOB, never on a violation count, so it stays satisfiable when everything is correct.
+
+⚠ **Both failure directions probed:** two configs sharing a dir reds with `coverage-components <- vitest.components.config.ts + vitest.workers.config.ts`; deleting a declaration reds with `these vitest configs default to coverage/`. Comments are stripped before extraction — the configs' own comments quote `reportsDirectory` while explaining the invariant, and this repo has shipped a guard that reported its own documentation at least six times.
+
+**Verified:** both gates green concurrently and independently (primary 91.78/79.23/93.56/93.85, components 90.68/81.87/89.25/93.60); `npx tsc --noEmit` exit 0; no coverage output appears in `git status`.
+
+**Revert:** `git revert <this sha>` — returns all three gates to the shared `coverage/` default and drops the guard. Test config + one test file; no production code, DB, migration, cron, auth, hot-wallet, secret or pricing change.
+
 ### 2026-08-17 · DOCS (Claude Code, interactive) — recorded the refutation of my own named suspect, in the durable files rather than only in the session log
 
 The session that claimed the component-gate lane **closed it, and refuted the leading hypothesis I handed over** (`23302cc1`/`5d0e74a3`). I named `SniperClient.tsx` because it was the only file whose function count moved between two runs of the same tree and it holds a `setInterval` countdown. **Measurement said otherwise:** six gate runs across two independent triples localised it to `CollectionTabClient`.
