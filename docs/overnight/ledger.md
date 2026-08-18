@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RESEARCH (Cowork cloud) — post-ship watch on `21ab85ef`: the rotation WORKS, and the one inference it flagged as unverified is REFUTED — Top Shot is losing ground
+
+`21ab85ef` stated plainly that *"the Top Shot tail draining is an inference from those, not something I watched."* ⛔ **Watched now. It is not draining.**
+
+| collection | before (`21ab85ef`) | first tick | now (12:20 PT) | direction |
+|---|---|---|---|---|
+| `nfl_all_day` | 33,861 | 32,861 | **30,922** | ✅ draining, ~2,900 cleared |
+| `nba_top_shot` | 452,789 | — | **454,316** | ⛔ **UP 1,527** |
+
+✅ **THE FIX IS REAL — All Day proves it on the OUTCOME table, not the self-report.** It has fallen **33,861 → 30,922**, continuing well past the single tick originally measured. The rotation reaches it, the scoped call writes, the backlog moves. **The starved-backfill diagnosis and the `cron.alter_job` fix are both confirmed.** ⛔ **Do NOT revert `21ab85ef`.**
+
+⛔ **But Top Shot is a FLOW, not a STOCK.** It received ticks in the same window — the **36.6 s / 47.9 s / 64.4 s** runs at 12:12, 12:02 and 11:42 PT are the long ones, and Top Shot is the expensive collection — **and the backlog still ROSE by 1,527.** New `wallet_moments_cache` rows arrive with `fmv_confidence IS NULL` faster than Top Shot's share of the rotation clears them. Golazos (6), UFC (499) and All Day are finite backlogs a rotation drains; Top Shot is a steady-state inflow and a 1-in-4 share is below its arrival rate.
+
+⚠ **THE DIRECTION IS MEASURED, THE RATE IS INFERRED.** ~1,000 rows/tick × ~a quarter of 12 ticks/hr ⇒ ~3,000/hr drain; net +1,527 over ~50 min ⇒ inflow near ~5,000/hr, losing ~2,400/hr. **Every term but the two counts is an assumption** — tick share, rows per tick, and the exact interval since the prior read. ⛔ **Do not quote the rate.** Two counts of the same predicate an hour apart settle it cheaply.
+
+💡 **The PRIOR question is whether the inflow is legitimate at all** — 454k NULL-confidence rows that keep arriving may mean the writer populating `wallet_moments_cache` never sets confidence at insert, in which case **the backfill is permanently chasing a producer** and a bigger drain is the wrong lever. **Cheaper to check than a bigger drain; not checked here.**
+
+⚠ **Reading conditions differed from the prior measurement, and that explains the timeout — not a method difference.** `pg_stat_activity` 12:17 PT: **5 of 46 backends in IO wait** vs **13 of 37** when `21ab85ef` was measured. The spell had eased, which is why the Top Shot count completed here. ⚠ A grouped `join collections` variant STILL timed out at 60 s; the per-collection `collection_id = <uuid>` form against the index is the one that returns. ⚠ Also: the **11:27 tick ran 370.3 s and swallowed the 11:32 slot** — a long tick costs a rotation slot, lowering the effective share further.
+
+Detail: [inbox/2026-08-18T1930Z-…](docs/overnight/inbox/2026-08-18T1930Z-the-rotation-works-and-top-shot-is-still-losing-ground.md).
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='Top Shot is still losing ground'`. One inbox file; read-only otherwise. No DB, migration, cron, auth, hot-wallet or pricing change.
+
 ### 2026-08-18 · FILED, NOT SHIPPED (Claude Code, interactive) — six "de-hardcoded" gate functions were never DEPLOYED with that code, so rotating their keys would fail closed; and half of `net._http_response` is one HEALTHY pipeline abandoning its own replies
 
 Two filings, both re-derived from live state this turn before landing. **Nothing shipped — no DB, migration, cron, auth, hot-wallet, secret or pricing change. Read-only.**
