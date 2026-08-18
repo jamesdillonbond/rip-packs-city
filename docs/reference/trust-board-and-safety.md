@@ -105,3 +105,17 @@ control refutes it:** `pack_ev_history` newest-per-collection at one instant rea
 nfl_all_day **8.4 h**, nba_top_shot **3.6 h**, disney_pinnacle **1.7 h**. Platform-wide IO does not
 stop one collection and spare three. **The standing "it's the saturation" instruction is right in
 general and is exactly what let a separate fault sit for 31 hours wearing a known-class label.**
+
+---
+
+## `Pipeline Success Coverage` — the arm, and the two things it CANNOT see (moved verbatim from CLAUDE.md 2026-08-18)
+
+*CLAUDE.md carried this as its "Recently closed" paragraph until 2026-08-18, when it was compressed to a
+one-line pointer to make room for newer rules. Nothing was deleted — this is the text verbatim.*
+
+✅ **Recently closed — WITH its boundary, so nobody reads it as coverage:** the **success-coverage gap** (the `Pipeline Success Coverage` arm flags an active-watchlist pipeline with **runs > 0, zero successes, zero rows written**; the `rows_written` term is load-bearing — zero-successes alone gave 4 false positives in 20 days, all graceful degradation — and it reads the ≤6 h-lagged rollup, so **never use it to confirm a recovery**). ⚠ **2026-08-17: that term also makes it blind to "writes rows and never completes" — 4 of the 5 unwatched-and-failing pipelines do exactly that.** The boundary is NOT an argument to drop the term; it earned its place on measurement.
+
+⚠ **And the membership half:** the arm only reads `pipeline_cadence_watchlist` rows with `is_active`, so
+its blind spot is whatever the curated list omits — measured 2026-08-17 at **67 of 150** live pipelines,
+not the 62 filed against all 102 watchlist rows. **Derive the watched set from `pipeline_runs`; make
+*suppression* the curated list.**
