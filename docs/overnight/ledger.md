@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — `PopularOnCollection`'s four queries could delete the /overview crawl path without a trace; extracted, and the non-page ratchet is now a BAN AT ZERO
+
+**Closes the surface opened two entries ago.** `components/entity/PopularOnCollection` was an async **server** component holding its own client, which put it outside the server-page ratchet (it walked `page.tsx` only) **and** outside any drivable gate — **jsdom cannot render an async server component**, so its ~29% component-gate number was nominal, not coverage. It was the entire `NON_PAGE_BUDGET`.
+
+⚠ **STATED PRECISELY, BECAUSE IT WOULD BE EASY TO OVERSELL: THIS BLOCK CANNOT LIE IN WORDS.** On a failed read the section returns `null` and disappears — no false sentence reaches a reader. **What it could do is VANISH SILENTLY, with nothing able to tell the two apart:**
+- `loadHubs` **never destructured `error`** on either query — `Array.isArray(res?.data) ? res.data : []`, the documented fabricated-empty shape. supabase-js **RETURNS** `{data:null,error}` on a statement timeout, so a failed read became an empty list with no trace.
+- `loadLinks` collapsed both into one branch: `if (error || !Array.isArray(data)) return []`.
+- Both sat under `catch { return [] }`.
+
+The component's own header calls these *"the high-leverage internal links that push crawl depth into the corpus"*. **So a timeout quietly removed the crawl path from a server-rendered page that still returned 200 and still looked complete — an SEO regression unfalsifiable by construction**, which is the sub-class this file rates worst precisely because its output is silence.
+
+⚠ **THE FIX IS NOT TO RENDER AN ERROR.** An anonymous crawler has no use for a degraded notice and there is no honest user-facing claim to make about absent internal links — **rendering nothing stays correct.** The fix is to stop DESTROYING the distinction: `lib/entity/popular-on-collection-fetchers.ts` returns `{ data, ok, reason }`, and the component now **logs** the `!ok` case. That log is the whole point: it turns an invisible SEO regression into a falsifiable one.
+
+⚠ **QUERIES MOVED BYTE-IDENTICALLY, AND I CHECKED RATHER THAN CLAIMED IT** — extracted every `.from/.select/.eq/.not/.or/.order/.limit` call from the pre-change file and from the new module and compared: **identical text, identical order, all four queries** (including `nullsFirst: false` and the `limit(1000)`/`limit(18)`/`limit(60)` bounds). **Moving a read is not licence to retune it**; a changed limit or a dropped secondary sort silently changes which links a crawler sees.
+
+**`NON_PAGE_BUDGET` 1 → 0 — now a BAN**, which this repo prefers to a ratchet: at zero it costs no allowlist, so the next `layout.tsx` or server component reaching for a client reds on the spot. ⚠ **At zero, raising it is not loosening a budget — it is deleting the guard.** Probed: an inline client added to `app/insights/layout.tsx` reds with `grew to 1 (budget 0)`. Also pinned the shape that earned the zero for both converted files, since a count assertion at zero would otherwise pass if someone simply DELETED them.
+
+**11 tests on the fetchers**, driving all four states per query — rows / genuinely-empty-and-`ok:true` / returned-error / throw — plus two the shape invites: **either** hub query failing makes the whole result `ok:false` (a partial hub set used to render as a complete one), and an unknown collection is **`ok:true`**, since absence of a uuid is not an outage. One states the forbidden COMBINATION (`!ok` together with rows) so it survives a refactor of the branches.
+
+**Verified:** primary gate **14,131 passed, exit 0** (91.77 / 79.23 / 93.54 / 93.86); component gate **2,926 passed, exit 0**, `functions` **3490** — a fifth consecutive reading, so tonight's determinism fix is still holding; ratchet **12/12**; `npx tsc --noEmit` exit 0.
+
+⚠ **What this does NOT fix: `PopularOnCollection.tsx` itself is still not drivable.** The reads are now tested; the component's own rendering still cannot be exercised under jsdom, and its component-gate percentage is unchanged. **The extraction moved the testable part out — it did not make async server components testable.**
+
+**Revert:** `git revert <this sha>` — returns four queries inline and re-opens the non-page budget. One component, one new lib module, one test, one guard; no DB, migration, cron, auth, hot-wallet, secret or pricing change.
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — `main` was RED from another session's migration; unblocked with the marker the guard prescribes, NOT a revoke
 
 ⚠ **Not my change and not my lane — recording it because a red `main` is everyone's problem and the next person to run the suite would have read it as their own break.** Found while running the primary gate over my own work: **`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` was failing on `f6d025e4`** (`20260818052724_..._repoint_panini_dry_days_arm_to_live_last_sale_usd.sql → public.rpc_thp_leg_panini`). Confirmed pre-existing before touching anything: the offending file is in `origin/main`, and my working tree had **no** change under `supabase/`.
