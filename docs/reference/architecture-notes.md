@@ -31,3 +31,16 @@ Watch wallets at `priority=3` in `seeded_wallets`:
 
 ---
 
+
+
+---
+
+## Preserved from the 2026-08-17 CLAUDE.md restructure
+
+> These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file
+> char limit. They are kept here verbatim so nothing is lost.
+
+### Code patterns dropped from CLAUDE.md
+
+- Branch fragmentation is a recurring issue — consolidate with cherry-pick onto one canonical branch before merging.
+- `project_knowledge_search` is NOT authoritative against live repo — Claude Code's direct file inspection wins every disagreement; prompts should allow Claude Code to correct false premises.

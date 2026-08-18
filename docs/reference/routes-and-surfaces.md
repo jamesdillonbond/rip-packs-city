@@ -41,3 +41,19 @@ Old flat routes redirect to the new nested paths.
 
 ---
 
+
+
+---
+
+## Preserved from the 2026-08-17 CLAUDE.md restructure
+
+> These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file
+> char limit. They are kept here verbatim so nothing is lost.
+
+### Wallet backfill ad-hoc (force full re-walk)
+
+```bash
+curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
+  -H "Authorization: Bearer $INGEST_SECRET_TOKEN" \
+  -d '{"wallet":"0x..."}'
+```

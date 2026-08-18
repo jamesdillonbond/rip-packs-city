@@ -33,3 +33,22 @@ Both bots reach the same concierge through `lib/alerts/concierge-bridge.ts`, but
 
 Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells the user to reply with `/ask` and that plain messages don't reach the bot — that DM is the message a user is most likely to reply to. Guarded by `__tests__/discord-alert-dm-tells-users-how-to-reply.test.ts`, which also pins the Telegram side as deliberately carrying no such caveat.
 
+
+
+---
+
+## Preserved from the 2026-08-17 CLAUDE.md restructure
+
+> These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file
+> char limit. They are kept here verbatim so nothing is lost.
+
+### Concierge non-negotiable rules
+
+1. **Pinnacle FMV**: NEVER join by `edition_key` alone — always triple (`character_name`, `set_name`, `variant_type`) per `92aab30`. Cadence uses `Int` not `UInt64`.
+2. Memory-FMV banned (`a910745`) — must tool-call same turn.
+3. `get_fmv` reads `editions + fmv_snapshots` primary; returns `p10/p50/p90` + sample shape.
+4. Tier filter: `.eq` not `.ilike` per `f55e022 + e9c90e5`.
+5. `trg_support_conv_updated_at` OWNS `shipped_at / updated_at` — never set manually.
+6. `/api/admin/feedback` GET MUST filter `feedback_type IS NOT NULL`.
+
+(CLAUDE.md keeps items 1 and 2 plus the read-only and error-vs-empty rules inline, and points here for the rest.)
