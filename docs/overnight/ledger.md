@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** 15/15 green, `tsc --noEmit` exit 0 (read bare), eslint exit 0, ledger guards — swallowed **3**, future-dated **0**.
 
-**Revert:** `git revert <this sha>` — comment text plus one added assertion in a single test file. No DB, migration, cron, auth, hot-wallet or pricing change.
+**Revert:** `git revert 0632156e` — comment text plus one added assertion in a single test file. No DB, migration, cron, auth, hot-wallet or pricing change.
 
 ### 2026-08-17 · DOCS (Claude Code, interactive cont.) — a Git Bash `/tmp` path handed to `node` is `C:\tmp`, and it fails as a missing FILE
 
