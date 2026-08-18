@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — the board-liveness SWEEP completes only half the time, and `cron.job_run_details.status` under-reports that by 40%
+
+⚠ **I started to re-file the 999s and STOPPED — grepping `docs/` first is what caught it.** `trust-board-and-safety.md` already documents them in more depth than I had: they are the **deliberate `budget_exhausted` branch, NOT the exception sentinel**; cron says `succeeded` because that branch returns normally; and `WHEN OTHERS` cannot catch a timeout at all because PostgreSQL excludes `QUERY_CANCELED`. **This entry adds only the thing that analysis lacked: the root cause, with a rate on it.**
+
+**`rpc-public-board-liveness-sweep` (jobid 288, `28 */6`) runs `SET statement_timeout='900s'; SELECT public_board_liveness_sweep(600000);` — a 600 s INTERNAL budget under a 900 s statement timeout.** Last 10 runs, seconds: **`79 · 127 · 292 · 414 · 549 · 621 · 788 · 900✗ · 900✗ · 904✗`**
+
+| reading | count |
+|---|---|
+| cron reports `failed` (900 s kill) | **3 / 10** |
+| **exceeded the 600 s internal budget** ⇒ `budget_exhausted: true` ⇒ leg publishes 999 | **5 / 10** |
+| completed cleanly | **5 / 10** |
+
+⚠ **THE INSTRUMENT LESSON: `cron.job_run_details.status` UNDER-REPORTS this by 40%.** The **621 s and 788 s runs report `succeeded`** — they returned normally — yet both blew the function's own 600 s budget and produced an inconclusive sweep. **A job whose INTERNAL budget is shorter than its statement timeout has a failure mode its scheduler structurally cannot see.**
+
+⚠ **The durations OSCILLATE ACROSS the budget rather than sitting under it (79 → 904), and this is the SECOND recorded instance of that exact shape** — after jobid 235 `rpc-refresh-market-index-daily` (118.9 / 357.7 / 438.3 / 462.1 s) in the same reference file. **A job whose runtime has grown to straddle its own budget fails intermittently and reads as flaky rather than sick.** Two instances make it a pattern worth naming, not a coincidence.
+
+✅ **Current state — recovered, and the board self-corrects at 02:48Z.** The 00:28Z sweep succeeded in 549 s; a direct probe returns `budget_exhausted: false, probed: 45, empty_or_error: 0, slow: 14`. The precompute still publishes **999/999** from the 20:48Z leg, which read the exhausted 18:28Z state; jobid 326 (`48 2,8,14,20`) next fires 02:48Z. ⚠ **So the two breached board arms are STALE, not real** — the honest values are `public_board_empty_count = 0` (**green**, shown as a maximal breach) and `public_board_slow_count = 14` (still breaching at 1, but 14 ≠ 999). **Do not open a board-integrity investigation off these numbers before 02:48Z.**
+
+⚠ **I did NOT hand-run the leg to correct them early** — it would have published true values ~2 h sooner, but it is a mutation to the operator's primary health surface outside its schedule, and the arm self-corrects. Left for the schedule.
+
+⛔ **Do NOT "fix" this by raising the 600 s internal budget** — that converts inconclusive sweeps into outright 900 s statement kills, trading a visible-but-honest 999 for a hard failure. The budget is doing its job. ⚠ **The deeper defect: `rpc_trust_health_precompute` is `metric, value, computed_at, duration_ms` with NO status column**, so "could not measure" has nowhere to go but into the value, where it reads as a maximal confirmed breach. **A status/inconclusive column is the structural fix and would retire the whole 999 convention.**
+
+- **Nothing shipped.** Filed: `docs/overnight/inbox/2026-08-18T0105Z-the-board-liveness-sweep-completes-only-half-the-time-and-cron-status-under-reports-it.md`. All probes read-only.
+
 ### 2026-08-17 · DOCS (Claude Code, interactive) — ran the sports-proxy decisive test from a residential network: it is TWO causes, not one, and the two forbidden fixes are now measured useless
 
 - **The repo told sessions to run one test before touching #8 and nobody could — this box is the network it required.** `known-issues.md` #8 said ⛔ *"Ship no UA refresh or 403-retry before the decisive test: one `curl` of the `cdn.nba.com` URL from an ordinary non-datacenter network."* Run 2026-08-17 18:01 PT.
