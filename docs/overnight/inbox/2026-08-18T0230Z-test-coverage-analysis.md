@@ -4,7 +4,7 @@ Requested: "analyze the test coverage of the codebase and propose some areas in 
 improve our tests." Everything below is **re-derived live in this session**, not quoted from
 `docs/reference/testing-and-ci.md` — several numbers in that file are stale and are corrected here.
 
-## ⚠ STATUS — this file is now a register, not a proposal. §0, §1, §2, §5 CLOSED; §3 has two of its pins; §4 open
+## ⚠ STATUS — this file is now a register, not a proposal. §0 (BOTH halves), §1, §2, §5 CLOSED; §3 has two of its pins; §4 open
 
 - **§1 — CLOSED by a CONCURRENT SESSION, not by this one.** Two sessions worked it within the hour;
   see the ✅ block inside §1 for what landed. ⚠ **Recorded because the collision is the lesson:** both
@@ -120,6 +120,21 @@ stops moving.
   the coverage directory"*. CI is safe (separate jobs); a local parallel run is not. A documented
   invariant with no implementation and no test is the same shape as an unenforced guard.
   One-line fix: distinct `coverage.reportsDirectory` per config.
+
+  > ✅ **SHIPPED 2026-08-17 (`a11c903f` / `02a396d3`) — §0 is now fully closed.** Each gate declares its
+  > own (`coverage` / `coverage-components` / `coverage-workers`), pinned by
+  > `__tests__/vitest-gates-have-distinct-coverage-dirs.test.ts`, which **globs `vitest*.config.*`**
+  > rather than naming the three so a fourth gate is covered the day it lands.
+  >
+  > ⚠ **This section under-stated it, and the understatement is the interesting part.** "one dies with
+  > *Something removed the coverage directory*" describes only ONE of the two failure modes. Measured:
+  > **both gates exit 1, and the component gate does NOT crash** — it loses the deleted `.tmp` chunks
+  > and publishes what survived as a **measured result**, `82.27 st / 80.61 fn` against true
+  > `90.68 / 89.25`, failing as a **THRESHOLD violation**. It reads as *"your diff broke coverage by 8
+  > points"* and blames the author's own work. That is a failed read rendered as an answer, in the
+  > tooling, naming the wrong cause — and CI never sees it, so the cost falls entirely on local and
+  > agent runs. **Verified fixed by re-running the identical concurrent invocation: both exit 0, true
+  > numbers, no corruption signature.**
 
 **Breadth is genuinely not the problem** (re-derived): 501/501 `route.{ts,tsx}` and 288/293 `lib/`
 modules are referenced by some test; 151/156 components; 24/24 workers. Only **2 files sit at 0%** in
