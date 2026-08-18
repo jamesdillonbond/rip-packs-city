@@ -1,5 +1,32 @@
 # Top Shot series 6/7/8 carry TWO different display labels, and both are user-visible
 
+> ## ◐ PARTIALLY CLOSED 2026-08-18 — the ROUND-TRIP BUG is fixed and shipped; the NAMING DECISION is untouched and still yours.
+>
+> **Re-derived first: the disagreement is still live.** `collection_series` for
+> `nba_top_shot` reads 6→"Series 5", 7→"Series 6", 8→"Series 7"; 0–5 agree with
+> the repo constants.
+>
+> **What was actually broken was worse than cosmetics, and it is now fixed.**
+> `lib/collection/series-param.ts` resolves a label via the dynamic options
+> first, then a hardcoded Top Shot fallback. The fallback carried ONLY the repo
+> spellings — so the three DB spellings ("Series 5/6/7") resolved to `null`.
+> That path is reachable: `CollectionTabClient`'s options fetch swallows a failed
+> read (`r.ok ? r.json() : null`, `.catch(() => {})`), leaving the options EMPTY,
+> at which point a persisted filter fell through to the fallback, missed, and the
+> caller left `series` unset — **the user was served the FULL catalogue while the
+> UI still showed "Series 5" selected.** A filter that silently did nothing, on
+> the three newest and most-trafficked series.
+>
+> The fallback now speaks BOTH conventions. This is safe *because* the two are
+> **disjoint where they differ and identical where they agree** — "Series 5" can
+> only mean on-chain 6 — which was verified against the live table, not assumed.
+> Pinned by three tests, all verified red against the pre-fix module.
+>
+> ⚠ **This does NOT decide which label wins, and deliberately so.** It makes the
+> resolver survive either answer, so whichever way the naming goes, no persisted
+> filter silently breaks in the meantime. The three-row `display_label` data
+> correction this filing proposes is still unshipped and still Trevor's call.
+
 **Status: FILED, nothing shipped.** This is a product-naming decision (which label
 wins), not a low-risk mechanical fix, so it is queued rather than auto-shipped.
 

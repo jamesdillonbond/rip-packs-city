@@ -1,5 +1,48 @@
 # `get_fmv_coverage()` plans the SAME correlated `EXISTS` twice — and it took the whole data-integrity monitor down
 
+> ## ✅ SHIPPED 2026-08-18 — the rewrite is live. ⚠ BUT THIS FILING'S HEADLINE IS WRONG AND THE TITLE IS LEFT STANDING ONLY AS HISTORY.
+>
+> **"it took the whole data-integrity monitor down" MISATTRIBUTES THE INCIDENT.**
+> Re-measured in a QUIET window (3 active sessions, 1 in IO wait, **zero**
+> autovacuum workers) — the condition this filing itself demanded before
+> shipping — warm-vs-warm, same instrument both sides:
+>
+> | shape | buffers | ms |
+> |---|---|---|
+> | old (SubPlan 1 + SubPlan 2) | **196,106** | 1,470 / 1,609 |
+> | new (one lateral probe) | **100,014** | 909 |
+>
+> **The old body runs in ~1.5 s when the disk is not starved. It never cost 55 s.**
+> The 55 s reading was taken *during* the saturation spell, so the double subplan
+> was a real waste sitting next to the incident, not its cause. The caller bound
+> (`rpcWithRetry` + `timeoutMs`, `c50ef186`/`f07de6ac`) remains the load-bearing
+> fix, and this rewrite does **not** make the route timeout-proof.
+>
+> ⚠ The cost-model prediction in this filing (12,348 → 8,709) also did not
+> survive contact: the real planner picked an index-only scan and the actual
+> costs were 8,122 → 6,566. **The direction was right, the numbers were not** —
+> a cost model is a plan-choice heuristic, exactly as the filing warned.
+>
+> Equivalence verified by value, not just by construction: identical across all
+> four active collections on a discriminating case (`nba_top_shot` 19,658/19,820
+> = 99.2%, not a degenerate all-100% set).
+>
+> Migration `audit_20260818_get_fmv_coverage_single_probe`
+> (`supabase/migrations/20260818205106_*.sql`). SECURITY DEFINER, `search_path`,
+> owner and ACL all preserved and re-verified with `has_function_privilege`
+> (never the acl text); exactly **1** overload, so no PUBLIC EXECUTE was
+> re-granted. `check_secdef_anon_exec_drift` 0, `check_secdef_anon_execute_violations`
+> 0, `check_public_security_invariants` 0 rows, `check_anon_write_surface` 0 rows.
+>
+> ⚠ Still open, and it bounds the win: `Heap Fetches: 14782` says the visibility
+> map on `fmv_snapshots_2026` is stale, inflating buffers on **both** shapes. A
+> VACUUM of that partition would cut both further; left to autovacuum
+> deliberately.
+>
+> ✅ The residual this filing named — the three unbounded table reads in the
+> caller — was already closed by `f07de6ac` (all five legs bounded, 6+8+3+3+3 = 23 s
+> under a 30 s `maxDuration`).
+
 Filed 2026-08-18 08:10 PT (15:10Z). Found while chasing the `FUNCTION_INVOCATION_TIMEOUT` that
 `RPC Ops Monitor` started reporting once its own failure path was repaired earlier the same morning
 (see the ledger entry for `ops-monitor`; before that fix this outage was invisible, showing only as

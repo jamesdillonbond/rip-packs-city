@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · SHIPPED (Claude Code, interactive) — `get_fmv_coverage()` stops paying twice for one answer, the Top Shot series filter stops silently doing nothing, and the UFC "outage" gets its controls
+
+Three items taken in one pass. **Two shipped, one deliberately not — and the one that shipped biggest also REFUTES the filing that requested it.**
+
+**1. `get_fmv_coverage()` — one lateral probe instead of two correlated `EXISTS`. (migration `audit_20260818_get_fmv_coverage_single_probe`)**
+
+The body wrote the identical `exists (select 1 from fmv_snapshots f where f.edition_id = e.id)` twice — once for `fmv_editions`, once again inside the `round(...)` percentage — and the planner does not collapse them. Waited for the quiet window the filing demanded (**3 active sessions, 1 in IO wait, ZERO autovacuum workers**, vs 14/9/2 earlier the same day), then measured warm-vs-warm on the same instrument:
+
+| shape | buffers | ms |
+|---|---|---|
+| old (SubPlan 1 + SubPlan 2) | **196,106** | 1,470 / 1,609 |
+| new (one lateral) | **100,014** | 909 |
+
+⚠ **THE FIRST COMPARISON I RAN WAS INVALID AND I ALMOST SHIPPED ON IT.** I measured the candidate first (cold: 8,197 ms) and the live shape second (warm: 1,470 ms), which read as *the rewrite is 5.6× SLOWER*. That was cache order, not a result. Re-running the candidate warm inverted it. **A one-sided cache state is as good at faking a difference as at hiding one.**
+
+⛔ **AND THE FILING'S HEADLINE IS WRONG.** It said this plan shape "took the whole data-integrity monitor down" (`did not finish in 55s`). **In a quiet window the OLD body runs in ~1.5 s.** The 55 s was measured *during* the saturation spell — the double subplan was real waste sitting next to the incident, not its cause. The caller bound (`rpcWithRetry` + `timeoutMs`, `c50ef186`/`f07de6ac`) is still the load-bearing fix, and **this rewrite does not make that route timeout-proof.** Its own cost-model prediction (12,348 → 8,709) also missed: the real plan was 8,122 → 6,566.
+
+Equivalence proven by VALUE, not just by construction — identical across all four active collections on a discriminating case (`nba_top_shot` 19,658/19,820 = 99.2%, not a degenerate all-100% set). Signature unchanged ⇒ no new overload; SECDEF, `search_path`, owner and ACL preserved and re-verified with `has_function_privilege` (never the acl text). Post-flight: `check_secdef_anon_exec_drift` **0**, `check_secdef_anon_execute_violations` **0**, `check_public_security_invariants` **0 rows**, `check_anon_write_surface` **0 rows** (read per each check's own return shape — array length vs row count). Function through its wrapper: 101,603 buffers / 239 ms.
+
+⚠ Bounds the win: `Heap Fetches: 14782` says the visibility map on `fmv_snapshots_2026` is stale, inflating buffers on BOTH shapes. Left to autovacuum — a manual VACUUM on the hottest partition is an operator call.
+
+**2. The Top Shot series filter could silently return the FULL catalogue.** `lib/collection/series-param.ts`'s hardcoded fallback carried only the repo spellings, so the three `collection_series.display_label` spellings ("Series 5/6/7" for on-chain 6/7/8) resolved to `null`. Reachable, not hypothetical: `CollectionTabClient`'s options fetch swallows a failed read, leaving the options EMPTY, so a persisted filter fell through to the fallback, missed, and the caller left `series` unset — **the user got the whole catalogue while the UI still showed "Series 5" selected.** The three missing keys were the three newest series. The fallback now speaks both conventions, which is safe *because* they are **disjoint where they differ and identical where they agree** (verified against the live table, not assumed). 3 tests, all verified red against the pre-fix module. ⚠ **This does NOT decide which label wins** — it makes the resolver survive either answer; the three-row `display_label` correction is still Trevor's call.
+
+**3. UFC — measured, NOT shipped, and one filed signal refuted.** `flowty_transactions` shows UFC activity at 2026-05-23, ten days AFTER the last recorded sale, which reads exactly like an indexer missing trades. **The control kills it: the same table's Top Shot column stops at 2026-05-24 while Top Shot `sales` is current to the minute — the whole feed died across every collection.** Also: `cached_listings_v2` has no UFC rows *and no Top Shot rows*, so its emptiness is not order-book evidence. Everything DB-side is consistent with dormancy; **the decisive upstream query still needs the gate-keyed `flowty-proxy`, and the disposition is a product call.** No monitoring change shipped: watchlist membership for UFC pipelines depends on that disposition, and per the 08-18 `0450Z`/`0455Z` measurements a naive threshold yields chronic false-firers and a NULL threshold is a silent pass. Filed: `docs/overnight/inbox/2026-08-18T2100Z-*.md`.
+
+**Revert:** code — `git revert <sha>` (resolve with `git log -1 --format=%H --grep='stops paying twice'`). DB — restore the prior body: the same `CREATE OR REPLACE FUNCTION public.get_fmv_coverage()` with the two inline `exists (select 1 from public.fmv_snapshots f where f.edition_id = e.id)` predicates (one in the `count(*) filter`, one inside `round(...)`), keeping `language sql stable security definer set search_path = public`. No data, cron, auth, hot-wallet or pricing change; `fmv_snapshots` untouched.
+
 ### 2026-08-18 · RESEARCH (Cowork cloud) — post-ship watch on `21ab85ef`: the rotation WORKS, and the one inference it flagged as unverified is REFUTED — Top Shot is losing ground
 
 `21ab85ef` stated plainly that *"the Top Shot tail draining is an inference from those, not something I watched."* ⛔ **Watched now. It is not draining.**
