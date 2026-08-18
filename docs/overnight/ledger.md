@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · SHIPPED (Claude Code, interactive) — jobid 218 pinnacle-mint-acquisitions cut hourly → `*/3`; the "heavy-cron band" headline it came from is REFUTED
+
+**What shipped.** pg_cron jobid **218** `rpc-backfill-pinnacle-mint-acquisitions`: `19 * * * *` → **`19 */3 * * *`**. Schedule only; `public.backfill_pinnacle_mint_acquisitions(int)` untouched. Applied via `cron.schedule` under `SET LOCAL ROLE cron_heavy` (in-place — jobid still **218**, one row, owner still `cron_heavy` so its 600 s budget survives), then registered for parity as `supabase/migrations/20260818040426_audit_20260817_pinnacle_mint_acquisitions_cadence_cut.sql`.
+
+**Revert path.** `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-backfill-pinnacle-mint-acquisitions', '19 * * * *', 'SELECT public.backfill_pinnacle_mint_acquisitions(50000)'); RESET ROLE;` — no repo revert needed (DB-only change; the migration file is a record).
+
+**Origin, and why only one third of it shipped.** `inbox/2026-08-18T0330Z-heavy-cron-collision-pinnacle-backfill-io.md` (daytime monitor, filed mid-spell) proposed three fixes. Re-measured in a **quiet window** (3 IO-wait vs 37 at the peak), **its headline is refuted**:
+
+- ⛔ **"A `:13`–`:34` band of eight hourly heavy jobs manufactures the spells" — NO.** The band is *constant*; 218's overlap over 48 h swings **1 → 28** and tracks 218's **own runtime** (11 s → 1 overlapping; 601 s → 28). A constant cause cannot produce that swing — **the pileup is a consequence of long runtimes, not their cause.** Fix #2 (de-pile the band) **NOT shipped**; it repeats the 2026-08-16 `:13` stagger that was measured to make things strictly worse, and its "empty" target minutes (:48, :53, :05, :58) are all occupied.
+- ⛔ **"218 is uncontended-cheap (11–18 s), a victim" — NO.** That was an 8-run tail. 7 days: 157 succeeded avg **116.8 s**/max 480.1 s + 11 failed avg **558.9 s**/max 966.3 s ≈ **5.4 h/week** of `cron_heavy`.
+- ✅ **The real mechanism: the `LIMIT 50000` NEVER BINDS.** `EXPLAIN` = Merge Anti Join over ~247k `pinnacle_mint_events` × ~877k `moment_acquisitions` (rows=**1**), then a nested-loop into `wmc`. Only tens of candidates exist, so **every run walks the full join** — a full sweep wearing an incremental catch-up's clothes; the 11 s↔966 s spread is cache-vs-disk. The same anti-join **failed a 90 s budget in the quiet window**, so the cost is intrinsic, not contention.
+
+**Target metric.** 16 of 24 daily full sweeps removed. Safe because 8 runs/day × 50,000 ceiling ≫ the real arrival rate — measured from the **outcome table**, not `rows_written`: `moment_acquisitions WHERE source='pinnacle_mints'` gained **92 / 275 / 102 / 67** rows on 08-17 / 16 / 15 / 14. Precedent: sibling jobid 78 `rpc-backfill-pinnacle-acquisitions`, same class of work on the same collection, already runs `17 */6` — hourly was the outlier.
+
+⚠ **NOT closed.** The durable fix is to make the LIMIT *bind* — a watermark or an index-supported "unprocessed" predicate on the anti-join. Until then this is 8 full sweeps/day instead of 24.
+
+⛔ **The filing's "pg_cron reschedule cannot be done from the Supabase MCP connection" is FALSE — second time that dead end has been filed.** The pincer is real for `cron.alter_job` only; `cron.schedule` under `SET LOCAL ROLE cron_heavy` works, updates in place, and keeps the 600 s budget. No dashboard, no night pass needed. Never `unschedule` first (that churned 109 → 332 on 08-16).
+
 ### 2026-08-17 · SHIPPED (Claude Code, interactive) — acted on the test-coverage analysis: an SEO guard that named three helpers while 43 files bypassed it, a live monitor covering 6 of 31 board URLs, and the first pin on the alert pipeline
 
 Follow-up to the analysis filed earlier tonight (`docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md`, updated in place). Three sections shipped; §1 was closed CONCURRENTLY by another session and this pass **took theirs and dropped its own** — see the collision note below.
