@@ -4,6 +4,27 @@ Requested: "analyze the test coverage of the codebase and propose some areas in 
 improve our tests." Everything below is **re-derived live in this session**, not quoted from
 `docs/reference/testing-and-ci.md` — several numbers in that file are stale and are corrected here.
 
+## ⚠ STATUS — this file is now part register. §1, §2 and §5 are shipped; §3 has its first pin
+
+- **§1 — CLOSED by a CONCURRENT SESSION, not by this one.** Two sessions worked it within the hour;
+  see the ✅ block inside §1 for what landed. ⚠ **Recorded because the collision is the lesson:** both
+  sessions re-derived the same counts (5 Rule-A / 101 Rule-B), and the one that shipped went further —
+  Rule B as a site-wide *ratchet* rather than left insights-only — **and it caught something this file
+  got wrong**, that `DashboardAlertsClient` never server-renders. *Server-fetched data* and
+  *server-rendered markup* are different things. Duplicated effort, better answer; the ledger is the
+  only thing that would have prevented the duplication.
+- **§2 — SHIPPED.** `OG_INHERITED` / `TWITTER_INHERITED` exported and spread into **43** inline
+  metadata blocks; the named-helpers guard joined by a tree walk
+  (`__tests__/metadata-inline-blocks-inherit-root-fields.test.ts`), mutation-tested.
+- **§5 — SHIPPED.** The live smoke went **6 → 31** `/insights` entries, with a **bidirectional**
+  completeness guard (`__tests__/e2e-smoke-covers-public-insights-boards.test.ts`) so a launch-flag
+  flip fails in a sub-second vitest case rather than on the 6-hourly monitor.
+- **§3 — first pin landed:** `build_deal_alerts_for_subscription`, verified byte-identical to LIVE
+  `prosrc` and killed by three separate mutations. **273 substantial functions remain unpinned.**
+- **§4 is untouched and remains the largest gap.**
+
+⚠ **§0's read of the component gate's margin was too kind and is corrected immediately below.**
+
 ## 0. The three gates, measured today
 
 Ran all three from a fresh `npm ci` on `main` @ `a690b507`.
@@ -14,8 +35,19 @@ Ran all three from a fresh `npm ci` on `main` @ `a690b507`.
 | components (`vitest.components.config.ts`) | **90.68 / 81.86 / 89.25 / 93.60** | 90.3 / 81.6 / 89.1 / 93.2 | +0.38 / +0.26 / **+0.15** / +0.40 |
 | workers (`vitest.workers.config.ts`) | **85.59 / 72.61 / 84.25 / 88.53** | 85.1 / 72.1 / 83.8 / 88.1 | +0.49 / +0.51 / +0.45 / +0.43 |
 
-All three green. The component gate's **functions** margin is 0.15pt — the binding constraint, and
-exactly the dimension `testing-and-ci.md` warns a partly-tested `*Client.tsx` conversion hits hardest.
+All three green.
+
+⚠ **CORRECTION, and it is the most actionable single finding in this file: the component gate's
+`functions` number is NOT 0.15pt above its threshold — it is INSIDE THE RUN-TO-RUN NOISE.** Measured
+across five runs on two trees (all `EXIT=0`): **3484, 3485, 3486, 3488, 3490 covered of 3910** →
+**89.10 / 89.13 / 89.15 / 89.20 / 89.25**, against a threshold of **89.1**. The low sample clears it by
+**0.004pt**; **one more uncovered function reds CI on an unchanged tree.** An A/B with the working tree
+stashed confirms this predates this pass — baseline measured 89.15 and the changed tree 89.20, the only
+per-file move being `SniperClient.tsx` at +2 covered functions, which is itself the jitter. So
+`component-tests` is currently a coin flip, and the next person to see it red will read it as their own
+regression. ⚠ **The fix is NOT to lower the threshold** (the config's own rule, and the repo has paid
+for the compounding version). It is to find the nondeterministic suite — `SniperClient.tsx` is the
+first candidate — and make its coverage deterministic.
 
 ⚠ **Corrections to `docs/reference/testing-and-ci.md` found while re-deriving:**
 - It says server `page.tsx` is "48,325 LOC" and client `page.tsx` "27,016 LOC / 33 files". Live today:
@@ -112,10 +144,18 @@ repo calls its most shareable — e.g. `app/insights/squeeze/layout.tsx` sets `c
 ⚠ **Not verified against a live unfurl** — this is derived from the source plus the merge semantics
 `lib/seo.ts` itself documents. Confirm one board with the X card validator before doing the sweep.
 
-**Proposal.** Replace the 3-case guard with a **tree walk** over `app/**` that extracts every inline
-`openGraph`/`twitter` literal and asserts it carries the root's fields (derive the required field list
-from `rootMetadata`, as the current guard already does, so adding a root field widens the guard for
-free). Ban at zero once the 38 are fixed — the fix is one line per file.
+**SHIPPED.** `lib/seo.ts`'s own instruction — *"spread these into every block rather than restating
+the literals"* — had only ever been applied to its three helpers, so `OG_INHERITED` /
+`TWITTER_INHERITED` are now **exported** and spread into all **43** deficient blocks (the sweep also
+caught 5 `openGraph` blocks missing `locale`/`siteName`/`type`, beyond the 38 twitter ones).
+`__tests__/metadata-inline-blocks-inherit-root-fields.test.ts` walks the tree, derives the demanded
+fields from those constants, and separately asserts the constants match `rootMetadata` — so adding a
+root field widens the ban for free. The R10 helper guard stays; this joins it rather than replacing it.
+
+⚠ **Its own extractor had a bug my fixture caught: the brace matcher was not string-aware**, so a `}`
+inside a quoted `alt:` closed the block early and reported fields that were present. A FALSE POSITIVE
+is the expensive direction on a guard — it reds CI on correct code, and the next person weakens the
+guard to get green.
 
 ## 3. 274 of 397 substantial DB functions have no SQL invariant pin
 
@@ -142,11 +182,29 @@ The other seven have vitest hits, but those are route tests that **stub the RPC 
 the call, never the SQL body. That is the same "mirror green, deployed copy drifted" hole the edge-fn
 drift guards exist to close, on a much larger surface.
 
-**Proposal.** Pin, in this order: `dispatch_due_deal_alerts` + `build_deal_alerts_for_subscription`
-(an alert's output is silence, so its errors are unfalsifiable — the repo's own worst sub-class),
-then `get_collection_stats` and `get_wallet_pack_summary` (claims about the market and about the
-reader's own account), then `rpc_search_catalog`. Five pins ≈ five files, and the harness already
-exists (`supabase/tests/_helpers.sql`, self-contained + `ROLLBACK`).
+**FIRST PIN SHIPPED.** `supabase/tests/build_deal_alerts_for_subscription.sql`, registered in the
+drift guard (pins 180 → 181, DB suite 171 → 172 files, all green). It pins the two defects the
+2026-08-16 migration fixed and the asymmetry between them: **price-only routing** (a `max_price` with
+`min_discount = 0` must read `edition_current_ask`, the raw ask universe, and see a row with NO
+`fmv_usd` — the pre-fix code read the deals board, so a saved $0.60 alert intersected an empty set for
+weeks), **set-name containment** ("Archive" matches "Archive Set"), and **player-name exactness**
+("Damian" must NOT match "Damian Lillard"). Also pinned: the two pools are mutually exclusive per
+subscription, and `deals_count` sums both passes.
+
+⚠ **Verified against LIVE, not just against the migration.** The migration's body is byte-identical to
+production `prosrc` (md5 `f17cfe05e4ab8d88e05fd56f7ce021c8`, 8,943 chars) — a pin against a stale
+migration would pin something production does not run, and CLAUDE.md records that some objects were
+applied by MCP and never committed. **Three mutations kill it**: reverting the price pool to the deals
+board, reverting set-names to equality, and loosening player-names to `LIKE`.
+
+⚠ **`rebuild_flowty_loans` CANNOT be pinned today** — it has **no committed migration**, so there is no
+verbatim source for the drift guard to compare against. That is a prerequisite, not an oversight to
+work around: dumping live `prosrc` into a test file would pin whatever is deployed with nothing
+asserting the repo agrees.
+
+**Next, in order:** `dispatch_due_deal_alerts` (13,203 chars, the sending half of the same pipeline,
+same migration file), then `get_collection_stats` and `get_wallet_pack_summary` (claims about the market
+and about the reader's own account), then `rpc_search_catalog`.
 
 ## 4. 13,653 LOC of Deno edge-function bodies are type-checked and never executed
 
@@ -183,9 +241,22 @@ holds **30 board pages** beside that hub. It runs on a 6-hourly schedule against
 render in one UTC process). Both incidents on record were on `/insights` boards
 (`first-mint`, `top-sales`) — **and 25 of those boards are outside the sweep.**
 
-**Proposal.** Extend the smoke list to all 30 `/insights` boards (they are anonymous, so no auth
-plumbing). Cheap, and it also covers the "a *slow* board errors nowhere and fails the whole production
-build" class that `insights-server-pages-bound-their-reads` is a ban for.
+**SHIPPED, and the sweep found a stale comment doing real damage.** The list is now the hub + **30
+boards**. The spec's comment claimed `panini-squeeze` and `candy-mlb` were *"deliberately omitted …
+until its flag stays flipped"* — **both flags have been `true` in `lib/launch-flags.ts` since their
+launches**, so two live public boards sat outside the only monitor that can see them, protected by a
+sentence that read like a decision.
+
+`__tests__/e2e-smoke-covers-public-insights-boards.test.ts` derives the population from
+`app/insights/*` + the real `isPublicPath`, and is **bidirectional on purpose**: it also fails if a
+GATED board is listed. A one-way check would have gone red in the slowest place — the 6-hourly live
+monitor, on a board now 302-ing to `/login` and rendering 0 chars, which is the cry-wolf entry
+`smoke.spec.ts` already carries a long warning about. Both directions mutation-tested (delete a board
+line; flip `CANDY_MLB_PUBLIC` to `false`).
+
+⚠ **The 23 new entries were added UNPROBED** — this sandbox has no egress to production (the agent
+proxy rejects the connect), so the first scheduled run is their validation. Recorded in the spec
+itself: if one fails, triage it; do not delete the line.
 
 ## 6. Smaller, cheap items
 
@@ -209,22 +280,27 @@ build" class that `insights-server-pages-bound-their-reads` is a ban for.
   `ufc-sales-indexer` 65.6, `topshot-listing-cache` 65, `listings-indexer` 66.46, `offers-indexer`
   68.71. CLAUDE.md already records the sales indexers as a five-way copy-paste family; their *error*
   branches are the untested half.
-- **`scripts/check-tree-corruption.mjs` and `scripts/find-future-dated-ledger-headings.mjs` have no
-  test.** The other five CI guard scripts do. The second is a day old and is a ban at zero, so it is
-  currently unfalsifiable — the repo's own rule is *"before relying on a watcher, prove it can see a
-  FAILURE."* (Its author did prove it, on a poisoned fixture, but by hand — the proof is not committed.)
+- **`scripts/check-tree-corruption.mjs` has no test.** The other CI guard scripts do.
+  ⚠ `find-future-dated-ledger-headings.mjs` was in this list when the file was first written and is
+  **already closed** — `57586c58` landed `__tests__/find-future-dated-ledger-headings.test.ts` while
+  this pass was running. Left visible rather than deleted: a finding list is a dated sample too, and
+  this one aged in under an hour.
 
 ---
 
-## Suggested order
+## What is left, in order
 
-1. **§1 Rule-A hydration widening** — 5 sites, closes a guard that is silent by construction on the
-   surfaces where the class actually shipped.
-2. **§2 OG tree walk** — one line per file, restores the X byline on 31 public boards.
-3. **§5 insights smoke** — a list edit; buys detection on 25 boards.
-4. **§3 five DB pins** — highest-consequence untested logic in the stack (an alert dispatcher).
-5. **§4 edge-fn cursor extraction** — the largest gap, and the only one that is a real project.
+1. **The component gate's `functions` jitter (§0).** Now the top item: the gate can red on an unchanged
+   tree. Find the nondeterministic suite (start with `SniperClient.tsx`, the only file that moved
+   between two runs of the same tree) rather than touching the threshold.
+2. **§4 edge-fn cursor extraction** — the largest gap, and the only one that is a real project. Start
+   with the two `event_cursor` ingesters: a cursor that advances past a failed write is silent
+   permanent loss, and nothing today can catch it.
+3. **§3, the remaining 273 pins** — next is `dispatch_due_deal_alerts`, in the same migration file the
+   first pin used, so the verbatim source is already to hand.
+4. **§6 smaller items** — `app/global-error.tsx` (zero tests, neither gate),
+   `components/entity/PopularOnCollection.tsx` (29/29/7.7, and outside the server-page ratchet),
+   `workers/sports-proxy` (44.53 br, and the subject of the top open item).
 
-Deliberately **not** proposed: raising any threshold. All three gates sit in their designed 0.15–0.6pt
-band, and the component gate's functions margin is thin enough that a partial `*Client.tsx` conversion
-would red it.
+Deliberately **not** proposed, then or now: raising any threshold. Two of the three gates sit in their
+designed band; the third's problem is noise, not level, and lowering it is what the config forbids.
