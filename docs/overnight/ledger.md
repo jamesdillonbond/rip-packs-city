@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — the 2026-08-15 conflated-subedition reorder FIXED the drain, and its `ok` flag has been hiding the recovery ever since
+
+⚠ **This CORRECTS MY OWN ENTRY from two hours earlier**, which listed `drain-conflated-subeditions` among "5 unwatched pipelines with zero successes". It has zero *successes*. **It does not have zero success.**
+
+⚠ **I was one step from filing "8 consecutive days of failure, `seed_recent` wedged at 120 s" — true about the STEP, wrong about the PIPELINE — and the route's own comments stopped me. Third save from that rule in one session.** `app/api/admin/drain-conflated-subeditions/route.ts` already carries the precise 2026-08-15 diagnosis (deep-audit R7): three seed steps sit at ~120,3xx ms, which is a **`statement_timeout=120s` CEILING in each function's own proconfig, not work** — they roll back producing nothing, and running FIRST they starved the drain. Named consequence at the time: `resolve_topshot_subedition_collision_knots` *"has not executed ONCE since 2026-07-31 — 76 resolutions ever."* Fix applied: **DRAIN before SEED, plus a budget guard.**
+
+✅ **IT WORKED, and this is the independent confirmation nobody had collected:**
+
+| measure | at the 08-15 diagnosis | now |
+|---|---|---|
+| `topshot_collision_knot_resolutions` | **76** | **272** |
+| resolved in last 3 days | **0** | **196** |
+| newest resolution | 2026-07-31 | **2026-08-17 20:32Z (today's run)** |
+| rows written per run | **0** (08-10→08-15) | **992 / 1,007** (08-16, 08-17) |
+| knots resolved per run | 0 | **98** |
+
+The transition lands exactly on the fix — every run 08-10→08-15 wrote 0 rows and logged *"started (no completion recorded — killed at maxDuration?)"*. **The knot resolver went from dead-for-three-weeks to ~65/day.**
+
+⚠ **THE REMAINING DEFECT: `ok` cannot ever be true.** It is an AND over every step's error slot, including `seed_recent_error` — and the seed steps are **known and expected** to be cut off, which is the entire point of running them last behind a budget guard. So `ok` is pinned false forever. **A pipeline that cannot report success is indistinguishable from a broken one** — the standing permanently-red-instrument rule — and here it hid a successful REPAIR. ⚠ **Worse, it is doubly invisible: `rows_written > 0` also puts it outside the `Pipeline Success Coverage` arm's third term. Two independent detectors, both blind, on a pipeline that is actually healthy.**
+
+⛔ **Do NOT simply drop `seed_recent_error` from the conjunction** — that trades a false negative for a false positive on the pipeline that keys TopShot editions, which every edition-keyed FMV derives from. The right shape is to stop treating "cut off by the budget guard" as an error at all, and to report drain-success and seed-truncation as two separate claims. **Not shipped: it is success-flag semantics on TopShot keying, an owner call.**
+
+⚠ **Stated rather than guessed: `conflated_editions_remaining` read 961 → 974 across the two recorded runs — TWO POINTS, not a distribution.** It may be growth, arrival noise, or the seeds not keeping up. `topshot_conflated_editions` is 974 now, matching the pipeline's own count. **Re-derive over a week before concluding the drain is losing ground** — the knot half is clearly winning, and the two queues are different things.
+
+- **Nothing shipped.** Filed: `docs/overnight/inbox/2026-08-17T2345Z-the-conflated-subedition-drain-fix-WORKED-and-its-ok-flag-hides-it.md`. All probes read-only.
+
 ### 2026-08-17 · RESEARCH (Claude Code, interactive cont.) — watchlist coverage audit: 62 of 149 live pipelines are unwatched, and the success arm we shipped is blind to 4 of the 5 that are failing
 
 ⚠ **This exists because THREE unrelated investigations in one session each ended at "…and it is on no watchlist"** (`topshot-wmc-fossil-drain`, `sync-nba-projections`, the UFC pipelines). **Three anecdotes is a pattern, so I replaced them with an enumeration**, which is this file's own "prefer a directory/tree walk over a curated list" rule with a number attached.
