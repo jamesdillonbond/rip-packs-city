@@ -135,6 +135,29 @@ Detail: [inbox/2026-08-18T1400Z-…](inbox/2026-08-18T1400Z-drain-fmv-cold-tail-
   on an empty `results`, and the only thing preventing that is the skip guard's `results.length > 0`.
   It holds today, but it is a ban-at-population-zero shape one edit away from reporting a green run
   that did nothing. Revert path: `git revert <sha>` (test-only).
+- **NOT APPLIED (blocked on an idle window), and it left an INVALID index that must be dropped before
+  any retry — `idx_wmc_fmv_conf_null`.** Trevor handed over the daytime monitor's finding: cron jobid
+  302 `rpc-backfill-wmc-fmv-confidence` (`2-59/5 * * * *`, ~288x/day) full-seq-scans the 874 MB
+  `wallet_moments_cache` heap because no index matches `fmv_confidence IS NULL` — the similar-looking
+  `idx_wmc_fmv_null` is on **`fmv_usd`**. ✅ **Re-derived rather than trusted, and it is correct**: job
+  and command confirmed verbatim, zero indexes mention `fmv_confidence`, and `EXPLAIN` reproduces the
+  filed plan to the cost unit (`Seq Scan … rows=572559`, `cost=0.00..134684.18`).
+  ⛔ **Could not be applied: `CONCURRENTLY` is unreachable through the MCP** — lone statement dies on
+  the 2 min `statement_timeout` (`57014`); `SET …; CREATE …CONCURRENTLY` is `25001 cannot run inside a
+  transaction block`; `apply_migration` and `pg_cron` are txn-wrapped the same way; `DROP INDEX
+  CONCURRENTLY` was ALSO cancelled at 2 min because it waits out open transactions (longest 161 s); and
+  the non-concurrent `DROP` returned `55P03` on `SET LOCAL lock_timeout='4s'`. **The guard working as
+  designed** — a harmless failure instead of a lock convoy on the hottest table. Conditions throughout:
+  **28-34 active sessions, 100% in IO wait**, longest query 272 s, an hour-plus `autovacuum` on that same
+  table. A plain build takes `ACCESS EXCLUSIVE` and would have blocked every read of `wmc` product-wide.
+  ⚠ **The residue is the trap:** the cancelled build left `idx_wmc_fmv_conf_null` at `indisvalid=false,
+  indisready=false`, 0 bytes. It is INERT (an unready index is not maintained by writes and never read),
+  so leaving it costs nothing — **but the handoff's own `CREATE INDEX CONCURRENTLY IF NOT EXISTS` retry
+  would now SKIP the build and report success**, leaving it invalid forever. Drop and create must be ONE
+  idle-window migration. Ready-to-fire SQL, the idle-window test, and the verification steps are in
+  `inbox/2026-08-18T1545Z-wmc-fmv-confidence-index-verified-and-ready-but-BLOCKED-on-an-idle-window.md`;
+  the MCP/CONCURRENTLY constraint is in the `large-index-build-on-hot-table` memory. Nothing shipped, so
+  nothing to revert; live delta is the inert invalid index named above.
 - **Conditions caveat:** all of the above was measured during a saturation spell — **69% of active sessions in IO wait**, with an hour-long `autovacuum: VACUUM public.wallet_moments_cache` as the main driver. Buffer counts are comparable across shapes; **wall times from this window are not**, and none are quoted as if they were.
 - **SHIPPED — the ops monitor's retry loop was dead code under `bash -e`.** `RPC Ops Monitor` went red at 13:53Z on `exit code 28` — curl's **timeout**, not a bad response. The step comment promises "fail only if all attempts are non-200, so a single blip doesn't red the monitor", but the `RESPONSE=$(curl …)` assignment aborts the whole step under `-e` before the loop can retry, so the protection only ever covered a non-200 *response* and never a *timeout* — precisely the saturation case it was written for. The `data-integrity` step had the same bug, failing as a bare 28 instead of reaching its own `::error::data-integrity returned HTTP …` line. Both curls now `|| true`. **Positive control run both ways:** without it `bash -e` dies at exit 28 and the following line never executes; with it the script continues and `HTTP_CODE` reads `000`, so the loop retries and ends on an honest "after 3 attempts (last: 000)". Revert path: `git revert <sha>` (workflow-only; no DB, no app code). ⚠ **The first fix was INCOMPLETE, and only re-running the monitor showed it:** `fmv-staleness` then logged `Attempt 1/2/3 — HTTP Status: 000` and exited 1 (loop alive, and a real 3x35s outage of `/api/cron/stale-fmv-monitor`), but `data-integrity` printed `HTTP Status: 504` and died on **exit code 5** — `jq` failing on an HTML body, a THIRD `-e` abort in the same file, so it still never reached its own `::error::… returned HTTP 504` line. Both `jq` assignments now guarded too. ⚠ **That was still wrong — the guarded assignment was not the aborting line.** A third run showed `data-integrity` dying on 5 again; the culprit was the jq **inside** the warning branch, which is that branch's LAST command, so `-e` killed the step there. **Naming the aborting line by reading the script failed twice; only re-running and reading the log found it.** The same run exposed a fresh honesty bug the guard itself introduced: an unparseable body leaves `ISSUE_COUNT` empty, empty passes `!= "0"` and `!= "null"`, and the step published `::warning:: data integrity issues found` with a **blank count** off a 504 HTML page — a failed read rendered as a finding, this repo's number-one defect class, in a monitor. Branch now requires `-n` first. ✅ **VERIFIED END STATE (run 32148456025):** `fmv-staleness` → `Attempt 1 — HTTP Status: 200` (passes); `data-integrity` → `::error::data-integrity returned HTTP 504` then `exit 1`, no fabricated warning. The monitor now surfaces a REAL production finding it was hiding: `/api/cron/data-integrity` is returning `FUNCTION_INVOCATION_TIMEOUT`. Lesson promoted to `docs/reference/testing-and-ci.md` (a retry loop after a fallible command is dead code under `-e`), with the two-way control inline so the next reader can re-run it.
 
