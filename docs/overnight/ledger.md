@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — answered #8's open question: restoring ESPN alone will NOT refill `nba_players`, because the roster fetch is SLATE-GATED and the season is over
+
+⚠ **First, a correction to MY OWN filing from earlier today.** I framed the sports-proxy 403 as *"three providers, two independent egress networks — the providers are tightening bot-blocking, not our infrastructure."* **The residential decisive test refutes the single-cause part:** `site.api.espn.com` returns **HTTP 200 residentially** while 403ing from Supabase edge (⇒ genuine **egress blocking**, fixable with a Worker route and no secret), whereas `cdn.nba.com` **403s residentially too**, on every path, identically with a current Chrome UA and a full browser header set. **Two causes, not one.** My "do not ship the UA refresh" call held and is now measured correct — but my causal model was wrong in the way that matters: **the ESPN lane IS fixable**, and "the providers are tightening" would have discouraged the cheap fix.
+
+**Now the question that test left open — *"check whether restoring ESPN alone feeds `nba_players`"*. It does not, and the reason is structural rather than an outage.** `sync-nba-projections` builds `teamPlan` **from the scoreboard's events** and calls `fetchEspnRoster(teamId)` **only for teams in it** (*"~16 teams worst-case on a full slate"*). **No games today ⇒ empty `teamPlan` ⇒ zero roster fetches ⇒ zero catalogue growth**, however healthy ESPN is.
+
+**And the season is over, measured:** newest `nba_games` row **2026-08-04** (14 days ago), **4 games in 30 days**; `nba_players` **174 players / 19 of 30 teams**, newest `last_synced_at` **102.2 days ago**.
+
+**Consequences for fix order:**
+- ⚠ **Restoring ESPN egress restores the MECHANISM but produces NOTHING until games resume (~October).** Do it — cheap and correct — but **do not read a still-flat `nba_players` afterwards as the fix having failed.**
+- ⚠ **Even in season it fills only with teams that PLAY that day**, ~16 per full slate, so covering all 30 takes several days of schedule and each team refreshes only on its game days. **A slow, partial repair of a catalogue missing 11 of 30 teams.**
+- ✅ **The cheap fix nobody has proposed: a slate-INDEPENDENT roster sweep.** `fetchEspnRoster(teamId)` already takes an arbitrary team ID and does not touch the scoreboard. A one-shot/weekly pass over the 30 known team IDs repopulates `nba_players` **immediately once ESPN egress works, in season or out.** Small addition, not a redesign — and it fixes the actual defect: **a reference catalogue was made a side effect of a per-day projections job.**
+- ⚠ **So the hard `cdn.nba.com` lane may be unnecessary for `nba_players`** — the hope behind the original question — **but only if that sweep is built.**
+
+⚠ **Caveat, stated rather than glossed:** I did NOT verify ESPN's roster payload carries everything `nba_players` needs — `nba_stats_id`, `bref_id`, `headshot_url` may come from the NBA lane. **Check the insert path's field sources before assuming the sweep suffices**; it could repopulate names/teams while leaving ID-join columns null, which would matter for `match-topshot-players`.
+
+- **Nothing shipped.** Filed: `docs/overnight/inbox/2026-08-18T0120Z-restoring-espn-alone-will-not-refill-nba_players-the-roster-fetch-is-slate-gated.md`. All probes read-only.
+
 ### 2026-08-18 · RESEARCH (Claude Code, interactive cont.) — the board-liveness SWEEP completes only half the time, and `cron.job_run_details.status` under-reports that by 40%
 
 ⚠ **I started to re-file the 999s and STOPPED — grepping `docs/` first is what caught it.** `trust-board-and-safety.md` already documents them in more depth than I had: they are the **deliberate `budget_exhausted` branch, NOT the exception sentinel**; cron says `succeeded` because that branch returns normally; and `WHEN OTHERS` cannot catch a timeout at all because PostgreSQL excludes `QUERY_CANCELED`. **This entry adds only the thing that analysis lacked: the root cause, with a rate on it.**
