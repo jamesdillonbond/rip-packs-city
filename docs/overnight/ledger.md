@@ -44,7 +44,7 @@ The precondition named in the entry below, now measured. **67 unwatched (7d) · 
 
 Detail: [inbox/2026-08-18T0455Z-…](inbox/2026-08-18T0455Z-watchlist-derivation-blast-radius-measured.md).
 
-**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='prices out at 4 alerts'`. Two docs files. No DB, migration, cron, watchlist or code change; the measurement was read-only.
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='price the watchlist derivation'`. Two docs files. No DB, migration, cron, watchlist or code change; the measurement was read-only.
 
 ### 2026-08-17 · SHIPPED (Cowork cloud) — the watchlist coverage audit measured against rows the monitor ignores: the blind spot is 67, not 62, and two "retired" pipelines are still running
 
