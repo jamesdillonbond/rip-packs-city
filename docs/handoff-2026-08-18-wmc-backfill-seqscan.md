@@ -1,5 +1,19 @@
 # Handoff — kill the every-5-min full seq scan of `wallet_moments_cache` (backfill FMV-confidence)
 
+> ✅ **RESOLVED 2026-08-18 — BOTH HALVES. Do not re-run this handoff.**
+> **(1) The index shipped**: `idx_wmc_fmv_conf_null` is valid/ready/4,400 kB, built `CONCURRENTLY` from a
+> one-statement pg_cron job (which also overturned the recorded "CONCURRENTLY is unreachable here").
+> The every-5-min seq scan is gone. **(2) The follow-on starvation shipped**: killing the scan made the
+> tick fast but not productive — it still converted ~0, because `LIMIT p_limit` sits inside the `targets`
+> CTE **above the join**, so every tick re-read the same unresolvable `disney_pinnacle` head. Jobid 302 now
+> rotates `p_collection_id` (Top Shot → All Day → UFC → Golazos, Pinnacle excluded on purpose); measured
+> unscoped **0** vs scoped **1,000**, verified in production All Day 33,861 → 32,861.
+> ⚠ **One claim in this handoff is REFUTED**: it states job 302 "failed 31 of 31 runs, every one
+> `canceling statement due to statement timeout`". Re-read from `cron.job_run_details` it was **41
+> succeeded / 31 failed**, and every failure was **`job startup timeout`** — the tick never launched.
+> So the "strictly wasteful, nothing is lost by pausing it" justification did not hold.
+> Detail: `docs/overnight/inbox/2026-08-18T1725Z-…` and `…T1835Z-…`.
+
 **Date:** 2026-08-18 (~08:3x PT) · **Author:** daytime monitor (read-only), handed to Trevor / Claude Code
 **Type:** DB-only. No git, no route/tsx/worker change. Apply the index directly via Supabase (SQL editor or `execute_sql`). Latest prod HEAD when written: `c50ef186`.
 
