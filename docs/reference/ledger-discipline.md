@@ -26,3 +26,18 @@ Cowork has a push-capable git clone, Supabase MCP (read+write), Vercel/Sentry, C
 
 ⚠ **And keep the delta checks, which is what makes a stale guard survivable:** `headings(out) == headings(theirs) + 1` and `noblank(out) <= noblank(theirs)` are both baseline-relative, so they stayed correct across two rebases while the content-pinned assertion did not.
 
+
+---
+
+## Future-dated headings — the warning was not the fix (2026-08-17)
+
+The ledger is dated **Pacific**. Almost every writer runs on **UTC**: CI, the cloud sandbox, the nightly pass. Between 17:00 PT and midnight PT, UTC is already on the next day, so a session that stamps from `date -u` writes a heading dated **tomorrow** — which sorts wrong in a newest-first file and reports work on a day that has not happened.
+
+⚠ **Measured 2026-08-17: FOUR entries mis-stamped inside 35 minutes** — `4b32934` (18:21 PT), `a18c39a` (18:09), `b7ec40b` (18:04), `2892f29` (17:46), all authored on the 17th, all stamped `2026-08-18`, all interleaved with correctly-dated 08-17 entries. The warning was **already present in both this file's header and CLAUDE.md** the entire time. Four repeats past a documented warning is the signal to stop writing warnings and make the thing mechanically detectable.
+
+**Shipped:** `scripts/find-future-dated-ledger-headings.mjs`, wired into the `ledger-guard` CI job as a **ban at population zero** (the four were corrected, so any hit is new). Prints the count, `--show` lists offenders.
+
+- ⚠ **The guard MUST do its own UTC→PT conversion, and that is why it is Node rather than awk beside its sibling `find-swallowed-ledger-headings.awk`.** A check that asks the runner for "today" computes *the same wrong date the bug did*, so a tomorrow-stamped entry looks like today's and it passes — the guard reproduces the exact defect it exists to catch. awk has no timezone database, and the shell fallbacks are worse than useless here: `TZ=America/Los_Angeles date` in Git Bash returns UTC labelled `GMT`, and bare `date` there has read a full calendar day ahead. **Verified by running the guard under `TZ=UTC`, `Asia/Tokyo`, `Pacific/Kiritimati` and `America/New_York` — 2 every time, while a naive host-clock version scored 1 and "thought today was 2026-08-18".**
+- ⚠ **Derive the date from `formatToParts`, never from a locale's format string.** Asking `Intl.DateTimeFormat("en-CA", …)` for a YYYY-MM-DD shape is a trap: on a small-ICU Node build every non-`en-US` locale silently falls back to `en-US`, which formats `M/D/YYYY`, and the string comparison then never fires. Parts are locale-independent. The guard also asserts the assembled date matches `[0-9]{4}-[0-9]{2}-[0-9]{2}` and **exits 2 rather than passing** if it cannot derive one.
+- ⚠ **Match `^### <ISO date>` strictly.** A loose "heading dated later than today" comparison fires on `### <date>` (quoted as a format example in the ledger's own header) and on every `### audit_20260705_*` heading, because both sort above a numeric date as strings. All three shapes are in the fixture and must stay silent.
+- ⚠ **The CI step fails loudly if `node` is absent** rather than skipping. A guard that silently no-ops is indistinguishable from a passing one.
