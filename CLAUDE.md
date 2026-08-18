@@ -14,17 +14,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All under `docs/reference/`:
 
-- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon (5 layers, helpers, ~20 instances), driver-message leak guards, fabricated-number shapes, OG cards, board degradation, Workers table.
+- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon (4 layers, helpers, ~20 instances), driver-message leak guards, fabricated-number shapes, OG cards, board degradation, Workers table.
 - **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, general rules (role timeouts, PostgREST caps, `apply_migration` cost), full **Security posture**.
-- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation-testing categories, CI jobs, Cadence + Playwright.
+- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation-testing categories, CI jobs, Playwright.
 - **`known-issues.md`** — open/resolved register (stable item numbers), deferred hardening, deep-audit follow-ups.
 - **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, saturation findings.
 - **`trust-board-and-safety.md`** — trust board (38 arms as of 2026-08-17 — re-count, and diff the breached SET, not its size), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
-- **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness and go-lives, chain-abstraction Phases A–F.
-- **`routes-and-surfaces.md`** — route structure, per-collection `pages`, notable API endpoints, global search.
-- **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, per-collection Cadence gotchas.
+- **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness, chain-abstraction Phases A–F.
+- **`routes-and-surfaces.md`** — route structure, per-collection `pages`, notable API endpoints, search.
+- **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, Cadence gotchas.
 - **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`session-and-archive-conventions.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
-- **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of the sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing**; CLAUDE.md is the current rule, this is the archive.
+- **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing**; CLAUDE.md is the rule, this is the archive.
 - **`schema-truth.md`** — generated from the live DB; **wins on any disagreement with prose.**
 
 ---
@@ -52,11 +52,10 @@ Any time you ship something that changes `main` or production DB/data state — 
 - Work directly on the `main` branch. Do NOT create `claude/*` or other feature branches.
 - Commit and push directly to `main`. Do NOT open pull requests.
 - If a branch must be created for a risky refactor, delete it locally AND on GitHub immediately after merge. ⚠ **Deleting a REMOTE branch 403s from the sandbox** — the proxy allows push-to-ref but denies delete-ref. Local `git branch -d` works; the remote branch must be cleared from the **GitHub UI** by Trevor. Confirm it is safe to drop (`git rev-list --count origin/main..<branch>` = 0), then hand it off.
-- Always run the smoke test after deploying changes.
-- Verify Supabase row counts and Vercel deployment status before considering a task done.
+- Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap bit twice: 07-16, 07-18).
 - Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200.
-- **Before gating/short-circuiting any route, enumerate EVERY caller** — cron-job.org, GHA workflows, vercel.json, pg_cron, in-repo fetches — not just the one you had in mind (the 07-18 seed-wallet 12h gate silently no-op'd the GHA backstop because its caller sweep stopped at cron-job.org).
+- **Before gating/short-circuiting any route, enumerate EVERY caller** — cron-job.org, GHA workflows, vercel.json, pg_cron, in-repo fetches — not just the one you had in mind (the 07-18 seed-wallet gate silently no-op'd the GHA backstop because its sweep stopped at cron-job.org).
 
 ### Pushing from a sandbox — test it, do not assume it
 
@@ -67,7 +66,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 ## Autonomous Cowork tasks
 
-Two scheduled Cowork tasks run here — coordinate via the shared ledger so daytime work doesn't collide.
+Two scheduled Cowork tasks run here — coordinate via the shared ledger so work doesn't collide.
 
 - **`rpc-daytime-monitor`** — READ-ONLY, every ~3h. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
 - **`rpc-nightly-autonomous-pass`** — 1am local. Drains the inbox, ships ≤4 low-risk changes to `main` (collision-gated, CI-gated, each verified by a fresh subagent), writes a handoff + digest. Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth & lockdown (`proxy.ts`), destructive SQL, FMV/ingest/pricing/pack-EV/concierge/sniper route logic, gated work.
@@ -80,17 +79,17 @@ Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-su
 
 Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
 
-Stack: Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
+Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
 
 **Repo map** (counts 2026-08-17 — re-derive, do not quote): `app/` App Router — **119** `page.tsx`, **456** `route.ts` under `app/api/**` · `lib/` **291** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **156** · `workers/` **10** Cloudflare egress proxies + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge functions · `scripts/` **94** ops scripts · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Surface detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
-**Public-facing tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
+**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
 
 ---
 
 ## Infrastructure IDs (required on every tool call)
 
-- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ Disk-IO-budget (burst-credit) model → throttles to a **22 MB/s** baseline when depleted; the platform's intermittent saturation is **disk-IO-bound, NOT compute-bound** — fix expensive queries, don't upgrade the tier (Medium is the same 2 cores for 4×).
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ Disk-IO-budget (burst-credit) model → throttles to a **22 MB/s** baseline when depleted; the intermittent saturation is **disk-IO-bound, NOT compute-bound** — fix expensive queries, don't upgrade (Medium is the same 2 cores for 4×).
 - Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
@@ -132,7 +131,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 
 | layer | helper |
 |---|---|
-| any API route a user can reach (anon OR signed-in) | `lib/api-error.ts` → `apiErrorResponse()` (`boardUnavailable()` is its `/api/public/**` alias) |
+| any API route a user can reach (anon OR signed-in) | `lib/api-error.ts` → `apiErrorResponse()` (its `/api/public/**` alias `boardUnavailable()` lives in `lib/insights/board-error.ts`) |
 | server page | `lib/insights/board-status.ts` → `summarizeDegraded()` / `degradedFromSource()` |
 | client dashboard | `lib/analytics/fetch-json.ts` → `fetchJson()` (discriminate on `ok`, **never** on `json == null`) |
 | OG social card | `lib/og/board-empty-copy.ts` → `boardEmptyCopy(fetched, noun)` |
@@ -151,14 +150,14 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **A vacuous assertion reads as coverage in every grep, review and report, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim ("without claiming none are saved") or a transformation ("is not an error", "at or below FMV") is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**
 - ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling** (a guard matching the literal `count ?? 0` reddened on the strictly better `?? null`).
 - ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success. Same for a guard that NAMES its instances — three have died on a rename. ⚠ **Strip comments before grepping source for user copy**; at least six guards have fired on the comment documenting the fix.
-- ⚠ **A permanently-red or permanently-zero instrument is indistinguishable from a broken one at a glance** — `edge-fn-drift` was loudly correct every day for a week while naming the function fabricating 161k rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can see a FAILURE** — an unreachable monitor and a green build produce the same output.
-- ⚠ **Look for a monitor whose input set includes another monitor's OUTPUT** — a concierge health check counted its own smoke suite's fixtures and reported a total outage that was not happening.
+- ⚠ **A permanently-red or permanently-zero instrument is indistinguishable from a broken one at a glance** — `edge-fn-drift` was loudly correct for a week while naming the function fabricating 161k rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can see a FAILURE** — an unreachable monitor and a green build look identical.
+- ⚠ **Look for a monitor whose input set includes another monitor's OUTPUT** — a concierge health check counted its own smoke suite's fixtures and reported an outage that was not happening.
 
 Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md).
 
 ### Measurement discipline
 
-- ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted on measurement, and one recommended fix would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it.
+- ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted on measurement; one recommended fix would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it.
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file. Test the tidy hypothesis before acting on it; a cheap sample beats a good story.
 - ⚠ **Name the caller before you touch the function.** An expensive-looking function is not a cost until you have named its caller — a whole afternoon went into fixing a function with **zero** callers. Require four sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, and a full-repo grep. ⚠ `pg_stat_statements` alone is insufficient in *both* directions (`track = top` hides nested callers), and **32 of 37** functions reporting zero DB callers are live product RPCs called from Next.js.
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name.** Two objects one suffix apart yielded *opposite* conclusions; the 13,009-char one that looks like the real implementation has zero callers.
@@ -183,7 +182,7 @@ Full detail: [docs/reference/tooling-gotchas.md](docs/reference/tooling-gotchas.
 
 ### Database — the traps that bite most often
 
-- **PostgREST caps reads at 1000 rows and CLAMPS an explicit `.limit()` above that**; a bare unbounded `.select()` clamps too. For a total read the returned `count` (with `head: true`), never `rows.length`.
+- **PostgREST caps reads at 1000 rows and CLAMPS an explicit `.limit()` above that**; a bare `.select()` clamps too. For a total, read the returned `count` (`head: true`), never `rows.length`.
 - ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()`** on a UNIQUE key, or it reads the right *number* of rows and the wrong *rows*. The duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a **ban at zero**.
 - **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** One duplicate fails the whole statement and writes none of the batch; on a cursored indexer that is permanent loss.
 - ⚠ **A function-level `SET statement_timeout` is INERT** — 195 functions declare one, 47 above the global 120 s; the binding budget is the caller's role, or the global. ⚠ **And a role's `rolconfig` timeout does NOT bind on the PostgREST path** — it applies at LOGIN, and PostgREST logs in as `authenticator` and only `SET LOCAL ROLE`s. 39 `service_role` statements exceed its nominal 30 s, worst 352 s: **no Postgres timeout bounds a `supabaseAdmin` RPC; the bound is the client.** ⚠ Settled 2026-08-17: **`anon`'s 3 s does not bind either** — the real value is `authenticator`'s login-time 8 s — so there is **no 3 s ceiling on unauthenticated compute**, which weakens the case for leaving 78 anon-executable functions in place.
@@ -201,8 +200,8 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 
 - **An empty or docs-only commit can NEVER force a rebuild** — `vercel.json`'s `ignoreCommand` skips it. Use the v13 deployments POST, or touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
-- ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` diverging from `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
-- **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback below it never fires. Five instances; now a **ban at zero** (`insights-server-pages-bound-their-reads`). ⚠ Twice the failing page was one the pushing commit never touched.
+- ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
+- **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Five instances; now a **ban at zero** (`insights-server-pages-bound-their-reads`). ⚠ Twice the failing page was one the pushing commit never touched.
 - `get_runtime_logs` needs `environment: "production"` and short windows; `console.warn` is NOT indexed — use `console.log`.
 
 ---
@@ -211,7 +210,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 
 ### Two collection-string conventions (CRITICAL footgun)
 
-Two vocabularies, not interchangeable — mixing them fails INSERTs against CHECK constraints.
+Two vocabularies, not interchangeable — mixing them fails INSERTs against CHECK constraints (verified against the live constraint 2026-08-17).
 
 - **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
 - **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
@@ -220,7 +219,7 @@ Writing `'ufc_strike'` to a `flowty_*` table fails at INSERT. The bridge is the 
 
 ### Collection UUIDs
 
-TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1ad-a83f763ac070` · Golazos `06248cc4-b85f-47cd-af67-1855d14acd75` · UFC `9b4824a8-736d-4a96-b450-8dcc0c46b023` · Pinnacle `7dd9dd11-e8b6-45c4-ac99-71331f959714` · Candy MLB `209ade70-32c5-4470-bc7c-4793d660f713` (unpublished, `is_active=false`)
+TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1ad-a83f763ac070` · Golazos `06248cc4-b85f-47cd-af67-1855d14acd75` · UFC `9b4824a8-736d-4a96-b450-8dcc0c46b023` · Pinnacle `7dd9dd11-e8b6-45c4-ac99-71331f959714` · Candy MLB `209ade70-32c5-4470-bc7c-4793d660f713` · Panini `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` (both unpublished, `is_active=false`; Candy is `solana`, Panini `ethereum`)
 
 ### Enums
 
@@ -230,13 +229,13 @@ TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1a
 
 ### Series map (on-chain UInt32 → display name)
 
-`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".**
+`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These names are the REPO's; the live `collection_series.display_label` says `Series 5/6/7` for 6/7/8 and drives the Collection tab's filter via `/api/collection-series`** — check which convention your surface parses before emitting a label (filed 2026-08-18 to `docs/overnight/inbox/`).
 
 ⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a real 2026-08-05 incident silently dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
 
 ### Cadence
 
-**Before modifying any `.cdc` file, any Cadence string literal, or any FCL `mutate`/`query`, use the Cadence MCP to fetch the deployed contract source on mainnet and verify the functions/fields/types exist.** Training-data assumptions are frequently wrong for Cadence 1.0. The MCP is development-time verification ONLY — all production reads must keep routing through the proxy layer (Flow public endpoints and the Top Shot / Flowty APIs all block Vercel egress). Contract addresses + per-collection gotchas: [docs/reference/apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, use the Cadence MCP to fetch the deployed mainnet contract source and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. The MCP is development-time verification ONLY; production reads must keep routing through the proxy layer (Flow public endpoints and the Top Shot / Flowty APIs all block Vercel egress). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
 
 ---
 
@@ -265,7 +264,7 @@ Remaining rules (`get_fmv` shape, `.eq` not `.ilike`, the `updated_at` trigger, 
 
 ## Hot wallet & secrets
 
-- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Any code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 until `3b5e62d8`; tests for signing code must verify signatures **cryptographically**, never just assert output shape/length.
+- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 until `3b5e62d8`; tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
 - Cadence service payer wallet: `0x73f55c4450b8d466` — gas payer for backend-submitted Cadence transactions, distinct from the hot wallet. Intentionally empty and its balance-check cron is paused while all Cadence-write features are shelved.
 - Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`, `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
 
@@ -290,8 +289,8 @@ Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/ref
 
 ## Recent sessions
 
-Session entries live entirely in `docs/sessions/` (newest-first) — none is needed to start work. [2026-08.md](docs/sessions/2026-08.md) (Aug 17 → Aug 1) · `2026-07.md` · `2026-06.md` · `2026-05.md` · `2026-04.md`.
+Session entries live entirely in `docs/sessions/`, one file per month, newest-first — none is needed to start work. Current: [2026-08.md](docs/sessions/2026-08.md).
 
-**Write new session entries into `docs/sessions/2026-08.md` (prepend, newest-first), not here.** Same discipline: what shipped, what was verified, what is still open, and the durable lesson — **and promote any durable lesson into this file or the matching `docs/reference/*.md`, because a fact left only in a session log stops being read.** Recorded failure mode: "38 arms, 3 breached" was still quoted as current after a fourth arm had breached and one of the three had tripled, purely because it lived in a dated entry.
+**Write new session entries into `docs/sessions/2026-08.md` (prepend, newest-first), not here.** Same discipline: what shipped, what was verified, what is open, the durable lesson — **and promote any durable lesson into this file or the matching `docs/reference/*.md`, because a fact left only in a session log stops being read.** Recorded failure mode: "38 arms, 3 breached" was quoted as current long after a fourth arm breached and one of the three tripled, purely because it lived in a dated entry.
 
-**Doc archive layout:** dated handoffs/audits under `docs/archive/`; weekly health snapshots under `docs/health/`. Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — don't rewrite them.
+**Doc archive layout:** dated handoffs/audits in `docs/archive/`, weekly health snapshots in `docs/health/`. Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — don't rewrite them.
