@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-17 · MEASURED (Claude Code, Trevor's box) — the watchlist derivation prices out at 4 alerts, not 67, but only under a threshold rule the existing rows do not use
+
+The precondition named in the entry below, now measured. **67 unwatched (7d) · 61 have a derivable median gap · 6 DO NOT** (5 with one run in 72h, 1 invisible to raw `pipeline_runs` entirely). ⚠ **A NULL threshold is a SILENT PASS** — `silent > med * 2.5` is NULL, not true — so a median-derived rule would add those six and still not monitor them. **It must FAIL CLOSED on an underivable threshold**, or it reproduces the defect it was written to fix at a smaller population.
+
+⚠ **Rule A (2.5 × median, the method the rows themselves document): 5 breaching, 3 chronic false-firers, and membership FLAPS.** `backfill-offer-fill-sales` flipped false → true between two reads two minutes apart: median gap **1.2 min**, p95 **43.1 min**, **p95/median = 35×**, so its 3-minute threshold is crossed by its own normal behaviour.
+
+✅ **Rule B — `max(2.5 × median, 1.5 × p95, 15 min)` — 4 breaching, ZERO chronic.** No pipeline's own p95 exceeds its own threshold. **The flood fear is refuted as stated (67 → 4)** — but only under rule B; the caution was right to demand the number, and the number then licensed the change.
+
+⛔ **Two of the four breachers are the CORRECTLY-RETIRED `topshot-flowty-*` pipelines** (1604 m and 1706 m silent, rows already `is_active=false`). Derivation reads `pipeline_runs`, which still holds their final runs, so it re-adds them and they alert **forever** — **the measured argument that suppression must stay the curated list.** The other two are genuine, unmonitored misses **right now**: `drain-fmv-cold-tail` (126 m vs 113 m) and `resolve-topshot-stubs` (104 m vs 90 m), both on a 30-minute median.
+
+⚠ **Limitation: a 72h characterization of a 7d population.** `pipeline_runs` retains ~73h; daily/weekly pipelines have 1–3 samples, so their medians are tautological (1440.0) and the 1.5×p95 term is inert for them. Not shipped — the derivation change now has its four preconditions and no longer has its excuse.
+
+Detail: [inbox/2026-08-18T0455Z-…](inbox/2026-08-18T0455Z-watchlist-derivation-blast-radius-measured.md).
+
+**Revert:** `git revert <sha>` — resolve with `git log -1 --format=%H --grep='prices out at 4 alerts'`. Two docs files. No DB, migration, cron, watchlist or code change; the measurement was read-only.
+
 ### 2026-08-17 · SHIPPED (Cowork cloud) — the watchlist coverage audit measured against rows the monitor ignores: the blind spot is 67, not 62, and two "retired" pipelines are still running
 
 ⛔ **`detect_stalled_pipelines` reads `WHERE w.is_active`, and only 83 of the 102 `pipeline_cadence_watchlist` rows are active.** `0e115ca`'s **62 of 149** compared live pipelines against **all** rows. Measured against the predicate the consumer actually applies: **150 live (7d) · 83 active rows · 67 unwatched · 4 live-but-DEACTIVATED · 0 active rows with no runs.** ⚠ **The audit's headline was an instance of the trap it was written about** — a coverage figure taken from the table instead of from the guard's own predicate.
