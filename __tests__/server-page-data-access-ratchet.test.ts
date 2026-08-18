@@ -119,6 +119,69 @@ const APP_DIR = join(process.cwd(), "app")
  */
 const BUDGET = 8
 
+/**
+ * ── THE WALK WAS BLIND TO EVERYTHING THAT IS NOT A `page.tsx` (widened 2026-08-17) ──
+ *
+ * `serverPages()` matched `entry === "page.tsx"` and nothing else, so a server
+ * component or a `layout.tsx` holding its own client was outside this ratchet
+ * BY CONSTRUCTION — the same failure two other guards were caught in on the
+ * same night: the derivation, not the membership, was the hole.
+ *
+ * Re-derived over `app/**` (minus `app/api`) + `components/**`: **10 files held
+ * a direct client, 8 of them `page.tsx`, so 2 were invisible** —
+ * `app/moment/[id]/layout.tsx` and `components/entity/PopularOnCollection.tsx`.
+ *
+ * ⚠ A filed count said THREE, and the third was wrong. `app/auth/confirm/
+ * AuthConfirmClient.tsx` was named alongside them; it is a `"use client"`
+ * component using `getSupabaseBrowser` from `@/lib/auth/supabase-client` — a
+ * BROWSER auth client, not a server data reader. Adding it would have widened a
+ * server-data-access ratchet over a sign-in flow. Re-derive a filed list before
+ * acting on it.
+ *
+ * ⚠ SEPARATE CEILING, DELIBERATELY — `BUDGET` IS NOT RAISED TO ABSORB THIS.
+ * Raising it is what this file's own header forbids in the strongest terms, and
+ * a widened walk paying for itself with a bigger number is indistinguishable in
+ * a diff from new debt being waved through. So the `page.tsx` promise stays
+ * literally true and independently checkable at 8, and the newly-visible
+ * surface gets its own ban at its own measured population.
+ *
+ * 2 -> 1 in the commit that widened this: `app/moment/[id]/layout.tsx`'s single
+ * `resolve_moment_id` call moved to `lib/moment/resolve-moment-id.ts`. That was
+ * not done for the ratchet — the layout FAILS OPEN on an unreadable answer so a
+ * transient RPC error cannot 404 an indexed moment out of Google, a contract its
+ * comment asserted and nothing checked because nothing could reach the code.
+ * Lower this by extracting, never by raising it.
+ *
+ * ⚠ Client components are NOT excluded. Today none match, and if one ever
+ * imports `@/lib/supabase` that is a service-role client in the browser — the
+ * loudest possible reason to be counted, not an exemption.
+ */
+const NON_PAGE_BUDGET = 1
+
+const COMPONENTS_DIR = join(process.cwd(), "components")
+
+/** Every .ts/.tsx outside `app/api`, which the primary gate already measures. */
+function allSourceFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) {
+      if (entry === "api" && dir === APP_DIR) continue
+      allSourceFiles(full, out)
+    } else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+      out.push(full)
+    }
+  }
+  return out
+}
+
+function nonPageFilesWithDirectDataAccess(): string[] {
+  return [...allSourceFiles(APP_DIR), ...allSourceFiles(COMPONENTS_DIR)]
+    .filter((f) => !f.endsWith(`${sep}page.tsx`))
+    .filter((f) => DIRECT_CLIENT.some((rx) => rx.test(readFileSync(f, "utf8"))))
+    .map((f) => relative(process.cwd(), f).split(sep).join("/"))
+    .sort()
+}
+
 /** Direct data access = the page itself holds a Supabase client. */
 const DIRECT_CLIENT = [/from ["']@\/lib\/supabase["']/, /from ["']@supabase\/supabase-js["']/]
 
@@ -222,6 +285,67 @@ describe("server-page data-access ratchet", () => {
       BUDGET - pages.length,
       `BUDGET is ${BUDGET} but only ${pages.length} pages qualify — lower BUDGET to ${pages.length}.`,
     ).toBeLessThanOrEqual(0)
+  })
+
+  // ── the surface the page.tsx-only walk could not see ─────────────────────
+
+  it("the non-page walk still enumerates a real tree (not vacuously passing)", () => {
+    // ⚠ On the WALK, never on a violation count — it has to stay satisfiable at
+    // a population of ZERO, which is the goal. Naming the one remaining file
+    // would make this a canary that dies the moment someone converts it.
+    const scanned = [...allSourceFiles(APP_DIR), ...allSourceFiles(COMPONENTS_DIR)].filter(
+      (f) => !f.endsWith(`${sep}page.tsx`),
+    )
+    expect(scanned.length, "the non-page walk found nothing — the enumerator is broken").toBeGreaterThan(200)
+    // Self-consistency: everything reported must really carry the import.
+    for (const rel of nonPageFilesWithDirectDataAccess()) {
+      const src = readFileSync(join(process.cwd(), ...rel.split("/")), "utf8")
+      expect(DIRECT_CLIENT.some((rx) => rx.test(src)), `${rel} should match`).toBe(true)
+    }
+  })
+
+  it("non-page files with inline DB access do not grow", () => {
+    const files = nonPageFilesWithDirectDataAccess()
+    expect(
+      files.length,
+      `Non-page server files with inline DB access grew to ${files.length} (budget ${NON_PAGE_BUDGET}).\n` +
+        `A layout or server component holding its own client is the same blind spot as a page:\n` +
+        files.map((f) => `  - ${f}`).join("\n"),
+    ).toBeLessThanOrEqual(NON_PAGE_BUDGET)
+  })
+
+  it("the non-page budget is not left slack above the real number", () => {
+    const files = nonPageFilesWithDirectDataAccess()
+    expect(
+      NON_PAGE_BUDGET - files.length,
+      `NON_PAGE_BUDGET is ${NON_PAGE_BUDGET} but only ${files.length} files qualify — lower it to ${files.length}.`,
+    ).toBeLessThanOrEqual(0)
+  })
+
+  it("the two walks partition the surface — nothing is counted twice or dropped", () => {
+    // The widening would be worthless if the two enumerators overlapped (a file
+    // paying against both budgets) or left a gap between them (a file paying
+    // against neither, which is the hole this closed).
+    const pageSet = new Set(pages)
+    const nonPageSet = new Set(nonPageFilesWithDirectDataAccess())
+    for (const f of nonPageSet) expect(pageSet.has(f), `${f} counted twice`).toBe(false)
+    const everything = [...allSourceFiles(APP_DIR), ...allSourceFiles(COMPONENTS_DIR)]
+      .filter((f) => DIRECT_CLIENT.some((rx) => rx.test(readFileSync(f, "utf8"))))
+      .map((f) => relative(process.cwd(), f).split(sep).join("/"))
+      .filter((f) => !f.startsWith("app/api/"))
+    for (const f of everything) {
+      expect(pageSet.has(f) || nonPageSet.has(f), `${f} is in neither budget — the walks leave a gap`).toBe(true)
+    }
+  })
+
+  it("the converted moment layout reads through lib/, not a client of its own", () => {
+    // The non-page worked example, pinned for the same reason as pack-dist
+    // below: an inline client here puts the FAIL-OPEN policy back outside every
+    // gate, and that policy is what keeps a transient RPC error from 404-ing an
+    // indexed moment.
+    const src = readFileSync(join(APP_DIR, "moment", "[id]", "layout.tsx"), "utf8")
+    expect(src).toContain('from "@/lib/moment/resolve-moment-id"')
+    expect(DIRECT_CLIENT.some((rx) => rx.test(src))).toBe(false)
   })
 
   it("the converted pack-dist page reads through lib/, not a client of its own", () => {

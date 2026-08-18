@@ -33,7 +33,8 @@
 // id resolves but no edition hydrates.
 
 import { notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
+import { decodeMomentId } from "@/lib/moment-detail-format"
+import { resolveMomentId } from "@/lib/moment/resolve-moment-id"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -42,39 +43,24 @@ interface LayoutProps {
 
 // Next hands the [id] segment URL-encoded (a Pinnacle legacy key
 // `STAR-OEV1-SWHM:Digital Display:1` arrives percent-escaped) and
-// resolve_moment_id matches the decoded colon form. Same decode the page does.
-function decodeMomentId(raw: string): string {
-  try {
-    return decodeURIComponent(raw)
-  } catch {
-    return raw
-  }
-}
+// resolve_moment_id matches the decoded colon form. This used to be a private
+// byte-identical copy of @/lib/moment-detail-format's decodeMomentId, which the
+// page already imports — "same decode the page does" was true by duplication
+// rather than by construction. Now it is the same function.
 
 export default async function MomentLayout({ children, params }: LayoutProps) {
   const { id: rawId } = await params
   const id = decodeMomentId(rawId)
 
-  let resolvable: boolean
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc("resolve_moment_id", { p_id: id })
-    if (error) {
-      // Fail OPEN on an infrastructure error. A transient RPC failure must not
-      // 404 a real moment and invite Google to drop it from the index — let the
-      // page render and surface its own (soft) not-found instead.
-      console.warn(`[moment-layout] resolve rpc error id=${id}: ${error.message}`)
-      resolvable = true
-    } else {
-      resolvable = Array.isArray(data) ? data.length > 0 : data != null
-    }
-  } catch (err) {
-    console.warn(
-      `[moment-layout] resolve threw id=${id}: ${err instanceof Error ? err.message : String(err)}`,
-    )
-    resolvable = true
-  }
+  // Fail OPEN on an infrastructure error. A transient RPC failure must not 404 a
+  // real moment and invite Google to drop it from the index — let the page
+  // render and surface its own (soft) not-found instead. That policy now lives
+  // in the fetcher, where a test can drive both failure shapes; this keeps the
+  // log line, which is the only part that is the layout's business.
+  const { resolves, degraded, reason } = await resolveMomentId(id)
+  if (degraded) console.warn(`[moment-layout] resolve unavailable id=${id}: ${reason}`)
 
-  if (!resolvable) notFound()
+  if (!resolves) notFound()
 
   return <>{children}</>
 }
