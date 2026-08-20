@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — "find a TODO and implement one") — the TODO backlog is empty again, so I took the hole BETWEEN the two SEO guards: `analyticsMetadata` dropped the X byline on all 17 /analytics surfaces, and the tree-walking guard could not see it because it walks `app/` only
+
+**The literal ask resolved in one grep, for the sixth-plus consecutive session: ZERO actionable TODO/FIXME markers** anywhere outside `docs/` — re-derived from the tree, not quoted. Every hit is a `TODO_`-prefixed env sentinel (`candyDiscoveryReady()` / `candyMeSymbolReady()`, both armed since 2026-07-17/19), a `TODO_n RESOLVED` annotation, or prose citing a closed item; both `docs/code-todos.md` items are RESOLVED. So I went looking for the class this repo says is its most-repeated lesson — *a guard that names its instances is silent about the population it did not name* — and found a live instance of it in the SEO layer.
+
+**THE FIND.** Two guards already ban the Next shallow-merge trap (a child `openGraph`/`twitter` block REPLACES the root's, so every omitted field vanishes from the rendered tags):
+
+| guard | how it derives its population | blind by construction to |
+|---|---|---|
+| `seo-shared-helpers-inherit-og-twitter.test.ts` | CURATED LIST — `pageMetadata`, `collectionLayoutMetadata`, `buildMeta` | any builder **not in the list**, incl. any outside `lib/seo.ts` |
+| `metadata-inline-blocks-inherit-root-fields.test.ts` | tree walk of **`app/`** | any builder that lives in **`lib/`** |
+
+`analyticsMetadata` in `lib/analytics/seo.ts` is a fourth metadata builder, in a different file from the three that are listed, one directory outside the tree that is walked. It fell in the gap and **dropped `twitter.site`, `twitter.creator` and `openGraph.locale`** — i.e. the X byline — on **all 17 `/analytics/**` page files**, several of them dynamic (`[collection]`, `[address]`, `[set_id]`, `[topic]`). None of the 17 callers re-adds the fields (verified: zero `openGraph`/`twitter` occurrences across the caller set). ⚠ **That is the exact symptom deep-audit R10 was filed for**, reached for the third time by a third route: root fixed → helpers fixed → `app/**` inline blocks fixed → and this one still open.
+
+**Shipped, two parts:**
+
+1. `lib/analytics/seo.ts` now spreads `OG_INHERITED` / `TWITTER_INHERITED` from `lib/seo.ts` instead of restating a subset, so a field added at the root widens it for free. `type`/`siteName`/`card` were already correct and are now derived rather than duplicated.
+2. `__tests__/metadata-inline-blocks-inherit-root-fields.test.ts` walks **`app/` AND `lib/`**, with the scope predicate widened rather than a fourth name added to a list: a file is in scope if it exports route metadata **or** imports Next's `Metadata` type. `\b` keeps `MetadataRoute` (the sitemap/robots type) out, and a guards-the-guard case asserts both arms plus that exclusion, so widening the walk cannot quietly drag the tree in.
+
+**Proven, not assumed — the watcher was shown a FAILURE before being trusted:** reverted `lib/analytics/seo.ts` to its pre-fix state with the new guard in place and it redded with exactly `lib/analytics/seo.ts — openGraph missing locale` + `twitter missing site, creator`; restored, green. The pre-fix block is also pinned as SOURCE (never a path — three guards here have died on a rename). Enumerator re-measured 2026-08-20: **88 files / 97 blocks** (2 files from `lib/`), floors left at 60/65 so ordinary churn does not red CI but a walk that silently stops seeing a tree does. Violation set stays at **ZERO** — a ban at population zero, not an allowlist.
+
+`npx tsc --noEmit` clean (exit 0), `scripts/check-brand-tokens.mjs` clean, the 4 metadata/SEO suites green (28 tests).
+
+**Revert path:** `git revert <this code sha>` — two files, no DB, no migration, no cron, no route logic, no runtime behaviour beyond the rendered `<meta>` tags on `/analytics/**`. Reverting restores the missing-byline state; reverting only the guard half would leave the fix in place but re-open the blind spot.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive) — CLAUDE.md refreshed to current state: four rules promoted out of entries that existed only in the ledger, every addition paid for by a displacement, and the displaced text landed verbatim downstream
 
 **Docs only. No code, no DB write, no migration, no cron/auth/hot-wallet/pricing change.**
