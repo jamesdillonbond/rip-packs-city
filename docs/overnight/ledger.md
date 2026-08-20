@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — continuation of the TODO session) — the sitemap's "this file mirrors proxy.ts" was PROSE, and it had been wrong for a month: 28 anon-public indexable pages were never advertised to Googlebot
+
+**How I got here:** the previous entry's correction (`/analytics/**` is auth-gated) came from reading `proxy.ts` instead of trusting a comment. `lib/sitemap-data.ts` opens with *"The public surface is defined by proxy.ts `isPublicPath`; this file mirrors it."* **A mirror asserted in a comment is a curated list with no instrument** — same class as the SEO guard gap fixed an hour earlier — so I measured the mirror instead of believing it.
+
+**THE FIND, and it runs in the direction nobody watches.**
+
+| date | state |
+|---|---|
+| 2026-05-31 | sitemap header: only `/<collection>/overview` is anon-public; the feature tabs are gated. **TRUE when written.** |
+| 2026-07-17 | `proxy.ts` **un-gated the read-only feature tabs for anonymous visitors** (GET/HEAD, the 5 published slugs). Sitemap never touched. |
+| 2026-08-20 | measured: **28 URLs** anon-200, robots-allowed, **self-canonical**, each carrying bespoke per-tab SEO copy from `PAGE_META` — and **none of them in the sitemap**. |
+
+⚠ **The omission direction is SILENT.** A sitemap listing a GATED url surfaces in Search Console as *"Page with redirect"*, so someone eventually sees it. A sitemap OMITTING a public url produces **no signal anywhere** — the pages simply are not advertised, and the file's own comment reads as proof they never should be. Every existing instrument pointed the other way.
+
+**Verified by RENDERED DOM, not HTTP 200** (the rule that caught my own error earlier today), on production: `/nba-top-shot/sniper` → `x-matched-path: /[collection]/sniper`, title *"Sniper — NBA Top Shot Deals Below FMV"*, `canonical` = itself, 98 KB of real markup, zero client-side bailouts. Not a login redirect, not an empty shell.
+
+**Shipped, three parts:**
+
+1. `lib/seo.ts` exports **`PUBLIC_TAB_PAGES`** (`Object.keys(PAGE_META)`), so the sitemap DERIVES which tabs are worth advertising.
+2. `lib/sitemap-data.ts` emits, per collection, that collection's **own `pages` array ∩ `PUBLIC_TAB_PAGES`** at priority 0.7 (below `/overview`'s 0.9). Segment 0: **46 → 74**. Stale header comment corrected in place, carrying the date it stopped being true.
+3. New **two-direction** guard `__tests__/sitemap-urls-are-anon-public.test.ts`: no listed URL is gated, **and no anon-public self-canonical tab is missing**. The second arm is the one that would have caught 07-17.
+
+⚠ **THE EXCLUSION IS THE INTERESTING HALF — 32 tabs pass `isPublicPath`, only 28 shipped.** `pack-sniper`, `challenges` and `hot-floors` have **no `PAGE_META` entry**, so they never call `pageMetadata` and inherit `collectionLayoutMetadata` — which emits **`canonical=/<collection>`, pointing at the collection ROOT, not at themselves**. Verified live on `/nba-top-shot/challenges` (it also renders the doubled-brand title *"NBA Top Shot Analytics — Rip Packs City | Rip Packs City"*, deep-audit D24 recurring on the tabs that lack a layout — **NOT fixed here, flagged**). Listing a self-canonicalising-away URL asks Google to index a declared duplicate. **The exclusion is by DERIVATION (absence from `PAGE_META`), never a second list.**
+
+**Both new arms proven able to FAIL before being trusted:** reverting only `lib/sitemap-data.ts` with the guard in place reds 3 of 5 arms including the missing-tab one; restored, 5/5 green.
+
+⚠ **One control of mine was WRONG and the fix is recorded rather than quietly dropped:** I asserted `/admin/rewards` must read as gated. It returns **TRUE** — `/admin/**` and `/api/admin/**` are deliberately allowed past the proxy because they carry their own `RPC_ADMIN_TOKEN` bearer check at the handler (`proxy.ts:351-362`). **`isPublicPath` means "the proxy does not 302 this to /login", NOT "an anonymous reader can see the content."** That is the right predicate for a sitemap arm — but the distinction is now written into the guard so nobody lifts it into an anon-readability claim. (`/admin` is robots-disallowed and never reaches the sitemap.) I also loosened both non-vacuous floors after they redded in lockstep with the tab arm — **one arm, one job**; a floor tuned tight enough to duplicate a real check just doubles the noise.
+
+⚠ **THE FULL SUITE CAUGHT WHAT MY TARGETED SWEEP DID NOT — 4 reds in 2 files, and the miss is the same mistake in miniature.** `candy-launch-flag-contract.test.ts` and `panini-launch-flag-contract.test.ts` each pin segment 0's ABSOLUTE length (46 on / 44 / 45 off); +28 broke all four. I had swept the affected suites **by FILENAME KEYWORD** (`seo|sitemap|robots|collection|proxy|insight|metadata`) — a curated list — and neither file matches any of them. **The correct sweep is "what IMPORTS the module", not "what is named like it".** Fixed all four pins with the arithmetic recorded.
+
+⚠ **And a design smell I fixed the symptom of but did NOT restructure, deliberately:** this is the **third unrelated bump** to those totals in three weeks (07-31, 08-01, today). What those files actually contract is PRESENT-when-on / ABSENT-when-off; the length pin stands in for "nothing else moved" and reds on changes that have nothing to do with either flag. **Rewriting a go-live contract test's semantics while shipping an unrelated sitemap change is how a safety net gets loosened by accident**, so the note is in the files and the decision is left to a deliberate pass.
+
+**Verified:** `tsc --noEmit` exit 0 · brand-token guard clean · sitemap + proxy suites 202 tests green · **full vitest 1313 files / 14167 tests green** (after the 4 fixes above; the pre-fix run is what surfaced them).
+
+**Revert path:** `git revert <this code sha>` — 6 files, no DB, no migration, no cron, no auth-boundary change (`proxy.ts` **untouched**; the guard reads it, nothing writes it). Reverting un-advertises the 28 URLs; it does not re-gate them, because they were never gated by this file.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "find a TODO and implement one") — the TODO backlog is empty again, so I took the hole BETWEEN the two SEO guards: `analyticsMetadata` dropped the X byline on all 17 /analytics surfaces, and the tree-walking guard could not see it because it walks `app/` only
 
 **The literal ask resolved in one grep, for the sixth-plus consecutive session: ZERO actionable TODO/FIXME markers** anywhere outside `docs/` — re-derived from the tree, not quoted. Every hit is a `TODO_`-prefixed env sentinel (`candyDiscoveryReady()` / `candyMeSymbolReady()`, both armed since 2026-07-17/19), a `TODO_n RESOLVED` annotation, or prose citing a closed item; both `docs/code-todos.md` items are RESOLVED. So I went looking for the class this repo says is its most-repeated lesson — *a guard that names its instances is silent about the population it did not name* — and found a live instance of it in the SEO layer.
