@@ -65,11 +65,18 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
     // Static skeleton grew by 2 on 2026-08-01 (/pricing + /nba/fast-break, both
-    // long-public but never enumerated), so every count below is +2 vs the
-    // 2026-07-31 baseline.
-    // 46-entry skeleton: the historical 44 + candy-mlb (2026-07-31) +
-    // panini-squeeze (2026-08-01), both live.
-    expect(s).toHaveLength(46)
+    // long-public but never enumerated), and by 28 on 2026-08-20 (the
+    // per-collection feature tabs proxy.ts un-gated on 2026-07-17, same class
+    // again). ⚠ THIRD unrelated bump to these totals in three weeks: the launch
+    // contract this file actually asserts is PRESENT-when-on / ABSENT-when-off,
+    // and the length pin is standing in for "nothing else moved". It keeps
+    // redding on changes that have nothing to do with either flag. Left as an
+    // absolute pin rather than restructured here, because rewriting a go-live
+    // contract test's semantics while shipping an unrelated sitemap change is
+    // how a safety net gets loosened by accident — flagged for a deliberate pass.
+    // 74 = the historical 44 + candy-mlb (2026-07-31) + panini-squeeze
+    // (2026-08-01), both live, + 28 feature tabs (2026-08-20).
+    expect(s).toHaveLength(74)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -84,8 +91,9 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // Back to the historical 44-entry skeleton — proof rollback is a clean no-op.
-    expect(s).toHaveLength(44)
+    // Back to the historical 44-entry skeleton + the 28 feature tabs (which are
+    // flag-independent) — proof rollback is a clean no-op.
+    expect(s).toHaveLength(72)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

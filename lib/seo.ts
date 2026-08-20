@@ -146,6 +146,20 @@ const PAGE_META: Record<string, PageMeta> = {
 }
 
 // Per-collection overrides keyed by `${page}:${collectionId}`.
+// The per-collection feature tabs that have their OWN SEO copy in PAGE_META and
+// therefore SELF-CANONICALISE via pageMetadata(). Exported so lib/sitemap-data.ts
+// can DERIVE which tabs are worth advertising instead of hardcoding a list.
+//
+// ⚠ Membership here is the indexability test, and that is not incidental. A tab
+// with no PAGE_META entry (pack-sniper / challenges / hot-floors) never calls
+// pageMetadata, so it inherits collectionLayoutMetadata and emits a
+// `<link rel="canonical">` pointing at the collection ROOT, not at itself —
+// verified live 2026-08-20 on /nba-top-shot/challenges. Listing a
+// self-canonicalising-away URL in a sitemap asks Google to index a declared
+// duplicate, so those tabs are excluded BY DERIVATION rather than by a second
+// list that could drift.
+export const PUBLIC_TAB_PAGES: string[] = Object.keys(PAGE_META)
+
 const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
 
 // ── The openGraph / twitter shallow-merge trap (deep-audit R10) ─────────────

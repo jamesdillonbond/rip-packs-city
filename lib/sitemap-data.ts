@@ -9,9 +9,25 @@
 // Covers:
 //   • root + static legal/marketing pages (about, privacy, terms)
 //   • /nba/fast-break (public optimizer) + /insights/* (public wedge surfaces)
-//   • /{collection}/overview — the ONLY anon-public per-collection page. The
-//     in-app feature tabs (collection / market / sniper / sets / packs) and the
-//     entire /analytics/* section are auth-gated, so they are NOT listed.
+//   • /{collection}/overview + the anon-public in-app FEATURE TABS.
+//     ⚠ CORRECTED 2026-08-20 — this block used to read "overview is the ONLY
+//     anon-public per-collection page … the in-app feature tabs are auth-gated,
+//     so they are NOT listed." That was true when written (2026-05-31) and
+//     STOPPED being true on 2026-07-17, when proxy.ts un-gated the read-only
+//     feature tabs for anonymous visitors (GET/HEAD, the 5 published slugs).
+//     For a month those tabs were anon-200, robots-allowed, self-canonical and
+//     carrying bespoke per-tab SEO copy — every signal saying "index me" — while
+//     the one file whose job is to tell Googlebot they exist asserted they were
+//     gated. Measured 2026-08-20: 28 such URLs.
+//     The set is DERIVED, never listed: each collection's own `pages` array
+//     intersected with lib/seo `PUBLIC_TAB_PAGES`. Tabs with no PAGE_META entry
+//     (pack-sniper / challenges / hot-floors) are excluded because they
+//     canonicalise to the collection root rather than to themselves.
+//     ⚠ The /analytics/** SECTION (a different surface from the per-collection
+//     /{collection}/analytics TAB) really is auth-gated and stays unlisted.
+//     __tests__/sitemap-urls-are-anon-public.test.ts cross-checks every emitted
+//     URL against proxy.ts `isPublicPath` in BOTH directions, so the claim in
+//     this comment can no longer drift back into unverified prose.
 //   • per-edition pages — every editions row in a published collection (~23.5K)
 //   • per-set / per-player / per-team pages — distinct slugs derived from
 //     those edition rows
@@ -45,6 +61,7 @@ import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slu
 import { slugifyName } from '@/lib/entity-labels'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
+import { PUBLIC_TAB_PAGES } from '@/lib/seo'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -522,13 +539,29 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     })),
   ]
 
-  // Per-collection: ONLY /<collection>/overview is anon-public (see proxy.ts).
-  const featurePages: MetadataRoute.Sitemap = publishedCollections().map((col) => ({
-    url: `${BASE_URL}/${col.id}/overview`,
-    lastModified: now,
-    changeFrequency: 'daily' as const,
-    priority: 0.9,
-  }))
+  // Per-collection: /overview plus every anon-public, self-canonical feature tab.
+  // Derived per collection from its OWN `pages` array (so a collection that does
+  // not ship a tab never gets a URL for it) intersected with PUBLIC_TAB_PAGES.
+  // See the corrected header note for why that intersection IS the indexability
+  // test and not a convenience.
+  const featurePages: MetadataRoute.Sitemap = publishedCollections().flatMap((col) => [
+    {
+      url: `${BASE_URL}/${col.id}/overview`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    },
+    ...(col.pages ?? [])
+      .filter((p) => p !== 'overview' && PUBLIC_TAB_PAGES.includes(p))
+      .map((p) => ({
+        url: `${BASE_URL}/${col.id}/${p}`,
+        lastModified: now,
+        // Below /overview (0.9): a tab is what a collector lands on from a
+        // query, the overview is the collection front door.
+        changeFrequency: 'daily' as const,
+        priority: 0.7,
+      })),
+  ])
 
   const seriesRows = await getCollectionSeries()
   const seriesPages: MetadataRoute.Sitemap = seriesRows
