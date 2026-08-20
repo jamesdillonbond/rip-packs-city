@@ -3,8 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { rootMetadata, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 
-// BAN: an `app/**` metadata export that defines its own `openGraph` / `twitter`
-// object must carry the fields the ROOT supplies — by spreading OG_INHERITED /
+// BAN: an `app/**` or `lib/**` metadata export/builder that defines its own
+// `openGraph` / `twitter` object must carry the fields the ROOT supplies — by spreading OG_INHERITED /
 // TWITTER_INHERITED, or by restating them.
 //
 // ── THE TRAP ───────────────────────────────────────────────────────────────
@@ -37,10 +37,27 @@ import { rootMetadata, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 // match `rootMetadata`. So adding a field at the root and to the inherited const
 // widens this ban for free, instead of leaving a new hole that reads as covered.
 
-const APP_DIR = join(process.cwd(), "app")
+// ⚠ TWO ROOTS, DELIBERATELY. Walking `app/` alone left the same hole one level
+// out: a metadata BUILDER that lives in `lib/` is outside this walk by
+// construction, and the sibling guard (seo-shared-helpers-inherit-og-twitter)
+// is a CURATED LIST of the three builders inside lib/seo.ts. `analyticsMetadata`
+// in lib/analytics/seo.ts fell between them and dropped `twitter.site`,
+// `twitter.creator` and `openGraph.locale` across all 17 /analytics surfaces
+// (measured 2026-08-20). Same lesson as the 43-file /insights population above,
+// reached by a different route — so the fix is another tree walk, not a fourth
+// name in a list.
+const ROOTS = [join(process.cwd(), "app"), join(process.cwd(), "lib")]
 
 const OG_FIELDS = Object.keys(OG_INHERITED)
 const TW_FIELDS = Object.keys(TWITTER_INHERITED)
+
+// A file is in scope if it EXPORTS route metadata (the `app/**` shape) or
+// imports Next's `Metadata` type (the `lib/**` builder shape). \b keeps
+// `MetadataRoute` — the sitemap/robots type — out of the second arm.
+export function buildsMetadata(src: string): boolean {
+  if (/export\s+(async\s+)?(const|function)\s+(metadata|generateMetadata)/.test(src)) return true
+  return /import\s+(type\s+)?\{[^}]*\bMetadata\b[^}]*\}\s+from\s+["']next["']/.test(src)
+}
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -97,15 +114,17 @@ export function blockSatisfies(body: string, field: string, konst: string): bool
 
 type Hit = { file: string; key: string; missing: string[] }
 
-function scan(): { hits: Hit[]; blocksSeen: number; filesSeen: number } {
+function scan(): { hits: Hit[]; blocksSeen: number; filesSeen: number; files: string[] } {
   const hits: Hit[] = []
+  const files: string[] = []
   let blocksSeen = 0
   let filesSeen = 0
-  for (const full of walk(APP_DIR)) {
+  for (const full of ROOTS.flatMap((r) => walk(r))) {
     const src = readFileSync(full, "utf8")
-    if (!/export\s+(async\s+)?(const|function)\s+(metadata|generateMetadata)/.test(src)) continue
+    if (!buildsMetadata(src)) continue
     filesSeen++
     const rel = relative(process.cwd(), full).split(sep).join("/")
+    files.push(rel)
     for (const [key, fields, konst] of [
       ["openGraph", OG_FIELDS, "OG_INHERITED"],
       ["twitter", TW_FIELDS, "TWITTER_INHERITED"],
@@ -117,16 +136,19 @@ function scan(): { hits: Hit[]; blocksSeen: number; filesSeen: number } {
       }
     }
   }
-  return { hits, blocksSeen, filesSeen }
+  return { hits, blocksSeen, filesSeen, files }
 }
 
-describe("inline app/** metadata blocks inherit the root openGraph/twitter fields", () => {
+describe("inline app/** + lib/** metadata blocks inherit the root openGraph/twitter fields", () => {
   it("the walk still finds the metadata population (not vacuously passing)", () => {
     // ⚠ Asserts on the ENUMERATOR, never on how many blocks are still dirty — a
     // not-vacuous check must be satisfiable at a population of ZERO, which is
     // where the violation set now sits. Measured 2026-08-17: 86 files, 87
-    // blocks; the floors are set well under so ordinary churn does not red CI,
-    // while a walker that silently stopped seeing the tree does.
+    // blocks over app/ alone; re-measured 2026-08-20 with lib/ added: 88 files
+    // (2 of them lib/ builders), 97 blocks. The floors stay well under so
+    // ordinary churn does not red CI, while a walker that silently stopped
+    // seeing a tree does — and a floor above 65 would red the moment app/ alone
+    // is walked again, which is the regression worth catching.
     const { filesSeen, blocksSeen } = scan()
     expect(filesSeen).toBeGreaterThan(60)
     expect(blocksSeen).toBeGreaterThan(65)
@@ -175,6 +197,51 @@ describe("inline app/** metadata blocks inherit the root openGraph/twitter field
     // ...and the shipped fix — a spread — clears every field at once.
     const [fixed] = objectLiterals(preFix.replace("  twitter: {", "  twitter: {\n    ...TWITTER_INHERITED,"), "twitter")
     expect(TW_FIELDS.filter((f) => !blockSatisfies(fixed, f, "TWITTER_INHERITED"))).toEqual([])
+  })
+
+  it("the walk reaches lib/ builders, not just app/ route files", () => {
+    // The blind spot this walk was widened to close. Both arms of the scope
+    // predicate are exercised, and a lib/ file that merely mentions the SITEMAP
+    // type stays out — otherwise widening the walk would drag unrelated files
+    // in and the next person would narrow it back.
+    expect(buildsMetadata('export const metadata: Metadata = { title: "x" }')).toBe(true)
+    expect(buildsMetadata('import type { Metadata } from "next"')).toBe(true)
+    expect(buildsMetadata('import type { MetadataRoute } from "next"')).toBe(false)
+    expect(buildsMetadata('const openGraph = { title: "x" }')).toBe(false)
+
+    // ...and the real tree: lib/analytics/seo.ts is inside the scanned set.
+    const { files } = scan()
+    expect(files).toContain("lib/analytics/seo.ts")
+    expect(files.some((p) => p.startsWith("app/"))).toBe(true)
+  })
+
+  it("flags the exact pre-fix analyticsMetadata blocks", () => {
+    // ⚠ Pinned as SOURCE, not a path. This is lib/analytics/seo.ts as it stood
+    // before 2026-08-20: siteName and type set, locale absent; card set, site
+    // and creator absent — the X byline missing on every /analytics URL.
+    const preFix = [
+      "    openGraph: {",
+      "      title,",
+      "      description,",
+      '      type: "website",',
+      "      url: canonical,",
+      '      siteName: "Rip Packs City",',
+      "      images: [{ url: ogImage, width: 1200, height: 630 }],",
+      "    },",
+      "    twitter: {",
+      '      card: "summary_large_image",',
+      "      title,",
+      "      description,",
+      "      images: [ogImage],",
+      "    },",
+    ].join("\n")
+    const [og] = objectLiterals(preFix, "openGraph")
+    expect(OG_FIELDS.filter((x) => !blockSatisfies(og, x, "OG_INHERITED"))).toEqual(["locale"])
+    const [tw] = objectLiterals(preFix, "twitter")
+    expect(TW_FIELDS.filter((x) => !blockSatisfies(tw, x, "TWITTER_INHERITED")).sort()).toEqual([
+      "creator",
+      "site",
+    ])
   })
 
   it("reads a field out of a block that nests arrays and objects", () => {
