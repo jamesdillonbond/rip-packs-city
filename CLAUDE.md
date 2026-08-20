@@ -2,9 +2,9 @@
 
 > **HOW THIS FILE WORKS (restructured 2026-08-17).** The memory-file limit is `max(40000, contextWindow × 0.05 × charsPerToken)` — **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at. This file carries only what a session needs *before* it knows its topic; the rest moved **verbatim** to `docs/reference/*.md`. Nothing was deleted — a rule that feels missing is in one of those files.
 >
-> **KEEPING IT UNDER: the limit is on CHARACTERS and `wc -c` counts BYTES.** ⚠ This file runs **~475 bytes longer than it is characters** (every `⚠ — ·` is multi-byte), so `wc -c` once read **40,086 — apparently over — when the true length was 39,610**, and a session nearly emergency-trimmed a file that was fine. Bare `wc -m` lies too when the sandbox locale is unset. **The BINDING number is Node's `.length` — a JS harness enforces the limit — so count with `node -e`, not `wc`** (4-instrument table: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.** Session entries go to `docs/sessions/`, never here.
+> **KEEPING IT UNDER: the limit is on CHARACTERS and `wc -c` counts BYTES.** ⚠ It runs several hundred bytes longer than it is characters (`⚠ — ·` are multi-byte) and lives inside that gap: `wc -c` once read **40,086 on a file whose true length was 39,610** and nearly triggered an emergency trim. `wc -m` is platform-dependent. **The BINDING number is Node's `.length` — a JS harness enforces the limit — count with `node -e`, not `wc`** (4-instrument table: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.** Session entries go to `docs/sessions/`, never here.
 >
-> ⚠ **Two rules govern every number here and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life** (a documented "this grep over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it). **Re-derive; do not quote.**
+> ⚠ **Two rules govern every number here and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life** (a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it). **Re-derive; do not quote.**
 
 ---
 
@@ -12,12 +12,12 @@
 
 All under `docs/reference/`:
 
-- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon (4 layers, helpers, ~20 instances), driver-message leak guards, fabricated-number shapes, OG cards, board degradation, Workers table.
+- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon, driver-message leak guards, fabricated-number shapes, OG cards, board degradation, Workers table.
 - **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, full **Security posture**.
 - **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation-testing categories, CI jobs (incl. the `bash -e` abort class), Playwright.
 - **`known-issues.md`** — open/resolved register (stable item numbers), deferred hardening, deep-audit follow-ups.
 - **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, saturation findings.
-- **`trust-board-and-safety.md`** — trust board (38 arms as of 2026-08-17 — re-count, and diff the breached SET, not its size; ⚠ the view still times out at 60 s, so read the sentinel's `Trust Health` check), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
+- **`trust-board-and-safety.md`** — trust board (38 arms as of 2026-08-17 — re-count; ⚠ the view still times out at 60 s, so read the sentinel's `Trust Health` check), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
 - **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness, chain-abstraction Phases A–F.
 - **`routes-and-surfaces.md`** — route structure, per-collection `pages`, API endpoints, search.
 - **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, Cadence gotchas.
@@ -35,7 +35,7 @@ Cowork has a push-capable clone, Supabase MCP (read+write), Vercel/Sentry, Chrom
 
 Any time you ship something that changes `main` or production DB/data state — a code push, a migration, a data mutation — append an entry to [docs/overnight/ledger.md](docs/overnight/ledger.md) **in the same turn**, short: **date · what shipped · revert path**. Newest at the top of the dated section. Skip it for pure research / Q&A / no-op turns.
 
-⚠ **RE-READ THE LEDGER FROM DISK IMMEDIATELY BEFORE WRITING IT** — it is append-at-top and sessions write it concurrently, so splice into the freshly-read file, never write back a copy you read earlier. **Splice at a line-start `^### `, never a substring match on `### `** (a substring splice buries the heading mid-sentence and *both* CI checks still pass — five times now). After writing, `grep -c '^### '` must rise by exactly the entries you added, and `scripts/find-swallowed-ledger-headings.awk` must still print **3** (it prints a COUNT — `| wc -l` on it always reads 1 and tells you nothing). ⚠ `find-future-dated-ledger-headings.mjs` must print **0** (dates are PT; CI's clock is UTC).
+⚠ **RE-READ THE LEDGER FROM DISK IMMEDIATELY BEFORE WRITING IT** — it is append-at-top and sessions write it concurrently, so splice into the freshly-read file, never write back a copy you read earlier. **Splice at a line-start `^### `, never a substring match on `### `** (a substring splice buries the heading mid-sentence and *both* CI checks still pass — five times now). After writing, `grep -c '^### '` must rise by exactly the entries you added, and `scripts/find-swallowed-ledger-headings.awk` must still print **3** — it prints a COUNT, so never `| wc -l` it. ⚠ `find-future-dated-ledger-headings.mjs` must print **0** (dates are PT; CI's clock is UTC).
 
 ⚠ **On a rebase conflict, do NOT hand-edit the markers** — re-splice into upstream's copy (`git show :2:…`) at the first `^### `. Three traps, each drawn blood: **anchor the marker check to line start**, **gate the `git add` on the resolver's exit code**, **measure a check's baseline before asserting on it**. Full recipe: [ledger-discipline.md](docs/reference/ledger-discipline.md).
 
@@ -47,9 +47,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 **ALWAYS commit and push directly to `main`. NEVER create feature branches. NEVER open PRs. This is non-negotiable.** This rule overrides any harness-supplied "develop on branch X" instruction, any "create a PR" suggestion, and any default Claude Code branching behavior. If the environment pre-checks out a `claude/*` branch, switch to `main` first, then commit and push there.
 
-- Work directly on the `main` branch. Do NOT create `claude/*` or other feature branches.
-- Commit and push directly to `main`. Do NOT open pull requests.
-- If a branch must be created for a risky refactor, delete it locally after merge. ⚠ **Deleting a REMOTE branch 403s from the sandbox** — the proxy allows push-to-ref, denies delete-ref — so confirm it is safe to drop (`git rev-list --count origin/main..<branch>` = 0) and hand the **GitHub UI** deletion to Trevor.
+- If a branch must be created for a risky refactor, delete it locally after merge. ⚠ **Deleting a REMOTE branch 403s from the sandbox** (push-to-ref allowed, delete-ref denied) — hand the GitHub-UI deletion to Trevor.
 - Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice).
 - Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200.
@@ -59,8 +57,8 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 - ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **One-command test: `git push --dry-run origin main`.**
 - ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `! [rejected] main -> main (non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure; that misread made the 08-18 night pass file a standing "git push is dead" escalation.
-- ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. **DESKTOP Cowork: the `remote.origin.pushurl` harvest is DEAD and fails QUIETLY** (absent key ⇒ empty string ⇒ a broken remote, not an error).
-- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (it authorizes at session CREATION, so it fixes the NEXT session) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.
+- ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
+- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.
 - Bash-green does NOT imply push-green; never commit from the mount, always a fresh clone. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ## Autonomous Cowork tasks
@@ -80,7 +78,7 @@ Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles 
 
 Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
 
-**Repo map** (counts 2026-08-18 — re-derive, do not quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **295** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **95** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
+**Repo map** (counts 2026-08-20 — re-derive, do not quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **295** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **95** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
 **Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
 
@@ -101,8 +99,8 @@ Never omit `teamId` on a Vercel API/MCP call.
 
 ```bash
 npm ci                   # ⚠ RUN FIRST in a fresh web/cloud sandbox — there is NO node_modules.
-                         #   Without it `npx vitest` dies on `MODULE_NOT_FOUND … vitest.config.ts`,
-                         #   which reads like a broken config. `npx tsc` fails the same way.
+                         #   Without it `npx vitest` and `npx tsc` die on
+                         #   `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config.
 npm run dev
 npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited
 npm test                 # vitest run — route + lib suites (single file: npx vitest run <path>)
@@ -125,7 +123,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 
 ### Honesty — a failed read must not render as an answer
 
-**The single most productive defect class on this platform (~20 recorded instances).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
+**The single most productive defect class on this platform (~24 recorded instances).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
 
 | layer | helper |
 |---|---|
@@ -145,7 +143,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 ### Guards, tests and instruments
 
 - ⚠ **Ask what RUNS a guard, not only whether it passes** — `check-tree-corruption.mjs` had no CI job and one manual caller, and its default staged-only mode inspects **nothing** on a CI checkout (`0 file(s) checked`, exit 0). Wiring it naively ships the theatre: **assert the count it inspected**. Its first real run found a committed NUL byte in a URL sanitiser.
-- ⚠ **Ask what a passing guard is structurally SILENT about** — every guard's own derivation fixes its blast radius (the anon driver-message guard derived its file set from `isPublicPath`, so everything behind sign-in was outside it *by construction*; `check_secdef_anon_exec_drift()` reads `prosecdef = true`, so 84 anon-executable INVOKER functions were outside it). **Prefer a directory/tree walk over a curated list, and a ban at population zero over an allowlist.** ⚠ **A curated list drifts, and COVERAGE IS ONLY REAL AGAINST WHAT THE GUARD READS** — `detect_stalled_pipelines` filters `WHERE w.is_active`, so its blind spot is **67 of 150** (08-17). Derive from `pipeline_runs`; make *suppression* the curated list.
+- ⚠ **Ask what a passing guard is structurally SILENT about** — every guard's own derivation fixes its blast radius (the anon driver-message guard derived its file set from `isPublicPath`, so everything behind sign-in was outside it *by construction*; `check_secdef_anon_exec_drift()` reads `prosecdef = true`, so 84 anon-executable INVOKER functions were outside it). **Prefer a directory/tree walk over a curated list, and a ban at population zero over an allowlist.** ⚠ **A curated list drifts, and COVERAGE IS ONLY REAL AGAINST WHAT THE GUARD READS** — `detect_stalled_pipelines` filters `WHERE w.is_active`, so its blind spot is **67 of 150** (08-17). Derive from `pipeline_runs`; make *suppression* the curated list. ⚠ **Assert an exclusion at the PROPERTY's granularity** — a FILE-level secret grep defended a per-HANDLER exclusion, so a gated `POST` vouched for the ungated `GET` beside it (4 dishonest handlers).
 - ⚠ **A vacuous assertion reads as coverage in every grep, review and report, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim ("without claiming none are saved") or a transformation ("is not an error", "at or below FMV") is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**
 - ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling** (a guard matching the literal `count ?? 0` reddened on the strictly better `?? null`).
 - ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success. Same for a guard that NAMES its instances — three have died on a rename. ⚠ **Strip comments before grepping source for user copy**; at least six guards have fired on the comment documenting the fix.
@@ -159,17 +157,17 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 
 - ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted on measurement; one recommended fix would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it.
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file. Test the tidy hypothesis before acting on it; a cheap sample beats a good story.
-- ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require four sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, a full-repo grep. ⚠ `pg_stat_statements` alone is insufficient in *both* directions (`track = top` hides nested callers): **32 of 37** functions reporting zero DB callers are live product RPCs called from Next.js.
+- ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require FIVE sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, a full-repo grep — ⚠ **and the Cowork artifacts' HTML, outside BOTH repo and catalogue**: 8 views are artifact-only, so a four-source sweep reads them as dead and would break 3 live boards. ⚠ `pg_stat_statements` alone is insufficient in *both* directions (`track = top` hides nested callers): **32 of 37** functions reporting zero DB callers are live product RPCs called from Next.js.
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name.** Two objects one suffix apart yielded *opposite* conclusions; the 13,009-char one that looks like the real implementation has zero callers.
-- ⚠ **A directional claim needs a distribution, not a snapshot** (`fmv-recalc`: three failed characterizations in two days from one-instant reads), and **compare against the series' own history before calling something a regression** — a "collapse" turned out to be its rate for three weeks. Read a current-day rollup row as PARTIAL. ⚠ Aggregating a `text` column (`max(cursor_after)`) is a lexicographic max — it reported `'9500' > '11500'` and made a **wedged** sweep look like an advancing one.
+- ⚠ **A directional claim needs a distribution, not a snapshot** (`fmv-recalc`: three failed characterizations in two days from one-instant reads), and **compare against the series' own history before calling something a regression** — a "collapse" turned out to be its rate for three weeks. Read a current-day rollup row as PARTIAL. ⚠ **A delta between two STOCKS across an unknown interval is neither a rate nor a sign** — a burst read as a trend, retracted at the third reading; measure the FLOW (`created_at` on the same predicate). ⚠ Aggregating a `text` column (`max(cursor_after)`) is a lexicographic max — it reported `'9500' > '11500'` and made a **wedged** sweep look like an advancing one.
 - ⚠ **Diff the SET, not the count.** The trust board's breached membership changed twice in one day while the total held at 5 — diffing the number shows "no change" across a fix landing *and* a new arm firing.
 - ⚠ **Controls, both directions:** a NULL result needs a positive control; a POSITIVE needs a no-change control; a DIFFERENCE needs both sides counted by the same instrument. **Never pair a count from one table with a property sampled from another.**
-- ⚠ **A byte-identical HTTP response is as much the signature of a CACHE HIT as of a correct change** (`/api/public/insights/**` sets a public `s-maxage`; the tell was an `elapsed_ms` identical to the millisecond — re-run with a cache-buster), and **an unordered `LIMIT` is not a sample** but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
+- ⚠ **A byte-identical HTTP response is as much the signature of a CACHE HIT as of a correct change** (`/api/public/insights/**` sets a public `s-maxage`; the tell was an `elapsed_ms` identical to the millisecond — re-run with a cache-buster) — ⚠ **and its DB analogue: an A/B benchmark must be WARM-vs-WARM** (a cold candidate against a warm incumbent read as *5.6× slower* and nearly killed a correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample** but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
 - ⚠ **Read the ERROR STRING, never the duration.** The Supabase gateway timeout and the Postgres global `statement_timeout` are both ~2 minutes, so `upstream request timeout` and `canceling statement due to statement timeout` produce the same number and mean completely different things.
 
 ### Timestamps
 
-**DATES ARE PACIFIC (Trevor operates in PT).** ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** `TZ=<anything> date` in Trevor's Git Bash silently returns **UTC labelled `GMT`** for every zone; plain `date` there has read a full calendar DAY ahead; and the Claude Code **web sandbox is PDT, not UTC**, so the reflexive "subtract 7h from `date -u`" lands a day early. Trustworthy: `date '+%Z'` first, then PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` (it prints the offset, so it cannot lie silently). Convert to PT before stamping any `### <date>` here or in the ledger.
+**DATES ARE PACIFIC (Trevor operates in PT).** ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** In Trevor's Git Bash `TZ=<anything> date` returns **UTC labelled `GMT`** and bare `date` has read a full calendar DAY ahead; the Claude Code **web sandbox is PDT, not UTC**, so the reflexive "subtract 7h from `date -u`" lands a day early. Trustworthy: `date '+%Z'` first, then PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` (it prints the offset, so it cannot lie silently). Convert to PT before stamping any `### <date>` here or in the ledger.
 
 ### Windows / Git Bash
 
@@ -230,13 +228,13 @@ TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1a
 
 ### Series map (on-chain UInt32 → display name)
 
-`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These names are the REPO's; the live `collection_series.display_label` says `Series 5/6/7` for 6/7/8 and drives the Collection tab's filter via `/api/collection-series`** — check which convention your surface parses before emitting a label (filed 2026-08-18 to `docs/overnight/inbox/`).
+`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These names are the REPO's; the live `collection_series.display_label` says `Series 5/6/7` for 6/7/8 and drives the Collection tab's filter via `/api/collection-series`** — check which convention your surface parses before emitting a label. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
 
 ⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a real 2026-08-05 incident silently dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
 
 ### Cadence
 
-**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, use the Cadence MCP to fetch the deployed mainnet contract source and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. The MCP is development-time verification ONLY; production reads must keep routing through the proxy layer (Flow public endpoints and the TS / Flowty APIs block Vercel egress). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, use the Cadence MCP to fetch the deployed mainnet contract source and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. The MCP is development-time verification ONLY; production reads keep routing through the proxy layer (Flow public + TS/Flowty APIs block Vercel egress). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
 
 ---
 
@@ -255,7 +253,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
 - `useSearchParams` requires a Suspense wrapper.
-- Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ Any `after()` route needs an **invocation heartbeat written BEFORE the work**, under a separate `<pipeline>-heartbeat` name, or a killed tick is indistinguishable from a cron that never fired. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill** — it takes the terminal `pipeline_runs` insert with it while the 202 already told the caller it succeeded (`drain-fmv-cold-tail`: 21 silent kills over 2 months). Read kills by CORRELATION (heartbeat with no terminal row), never a `finally`; a marker row's `rows_*` must be **NULL, not 0**.
+- Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ Any `after()` route needs an **invocation heartbeat written BEFORE the work**, under a separate `<pipeline>-heartbeat` name, or a killed tick is indistinguishable from a cron that never fired. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill** — it takes the terminal `pipeline_runs` insert with it while the 202 already told the caller it succeeded (21 silent kills over 2 months). Read kills by CORRELATION (heartbeat with no terminal row), never a `finally`; a marker row's `rows_*` must be **NULL, not 0**.
 - Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
 
 ---
@@ -274,13 +272,13 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 
 **Open items, stated rather than quietly dropped:**
 
-- **The sports-proxy `403` — highest-value open item; TWO causes, and NOT a secret** (502 not 401; the ESPN lane uses no secret and 403s too). Residential test: ESPN 200 residential / 403 from Supabase ⇒ **proxy it**; `cdn.nba.com` 403s residentially too (Akamai, any path or UA) ⇒ ⛔ **UA-refresh and 403-retry are measured useless.** ⚠ **Restoring ESPN alone will NOT refill `nba_players`** — the roster fetch is SLATE-GATED and the season ended 08-04, so a healthy lane yields zero rows until ~October: **do not read a flat catalogue as the fix having failed.** One root cause under three separately-triaged items. Symptoms, mechanism, the unbuilt 30-team-ID sweep: known issues #8 in [known-issues.md](docs/reference/known-issues.md).
+- **The sports-proxy `403` — highest-value open item; TWO causes, and NOT a secret** (it 502s, not 401, and the ESPN lane uses no secret). ESPN is **200 residential / 403 from Supabase egress ⇒ proxy it**; `cdn.nba.com` **403s residentially too** (Akamai, any path or UA) ⇒ ⛔ **UA-refresh and 403-retry are measured useless.** ⚠ **Restoring ESPN alone will NOT refill `nba_players`** — the roster fetch is SLATE-GATED and the season ended 08-04, so a healthy lane yields zero rows until ~October: **do not read a flat catalogue as the fix having failed.** One root cause under three triaged items; mechanism + the unbuilt 30-team-ID sweep: #8 in [known-issues.md](docs/reference/known-issues.md).
 - The `match-topshot-players` perf restructure — correct, but it follows the 403; it cannot produce an alias while the catalogue is starved.
 - `fmv-recalc` — **RE-CHARACTERIZED 2026-08-17: wasteful, NOT broken** (72.7% wall-kills, 13,835 editions/day). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - `atlas-proxy` needs an operator `wrangler deploy` + a Cloudflare-egress probe; ~60% of `topshot-active-listings-ingest` sweeps fail `egress_blocked` meanwhile.
 - **Two measured-but-unshipped DB fixes, blocked on a DECISION not a diagnosis** (both filed in `docs/overnight/inbox/`): `drain_fmv_cold_tail`'s unscoped aggregate (**re-measure at a quiet hour, compare buffers**; a per-edition correlated rewrite is a recorded dead end), and `compute_pack_ev_per_edition_weighted`'s lateral `fmv_current` leg (**verified equivalent, 18,766 vs 1,046,192 buffers**, but it forces a re-seed of a pinned pack-EV fixture — Trevor's call).
 
-✅ **Recently closed, with its boundary stated so nobody reads it as coverage:** the **success-coverage gap** — the `Pipeline Success Coverage` arm, whose load-bearing `rows_written` term makes it blind to "writes rows and never completes", and which reads a ≤6 h-lagged rollup so it can **never confirm a recovery**. Full text + the membership half: [trust-board-and-safety.md](docs/reference/trust-board-and-safety.md).
+✅ **Recently closed — read its BOUNDARY before treating it as coverage:** the success-coverage arm is blind to "writes rows and never completes" and can **never confirm a recovery** ([trust-board-and-safety.md](docs/reference/trust-board-and-safety.md)).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
@@ -288,8 +286,6 @@ Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/ref
 
 ## Recent sessions
 
-Session entries live entirely in `docs/sessions/`, one file per month, newest-first — none is needed to start work. Current: [2026-08.md](docs/sessions/2026-08.md).
-
-**Write new session entries into `docs/sessions/2026-08.md` (prepend, newest-first), not here.** Same discipline: what shipped, what was verified, what is open, the durable lesson — **and promote any durable lesson into this file or the matching `docs/reference/*.md`, because a fact left only in a session log stops being read.**
+Session entries live entirely in `docs/sessions/`, one file per month — none is needed to start work. **Write new ones into [2026-08.md](docs/sessions/2026-08.md) (prepend, newest-first), never here:** what shipped, what was verified, what is open, the durable lesson — **and promote any durable lesson into this file or the matching `docs/reference/*.md`, because a fact left only in a session log stops being read.**
 
 **Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — never rewrite them.** Layout: [session-and-archive-conventions.md](docs/reference/session-and-archive-conventions.md).

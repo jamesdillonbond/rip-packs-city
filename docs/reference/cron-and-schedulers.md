@@ -82,6 +82,15 @@ These are generalisations of specific incidents from one session. Each names the
 re-checked, and each is a way a pipeline's *own reporting* misleads. **All four were found by measuring the
 OUTCOME rather than trusting the pipeline's status.**
 
+### 0. `drain-fmv-cold-tail` is where the "a `try/catch` cannot catch a `maxDuration` kill" rule was measured
+
+**21 silent kills over 2 months** (2026-08-18). The route returns its 202 from `after()`, so a kill takes the
+terminal `pipeline_runs` insert with it *after* the caller has already been told the tick succeeded — and no
+`try/catch` or `finally` in the handler runs. Read kills by CORRELATION (an invocation heartbeat with no
+terminal row), never from a `finally`. *(The `drain-fmv-cold-tail` attribution was moved here verbatim from
+CLAUDE.md's `after()` bullet on 2026-08-20; the rule itself still lives there.)* Fixed 2026-08-18 (`714f5d65`):
+the tick leaves a heartbeat when killed and stops starting work it cannot finish.
+
 ### 1. A per-collection ZERO inside an otherwise-succeeding run is the shape a collection-blind filter makes
 
 `drain-fmv-cold-tail` reported `"collection_slug": "ufc_strike", "processed": 0` on every run **for months**,
