@@ -9,10 +9,20 @@ import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 // blind spot between the two guards that already ban this shape: the tree-walking
 // one reads `app/**` only, and the shared-helper one is a CURATED LIST of the
 // three builders inside lib/seo.ts. Measured 2026-08-20: it dropped
-// `twitter.site`, `twitter.creator` and `openGraph.locale` — i.e. the X byline,
-// on the pages this repo calls its most shareable surface. Fields are SPREAD from
-// the exported constants, never restated, so adding one at the root widens this
-// for free.
+// `twitter.site`, `twitter.creator` and `openGraph.locale` — the X byline.
+//
+// ⚠ BLAST RADIUS, STATED HONESTLY BECAUSE I FIRST OVERSTATED IT. `/analytics/**`
+// is AUTH-GATED (proxy.ts: "the in-app feature pages … stay behind the funnel"),
+// so an anon crawler or an X unfurl bot is 302d to /login and reads the ROOT
+// metadata, which is correct. Verified live on the deployed fix:
+// GET /analytics/sales returns `x-matched-path: /login`. The wrong tags were
+// therefore only ever rendered into a SIGNED-IN viewer's head — a real defect,
+// but not a public-unfurl one. ⚠ I reached the wrong number by counting CALLERS
+// (17 page files) and never measuring whether those callers were anon-reachable:
+// a count from one instrument paired with a property sampled from none.
+//
+// Fields are SPREAD from the exported constants, never restated, so adding one at
+// the root widens this for free.
 
 export const ANALYTICS_BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"

@@ -32,6 +32,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert path:** `git revert <this code sha>` — two files, no DB, no migration, no cron, no route logic, no runtime behaviour beyond the rendered `<meta>` tags on `/analytics/**`. Reverting restores the missing-byline state; reverting only the guard half would leave the fix in place but re-open the blind spot.
 
+⚠ **CORRECTION, same session, from the post-deploy check — I OVERSTATED THE BLAST RADIUS above and it is corrected in the code comments too.** `/analytics/**` is **AUTH-GATED** (proxy.ts: "the in-app feature pages … stay behind the funnel"), so an anon crawler or an X unfurl bot is 302d to `/login` and reads the ROOT metadata, which is and was correct. Verified live on the deployed fix (`dpl_Dv62YhR2rbhXNjd9cmXo3x1ZTKPX`, READY, aliases attached): `GET /analytics/sales` → 200 with **`x-matched-path: /login`** and the root's `twitter:site`/`og:locale` in the head. The missing fields were therefore only ever rendered into a **signed-in** viewer's head — a real defect and a correct fix, but **NOT the public-unfurl one my entry above claims**. Unlike the /insights population, this one never reached a social card.
+
+⚠ **How I got it wrong is the durable part, and it is this repo's own rule:** I sized the impact by counting CALLERS (17 page files, verified none re-adds the fields) and never measured whether those callers were **anon-reachable** — *a count from one instrument paired with a property sampled from none*. The caller count was right; the inference from it was not. **The verification that caught it is the one CLAUDE.md already mandates — verify by RENDERED DOM, not HTTP 200** — the page returned 200 the whole time.
+
+**What still earns the guard its keep, stated without the inflation:** not the size of today's population but that a FUTURE `lib/` metadata builder backing a PUBLIC route is invisible to both existing guards by construction. That is unchanged.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive) — CLAUDE.md refreshed to current state: four rules promoted out of entries that existed only in the ledger, every addition paid for by a displacement, and the displaced text landed verbatim downstream
 
 **Docs only. No code, no DB write, no migration, no cron/auth/hot-wallet/pricing change.**

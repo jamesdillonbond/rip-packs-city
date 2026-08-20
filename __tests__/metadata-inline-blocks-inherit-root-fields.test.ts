@@ -42,10 +42,18 @@ import { rootMetadata, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 // construction, and the sibling guard (seo-shared-helpers-inherit-og-twitter)
 // is a CURATED LIST of the three builders inside lib/seo.ts. `analyticsMetadata`
 // in lib/analytics/seo.ts fell between them and dropped `twitter.site`,
-// `twitter.creator` and `openGraph.locale` across all 17 /analytics surfaces
+// `twitter.creator` and `openGraph.locale` across all 17 /analytics page files
 // (measured 2026-08-20). Same lesson as the 43-file /insights population above,
 // reached by a different route — so the fix is another tree walk, not a fourth
 // name in a list.
+//
+// ⚠ The /analytics surfaces are AUTH-GATED, so unlike the /insights case above
+// this one never reached a public unfurl — verified live, GET /analytics/sales
+// returns `x-matched-path: /login`. Recorded because the walk is worth having on
+// its own terms and the next person should not inherit an inflated reason for it:
+// what makes this guard earn its keep is that a FUTURE lib/ builder backing a
+// PUBLIC route would be invisible to both existing guards, not the size of the
+// population it caught today.
 const ROOTS = [join(process.cwd(), "app"), join(process.cwd(), "lib")]
 
 const OG_FIELDS = Object.keys(OG_INHERITED)
