@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · RESEARCH — NOTHING SHIPPED (Claude Code, interactive — "keep going", area 7) — the render-layer gap is ALREADY CLOSED (30 of 31), and building the proposed guard would have redded CI on the two pages that implement the property BEST
+
+**Area (7)** proposed extending `server-pages-error-vs-absent-guard` from 2 pages across **23**, asserting *"the error branch precedes the empty branch"*. **I measured before building, and the work is not there.**
+
+Async server `page.tsx` that actually read data: **31** (of 119 `page.tsx`, 115 server).
+
+| how it separates a failed read from an absent one | count |
+|---|--:|
+| canon helper (`summarizeDegraded` / `degradedFromSource`) | **22** |
+| carries a named failure signal out (`ok`, `loadError`, `errored`) | **7** |
+| **throws** to the retryable error boundary | **1** |
+| observes the error but collapses it | **1** |
+
+**30 of 31 are correct.** The helper is already the dominant pattern — this workstream looks finished by whoever built `lib/insights/board-status.ts`, with only the prose left stale.
+
+⚠ **THE ONE GENUINE INSTANCE, AND ITS SEVERITY STATED HONESTLY RATHER THAN INFLATED:** `app/insights/page.tsx` — `getHubStats()` does `if (error || !data) return null`, the two-state collapse. But the page renders `stats?.market ? … : null`, so a failed read **WITHHOLDS the live numbers rather than fabricating a zero**. That is undifferentiated silence, not a false claim — the acceptable end of the canon's three states. Fixing it needs a visible "unavailable" state to be worth anything, which is a product decision, not a bug fix. **Left alone.**
+
+⚠ **THE REAL FINDING IS WHY THE GUARD MUST NOT BE BUILT: I WROTE THE DETECTOR FOUR TIMES AND EACH VERSION'S "VIOLATIONS" WERE CORRECT CODE.**
+
+| version | flagged | what they actually did |
+|---|--:|---|
+| helper / `ok` only | 6 | — |
+| + `loadError` | 4 | `insights/market`, `admin/flowty-errors` return `{ rows, loadError }` |
+| + `errored` | 2 | `challenges`, `hot-floors` use `let errored` + `!errored && length === 0` — **exemplary** |
+| + `throw` | 1 | `series/[slug]` throws to the boundary; its comment documents the D10 fix |
+
+**Four correct idioms for one property.** The proposed guard would have redded CI on `challenges` and `hot-floors` — **the two pages that implement the requested property best**. The bound-reads guard's own header names this the expensive direction: *"a FALSE POSITIVE reds CI on correct code, and the next person weakens the guard to get green."* At a true population of 1, a detector whose false-positive count went 6 → 4 → 2 is not an instrument, it is a tax.
+
+**Recommendation, filed:** keep the 2-page bespoke guard (page-specific strings pinning two historically-broken fixes is what source guards are good at; generalising is what fails). The honest instrument for this layer is EXECUTION — an RSC render harness — because an async server component cannot be rendered by the jsdom component gate. That is a project, not a guard tweak.
+
+**No code, no DB, no test shipped.** Filed at [inbox 2026-08-21T0245Z](inbox/2026-08-21T0245Z-area-7s-render-layer-gap-is-already-closed-and-a-source-guard-would-red-on-correct-code.md), including the caveat that the VOCABULARY list is the part most likely to grow — a fifth idiom would make my own "30 of 31" an undercount of correctness.
+
+**Revert path:** n/a — docs only.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "do all of them", area 4) — the filing's "10,642 lines no test can reach" is **6× overstated**: it counted imports and missed that this repo's dominant pattern is MIRROR + drift guard. Real figure: 10 functions / 1,767 lines
 
 **Area (4) of the coverage filing** reported *"32 of 38 `index.ts` files import nothing from `_shared` — 10,642 lines"* that no test can reach. I reproduced the 32 exactly (mine: 32 / 10,674). **Then I nearly acted on it, and the repo stopped me.**
