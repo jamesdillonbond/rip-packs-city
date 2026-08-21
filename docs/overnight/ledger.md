@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage analysis pass) — the after() heartbeat rule was the only member of the honesty family with no guard, and its five hand-rolled copies had drifted four different ways
+
+**How I got here:** asked to analyse test coverage. Re-ran all three gates from a clean `npm ci` rather than quoting `testing-and-ci.md`. **Breadth is finished** — 456/456 routes and 290/295 `lib/` modules are referenced by a test — so the finding is about BRANCH depth: statements ~92% against branches ~79%, and `app/api/**` holds **86% of every uncovered branch in the primary gate**. Within it, `after()` routes are **22% of the files and 49% of the uncovered branches**. Filing: `docs/overnight/inbox/2026-08-20T2325Z-test-coverage-analysis.md`.
+
+**THE FIND. CLAUDE.md's heartbeat rule had a sentence and five implementations, and no two agreed.** Counted live in `pipeline_runs`:
+
+| pipeline | rows | `rows_*` | `duration_ms` |
+|---|---|---|---|
+| `drain-fmv-cold-tail-heartbeat` | 111 | NULL ✅ | 0 ✅ |
+| `fmv-recalc-heartbeat` | 564 | **0** | 0 ✅ |
+| `candy-listings-indexer-heartbeat` | 22 | **0** | **≤47,462 ms** |
+| `candy-offers-indexer-heartbeat` | 12 | **0** | **≤24,803 ms** |
+| `candy-editions-ingest-heartbeat` | 3 | **0** | **≤474 ms** |
+
+⚠ **Neither divergence was hidden — both were DOCUMENTED at their call sites, and that is the point.** `rows 0` is the fabricated-measurement shape this repo bans (a marker measures nothing, so a 0 is a number nobody read — it is what made a live pipeline read as inert in the 08-16 retirement sweep). The nonzero durations are the three RPC sites publishing their own INSERT latency, because `log_pipeline_run` has **no `p_finished_at`** and `duration_ms` is GENERATED from the pair; that site's comment says "read `extra`/`ok`, never the duration" rather than fixing it, because from inside the RPC it was unfixable. **A contract whose correctness lives in five comments is a contract that drifts.** A fourth divergence only surfaced on conversion: `phase` was `"invoked"` at three sites and `"started"` at two, so a correlation query keyed on the phase would have silently skipped three pipelines.
+
+**Shipped:**
+
+1. **`lib/pipeline/heartbeat.ts`** — one decision, table-direct (the only way to pin `finished_at`). All five sites converted. Verified nothing downstream reads these rows: no view, matview or cron job references a `-heartbeat` pipeline.
+2. **`__tests__/after-route-heartbeat-ratchet.test.ts`**, `BUDGET = 66`, no-slack, plus two bans on re-rolling the row by hand. ⚠ Population derived **structurally** — *calls `after(` and writes a terminal `pipeline_runs` row* — not from `app/api/cron/**`, because a cron entry can point at any path and several of the 66 sit under `/admin/` or a bare `/<name>-indexer/`. A path glob here would be a curated list wearing a glob.
+3. **`lib/edition/legacy-redirect.ts` 0% → 100%.** It had been extracted *specifically* so its ok-flag contract could be driven, and the behavioural test never followed; the only test naming it read it as **source text**. A source guard cannot see whether the error branch is REACHED, and supabase-js **returns** errors rather than throwing, so that is the entire question.
+4. **`supabase/functions/_shared/**` into the primary gate** (29 modules, 2,615 lines — tested but measured by nothing, so nothing ratcheted them). Measured 98.31/92.76/100 *before* widening, so it raises the gate.
+5. **The last four `components/` subtrees gated** (legal, play, ui, visual), 215 → 220 measured files, `KNOWN_UNMEASURED` now empty.
+6. **Thresholds re-seated UP.** Primary 91.3/78.6/93.1/93.4 → **91.8/79.4/93.6/93.85**; components 90.3/81.6/89.1/93.2 → **90.6/81.8/89.1/93.5**. ⚠ Component `functions` deliberately NOT raised — it is the metric with the recorded ±0.1pt wobble on an unchanged tree, and raising it to within 0.11 would rebuild that flake by hand.
+
+⚠ **Two of my own filed findings were WRONG on measurement, corrected in the filing.** (a) The four `components/` subtrees were never "invisible by construction" — a rot guard tracked all four; what had gone stale were the four REASONS, each asserting inertness *with no number in it*. (b) `trim_recent_searches` is a **trigger function**, so "no caller anywhere" was an artifact of looking for a call site. The real finding is bigger and **NOT shipped**: **22 of 38** `RETURNS trigger` functions still carry `anon`+`authenticated` EXECUTE, outside `check_secdef_anon_exec_drift()` by construction (it reads `prosecdef = true`). Migration `20260727024400` already made exactly this argument and revoked it on the only two SECDEF ones. A 22-function REVOKE is a prod security-posture change on the autonomous off-limits list — **Trevor's call**.
+
+**Verification:** all three gates green — primary **1320 files / 14,246 tests**, components 239/2,962, workers 23/376. `npx tsc --noEmit` clean. Every new assertion mutation-tested (4 mutations on legacy-redirect, 4 on PlayHub, 6 on the helper, 3 on the ratchet, 2 on candy-listings). ⚠ **One real defect found that way**: the ratchet first matched the bare helper NAME, which also matches the `import` line, so it stayed green when the CALL was deleted — now asserts at the property's granularity.
+
+**Revert path:** `git revert` the three commits, findable by message (shas rewrite): `feat(pipeline): one invocation heartbeat…`, `test: close the three coverage gaps…`, `test(gates): re-seat…`. No DB or prod-state change — code and config only.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — continuation) — three folded tabs were telling Google their canonical was a page it gets redirected away from, and the gate built for them in the same reorg had never been applied
 
 **Found while shipping the sitemap work** (`1016d29f`), which excluded these three deliberately. Chasing WHY they were excluded turned up the defect.

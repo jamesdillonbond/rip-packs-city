@@ -5,6 +5,57 @@ All three gates re-run from a clean `npm ci` in this sandbox. Every number below
 
 ---
 
+## ⚠ CORRECTIONS — 2026-08-20 PT, from acting on this filing
+
+Two items below were WRONG on measurement, both in the same direction: I read an
+absence of *references* as an absence of *thought*, when in both cases the repo had
+already reasoned about the thing and recorded the decision somewhere my grep did not
+look. **Re-derive a filed finding before acting on it** — this document is the example.
+
+**Item 6 (component gate include) overstated the mechanism.** I wrote that four
+subtrees "match none of them and are invisible to the gate **by construction**". The
+first half is true; the second is not. `__tests__/component-gate-include-completeness.test.ts`
+has tracked all four by name in a `KNOWN_UNMEASURED` allowlist all along, with two rot
+guards (no stale entries, no ghosts) that force the bookkeeping. The mechanism worked
+exactly as designed and was never drifting.
+
+**What HAD gone stale was the four REASONS**, and that is the better finding, because
+it is the failure mode this repo says nobody re-checks: *a decision not to act, whose
+tell is a cost stated with no number in it.* All four read that way — "no logic",
+"links only", "no branches", "decorative". Three held real branch logic when finally
+measured, one of it a cross-file correspondence (`play`'s `live` flag versus an
+unconditional `redirect()` in a **different file's** `layout.tsx`) that no amount of
+reading `components/play/` would surface. ✅ **Closed:** all four gated, tests landed,
+`KNOWN_UNMEASURED` now empty.
+
+**Item 5's headline example was wrong.** I called `trim_recent_searches` an
+"anon-executable deleter with **no caller anywhere in the repo**". It is a **TRIGGER
+function** — it references `NEW`, takes no arguments, returns NULL, and is wired as
+`trg_trim_recent_searches` on `recent_searches`. Trigger functions have no call sites
+by construction, so "zero references" was an artifact of looking for one. It is also
+`prosecdef = false`, and a trigger function invoked directly via PostgREST errors out,
+so the exposure is far smaller than I implied. **The `anon` EXECUTE grant is surface,
+not a live hole.**
+
+⚠ **But it is not a singleton, and that is the part worth keeping.** Measured:
+**22 of 38** `RETURNS trigger` functions in `public` still carry `anon` + `authenticated`
+EXECUTE. Migration `20260727024400_audit_20260727_revoke_anon_exec_trigger_functions`
+already made exactly this argument — *"pure surface with zero legitimate caller"* — and
+revoked it on **the only two SECDEF ones**. The identical reasoning applies to the 22
+INVOKER ones, which are outside `check_secdef_anon_exec_drift()` **by construction**
+because it reads `prosecdef = true`. Same guard-blind-spot class CLAUDE.md already
+records for the 84 anon-executable INVOKER functions.
+
+**Deliberately NOT actioned here.** A 22-function REVOKE is a production security-posture
+change, it is on the autonomous off-limits list ("auth & lockdown"), and `db-tests` runs
+against a throwaway Postgres so no existing test layer can even see live grants. It needs
+Trevor's call plus a live-DB checker (the `db-pin-staleness.yml` lane already has the
+service-role key). Filed, not shipped.
+
+**Everything else in this document was re-checked while acting on it and stands.**
+
+---
+
 ## 1. Where the suite actually stands (measured, not quoted)
 
 | gate | statements | branches | functions | lines | thresholds | margin |
