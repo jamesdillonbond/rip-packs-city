@@ -56,10 +56,10 @@ Any time you ship something that changes `main` or production DB/data state — 
 ### Pushing from a sandbox — test it, do not assume it
 
 - ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **One-command test: `git push --dry-run origin main`.**
-- ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `! [rejected] main -> main (non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure; that misread made the 08-18 night pass file a standing "git push is dead" escalation.
+- ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
 - ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
 - **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.
-- Bash-green does NOT imply push-green; never commit from the mount, always a fresh clone. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+- Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ## Autonomous Cowork tasks
 
@@ -155,7 +155,7 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 
 ### Measurement discipline
 
-- ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted on measurement; one recommended fix would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it.
+- ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted; one "fix" would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it. ⚠ **A number is no immunity: re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5.
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file. Test the tidy hypothesis before acting on it; a cheap sample beats a good story.
 - ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require SIX sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep — ⚠ **and the Cowork artifacts' HTML, outside BOTH repo and catalogue**: 8 views are artifact-only, so a sweep without it would break 3 live boards. ⚠ **A TRIGGER function has NO textual caller anywhere**: 33 of the 38 live attached ones read as dead without `pg_trigger` (2 delete). ⚠ `pg_stat_statements` alone is insufficient in *both* directions (`track = top` hides nested callers): **32 of 37** functions reporting zero DB callers are live product RPCs called from Next.js.
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions.
@@ -201,7 +201,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
 - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Now a **ban at zero** (`insights-server-pages-bound-their-reads`); ⚠ twice the failing page was one the pushing commit never touched.
-- `get_runtime_logs` needs `environment: "production"` and short windows; `console.warn` is NOT indexed — use `console.log`.
+- `get_runtime_logs`: `environment: "production"` + short windows; `console.warn` is NOT indexed — use `console.log`.
 
 ---
 
