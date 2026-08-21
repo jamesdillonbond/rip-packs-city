@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
 import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-closed"
+import { collectionHasPage, type CollectionPage } from "@/lib/collections"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -239,6 +240,58 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
 // This is the honest floor, not the end state: a slug people actually link to
 // (e.g. `topshot`) should 301 to /nba-top-shot/..., a routing decision not a
 // metadata one.
+// ── Folded-tab canonical targets (2026-08-21) ──────────────────────────────
+//
+// `pack-sniper`, `challenges` and `hot-floors` are the 2026-07-18 IA reorg's
+// FOLDED pages: filtered out of the tab bar by `tabBarPages()` and, unlike
+// their seven siblings, given no `PAGE_META` entry and no layout. So they
+// inherited `collectionLayoutMetadata()` and emitted
+// `canonical=/<collection>` — pointing at the collection ROOT.
+//
+// ⚠ AND THAT ROOT IS AUTH-GATED. Verified live 2026-08-20: `GET /nba-top-shot`
+// returns `x-matched-path: /login`, and `isPublicPath('/nba-top-shot','GET')` is
+// false for all five. Four anon-public URLs were telling Google *"the canonical
+// version of me is a page you will be redirected away from."*
+//
+// The consolidation INTENT was right — these are sub-surfaces, and promoting
+// them to self-canonical would put them in query competition with their own
+// parents (`PAGE_META.play` already claims "Challenges"). Only the TARGET was
+// wrong. So each folded tab canonicalises to the public parent it was folded
+// into, grounded in the repo's own one-line pitches in lib/collections.ts
+// rather than in a guess:
+//
+//   challenges  -> play    "Challenges, Fast Break, and Road to the Ring"
+//                          (the ONLY mapping also confirmed by a real link:
+//                           components/play/PlayHub.tsx links /<id>/challenges)
+//   pack-sniper -> packs   "Sealed packs listed below their expected pull
+//                          value" vs "Pack EV calculator — find drops where
+//                          EV > retail"
+//   hot-floors  -> market  "Editions whose floor is being actively swept" vs
+//                          "Sort and filter every indexed listing"
+//
+// ⚠ `pack-sniper` and `hot-floors` have ZERO inbound links anywhere in the app
+// (measured 2026-08-21 — only `challenges` is linked, from PlayHub). They are
+// reachable by direct URL only, so their mapping rests on the pitches above,
+// not on observed navigation. Recorded so the next reader knows which of the
+// three is evidence and which two are reasoned.
+export const FOLDED_TAB_PARENT: Record<string, string> = {
+  'pack-sniper': 'packs',
+  challenges: 'play',
+  'hot-floors': 'market',
+}
+
+// Canonical URL for a folded tab. ⚠ Falls back to `/overview` when the
+// collection does not expose the parent — without this, `/ufc/challenges`
+// would canonicalise to `/ufc/play`, and UFC ships no `play` tab either, so
+// the fix would just move the broken target. `/overview` is the one tab every
+// published collection exposes, and it is anon-public, self-canonical and
+// sitemapped.
+export function foldedTabCanonical(page: string, collectionId: string): string {
+  const parent = ownMeta(FOLDED_TAB_PARENT, page)
+  const target = parent && collectionHasPage(collectionId, parent as CollectionPage) ? parent : 'overview'
+  return `${BASE_URL}/${collectionId}/${target}`
+}
+
 export function unknownCollectionMetadata(page: string, id: string): Metadata {
   return { ...pageMetadata(page, "Flow", id), robots: { index: false, follow: true } }
 }
