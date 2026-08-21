@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — the whale map has been 4 days 19 hours stale with nothing on screen saying so, and the field that looked like a freshness stamp was a lie
+
+Found by widening yesterday's question rather than the same population: having fixed the two `readBoardOrLive` boards that showed no age, I asked which `/insights` boards render no age **at all** (tree walk: 11 of 30), then which of those serve data that can be genuinely old.
+
+**`/insights/cross-collection` — public, crawlable, in the sitemap — is served from three MATERIALISED tables whose `max(computed_at)` is `2026-08-17 04:10Z`: 4 days 19 hours.** `cron.job_run_details` for the daily rebuild pair:
+
+| run (UTC) | `rpc-ccm-step1` | `rpc-ccm-step2` |
+|---|---|---|
+| 08-16 | succeeded 161 s | succeeded 10 s |
+| 08-17 | succeeded **350 s** | succeeded 9 s |
+| **08-18 → 08-21** | **failed, killed at 600 s** | **failed, killed at 300 s** |
+
+⚠ **`meta.fetched_at` IS IN THAT PAYLOAD AND IS THE WRONG FIELD** — the page and the API route both stamp it `new Date()` at READ time, so rendering it would have printed *"updated seconds ago"* over five-day-old data. **A convenient timestamp beside stale data is worse than no timestamp**; the honest instant is `stats.computed_at`, which `select("*")` has always returned and which nothing had ever typed or displayed.
+
+- `CrossCollectionBoardClient.tsx` — `computed_at` added to the `Stats` type (**required, not optional**, so every fixture and caller must state the data's age) and rendered as `Cohort data computed <FreshnessStamp iso={stats?.computed_at ?? null} />`. Both instants now documented on `ApiResponse` so the next reader cannot pick the wrong one by accident.
+- `__tests__/component-cross-collection-renders-data-age-not-read-time.test.tsx` (new, 3 cases) — pins the **DISTINCTION**, not the presence: a missing `computed_at` must render `—` and must NOT fall back to `meta.fetched_at`, and a null `stats` (a failed leg) must render no age rather than borrow the read clock. **Controls: adding the `?? fetched_at` fallback reds 2 of 3; removing the stamp reds 2 of 3.**
+
+⚠ **THE REFRESH ITSELF IS NOT FIXED, AND THE 08-18 FILING'S OWN ESCALATION TRIGGER FIRED THREE DAYS AGO.** That filing closed the item as saturation — *"No fix needed; it self-heals at the next clean 04:10Z tick"* — and wrote the condition down: **"escalate only if it fails a second consecutive day."** Four consecutive days. Live instance of two CLAUDE.md rules at once: *a filed decision NOT to act is a hypothesis*, and *re-TEST a stated exit condition, never re-read it*.
+
+**Its measurement was right and the missing piece makes it decisive.** Its rolled-back probe measured the aggregate at **105 s against the 600 s ceiling** and called the kill IO pressure — correct. What it could not know is that the pressure is now a **~20-hour daily band** (today's 23:15Z filing), and **`rpc-ccm-step1` fires at 04:10Z, inside it**. The band's measured 3–18× multiplier consumes exactly the "6× headroom": 105 × 3.3 ≈ 350 (the 08-17 run), 105 × 5.7+ > 600 (every run since). **There is no longer a clean 04:10Z tick to wait for.**
+
+**The one-line fix I did NOT ship, with the reason:** `cron.alter_job(60, schedule := '10 23 * * *')` + jobid 4 at `'25 23 * * *'` moves both into the quietest measured hour (23Z: `deals` failed 0% there on all three retained days). ⚠ But `refresh_cross_collection_cohort_step1` opens with `TRUNCATE`, holding ACCESS EXCLUSIVE on a table the public board reads for the whole 105–350 s — and **23:10Z is 4:10 pm PT**. The healthy window IS the Pacific afternoon, so there is no window that is both fast and off-hours; the 08-18 filing declined a daytime run for exactly this lock. That trade is Trevor's, not mine. ⚠ Also unverified: `cron.alter_job(schedule := …)` is recorded as having silently not taken effect once — **verify tomorrow by reading `start_time` for jobids 60 and 4; if either still starts at 04:10/04:25Z, `cron.schedule` a fresh job and `cron.unschedule` the old one.** Full write-up incl. the weaker alternatives: `docs/overnight/inbox/2026-08-21T2340Z-ESCALATION-…`.
+
+`tsc` 0 (the required `computed_at` correctly reddened one existing fixture, which was updated with a value deliberately DIFFERENT from `fetched_at`). Components **2992**, primary **14430**, both green.
+
+**Revert:** `git revert <sha>` (code-only; no DB or prod-state change — nothing here touched pg_cron).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — CI was red on `main`, and the fake-timer rewrite that was supposed to fix this test had fixed the wrong half
 
 **`__tests__/component-AdminFeedbackClient.test.tsx` reddened CI run `32534550813` on `80108df9` — an EDGE-FUNCTION-ONLY commit** whose diff cannot reach that component. `RPC Ops Monitor` then failed too, correctly and downstream (`CI is failure on main (80108df9)`); it is a good instrument, not a second defect.
