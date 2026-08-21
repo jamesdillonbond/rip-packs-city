@@ -1563,6 +1563,38 @@ const PINS = [
     migration:
       "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
   },
+  {
+    // Added 2026-08-20, deleters-first. Over-deletion produces an ABSENCE rather
+    // than an error: nothing raises, the rows are gone, and every downstream
+    // reader silently agrees with the smaller number. The load-bearing clause is
+    // not the age — it is `feedback_type IS NULL`, which keeps a conversation the
+    // user gave feedback on FOREVER. That feedback is the only durable record of
+    // what a real collector told us the product got wrong, and it cannot be
+    // re-fetched from anywhere.
+    fn: "purge_old_support_conversations",
+    test: "supabase/tests/purge_old_support_conversations.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
+  {
+    // Added 2026-08-20. `usage_events` backs the active-user count, and the
+    // roadmap gates monetization on "50+ weekly active users". A retention bug
+    // here moves the headline metric DOWN — the direction that reads as "not
+    // ready yet", so nobody questions it.
+    fn: "purge_old_usage_events",
+    test: "supabase/tests/purge_old_usage_events.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
+  {
+    // Added 2026-08-20. ⚠ The one whose cutoff is DATE arithmetic
+    // (`CURRENT_DATE - p_days_keep`) rather than `NOW() - interval` like every
+    // sibling — correct, because `snapshot_at` is a `date`. Pinned so a
+    // consistency pass cannot harmonise it into an uncast timestamptz comparison
+    // and move the boundary by up to 24h. Portfolio history is not re-derivable:
+    // the snapshots ARE the record of what a wallet held on a past day.
+    fn: "purge_old_wallet_holdings_snapshots",
+    test: "supabase/tests/purge_old_wallet_holdings_snapshots.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
