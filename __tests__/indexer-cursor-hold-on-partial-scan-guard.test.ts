@@ -430,3 +430,95 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     })
   })
 })
+
+// ════════════════════════════════════════════════════════════════════════════
+// ⚠ THE FOURTH PROXY, AND THIS ONE IS A DIRECTORY.
+//
+// Every arm above greps `app/api` or `app lib`. `workers/` and
+// `supabase/functions/` are outside ALL of them, and both contain code that
+// reads a range of Flow events and persists a cursor — the exact defect this
+// file exists for. The population moved 8 → 17 → 19 as each derivation was
+// corrected, and every one of those was a derivation over the SOURCE TEXT. The
+// scope of the search was never questioned, so a whole class of walker sat
+// outside the guard by construction, the same shape CLAUDE.md records for the
+// anon driver-message guard (`isPublicPath`) and `check_secdef_anon_exec_drift`
+// (`prosecdef = true`).
+//
+// ⚠ WHAT THIS ARM DOES AND DOES NOT DO — READ BEFORE TRUSTING IT.
+//
+// It is a REVIEW TRIGGER on the POPULATION, not an assertion about the
+// property. It fails when the set of event-range readers in these two
+// directories CHANGES, so a new one cannot land unnoticed; it does NOT prove
+// the new one holds its cursor. That is deliberate, and measured — I built the
+// property check first and it was not trustworthy in EITHER form:
+//
+//   • FILE-scoped (every `!res.ok` in the file) — 12 false positives on the
+//     clean tree, all legitimate: `fetchTxBuyers` and the worker's
+//     `txPayerCache` return null on a non-2xx because losing a buyer address
+//     degrades a FIELD, while losing an event range moves the CURSOR. Same
+//     expression, opposite correctness. Suppressing them needs a curated list,
+//     which drifts.
+//   • FUNCTION-scoped (only `!res.ok` inside the fetching function) — SILENTLY
+//     VACUOUS on the edge functions, which is worse. In
+//     `ingest-allday-pack-opens` the URL is built in a small inner helper and
+//     the `!r.ok` check lives in the outer `scanOpens`, so the enclosing-function
+//     walk found a body with ZERO ok-checks and reported the file clean. It
+//     produced "0 violations" on the clean tree AND on a mutant that deleted the
+//     error channel outright. A guard that passes both ways is not a guard.
+//
+// So the honest instrument is the one whose claim it can actually keep. When
+// this reddens, open the new file and check the property by hand.
+//
+// ⚠ MEASURED 2026-08-21: all ten currently hold. Two correct patterns, and the
+// second is why a blanket "must throw" rule would have been wrong here:
+//   throw on a non-2xx — the 3 egress proxies, pack-events-ingest,
+//     hybrid-custody-events, ingest-pinnacle-mints, pinnacle-owner-discovery{,-forward}
+//   carry an error CHANNEL and hold on it — ingest-allday-pack-opens and
+//     ingest-topshot-pack-opens-history return `{ …, err }` and the caller does
+//     `const after = err || rerr ? start - 1 : end` ("don't advance past a
+//     failed window"). These are the best implementations of this property in
+//     the repo; a rule demanding a `throw` would have reddened them.
+describe("event-range walkers outside app/ and lib/ are enumerated, not invisible", () => {
+  const OUT_OF_SCOPE_WALKERS = [
+    "supabase/functions/hybrid-custody-events/index.ts",
+    "supabase/functions/ingest-allday-pack-opens/index.ts",
+    "supabase/functions/ingest-pinnacle-mints/index.ts",
+    "supabase/functions/ingest-topshot-pack-opens-history/index.ts",
+    "supabase/functions/pinnacle-owner-discovery-forward/index.ts",
+    "supabase/functions/pinnacle-owner-discovery/index.ts",
+    "workers/hybrid-custody-proxy/index.ts",
+    "workers/pack-events-ingest/index.ts",
+    "workers/pinnacle-events-proxy/index.ts",
+    "workers/spork-proxy/index.ts",
+  ]
+
+  const found = execSync(
+    "grep -rlE 'v1/events|getEventsAtBlockHeightRange' workers supabase/functions --include='*.ts' || true",
+    { encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean)
+    .sort()
+
+  it("the set of out-of-scope event-range walkers is unchanged", () => {
+    expect(
+      found,
+      "the event-range walkers outside app/ and lib/ changed. No property guard " +
+        "covers these files, so this list is the only thing standing between a " +
+        "new one and the swallow that reached 19 instances. If you ADDED one: " +
+        "check by hand that a failed range cannot advance its cursor (throw, or " +
+        "return an error channel the caller holds on), then add it here. If you " +
+        "REMOVED one: delete it from the list.",
+    ).toEqual(OUT_OF_SCOPE_WALKERS)
+  })
+
+  it("is not vacuous: the directories are actually being read", () => {
+    // ⚠ A guard that silently searched nothing would pass the assertion above
+    // by comparing [] to []. This repo has shipped exactly that
+    // (`check-tree-corruption.mjs`, `0 file(s) checked`, exit 0), so assert the
+    // count it INSPECTED, not just the comparison.
+    expect(found.length, "expected 10 event-range readers outside app/ and lib/").toBe(10)
+    expect(found.some((f) => f.startsWith("workers/"))).toBe(true)
+    expect(found.some((f) => f.startsWith("supabase/functions/"))).toBe(true)
+  })
+})
