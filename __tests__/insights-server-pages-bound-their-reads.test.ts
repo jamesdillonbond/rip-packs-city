@@ -121,12 +121,24 @@ function isBounded(raw: string): boolean {
   )
 }
 
-/** Async server pages under app/insights — the ones Next prerenders with a read. */
+/** Async server pages under app/insights — the ones Next prerenders with a read.
+ *
+ * ⚠ THE HUB IS INCLUDED VIA ".", AND IT WAS THE HOLE. This walk used to iterate
+ * subdirectories only, so `app/insights/page.tsx` — a FILE in INSIGHTS_DIR, not
+ * a directory — was outside the guard BY CONSTRUCTION. It was also the only
+ * unbounded read left on the surface, and on 2026-08-21T01:19Z it failed a
+ * PRODUCTION BUILD: every board page logged a clean "read exceeded 8000ms" and
+ * fell back, while /insights sat on an unbounded service-role RPC through three
+ * 60 s export attempts and took the whole build down. Third instance of the
+ * class this ban was written for, on the one page it could not see.
+ *
+ * "." is the entry name because `join(INSIGHTS_DIR, ".", "page.tsx")` resolves
+ * to the hub with no change at any consumption site below. */
 function asyncServerPages(): string[] {
   const out: string[] = []
-  for (const entry of readdirSync(INSIGHTS_DIR)) {
+  for (const entry of [".", ...readdirSync(INSIGHTS_DIR)]) {
     const dir = join(INSIGHTS_DIR, entry)
-    if (!statSync(dir).isDirectory()) continue
+    if (!statSync(dir).isDirectory()) continue // "." is a directory, so the hub survives this
     const file = join(dir, "page.tsx")
     let src: string
     try {
@@ -149,10 +161,13 @@ describe("/insights server pages bound their reads", () => {
 
   it("is not vacuous: it found the prerendered board pages", () => {
     expect(pages.length).toBeGreaterThanOrEqual(20)
-    // The two that actually broke production builds, named so a rename cannot
-    // silently drop either out of the checked set.
+    // The pages that actually broke production builds, named so a rename cannot
+    // silently drop any out of the checked set. "." is the hub — the 2026-08-21
+    // failure — and naming it here is what stops the walk quietly reverting to
+    // subdirectories-only.
     expect(pages).toContain("market")
     expect(pages).toContain("market-pulse")
+    expect(pages, "the /insights HUB must be in scope, not just the board pages").toContain(".")
   })
 
   it("excludes client pages and static shells rather than exempting them", () => {

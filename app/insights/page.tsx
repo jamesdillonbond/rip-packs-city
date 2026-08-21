@@ -7,6 +7,7 @@
 // every 30 minutes so the numbers stay current without hitting the DB per hit.
 
 import Link from "next/link"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { createClient } from "@supabase/supabase-js"
 import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
@@ -38,7 +39,32 @@ async function getHubStats(): Promise<HubStats | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb: any = createClient(url, key)
-    const { data, error } = await sb.rpc("get_insights_hub_stats")
+    // ⚠ BOUNDED 2026-08-20, and this page is why the ban exists yet was the one
+    // page outside it. The board pages under app/insights/<slug>/ all bound their
+    // reads; THIS one — the hub, app/insights/page.tsx — did not, because it is a
+    // FILE in app/insights rather than a directory, and
+    // __tests__/insights-server-pages-bound-their-reads.test.ts walked
+    // subdirectories only. Outside the guard by construction.
+    //
+    // The cost was a failed PRODUCTION BUILD on 2026-08-21T01:19Z: every board
+    // page logged a clean "read exceeded 8000ms" and fell back, while /insights
+    // sat on this unbounded RPC through three 60 s export attempts and took the
+    // whole build down ("Export encountered an error on /insights/page"). Same
+    // class as the two 2026-08-15 failures this ban was created for — third
+    // instance, on the page the guard could not see.
+    //
+    // A service-role RPC has NO server-side bound (the role timeout applies at
+    // login, and PostgREST logs in as authenticator), so the client is the only
+    // bound there is. On timeout this rejects, the catch below returns null, and
+    // null is an already-supported render path — `stats?.market` hides the band
+    // and `stats ? liveStat(...) : null` drops the per-card stat. The hub loses
+    // its live numbers instead of failing every deploy on the platform.
+    // Explicit type arg: `sb` is `any`, so inference would land on `unknown`
+    // and the destructure below would not typecheck.
+    const { data, error } = await withBoardBudget<{ data: unknown; error: unknown }>(
+      sb.rpc("get_insights_hub_stats"),
+      "hub",
+    )
     if (error || !data) return null
     return data as HubStats
   } catch {
