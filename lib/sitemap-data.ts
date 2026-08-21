@@ -65,6 +65,42 @@ import { PUBLIC_TAB_PAGES } from '@/lib/seo'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
+/**
+ * The hand-authored, non-database-derived pages of segment 0.
+ *
+ * ⚠ EXPORTED SO A TEST CAN READ IT, and that is the whole point. These are the
+ * URLs this repo TELLS GOOGLE TO CRAWL, which is a stronger claim than "proxy.ts
+ * does not redirect it" — `isPublicPath` returns true for `/admin/**` too, where
+ * the page enforces its own bearer auth and an anonymous visitor sees nothing.
+ * Sitemap membership is therefore the repo's own assertion that a path renders
+ * real content to an anonymous crawler, which makes it the right population for
+ * `__tests__/e2e-smoke-covers-sitemap-static-pages.test.ts` to demand the
+ * rendered-DOM monitor covers. Restating these paths in the test would rebuild
+ * the curated list the monitor already drifted on once.
+ */
+export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
+  path: string
+  changeFrequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  priority: number
+}> = [
+  { path: '/',                                 changeFrequency: 'daily',   priority: 1.0 },
+  { path: '/about',                            changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/privacy',                          changeFrequency: 'yearly',  priority: 0.3 },
+  { path: '/terms',                            changeFrequency: 'yearly',  priority: 0.3 },
+  { path: '/legal/fmv-methodology',            changeFrequency: 'monthly', priority: 0.4 },
+  { path: '/blog',                             changeFrequency: 'weekly',  priority: 0.5 },
+  { path: '/blog/permanent-moments-ipfs',      changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/blog/pinnacle-star-wars-day-2026', changeFrequency: 'monthly', priority: 0.5 },
+  // Both added 2026-08-01. /pricing is public (proxy.ts:173), indexable and
+  // footer-linked, but had never been enumerated here. /nba/fast-break is public
+  // (proxy.ts:352) and the header comment at the top of this file has claimed it
+  // was covered since the file was written — it never was. Both are genuine
+  // anon-200s, so neither burns crawl budget.
+  { path: '/pricing',                          changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/nba/fast-break',                   changeFrequency: 'daily',   priority: 0.7 },
+]
+
+
 
 async function getPublicProfiles(): Promise<Array<{ username: string; updated_at: string | null }>> {
   // profile_bio.username is the public handle for /profile/[username]. We
@@ -475,23 +511,12 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   }
 
   // ── Segment 0 (default): static + insights + overviews + series + profiles ─
-  const staticPages: MetadataRoute.Sitemap = [
-    { url: BASE_URL,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
-    { url: `${BASE_URL}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${BASE_URL}/privacy`,          lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
-    { url: `${BASE_URL}/terms`,            lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
-    { url: `${BASE_URL}/legal/fmv-methodology`, lastModified: now, changeFrequency: 'monthly', priority: 0.4 },
-    { url: `${BASE_URL}/blog`,             lastModified: now, changeFrequency: 'weekly',  priority: 0.5 },
-    { url: `${BASE_URL}/blog/permanent-moments-ipfs`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${BASE_URL}/blog/pinnacle-star-wars-day-2026`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
-    // Both added 2026-08-01. /pricing is public (proxy.ts:173), indexable and
-    // footer-linked, but had never been enumerated here. /nba/fast-break is public
-    // (proxy.ts:352) and the header comment at the top of this file has claimed it
-    // was covered since the file was written — it never was. Both are genuine
-    // anon-200s, so neither burns crawl budget.
-    { url: `${BASE_URL}/pricing`,          lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
-    { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.7 },
-  ]
+  const staticPages: MetadataRoute.Sitemap = STATIC_SITEMAP_PAGES.map((e) => ({
+    url: e.path === '/' ? BASE_URL : `${BASE_URL}${e.path}`,
+    lastModified: now,
+    changeFrequency: e.changeFrequency,
+    priority: e.priority,
+  }))
 
   const INSIGHT_ROUTES = [
     'squeeze',

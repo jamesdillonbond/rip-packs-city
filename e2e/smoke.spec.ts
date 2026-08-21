@@ -129,6 +129,39 @@ const PAGES: PageCheck[] = [
   // authenticated browser context, not another entry in this public list.
 
   { path: "/pricing", name: "pricing" },
+
+  // ── Marketing / legal / blog, added 2026-08-20 ─────────────────────────────
+  //
+  // These were the LAST gap in the monitor, and the derivation that found them
+  // is worth keeping: the existing completeness guard walks `app/insights/*`, so
+  // everything outside /insights was outside it BY CONSTRUCTION — the repo's own
+  // "ask what a passing guard is structurally silent about" rule.
+  //
+  // ⚠ THE POPULATION IS THE SITEMAP, NOT `isPublicPath`. Sweeping the app tree
+  // with isPublicPath surfaces 24 unlisted public paths, 12 of them `/admin/**`
+  // — public only in the sense that proxy.ts does not redirect them, because
+  // each admin page enforces its own RPC_ADMIN_TOKEN bearer check and shows an
+  // anonymous visitor nothing. Demanding those be smoke-tested anonymously would
+  // rebuild the /analytics cry-wolf failure documented above, on 12 pages.
+  // Sitemap membership is a stronger and correcter claim: it is this repo
+  // telling Google the page renders content to an anonymous crawler. Every path
+  // below is in lib/sitemap-data.ts's STATIC_SITEMAP_PAGES, and
+  // __tests__/e2e-smoke-covers-sitemap-static-pages.test.ts now holds the two
+  // lists together so the next sitemap addition cannot ship outside the monitor.
+  //
+  // ⚠ NOT PROBED FIRST, same as the 23 boards above and for the same reason —
+  // the sandbox that added them has no egress to production (the agent proxy
+  // answers 403 to CONNECT for www.rippackscity.com; measured, not assumed). The
+  // first scheduled run is their validation. If one fails, TRIAGE IT: these are
+  // pages already advertised to Googlebot, so a failure here is a true positive.
+  { path: "/about", name: "about" },
+  { path: "/privacy", name: "privacy policy" },
+  { path: "/terms", name: "terms of service" },
+  { path: "/legal/fmv-methodology", name: "legal · fmv methodology" },
+  { path: "/blog", name: "blog index" },
+  { path: "/blog/permanent-moments-ipfs", name: "blog · permanent moments" },
+  { path: "/blog/pinnacle-star-wars-day-2026", name: "blog · pinnacle star wars day" },
+  { path: "/nba/fast-break", name: "fast break optimizer" },
 ]
 
 for (const p of PAGES) {
