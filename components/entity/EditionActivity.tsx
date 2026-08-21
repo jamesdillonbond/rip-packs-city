@@ -12,6 +12,7 @@
 // collections show an empty Offers state and never error.
 
 import { useMemo, useState } from "react"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
 import RelTime from "./RelTime"
@@ -48,6 +49,10 @@ interface Props {
   salesPageSize: number
   isAllDay: boolean
   offers: OfferRow[]
+  /** `false` only when the server's sales read FAILED. See SalesTablePaginated. */
+  salesOk?: boolean
+  /** `false` only when the server's offers read FAILED. */
+  offersOk?: boolean
   // P6b — server-resolved { lowercased addr → username } covering the initial
   // sales + offers rows, so both tables paint @names on first render.
   initialNames?: Record<string, string>
@@ -87,7 +92,7 @@ function WalletCell({ address, name }: { address: string | null; name?: string |
   )
 }
 
-function OffersTable({ offers, initialNames }: { offers: OfferRow[]; initialNames?: Record<string, string> }) {
+function OffersTable({ offers, initialNames, ok = true }: { offers: OfferRow[]; initialNames?: Record<string, string>; ok?: boolean }) {
   const addrs = useMemo(() => offers.map(o => o.buyer_address).filter((a): a is string => !!a), [offers])
   const names = useResolveUsernames(addrs)
   const nameFor = (a: string | null) =>
@@ -96,7 +101,7 @@ function OffersTable({ offers, initialNames }: { offers: OfferRow[]; initialName
   if (offers.length === 0) {
     return (
       <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-        No open offers on this edition.
+        {sectionEmptyCopy(ok, "Offers", "No open offers on this edition.")}
       </div>
     )
   }
@@ -141,6 +146,8 @@ export default function EditionActivity({
   isAllDay,
   offers,
   initialNames,
+  salesOk = true,
+  offersOk = true,
 }: Props) {
   const [tab, setTab] = useState<Tab>("sales")
 
@@ -176,9 +183,10 @@ export default function EditionActivity({
           pageSize={salesPageSize}
           isAllDay={isAllDay}
           initialNames={initialNames}
+          serverOk={salesOk}
         />
       ) : (
-        <OffersTable offers={offers} initialNames={initialNames} />
+        <OffersTable offers={offers} initialNames={initialNames} ok={offersOk} />
       )}
     </div>
   )

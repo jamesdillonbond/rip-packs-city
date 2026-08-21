@@ -9,7 +9,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRow, sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRow, sectionRows, sectionRowsResult } from "@/lib/entity-section-rpc"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -88,8 +88,12 @@ async function fetchTopEditions(collectionId: string, slug: string, limit: numbe
   return sectionRows<EditionTile>("team top editions", "get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
 }
 
-async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<ActivityRow[]> {
-  return sectionRows<ActivityRow>("team activity", "get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
+// Three-state, because TeamActivity's empty copy CONCLUDES ("No recent sales.").
+// A decorative section degrading to [] would otherwise publish that sentence out
+// of a failed read — this team page's six-way RPC fan-out is exactly what
+// produces the pool-acquire timeouts that trigger it.
+async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<{ rows: ActivityRow[]; ok: boolean }> {
+  return sectionRowsResult<ActivityRow>("team activity", "get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
 }
 
 async function fetchSets(collectionId: string, slug: string): Promise<SetRow[]> {
@@ -146,7 +150,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster
 
-  const [players, topEditions, activity, teamSets, squeeze, nextGame] = await Promise.all([
+  const [players, topEditions, activityRes, teamSets, squeeze, nextGame] = await Promise.all([
     fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
     fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
     fetchActivity(coll.id, slug, 40),
@@ -154,6 +158,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
     fetchSqueeze(coll.id, slug, 12),
     fetchNextGame(coll.id, slug),
   ])
+  const activity = activityRes.rows
 
   return (
     <div>
@@ -227,7 +232,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
       {/* ── Market Activity ──────────────────────────────────────────────── */}
       {activity.length > 0 && (
         <Section title="Market Activity">
-          <TeamActivity collectionUrlSlug={collection} rows={activity} />
+          <TeamActivity collectionUrlSlug={collection} rows={activity} ok={activityRes.ok} />
         </Section>
       )}
 

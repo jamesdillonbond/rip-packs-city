@@ -44,6 +44,31 @@
 // Retries are cheap here and bounded: rpcWithRetry stops immediately on 42xxx
 // logic-class errors, so a bad argument still fails fast on the first attempt.
 //
+// ── ⚠ THE GAP THIS POLICY LEFT OPEN, closed 2026-08-21 ─────────────────────
+// The comment above says `return []` "renders a PLAUSIBLE EMPTY STATE" and then
+// returns [] anyway for a decorative section, on the reasoning that the log line
+// makes the degradation greppable. **The log is for the operator. The reader was
+// still told something false.** Measured on 2026-08-21: a failed
+// `get_edition_recent_sales` degrades to [] and the edition page renders
+// "No sales yet." — a factual claim about the data, published out of a failed
+// read, on the highest-traffic public page in the product (~750 such renders in
+// 24h across recent-sales / offers / top-sales / FMV-history / parallels).
+//
+// ⚠ The two adjacent tests in __tests__/entity-section-rpc.test.ts prove it side
+// by side: "an empty result is NOT an error" asserts `toEqual([])`, and
+// "degrades to empty for a decorative section" asserts `toEqual([])`. Same value,
+// two different states — the two-state collapse the honesty canon forbids, sitting
+// under a ledger entry that called it "the three-state distinction the canon
+// requires". A helper cannot be the reason a caller lies: at [] the caller has
+// nothing left to discriminate on.
+//
+// ⚠ THE DEGRADE/THROW POLICY IS UNCHANGED. A decorative section still degrades;
+// that decision is Trevor's and it is sound. What changes is that the degradation
+// is now VISIBLE to the caller — `sectionRowsResult` / `sectionRowResult` carry
+// `ok`, so a section can render "unavailable" instead of concluding "none".
+// `sectionRows` / `sectionRow` keep their exact signatures and are implemented on
+// top, so no existing caller changes behaviour.
+//
 // NOTE: the follow-on conversion is DONE. Beyond the player and team routes
 // Sentry originally named, the edition / set / series routes now route their
 // list- and object-shaped section fetchers through sectionRows / sectionRow too.
@@ -81,14 +106,36 @@ export async function sectionRows<T>(
   args: Record<string, unknown>,
   opts: SectionOptions = {},
 ): Promise<T[]> {
+  return (await sectionRowsResult<T>(tag, fn, args, opts)).rows
+}
+
+/**
+ * The three-state form of {@link sectionRows}, for any section whose empty copy
+ * CONCLUDES ("No sales yet.") rather than merely showing nothing.
+ *
+ * - read failed, decorative  → `{ rows: [], ok: false, error }`
+ * - read failed, structural  → throws (unchanged)
+ * - read ok, genuinely empty → `{ rows: [], ok: true }`
+ * - read ok, rows            → `{ rows, ok: true }`
+ *
+ * ⚠ `ok` is what a caller needs to tell the first case from the third. Without
+ * it every consumer of a degraded section is FORCED to publish "none" for
+ * "we could not look" — which is the defect, not the caller's fault.
+ */
+export async function sectionRowsResult<T>(
+  tag: string,
+  fn: string,
+  args: Record<string, unknown>,
+  opts: SectionOptions = {},
+): Promise<{ rows: T[]; ok: boolean; error?: string }> {
   const structural = opts.structural === true
   const { data, error } = await rpcWithRetry(supabaseAdmin as never, fn, args)
   if (error) {
     report(tag, fn, error.message, structural)
     if (structural) throw new Error(`${tag} unavailable: ${error.message}`)
-    return []
+    return { rows: [], ok: false, error: error.message }
   }
-  return Array.isArray(data) ? (data as T[]) : []
+  return { rows: Array.isArray(data) ? (data as T[]) : [], ok: true }
 }
 
 /**
@@ -102,14 +149,24 @@ export async function sectionRow<T>(
   args: Record<string, unknown>,
   opts: SectionOptions = {},
 ): Promise<T | null> {
+  return (await sectionRowResult<T>(tag, fn, args, opts)).row
+}
+
+/** The three-state form of {@link sectionRow}. See {@link sectionRowsResult}. */
+export async function sectionRowResult<T>(
+  tag: string,
+  fn: string,
+  args: Record<string, unknown>,
+  opts: SectionOptions = {},
+): Promise<{ row: T | null; ok: boolean; error?: string }> {
   const structural = opts.structural === true
   const { data, error } = await rpcWithRetry(supabaseAdmin as never, fn, args)
   if (error) {
     report(tag, fn, error.message, structural)
     if (structural) throw new Error(`${tag} unavailable: ${error.message}`)
-    return null
+    return { row: null, ok: false, error: error.message }
   }
-  if (data == null) return null
-  if (Array.isArray(data)) return (data[0] as T) ?? null
-  return data as T
+  if (data == null) return { row: null, ok: true }
+  if (Array.isArray(data)) return { row: (data[0] as T) ?? null, ok: true }
+  return { row: data as T, ok: true }
 }

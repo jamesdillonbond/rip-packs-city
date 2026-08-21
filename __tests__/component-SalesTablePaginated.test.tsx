@@ -38,6 +38,31 @@ describe("SalesTablePaginated", () => {
     expect(container.querySelector("table")).toBeNull()
   })
 
+  it("a DEGRADED empty table says the read failed — never 'No sales yet.'", async () => {
+    // The whole point of serverOk. Before it, a failed get_edition_recent_sales
+    // degraded to [] and this table concluded there were no sales — measured 221
+    // times in 24h on 2026-08-21, on the highest-traffic public page.
+    const { container } = render(<SalesTablePaginated {...base([])} serverOk={false} />)
+    // Assert the ABSENCE of the false claim, not just the presence of an error.
+    expect(container.textContent).not.toMatch(/No sales/i)
+    expect(container.textContent).toContain("couldn't be loaded")
+  })
+
+  it("a GENUINELY empty table still says 'No sales yet.' — the honest case is unchanged", async () => {
+    // ⚠ The inverse defect: a section that cries "unavailable" when it is merely
+    // quiet would fire on every low-volume edition and train readers to ignore it.
+    const { container } = render(<SalesTablePaginated {...base([])} serverOk={true} />)
+    expect(container.textContent).toContain("No sales yet.")
+    expect(container.textContent).not.toContain("couldn't be loaded")
+  })
+
+  it("defaults to the honest-empty reading when serverOk is not passed", async () => {
+    // Every existing caller omits the prop; the default must not turn quiet
+    // sections into error banners.
+    const { container } = render(<SalesTablePaginated {...base([])} />)
+    expect(container.textContent).toContain("No sales yet.")
+  })
+
   it("formats a positive serial as #N and the price via fmtUsd", () => {
     const { container } = render(<SalesTablePaginated {...base([sale({ serial_number: 7, price_usd: 42 })])} />)
     const txt = container.textContent!
@@ -99,19 +124,33 @@ describe("SalesTablePaginated — loadMore + cell branches", () => {
     await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
   })
 
-  it("marks the list exhausted when the fetch fails", async () => {
+  it("a FAILED page fetch says so and keeps Load More — it is not 'that is all the sales'", async () => {
+    // ⚠ INVERTED 2026-08-21, NOT deleted. This asserted the opposite — "on error
+    // the catch sets exhausted -> the button disappears" — i.e. a 500 while
+    // paginating rendered as "you have reached the end of the sales history".
+    // Same failed-read-as-fact defect as the empty state, one interaction in.
+    //
+    // ⚠ AND THE OLD ASSERTION WAS FLAKY-VACUOUS: it waited for "Load 30 more" to
+    // be ABSENT, and that string is also absent for the moment the button reads
+    // "Loading…". It would have passed whether or not the catch set `exhausted`.
+    // This version waits for the settled end state instead.
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json: async () => [] })) as never)
     const { container, getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
     fireEvent.click(getByText("Load 30 more"))
-    // On error the catch sets exhausted -> the button disappears.
-    await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
+    await waitFor(() => expect(container.textContent).toContain("couldn't be loaded"))
+    // The retry affordance survives, and no false claim about the data is made.
+    expect(container.textContent).toContain("Load 30 more")
+    expect(container.textContent).not.toMatch(/No sales/i)
   })
 
-  it("marks the list exhausted when the fetch throws (network error)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("down") }) as never)
+  it("a THROWN page fetch is treated exactly like a failed one", async () => {
+    // ⚠ INVERTED with its sibling above. A network error is not evidence about
+    // how many sales exist.
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down") }) as never)
     const { container, getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
     fireEvent.click(getByText("Load 30 more"))
-    await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
+    await waitFor(() => expect(container.textContent).toContain("couldn't be loaded"))
+    expect(container.textContent).toContain("Load 30 more")
   })
 
   it("shows the loading label while a fetch is in-flight", async () => {

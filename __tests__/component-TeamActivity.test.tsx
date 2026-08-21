@@ -30,6 +30,22 @@ describe("TeamActivity", () => {
     expect(getByText("No recent sales.")).toBeTruthy()
   })
 
+  it("a DEGRADED activity read says so — never 'No recent sales.'", () => {
+    // The team page fires SIX section RPCs in one Promise.all; the pool-acquire
+    // timeouts that fan-out produces are exactly what degrades this section to
+    // [], and until now that rendered as a factual claim that the franchise had
+    // no recent sales.
+    const { container } = render(<TeamActivity collectionUrlSlug="nba-top-shot" rows={[]} ok={false} />)
+    expect(container.textContent).not.toMatch(/No recent sales/i)
+    expect(container.textContent).toContain("couldn't be loaded")
+  })
+
+  it("a genuinely quiet team keeps 'No recent sales.'", () => {
+    const { container } = render(<TeamActivity collectionUrlSlug="nba-top-shot" rows={[]} ok={true} />)
+    expect(container.textContent).toContain("No recent sales.")
+    expect(container.textContent).not.toContain("couldn't be loaded")
+  })
+
   it("renders Recent sales and a price-sorted Biggest recent sales column", () => {
     const rows = [
       row({ route_slug: "cheap", player_name: "Cheap One", price_usd: 10 }),

@@ -4,6 +4,7 @@
 // Phase 1B. Recent-sales table with "Load 30 more" client-side pagination.
 
 import { useMemo, useState } from "react"
+import { sectionEmptyCopy, sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
 import RelTime from "./RelTime"
@@ -35,6 +36,12 @@ interface Props {
   // so the first paint shows @names instead of flashing raw 0x… for ~2s while
   // the client hook resolves. Optional; the hook still fills paginated rows.
   initialNames?: Record<string, string>
+  /**
+   * `false` only when the server's sales read FAILED. Without it an empty
+   * `initial` is indistinguishable from a degraded one and this table publishes
+   * "No sales yet." out of a failed read — measured 221x in 24h on 2026-08-21.
+   */
+  serverOk?: boolean
 }
 
 const TH: React.CSSProperties = {
@@ -71,11 +78,12 @@ function WalletCell({ address, name }: { address: string | null; name?: string |
   )
 }
 
-export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, initial, initialOffset, pageSize, isAllDay, initialNames }: Props) {
+export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, initial, initialOffset, pageSize, isAllDay, initialNames, serverOk = true }: Props) {
   const [rows, setRows] = useState<SaleRow[]>(initial)
   const [offset, setOffset] = useState<number>(initialOffset)
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
+  const [pageError, setPageError] = useState(false)
 
   const addrs = useMemo(() => {
     const out: string[] = []
@@ -99,12 +107,17 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
       const r = await fetch(url, { cache: "no-store" })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const next: SaleRow[] = await r.json()
+      setPageError(false)
       const safe = Array.isArray(next) ? next : []
       setRows(prev => [...prev, ...safe])
       setOffset(prev => prev + safe.length)
       if (safe.length < pageSize) setExhausted(true)
     } catch {
-      setExhausted(true)
+      // ⚠ Do NOT `setExhausted(true)` here. That was the same lie one layer in:
+      // a failed page-N fetch rendered as "you have reached the end of the
+      // sales", so a network blip silently truncated the history. Surface it and
+      // leave Load More available so the reader can retry.
+      setPageError(true)
     } finally {
       setLoading(false)
     }
@@ -116,7 +129,11 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
   const hasParallelCol = rows.some(r => r.parallel != null && r.parallel !== "")
 
   if (rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No sales yet.</div>
+    return (
+      <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        {sectionEmptyCopy(serverOk, "Recent sales", "No sales yet.")}
+      </div>
+    )
   }
 
   return (
@@ -167,10 +184,19 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
         </table>
       </div>
       {!exhausted && (
-        <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
           <button type="button" className="rpc-btn-ghost" disabled={loading} onClick={loadMore}>
             {loading ? "Loading…" : `Load ${pageSize} more`}
           </button>
+          {/* ⚠ The reader has to be told the page did not load. Before this the
+              catch set `exhausted`, so a failed fetch silently rendered as
+              "that is all the sales there are" — the same failed-read-as-fact
+              defect as the empty state above, one interaction further in. */}
+          {pageError && !loading && (
+            <div role="status" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              {sectionUnavailableCopy("More sales")}
+            </div>
+          )}
         </div>
       )}
     </div>

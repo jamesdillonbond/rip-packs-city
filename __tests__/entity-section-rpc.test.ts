@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
-import { sectionRow, sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRow, sectionRows, sectionRowResult, sectionRowsResult } from "@/lib/entity-section-rpc"
 
 const ok = (data: unknown) => ({ data, error: null })
 const poolTimeout = () => ({
@@ -61,7 +61,18 @@ describe("sectionRows", () => {
     expect(rpcMock).toHaveBeenCalledTimes(2)
   })
 
-  it("an empty result is NOT an error — a genuinely empty section stays empty", async () => {
+  it("a genuinely empty section is not retried — [] is a successful answer", async () => {
+    // ⚠ RETITLED 2026-08-21. This used to read "an empty result is NOT an error
+    // — a genuinely empty section stays empty", and a ledger entry cited it as
+    // "the three-state distinction the canon requires". It is not that: the
+    // assertion below and the one in "degrades to empty for a decorative
+    // section" are BOTH `toEqual([])`, for two DIFFERENT states. Same value,
+    // adjacent tests — the two-state collapse the canon forbids, sitting under a
+    // title that claimed the opposite.
+    //
+    // What this case actually proves is narrower and still worth keeping: an
+    // empty success is not treated as a failure, so it costs no retries. The
+    // distinction itself is proved below, against sectionRowsResult.
     rpcMock.mockResolvedValueOnce(ok([]))
     const rows = await sectionRows("team activity", "get_team_activity", {}, { structural: true })
     expect(rows).toEqual([])
@@ -79,6 +90,19 @@ describe("sectionRows", () => {
     rpcMock.mockResolvedValue(poolTimeout())
     const rows = await sectionRows("team squeeze", "get_team_squeeze", {})
     expect(rows).toEqual([])
+  })
+
+  it("⚠ sectionRows CANNOT distinguish a failed read from an empty one — this is the collapse", async () => {
+    // Pinned deliberately, as the thing that makes the three-state API necessary.
+    // A caller holding only this return value has nothing to discriminate on, so
+    // any "No sales yet." it renders is published out of a failed read. Do not
+    // "fix" this by changing sectionRows' shape — every existing caller depends
+    // on it; reach for sectionRowsResult instead.
+    rpcMock.mockResolvedValueOnce(ok([]))
+    const empty = await sectionRows("team squeeze", "get_team_squeeze", {})
+    rpcMock.mockResolvedValue(poolTimeout())
+    const failed = await sectionRows("team squeeze", "get_team_squeeze", {})
+    expect(failed).toEqual(empty)
   })
 
   it("logs the degradation under a greppable [entity-section] prefix", async () => {
@@ -129,5 +153,69 @@ describe("sectionRow", () => {
     await expect(sectionRow("some hero", "get_hero", {}, { structural: true })).rejects.toThrow(
       /some hero unavailable/,
     )
+  })
+})
+
+describe("sectionRowsResult / sectionRowResult — the three states, kept apart", () => {
+  it("read ok + rows → ok:true with the rows", async () => {
+    rpcMock.mockResolvedValueOnce(ok([{ id: 1 }]))
+    expect(await sectionRowsResult("edition recent sales", "get_edition_recent_sales", {}))
+      .toEqual({ rows: [{ id: 1 }], ok: true })
+  })
+
+  it("read ok + genuinely empty → ok:TRUE with []", async () => {
+    rpcMock.mockResolvedValueOnce(ok([]))
+    const res = await sectionRowsResult("edition recent sales", "get_edition_recent_sales", {})
+    expect(res.rows).toEqual([])
+    // The half that matters: an honest empty section must NOT read as degraded,
+    // or every quiet edition renders a false "unavailable" banner.
+    expect(res.ok).toBe(true)
+  })
+
+  it("read FAILED + decorative → ok:FALSE, and the reason travels with it", async () => {
+    rpcMock.mockResolvedValue(poolTimeout())
+    const res = await sectionRowsResult("edition recent sales", "get_edition_recent_sales", {})
+    expect(res.rows).toEqual([])
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain("connection pool")
+  })
+
+  it("the two [] cases are DISTINGUISHABLE here — the whole point", async () => {
+    rpcMock.mockResolvedValueOnce(ok([]))
+    const empty = await sectionRowsResult("s", "fn", {})
+    rpcMock.mockResolvedValue(poolTimeout())
+    const failed = await sectionRowsResult("s", "fn", {})
+    expect(empty.rows).toEqual(failed.rows)   // same rows…
+    expect(empty.ok).not.toBe(failed.ok)      // …different state
+  })
+
+  it("read FAILED + structural still THROWS — the policy is unchanged", async () => {
+    rpcMock.mockResolvedValue(poolTimeout())
+    await expect(sectionRowsResult("team roster", "get_team_players", {}, { structural: true }))
+      .rejects.toThrow(/team roster unavailable/)
+  })
+
+  it("sectionRows is implemented on the result form and is byte-identical in behaviour", async () => {
+    // Guards the refactor itself: if the wrapper ever stops delegating, the two
+    // can drift and every existing caller silently changes.
+    rpcMock.mockResolvedValueOnce(ok([{ a: 1 }]))
+    const viaResult = (await sectionRowsResult("s", "fn", {})).rows
+    rpcMock.mockResolvedValueOnce(ok([{ a: 1 }]))
+    const viaPlain = await sectionRows("s", "fn", {})
+    expect(viaPlain).toEqual(viaResult)
+  })
+
+  it("sectionRowResult separates a null row from a failed read", async () => {
+    rpcMock.mockResolvedValueOnce(ok(null))
+    expect(await sectionRowResult("s", "fn", {})).toEqual({ row: null, ok: true })
+    rpcMock.mockResolvedValue(poolTimeout())
+    const failed = await sectionRowResult("s", "fn", {})
+    expect(failed.row).toBeNull()
+    expect(failed.ok).toBe(false)
+  })
+
+  it("sectionRowResult unwraps a one-row array and reports ok", async () => {
+    rpcMock.mockResolvedValueOnce(ok([{ z: 9 }]))
+    expect(await sectionRowResult("s", "fn", {})).toEqual({ row: { z: 9 }, ok: true })
   })
 })

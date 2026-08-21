@@ -13,7 +13,8 @@ import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRows, sectionRowsResult } from "@/lib/entity-section-rpc"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import {
   fetchMarketBundle,
   fetchInsightLinks,
@@ -190,12 +191,28 @@ async function fetchDetail(collectionId: string, routeSlug: string): Promise<Edi
 }
 
 async function fetchSales(collectionId: string, routeSlug: string, limit: number, offset = 0): Promise<SaleRow[]> {
-  return sectionRows<SaleRow>("edition recent sales", "get_edition_recent_sales", {
+  return (await fetchSalesResult(collectionId, routeSlug, limit, offset)).rows
+}
+
+/**
+ * The three-state form, for the Activity block. ⚠ `ok` has to survive BOTH
+ * erasers: `sectionRows` degrading a decorative failure to `[]`, and the
+ * `.catch(() => [])` in the section fan-out below. Either one alone puts an
+ * empty array in front of the reader, and the table then says "No sales yet."
+ */
+async function fetchSalesResult(
+  collectionId: string,
+  routeSlug: string,
+  limit: number,
+  offset = 0,
+): Promise<{ rows: SaleRow[]; ok: boolean }> {
+  const { rows, ok } = await sectionRowsResult<SaleRow>("edition recent sales", "get_edition_recent_sales", {
     p_collection_id: collectionId,
     p_route_slug: routeSlug,
     p_limit: limit,
     p_offset: offset,
   })
+  return { rows, ok }
 }
 
 // Feature 2 — open standing offers for the Activity section's "Offers" tab.
@@ -209,8 +226,8 @@ interface OfferRow {
   made_at: string | null
 }
 
-async function fetchOffers(editionId: string, limit: number): Promise<OfferRow[]> {
-  return sectionRows<OfferRow>("edition offers", "get_edition_offers", { p_edition_id: editionId, p_limit: limit })
+async function fetchOffers(editionId: string, limit: number): Promise<{ rows: OfferRow[]; ok: boolean }> {
+  return sectionRowsResult<OfferRow>("edition offers", "get_edition_offers", { p_edition_id: editionId, p_limit: limit })
 }
 
 async function fetchHistory(collectionId: string, routeSlug: string, days: number): Promise<HistoryRow[]> {
@@ -250,8 +267,10 @@ interface NotableSerialRow {
   nft_id: string | null
 }
 
-async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
-  return sectionRows<NotableSerialRow>("edition special serials", "get_edition_special_serials", { p_edition_id: editionId })
+// Three-state: this section's empty copy CONCLUDES ("No notable serials … yet."),
+// so a degraded read must not be published as a fact about the edition.
+async function fetchNotableSerials(editionId: string): Promise<{ rows: NotableSerialRow[]; ok: boolean }> {
+  return sectionRowsResult<NotableSerialRow>("edition special serials", "get_edition_special_serials", { p_edition_id: editionId })
 }
 
 // Top Owners (v2 "Most Owned") — the biggest holders of this edition from the
@@ -838,18 +857,28 @@ async function EditionBottomSections({
   // the edition smoke probe even though the page was healthy. Per-fetch .catch
   // keeps the section (and its titled empty-states) rendering when one leg times
   // out, and degrades real users gracefully instead of blanking the block.
-  const [sales, offers, parallels, packs, notableSerials, packProvenance, topOwners] = await Promise.all([
-    fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0).catch(() => [] as SaleRow[]),
-    fetchOffers(detail.id, 50).catch(() => [] as OfferRow[]),
+  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners] = await Promise.all([
+    // ⚠ The catch fallbacks carry ok:false. Returning a bare [] here would put the
+    // failure back exactly where it was erased before — see fetchSalesResult.
+    fetchSalesResult(detail.collection_id, slug, SALES_PAGE_SIZE, 0).catch(() => ({ rows: [] as SaleRow[], ok: false })),
+    fetchOffers(detail.id, 50).catch(() => ({ rows: [] as OfferRow[], ok: false })),
     fetchParallels(detail.id).catch(() => [] as ParallelEdition[]),
     fetchPacks(detail.collection_id, slug).catch(() => [] as PackRow[]),
-    (isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id)).catch(() => [] as NotableSerialRow[]),
+    (isPinnacle
+      ? Promise.resolve({ rows: [] as NotableSerialRow[], ok: true })
+      : fetchNotableSerials(detail.id)
+    ).catch(() => ({ rows: [] as NotableSerialRow[], ok: false })),
     (isTopShot || isAllDay
       ? fetchPackProvenance(detail.id, isAllDay).then((r) => r.data)
       : Promise.resolve(null)
     ).catch(() => null),
     (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
   ])
+  // Rows for rendering; the `ok` halves travel separately to the Activity block
+  // so a degraded read can never be published as "No sales yet."
+  const sales = salesRes.rows
+  const offers = offersRes.rows
+  const notableSerials = notableRes.rows
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
   // owners (special_serial_holders) by serial — gives one board with tag, last
@@ -892,6 +921,8 @@ async function EditionBottomSections({
           isAllDay={isAllDay}
           offers={offers}
           initialNames={initialActivityNames}
+          salesOk={salesRes.ok}
+          offersOk={offersRes.ok}
         />
       </Section>
 
@@ -996,7 +1027,7 @@ async function EditionBottomSections({
           </div>
           {sortedNotable.length === 0 ? (
             <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-              No notable serials for this edition yet.
+              {sectionEmptyCopy(notableRes.ok, "Special serials", "No notable serials for this edition yet.")}
             </div>
           ) : (
             <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>

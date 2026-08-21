@@ -5,6 +5,7 @@
 // in the team page and passed in.
 
 import Link from "next/link"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { EM_DASH, fmtUsd, relTime, marketplaceLabel, tileSubject } from "./_shared"
 
 export interface ActivityRow {
@@ -52,9 +53,13 @@ function Row({ collectionUrlSlug, r, showTime }: { collectionUrlSlug: string; r:
   )
 }
 
-export default function TeamActivity({ collectionUrlSlug, rows }: { collectionUrlSlug: string; rows: ActivityRow[] }) {
+export default function TeamActivity({ collectionUrlSlug, rows, ok = true }: { collectionUrlSlug: string; rows: ActivityRow[]; ok?: boolean }) {
   if (!rows || rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No recent sales.</div>
+    return (
+      <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        {sectionEmptyCopy(ok, "Recent sales", "No recent sales.")}
+      </div>
+    )
   }
   const recent = rows.slice(0, 15)
   const biggest = [...rows]

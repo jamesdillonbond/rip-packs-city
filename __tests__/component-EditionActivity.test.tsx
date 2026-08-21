@@ -2,7 +2,13 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, screen, fireEvent } from "@testing-library/react"
 
-vi.mock("@/components/entity/SalesTablePaginated", () => ({ default: () => <div data-testid="sales-table" /> }))
+const salesProps = vi.hoisted(() => ({ last: null as any }))
+vi.mock("@/components/entity/SalesTablePaginated", () => ({
+  default: (props: any) => {
+    salesProps.last = props
+    return <div data-testid="sales-table" />
+  },
+}))
 vi.mock("@/components/entity/RelTime", () => ({ default: () => null }))
 vi.mock("@/lib/analytics/username-resolver", () => ({ useResolveUsernames: () => ({}) }))
 
@@ -65,6 +71,40 @@ describe("EditionActivity", () => {
     render(<EditionActivity {...baseProps} offers={[]} />)
     fireEvent.click(screen.getByRole("button", { name: /Offers/ }))
     expect(screen.getByText(/No open offers on this edition/i)).toBeTruthy()
+  })
+
+  it("a DEGRADED offers tab says the read failed — never 'No open offers'", () => {
+    // ⚠ The sibling case above is titled "an honest empty state", and until now
+    // that word was doing work the assertion could not back: a failed
+    // get_edition_offers degraded to [] and rendered the same sentence, so the
+    // tab claimed there were no standing bids when it had simply failed to look.
+    const { getByText, container } = render(<EditionActivity {...baseProps} offers={[]} offersOk={false} />)
+    fireEvent.click(getByText(/^Offers/))
+    expect(container.textContent).not.toMatch(/No open offers/i)
+    expect(container.textContent).toContain("couldn't be loaded")
+  })
+
+  it("a genuinely empty offers tab keeps its own wording", () => {
+    const { getByText, container } = render(<EditionActivity {...baseProps} offers={[]} offersOk={true} />)
+    fireEvent.click(getByText(/^Offers/))
+    expect(container.textContent).toContain("No open offers on this edition.")
+  })
+
+  it("FORWARDS the degraded sales flag to the sales table", () => {
+    // ⚠ Asserted as a forwarded PROP, not as rendered text: SalesTablePaginated
+    // is mocked in this suite, so a text assertion here would pass no matter what
+    // this component did with salesOk. The rendered behaviour is pinned in
+    // component-SalesTablePaginated.test.tsx instead.
+    //
+    // Both legs of the Activity block fan out separately; wiring one and not the
+    // other is the "one honest branch does not make an honest page" shape.
+    render(<EditionActivity {...baseProps} offers={[]} salesOk={false} />)
+    expect(salesProps.last.serverOk).toBe(false)
+  })
+
+  it("forwards serverOk true by default so a quiet edition is not called broken", () => {
+    render(<EditionActivity {...baseProps} offers={[]} />)
+    expect(salesProps.last.serverOk).toBe(true)
   })
 
   it("toggles aria-pressed on the active tab", () => {
