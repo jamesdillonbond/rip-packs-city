@@ -29,6 +29,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800; // Pro hard cap; the walk is bounded by HARD_BUDGET_MS below.
@@ -112,6 +113,23 @@ async function run(req: NextRequest) {
   const proxySecret = process.env.DUNE_PROXY_SECRET;
   const queryId = process.env.DUNE_OWNERSHIP_QUERY_ID;
   const startedAt = new Date().toISOString();
+
+  // ── Invocation heartbeat (2026-08-20) ────────────────────────────────────
+  // `maxDuration` here is 800 s — the longest in the fleet, so this is where a
+  // wall kill is most likely, and this route's terminal `log_pipeline_run` sits
+  // INSIDE the `after()` body below. A kill terminates the function with that
+  // insert still pending, so the tick writes NOTHING and is indistinguishable
+  // from a cron that never fired. `try/catch` cannot close it (the kill is
+  // outside the language) and `finally` does not run reliably here.
+  //
+  // Written BEFORE any early return below, so a skipped tick still proves the
+  // route was reached. Kills are then read by CORRELATION — a
+  // `${PIPELINE_NAME}-heartbeat` row with no matching terminal row. Never throws.
+  await writeInvocationHeartbeat({
+    pipeline: PIPELINE_NAME,
+    startedAtMs: Date.parse(startedAt),
+  });
+
 
   // Inert until provisioned — log an honest skip so the absence is visible in
   // pipeline_runs rather than looking like a silent stall.

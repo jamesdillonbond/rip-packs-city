@@ -135,7 +135,7 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   `lib/pipeline/heartbeat.ts` in the same commit that added this file, which
 //   is where the "no two of the five agreed" measurement came from.
 // Lower this in the SAME commit that converts a route. Never raise it.
-const BUDGET = 66
+const BUDGET = 62
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

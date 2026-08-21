@@ -25,6 +25,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 
 export const dynamic = "force-dynamic"
@@ -129,6 +130,23 @@ async function run(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = new Date().toISOString();
+
+  // ── Invocation heartbeat (2026-08-20) ────────────────────────────────────
+  // `maxDuration` here is 800 s — the longest in the fleet, so this is where a
+  // wall kill is most likely, and this route's terminal `log_pipeline_run` sits
+  // INSIDE the `after()` body below. A kill terminates the function with that
+  // insert still pending, so the tick writes NOTHING and is indistinguishable
+  // from a cron that never fired. `try/catch` cannot close it (the kill is
+  // outside the language) and `finally` does not run reliably here.
+  //
+  // Written BEFORE any early return below, so a skipped tick still proves the
+  // route was reached. Kills are then read by CORRELATION — a
+  // `${PIPELINE}-heartbeat` row with no matching terminal row. Never throws.
+  await writeInvocationHeartbeat({
+    pipeline: PIPELINE,
+    startedAtMs: Date.parse(startedAt),
+  });
+
 
   after(async () => {
     const startedMs = Date.now();
