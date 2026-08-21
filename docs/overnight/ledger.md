@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — continuation) — three folded tabs were telling Google their canonical was a page it gets redirected away from, and the gate built for them in the same reorg had never been applied
+
+**Found while shipping the sitemap work** (`1016d29f`), which excluded these three deliberately. Chasing WHY they were excluded turned up the defect.
+
+**THE FIND — two omissions, one cause.** `pack-sniper` / `challenges` / `hot-floors` are the 2026-07-18 IA reorg's **folded** pages. Unlike their seven siblings they got **no `PAGE_META` entry and no layout**, so they inherited `collectionLayoutMetadata()`:
+
+1. **`canonical=/<collection>` — and the collection root is AUTH-GATED.** Verified live 2026-08-20: `GET /nba-top-shot` → **`x-matched-path: /login`**; `isPublicPath` is `false` for all five roots. **4 anon-public URLs** were declaring their canonical to be a page Googlebot is redirected away from.
+2. **No `FeatureTabGate`** — the component built in the SAME reorg so *"a direct URL to a tab a collection doesn't expose renders a graceful pointer instead of a broken/empty core tab."* Measured: **11 anon-public URLs** (e.g. `/ufc/challenges`, and UFC ships no challenges) rendered the raw tab. Confirmed live — `/ufc/challenges` returns `x-matched-path: /[collection]/challenges` and renders the challenges surface, not the pointer.
+
+⚠ **MY FIRST CONCLUSION WAS WRONG AND THE REPO'S OWN COPY REFUTED IT.** I was going to give them `PAGE_META` + layouts like every sibling. But `PAGE_META.play` already reads *"Play — {label} **Challenges**, Fast Break & Road to the Ring"*, and `packs` / `market` likewise cover `pack-sniper` / `hot-floors`. **Promoting them would have created query cannibalisation with their own parents — a defect manufactured by the fix.** The consolidation INTENT was right; only the TARGET was broken. Trevor picked canonical→parent from three options once the fork was filed.
+
+**The mapping is GROUNDED, and I say which part is evidence and which is reasoning.** From `lib/collections.ts`'s own one-line pitches: `challenges`→`play`, `pack-sniper`→`packs`, `hot-floors`→`market`. ⚠ **Only `challenges` is corroborated by a real link** (`components/play/PlayHub.tsx`). **`pack-sniper` and `hot-floors` have ZERO inbound links anywhere in the app** — direct-URL-only orphans — so their mapping rests on the pitches, not on observed navigation. Recorded in the code, not just here.
+
+⚠ **A naive parent mapping would have MOVED the broken target, not fixed it:** UFC ships no `play`, so `/ufc/challenges` → `/ufc/play` is another URL that does not exist. `foldedTabCanonical()` therefore falls back to **`/overview`** — the one tab every published collection ships, anon-public, self-canonical and sitemapped — whenever the collection lacks the parent.
+
+**Guard asserts the PROPERTY, not the mapping.** Pinning "challenges → play" would pass just as happily the day `/play` gets gated, which is the entire failure mode. So it re-derives every folded canonical across every published collection and asks `isPublicPath` whether a crawler can fetch it. **Proven able to fail:** restoring the pre-fix return value reds 3 of 6 arms; restored, 6/6. Controls both directions, and a case pinning that folded tabs stay OUT of `PUBLIC_TAB_PAGES` so promotion can never be silent.
+
+**Verified:** `tsc --noEmit` exit 0 · brand-token guard clean · full vitest green · deploy checked per commit.
+
+**Revert path:** `git revert <this code sha>` — 5 files (3 new layouts, `lib/seo.ts`, 1 new test). No DB, no migration, no cron, `proxy.ts` untouched. ⚠ Reverting restores BOTH omissions: the canonical points back at the login-gated root and the 11 ungated URLs render the raw tab again.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — continuation of the TODO session) — the sitemap's "this file mirrors proxy.ts" was PROSE, and it had been wrong for a month: 28 anon-public indexable pages were never advertised to Googlebot
 
 **How I got here:** the previous entry's correction (`/analytics/**` is auth-gated) came from reading `proxy.ts` instead of trusting a comment. `lib/sitemap-data.ts` opens with *"The public surface is defined by proxy.ts `isPublicPath`; this file mirrors it."* **A mirror asserted in a comment is a curated list with no instrument** — same class as the SEO guard gap fixed an hour earlier — so I measured the mirror instead of believing it.
