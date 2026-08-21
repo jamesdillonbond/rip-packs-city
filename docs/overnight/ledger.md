@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — "do all of them", area 5) — a live three-DELETE function had NO migration anywhere in the repo, and the drift guard's own list had 2 unregistered pins
+
+**Worked the rest of coverage-filing area (5).** Three findings, each one found by re-deriving rather than by reading the filing.
+
+⚠ **1. `prune_log_tables` had NO MIGRATION.** It is live, `app/api/cron/prune-logs/route.ts` calls it on a schedule, it is SECURITY DEFINER, and it issues **three DELETEs** — and `grep -rn prune_log_tables supabase/migrations/` returned **nothing**. Prod carried a deleter whose DDL the repo could not describe: no revert path, and nothing for a DB-invariant test to pin against. Snapshotted byte-identical from `pg_get_functiondef`, **committed but NOT applied** (a `CREATE OR REPLACE` with an identical body is a semantic no-op, and applying costs the usual ~10–20 s of user-facing `PGRST002` 500s for nothing). `check-migration-parity.mjs` checks prod→repo only, so a committed-but-unapplied snapshot does not break it.
+
+⚠ **2. The drift guard's `PINS` is a curated list, and 2 files were missing from it.** 172 pin files carry a verbatim copy of a live DB object; **171 were registered**. `capture_board_liveness_history.sql` and `v_pack_pipeline_health.sql` were not — so they read as covered from every angle (in `supabase/tests/`, executed by db-tests, visibly containing the DDL) while **nothing compared that DDL to the migration**. Their copies could rot indefinitely. Added a **completeness arm derived from a tree walk**, and registered the function one; its copy turned out NOT to have drifted, so registering was safe. ⚠ **The view one is excluded BY WHAT IT IS, not by name** — the extractor is `FN_KINDS = FUNCTION | PROCEDURE` and finds a body by its `$tag$` delimiters, which a VIEW has neither of. Re-derived from the file each run, so a view pin later converted to a function stops being excluded automatically; the arm also fails if the exclusion ever empties, so it cannot linger as dead reasoning.
+
+⚠ **3. One leg of `prune_log_tables` is DEAD IN PRACTICE.** Its `pipeline_runs` leg uses a **14-day** cutoff, but `pipeline_runs` is pruned to ~3 days by `prune_pipeline_runs(3)` on pg_cron. Measured: oldest row **73.3 h** — ✅ **exactly the "~73h" CLAUDE.md documents, re-derived and confirmed rather than quoted.** So `pipeline_runs_deleted` from this function is structurally **always 0** — a "nothing to do" zero, not a "nothing happened" one. Recorded in the migration header so nobody reads it as either health or breakage.
+
+**The pin itself** (`supabase/tests/prune_log_tables.sql`) covers all three legs. ⚠ **The `listing_resolution_failures` leg is an OR, not an age window**: `resolved_at IS NOT NULL OR first_seen_at < cutoff` deletes **every resolved row at any age** — a one-minute-old resolved row goes. Intended, but not what "3 days retention" implies, and the leg most likely to be mis-summarised in a comment.
+
+**Every assertion proven able to fail — this pin was RUN, not just written.** Provisioned a throwaway Postgres from the runner's own binaries (as CI does; `initdb` refuses to run as root, so via an unprivileged user) and executed the real suite: **174 files, exit 0**. Then mutated the verbatim block:
+
+| mutation | result |
+|---|---|
+| `started_at <` → `<=` | reds — *"a row exactly AT the 14-day cutoff is kept"* |
+| `first_seen_at <` → `<=` | reds — *"a row exactly AT the 3-day cutoff is kept"* |
+| `ran_at <` → `<=` | reds — *"a row exactly AT the 30-day cutoff is kept"* |
+| `OR` → `AND` on the resolved leg | reds — *"a RESOLVED failure is deleted at any age"* |
+
+⚠ The fixtures sit **exactly ON** each cutoff, not near it — the sibling pin records a `< → <=` mutation SURVIVING precisely that mistake, because a row inside the window is kept under either operator.
+
+⚠ **AND A GUARD CORRECTED ME MID-FLIGHT, WITH BETTER REASONING THAN MINE.** `migration-new-function-states-its-anon-exec-decision` failed my snapshot. I first added a real `REVOKE`, arguing it was inert on prod (verified: anon=false, authenticated=false, service_role=true) and *safer on a fresh DB*. The guard's message answers that directly: **use the marker for a snapshot, because `CREATE OR REPLACE` does not reset an ACL but a REVOKE is an ACTIVE change that WOULD alter production if applied.** A snapshot must be able to run as a no-op. Replaced my REVOKE with the marker and recorded why the guard was right.
+
+**Verified:** `tsc --noEmit` exit 0 · **full vitest 1,320 files / 14,252 tests green** · **DB-invariant suite 174 files, exit 0** on a real Postgres.
+
+**Revert path:** `git revert <this sha>` — 3 files (1 modified guard, 1 new pin, 1 new migration). **No DB change was made**: the migration is committed-unapplied and prod is untouched. Reverting removes the pin and the completeness arm and returns `prune_log_tables` to having no committed DDL.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, second wave) — four routes' invocation markers were SILENCING the stall alarm they were added to protect, and the fix collided with a concurrent session on the same ratchet
 
 **How I got here:** converting the 66 un-heartbeated `after()` routes from the ratchet landed earlier today, working down the 32 that sit on `pipeline_cadence_watchlist`. Seven had no marker at all. **Four already had one — under their own pipeline name, which is strictly worse than none.**
