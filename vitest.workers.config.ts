@@ -133,11 +133,26 @@ export default defineConfig({
       //
       // What is genuinely left is the residue inside those paths — alternate
       // error shapes and the deeper backfill branches — not a named blind spot.
+      // Re-seated 2026-08-20 after covering sports-proxy's retry / fingerprint-
+      // rotation branches — the largest uncovered cluster in the gate.
+      //   before  85.59 / 72.61 / 84.25 / 88.53   (thresholds 85.1 / 72.1 / 83.8 / 88.1)
+      //   after   86.40 / 73.01 / 86.11 / 89.23
+      // sports-proxy/index.ts alone moved 67.15 -> 72.14 st and 61.11 -> 72.22 fn.
+      //
+      // ⚠ MEASURED STABLE BEFORE RAISING, not assumed: three consecutive runs on
+      // the unchanged tree returned 86.40 / 73.01 / 86.11 / 89.23 EXACTLY. That
+      // matters because the COMPONENT gate's `functions` metric is documented in
+      // testing-and-ci.md as wobbling ~0.1pt on an unchanged tree, and seating a
+      // threshold against a single sample of a jittery metric is how a gate
+      // starts failing on nothing. This gate showed no jitter, so the margin
+      // below is the usual ~0.15 rather than a jitter allowance.
+      //
+      // Every point came from ADDING tests, never from loosening an include.
       thresholds: {
-        statements: 85.1,
-        branches: 72.1,
-        functions: 83.8,
-        lines: 88.1,
+        statements: 86.25,
+        branches: 72.85,
+        functions: 85.95,
+        lines: 89.05,
       },
     },
   },
