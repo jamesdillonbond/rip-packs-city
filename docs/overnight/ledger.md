@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — four entity sections were publishing "No sales yet." out of FAILED reads, and the helper made the honest option impossible
+
+**Found by following the Vercel error groups from this morning's health pass to the render layer.** `lib/entity-section-rpc.ts` degrades a DECORATIVE section to `[]` after retries — a deliberate, sound policy — and its own header already says `return []` *"renders a PLAUSIBLE EMPTY STATE"*. It then returns `[]` anyway, on the reasoning that the `[entity-section]` log makes the degradation greppable. ⚠ **The log is for the operator. The reader was still told something false.**
+
+**Measured 24h, from `get_runtime_errors`, all "degrading to empty":** `get_player_top_sales` **254** · `get_edition_recent_sales` **124 + 97** · `get_edition_fmv_history` 62 · `get_edition_offers` 60 · `get_edition_special_serials` 53 · `get_edition_in_packs` 51 · `get_edition_parallels` 47.
+
+**Four sections CONCLUDE from that `[]`** — the rest render nothing, which makes no claim and is fine:
+- `"No sales yet."` — edition Activity (highest-traffic public page in the product)
+- `"No open offers on this edition."` — edition Activity → Offers
+- `"No notable serials for this edition yet."` — edition Special Serials
+- `"No recent sales."` — team Activity
+
+⚠ **THE TWO ADJACENT TESTS PROVED IT SIDE BY SIDE, under a title claiming the opposite.** `__tests__/entity-section-rpc.test.ts` had *"an empty result is NOT an error"* asserting `toEqual([])` and *"degrades to empty for a decorative section"* asserting `toEqual([])` — **same value, two different states** — while the 2026-07-26 ledger entry cited that pair as *"the three-state distinction the canon requires."* It is the two-state collapse the canon forbids. Retitled in place with the reasoning, never deleted, and a new case **pins the collapse itself** as the reason the three-state API has to exist.
+
+⚠ **THE FAILURE WAS ERASED THREE TIMES, NOT ONCE**, and fixing one erasure would have changed nothing: `sectionRows` degrading to `[]`; the `.catch(() => [] as SaleRow[])` in the edition page's section fan-out; and — one interaction further in — `SalesTablePaginated`'s `catch { setExhausted(true) }`, which rendered a failed page-N fetch as *"you have reached the end of the sales history"*.
+
+**Shipped:**
+- `sectionRowsResult` / `sectionRowResult` — the three-state form (`{ rows, ok, error }`). ⚠ **`sectionRows` / `sectionRow` keep their exact signatures and are reimplemented on top**, so none of the ~12 existing callers changes behaviour; a test pins the delegation so the two cannot drift. The degrade/throw POLICY is untouched — only its VISIBILITY to the caller.
+- `lib/entity/section-empty-copy.ts` — one place deciding what a degraded section says. ⚠ **The honest empty copy passes through UNCHANGED.** A section that cries "unavailable" when it is merely quiet is the same defect inverted, and would fire on every low-volume edition; that inverse is asserted in both directions.
+- The four sections wired, plus the client-side page-error affordance (Load More survives, with `More sales couldn't be loaded — refresh to try again.`). Verified the whole chain is honest end to end: the backing API already returns a non-2xx via `apiErrorResponse`, so the client's `!r.ok` branch is real.
+- `__tests__/entity-sections-do-not-conclude-from-a-failed-read.test.ts` — a tree walk stopping the FIFTH.
+
+⚠ **THREE PINNING TESTS INVERTED, and one of them was VACUOUS-FLAKY.** *"marks the list exhausted when the fetch fails"* and its `(network error)` twin asserted the data loss as correct — and both waited for the string `"Load 30 more"` to be **absent**, which is also true for the moment the button reads `"Loading…"`. **They would have passed either way.** Now they wait for the settled state. Third: EditionActivity's *"shows an honest empty state (never errors)"* — the word "honest" was doing work the assertion could not back.
+
+⚠ **THE GUARD'S FIRST SCOPE WAS WRONG AND I NARROWED IT ON EVIDENCE, NOT TO GO GREEN.** Walking all of `app/(collections)/[collection]` flagged three collection-TAB clients; all three were checked and all three are fine — a filter claim (`"No listings match these filters."`), an already-correct `statsUnavailable ? <PanelUnavailable/> : empty` (the deep-audit R1/R4 fix), and explanatory prose. **That layer has its own sanctioned shape and this guard does not model it.** Widening the regex until they passed would have asserted a property across a layer this change never audited. The boundary is written into the guard: *what it is structurally silent about is every surface outside the entity sections.* ⚠ Also found and fixed a real bug in my own detector — `matchAll` throws on a non-global regexp, so without the `g` flag every arm was a TypeError rather than a finding.
+
+**Proven it can fail — 16 mutation controls, all RED, tree restored byte-identical:** `ok` forced true on failure · forced false on SUCCESS (the inverse case) · `sectionRowResult` always ok · `sectionRows` stops delegating · degraded copy still says "no sales" · empty copy replaced by the degraded copy · degraded copy with no next step · each of the four components ignoring its flag · `serverOk`/`offersOk` forwarding dropped · failed page fetch marking exhausted again · the page error never rendered · plus 3 on the guard (a regression in either fixed file, and a brand-new entity section shipping with a bare conclusion).
+
+**Verified:** `tsc` 0 · full suite **1329 files / 14,406 tests** green (1328 / 14,402 before) · primary gate **92.15 / 79.71 / 93.86 / 94.19** and components gate **91.00 / 82.10 / 89.59 / 93.89**, both PASS, thresholds untouched.
+
+**Revert:** `git revert <sha>`. Restores the four concluding empty states, the `setExhausted` on a failed page fetch, and the three pinning assertions. **No DB, no migration, no prod-state change** — this reads no database.
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — the pack-opens throughput collapse: mechanism established from an instrument that already existed, and the proposed lever measured to be a no-op
 
 **Docs only, no code and no DB change.** Re-derivation of the 17:35Z filing, which was parked as "CHARACTERISED, NOT FIXED (deploy blocked)" on the grounds that the instrument needed to settle it — an invocation heartbeat — required an edge-function deploy blocked by the gate-key BLOCKER.
