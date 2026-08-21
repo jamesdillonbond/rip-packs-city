@@ -825,7 +825,22 @@ function WalletMomentsBody() {
           break
         }
       }
-      setLoadingMore(false)
+      // ⚠ GUARDED, and this is the ONE state update in the loop that was not.
+      // Every other write checks `cancelled`; this trailing one ran unconditionally,
+      // and the loop can only reach it up to ~300 ms AFTER the effect was torn down
+      // (the first thing each iteration does is await a 300 ms timer, and the
+      // cancellation is only observed when that timer resolves).
+      //
+      // Two consequences, one per environment. In a browser: the effect re-runs on
+      // wallet/total-pages change, so the OLD run's `setLoadingMore(false)` lands
+      // after the NEW run's `setLoadingMore(true)` and clears the spinner while the
+      // new wallet is still paginating. Under vitest+jsdom: the file's environment
+      // is gone by then, so React's dispatchSetState throws
+      // `ReferenceError: window is not defined` as an UNHANDLED REJECTION — which
+      // fails the component job with every test passing (CI run 32536511776) and
+      // reads like an unrelated flake, because the throw is attributed to whichever
+      // file happened to be running.
+      if (!cancelled) setLoadingMore(false)
     }
 
     autoPaginate()
