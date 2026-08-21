@@ -1,4 +1,17 @@
-name = "spork-proxy"
+# ⚠ RENAMED 2026-08-20 — was `spork-proxy`, THE SAME NAME the live worker at
+# workers/spork-proxy/wrangler.toml deploys under. Two divergent sources pointed
+# at one Cloudflare worker: a `wrangler deploy` from THIS directory would have
+# silently overwritten the live worker with the 75-line version below, which
+# knows only mainnet24–27. The live one covers mainnet17–27 with per-spork height
+# routing and a ?tx= lookup, added 2026-06-25 specifically to extend the
+# historical floor to 2022-04-06 — so the overwrite would have broken the
+# pack-opens backfills without changing a line of application code.
+#
+# This directory is a 2026-04-27 fossil: nothing references it but its own README,
+# it has no test, and workers/spork-proxy is the maintained copy. Renamed rather
+# than deleted so the change is reversible and non-destructive; deletion is the
+# right end state and is filed separately.
+name = "spork-proxy-legacy-DO-NOT-DEPLOY"
 main = "index.ts"
 compatibility_date = "2025-09-01"
 

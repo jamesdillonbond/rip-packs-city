@@ -1,3 +1,8 @@
+// ⚠ SUPERSEDED 2026-04-27 → do not deploy. See wrangler.toml in this directory.
+// The maintained spork proxy is workers/spork-proxy/index.ts (255 lines,
+// mainnet17–27 + height routing + ?tx=). This 75-line copy knows only
+// mainnet24–27 and, until 2026-08-20, deployed under the SAME worker name.
+//
 // spork-proxy worker
 // Forwards Flow REST API requests to historical access nodes on port 8070.
 // Used by Supabase edge functions to scan pre-current-spork blockchain history.
