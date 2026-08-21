@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — CI failed with EVERY TEST PASSING: an async effect wrote state ~300 ms after its own teardown
+
+**CI run `32536511776` on `f3289d34`: `Test Files 241 passed · Tests 2989 passed · Errors 1 error`, exit 1.** ⚠ **A green test count is not a green job** — vitest failed it on one **unhandled rejection**, which is the only reason the components gate caught this at all.
+
+    ReferenceError: window is not defined
+      ❯ dispatchSetState  react-dom-client.development.js
+      ❯ autoPaginate      CollectionTabClient.tsx:828  → setLoadingMore(false)
+    This error originated in "__tests__/component-CollectionTabClient.test.tsx"
+
+**A SECOND, independent flake in the same job** — not a recurrence of the AdminFeedbackClient race fixed an hour earlier, and not caused by it.
+
+**Cause.** `autoPaginate` is an effect-scoped async loop whose cleanup sets `cancelled = true`. Every write **inside** the loop checks it; the trailing `setLoadingMore(false)` **after** the loop did not. And the loop can only reach that line up to **~300 ms after teardown**, because each iteration opens by awaiting a 300 ms timer and only observes the cancellation when that timer resolves. So the one unguarded write is also the one guaranteed to run late.
+
+⚠ **Two consequences, one per environment — and the browser one is a real product bug, not just test noise.** Under vitest the file's jsdom environment is gone by then, so React throws. In a BROWSER the effect re-runs on wallet / total-pages change, so the OLD run's `setLoadingMore(false)` lands **after** the NEW run's `setLoadingMore(true)` and clears the Load More spinner while the new wallet is still paginating. Fixed with `if (!cancelled) setLoadingMore(false)` — the loop's own convention, applied to the one line that had escaped it.
+
+⚠ **THE RUNTIME SYMPTOM IS NOT REPRODUCIBLE FROM A TEST, and I did not manufacture one that pretends otherwise.** React 19 makes a setState on an unmounted fiber a silent no-op, so in-process the write is invisible; the `ReferenceError` needs the jsdom ENVIRONMENT to be gone, which happens only after the whole file finishes. The browser-visible half is real but needs the search flow driven twice with the first mid-await, which no harness in that 1,330-line file supports. **A test asserting "no error was thrown" would have passed before the fix** — the vacuous-assertion shape this repo keeps finding.
+
+So `__tests__/collection-tab-autopaginate-honours-its-cancel-flag.test.ts` (new, 4 cases) pins the STRUCTURAL property, scoped to the function body **by brace matching** rather than a whole-file grep, with the reason for the source-assertion written in the file. **Three mutation controls, all red:** removing the guard reds 2 of 4; adding the guarded call while leaving the unguarded one (the half-fix that would satisfy a naive single-arm guard) reds 1; **renaming `autoPaginate` reds 3 rather than silently passing** — the population arm exists precisely so a rename cannot turn this into theatre.
+
+⚠ **The guard reddened on its OWN fix's comment on the first run** — my explanation quotes `setLoadingMore(false)` while describing the bug. CLAUDE.md records this shape (six-plus guards have fired on the comment documenting the fix) and it still cost a cycle. `stripComments()` added, with the incident noted in the file. **Reading the rule is not the same as applying it; assume every new source guard needs it.**
+
+`tsc` 0. Components + primary suites green.
+
+**Revert:** `git revert <sha>` (code-only; no DB or prod-state change).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — the whale map has been 4 days 19 hours stale with nothing on screen saying so, and the field that looked like a freshness stamp was a lie
 
 Found by widening yesterday's question rather than the same population: having fixed the two `readBoardOrLive` boards that showed no age, I asked which `/insights` boards render no age **at all** (tree walk: 11 of 30), then which of those serve data that can be genuinely old.
