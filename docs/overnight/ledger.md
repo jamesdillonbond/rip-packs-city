@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive) — my own deploy ERRORed, and chasing it found the THIRD instance of the unbounded-read class on the one `/insights` page the ban could not see
+
+⚠ **MY DEPLOY FAILED AND I ONLY KNOW BECAUSE I CHECKED PER COMMIT.** `a1a5f4f9` (the heartbeat conversions) went **ERROR**; production stayed on `b9d052c6`, so my code was on `main` and **not in production** — exactly the trap CLAUDE.md names ("a deploy that ERRORs is easy to miss because the next push supersedes it and goes READY").
+
+**Build log, 01:19–01:22Z:** ~15 board pages logged a clean `read exceeded 8000ms` and fell back. Then `Failed to build /insights/page: /insights ... because it took more than 60 seconds` **three times**, then `Export encountered an error on /insights/page, exiting the build`. Alongside: `canceling statement due to statement timeout` on six candy/panini views and `Timed out acquiring connection from connection pool`.
+
+**NOT MY CHANGE, established rather than asserted:** my diff was 4 cron route handlers (dynamic, never prerendered), one test constant and the ledger; `/insights/page` imports none of them. The commit immediately before mine deployed READY six minutes earlier. Measured live at 01:23Z: **35 active connections, 12 waiting on `DataFileRead`** — a saturation spell in progress, so I did **not** redeploy into it.
+
+⚠ **BUT THE PAGE THAT FAILED IS A REAL DEFECT, AND IT IS THE THIRD OF ITS CLASS.** `app/insights/page.tsx` calls `get_insights_hub_stats` through a service-role client with **no bound at all** — while every board page under `app/insights/<slug>/` bounds at 8 s (that is what the clean fallbacks in the log are). A service-role RPC has **no server-side bound** (the role timeout applies at LOGIN and PostgREST logs in as `authenticator`), so the client is the only bound there is, and there was none.
+
+⚠ **AND THE BAN THAT EXISTS FOR THIS COULD NOT SEE IT.** `insights-server-pages-bound-their-reads` — written after TWO production-build failures on 2026-08-15, and explicitly a "ban at zero, no allowlist" — derived its population as `readdirSync(INSIGHTS_DIR)` filtered to **directories**. `app/insights/page.tsx` is a **FILE** in that directory, so the hub was outside the guard **by construction**. The guard's own header says the class recurred twice because prior fixes were "applied to the ONE page that failed rather than to the shape"; this is the same lesson one level up — **the shape-level fix had a shape-level blind spot.**
+
+**Shipped:**
+1. `app/insights/page.tsx` bounds the hub read with `withBoardBudget(...)`. On timeout it rejects, the existing catch returns `null`, and **null is already a supported render path** (`stats?.market` hides the band, `stats ? liveStat(...) : null` drops the per-card stat). The hub loses its live numbers instead of failing every deploy on the platform.
+2. The guard now walks `[".", ...readdirSync(...)]` — `join(INSIGHTS_DIR, ".", "page.tsx")` resolves to the hub with **no change at any consumption site** — plus a not-vacuous arm asserting `"."` is in scope, so the walk cannot quietly revert to subdirectories-only.
+
+**Proven able to fail:** with the widened guard in place, reverting only `app/insights/page.tsx` reds 2 arms (`/insights/. bounds its read`, and the zero-allowlist count with `expected [ '.' ] to deeply equal []`). Restored, 31/31 green.
+
+⚠ **A HYPOTHESIS I AM FILING AS ONE, NOT AS A FINDING:** the longest-running process throughout was `autovacuum: VACUUM public.wallet_moments_cache` (811 s → 1,012 s). ⚠ **I first mis-read that as a client query exceeding the worst-observed 352 s supabaseAdmin RPC — it is not, it is a maintenance process and that comparison was wrong.** On 2026-08-18 an **aggressive 2% autovacuum scale factor** was set on that exact table to fix a rotted visibility map. A 2% factor on a large table means far more frequent autovacuum, which is a *plausible* contributor to IO spells like tonight's — **a plausible mechanism is not a measurement**, and this needs a before/after on autovacuum frequency and IO before anyone acts on it.
+
+**Verified:** `tsc --noEmit` exit 0 · brand-token guard clean · **full vitest 1,320 files / 14,247 tests green**. Re-measured before pushing: active connections **35 → 7**, IO waiters **12 → 6**.
+
+**Revert path:** `git revert <this code sha>` — 2 files. No DB, no migration, no cron. ⚠ Reverting restores the unbounded hub read AND re-opens the guard's blind spot, i.e. it re-arms a coin-flip on every future deploy.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "do it all") — a CONCURRENT SESSION shipped the same heartbeat item mid-flight, so I threw my duplicate away and contributed only what was missing: the four `maxDuration = 800` routes, the highest kill risk in the fleet
 
 ⚠ **COLLISION, and the honest outcome is that most of my work was discarded.** I built the whole item independently — `lib/pipeline/heartbeat.ts`, 10 unit tests, a tree-walk ratchet at BUDGET 53, the three candy migrations — and while I was running the full suite, a concurrent session landed **`c57405ed` + `2df7f2fb`**: the same helper, the same migrations, its own ratchet. Rather than force mine over it, I **`git reset --hard origin/main` and re-derived what was genuinely additive.**
