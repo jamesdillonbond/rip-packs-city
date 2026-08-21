@@ -28,6 +28,25 @@
 -- rather than an error: nothing raises, the rows are simply gone, and every
 -- downstream reader silently agrees with the smaller number.
 --
+-- ── ANON-EXECUTE DECISION (required by
+--    __tests__/migration-new-function-states-its-anon-exec-decision.test.ts) ──
+--
+-- ⚠ NO REVOKE HERE, DELIBERATELY, and the guard's own message says why:
+-- `CREATE OR REPLACE FUNCTION` does NOT reset a function's ACL, so a revoke in a
+-- snapshot migration would be the one statement in this file that CHANGES
+-- production — the opposite of a provenance no-op.
+--
+-- MEASURED 2026-08-20 rather than assumed. All three are already locked down in
+-- prod — `has_function_privilege(...)` reports anon=false and authenticated=false
+-- for each, and all three are `prosecdef = true`. So there is nothing to revoke,
+-- and stating the decision is the correct and complete action:
+--
+-- ⚠ Each marker must sit on ONE line with its function name — the guard matches
+-- `anon-exec:` and the name on the SAME line, so a wrapped comment does not count.
+-- anon-exec: intentional — already REVOKED in prod (anon=false, authenticated=false, measured 2026-08-20); SECURITY DEFINER retention deleter reached only from run_weekly_log_purges() (purge_old_support_conversations)
+-- anon-exec: intentional — already REVOKED in prod (anon=false, authenticated=false, measured 2026-08-20); SECURITY DEFINER retention deleter, no user-facing caller (purge_old_usage_events)
+-- anon-exec: intentional — already REVOKED in prod (anon=false, authenticated=false, measured 2026-08-20); SECURITY DEFINER retention deleter, no user-facing caller (purge_old_wallet_holdings_snapshots)
+--
 -- Revert: none required — re-running any statement here restores the identical
 -- body it already has.
 
