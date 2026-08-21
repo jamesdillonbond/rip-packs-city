@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · FILED (Claude Code, interactive) — the flagship `deals` board fails ~80% of refreshes, runs up to 15.1h stale, and the failure is ~20h/day rather than the 05–08:30Z saturation window
+
+**Docs only, nothing shipped.** Picks up the loose end the 17:30Z Vercel-attribution filing left explicitly open — *"the underlying timeouts are real … nothing here says the boards are healthy."*
+
+⚠ **THE SMEARED INSTRUMENT HID THE TWO BOARDS THAT MATTER — that filing's own "inverse risk", realised.** It is entirely about `[panini-squeeze]` and eight `[candy-mlb]` groups, **both UNPUBLISHED collections**, because those emit the loud distinctive strings `get_runtime_errors` surfaces. Per-board outcomes from `pipeline_runs.extra.boards` (509 ticks/48h) put **`deals` at 78.2% and `first-mint` at 63.7%** — panini's rate, on the **published flagship** — and **neither appears anywhere in that filing.** The instrument surfaced the loudest error STRING, not the worst-affected board.
+
+**Worsening, measured as a series:** `deals` fail% by PT day — **08-19 67.7% · 08-20 80.4% · 08-21 80.1%**, against the **59.5%** already recorded in the cron's own source comment on 2026-08-15. All three affected boards move together, so a shared cause, not three query regressions. (08-18 discounted — partial day at the ~73h retention edge.)
+
+⚠ **NOT THE DOCUMENTED 05–08:30Z SATURATION WINDOW, and that framing should stop being applied here.** By UTC hour over 72h, `deals` fails **71–100% from 01:00–19:00Z** and recovers to **0–15% only between 20:00–00:00Z**. The failure band is **~20h/day — four times wider than the healthy one** — and the healthy window is early-afternoon Pacific, so the board is stale straight through the US evening. "Saturation-driven, self-heals when load lifts" no longer describes it.
+
+**What users get:** 219 stale ticks/48h against a 2h ceiling, **worst 906 min = 15.1h**, average 415 min = 6.9h. ⚠ **This is NOT a "failed read renders as an answer" defect — I checked before assuming.** `readBoardOrLive` returns `source:"stale-cache"`, `withCacheMeta` stamps the snapshot's real `fetched_at`, and the client renders `Updated <FreshnessStamp>`. The age is disclosed truthfully. **The judgement call, flagged not changed:** `degradedFromSource` fires only on `live-degraded`, so 15h-old data carries **no degraded banner** — arguably too quiet for a deal-finding board, but a product decision, and the ladder deliberately treats `stale-cache` as non-regressive.
+
+**Cost:** `cross_collection_deals_board` is a VIEW — `pg_stat_statements` **928 calls · mean 12,868 ms · 9,295,589 shared blocks ≈ 10,017 blocks (~78 MB) per call.** The mean alone exceeds the statement timeout, so ~80% failure is arithmetic, not flakiness.
+
+⚠ **MY OWN FIRST HYPOTHESIS WAS REFUTED BY THE PLAN, and filing it unchecked would have aimed the next person at the wrong leg.** I expected the AllDay `JOIN LATERAL … fmv_snapshots … ORDER BY computed_at DESC LIMIT 1` to be the pathology — the shape CLAUDE.md records at 18,766 vs 1,046,192 buffers for `compute_pack_ev_per_edition_weighted`. **`EXPLAIN` says both lateral legs are index-backed and partition-pruned at cost ≈ 1.8 each.** They are fine. The real driver is that the outer `ORDER BY discount_pct DESC LIMIT 120` **cannot push down**: every call materialises ~1,396 candidate rows from a **19,838-row** `editions` index scan (TopShot leg ≈ 12,300) plus a `Sort→Unique` over **31,534 → 8,988** `cached_listings_v2` rows (AllDay leg ≈ 9,400). That is **"a `LIMIT` bounds OUTPUT, not COST"** on the flagship public board.
+
+**Levers, none pulled** (matview on the cron's cadence · pre-filter the TopShot leg before the lateral · drop the 5-min cadence, which at 80% failure mostly buys retries · or accept it) — ⚠ **but do NOT raise `BOARD_SNAPSHOT_STALE_CEILING_MS` to silence the `STALE` lines**, which converts a measured degradation into a quiet one. **Not auto-shipped:** board/FMV query logic is on the off-limits list and this is the same class as the two measured-but-unshipped DB fixes already awaiting Trevor's decision. Full detail: [docs/overnight/inbox/2026-08-21T2245Z-the-deals-board-fails-80pct-of-refreshes-and-is-20h-a-day-not-a-saturation-window.md](inbox/2026-08-21T2245Z-the-deals-board-fails-80pct-of-refreshes-and-is-20h-a-day-not-a-saturation-window.md).
+
+**Verified:** read-only — `EXPLAIN` without `ANALYZE` (planning only), plus `pipeline_runs` / `pg_stat_statements` / `pg_views` reads. No code, no DB change.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — an instrument used 18 times in this ledger and referenced NOWHERE else, which is why I missed it today
 
 **Docs only.** Follow-on from correcting my own pack-opens filing: the thing that made that filing wrong was writing *"the instrument that would settle it does not exist here"* about `net._http_response` — **after having queried that table during the same investigation.**
