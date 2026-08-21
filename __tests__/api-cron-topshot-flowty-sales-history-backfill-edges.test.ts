@@ -189,19 +189,41 @@ describe("topshot-flowty-sales-history-backfill — batch-insert dedupe retry", 
 })
 
 describe("topshot-flowty-sales-history-backfill — event-range failures", () => {
-  it("reports below_floor on the spork-floor 404 and treats any other status as an empty range", async () => {
+  it("holds the backward cursor on a 500 and stops honestly at the spork floor — the two non-2xx cases are NOT the same", async () => {
+    // ⚠ INVERTED 2026-08-21, NOT deleted. This case previously ended
+    //   expect(status).toBe(200); expect(below_floor).toBe(false); expect(rows_found).toBe(0)
+    // under the title "...treats any other status as an empty range" — i.e. it
+    // ASSERTED that an upstream 500 should read as a window containing no sales.
+    // It does not: these crons walk history BACKWARD and then move the cursor to
+    // `start`, so an unread window ends up ABOVE the cursor and nothing ever
+    // returns to it. A passing assertion is what held that in place.
+    //
+    // The two non-2xx cases must stay DISTINGUISHABLE, which is the whole reason
+    // this family could not take the blanket throw the forward indexers took:
+    //   404 "is less than"  → the node's block floor. Legitimate stop, cursor advances.
+    //   anything else       → a failed read. Cursor must NOT move.
     fetchMock = installFetchMock(flowStubs({ eventsHttp: { status: 404, text: "start height 1 is less than the spork root block height" } }))
     const spy = install(mappedFixtures())
     await POST(req())
     expect((terminalLog(spy.rpcCalls)!.p_extra as Record<string, unknown>).below_floor).toBe(true)
 
+    // The floor case still advances — that is the point of distinguishing it.
+    expect((spy.writes.event_cursor ?? []).length).toBeGreaterThan(0)
+
     fetchMock.restore()
     fetchMock = installFetchMock(flowStubs({ eventsHttp: { status: 500, text: "upstream boom" } }))
     const spy2 = install(mappedFixtures())
-    expect((await POST(req())).status).toBe(200)
+    const res = await POST(req())
+    // ⚠ Assert the ABSENCE of a cursor write, not a particular cursor value: the
+    // failure mode is movement, and a value assertion passes if the write moves
+    // somewhere else unexpected.
+    expect(spy2.writes.event_cursor ?? []).toHaveLength(0)
     const log = terminalLog(spy2.rpcCalls)!
-    expect((log.p_extra as Record<string, unknown>).below_floor).toBe(false)
-    expect(log.p_rows_found).toBe(0)
-    expect(log.p_ok).toBe(true)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error ?? "")).toMatch(/500/)
+    // …and the logged cursor reports where it really is, not where the tick
+    // intended to move it.
+    expect(log.p_cursor_after).toBe(log.p_cursor_before)
+    expect(res.status).toBe(500)
   })
 })

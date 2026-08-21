@@ -190,17 +190,32 @@ async function fetchEventRange(
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
     if (!res.ok) {
       const body = (await res.text()).slice(0, 200)
-      const belowFloor = res.status === 404 && /is less than/i.test(body)
-      if (!belowFloor) {
-        console.log(`[${PIPELINE_NAME}] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${body}`)
+      // ⚠ A 404 whose body says "is less than" is the node's BLOCK FLOOR, not a
+      // failure — these crons walk history BACKWARD and are meant to stop there.
+      // It is the one non-2xx that must NOT throw, which is why this family was
+      // held back from the 2026-08-21 pass that fixed the ten forward indexers:
+      // a blanket throw would have broken the legitimate stop condition.
+      if (res.status === 404 && /is less than/i.test(body)) {
+        return { blocks: [], belowFloor: true }
       }
-      return { blocks: [], belowFloor }
+      // ⚠ EVERY OTHER non-2xx THROWS. Swallowed into `{blocks: [], belowFloor:
+      // false}` it read as a range that was genuinely empty, and the caller then
+      // moved the backward cursor to `start` unconditionally — so the unread
+      // range ended up ABOVE the cursor, which walks away from it forever.
+      // Nothing revisits it: these are history backfills, not tailing indexers.
+      // Throwing skips the cursor upsert entirely (it sits after the scan inside
+      // the same try) and the run logs ok:false, so the window is retried.
+      throw new Error(
+        `[${PIPELINE_NAME}] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${body}`
+      )
     }
     const json = (await res.json()) as FlowEventBlock[]
     return { blocks: Array.isArray(json) ? json : [], belowFloor: false }
   } catch (e) {
+    // ⚠ RETHROW. The same swallow, one layer out: a timeout or ECONNRESET
+    // returned an empty range and the cursor walked past it just the same.
     console.log(`[${PIPELINE_NAME}] events ${start}-${end} err: ${e instanceof Error ? e.message : String(e)}`)
-    return { blocks: [], belowFloor: false }
+    throw e
   }
 }
 
@@ -597,6 +612,13 @@ async function run(req: NextRequest): Promise<NextResponse> {
   const end = ceiling - 1
   const start = Math.max(SPORK_FLOOR_HINT, ceiling - scanWindow)
   const cursorBefore = String(ceiling)
+  // ⚠ The block the cursor upsert ACTUALLY wrote, or null when it never ran.
+  // `cursorAfter` used to be recomputed from `ceiling - scanWindow` at log time,
+  // independent of whether the write happened — so a tick that threw before the
+  // upsert still logged a cursor MOVEMENT that did not occur. That is the one
+  // instrument someone would use to notice this whole class, and it was
+  // reporting an unmeasured number.
+  let cursorWritten: number | null = null
 
   if (end < SPORK_FLOOR_HINT) {
     await logRun(startedAt, startedMs, true, 0, 0, 0, null, cursorBefore, cursorBefore, {
@@ -915,13 +937,18 @@ async function run(req: NextRequest): Promise<NextResponse> {
     }
 
     // ── Advance the backward cursor ────────────────────────────────────────────
-    const newLow = belowFloor ? start : start
+    // ⚠ This was `belowFloor ? start : start` — a no-op ternary that READ like a
+    // below-floor special case and had none. The four sibling backfills write
+    // `start` unconditionally, so the behaviour is unchanged; only the false
+    // impression of a branch is gone.
+    const newLow = start
     await supabaseAdmin
       .from("event_cursor")
       .upsert(
         { id: CURSOR_ID, last_processed_block: newLow, updated_at: new Date().toISOString() },
         { onConflict: "id" },
       )
+    cursorWritten = newLow
 
     extra.scanned = `${start}-${end}`
     extra.blocks = end - start + 1
@@ -945,7 +972,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
   }
 
   if (!dryRun) {
-    const cursorAfter = String(Math.max(SPORK_FLOOR_HINT, ceiling - scanWindow))
+    const cursorAfter = cursorWritten !== null ? String(cursorWritten) : cursorBefore
     await logRun(startedAt, startedMs, ok, rowsFound, rowsWritten, rowsSkipped, errorMsg, cursorBefore, cursorAfter, extra)
     // Resolve any newly-written unmapped rows + reprice via the existing chain.
     await fireNextPipelineStep("/api/cron/allday-resolve-unmapped", true)

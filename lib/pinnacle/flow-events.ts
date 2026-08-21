@@ -144,7 +144,22 @@ export async function ingestPinnacleSalesEvents(
     fromBlock = currentHeight - BLOCK_CHUNK_SIZE
   }
 
-  // Process in chunks of 250 blocks
+  // Process in chunks of 250 blocks.
+  //
+  // ⚠ THE 18th INSTANCE OF THE 2026-08-21 CURSOR-LEAPFROG CLASS, and the one the
+  // guard could not see: `indexer-cursor-hold-on-partial-scan-guard` derives its
+  // population with `grep -rl … app/api`, so a `lib/` implementation of the same
+  // ingest is outside it BY CONSTRUCTION — the third time this pass that a
+  // population derived from a proxy (the symbol, then the directory) missed real
+  // members. This module is reached from app/api/pinnacle/ingest-events.
+  //
+  // Its fetcher already THROWS on a non-2xx (unlike the seventeen in app/api),
+  // so it never had the swallow — it had only the second half of the defect: the
+  // cursor below was written to `currentHeight` unconditionally, however many
+  // chunks had failed. An upstream outage on any chunk therefore skipped that
+  // range forever, and a failed UPSERT did the same, since `errors.push` does
+  // not stop the cursor either. Both now hold.
+  let firstFailedChunkStart: number | null = null
   let blockCursor = fromBlock
   while (blockCursor < currentHeight) {
     const chunkEnd = Math.min(blockCursor + BLOCK_CHUNK_SIZE - 1, currentHeight)
@@ -171,6 +186,9 @@ export async function ingestPinnacleSalesEvents(
 
         if (error) {
           errors.push(`Upsert error at block ${blockCursor}: ${error.message}`)
+          // A range we FETCHED but failed to persist is just as unread as one we
+          // never fetched — the rows do not exist either way.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = blockCursor
         } else {
           salesIngested += rows.length
         }
@@ -179,10 +197,17 @@ export async function ingestPinnacleSalesEvents(
       errors.push(
         `Fetch error blocks ${blockCursor}-${chunkEnd}: ${(err as Error).message}`
       )
+      if (firstFailedChunkStart === null) firstFailedChunkStart = blockCursor
     }
 
     blockCursor = chunkEnd + 1
   }
+
+  // Cap the cursor to just below the first chunk that failed (currentHeight when
+  // none did). Later successful chunks are harmlessly re-scanned next tick — the
+  // upsert is `ignoreDuplicates` on a deterministic id.
+  const newCursor =
+    firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : currentHeight
 
   // Update backfill_state cursor
   const { error: cursorError } = await supabase
@@ -190,7 +215,7 @@ export async function ingestPinnacleSalesEvents(
     .upsert(
       {
         id: BACKFILL_STATE_ID,
-        cursor: currentHeight,
+        cursor: newCursor,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }
@@ -202,7 +227,10 @@ export async function ingestPinnacleSalesEvents(
 
   return {
     sales_ingested: salesIngested,
-    new_cursor: currentHeight,
+    // ⚠ Report the cursor that was WRITTEN. Returning `currentHeight` while
+    // storing something lower is the fabricated-number shape: the caller's
+    // response body would claim progress the database does not have.
+    new_cursor: newCursor,
     errors,
   }
 }

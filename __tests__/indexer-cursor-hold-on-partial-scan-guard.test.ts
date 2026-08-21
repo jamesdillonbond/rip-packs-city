@@ -162,34 +162,36 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       .filter(Boolean)
       .sort()
 
-    // ⚠ KNOWN OFFENDERS — A RATCHET, NOT AN ALLOWLIST. This set is asserted by
-    // EXACT EQUALITY below, so it can only ever SHRINK: fixing one of these
-    // reddens the guard until it is removed from the list, and a NEW route that
-    // swallows cannot join it. That is the difference between a ratchet and the
-    // per-file allowlist this repo keeps calling theatre.
+    // ⚠ KNOWN OFFENDERS — A RATCHET, NOT AN ALLOWLIST. Asserted by EXACT
+    // EQUALITY below, so it can only ever SHRINK: fixing one reddens the guard
+    // until it is delisted, and a NEW route that swallows cannot join it.
     //
-    // Why these seven are not simply fixed alongside the ten that were: their
-    // fix is NOT the one-line throw. Measured 2026-08-21:
+    // ✅ EMPTY SINCE 2026-08-21. It held seven routes for a few hours — the two
+    // Pinnacle indexers and the five sales-history backfills — because their fix
+    // was genuinely not the one-line throw the other ten took:
     //
-    //   pinnacle-{listings,sales}-indexer — swallow AND have no cursor hold at
-    //     all. pinnacle-listings advances to targetHeight unconditionally after
-    //     the loop; pinnacle-sales advances PER CHUNK inside a catch that does
-    //     not break, so a later chunk leapfrogs a failed one even on a THROWN
-    //     error. Throwing alone changes nothing there — they need the full
-    //     partial-scan pattern, on a live Pinnacle ingest path.
+    //   pinnacle-listings-indexer had no hold at all (chunk catch neither broke
+    //     nor recorded; cursor set to targetHeight unconditionally after the
+    //     loop). It now tracks `firstFailedChunkStart` and caps, like its seven
+    //     siblings.
+    //   pinnacle-sales-indexer wrote the cursor PER CHUNK from a catch that does
+    //     not break, so a later chunk leapfrogged a failed one even on a THROWN
+    //     error. The per-chunk write is now gated on nothing having failed yet.
+    //   the 5 *-sales-history-backfill crons walk history BACKWARD and have a
+    //     LEGITIMATE non-throwing non-2xx — a 404 whose body says "is less than",
+    //     the node's block floor — so a blanket throw would have broken their
+    //     stop condition. They now throw on every OTHER non-2xx and return the
+    //     below-floor sentinel only for that one.
     //
-    //   *-sales-history-backfill (5) — swallow non-2xx AND thrown errors into
-    //     `{blocks: [], belowFloor}`, then advance the backward cursor with
-    //     `const newLow = belowFloor ? start : start` (both branches identical),
-    //     unconditionally. A failed sub-range is skipped permanently, and these
-    //     walk HISTORY, so nothing ever comes back for it. They also have a
-    //     legitimate non-throwing case (a 404 "is less than" below the node's
-    //     block floor), so the fix has to distinguish it rather than throw on
-    //     every non-2xx.
-    //
-    // Filed with measurements in
-    // docs/overnight/inbox/2026-08-21T1420Z-an-http-error-defeats-the-cursor-hold-in-7-of-8-indexers.md
-    const KNOWN_SWALLOWERS = [
+    // ⚠ Which is exactly why the swallow test below cannot be "does it return an
+    // empty result": the below-floor return IS an empty result, and it is
+    // correct. The discriminator is whether the empty result carries a signal
+    // the caller acts on. See `swallowsEmpty`.
+    const KNOWN_SWALLOWERS: string[] = []
+
+    // Routes named so a rename cannot silently drop one out of the population
+    // now that KNOWN_SWALLOWERS is empty and can no longer carry that duty.
+    const MUST_BE_DISCOVERED = [
       "app/api/cron/allday-sales-history-backfill/route.ts",
       "app/api/cron/golazos-sales-history-backfill/route.ts",
       "app/api/cron/pinnacle-sales-history-backfill/route.ts",
@@ -197,12 +199,34 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       "app/api/cron/ufc-sales-history-backfill/route.ts",
       "app/api/pinnacle-listings-indexer/route.ts",
       "app/api/pinnacle-sales-indexer/route.ts",
+      "app/api/allday-listings-indexer/route.ts",
+      "app/api/topshot-offers-indexer/route.ts",
     ]
 
-    /** The `if (!res.ok)` handler inside fetchEventRange, comments stripped. */
-    function okHandler(route: string): string | null {
+    /**
+     * Does this `if (!res.ok)` handler swallow a failed fetch into an empty
+     * result?
+     *
+     * ⚠ A BARE "returns something empty" TEST IS WRONG HERE, and getting that
+     * wrong would have punished the correct fix. The five backfills legitimately
+     * return `{ blocks: [], belowFloor: true }` when the access node reports the
+     * range is below its block floor — an empty result that is a real answer,
+     * not a lost read, and the caller stops the backward walk on it.
+     *
+     * So the property is: an empty-blocks return is honest ONLY when it carries
+     * that sentinel. `{ blocks: [], belowFloor }` — the shorthand that could be
+     * false — and a bare `return []` are both the swallow.
+     */
+    function swallowsEmpty(handler: string): boolean {
+      if (/return\s*\[\s*\]/.test(handler)) return true
+      const emptyReturns = handler.match(/return\s*\{[^}]*blocks\s*:\s*\[\s*\][^}]*\}/g) ?? []
+      return emptyReturns.some((r) => !/belowFloor\s*:\s*true/.test(r))
+    }
+
+    /** The `if (!res.ok)` handler inside the named fetcher, comments stripped. */
+    function okHandler(route: string, fnName = "fetchEventRange"): string | null {
       const src = stripComments(readFileSync(route, "utf8"))
-      const at = src.indexOf("async function fetchEventRange")
+      const at = src.indexOf(`async function ${fnName}`)
       if (at < 0) return null
       // ⚠ NOT `indexOf("{", at)`. The backfills declare
       // `): Promise<{ blocks: FlowEventBlock[]; belowFloor: boolean }> {`, so the
@@ -243,7 +267,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       // sales-indexer is absent by construction rather than by exemption: it
       // reaches Flow through fcl, which THROWS, so it never had the swallow.
       expect(fetchers).not.toContain("app/api/sales-indexer/route.ts")
-      for (const k of KNOWN_SWALLOWERS) {
+      for (const k of MUST_BE_DISCOVERED) {
         expect(fetchers, `${k} must still be discovered`).toContain(k)
       }
     })
@@ -259,7 +283,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
         // result on another would satisfy a presence-only check while keeping
         // the hole. Mutation-verified against exactly that shape.
         expect(
-          /return\s*(\[\s*\]|\{[^}]*blocks\s*:\s*\[\s*\])/.test(handler ?? ""),
+          swallowsEmpty(handler ?? ""),
           `${route} swallows a non-2xx event fetch into an empty result. The ` +
             `chunk loop only ever sees THROWN errors, so the failed range reads ` +
             `as GENUINELY EMPTY, the cursor advances past blocks nothing ` +
@@ -274,6 +298,119 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       },
     )
 
+    it("swallowsEmpty discriminates the below-floor sentinel from a lost read", () => {
+      // ⚠ GUARDS THE GUARD, and this one is load-bearing rather than ceremonial:
+      // the previous regex flagged ANY empty-blocks return, so it would have
+      // reported the five backfills as still broken AFTER they were correctly
+      // fixed — punishing the fix and pushing the next person to weaken the
+      // check. A discriminator that cannot be shown to discriminate is a coin.
+      const swallows = [
+        "{ return [] }",
+        "{ return { blocks: [], belowFloor } }",
+        "{ return { blocks: [], belowFloor: false } }",
+        // Mixed: throws on one branch, swallows on another. Presence-of-throw
+        // alone would call this clean.
+        "{ if (a) throw new Error('x')\n return { blocks: [], belowFloor: false } }",
+      ]
+      for (const h of swallows) {
+        expect(swallowsEmpty(h), `should be flagged: ${h}`).toBe(true)
+      }
+      const honest = [
+        "{ throw new Error('HTTP 500') }",
+        "{ if (res.status === 404) { return { blocks: [], belowFloor: true } }\n throw new Error('x') }",
+        // A non-empty return is not this check's business.
+        "{ return { blocks: json, belowFloor: false } }",
+      ]
+      for (const h of honest) {
+        expect(swallowsEmpty(h), `should NOT be flagged: ${h}`).toBe(false)
+      }
+    })
+
+    // ⚠ THE POPULATION WAS NEVER DERIVED FROM THE RIGHT THING — third correction
+    // in one pass, and the one that matters most.
+    //
+    //   v1  grep `firstFailedChunkStart`               →  8 files (the cursor HOLD)
+    //   v2  grep `async function fetchEventRange`      → 17 files (the FETCHER'S NAME)
+    //   v3  grep `v1/events`                           → 22 files (the URL)
+    //
+    // Each earlier derivation is a PROXY for the property, and each proxy leaked:
+    // v1 missed every route with no hold; v2 missed every route whose fetcher is
+    // called something else. Measured 2026-08-21, v2's blind spot was not
+    // hypothetical — it hid TWO live instances of the same permanent-loss bug:
+    //
+    //   lib/pinnacle/flow-events.ts             fetchCompletedPinnacleSales
+    //   app/api/admin/backfill-offer-fill-sales fetchCompletedRange
+    //
+    // The URL cannot vary — every one of these reads Flow's `/v1/events`. So the
+    // population is derived from it, and anything not in the fetchEventRange
+    // family has to be ACCOUNTED FOR by name below. Suppression is the curated
+    // list; the population is not.
+    const urlWalkers = execSync(
+      "grep -rl 'v1/events' app lib --include='*.ts' || true",
+      { encoding: "utf8" },
+    )
+      .split("\n")
+      .filter(Boolean)
+      .sort()
+
+    // Reads an event range but persists NO block cursor, so it cannot leapfrog
+    // one. ⚠ That claim is ASSERTED below, not asserted-by-comment: the moment
+    // one of these gains a cursor, its exemption dies.
+    const NO_BLOCK_CURSOR = [
+      "app/api/cron/allday-resolve-unmapped-tail/route.ts",
+      "app/api/cron/allday-resolve-unmapped/route.ts",
+      "lib/chains/flow/allday-edition-onchain.ts",
+    ]
+
+    // Has a cursor and IS this class, but its fetcher has another name. Each is
+    // held by the entry beside it rather than by the fetchEventRange arm.
+    const OTHER_FETCHERS: Record<string, string> = {
+      "app/api/admin/backfill-offer-fill-sales/route.ts": "fetchCompletedRange",
+      "lib/pinnacle/flow-events.ts": "fetchCompletedPinnacleSales",
+    }
+
+    it("every file that reads a Flow event range is accounted for", () => {
+      const unaccounted = urlWalkers.filter(
+        (f) => !fetchers.includes(f) && !NO_BLOCK_CURSOR.includes(f) && !(f in OTHER_FETCHERS),
+      )
+      expect(
+        unaccounted,
+        "a new file reads Flow /v1/events and is in none of the three buckets. " +
+          "If it walks blocks behind a cursor, its fetcher must THROW on a non-2xx " +
+          "and its caller must hold the cursor — see the 2026-08-21 filing. If it " +
+          "keeps no cursor, add it to NO_BLOCK_CURSOR:\n" + unaccounted.join("\n"),
+      ).toEqual([])
+      // Not vacuous: the sweep still finds the family it was built for.
+      expect(urlWalkers.length).toBeGreaterThanOrEqual(22)
+    })
+
+    it("the no-cursor exemptions still keep no cursor", () => {
+      // ⚠ An exemption justified by a PROPERTY has to re-check the property, or
+      // it decays into the per-file allowlist this repo keeps calling theatre.
+      const gainedACursor = NO_BLOCK_CURSOR.filter((f) =>
+        /event_cursor|backfill_state|last_processed_block/.test(stripComments(readFileSync(f, "utf8"))),
+      )
+      expect(
+        gainedACursor,
+        "these were exempt only because they persist no block cursor, and now " +
+          "they do. They are in scope for the hold rules:\n" + gainedACursor.join("\n"),
+      ).toEqual([])
+    })
+
+    it.each(Object.entries(OTHER_FETCHERS))(
+      "%s: %s throws on a non-2xx too",
+      (route, fnName) => {
+        const handler = okHandler(route, fnName)
+        expect(handler, `${route}: ${fnName} must check res.ok at all`).not.toBeNull()
+        expect(
+          swallowsEmpty(handler ?? ""),
+          `${route} swallows a non-2xx event fetch into an empty result under a ` +
+            `different fetcher name. Same URL, same cursor, same permanent loss.`,
+        ).toBe(false)
+        expect(/\bthrow\b/.test(handler ?? ""), `${route}: ${fnName} must THROW`).toBe(true)
+      },
+    )
+
     it("the known-swallower list only ever shrinks", () => {
       // ⚠ EXACT EQUALITY, both directions. A route that gets fixed must be
       // REMOVED from the list (or this reddens), and a route that regresses
@@ -282,7 +419,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       // above is only safe because of it.
       const stillSwallowing = fetchers.filter((r) => {
         const h = okHandler(r)
-        return h != null && /return\s*(\[\s*\]|\{[^}]*blocks\s*:\s*\[\s*\])/.test(h)
+        return h != null && swallowsEmpty(h)
       })
       expect(
         stillSwallowing,

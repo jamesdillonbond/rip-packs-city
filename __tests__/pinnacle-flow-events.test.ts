@@ -174,7 +174,13 @@ function makeSupabase(state: any) {
               single: async () => ({ data: state.cursorRow ?? null, error: null }),
             }),
           }),
-          upsert: async () => ({ error: state.cursorUpsertError ?? null }),
+          upsert: async (row: any) => {
+            // Record what was actually STORED so a test can assert that the
+            // returned new_cursor and the persisted cursor agree.
+            state.cursorWrites = state.cursorWrites ?? []
+            state.cursorWrites.push(row)
+            return { error: state.cursorUpsertError ?? null }
+          },
         }
       }
       // pinnacle_sales
@@ -246,8 +252,16 @@ describe("ingestPinnacleSalesEvents", () => {
     expect(res.errors.some((e) => e.includes("Upsert error") && e.includes("boom"))).toBe(true)
   })
 
-  it("captures a fetch throw as a chunk error and still advances the cursor", async () => {
-    const state = { upserts: [] as any[] }
+  it("captures a fetch throw as a chunk error and HOLDS the cursor at that chunk", async () => {
+    // ⚠ INVERTED 2026-08-21, NOT deleted. This ended `expect(res.new_cursor).toBe(300)`
+    // under the title "…and still advances the cursor" — the same
+    // permanent-loss shape fixed that day in seventeen `app/api` routes, in an
+    // eighteenth the guard could not see because it derives its population with
+    // `grep -rl … app/api` and this implementation lives in `lib/`.
+    //
+    // The cursor advancing to the chain head over a chunk that never returned
+    // means those blocks are below the cursor forever; nothing re-reads them.
+    const state: any = { upserts: [] as any[] }
     let call = 0
     vi.stubGlobal(
       "fetch",
@@ -260,7 +274,29 @@ describe("ingestPinnacleSalesEvents", () => {
     const res = await ingestPinnacleSalesEvents(makeSupabase(state), 100)
     expect(res.sales_ingested).toBe(0)
     expect(res.errors.some((e) => e.includes("Fetch error") && e.includes("network down"))).toBe(true)
-    expect(res.new_cursor).toBe(300)
+    // The first (and only) chunk starts at 100, so the cursor holds at 99.
+    expect(res.new_cursor).toBe(99)
+    // ⚠ And what was STORED must equal what was reported — returning the head
+    // while writing something lower is the fabricated-number shape.
+    expect(state.cursorWrites?.at(-1)?.cursor).toBe(99)
+  })
+
+  it("a failed UPSERT holds the cursor too — a range fetched but not persisted is still unread", async () => {
+    // The rows do not exist either way, so an upsert error must hold exactly
+    // like a fetch error. Nothing asserted this before.
+    const state = { upserts: [] as any[], upsertError: { message: "boom" } }
+    let call = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        call++
+        if (call === 1) return okJson([{ header: { height: "300" } }])
+        return okJson([block([pinnacleEvent()])])
+      })
+    )
+    const res = await ingestPinnacleSalesEvents(makeSupabase(state), 100)
+    expect(res.errors.some((e) => e.includes("Upsert error"))).toBe(true)
+    expect(res.new_cursor).toBe(99)
   })
 
   it("records the cursor-update error when the final upsert fails", async () => {

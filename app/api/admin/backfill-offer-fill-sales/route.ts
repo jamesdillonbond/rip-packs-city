@@ -109,8 +109,22 @@ async function fetchCompletedRange(start: number, end: number): Promise<FlowEven
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(OFFER_COMPLETED)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[${PIPELINE_NAME}] events ${start}-${end} HTTP ${res.status}`)
-    return []
+    // ⚠ THROW, DO NOT `return []`. Found 2026-08-21 as the NINETEENTH instance of
+    // this class, and the one that proves the population was never derived from
+    // the right thing: the guard greps for the sibling fetcher's NAME, and this
+    // fetcher is called `fetchCompletedRange`. Same URL, same cursor, same
+    // permanent loss — invisible to a name-based sweep. (Deliberately not
+    // spelling the sibling's name here: the guard's grep reads source text, so a
+    // comment mentioning it would enrol this file in the wrong population —
+    // measured, it did exactly that on the first attempt.)
+    //
+    // Unlike its siblings the fix here IS the one-liner: the chunk loop has no
+    // per-chunk catch, so a throw reaches the outer catch, which skips the
+    // `event_cursor` upsert entirely and logs ok:false. Swallowed into `[]` the
+    // chunk read as genuinely empty, `processedTo` advanced to `e`, and the
+    // cursor moved past blocks nothing had fetched — with nothing behind it,
+    // since this route drains a range ONCE and then no-ops at the frontier.
+    throw new Error(`[${PIPELINE_NAME}] events ${start}-${end} HTTP ${res.status}`)
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []

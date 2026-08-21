@@ -106,6 +106,7 @@ function flowRestStubs(events: {
   avail?: unknown[]
   compl?: unknown[]
   scripts?: Array<{ value: string }>
+  eventsHttp?: { status: number; text: string }
 }): FetchStub[] {
   let scriptCall = 0
   return [
@@ -118,9 +119,18 @@ function flowRestStubs(events: {
         return { json: r ?? scriptResult(null) }
       },
     },
-    jsonRoute("ListingAvailable", events.avail ?? []),
-    jsonRoute("ListingCompleted", events.compl ?? []),
-    jsonRoute("/v1/events", []),
+    ...(events.eventsHttp
+      ? [
+          {
+            match: (url: string) => url.includes("/v1/events"),
+            respond: () => ({ status: events.eventsHttp!.status, ok: false, text: events.eventsHttp!.text }),
+          },
+        ]
+      : [
+          jsonRoute("ListingAvailable", events.avail ?? []),
+          jsonRoute("ListingCompleted", events.compl ?? []),
+          jsonRoute("/v1/events", []),
+        ]),
   ]
 }
 
@@ -779,6 +789,39 @@ describe("pinnacle-listings-indexer — cursor + control flow", () => {
     expect(log?.p_ok).toBe(false)
     expect(String(log?.p_error)).toContain("cursor read error")
     expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+  })
+
+  it("an HTTP 500 on the event fetch HOLDS the cursor and says so, instead of advancing over the range", async () => {
+    // ⚠ This route was held back from the 2026-08-21 sweep that fixed ten
+    // sibling indexers, because the one-line throw would have changed nothing
+    // here: it had NO hold at all. The chunk catch neither broke nor recorded,
+    // and the cursor was written from `targetHeight` unconditionally after the
+    // loop, so an upstream 500 advanced the cursor 1000 → 1250 over blocks
+    // nothing had read. Nothing revisits a block below the cursor.
+    fetchMock = installFetchMock(flowRestStubs({ eventsHttp: { status: 500, text: "upstream boom" } }))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    // The cursor is written, but to where it already was — the chunk that
+    // failed starts at 1001, so the cap lands on 1000.
+    const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
+    expect(cursorUpdate?.rows[0]).toMatchObject({ last_processed_block: 1000 })
+    expect(log?.p_cursor_after).toBe("1000")
+
+    // ⚠ The flag matters as much as the hold: a held cursor with no flag is
+    // indistinguishable from an idle chain in pipeline_runs, so the outage is
+    // unfalsifiable — the sub-class this repo rates worst.
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.partial_scan).toBe(true)
+    expect(extra.first_failed_chunk).toBe(1001)
+    expect(extra.cursor_held_from).toBe(1250)
+    // And blocks_scanned reports what was READ, not the range intended.
+    expect(extra.blocks_scanned).toBe(0)
   })
 
   it("401s without the token and defers nothing", async () => {

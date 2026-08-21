@@ -277,11 +277,18 @@ describe("pinnacle-sales-indexer — instrumentation must never break the ingest
 })
 
 describe("pinnacle-sales-indexer — scan resilience (what the logged accounting hides)", () => {
-  it("a non-OK /v1/events response yields an EMPTY window, and the tick still logs ok:true", async () => {
-    // fetchEventRange swallows a non-OK status and returns []. That is the
-    // silent-loss shape: blocks_scanned counts blocks that were never read, and
-    // the cursor advances over them. Pinned so the trade-off stays deliberate —
-    // the logged row is the only place a human could ever notice it.
+  it("a non-OK /v1/events response holds the cursor and is flagged, exactly like a thrown one", async () => {
+    // ⚠ INVERTED 2026-08-21, NOT deleted. This case used to assert
+    //   expect(blocks_scanned).toBe(TARGET - CURSOR_START)
+    // with a comment calling it "the silent-loss shape ... pinned so the
+    // trade-off stays deliberate". It was not a trade-off: `fetchEventRange`
+    // swallowed the non-OK into `[]`, the chunk read as GENUINELY EMPTY, the
+    // per-chunk cursor write advanced over it, and nothing revisits a block
+    // below the cursor. The passing assertion is what held that in place.
+    //
+    // The property that matters is that an HTTP failure and a thrown failure are
+    // INDISTINGUISHABLE from here on — the case below drives the same scenario
+    // through a throw and must produce the same outcome.
     fetchMock = installFetchMock(flowStubs({ eventsStatus: 502 }))
     const spy = install({ event_cursor: cursorFixture })
 
@@ -289,10 +296,17 @@ describe("pinnacle-sales-indexer — scan resilience (what the logged accounting
     expect(res.status).toBe(200)
 
     const logs = logsOf(spy)
-    expect(logs[0].p_ok).toBe(true)
     expect(logs[0].p_extra.phase).toBe("no_sales")
     expect(logs[0].p_rows_found).toBe(0)
-    expect(logs[0].p_extra.blocks_scanned).toBe(TARGET - CURSOR_START)
+    // ⚠ blocks_scanned now reports what was READ. The old value was the range
+    // the tick INTENDED to read — a measured-looking number for blocks nothing
+    // ever fetched, which is precisely what made the loss invisible.
+    expect(logs[0].p_extra.blocks_scanned).toBe(0)
+    expect(logs[0].p_extra.partial_scan).toBe(true)
+    expect(logs[0].p_extra.first_failed_chunk).toBe(CURSOR_START + 1)
+    // Assert the ABSENCE of movement, not a cursor value.
+    expect(logs[0].p_cursor_after).toBe(String(CURSOR_START))
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
   })
 
   it("a THROWN chunk fetch is isolated per chunk: the cursor holds at the last good chunk", async () => {
@@ -310,6 +324,11 @@ describe("pinnacle-sales-indexer — scan resilience (what the logged accounting
     expect(logs[0].p_cursor_after).toBe(String(CURSOR_START))
     // Nothing was committed to the cursor row either.
     expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    // ⚠ "the cursor did not move" alone would still pass if the flag were
+    // dropped, and the flag is the only thing that makes a held tick legible in
+    // pipeline_runs — a held cursor with no flag reads as an idle chain.
+    expect(logs[0].p_extra.partial_scan).toBe(true)
+    expect(logs[0].p_extra.first_failed_chunk).toBe(CURSOR_START + 1)
   })
 
   it("a multi-chunk range walks every 250-block chunk and reports the full span", async () => {

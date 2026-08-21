@@ -239,10 +239,23 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(
-      `[pinnacle-listings-indexer] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`
+    // ⚠ THROW, DO NOT `return []` — same defect and same fix as the 7 sibling
+    // block-scan indexers (2026-08-21). The chunk loop's catch is the only thing
+    // that can hold the cursor, and it only ever sees THROWN errors. A non-2xx
+    // swallowed into an empty array read as a range that was GENUINELY EMPTY, so
+    // the cursor advanced past blocks nothing had read; nothing revisits a block
+    // below the cursor, so those listings were lost permanently under a clean
+    // `ok: true`.
+    //
+    // ⚠ This route needed MORE than the throw, which is why it was held back
+    // from that pass rather than shipped blind: it had no hold at all. The chunk
+    // catch neither broke nor recorded, and the cursor was set to `targetHeight`
+    // unconditionally after the loop. Both halves are fixed together below —
+    // throwing alone would have changed nothing here.
+    const body = (await res.text()).slice(0, 200)
+    throw new Error(
+      `[pinnacle-listings-indexer] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${body}`
     )
-    return []
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []
@@ -397,6 +410,11 @@ export async function POST(req: NextRequest) {
       let rawAvailable = 0
       let rawCompleted = 0
 
+      // Block of the first chunk that failed to fetch, or null when every chunk
+      // was read. The cursor is capped to just below it so the failed range is
+      // re-scanned next tick.
+      let firstFailedChunkStart: number | null = null
+
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -479,6 +497,8 @@ export async function POST(req: NextRequest) {
             `[pinnacle-listings-indexer] chunk ${s}-${e} error:`,
             err instanceof Error ? err.message : String(err)
           )
+          // Don't let the cursor step past a chunk we failed to fetch.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = s
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
@@ -755,13 +775,23 @@ export async function POST(req: NextRequest) {
         else completedSkipped++
       }
 
+      // Cap the cursor to just before the first failed chunk (targetHeight when
+      // none failed). Later successful chunks are harmlessly re-scanned next tick
+      // — every write above is an idempotent upsert or an event-keyed update.
+      const cursorTarget =
+        firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "pinnacle_listings")
-      cursorAfter = String(targetHeight)
+      cursorAfter = String(cursorTarget)
 
-      extra.blocks_scanned = targetHeight - lastBlock
+      if (firstFailedChunkStart !== null) {
+        extra.partial_scan = true
+        extra.first_failed_chunk = firstFailedChunkStart
+        extra.cursor_held_from = targetHeight
+      }
+      extra.blocks_scanned = cursorTarget - lastBlock
       extra.events_pre_filter = rawAvailable + rawCompleted
       extra.events_post_filter = rowsFound
       extra.events_filtered_to_pinnacle = listingsAvailableCount + listingsCompletedCount

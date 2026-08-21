@@ -116,8 +116,19 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[pinnacle-sales-indexer] events ${start}-${end} HTTP ${res.status}`)
-    return []
+    // ⚠ THROW, DO NOT `return []` — see the 7 sibling block-scan indexers
+    // (2026-08-21). A non-2xx swallowed into an empty array is delivered to the
+    // chunk loop as a range that read fine and was GENUINELY EMPTY, so the
+    // cursor advances past blocks nothing read. Nothing revisits a block below
+    // the cursor, so those sales are lost permanently under a clean `ok: true`.
+    //
+    // ⚠ The throw is only half the fix HERE, which is why this route was held
+    // back rather than shipped with the other seven. This loop writes the cursor
+    // PER CHUNK and its catch does not `break`, so chunk N+1 succeeding would
+    // write a cursor past failed chunk N — a leapfrog that happens even on a
+    // thrown error. The per-chunk write is now gated on nothing having failed
+    // yet; see `firstFailedChunkStart` below.
+    throw new Error(`[pinnacle-sales-indexer] events ${start}-${end} HTTP ${res.status}`)
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []
@@ -192,6 +203,10 @@ async function runIndexer(req: NextRequest) {
 
     const sales: Sale[] = []
     let lastChunkEnd = lastBlock
+    // Block of the first chunk that failed to fetch, or null when every chunk was
+    // read. Once set, the per-chunk cursor write below stops, so a later
+    // successful chunk can never leapfrog a failed one.
+    let firstFailedChunkStart: number | null = null
 
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
@@ -229,11 +244,26 @@ async function runIndexer(req: NextRequest) {
           .eq("id", "pinnacle_sales")
       } catch (err) {
         console.log(`[pinnacle-sales-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
+        // ⚠ STOP. This loop writes the cursor PER CHUNK, so without the break a
+        // later chunk succeeding writes a cursor ABOVE the failed one — a
+        // leapfrog that leaves the failed range permanently below the cursor,
+        // where nothing ever returns for it. Same strategy as
+        // ufc-sales-indexer: advance per chunk, and stop at the first failure.
+        firstFailedChunkStart = s
+        break
       }
       if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
     }
 
     console.log(`[pinnacle-sales-indexer] found ${sales.length} Pinnacle sales`)
+
+    // ⚠ `blocks_scanned` must report what was READ, not the range we intended to
+    // read — `targetHeight - lastBlock` on a partial scan is a measured-looking
+    // number for blocks nothing fetched.
+    const partialScanExtra: Record<string, unknown> =
+      firstFailedChunkStart !== null
+        ? { partial_scan: true, first_failed_chunk: firstFailedChunkStart, cursor_held_from: targetHeight }
+        : {}
 
     if (sales.length === 0) {
       await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
@@ -244,9 +274,10 @@ async function runIndexer(req: NextRequest) {
         cursorAfter: lastChunkEnd,
         extra: {
           phase: "no_sales",
-          blocks_scanned: targetHeight - lastBlock,
+          blocks_scanned: lastChunkEnd - lastBlock,
           chain_height: currentHeight,
           elapsed_ms: Date.now() - started,
+          ...partialScanExtra,
         },
       })
       return NextResponse.json({
@@ -347,8 +378,9 @@ async function runIndexer(req: NextRequest) {
       cursorAfter: lastChunkEnd,
       extra: {
         phase: "complete",
-        blocks_scanned: targetHeight - lastBlock,
+        blocks_scanned: lastChunkEnd - lastBlock,
         chain_height: currentHeight,
+        ...partialScanExtra,
         unique_nft_ids: uniqueNftIds.length,
         edition_resolved: nftToEditionId.size,
         sales_unresolved: finalUnresolved,

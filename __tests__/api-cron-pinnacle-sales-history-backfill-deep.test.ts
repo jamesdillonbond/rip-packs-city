@@ -76,7 +76,11 @@ function pinnacleSale(
   })
 }
 
-function flowStubs(opts: { events?: unknown[]; sealedStatus?: number }): FetchStub[] {
+function flowStubs(opts: {
+  events?: unknown[]
+  sealedStatus?: number
+  eventsHttp?: { status: number; text: string }
+}): FetchStub[] {
   return [
     {
       match: (url) => url.includes("/v1/blocks?height=sealed"),
@@ -86,7 +90,12 @@ function flowStubs(opts: { events?: unknown[]; sealedStatus?: number }): FetchSt
           : { json: [{ header: { height: String(SPORK_FLOOR + 1) } }] },
     },
     jsonRoute("/v1/blocks?height=", [{ header: { timestamp: "2026-05-01T00:00:00Z" } }]),
-    jsonRoute("A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted", opts.events ?? []),
+    opts.eventsHttp
+      ? {
+          match: (url: string) => url.includes("A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted"),
+          respond: () => ({ status: opts.eventsHttp!.status, ok: false, text: opts.eventsHttp!.text }),
+        }
+      : jsonRoute("A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted", opts.events ?? []),
   ]
 }
 
@@ -276,6 +285,47 @@ describe("pinnacle-sales-history-backfill — scan + write", () => {
     expect(String(log?.p_error)).toContain("event_cursor")
     // The chain is unconditional on non-dryRun exits — partial writes get drained.
     expect(state.chained).toEqual([{ path: "/api/pinnacle/resolve-buyers", chain: true }])
+  })
+})
+
+describe("pinnacle-sales-history-backfill — the two non-2xx cases are not the same", () => {
+  // ⚠ This route had no execution coverage for either case when its
+  // `fetchEventRange` was fixed on 2026-08-21, which is exactly why it is added
+  // here rather than left to the source guard: the source guard can tell you a
+  // `throw` is present, not that the cursor stayed put.
+  //
+  // This cron walks history BACKWARD and then moves the cursor DOWN to `start`.
+  // So an unread window ends up ABOVE the cursor, and nothing ever comes back
+  // for it — there is no tailing indexer behind a history backfill.
+
+  it("stops honestly at the spork floor: below_floor surfaced, run ok, cursor still advances", async () => {
+    fetchMock = installFetchMock(
+      flowStubs({ eventsHttp: { status: 404, text: "start height 1 is less than the spork root block height" } }),
+    )
+    const spy = install({ event_cursor: cursorFixture })
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    const log = terminalLog(spy.rpcCalls)!
+    expect(log.p_ok).toBe(true)
+    expect((log.p_extra as Record<string, unknown>).below_floor).toBe(true)
+    // The floor is a real answer, so the backward walk continues past it.
+    expect((spy.writes.event_cursor ?? []).length).toBeGreaterThan(0)
+  })
+
+  it("holds the cursor on a 500 and reports where it actually is", async () => {
+    fetchMock = installFetchMock(flowStubs({ eventsHttp: { status: 500, text: "upstream boom" } }))
+    const spy = install({ event_cursor: cursorFixture })
+    const res = await POST(req())
+    expect(res.status).toBe(500)
+    // ⚠ Assert the ABSENCE of a cursor write. A value assertion passes if the
+    // write merely moves somewhere else unexpected.
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error ?? "")).toMatch(/500/)
+    // …and the logged cursor is the one that is really stored, not the one the
+    // tick intended to write.
+    expect(log.p_cursor_after).toBe(log.p_cursor_before)
   })
 })
 
