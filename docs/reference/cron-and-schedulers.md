@@ -34,7 +34,7 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 
 **Rescheduling a `cron_heavy` job (mechanism proven in production by the 8-way split, 2026-08-16).** `postgres` IS a member of `cron_heavy`; `cron_heavy` **CAN** execute `cron.schedule` but **CANNOT** execute `cron.alter_job` — so the working path is `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('<existing job name>', …);`, which updates in place, **keeps the jobid**, and retains the role's `statement_timeout=600s` because the owner is set to the *current* role. The `SET LOCAL ROLE` is load-bearing: without it the job is re-owned and silently loses the 600 s budget.
 
-`/api/admin/prune-pipeline-runs` (daily) keeps `pipeline_runs` ~9.5K rows. **⚠ `pipeline_runs` retains only ~73h** (`prune_pipeline_runs(3)`, pg_cron jobid 57) — far shorter than the time it typically takes to NOTICE a defect here (measured 08-01: only 1 of 5 findings in the 07-31→08-01 wave was still inside the window; AllDay serial supply took ~18d to spot). **So "no matching record in `pipeline_runs`" is usually a RETENTION ARTIFACT, not a finding** — both Cowork and Claude Code drew that false inference on the same 07-28 wallet investigation. Check **`public.pipeline_runs_daily`** first: an indefinite daily rollup (one row per pipeline per UTC day — runs/ok/fail, rows, duration p95, last_error, plus `extra_key_counts` for payload-shape drift), written by `rollup_pipeline_runs(4)` / pg_cron jobid 233. History starts **2026-07-29** and cannot be backfilled earlier; the 07-29 row is permanently partial.
+`/api/admin/prune-pipeline-runs` (daily) keeps `pipeline_runs` ~9.5K rows. **⚠ `pipeline_runs` retains only ~73h** (`prune_pipeline_runs(3)`, pg_cron jobid 57) — far shorter than the time it typically takes to NOTICE a defect here (measured 08-01: only 1 of 5 findings in the 07-31→08-01 wave was still inside the window; AllDay serial supply took ~18d to spot). **So "no matching record in `pipeline_runs`" is usually a RETENTION ARTIFACT, not a finding** — both Cowork and Claude Code drew that false inference on the same 07-28 wallet investigation. Check **`public.pipeline_runs_daily`** first: an indefinite daily rollup (one row per pipeline per UTC day — runs/ok/fail, rows, duration p95, last_error, plus `extra_key_counts` for payload-shape drift), written by `rollup_pipeline_runs(4)` / pg_cron jobid 233. History starts **2026-07-29** and cannot be backfilled earlier; the 07-29 row is permanently partial. ⚠ **NEVER read `pipeline_runs_daily` for RECENCY** — it is refreshed **six-hourly**, so it fabricates silences up to 6 h long; read `refreshed_at` beside `last_run_at`, or query `pipeline_runs` directly. *(Moved verbatim out of CLAUDE.md 2026-08-21 when that bullet was compressed to make room for the `net._http_response` pointer; nothing was deleted.)*
 
 ⚠ **BUT `pipeline_runs_daily` IS A SIX-HOURLY ROLLUP, AND READING `last_run_at` FROM IT FABRICATES SILENCES UP TO 6 h LONG — this directly qualifies the "check the rollup first" sentence above, which is correct for VOLUME and TREND and actively wrong for RECENCY (2026-08-16).** The schedule is **`11 */6 * * *`**, not the hourly `:11` this bullet used to imply, so between refreshes the table is *supposed* to lag — by design, not by failure — and the current day's `runs` is always a partial count as-of-refresh. Measured side by side on `offers-sweep`: the rollup said **last run 12:02Z (253.7 min of apparent silence) / 36 runs**, while live `pipeline_runs` said **16:02Z — 7 minutes ago / 46 runs**, with the rollup's own `refreshed_at` **244.8 min stale**. That nearly became a filed 4-hour stall on a pipeline that was healthy (20-min cadence held all night). **Never read `last_run_at` from the rollup without `refreshed_at` beside it; for "is it running right now", query `pipeline_runs` directly.** The two questions must not share an instrument — same family as the current-day-row trap already recorded for `fmv-recalc` throughput. Notable recurring jobs:
 
@@ -75,6 +75,45 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 ⚠ **`>90 d = 0` is a live tripwire, not an empty instrument** — it is currently a true zero. If the cold tail ever stops being drained, that bucket becomes non-zero. Re-derive it rather than quoting these counts.
 
 ---
+
+## ⚠ `net._http_response` — the instrument for any pg_cron `net.http_get` pipeline, and it needs NO deploy
+
+**Promoted here 2026-08-21 because it had been used in the ledger EIGHTEEN times and appeared in no
+reference doc — and on that same day a session (mine) wrote *"the instrument that would settle it does not
+exist here"* about a pipeline this table describes completely, after having already queried the table
+during the investigation.** That is the exact failure CLAUDE.md predicts for a fact left only in a session
+log. It is the reason this section exists.
+
+Every `net.http_get` that pg_cron issues writes a row here, server-side, with **no application code and no
+edge-function deploy** — so it is available even when a function is behind a deploy blocker. It carries
+`status_code`, `timed_out`, `error_msg`, `content` and `created`. Retention is short (**~6 h measured
+2026-08-21**), so sample it while the window is open.
+
+**What it settles that `pipeline_runs` cannot.** A pg_cron pipeline that leaves no terminal row is
+ambiguous three ways; this table splits them:
+
+| observation | meaning |
+|---|---|
+| no `cron.job_run_details` row | never dispatched |
+| dispatched, no `net._http_response` row | still in flight, or the row aged out |
+| `timed_out = true`, `status_code` NULL | the caller gave up — the function may still be running |
+| `status_code` 2xx with a body | the tick answered; read `content` for its own accounting |
+
+⚠ **`cron.job_run_details.status = 'succeeded'` means the `net.http_get` was QUEUED, nothing more.** It is
+a dispatch record, not an outcome, and `return_message` is `"1 row"` on every success.
+
+### ⚠ Two attribution traps, both measured 2026-08-21
+
+1. **The table is shared by every http cron job, so a naive filter mixes pipelines.** Filtering
+   `content LIKE '%backfill%'` matched 162 rows belonging to other functions; a minute-of-hour filter
+   matches every job scheduled on that minute. **Discriminate on a field only the target emits**
+   (a distinctive key in its JSON body), or on a timeout value only one job uses.
+2. **There is no join key from `cron.job_run_details` to `net._http_response`.** `return_message` does not
+   carry the request id. Correlate by time and by a discriminator as above, and say which you used.
+
+⚠ **Query `cron.job` with the gate key MASKED.** Reading `cron.job.command` to find a caller prints a live
+`?key=` into the transcript — this has now happened twice. Use
+`regexp_replace(command, 'key=[^&'']+', 'key=***')`.
 
 ## Reading a pipeline's health signals — four shapes learned 2026-08-17
 
