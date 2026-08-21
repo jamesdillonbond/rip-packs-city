@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 // The supabase/tests/*.sql DB-invariant tests embed a VERBATIM copy of the
@@ -14,6 +14,23 @@ import path from "node:path"
 const root = process.cwd()
 
 const PINS = [
+  {
+    // Added 2026-08-20. A live deleter with THREE DELETE legs that had NO
+    // migration anywhere in the repo — prod carried DDL the repo could not
+    // describe. The snapshot migration was created for it in the same pass.
+    fn: "prune_log_tables",
+    test: "supabase/tests/prune_log_tables.sql",
+    migration: "supabase/migrations/20260820190000_audit_20260820_snapshot_prune_log_tables.sql",
+  },
+  {
+    // Added 2026-08-20 by the completeness arm below, which found it: this file
+    // carried a verbatim copy and was in NO drift check, so it read as covered
+    // (it lives in supabase/tests/, it runs in db-tests, it has a verbatim
+    // block) while nothing compared it to the migration.
+    fn: "capture_board_liveness_history",
+    test: "supabase/tests/capture_board_liveness_history.sql",
+    migration: "supabase/migrations/20260811003456_audit_20260810_board_liveness_history_decoupled_capture.sql",
+  },
   {
     fn: "allday_sales_cross_source_dedup",
     test: "supabase/tests/allday_sales_cross_source_dedup.sql",
@@ -1620,6 +1637,52 @@ describe("the extractor itself handles both object kinds", () => {
   it("still skips a commented-out declaration of either kind", () => {
     expect(extractSqlFn(`-- ${FN}`, "zz_probe")).toBeNull()
     expect(extractSqlFn(`-- ${PROC}`, "zz_probe")).toBeNull()
+  })
+
+  it("every pin file carrying a verbatim copy is REGISTERED — the list cannot silently drift", () => {
+    // ⚠ PINS is a CURATED LIST, which is the shape this repo has been bitten by
+    // more than any other. A pin file that embeds a verbatim copy of a live DB
+    // object but is absent from PINS is the worst kind of miss: it reads as
+    // covered from every angle — it sits in supabase/tests/, db-tests executes
+    // it, and it visibly contains the object's DDL — while NOTHING compares that
+    // DDL to the migration. Its copy can rot indefinitely.
+    //
+    // Measured 2026-08-20 when this arm was added: 172 files carried a verbatim
+    // block and 2 were unregistered — capture_board_liveness_history (now
+    // registered above) and v_pack_pipeline_health.
+    //
+    // ⚠ THE VIEW EXCLUSION IS ARGUED, NOT AN ALLOWLIST OF CONVENIENCE. The
+    // extractor below is FN_KINDS = FUNCTION | PROCEDURE and locates a body by
+    // its $tag$ delimiters; a VIEW has neither, so a view pin cannot be
+    // registered under the current mechanism at all. It is excluded by what it
+    // IS, re-derived from the file on every run, not by being named — so a view
+    // pin that is later converted to a function stops being excluded
+    // automatically. Extending the extractor to views is the real fix and is
+    // deliberately not attempted here.
+    const dir = path.join(root, "supabase", "tests")
+    const withVerbatim = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .filter((f) => readFileSync(path.join(dir, f), "utf8").includes("BEGIN verbatim"))
+
+    expect(withVerbatim.length, "the walk found no pin files at all").toBeGreaterThan(100)
+
+    const registered = new Set(PINS.map((p) => p.test.replace(/^supabase\/tests\//, "")))
+    const unregistered = withVerbatim.filter((f) => !registered.has(f))
+
+    const isViewPin = (f: string) =>
+      /CREATE OR REPLACE VIEW|DROP VIEW IF EXISTS/.test(readFileSync(path.join(dir, f), "utf8"))
+    const viewPins = unregistered.filter(isViewPin)
+    const realMisses = unregistered.filter((f) => !isViewPin(f))
+
+    expect(
+      realMisses,
+      "these pin files embed a verbatim DB object but are in no drift check — register them in PINS:\n" +
+        realMisses.join("\n"),
+    ).toEqual([])
+
+    // The exclusion is real, so keep it honest: if it ever empties, the special
+    // case should go rather than linger as dead reasoning.
+    expect(viewPins.length, "the view exclusion is now empty — delete it and the argument above").toBeGreaterThan(0)
   })
 
   it("at least one pin is actually a PROCEDURE, so the capability is exercised for real", () => {
