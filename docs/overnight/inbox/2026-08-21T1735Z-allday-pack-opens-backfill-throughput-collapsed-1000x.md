@@ -177,3 +177,30 @@ can be split into *never dispatched* / *dispatched and killed* / *answered* from
 it before concluding a pipeline is unobservable — especially when the application-side instrument is behind
 a deploy blocker.
 
+---
+
+## ⚠ AMENDMENT 2026-08-21 ~11:15 PT — two of my claims above are REFUTED, and the proposed value for the fix breaks the instrument that found it
+
+A concurrent session re-derived this filing (ledger, same day). **Two things I wrote above are wrong; both are recorded here so the body is not read at face value.**
+
+1. **"The `status 0` wedge cleared and was transient" — FALSE.** The failing block **tracks the cursor**: as the walk descended 84,704,998 → 84,700,248 the `scan_err` band descended with it. The "~5,250-block band the cursor walked through" was a snapshot of where the walk happened to be. `status 0` on **40 of 42 runs / 72h**. ⚠ I made a stock-vs-flow error in the same document where I was careful to measure the cursor rate as a flow.
+2. **"The instrument that would settle it does not exist here" — FALSE, and this is the reusable half.** `net._http_response` already records `status_code`, `timed_out` and `error_msg` for every `net.http_get` pg_cron makes — no deploy, not behind the gate-key blocker. **I queried that table during this very investigation and still wrote that the instrument was missing.** Reach for it before concluding a pg_cron pipeline is unobservable.
+
+**Root cause, independently re-verified here:** `j()` in the edge function aborts each attempt at **`AbortSignal.timeout(15000)`** and returns **`status 0`** when fetch throws; `workers/spork-proxy` allows itself **`REQUEST_TIMEOUT_MS = 25_000`** and returns **504** when it gives up. The caller quits **10 s before the worker may answer**, and the status code is what discriminates: a worker-side timeout reads `504`, and we see `0`.
+
+### ⚠ The recommended value (15 s → 30 s) would blind the instrument that just found this
+
+The spork paths call `j(url, 3, sporkHeaders)` — **three** attempts, with `sleep(400 * a)` between them.
+
+| per-attempt abort | worst case for ONE failing query |
+|---|---|
+| 15 s (today) | 3×15 + 0.4 + 0.8 = **46.2 s** |
+| **30 s (proposed)** | 3×30 + 1.2 = **91.2 s** |
+
+jobid 55's `net.http_get` timeout is **90 000 ms**. At 30 s × 3, **no tick that hits a failure can return a response body inside pg_net's window** — so `net._http_response.content`, the table the mechanism was just established from, goes permanently dark for exactly the failure case. The fix would trade a visible failure for an invisible one.
+
+**Recommendation, with the arithmetic rather than a round number:** one attempt has to outlast the worker's 25 s budget or the caller can never see a slow success — but three of them cannot fit in 90 s. **`AbortSignal.timeout(28000)` with `tries = 2` on the spork paths: 28 + 0.4 + 28 = 56.4 s worst case**, comfortably inside pg_net's window, and each attempt now gives the worker room to answer. (Dropping `REQUEST_TIMEOUT_MS` below 15 s instead would also work and needs no edge-function deploy — but it needs an operator `wrangler deploy`, and it makes the worker give up sooner on a node that is merely slow.)
+
+**Still deploy-gated** either way; it belongs in the gate-key rotation window that has to happen regardless. ⚠ **Not shipped as code-only-deploy-withheld on purpose:** the value is a judgement between two numbers, and committing mine would pre-empt a decision that costs nothing to make at rotation time.
+
+⚠ **Secret exposure, disclosed:** reading `cron.job.command` to identify the callers printed the `?key=` gate key for `ingest-allday-pack-opens` into this session's transcript — the incident class CLAUDE.md records. I noticed it at the time and did **not** disclose it in my original ledger entry, which was the wrong call; the concurrent session disclosed the same exposure independently. The key was already scheduled for rotation under the 2026-08-18 BLOCKER, so no new rotation is created, but it makes that rotation **required rather than deferred**. Query `cron.job` with the key masked: `regexp_replace(command, 'key=[^&'']+', 'key=***')`.
