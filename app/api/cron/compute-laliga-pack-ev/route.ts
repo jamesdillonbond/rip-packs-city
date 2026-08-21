@@ -30,6 +30,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
@@ -103,15 +104,18 @@ export async function POST(req: NextRequest) {
   //   marker only, no completion row -> after() is being dropped
   //   no marker at all               -> the route is never reached
   // Logged ok:true so it cannot inflate the new v_pipeline_failure_rates arm.
-  await logPipelineRun({
-    startedAtIso,
-    ok: true,
-    rowsFound: 0,
-    rowsWritten: 0,
-    rowsSkipped: 0,
-    errorMsg: null,
-    extra: { phase: "invoked" },
-  })
+  // ⚠ 2026-08-20: this marker used to be written under the pipeline's OWN name,
+  // and that DEFEATED the alarm it was added to protect. `detect_stalled_pipelines()`
+  // computes `max(started_at) FROM pipeline_runs WHERE pipeline = w.pipeline` with
+  // NO phase filter, so a self-named marker refreshes `last_run` on every tick —
+  // the arm can never fire, however many after() bodies die. Measured across the
+  // ~72h retention window: allday-pack-listings had 212 markers against 208
+  // completions (6 ticks started and never finished, every one invisible), and
+  // pinnacle-sync and compute-laliga-pack-ev had markers ONLY, zero completions.
+  // A monitor whose input set includes its own output. The marker now goes under
+  // `<pipeline>-heartbeat` via lib/pipeline/heartbeat.ts, which keeps the three
+  // states readable AND leaves the stall arm measuring real completions.
+  await writeInvocationHeartbeat({ pipeline: "compute-laliga-pack-ev", startedAtMs: startedAt })
 
   after(async () => {
     const counters = {

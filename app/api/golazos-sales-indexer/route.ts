@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
@@ -219,6 +220,13 @@ export async function POST(req: NextRequest) {
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)
 
   after(async () => {
+    // ⚠ INVOCATION HEARTBEAT — written FIRST, before any work below.
+    // A maxDuration kill takes the terminal pipeline_runs insert with it, and
+    // this pipeline is on `pipeline_cadence_watchlist`, so the kill reads as
+    // "the cron never fired" rather than "the tick died" — two states needing
+    // opposite fixes. try/catch cannot catch the kill; the marker is the only
+    // evidence. Row shape lives in lib/pipeline/heartbeat.ts, deliberately once.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: start })
     let rowsFound = 0
     let rowsWritten = 0
     let rowsSkipped = 0

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // Multi-collection acquisitions classification cron.
 //
@@ -78,27 +79,20 @@ export async function POST(req: NextRequest) {
   // before any work, so a dropped after() now reads as `phase: "invoked"` with
   // no terminal row. Same repair already applied to allday-pack-listings and
   // pinnacle-sync. Best-effort: never fail the request on a logging error.
-  try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE_NAME,
-      p_started_at: startedAtIso,
-      p_rows_found: 0,
-      p_rows_written: 0,
-      p_rows_skipped: 0,
-      p_ok: true,
-      p_error: null,
-      p_collection_slug: null,
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { phase: "invoked" },
-    })
-  } catch (e) {
-    console.log(
-      `[${PIPELINE_NAME}] invoked-marker log failed: ${
-        e instanceof Error ? e.message : String(e)
-      }`
-    )
-  }
+  // ⚠ 2026-08-20: this marker used to be written under the pipeline's OWN name,
+  // and that DEFEATED the alarm it was added to protect. `detect_stalled_pipelines()`
+  // computes `max(started_at) FROM pipeline_runs WHERE pipeline = w.pipeline` with
+  // NO phase filter, so a self-named marker refreshes `last_run` on every tick and
+  // the arm can never fire, however many after() bodies die. This pipeline carried
+  // 70 markers against 122 total rows on a 180-min arm. The marker now goes under
+  // `<pipeline>-heartbeat` via lib/pipeline/heartbeat.ts — the three states stay
+  // readable and the stall arm goes back to measuring real completions.
+  //
+  // ⚠ The comment that stood here said "Same repair already applied to
+  // allday-pack-listings and pinnacle-sync". It had spread to FOUR routes by
+  // copy-paste, defect included — the documented reason to grep for the
+  // EXPRESSION rather than the file.
+  await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAtIso) })
 
   // 202 + after(): the 3-collection classify loop (maxDuration=120) can exceed
   // cron-job.org's 30s client cap under DB saturation; auth stays sync, the

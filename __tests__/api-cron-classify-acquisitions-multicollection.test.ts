@@ -15,6 +15,11 @@ const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
 const cst = vi.hoisted(() => ({
   bySlug: {} as Record<string, any>,
   runs: [] as any[],
+  // The invocation marker is a `pipeline_runs` INSERT under
+  // `<pipeline>-heartbeat` since 2026-08-20 (lib/pipeline/heartbeat.ts). Under
+  // the pipeline's OWN name it refreshed `last_run` every tick and the 180-min
+  // stall arm could never fire — 70 markers against 122 total rows here.
+  hbRows: [] as any[],
   logThrows: false,
   calls: [] as Array<{ slug: string; limit: number; since: string | null }>,
 }))
@@ -27,6 +32,13 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => {
   const sb: any = {}
   for (const m of ["from","select","eq","in","order","limit","gte","lte","lt","gt","is","not","or","range","match","insert","update","upsert","delete","returns"]) sb[m] = () => sb
+  const origFrom = sb.from
+  sb.from = (table?: string) => {
+    if (table === "pipeline_runs") {
+      return { insert: async (row: any) => { cst.hbRows.push(row); return { error: null } } }
+    }
+    return origFrom(table)
+  }
   sb.single = async () => ({ data: {}, error: null })
   sb.maybeSingle = async () => ({ data: {}, error: null })
   const BY_ID: Record<string, string> = {
@@ -118,6 +130,7 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
   // indexing would silently start asserting against the marker.
   async function run() {
     cst.runs = []
+    cst.hbRows = []
     cst.calls = []
     cap.fn = null
     await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
@@ -189,15 +202,24 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
   // cron that never fired.
   it("writes a synchronous invoked-marker before any classify work", async () => {
     cst.runs = []
+    cst.hbRows = []
     cst.calls = []
     cap.fn = null
     await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
 
     // after() has NOT run yet — this is the state a killed lambda leaves behind.
     expect(cst.calls).toEqual([])
-    expect(cst.runs).toHaveLength(1)
-    expect(cst.runs[0].p_pipeline).toBe("classify-acquisitions-multicollection")
-    expect(cst.runs[0].p_extra).toEqual({ phase: "invoked" })
+    // ⚠ The marker must NOT be an own-name row. It was until 2026-08-20, and
+    // that is strictly worse than no marker: `detect_stalled_pipelines()` takes
+    // max(started_at) with no phase filter, so the marker refreshed `last_run`
+    // every tick and suppressed the 180-min arm on every dead after().
+    // Asserting the ABSENCE of the own-name row is the load-bearing half.
+    expect(cst.runs, "no own-name row until the classify loop completes").toHaveLength(0)
+    expect(cst.hbRows).toHaveLength(1)
+    expect(cst.hbRows[0].pipeline).toBe("classify-acquisitions-multicollection-heartbeat")
+    expect(cst.hbRows[0].extra.phase).toBe("started")
+    expect(cst.hbRows[0].ok).toBe(true)
+    expect(cst.hbRows[0].rows_written, "a marker measures nothing").toBeNull()
   })
 
   it("accepts the alternate RPC counter key names", async () => {

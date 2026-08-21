@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -80,7 +81,24 @@ export async function POST(req: NextRequest) {
   //   marker only, no completion row -> after() was dropped
   //   no marker at all               -> the route was never reached (cron/auth)
   // Logged ok:true so it cannot inflate v_pipeline_failure_rates.
-  await logPipelineRun({ startedAtIso, ok: true, extra: { phase: "invoked" } })
+  // ⚠ 2026-08-20: this marker used to be written under the pipeline's OWN name,
+  // and that DEFEATED the alarm it was added to protect. `detect_stalled_pipelines()`
+  // computes `max(started_at) FROM pipeline_runs WHERE pipeline = w.pipeline` with
+  // NO phase filter, so a self-named marker refreshes `last_run` on every tick —
+  // the arm can never fire, however many after() bodies die. Measured across the
+  // ~72h retention window: allday-pack-listings had 212 markers against 208
+  // completions (6 ticks started and never finished, every one invisible), and
+  // pinnacle-sync and compute-laliga-pack-ev had markers ONLY, zero completions.
+  // A monitor whose input set includes its own output. The marker now goes under
+  // `<pipeline>-heartbeat` via lib/pipeline/heartbeat.ts, which keeps the three
+  // states readable AND leaves the stall arm measuring real completions.
+  await writeInvocationHeartbeat(
+    // `collectionSlug` carried over deliberately: the old marker set it, and a
+    // per-collection pipeline whose marker is collection-less reads as "all
+    // collections" in any grouped view.
+    { pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAtIso), collectionSlug: "nfl_all_day" },
+    supabase,
+  )
 
   // Fatal-catch wrapper: an uncaught throw inside after() would otherwise write
   // NOTHING, making a genuine crash indistinguishable from a dropped after().

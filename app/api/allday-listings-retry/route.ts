@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // ── AllDay listing-resolution retry cron ────────────────────────────────────
 //
@@ -200,6 +201,13 @@ export async function POST(req: NextRequest) {
   let rowsSkipped = 0
 
   after(async () => {
+    // ⚠ INVOCATION HEARTBEAT — written FIRST, before any work below.
+    // A maxDuration kill takes the terminal pipeline_runs insert with it, and
+    // this pipeline is on `pipeline_cadence_watchlist`, so the kill reads as
+    // "the cron never fired" rather than "the tick died" — two states needing
+    // opposite fixes. try/catch cannot catch the kill; the marker is the only
+    // evidence. Row shape lives in lib/pipeline/heartbeat.ts, deliberately once.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: start })
     let resolved = 0
     let stillUnresolved = 0
     let retryCountHitCap = 0

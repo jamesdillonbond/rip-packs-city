@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fetchLivePackListings, SUPPORTED_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
 
 // Snapshots the live sealed-pack lowest-ask per dist into public.pack_ask_state
@@ -32,6 +33,11 @@ async function run(request: NextRequest) {
 
   after(async () => {
     const startedMs = Date.now()
+    // ⚠ INVOCATION HEARTBEAT — written FIRST, before any work below. This
+    // pipeline is on `pipeline_cadence_watchlist` at 30 min, the tightest arm
+    // on the board, so a maxDuration kill here reads as "the cron never fired"
+    // within half an hour — a real alert pointing at the wrong subsystem.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: startedMs })
     let ok = true
     let errMsg: string | null = null
     const perCollection: Record<string, unknown> = {}

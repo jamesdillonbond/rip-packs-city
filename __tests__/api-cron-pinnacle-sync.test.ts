@@ -110,16 +110,34 @@ describe("GET /api/cron/pinnacle-sync — success path (render-FMV refresh)", ()
 // after() and restore the exact defect twice already fixed. These do.
 function captureLogRuns() {
   const calls: Array<{ fn: string; args: any }> = []
+  // ⚠ The invocation marker is a `pipeline_runs` INSERT since 2026-08-20
+  // (lib/pipeline/heartbeat.ts), not a self-named `log_pipeline_run` row. It had
+  // to move: `detect_stalled_pipelines()` reads max(started_at) with NO phase
+  // filter, so a marker under `pinnacle-sync` refreshed `last_run` every tick and
+  // the 1,560-min arm could never fire. Measured before the fix, this pipeline
+  // had 3 markers and ZERO completions in the retention window — the arm was
+  // suppressed on a pipeline whose after() body was not finishing at all.
+  const hbRows: any[] = []
   const origRpc = sb.rpc
+  const origFrom = sb.from
   sb.rpc = async (fn: string, args?: any) => {
     calls.push({ fn, args })
     return origRpc(fn, args)
   }
+  sb.from = (table?: string) => {
+    if (table === "pipeline_runs") {
+      return { insert: async (row: any) => { hbRows.push(row); return { error: null } } }
+    }
+    return origFrom(table)
+  }
   return {
     calls,
+    hbRows,
     logs: () => calls.filter((c) => c.fn === "log_pipeline_run"),
+    heartbeat: () => hbRows.find((r) => r.pipeline === "pinnacle-sync-heartbeat"),
     restore: () => {
       sb.rpc = origRpc
+      sb.from = origFrom
     },
   }
 }
@@ -134,13 +152,18 @@ describe("GET /api/cron/pinnacle-sync — invoked-marker observability", () => {
     }
     // The marker must exist the moment the 202 is returned — that is the whole
     // point. If logging moves back inside after(), this is empty.
-    const logs = cap.logs()
-    expect(logs).toHaveLength(1)
-    expect(logs[0].args.p_pipeline).toBe("pinnacle-sync")
-    expect(logs[0].args.p_extra.phase).toBe("invoked")
-    // ok:true with zero rows so a heartbeat cannot inflate v_pipeline_failure_rates.
-    expect(logs[0].args.p_ok).toBe(true)
-    expect(logs[0].args.p_rows_written).toBe(0)
+    const hb = cap.heartbeat()
+    expect(hb, "the marker must exist the moment the 202 is returned").toBeTruthy()
+    // ⚠ NOT under `pinnacle-sync` — that is what silenced the arm. Asserting the
+    // absence of the own-name row is the load-bearing half: asserting only that
+    // a marker exists would pass on the defect.
+    expect(hb.pipeline).toBe("pinnacle-sync-heartbeat")
+    expect(cap.logs(), "no own-name row until the run completes").toHaveLength(0)
+    expect(hb.extra.phase).toBe("started")
+    // ok:true, and rows NULL rather than 0 — a marker measures nothing, so a 0
+    // would be a number nobody read.
+    expect(hb.ok).toBe(true)
+    expect(hb.rows_written).toBeNull()
     // ...and the actual work must still be deferred, not pulled inline.
     expect(cap.calls.some((c) => c.fn === "pinnacle_fmv_recalc_render_all")).toBe(false)
     expect(afterCbs).toHaveLength(1)
@@ -155,16 +178,16 @@ describe("GET /api/cron/pinnacle-sync — invoked-marker observability", () => {
       cap.restore()
     }
     const logs = cap.logs()
-    expect(logs).toHaveLength(2)
-    expect(logs[0].args.p_extra.phase).toBe("invoked")
-    expect(logs[1].args.p_extra.phase).toBe("complete")
-    // log_pipeline_run is a plain INSERT, so these are two rows. Threading the GET's
-    // startedAtIso into runPinnacleSync is what lets a reader pair them into a single
-    // run instead of seeing an orphan heartbeat plus an unrelated result.
-    expect(logs[1].args.p_started_at).toBe(logs[0].args.p_started_at)
-    expect(logs[1].args.p_rows_written).toBe(42)
-    expect(logs[1].args.p_ok).toBe(true)
-    expect(logs[1].args.p_extra.fmv_recalc_render).toEqual({ renders_priced: 42 })
+    expect(logs).toHaveLength(1)
+    expect(logs[0].args.p_extra.phase).toBe("complete")
+    // The marker and the completion are two rows under two names. Threading the
+    // GET's startedAtIso into runPinnacleSync is what lets a reader pair them
+    // into a single run instead of seeing an orphan marker plus an unrelated
+    // result — and it is exactly what the kill-detection correlation joins on.
+    expect(logs[0].args.p_started_at).toBe(cap.heartbeat().started_at)
+    expect(logs[0].args.p_rows_written).toBe(42)
+    expect(logs[0].args.p_ok).toBe(true)
+    expect(logs[0].args.p_extra.fmv_recalc_render).toEqual({ renders_priced: 42 })
   })
 
   it("a failing recalc still lands a phase:'complete' row with ok:false", async () => {
@@ -185,13 +208,16 @@ describe("GET /api/cron/pinnacle-sync — invoked-marker observability", () => {
       cap.restore()
     }
     const logs = cap.logs()
-    expect(logs).toHaveLength(2)
+    expect(logs).toHaveLength(1)
     // A failed run must be visibly failed, not merely absent — "no row" is the
-    // ambiguous state this whole fix exists to eliminate.
-    expect(logs[1].args.p_ok).toBe(false)
-    expect(logs[1].args.p_extra.phase).toBe("complete")
-    expect(logs[1].args.p_error).toContain("statement timeout")
-    expect(logs[1].args.p_rows_written).toBe(0)
+    // ambiguous state this whole fix exists to eliminate. And the marker must
+    // stay ok:true under its own name, so a failure counts ONCE in
+    // v_pipeline_failure_rates rather than being diluted by its own marker.
+    expect(logs[0].args.p_ok).toBe(false)
+    expect(logs[0].args.p_extra.phase).toBe("complete")
+    expect(cap.heartbeat().ok).toBe(true)
+    expect(logs[0].args.p_error).toContain("statement timeout")
+    expect(logs[0].args.p_rows_written).toBe(0)
   })
 
   it("logRun never lets an observability failure break the run (best-effort)", async () => {

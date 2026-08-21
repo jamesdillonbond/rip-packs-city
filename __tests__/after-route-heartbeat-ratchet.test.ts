@@ -134,8 +134,27 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   ingest/candy-editions, ingest/candy-offers — all five converted to
 //   `lib/pipeline/heartbeat.ts` in the same commit that added this file, which
 //   is where the "no two of the five agreed" measurement came from.
+// 2026-08-20 (same day, second pass): 66 -> 55. Eleven conversions, all from the
+//   watchlisted tier, so each one restores an arm that could not fire:
+//     seven with no marker at all — golazos/allday/pinnacle listings + sales
+//     indexers, allday-listings-retry, cron/snapshot-pack-asks;
+//     FOUR that already had a marker under their OWN pipeline name, which is
+//     strictly worse than none (see the ban below).
 // Lower this in the SAME commit that converts a route. Never raise it.
-const BUDGET = 62
+// ⚠ 2026-08-20, THIRD EDIT OF THIS CONSTANT IN ONE DAY, AND IT COLLIDED.
+//   Two sessions ran this workstream concurrently and each lowered the budget by
+//   ITS OWN conversions only: a1a5f4f9 took 66 -> 62 (the four maxDuration=800
+//   routes, the highest kill risk in the fleet), this pass took 66 -> 55 (eleven
+//   from the watchlisted tier). ⚠ BOTH ARE WRONG, and "take mine"/"take theirs"
+//   are equally wrong — the value is a COUNT of a shared population, not an
+//   opinion. Re-derived from the failing no-slack assertion rather than by
+//   arithmetic on the two sides, exactly as this repo's ratchet history requires.
+//   Re-derived live: **51**. Not 62, not 55, and note that it is also exactly
+//   66 - 4 - 11 — the arithmetic agrees here only because the two sessions
+//   happened to touch disjoint routes. Read it off the assertion anyway; a
+//   single overlapping route would have made the sum wrong and silently
+//   licensed one more un-heartbeated route.
+const BUDGET = 51
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {
@@ -206,6 +225,57 @@ describe("nobody re-rolls the heartbeat by hand", () => {
       rogue.map((r) => r.rel),
       "these routes name a '-heartbeat' pipeline without going through " +
         "lib/pipeline/heartbeat.ts — use writeInvocationHeartbeat() so the row shape stays one decision",
+    ).toEqual([])
+  })
+
+  it("no route writes an invocation marker under its OWN pipeline name", () => {
+    // ⚠ THE WORST SHAPE, AND IT LOOKS LIKE THE FIX. Four routes wrote a
+    // `phase: "invoked"` marker under their real pipeline name, each with a
+    // careful comment explaining that it made a dropped after() distinguishable
+    // from a cron that never fired. It did — and it simultaneously DESTROYED the
+    // alarm, because `detect_stalled_pipelines()` computes
+    //   max(started_at) FROM pipeline_runs WHERE pipeline = w.pipeline
+    // with NO phase filter. A self-named marker refreshes `last_run` every tick,
+    // so the cadence arm can never fire however many after() bodies die. A
+    // monitor whose input set includes its own output.
+    //
+    // Measured over the ~72h retention window before the fix:
+    //   allday-pack-listings   212 markers / 208 completions — 6 dead ticks, all
+    //                          invisible behind a 90-min arm
+    //   classify-acquisitions   70 markers / 122 rows, 180-min arm
+    //   pinnacle-sync            3 markers /   0 completions, 1560-min arm
+    //   compute-laliga-pack-ev   3 markers /   0 completions
+    //
+    // ⚠ A BAN AT POPULATION ZERO, not a ratchet — this repo prefers one, and it
+    // costs no allowlist. The marker itself is right; only the NAME was wrong,
+    // and `writeInvocationHeartbeat` cannot get the name wrong.
+    // ⚠ THE PREDICATE IS `"invoked"` ONLY, AND THAT NARROWING IS DELIBERATE —
+    // the first draft also matched `phase: "started"` and mis-sorted a route
+    // that is NOT doing this. `app/api/admin/drain-conflated-subeditions`
+    // inserts a `phase: "started"` row with **ok: false** and then UPDATEs that
+    // SAME row to completion. It is not a phantom second row: there is one row
+    // per run, it stays ok:false until the run finishes, and a maxDuration kill
+    // correctly leaves it ok:false with `error: "started (no completion
+    // recorded…)"`. Nothing is suppressed, and the row carries progressive
+    // `last_step` telemetry that is the only diagnosis available on a kill.
+    // Banning it would force a rewrite of a design that is already right.
+    //
+    // So the discriminator is not the word — it is whether a SEPARATE, ok:true
+    // row is minted under the real pipeline name. All four defects spelled that
+    // `phase: "invoked"`. Ban the spelling that only the defect uses, and say
+    // out loud what is excluded, rather than write a cleverer regex that sorts
+    // the two apart by accident.
+    const selfNamed = ROUTES.filter((r) => {
+      const code = stripComments(readFileSync(path.join(ROOT, r.rel), "utf8"))
+      return /phase:\s*["']invoked["']/.test(code)
+    })
+
+    expect(
+      selfNamed.map((r) => r.rel),
+      "these routes write an invocation marker inline. Route it through " +
+        "writeInvocationHeartbeat() from lib/pipeline/heartbeat.ts so it lands under " +
+        "<pipeline>-heartbeat — a marker under the pipeline's own name silences " +
+        "detect_stalled_pipelines() on the exact outage it was added to expose",
     ).toEqual([])
   })
 

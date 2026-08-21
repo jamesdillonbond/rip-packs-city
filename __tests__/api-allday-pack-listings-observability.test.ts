@@ -37,11 +37,26 @@ const st = vi.hoisted(() => ({
   rpcThrows: false,
   rpcCalls: [] as Array<{ name: string; args: any }>,
   upserted: [] as any[],
+  // The invocation marker moved from a self-named `log_pipeline_run` row to a
+  // `<pipeline>-heartbeat` INSERT on 2026-08-20 (lib/pipeline/heartbeat.ts). It
+  // had to: `detect_stalled_pipelines()` reads max(started_at) with no phase
+  // filter, so the self-named marker refreshed `last_run` every tick and the
+  // 90-min arm could never fire — this route ran 212 markers against 208
+  // completions, i.e. 6 dead ticks, every one invisible.
+  hbRows: [] as any[],
 }))
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from(table: string) {
+      if (table === "pipeline_runs") {
+        return {
+          insert: async (row: any) => {
+            st.hbRows.push(row)
+            return { error: null }
+          },
+        }
+      }
       const b: any = {
         select: () => b,
         eq: () => b,
@@ -87,6 +102,7 @@ import { POST } from "@/app/api/allday-pack-listings/route"
 
 const post = () => ({ headers: new Headers({ authorization: "Bearer tok" }) }) as any
 const logs = () => st.rpcCalls.filter((c) => c.name === "log_pipeline_run").map((c) => c.args)
+const heartbeat = () => st.hbRows.find((r) => r.pipeline === "allday-pack-listings-heartbeat")
 
 function edition(over: Record<string, unknown> = {}) {
   return {
@@ -108,6 +124,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.test"
   process.env.SUPABASE_SERVICE_ROLE_KEY = "k"
   capturedPromise = null
+  st.hbRows = []
   st.editions = { data: [], error: null }
   st.listings = { data: [], error: null }
   st.plcDelete = { error: null }
@@ -131,16 +148,24 @@ describe("allday-pack-listings — the fatal-catch around after()", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l).toHaveLength(2)
-    expect(l[0].p_extra).toEqual({ phase: "invoked" })
-    expect(l[1].p_ok).toBe(false)
-    expect(l[1].p_extra.phase).toBe("complete")
-    expect(l[1].p_extra.failed_at).toBe("uncaught")
-    expect(String(l[1].p_error)).toContain("editions read exploded")
-    // Both rows share started_at so the pair reads as ONE run, not two.
-    expect(l[1].p_started_at).toBe(l[0].p_started_at)
-    expect(l[1].p_pipeline).toBe("allday-pack-listings")
-    expect(l[1].p_collection_slug).toBe("nfl_all_day")
+    // ⚠ ONE log_pipeline_run row now, not two: the marker is no longer minted
+    // under this pipeline's own name. That is the fix, not a regression — a
+    // second self-named row is exactly what refreshed `last_run` and silenced
+    // the 90-min stall arm.
+    expect(l).toHaveLength(1)
+    expect(l[0].p_ok).toBe(false)
+    expect(l[0].p_extra.phase).toBe("complete")
+    expect(l[0].p_extra.failed_at).toBe("uncaught")
+    expect(String(l[0].p_error)).toContain("editions read exploded")
+    expect(l[0].p_pipeline).toBe("allday-pack-listings")
+    expect(l[0].p_collection_slug).toBe("nfl_all_day")
+
+    // The marker still exists, under the -heartbeat name, and still shares
+    // started_at with the completion so the pair reads as ONE run.
+    const hb = heartbeat()
+    expect(hb, "the invocation marker must still be written").toBeTruthy()
+    expect(hb.started_at).toBe(l[0].p_started_at)
+    expect(hb.pipeline).not.toBe("allday-pack-listings")
   })
 
   it("the marker is ok:true so a crashed run cannot double-count in v_pipeline_failure_rates", async () => {
@@ -148,8 +173,15 @@ describe("allday-pack-listings — the fatal-catch around after()", () => {
     await POST(post())
     await capturedPromise
     const l = logs()
-    expect(l[0].p_ok).toBe(true)
+    // The marker must not double-count in v_pipeline_failure_rates. It now sits
+    // under a different pipeline name entirely, which is a stronger guarantee
+    // than ok:true was — that view never sees it at all.
+    expect(heartbeat().ok).toBe(true)
     expect(l.filter((r) => r.p_ok === false)).toHaveLength(1)
+    expect(
+      l.filter((r) => r.p_pipeline === "allday-pack-listings"),
+      "exactly one own-name row per run, and it is the completion",
+    ).toHaveLength(1)
   })
 })
 
@@ -161,10 +193,10 @@ describe("allday-pack-listings — early aborts that used to be silent", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l).toHaveLength(2)
-    expect(l[1].p_ok).toBe(false)
-    expect(l[1].p_extra.failed_at).toBe("editions_fetch")
-    expect(String(l[1].p_error)).toContain("editions denied")
+    expect(l).toHaveLength(1)
+    expect(l[0].p_ok).toBe(false)
+    expect(l[0].p_extra.failed_at).toBe("editions_fetch")
+    expect(String(l[0].p_error)).toContain("editions denied")
     expect(st.upserted).toHaveLength(0)
   })
 
@@ -178,10 +210,10 @@ describe("allday-pack-listings — early aborts that used to be silent", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_ok).toBe(false)
-    expect(l[1].p_extra.failed_at).toBe("cached_listings_fetch")
-    expect(l[1].p_extra.editions).toBe(2)
-    expect(l[1].p_rows_found).toBe(2)
+    expect(l[0].p_ok).toBe(false)
+    expect(l[0].p_extra.failed_at).toBe("cached_listings_fetch")
+    expect(l[0].p_extra.editions).toBe(2)
+    expect(l[0].p_rows_found).toBe(2)
     expect(st.upserted).toHaveLength(0)
   })
 })
@@ -196,11 +228,11 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_ok).toBe(true) // the sweep completed; it just wrote nothing
-    expect(l[1].p_extra.phase).toBe("complete")
-    expect(l[1].p_rows_found).toBeGreaterThan(0)
-    expect(l[1].p_rows_written).toBe(0)
-    expect(l[1].p_rows_skipped).toBe(l[1].p_rows_found)
+    expect(l[0].p_ok).toBe(true) // the sweep completed; it just wrote nothing
+    expect(l[0].p_extra.phase).toBe("complete")
+    expect(l[0].p_rows_found).toBeGreaterThan(0)
+    expect(l[0].p_rows_written).toBe(0)
+    expect(l[0].p_rows_skipped).toBe(l[0].p_rows_found)
   })
 
   it("a THROWN upsert is caught per-chunk and still reported as an under-write", async () => {
@@ -212,8 +244,8 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_rows_written).toBe(0)
-    expect(l[1].p_rows_skipped).toBe(l[1].p_rows_found)
+    expect(l[0].p_rows_written).toBe(0)
+    expect(l[0].p_rows_skipped).toBe(l[0].p_rows_found)
   })
 
   it("a delete ERROR is surfaced in extra.delete_error rather than swallowed", async () => {
@@ -228,7 +260,7 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_extra.delete_error).toBe("delete blocked")
+    expect(l[0].p_extra.delete_error).toBe("delete blocked")
   })
 
   it("a clean sweep reports delete_error null and rows_written === rows_found", async () => {
@@ -239,13 +271,13 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_ok).toBe(true)
-    expect(l[1].p_extra.delete_error).toBeNull()
-    expect(l[1].p_rows_written).toBe(l[1].p_rows_found)
-    expect(l[1].p_rows_skipped).toBe(0)
-    expect(l[1].p_extra.editions_loaded).toBe(1)
-    expect(l[1].p_extra.listings_loaded).toBe(1)
-    expect(typeof l[1].p_extra.elapsed_ms).toBe("number")
+    expect(l[0].p_ok).toBe(true)
+    expect(l[0].p_extra.delete_error).toBeNull()
+    expect(l[0].p_rows_written).toBe(l[0].p_rows_found)
+    expect(l[0].p_rows_skipped).toBe(0)
+    expect(l[0].p_extra.editions_loaded).toBe(1)
+    expect(l[0].p_extra.listings_loaded).toBe(1)
+    expect(typeof l[0].p_extra.elapsed_ms).toBe("number")
   })
 
   it("groups listings by set::tier — lowest ask wins, count accumulates, first image sticks", async () => {
@@ -267,8 +299,8 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[1].p_extra.listings_loaded).toBe(4)
-    expect(l[1].p_extra.groups_with_listings).toBe(1)
+    expect(l[0].p_extra.listings_loaded).toBe(4)
+    expect(l[0].p_extra.groups_with_listings).toBe(1)
     const row = st.upserted.find((r) => r.pack_name === "Base Set — COMMON")
     expect(row).toBeTruthy()
     expect(row.lowest_ask_usd).toBe(8) // lowest of 20 / 8 (0 and blank-set rows skipped)

@@ -24,10 +24,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 describe("allday-pack-listings — pipeline observability", () => {
   let capturedPromise: Promise<unknown> | null = null
   const calls: any[] = []
+  const hbRows: any[] = []
 
   beforeEach(() => {
     vi.resetModules()
     calls.length = 0
+    hbRows.length = 0
     capturedPromise = null
     process.env.INGEST_SECRET_TOKEN = "tok"
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.test"
@@ -41,7 +43,12 @@ describe("allday-pack-listings — pipeline observability", () => {
     })
     vi.doMock("@supabase/supabase-js", () => ({
       createClient: () => ({
-        from() {
+        from(table?: string) {
+          // The invocation marker is a `pipeline_runs` INSERT since 2026-08-20
+          // (lib/pipeline/heartbeat.ts), not a self-named log_pipeline_run row.
+          if (table === "pipeline_runs") {
+            return { insert: async (row: any) => { hbRows.push(row); return { error: null } } }
+          }
           const b: any = {
             select: () => b, eq: () => b, order: () => b, range: () => b, delete: () => b,
             upsert: () => b,
@@ -57,17 +64,25 @@ describe("allday-pack-listings — pipeline observability", () => {
 
   const post = () => ({ headers: new Headers({ authorization: "Bearer tok" }) }) as any
 
-  it("writes a synchronous phase:invoked marker BEFORE after() is scheduled", async () => {
+  it("writes a synchronous invocation marker BEFORE after() is scheduled", async () => {
     const { POST } = await load()
     await POST(post())
     // Asserted BEFORE awaiting the captured promise: the marker must already
-    // exist purely from the synchronous part of the handler.
-    const logs = calls.filter((c) => c.name === "log_pipeline_run")
-    expect(logs.length).toBe(1)
-    expect(logs[0].args.p_pipeline).toBe("allday-pack-listings")
-    expect(logs[0].args.p_extra).toEqual({ phase: "invoked" })
-    expect(logs[0].args.p_ok).toBe(true)
-    expect(logs[0].args.p_collection_slug).toBe("nfl_all_day")
+    // exist purely from the synchronous part of the handler. That ordering is
+    // the whole point — a marker written after the work cannot survive the kill
+    // it exists to record.
+    expect(hbRows).toHaveLength(1)
+    expect(hbRows[0].collection_slug).toBe("nfl_all_day")
+    expect(hbRows[0].ok).toBe(true)
+
+    // ⚠ AND IT MUST NOT BE UNDER THE PIPELINE'S OWN NAME. It was until
+    // 2026-08-20, and that silenced the very alarm it was added to protect:
+    // `detect_stalled_pipelines()` takes max(started_at) with no phase filter,
+    // so a self-named marker refreshed `last_run` on every tick. This route ran
+    // 212 markers against 208 completions — 6 dead ticks behind a 90-min arm,
+    // none of which could ever fire.
+    expect(hbRows[0].pipeline).toBe("allday-pack-listings-heartbeat")
+    expect(calls.filter((c) => c.name === "log_pipeline_run")).toHaveLength(0)
   })
 
   it("writes a phase:complete row once the deferred body finishes", async () => {
@@ -75,17 +90,21 @@ describe("allday-pack-listings — pipeline observability", () => {
     await POST(post())
     await capturedPromise
     const logs = calls.filter((c) => c.name === "log_pipeline_run")
-    expect(logs.length).toBe(2)
-    expect(logs[1].args.p_extra.phase).toBe("complete")
-    expect(logs[1].args.p_ok).toBe(true)
-    // Both rows share one started_at so they pair up as a single run.
-    expect(logs[1].args.p_started_at).toBe(logs[0].args.p_started_at)
+    expect(logs.length).toBe(1)
+    expect(logs[0].args.p_extra.phase).toBe("complete")
+    expect(logs[0].args.p_ok).toBe(true)
+    // The marker and the completion still share one started_at, so they pair up
+    // as a single run for the kill-detection correlation.
+    expect(logs[0].args.p_started_at).toBe(hbRows[0].started_at)
   })
 
   it("does NOT log when the request is unauthorized", async () => {
     const { POST } = await load()
     await POST({ headers: new Headers({ authorization: "Bearer nope" }) } as any)
     expect(calls.filter((c) => c.name === "log_pipeline_run")).toHaveLength(0)
+    // Nor a marker: "heartbeat only" must keep meaning "killed mid-flight", not
+    // "someone probed the endpoint without a token".
+    expect(hbRows).toHaveLength(0)
   })
 })
 
