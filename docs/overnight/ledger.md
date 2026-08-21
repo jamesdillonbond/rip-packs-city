@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — PopularOnCollection was 31.5% covered because a PREMISE went stale, not because it was hard; component gate re-seated against a MEASURED wobble
+
+**Area (8) continued.** Re-derived the filing's three worst component files rather than quoting them: `CollectionTabClient` **142 uncovered branches / 75.6%** (but already 96 tests — diminishing), `ErrorTriageClient` **64.0% br** (admin-only), and `components/entity/PopularOnCollection.tsx` **31.5% st / 34.9% br / 7.7% fn** — worst by a wide margin, in a 240-line file that already had **two** test suites.
+
+⚠ **THE 7.7% FUNCTIONS NUMBER WAS THE TELL.** Two test files, ~6 near-identical cases each, both covering only the exported helper `distinctSlugLinks` — and both opening with a header that explains why the component body is unreachable:
+
+- `component-PopularOnCollection.test.tsx`: *"the DEFAULT export is an ASYNC SERVER COMPONENT … it CANNOT be rendered in jsdom."*
+- `component-PopularOnCollection-links.test.tsx`: *"The module references supabaseAdmin at import time."*
+
+**Both were true when written and both stopped being true on 2026-08-17**, when that day's pass lifted the two reads into `lib/entity/popular-on-collection-fetchers`. The module has not touched `supabaseAdmin` since, and an async server component whose data arrives through an injectable module renders under jsdom by simply awaiting it: **`render(await PopularOnCollection({ collection }))`**. Proven in one throwaway file before writing anything. This is the same shape `vitest.workers.config.ts` already records — *"BOTH were parked behind an assumed tooling gap that a few minutes of reading disproved"* — and CLAUDE.md's *"a filed DECISION NOT TO ACT is a hypothesis, and it is the one nobody re-checks."*
+
+⚠ **BOUNDED, NOT ASSUMED:** `grep -rln 'export default async function' components/` returns **exactly one file**. This is not a class of hidden dark components; it is one file, and saying so is the point.
+
+**14 cases** in `__tests__/component-PopularOnCollection-render.test.tsx`, driving the real component with the fetchers module injected:
+
+- **The honesty contract, which is the reason this mattered.** The component's own header says a failed read and an empty catalogue must both render nothing — correct, since an anonymous crawler has no use for a degraded notice — and that a `console.warn` is the only thing keeping them distinguishable. So the suite asserts **the DISTINCTION**: healthy-and-empty returns null and logs **nothing**; both-reads-failed returns an **identical** null and logs two warns carrying the collection and each `reason`; one failed leg still renders the working half and warns once. Nothing could check any of that while the body was unreachable — an SEO regression whose output is silence.
+- Unknown collection returns null **without costing a query**; Pinnacle links on `id` not `external_id` (different table, text keys — an `external_id` href 404s) and **skips the hub read entirely** by design; team moments label as `"<team> <play>"` rather than vanishing; `external_id` is URL-encoded; an empty hub group renders **no heading** (UFC Strike has no teams); the exhibition-roster drop applies to Teams only.
+
+**Proven it can fail — 12 mutation controls, all RED, tree restored byte-identical:** each warn removed · warn fired on the healthy-empty path too · unknown-collection guard removed · Pinnacle hub-skip removed · Pinnacle link branch removed · href un-encoded · empty HubRow not hidden · exhibition drop disabled · sub-line always rendered · `tileSubject` reduced to the raw player · the render-nothing guard removed.
+
+Both stale headers are **corrected in the same commit**, each naming what changed and when, so the next reader inherits the fact rather than the fossil.
+
+**Result:** `PopularOnCollection.tsx` **31.5 → 100 st, 34.9 → 97.7 br, 7.7 → 100 fn**. Gate totals **90.72 / 81.93 / 89.18 / 93.65 → 90.97–91.00 / 82.09–82.10 / 89.48–89.59 / 93.89** across three runs. ⚠ **The `functions` wobble was MEASURED this time, not assumed away** — 0.11pt spread, matching `testing-and-ci.md` exactly — so thresholds moved to `90.85 / 81.95 / 89.3 / 93.75`, each seated under the **lowest** of three samples (functions by 0.18, i.e. 1.6× the observed spread). The previous pass deliberately froze `functions` at 89.1 and asked for exactly this: *"raise it once the spread is known, not once a single run permits it."* New seat proven to REJECT (functions temporarily 89.7 → exit 1). Suite 1326 files / 14,331 tests green, `tsc` 0.
+
+**Revert path:** `git revert <sha>` (delete `__tests__/component-PopularOnCollection-render.test.tsx`, restore the four thresholds to `90.6 / 81.8 / 89.1 / 93.5`, restore the two test headers). No production code changed — tests + config + comments only.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — covered rpc-mcp-proxy's six tool handlers: argument coercion, sniper slug routing, wallet-filter gaps; workers gate re-seated again
 
 **Area (8) continued.** After sports-proxy, the next-largest uncovered cluster in the workers gate was `workers/rpc-mcp-proxy/index.ts` — **74.74% st / 53.75% br** (re-measured, not quoted from the filing). The existing `worker-rpc-mcp-handler.test.ts` covers the HTTP entry surface (auth, quota, body validation, dispatch envelopes) and **exactly one of the six tools**; the other five and every branch inside `get_sniper_deals` / `lookup_wallet` were unexecuted.
