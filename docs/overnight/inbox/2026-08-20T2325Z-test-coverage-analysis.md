@@ -52,6 +52,33 @@ against a throwaway Postgres so no existing test layer can even see live grants.
 Trevor's call plus a live-DB checker (the `db-pin-staleness.yml` lane already has the
 service-role key). Filed, not shipped.
 
+**⚠ UPDATE 2026-08-20 PT, later the same day: FOUR of this document's items have now
+been refuted on measurement — two by me, two by concurrent sessions. Treat the
+remainder as hypotheses, not a work queue.** The pattern in all four is the same and is
+worth naming: **I measured a PROXY and reported it as the property.** Imports for
+reachability. Include-globs for tracking. Call sites for liveness. Coverage % for
+untested-ness. Each proxy was easy to compute and each was wrong in the same direction —
+it made the gap look bigger than it was.
+
+| item | filed claim | what measurement found |
+|---|---|---|
+| 4 — edge functions | *"32 of 38 import nothing from `_shared` — 10,642 lines no test can reach"* | **6× overstated.** Reachability here has TWO routes, because CI has no Deno test run: import from `_shared`, **or** keep an inline copy mirrored in `_shared` and pinned byte-for-byte by the drift guard — and the mirror is the DOMINANT pattern (6 import, **22 mirror**, 10 neither). Real figure **10 functions / 1,767 lines**. ⚠ A ratchet on my number would have pushed someone to convert 22 *working* mirrors into imports for no gain. The session that caught it did start that conversion and broke two existing guards before the suite stopped it. |
+| 5 — `trim_recent_searches` | *"anon-executable deleter with no caller anywhere"* | It is a **trigger function**; trigger functions have no call sites by construction. Also SECURITY INVOKER, and an RPC call raises `record "new" is not assigned yet`, so it deletes nothing. **Revoking would have been a no-op dressed as a security fix.** The real finding is the population: 22 of 38 trigger functions hold anon EXECUTE, outside `check_secdef_anon_exec_drift()` by construction. |
+| 6 — component gate | *"four subtrees are invisible to the gate by construction"* | A rot guard tracked all four by name in `KNOWN_UNMEASURED`. The mechanism worked; the four **REASONS** had gone stale. |
+| 7 — server-page render layer | *"the gap is the render layer; extend the source guard across ~23 pages"* | **Already closed: 30 of 31 pages discriminate**, via `lib/insights/board-status.ts`. ⚠ The proposed guard **would have reddened CI on the two pages that implement the property best.** Only the prose was stale. |
+
+Plus the one I found working item 3: **`cron/pinnacle-listings-reconcile`, named here as the #1
+branch-coverage target, is ~73 lines of unreachable rollback code** behind
+`const ASK_UNIFY_RETIRED = true`, with the live path already covered by two test files.
+
+**What still stands, and why I believe it more than the above:** the items backed by a
+measurement of the PROPERTY rather than a proxy — the `after()` heartbeat gap (measured
+from `pipeline_runs` row counts, and the fix has since been verified live), the
+`legacy-redirect` 0% (measured from executed coverage, now 100%), the retention-deleter
+pins (measured from live DDL and run records), and the branch-percentage distribution
+itself. ⚠ **Anything in this document phrased as a count of files or lines deserves
+re-derivation before anyone acts on it.**
+
 **Everything else in this document was re-checked while acting on it and stands.**
 
 ---

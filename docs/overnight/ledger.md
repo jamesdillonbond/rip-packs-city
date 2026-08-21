@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, fourth wave) — the partial-scan cursor hold on `sales-indexer` was held by a GREP, and it is the branch where a bug loses sales permanently
+
+**How I got here:** re-derived the branch-coverage ranking from a fresh run rather than trusting the filing, after four of its items had already been refuted. `app/api/sales-indexer/route.ts` was the **worst REACHABLE branch coverage in `app/api` at 59.31%** — the worst overall, `cron/pinnacle-listings-reconcile`, being ~73 lines of unreachable rollback code (filed separately).
+
+⚠ **THE BRANCH THAT HAD NO BEHAVIOURAL TEST.** The scan walks blocks in 250-height chunks. If a chunk's event fetch throws, `firstFailedChunkStart` caps the cursor at `firstFailedChunkStart - 1` so those blocks are re-scanned next tick. **If that cap breaks, every block in and after the failed chunk is marked processed without ever being read — the sales in them are lost PERMANENTLY**, because nothing revisits a block below the cursor. No error, no `ok:false`, no row count that looks wrong: the pipeline reports a clean run over a range it never scanned. Absence-not-an-error, on the table the whole product prices from.
+
+**What held it: `indexer-cursor-hold-on-partial-scan-guard.test.ts` — a SOURCE grep** for `firstFailedChunkStart - 1` and `partial_scan: true`. ⚠ Same shape as `legacy-redirect` earlier today: a tripwire on the spelling that cannot see whether the branch is REACHED, nor what value actually reaches `event_cursor`. The sibling `allday-listings-indexer` already had behavioural cases for its own copy; this one did not.
+
+**Shipped:** five cases driving it through a new per-chunk throw seam in the deep harness, plus the invocation heartbeat this route lacked (it is on `pipeline_cadence_watchlist` at 180 min). Ratchet **51 → 50**. Route branch coverage **59.31% → 62.06%**.
+
+**Mutation-tested, 3/3 killed:** cursor always advances (the blocks-lost-forever defect) · off-by-one, capping AT the failed chunk instead of before it · LAST failed chunk wins instead of first. ⚠ **The third is only observable with a THREE-chunk scan and TWO failures** — with one failing chunk, "first" and "last" are the same block and `if (firstFailedChunkStart === null)` is unobservable. That is the documented fixture-cannot-distinguish shape, and the fixture is built to defeat it.
+
+⚠ **A control case is included deliberately** — a clean three-chunk scan must advance the cursor to the target. Without it every hold assertion passes on a route that simply never advances the cursor at all.
+
+⚠ **One trap the heartbeat introduced into my own tests:** `pipeline_runs` now receives the marker row FIRST, so a `[0]` index silently starts measuring the wrong row. The helper selects the terminal row **by pipeline name**, and the control asserts both names are present so it cannot quietly become an index again.
+
+**Verification:** full suite **1321 files / 14,266 tests** green, `tsc` clean. ⚠ The coverage-instrumented run was OOM-killed twice in this sandbox (exit 137); the green run above is uninstrumented, and the coverage gate is left to CI, which is the authority anyway.
+
+**Revert path:** `git revert` by message — `test(sales-indexer): drive the partial-scan cursor hold…`. Code + tests; no DB or schema change.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "keep going", area 8) — TWO wrangler configs deployed to ONE Cloudflare worker, and the fossil would have silently downgraded the live spork proxy
 
 **Area (8) listed this as a measurement gap** — *"`infrastructure/spork-proxy-worker/index.ts` (75 lines) is outside the workers gate's `workers/**` include entirely, and differs from `workers/spork-proxy/index.ts`."* True, and **the coverage angle is the least interesting part.**
