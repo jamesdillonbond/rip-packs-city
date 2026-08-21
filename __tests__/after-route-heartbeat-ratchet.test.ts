@@ -37,6 +37,46 @@ import path from "node:path"
 // one pass, and some may not want a marker (a route whose terminal row is
 // incidental rather than watched). Lower BUDGET in the same commit that converts
 // a route; never raise it. At zero, replace this with a ban.
+//
+// ── WHICH OF THE 66 TO DO FIRST (measured 2026-08-20, re-derive before acting) ──
+//
+// Not all 66 are equal, and the discriminator is measurable rather than a matter
+// of taste: **is anything watching this pipeline's SILENCE?** Cross-referencing
+// the 66 against `pipeline_cadence_watchlist WHERE is_active` gives **32**.
+//
+// Those 32 are the ones where a `maxDuration` kill is not merely unlogged but
+// ACTIVELY MISREAD. `detect_stalled_pipelines()` alerts on the absence of a
+// terminal row, so a killed tick and a cron that never fired produce the
+// identical alert — and the two need opposite responses (fix the route vs. fix
+// the schedule). The heartbeat is what separates them. On the other 34 the
+// marker is worth having but nothing is currently drawing a wrong conclusion
+// without it.
+//
+// The 32, by route (their watchlisted pipeline name in parentheses where it
+// differs from the path):
+//   app/api/sales-indexer                      (topshot-sales-indexer)
+//   app/api/allday-sales-indexer               app/api/golazos-sales-indexer
+//   app/api/allday-listings-indexer            app/api/allday-listings-retry
+//   app/api/allday-pack-listings               app/api/pinnacle-listings-indexer
+//   app/api/golazos-listings-indexer           app/api/candy-sales-indexer
+//   app/api/topshot-fmv-populate               app/api/topshot-listing-cache
+//   app/api/wmc-fmv-populate                   app/api/wallet-backfill
+//   app/api/admin/apply-fmv-haircut            app/api/admin/backfill-topshot-buyers
+//   app/api/cron/offers-sweep                  app/api/cron/lock-check-batch
+//   app/api/cron/panini-ingest                 app/api/cron/pinnacle-sync
+//   app/api/cron/pinnacle-events-ingest        app/api/cron/pinnacle-wmc-render-id
+//   app/api/cron/snapshot-pack-asks            app/api/cron/run-insider-detectors
+//   app/api/cron/ufc-enrichment-drain          app/api/cron/allday-lock-refresh-batch
+//   app/api/cron/allday-resolve-unmapped       app/api/cron/backfill-pack-rip-metadata
+//   app/api/cron/refresh-pack-grail-metrics-mv app/api/cron/populate-pinnacle-wmc-fmv
+//   app/api/cron/resolve-wallet-usernames      (wallet-username-resolver)
+//   app/api/cron/backfill-pack-pull-source-rip-id (pack-pull-source-rip-id-backfill)
+//   app/api/cron/classify-acquisitions-multicollection
+//
+// ⚠ This list is a dated SAMPLE and deliberately NOT an assertion — the
+// watchlist is live data a test cannot read (`db-tests` runs against a throwaway
+// Postgres), and freezing it here would create exactly the curated list the
+// predicate above avoids. It is a work queue, not a guard.
 
 const ROOT = path.resolve(__dirname, "..")
 const API = path.join(ROOT, "app", "api")
