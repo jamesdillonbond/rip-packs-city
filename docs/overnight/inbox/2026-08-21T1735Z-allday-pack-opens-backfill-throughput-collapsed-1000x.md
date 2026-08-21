@@ -204,3 +204,78 @@ jobid 55's `net.http_get` timeout is **90 000 ms**. At 30 s × 3, **no tick that
 **Still deploy-gated** either way; it belongs in the gate-key rotation window that has to happen regardless. ⚠ **Not shipped as code-only-deploy-withheld on purpose:** the value is a judgement between two numbers, and committing mine would pre-empt a decision that costs nothing to make at rotation time.
 
 ⚠ **Secret exposure, disclosed:** reading `cron.job.command` to identify the callers printed the `?key=` gate key for `ingest-allday-pack-opens` into this session's transcript — the incident class CLAUDE.md records. I noticed it at the time and did **not** disclose it in my original ledger entry, which was the wrong call; the concurrent session disclosed the same exposure independently. The key was already scheduled for rotation under the 2026-08-18 BLOCKER, so no new rotation is created, but it makes that rotation **required rather than deferred**. Query `cron.job` with the key masked: `regexp_replace(command, 'key=[^&'']+', 'key=***')`.
+
+---
+
+## ⚠ AMENDMENT 2026-08-21 ~11:45 PT — the 28 s value is right, but it CANNOT be applied where the amendment above implies
+
+The `tries = 2` arithmetic in the previous amendment is correct and I verified it independently
+(28 + 0.4 + 28 = **56.4 s**, inside pg_net's 90 s; 3 × 30 + 1.2 = **91.2 s**, outside it — so raising the
+timeout without cutting `tries` really would blind `net._http_response` for the failure case).
+
+**But there is a structural constraint neither pass has stated, and it is not a judgement call.**
+
+### The abort is inside `j()`, not at the call site
+
+```
+async function j(url, tries = 3, headers = {}) {
+  const r = await fetch(url, { ..., signal: AbortSignal.timeout(15000) })   // ← hardcoded
+```
+
+`tries` and `headers` are parameters. **The 15 000 ms is not.** There are five call sites, and only two are
+spork:
+
+| call site | lane | tries |
+|---|---|---|
+| `eventsFetch` → `SPORK_URL` | spork | 3 (explicit) |
+| `txFetch` → `SPORK_URL` | spork | 3 (explicit) |
+| `eventsFetch` → `REST` | rest | 3 (default) |
+| `txFetch` → `REST` | rest | 3 (default) |
+| `tip()` → `REST` | rest | 3 (default) |
+
+So editing the literal `15000 → 28000` raises the per-attempt abort for **the healthy forward lane and the
+tip read as well**, and jobid 20 carries the **same 90 000 ms** pg_net budget as jobid 55:
+
+| REST-lane worst case for one failing query | total |
+|---|---|
+| today (3 × 15 s + 0.4 + 0.8) | **46.2 s** — 43.8 s of headroom |
+| after a bare `15000 → 28000` (3 × 28 s + 1.2) | **85.2 s** — **4.8 s of headroom** |
+
+⚠ Stated honestly: forward's p50 is 2.6 s, so this is **tail risk, not routine** — REST has to actually fail
+for the attempts to stack. But it converts the working job's comfortable margin into almost none, on the
+same pg_net budget, for no benefit to that lane. **The fix would put the healthy half of the positive
+control at risk to repair the broken half.**
+
+### The constraint, which does not pre-empt the value
+
+Make the timeout a **parameter scoped to the spork paths** — the two call sites that actually face the
+25 s worker — rather than editing the shared literal:
+
+```
+async function j(url, tries = 3, headers = {}, timeoutMs = 15000)   // REST callers unchanged
+...
+j(sporkUrl, 2, sporkHeaders, 28000)                                  // spork only
+```
+
+REST keeps 46.2 s worst case; spork gets 56.4 s. The number in the previous amendment stands — this only
+says where it may be applied. Whoever ships at rotation time still picks the value.
+
+### ⚠ The twin has the identical `j()` and must NOT be changed with it — verified, not assumed
+
+`supabase/functions/ingest-topshot-pack-opens-history/index.ts` carries a byte-identical `j()`, same
+hardcoded `15000`, same spork routing. It is **live** (2,094 all-time runs, active today), so "it is
+dormant" is not the reason to leave it alone. The reason is that **its backfill is FINISHED**:
+
+- `done: true` on **270 of 272** runs / 72h; the other 2 are `{"cursor_read_failed": true}` — the
+  `CursorRead` discriminated union doing its job on a transient PostgREST blip.
+- cursor **61,808,846** is already **below** its floor **65,264,619**, so it takes the `cur <= floor`
+  early return and never reaches `eventsFetch`. `status 0`: **0**. avg advance: **0**. avg duration 2.2 s.
+
+⚠ That profile — 99% `ok`, sub-3 s, zero progress — is indistinguishable at a glance from a silent stall,
+and only `extra.done` separates them. **Read `extra`, not the ok-rate.** Recorded so a later sweep does not
+"fix" a function that has nothing to fix, and so the deliberate divergence between the two twins is on file.
+
+**Minor, not a defect:** the finished twin still burns ~272 invocations / 72 h re-confirming `done`.
+Disabling its pg_cron entry is a free cleanup whenever someone is in there; it is not urgent and it is not
+part of this fix.
+

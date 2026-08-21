@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — the pack-opens timeout fix has a scoping constraint neither pass stated, and the twin that shares the bug must not be changed with it
+
+**Docs only.** Third pass on the pack-opens filing. The previous amendment's arithmetic is right and I re-verified it independently — `28 s × 2 tries` = **56.4 s** (inside pg_net's 90 s), `30 s × 3` = **91.2 s** (outside it, which would blind `net._http_response` for exactly the failure case it was diagnosed from). **The value stands. Where it may be applied does not.**
+
+⚠ **THE ABORT IS INSIDE `j()`, NOT AT THE CALL SITE — so there is no such thing as "change the spork timeout" as a one-line edit.** `tries` and `headers` are parameters; **`AbortSignal.timeout(15000)` is a hardcoded literal**. Five call sites, only **two** are spork (`eventsFetch`/`txFetch` → `SPORK_URL`); the other three are REST — including `tip()`. Editing the literal raises the abort for **the healthy forward lane too**, and jobid 20 carries the **same 90 000 ms** pg_net budget as jobid 55:
+
+| REST-lane worst case, one failing query | total | headroom |
+|---|---|---|
+| today (3 × 15 s + 0.4 + 0.8) | 46.2 s | 43.8 s |
+| bare `15000 → 28000` (3 × 28 s + 1.2) | **85.2 s** | **4.8 s** |
+
+⚠ Stated honestly rather than alarmingly: forward's p50 is 2.6 s, so this is **tail risk, not routine** — REST must actually fail for attempts to stack. But it spends the working job's entire margin, on the same budget, for **no benefit to that lane**: the fix would put the healthy half of the positive control at risk to repair the broken half. **The constraint is to make the timeout a PARAMETER scoped to the two spork call sites** (`j(url, tries, headers, timeoutMs = 15000)`) instead of editing the shared literal. That is a correctness constraint, not a choice between numbers, so it does not pre-empt the value decision the prior pass deliberately left for rotation time.
+
+⚠ **THE TWIN HAS A BYTE-IDENTICAL `j()` AND MUST NOT BE CHANGED WITH IT — verified, not assumed.** `ingest-topshot-pack-opens-history` carries the same hardcoded `15000` and the same spork routing, and it is **LIVE** (2,094 all-time runs, active today), so "it's dormant" is not the reason to leave it. The reason is that its backfill is **FINISHED**: `done: true` on **270 of 272** runs/72h (the other 2 are `{"cursor_read_failed": true}` — the `CursorRead` discriminated union correctly refusing to re-seed on a transient blip), cursor **61,808,846** already **below** its floor **65,264,619**, so it early-returns and never reaches `eventsFetch`. `status 0`: **0**.
+
+⚠ **The durable bit: that twin's profile is 99% `ok`, 2.2 s, and ZERO cursor advance — indistinguishable at a glance from a silent stall.** Only `extra.done` separates "finished" from "wedged". **Read `extra`, not the ok-rate** — the same overloading CLAUDE.md records for `rows_written = 0` and `ok = false`. I checked it precisely because a 272-run/72h pipeline advancing nothing looks exactly like the AllDay collapse next to it, and it is the opposite.
+
+**Minor, filed not fixed:** the finished twin still burns ~272 invocations/72h re-confirming `done`. Disabling its pg_cron entry is a free cleanup, not urgent, not part of this fix.
+
+**Scope conclusion: the fix is AllDay-only.** Recorded so a later sweep does not "repair" a function with nothing to repair, and so the deliberate divergence between the twins is on file.
+
+**Verified:** docs only; no code, no DB change, repo tree otherwise unchanged.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — four entity sections were publishing "No sales yet." out of FAILED reads, and the helper made the honest option impossible
 
 **Found by following the Vercel error groups from this morning's health pass to the render layer.** `lib/entity-section-rpc.ts` degrades a DECORATIVE section to `[]` after retries — a deliberate, sound policy — and its own header already says `return []` *"renders a PLAUSIBLE EMPTY STATE"*. It then returns `[]` anyway, on the reasoning that the `[entity-section]` log makes the degradation greppable. ⚠ **The log is for the operator. The reader was still told something false.**
