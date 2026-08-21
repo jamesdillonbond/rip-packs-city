@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8, closed) — the migration-parity job's "once the backlog is cleared" condition had been MET for days; backlog recovered from prod and the job is now ENFORCING
+
+**Area (8), last item.** The filing listed `check-migration-parity.mjs` as *"warning-only"* — flagged as a candidate, **not** a defect, because the workflow's own header explains the posture and names its exit condition: *"TO MAKE IT ENFORCING once the backlog is cleared: delete the `|| true`."*
+
+⚠ **THAT IS A DECISION-NOT-TO-ACT WITH A NUMBER IN IT, WHICH IS THE GOOD KIND — and it still went stale.** The number was **114 fileless migrations at a 14-day window**, measured 2026-08-10. Re-derived 2026-08-20 against `supabase_migrations.schema_migrations` (Supabase MCP; the sandbox has no service-role key, so the check's own comparison was replicated exactly — same window predicate, same NAME matching, repo side from `git ls-tree HEAD`):
+
+| window | applied | drift |
+|---|---|---|
+| 3 d | 3 | **0** |
+| 7 d | 34 | 5 |
+| 14 d | 109 | **5** |
+
+**114 → 5.** And the 5 are one coherent afternoon: `rpc_search_catalog` **v2 / v3 / v4 prototypes plus their own two drops**, all 2026-08-14. Not an unbounded historical tail — a finishable job.
+
+**Recovered, not retyped.** Each was pulled from `schema_migrations.statements` as base64, decoded locally, and **md5-compared against `md5(array_to_string(statements, E'\n'))` from the same row — all five match exactly.** (⚠ Byte length did *not* match Postgres `length()` — 1348 vs 1336 on the smallest — because `length()` counts CHARACTERS and the SQL carries `✅ ❌ — →`. The md5 is the binding check; this is the same `wc -c` trap CLAUDE.md records for its own size limit.)
+
+⚠ **CHECKED FOR AN ORPHAN BEFORE ASSUMING THESE WERE INERT** — `pg_proc` for `rpc_search_catalog%` in prod returns **exactly one function**, the live `rpc_search_catalog`, `anon`/`authenticated` EXECUTE both false. v2, v3 and v4 are genuinely gone; nothing left behind to escalate. Their recovered SQL is worth keeping for a reason beyond parity: the drop migrations carry **measured negative results** (the prose-ranking boost changed nothing because ~297 moments mention "buzzer" exactly once and are equivalent under any text-relevance measure; the real defect was `LIKE ALL` token handling) — findings that had existed only inside a database column.
+
+**Backlog now 0 / 0 / 0 at 3d / 7d / 14d, so the exit condition is satisfied and the job is ENFORCING.**
+
+⚠ **DELETING `|| true` ALONE WOULD HAVE BEEN THE WRONG FIX, and this is the part worth keeping.** Every CI `run:` block is `bash -e`, so a bare failing pipeline aborts the step **on the npm line** — leaving BOTH grep annotations, the ones that name WHICH migrations drifted, as **dead code that reads as coverage**, on precisely the run where they matter. The step now captures with `|| RC=$?`, annotates, and `exit "$RC"` at the end. `::warning::` → `::error::`, and **exit 2 (the check could not RUN) now fails too** — an unreachable database was previously indistinguishable from a clean repo, the null-instrument shape.
+
+**Verified by SIMULATION, not by reading.** The block was run under real `bash -e` against three stub commands exiting 0 / 1 / 2: exit 0 → no annotations, exit 0; exit 1 → **both** annotations printed, exit 1; exit 2 → cannot-run annotation, exit 2.
+
+**Pinned so it cannot quietly revert:** `__tests__/migration-parity-workflow-is-enforcing.test.ts`, 6 cases asserting the two things that must hold **together** (the exit code stands AND the annotations stay reachable after the failing command — pinning only the first is worse than pinning neither), plus the load-bearing `2>&1`. **6 mutation controls, all RED:** `|| true` restored · `exit "$RC"` deleted · `2>&1` tidied away · exit-2 branch removed · UNTRACKED grep deleted · check step gutted.
+
+`scripts/check-migration-parity.mjs`'s header numbers re-derived and **stamped as dated samples** (2,570 rows vs 596 committed files on 08-20; it said ~2,478 vs ~402 from 08-10) rather than silently overwritten.
+
+Suite **1328 files / 14,343 tests** green, `tsc` 0.
+
+**Revert path:** `git revert <sha>` restores `|| true` + the `::warning::` wrappers and drops the guard; the five recovered `supabase/migrations/20260814*.sql` files are pure repo record — **deleting them changes no production state** (they are already applied, and their net effect is already undone by their own drops). No migration was applied by this work; the DB was read only.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8, last item) — the rendered-DOM monitor was missing 8 pages Google is told to crawl; the guard that was supposed to catch that was blind to everything outside /insights
 
 **Area (8), final item.** The filing said *"E2E touches zero signed-in surfaces (55 public paths, 6h cadence, never on `pull_request`)."* The signed-in half needs a production test account + session secrets in GHA — **auth is on the night pass's off-limits list and stays an operator decision, not shipped here.** What re-derivation found instead was a gap in the *public* half that nothing was watching.
