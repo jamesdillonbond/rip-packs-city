@@ -23,6 +23,10 @@ const state = vi.hoisted(() => ({
   sealedHeight: 1250,
   sealedThrows: false,
   eventsByType: {} as Record<string, unknown[]>,
+  // Chunk start-heights whose event fetch should THROW, so the route's
+  // per-chunk catch runs and `firstFailedChunkStart` is set. Needed to drive
+  // the cursor-hold branch, which is otherwise unreachable from a test.
+  throwEventsAtStart: [] as number[],
   decodeByTx: {} as Record<
     string,
     { buyer?: string | null; seller?: string | null; payer?: string | null; proposer?: string | null }
@@ -69,6 +73,10 @@ vi.mock("@/lib/chains/flow/flow", () => ({
       if (descriptor.kind === "block") {
         if (state.sealedThrows) throw new Error("access node unavailable")
         return { height: state.sealedHeight }
+      }
+      const d = descriptor as { kind: string; type?: string; s?: number }
+      if (typeof d.s === "number" && state.throwEventsAtStart.includes(d.s)) {
+        throw new Error(`access node chunk ${d.s} unavailable`)
       }
       return state.eventsByType[descriptor.type ?? ""] ?? []
     },
@@ -178,6 +186,7 @@ beforeEach(() => {
   state.sealedThrows = false
   state.eventsByType = {}
   state.decodeByTx = {}
+  state.throwEventsAtStart = []
   fetchMock = installFetchMock([jsonRoute("ts-proxy.test", { data: null })])
 })
 
@@ -514,5 +523,157 @@ describe("sales-indexer — 23505 all-or-nothing insert contract", () => {
     const run = pipelineRun(spy)
     expect(run).toMatchObject({ ok: true, rows_written: 2 })
     expect((run?.extra as Record<string, unknown>).duped).toBe(0)
+  })
+})
+
+// ── THE PARTIAL-SCAN CURSOR HOLD ────────────────────────────────────────────
+//
+// ⚠ THE HIGHEST-STAKES BRANCH IN THIS ROUTE, AND UNTIL NOW IT WAS HELD BY A
+// GREP. `__tests__/indexer-cursor-hold-on-partial-scan-guard.test.ts` asserts
+// the SOURCE contains `firstFailedChunkStart - 1` and `partial_scan: true`.
+// That is a tripwire on the spelling; it cannot see whether the branch is ever
+// REACHED, nor what value actually reaches `event_cursor`. The sibling route
+// `allday-listings-indexer` already has behavioural cases for its own copy of
+// this logic (api-allday-listings-indexer-deep). `sales-indexer` did not.
+//
+// WHAT GOES WRONG IF IT BREAKS. The scan walks blocks in 250-height chunks. If
+// one chunk's event fetch throws and the cursor still advances to
+// `targetHeight`, every block in and after the failed chunk is marked processed
+// without ever being read — the sales in them are lost PERMANENTLY, because
+// nothing ever revisits a block below the cursor. There is no error, no
+// ok:false, and no row count that looks wrong; the pipeline reports a clean run
+// over a range it never scanned. That is the absence-not-an-error shape, on the
+// table the whole product prices from.
+//
+// Measured before writing these: branch coverage of this route was 59.3%, the
+// worst of any reachable route in `app/api`, and lines 303-320 (the cap and the
+// partial-scan extra) had no covered arm at all.
+describe("sales-indexer — a failed chunk must HOLD the cursor, not skip its blocks", () => {
+  // lastBlock 1000, sealed 1750 -> targetHeight 1750, so the scan is three
+  // chunks: 1001-1250, 1251-1500, 1501-1750. Three is the minimum that can tell
+  // "first failed chunk" apart from "last failed chunk".
+  function threeChunkScan() {
+    state.sealedHeight = 1750
+    return install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      sales: { data: null, error: null },
+    })
+  }
+
+  const cursorWrites = (spy: ReturnType<typeof install>) =>
+    (spy.writes.event_cursor ?? []).flatMap((w) => w.rows)
+
+  // ⚠ This route writes `pipeline_runs` DIRECTLY, not through log_pipeline_run —
+  // `writePipelineRun` inserts the row so Postgres can compute the GENERATED
+  // duration_ms (passing it explicitly returns 428C9, which an earlier version
+  // swallowed and lost the whole row). So the field names are the COLUMN names,
+  // and `cursor_after` is stringified.
+  // ⚠ Select the TERMINAL row by pipeline name, never by index. Since the
+  // invocation heartbeat landed, `pipeline_runs` receives a
+  // `topshot-sales-indexer-heartbeat` marker FIRST, so `[0]` is the marker and
+  // every assertion below would silently start measuring the wrong row — the
+  // marker has no `extra.partial_scan`, so the cursor-hold cases would fail for
+  // a reason that has nothing to do with the cursor.
+  const runRow = (spy: ReturnType<typeof install>) =>
+    (spy.writes.pipeline_runs ?? [])
+      .flatMap((w) => w.rows)
+      .find((r) => (r as Record<string, unknown>).pipeline === "topshot-sales-indexer") as Record<
+      string,
+      unknown
+    >
+  const runExtra = (spy: ReturnType<typeof install>) =>
+    (runRow(spy).extra ?? {}) as Record<string, unknown>
+
+  it("a clean three-chunk scan advances the cursor all the way to the target", async () => {
+    // ⚠ THE CONTROL. Without it, every assertion below passes on a route that
+    // simply never advances the cursor at all — the fixture could not tell a
+    // working hold from a broken advance.
+    const spy = threeChunkScan()
+
+    expect((await POST(req())).status).toBe(202)
+    await runDeferred()
+
+    expect(cursorWrites(spy)).toHaveLength(1)
+    expect(cursorWrites(spy)[0].last_processed_block).toBe(1750)
+
+    expect(runExtra(spy).partial_scan).toBeUndefined()
+    // The marker is a SEPARATE row under a separate name — asserted here so the
+    // terminal-row selection above cannot quietly become an index again.
+    const names = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows).map((r) => (r as Record<string, unknown>).pipeline)
+    expect(names).toContain("topshot-sales-indexer-heartbeat")
+    expect(names).toContain("topshot-sales-indexer")
+  })
+
+  it("a mid-scan chunk failure caps the cursor at the block BEFORE that chunk", async () => {
+    state.throwEventsAtStart = [1251] // the second chunk
+    const spy = threeChunkScan()
+
+    expect((await POST(req())).status).toBe(202)
+    await runDeferred()
+
+    // ⚠ The exact value is the assertion. `partial_scan: true` being present is
+    // NOT enough — the flag can be set while the cursor still advances, which is
+    // precisely the defect (a run that announces it was partial and then skips
+    // the blocks anyway).
+    expect(cursorWrites(spy)).toHaveLength(1)
+    expect(
+      cursorWrites(spy)[0].last_processed_block,
+      "blocks 1251-1750 must be re-scanned next tick, so the cursor may not pass 1250",
+    ).toBe(1250)
+  })
+
+  it("reports the hold in pipeline_runs so an operator can see the range was not covered", async () => {
+    state.throwEventsAtStart = [1251]
+    const spy = threeChunkScan()
+
+    await POST(req())
+    await runDeferred()
+
+    const extra = runExtra(spy)
+    expect(extra.partial_scan).toBe(true)
+    expect(extra.first_failed_chunk).toBe(1251)
+    expect(extra.cursor_held_from).toBe(1750)
+    expect(runRow(spy).cursor_after).toBe("1250")
+    // ⚠ ok STAYS TRUE. A held cursor is the system working as designed, not a
+    // failed run; flipping it to false here would fire the failure-rate alerting
+    // on every transient access-node hiccup. The `partial_scan` flag is the
+    // signal, and `blocks_scanned` must reflect what was really covered.
+    expect(runRow(spy).ok).toBe(true)
+    expect(extra.blocks_scanned).toBe(250)
+  })
+
+  it("the FIRST failed chunk wins, not the last — two failures still cap at the earlier one", async () => {
+    // ⚠ THE CASE THAT MAKES `if (firstFailedChunkStart === null)` OBSERVABLE.
+    // With one failing chunk, "first" and "last" are the same block and the
+    // guard is unobservable — the documented fixture-cannot-distinguish shape.
+    // Failing chunks 2 AND 3 separates them: capping at the LAST failure (1500)
+    // would still skip every block in chunk 2.
+    state.throwEventsAtStart = [1251, 1501]
+    const spy = threeChunkScan()
+
+    await POST(req())
+    await runDeferred()
+
+    expect(cursorWrites(spy)[0].last_processed_block).toBe(1250)
+    expect(runExtra(spy).first_failed_chunk).toBe(1251)
+  })
+
+  it("a failure in the very first chunk holds the cursor exactly where it started", async () => {
+    // The boundary: cursorTarget becomes lastBlock, so the run must be a no-op
+    // rather than moving the cursor backwards or writing a negative span.
+    state.throwEventsAtStart = [1001]
+    const spy = threeChunkScan()
+
+    await POST(req())
+    await runDeferred()
+
+    expect(cursorWrites(spy)[0].last_processed_block).toBe(1000)
+    expect(
+      runExtra(spy).blocks_scanned,
+      "nothing was scanned, and the run must not claim otherwise",
+    ).toBe(0)
   })
 })

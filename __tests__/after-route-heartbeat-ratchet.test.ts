@@ -154,7 +154,10 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   happened to touch disjoint routes. Read it off the assertion anyway; a
 //   single overlapping route would have made the sum wrong and silently
 //   licensed one more un-heartbeated route.
-const BUDGET = 51
+// 2026-08-20 (fourth): 51 -> 50. `sales-indexer` (topshot-sales-indexer, 180-min
+//   arm), converted alongside behavioural tests for its partial-scan cursor hold
+//   — it was also the worst REACHABLE branch coverage in app/api at 59.3%.
+const BUDGET = 50
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

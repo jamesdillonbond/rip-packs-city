@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import fcl from "@/lib/chains/flow/flow"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
@@ -150,6 +151,17 @@ export async function POST(req: NextRequest) {
   // idempotent (dedups on sales.transaction_hash), so a fast return is safe
   // even with GH Actions + cron-job.org both firing.
   after(async () => {
+    // ⚠ INVOCATION HEARTBEAT — written FIRST, before any scan work.
+    // `topshot-sales-indexer` is on `pipeline_cadence_watchlist` at 180 min, and
+    // every terminal `pipeline_runs` write in this route lives inside this
+    // after() body. A maxDuration kill therefore takes the terminal row with it
+    // and the tick is indistinguishable from a cron that never fired — two
+    // states needing opposite fixes. try/catch cannot catch the kill.
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE_NAME,
+      startedAtMs: start,
+      collectionSlug: "nba-top-shot",
+    })
   try {
     // Step 1: Read cursor
     const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
