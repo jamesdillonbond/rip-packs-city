@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — "do all of them", area 4) — the filing's "10,642 lines no test can reach" is **6× overstated**: it counted imports and missed that this repo's dominant pattern is MIRROR + drift guard. Real figure: 10 functions / 1,767 lines
+
+**Area (4) of the coverage filing** reported *"32 of 38 `index.ts` files import nothing from `_shared` — 10,642 lines"* that no test can reach. I reproduced the 32 exactly (mine: 32 / 10,674). **Then I nearly acted on it, and the repo stopped me.**
+
+⚠ **WHAT I DID WRONG, FIRST.** I picked `topshot-stub-resolver`'s two pure helpers — `flattenCadenceDict` and `pickPlayerName`, the latter encoding a real shipped bug (composing the literal `"<invalid Value> <invalid Value>"` into `editions.player_name`, 4 of 42 sampled targets, set 141) — extracted them to a new `_shared/topshot-stub-meta.ts`, wired the edge fn to import it, and wrote 12 tests. **The full suite then failed 4 tests I did not know existed:** `_shared/topshot-stub-parse.ts` **already mirrors both helpers**, `edge-topshot-stub-parse.test.ts` **already has 18 cases** — including the exact sentinel-composition regression I had just written — and `edge-inline-copy-drift-guard.test.ts` pins the edge fn's inline copy against that mirror. **I had duplicated a module and broken two guards.** Reverted completely: `git checkout` the edge fn, deleted my module and my test. ⚠ **The check I skipped was one grep** — `_shared` for the function names — before writing a line.
+
+⚠ **AND THE FAILURE TAUGHT ME THE FILING WAS WRONG.** Behaviour in `supabase/functions/**` is reachable TWO ways, because CI has **no Deno test run** at all: the fn **imports** from `_shared`, **or** it keeps an inline copy that is **mirrored in `_shared` and pinned byte-for-byte** by the drift guard. Counting only imports misses the second — and the second is the DOMINANT pattern here:
+
+| | count | |
+|---|--:|---|
+| edge functions | **38** | |
+| imports `_shared` | **6** | reachable |
+| tested **MIRROR** in the drift registry | **22** | reachable |
+| **NEITHER** | **10** | **1,767 lines** — genuinely unreachable |
+
+**10 / 1,767, not 32 / 10,642 — about a sixth.** ⚠ A ratchet on the filed number would have pushed people to convert 22 *working* mirrors into imports for no gain — the fix manufacturing the work.
+
+**Shipped:** `__tests__/edge-functions-have-reachable-tests-ratchet.test.ts`, **BUDGET = 10**, population from a tree walk and the mirrored set **DERIVED from the drift guard's own PINS registry** (never restated — two lists of the same thing drift). It **throws rather than returning empty** if that registry stops parsing, because a silent zero would move all 22 mirrored functions into the violation bucket and break the guard in the direction that looks like a finding.
+
+⚠ **STATED IN THE HEADER SO THE NUMBER IS NOT OVERSOLD: "has a mirror" is itself a proxy.** A mirror entry proves a symbol is pinned, not that the RISKY logic is — `compute-topshot-pack-ev` (1,584 lines) has mirror entries while `edge-pack-ev-row-source-drift`'s own header says it *"pins the EXPRESSIONS, not the behaviour"*. The honest claim is narrow: a function in the NEITHER bucket has definitively nothing reachable; one outside it has something.
+
+**Both arms proven able to fail:** BUDGET 9 reds naming the count and the remedy; BUDGET 20 reds the staleness arm. Plus guards-the-guard cases pinning that a MIRRORED function counts as reachable (the exact 6× correction), that a `_shared` **mention in a comment is not an import**, and that a broken registry parse throws.
+
+✅ **Also verified, not assumed:** `supabase/functions/_shared` **is** now in the primary gate's include — the filing's "cheap structural fix worth taking first" was already done by the concurrent session earlier today (`1edfdc37`), so I did not redo it.
+
+**Verified:** `tsc --noEmit` exit 0 · **full vitest 1,321 files / 14,258 tests green**. ⚠ **`deno check` NOT run — deno is not installed in this sandbox.** My final diff touches no `supabase/functions/**` source (the extraction was fully reverted), so there is nothing new for it to check; CI runs it regardless.
+
+**Revert path:** `git revert <this sha>` — 1 new test file. No code, no DB, no edge-function change, nothing deployed.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, third wave) — three retention deleters pinned, and `pipeline_runs` turns out to have THREE overlapping retention policies of which two delete nothing, ever
 
 **How I got here:** the coverage filing ranked "the 22 unpinned unscheduled deleters, deleters first" — over-deletion produces an ABSENCE, not an error, so nothing downstream raises and every reader silently agrees with the smaller number.
