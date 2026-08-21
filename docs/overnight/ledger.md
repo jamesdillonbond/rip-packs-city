@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — "keep going", area 8) — TWO wrangler configs deployed to ONE Cloudflare worker, and the fossil would have silently downgraded the live spork proxy
+
+**Area (8) listed this as a measurement gap** — *"`infrastructure/spork-proxy-worker/index.ts` (75 lines) is outside the workers gate's `workers/**` include entirely, and differs from `workers/spork-proxy/index.ts`."* True, and **the coverage angle is the least interesting part.**
+
+⚠ **BOTH directories' `wrangler.toml` declared `name = "spork-proxy"`.** `name` is the Cloudflare worker a `wrangler deploy` writes to — so two divergent sources pointed at ONE live worker, last deploy wins, nothing in the repo recording which ran. Of **19** wrangler configs in the tree, this was the **only** collision.
+
+**Which is live, established rather than assumed:**
+
+| | `workers/spork-proxy` | `infrastructure/spork-proxy-worker` |
+|---|---|---|
+| size | **255 lines** | 75 lines |
+| sporks | **mainnet17–27** + height routing + `?tx=` | mainnet24–27, no routing |
+| last touched | **2026-06-25** *"extend historical floor to mainnet17"* | 2026-04-27 |
+| referenced by | 2 edge fns (*"must match workers/spork-proxy SPORKS"*), an admin route | **its own README only** |
+| test | `worker-spork-proxy.test.ts` | none |
+
+Corroborated live the same day: `allday-pack-opens-backfill` has written **1,298 rows**, `allday-pack-opens-forward` **234**, last run 04:39Z — the historical path works.
+
+⚠ **So a `wrangler deploy` from the `infrastructure/` directory would have replaced the live worker with the 75-line version — dropping mainnet17–23 and the tx lookup, breaking the pack-opens backfills WITHOUT CHANGING ONE LINE OF APPLICATION CODE.** Nothing in CI or the repo would have said so; the pipelines would just have stopped finding history. Same "two copies, no instrument saying which is authoritative" shape this repo keeps paying for — and the third time today I have hit it (the 5 hand-rolled heartbeats, the 2 unregistered DB pins, now this).
+
+**Shipped:**
+1. **Renamed** the fossil to `spork-proxy-legacy-DO-NOT-DEPLOY` with the reasoning in the toml, and marked its `index.ts` superseded. ⚠ **Chosen over deletion because a rename is REVERSIBLE** — if the fossil ever turns out to be what is deployed, the source still exists.
+2. **`__tests__/wrangler-worker-names-are-unique.test.ts`** — a **ban at population ZERO**, not a ratchet: there is no legitimate reason for two configs to claim one worker. Proven able to fail (restoring the old name reds two arms and prints both paths). Its parser **ignores a commented-out `name`**, which matters because the fix put a comment block directly above the live one — the guards-the-guard case pins that.
+
+⚠ **WHAT I COULD NOT VERIFY, AND THE OPERATOR CHECK THAT WOULD:** which source is deployed *right now*. `*.workers.dev` egress is **403 from this sandbox**. The two are trivially distinguishable by health response — the fossil returns a `sporks` array, the live one does not:
+`curl -s https://spork-proxy.<account>.workers.dev/health` → `{"ok":true,"worker":"spork-proxy","sporks":[…]}` means the FOSSIL is live (bad); no `sporks` key means the maintained one is. **All in-repo and pipeline evidence points to the maintained one — but that is corroboration, not the probe.**
+
+**Left for Trevor:** delete `infrastructure/spork-proxy-worker/` outright. Not done because the probe is outstanding and deletion is not reversible the way a rename is. ⚠ CLAUDE.md's repo map names that directory, so deleting it means editing that line too. Filed: [inbox 2026-08-21T0510Z](inbox/2026-08-21T0510Z-two-wrangler-configs-deployed-to-one-worker-and-the-fossil-would-have-downgraded-it.md).
+
+**Verified:** `tsc --noEmit` exit 0 · **full vitest 1,322 files / 14,266 tests green** · the existing `worker-spork-proxy` test still passes.
+
+**Revert path:** `git revert <this sha>` — 3 files (toml, the fossil's header comment, 1 new test). No application code, no DB, nothing deployed. ⚠ Reverting restores the name collision, i.e. re-arms the silent-downgrade hazard.
+
 ### 2026-08-20 · RESEARCH — NOTHING SHIPPED (Claude Code, interactive — "keep going", area 7) — the render-layer gap is ALREADY CLOSED (30 of 31), and building the proposed guard would have redded CI on the two pages that implement the property BEST
 
 **Area (7)** proposed extending `server-pages-error-vs-absent-guard` from 2 pages across **23**, asserting *"the error branch precedes the empty branch"*. **I measured before building, and the work is not there.**
