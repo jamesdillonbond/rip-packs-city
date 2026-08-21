@@ -147,12 +147,22 @@ export default defineConfig({
       // starts failing on nothing. This gate showed no jitter, so the margin
       // below is the usual ~0.15 rather than a jitter allowance.
       //
+      // Re-seated again 2026-08-20 after covering rpc-mcp-proxy's six tool
+      // handlers — their argument coercion, the sniper slug routing, and the
+      // lookup_wallet filter/gap branches (the next-largest uncovered cluster
+      // after sports-proxy).
+      //   before  86.40 / 73.01 / 86.11 / 89.23
+      //   after   88.34 / 76.32 / 89.81 / 91.28
+      // rpc-mcp-proxy/index.ts alone moved 74.74 -> 95.37 st and 53.75 -> 81.29 br.
+      // Three consecutive runs on the unchanged tree returned those four numbers
+      // EXACTLY, so the margin below is again the usual ~0.15, not jitter room.
+      //
       // Every point came from ADDING tests, never from loosening an include.
       thresholds: {
-        statements: 86.25,
-        branches: 72.85,
-        functions: 85.95,
-        lines: 89.05,
+        statements: 88.15,
+        branches: 76.15,
+        functions: 89.6,
+        lines: 91.1,
       },
     },
   },
