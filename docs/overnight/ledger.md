@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — "do it all", area 5) — the caller rule was blind to `pg_trigger`: **33 of 38 live attached trigger functions read as DEAD**, and the item I was about to act on was a false positive
+
+**Went to work area (5) of the coverage filing**, whose named "highest-stakes single item" was `trim_recent_searches`: DELETEs, `anon` **and** `authenticated` hold EXECUTE, **zero in-DB callers**, nothing in a repo-wide grep — *"pinned or revoked, decide which, but not neither."* **Every one of those facts is true and the conclusion is wrong.**
+
+⚠ **IT IS A TRIGGER FUNCTION.** `CREATE TRIGGER trg_trim_recent_searches AFTER INSERT ON public.recent_searches FOR EACH ROW` — enabled. Its body references **`NEW.owner_key`**, which only binds inside a trigger, so an RPC call raises `record "new" is not assigned yet` and deletes **nothing**. It keeps the newest 20 rows per `owner_key`: a working retention trigger, not a loose deleter. It is also **SECURITY INVOKER**, which the filing did not mention and which matters independently — an anon caller would still be under RLS. ⚠ **Revoking would have been a no-op dressed as a security fix**, and the "zero callers" line would have stayed on the register as evidence the function was dead.
+
+⚠ **THE GENERALIZABLE DEFECT, AND IT IS IN THE RULE ITSELF.** CLAUDE.md required **FIVE** caller sources — `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, a full-repo grep, and the Cowork artifacts' HTML. **A trigger function appears in NONE of them**; its only caller is a row in `pg_trigger`, which is not a text corpus anyone greps. Measured live:
+
+| | |
+|---|--:|
+| `public` functions | **657** |
+| return `trigger` | **38** |
+| of those, actually attached to a live trigger | **38 (all)** |
+| trigger functions that DELETE/TRUNCATE | **2** |
+| **reading as ZERO-caller under the five-source rule** | **33** |
+
+**33 live attached functions would be reported dead by the repo's own documented sweep** — the same failure as the artifact-only views already recorded there (a four-source sweep would have broken 3 live boards), one source further out and with a worse blast radius: dropping a trigger function does not break a board, it silently stops a table's invariant from being maintained.
+
+**Shipped:** CLAUDE.md now requires **SIX** sources, adding `pg_trigger` with the 33-of-38 measurement inline. ⚠ **Paid for by a displacement, per this file's own equilibrium rule** — the `cron.job.command` name-trap's evidence tail (the 13,009-char monolith) already lives **verbatim and richer** in `trust-board-and-safety.md`, so only the pointer-worthy rule stays. **Each edit's delta measured with Node `.length`, never estimated:** 39,901 → 40,025 (**25 OVER**) → 39,948 after the displacement, **52 headroom**. Correction filed at [inbox 2026-08-21T0140Z](inbox/2026-08-21T0140Z-the-caller-rule-is-blind-to-triggers-and-item-5s-headline-is-a-false-positive.md).
+
+⚠ **What I did NOT do, deliberately:** no REVOKE, no migration, no pin — the object turned out not to need any of them, and `apply_migration` costs a ~10–20 s burst of user-facing `PGRST002` 500s, which is not a price worth paying for a no-op. Area (5)'s *remaining* items stand (105 unpinned writers, 22 deleters; the ten `purge_old_*` cutoffs whose test fixtures the RPC) — ⚠ but **re-derive that 105 with `pg_trigger` excluded first**, because the same blindness inflates it.
+
+⚠ **The meta-lesson, and it is the keeper: the filing's facts were individually correct and its conclusion was wrong because the OBJECT CLASS was never checked.** A trigger function, a `SECURITY INVOKER` helper and a dormant RPC are **indistinguishable to a text-corpus sweep** and want completely different responses. Ask what KIND of object it is before acting on a zero-caller finding.
+
+**Revert path:** `git revert <this docs sha>` — docs only (CLAUDE.md + inbox + this entry). No code, no DB, no migration. Reverting restores a five-source rule that reads 33 live functions as dead.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive) — my own deploy ERRORed, and chasing it found the THIRD instance of the unbounded-read class on the one `/insights` page the ban could not see
 
 ⚠ **MY DEPLOY FAILED AND I ONLY KNOW BECAUSE I CHECKED PER COMMIT.** `a1a5f4f9` (the heartbeat conversions) went **ERROR**; production stayed on `b9d052c6`, so my code was on `main` and **not in production** — exactly the trap CLAUDE.md names ("a deploy that ERRORs is easy to miss because the next push supersedes it and goes READY").
