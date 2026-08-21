@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, second wave) — four routes' invocation markers were SILENCING the stall alarm they were added to protect, and the fix collided with a concurrent session on the same ratchet
+
+**How I got here:** converting the 66 un-heartbeated `after()` routes from the ratchet landed earlier today, working down the 32 that sit on `pipeline_cadence_watchlist`. Seven had no marker at all. **Four already had one — under their own pipeline name, which is strictly worse than none.**
+
+**THE MECHANISM.** `detect_stalled_pipelines()` is `max(started_at) FROM pipeline_runs WHERE pipeline = w.pipeline` with **NO phase filter**. A marker written under the REAL pipeline name therefore refreshes `last_run` on every tick, so the cadence arm **can never fire** however many `after()` bodies die. ⚠ The marker added to make a dropped `after()` visible was the thing hiding it — *a monitor whose input set includes its own output*, the class CLAUDE.md already records for the concierge health check.
+
+**Measured over the ~72h retention window, before the fix:**
+
+| pipeline | markers | completions | arm | consequence |
+|---|---|---|---|---|
+| `allday-pack-listings` | 212 | 208 | 90 min | **6 ticks started and never finished, every one invisible** (08-18 09:10 · 12:50 · 15:10, 08-19 15:10, 08-20 01:30 · 15:30) |
+| `classify-acquisitions-multicollection` | 70 | (122 rows) | 180 min | arm suppressed |
+| `pinnacle-sync` | 3 | **0** | 1560 min | arm suppressed on a pipeline that never completes |
+| `compute-laliga-pack-ev` | 3 | **0** | not watchlisted | — |
+
+⚠ **How it spread is in the code:** `classify`'s comment read *"Same repair already applied to allday-pack-listings and pinnacle-sync"*. Four copies by copy-paste, **defect included** — the documented reason to grep for the EXPRESSION, not the file.
+
+**PRE-FLIGHT before unsuppressing an arm** (this is the step that makes it safe): `allday-pack-listings`' completion-to-completion gaps max at **40.4 min against its 90-min arm**, 0 gaps over 90 across 207 intervals. Restoring the arm does not start a false alarm.
+
+🚨 **READ BEFORE THE NEXT SWEEP — two pipelines may be dead, and this commit will make one of them say so.** `pinnacle-sync` and `compute-laliga-pack-ev` had markers and **ZERO completions**, so by each route's OWN stated criterion (*"marker only, no completion row → after() is being dropped"*) their deferred body is dying every tick. **`pinnacle-sync`'s 26h arm may now fire, and that is a TRUE alarm, not a regression from this commit.** ⚠ For laliga the DATA is unaffected — positive control: `pack_ev_history` has Golazos rows daily, and the writer is the edge function `compute-golazos-pack-ev` (114 rows written vs the route's 0), so the route looks **redundant**, not load-bearing. Neither is diagnosed here.
+
+**Shipped:** 11 conversions to `lib/pipeline/heartbeat.ts`; a **ban at population zero** on inline invocation markers; 4 test files moved to the new seam. ⚠ The ban was **narrowed after mutation mis-sorted a correct route**: `admin/drain-conflated-subeditions` writes a `phase: "started"` row with **ok:false** and UPDATEs that same row to completion — one row per run, nothing suppressed, already right. Banning the word would have forced a rewrite of a good design, so the ban is on the `phase: "invoked"` spelling only, with the exclusion stated out loud rather than sorted apart by a cleverer regex.
+
+⚠ **THE RATCHET COLLIDED, exactly as this file's own history warns.** A concurrent session (`a1a5f4f9`, the four `maxDuration=800` routes) lowered `BUDGET` 66 → 62 for its conversions while this pass lowered it 66 → 55 for its eleven. **Both were wrong, and "take mine"/"take theirs" are equally wrong** — the value is a COUNT of a shared population. Re-derived from the failing no-slack assertion to **51**. It happens to equal 66−4−11 only because the two sessions touched disjoint routes; one overlap and the arithmetic would have silently licensed an un-heartbeated route.
+
+**Verification:** primary gate green at the re-seated thresholds — **1320 files / 14,247 tests**, 91.92 / 79.53 / 93.70 / 93.97. `npx tsc --noEmit` clean. Ban mutation-tested (reverting one route to a self-named marker reds 3 cases).
+
+**Revert path:** `git revert` by message — `fix(pipeline): four routes' invocation markers…`. Code only; no DB or schema change. Reverting restores the suppressed arms, so prefer fixing forward.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "do it all", area 5) — the caller rule was blind to `pg_trigger`: **33 of 38 live attached trigger functions read as DEAD**, and the item I was about to act on was a false positive
 
 **Went to work area (5) of the coverage filing**, whose named "highest-stakes single item" was `trim_recent_searches`: DELETEs, `anon` **and** `authenticated` hold EXECUTE, **zero in-DB callers**, nothing in a repo-wide grep — *"pinned or revoked, decide which, but not neither."* **Every one of those facts is true and the conclusion is wrong.**
