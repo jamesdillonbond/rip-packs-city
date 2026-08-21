@@ -78,11 +78,25 @@ export default defineConfig({
       // vs `.tsx` gap below, on the SEO surface, where the failure is silent:
       // one unescaped `&` makes a segment malformed and Google drops every URL
       // in it while the route still returns 200.
+      //
+      // ⚠ `supabase/functions/_shared` ADDED 2026-08-20. Those 29 modules exist
+      // ONLY to be testable — they are the vitest-importable half of the Deno
+      // edge functions, which no gate can execute (`edge-deno` runs `deno check`
+      // + an informational lint, never a test). All 29 were already referenced
+      // by a test, and `edge-shared-test-completeness.test.ts` guards that they
+      // stay that way. But they matched NO gate's `include`, so they were
+      // **tested and unmeasured**: nothing ratcheted them, and a new `_shared`
+      // module could land at 0% behind a passing completeness check that only
+      // asks whether a test file NAMES it. Measured before widening —
+      // 98.31 stmts / 92.76 branch / 100 funcs, above the aggregate in every
+      // metric — so this RAISES the gate rather than buying headroom, which is
+      // the only shape of include-widening this file permits.
       include: [
         "lib/**/*.ts",
         "lib/**/*.tsx",
         "app/**/route.ts",
         "app/**/route.tsx",
+        "supabase/functions/_shared/**/*.ts",
         "proxy.ts",
       ],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],

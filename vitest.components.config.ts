@@ -93,6 +93,44 @@ export default defineConfig({
         // 4-state status machine whose error state must stay DISTINCT from
         // "no results", and keyboard listbox navigation.
         "components/search/**/*.tsx",
+        // ── 2026-08-20: the LAST four subtrees, so `components/` is now whole ──
+        //
+        // These were not an oversight — `component-gate-include-completeness`
+        // has tracked them in `KNOWN_UNMEASURED` all along, which is the right
+        // mechanism and worked exactly as designed. What went stale was the
+        // REASON each carried, and a decision-not-to-act is the one nobody
+        // re-checks. ⚠ Every one of the four reasons asserted inertness with no
+        // number in it — this repo's documented tell:
+        //
+        //   legal   "variant/link toggles only, no logic" — the toggles ARE the
+        //           logic: `showMethodologyLink={false}` sits one careless edit
+        //           from dropping the "not investment advice" disclosure along
+        //           with the link, on a platform whose product is a price.
+        //   play    "presentational hub shell (links only)" — whether a card is
+        //           a LINK AT ALL depends on `live`, which must agree with an
+        //           unconditional `redirect()` in a DIFFERENT file's layout.tsx.
+        //           Both ways of disagreeing ship a defect, and nothing checked
+        //           it. "Links only" is precisely what made it look inert.
+        //   ui      "generic presentational primitives (no branches)" — literally
+        //           false: LoadingState has a defaulted prop, a modulo'd width
+        //           cycle and an opacity ramp.
+        //   visual  "decorative visual chrome" — ConsoleGreeting carries a
+        //           module-level once-latch (React 19 StrictMode double-invokes
+        //           effects) and the repo's ONE sanctioned hardcode of #E03A2F.
+        //
+        // Tests landed in the same commit (component-PlayHub,
+        // component-FmvDisclaimer, component-visual-and-loading), so this RAISES
+        // the gate rather than buying headroom. Their KNOWN_UNMEASURED entries
+        // are deleted in the same commit — the rot guard's "no stale entries"
+        // case enforces that, which is why the bookkeeping cannot drift.
+        //
+        // ⚠ This does NOT make the include a tree walk. `components/*.tsx` plus
+        // named subtrees still means a NEW subtree matches nothing; that is what
+        // the rot guard is for, and it stays load-bearing.
+        "components/legal/**/*.tsx",
+        "components/play/**/*.tsx",
+        "components/ui/**/*.tsx",
+        "components/visual/**/*.tsx",
         // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
         // (top-sales, deals, market, offer-spread, …). ~23 files / ~12.6k lines
         // of financial display + sort/filter logic that lived under app/ where

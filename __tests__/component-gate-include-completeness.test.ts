@@ -29,12 +29,26 @@ const CONFIG_PATH = path.join(ROOT, "vitest.components.config.ts")
 
 // Subtrees deliberately left out of the coverage gate, each with a reason.
 // Presentational-only (no branch logic worth a ratchet) or shelved features.
-const KNOWN_UNMEASURED: Record<string, string> = {
-  legal: "presentational disclosure shell (variant/link toggles only, no logic)",
-  play: "presentational hub shell (links only)",
-  ui: "generic presentational primitives (no branches)",
-  visual: "decorative visual chrome",
-}
+//
+// ⚠ EMPTY AS OF 2026-08-20, AND THAT IS THE INTERESTING STATE — every
+// `components/` subtree is now gated. This guard was always correct: it tracked
+// all four of the last entries by name and its two rot cases (no stale entries,
+// no ghosts) forced them to be deleted in the same commit that gated them.
+//
+// ⚠ WHAT FAILED WAS THE REASONS, NOT THE MECHANISM, AND THAT IS THE LESSON TO
+// CARRY. All four asserted inertness — "no logic", "links only", "no branches",
+// "decorative" — with NO NUMBER IN ANY OF THEM, which is this repo's documented
+// tell for a decision-not-to-act that nobody re-checks. Three of the four held
+// real branch logic when finally measured, one of it a cross-file correspondence
+// (`play`'s live flag vs. an unconditional `redirect()` in another file's
+// layout.tsx) that no amount of looking at `components/play/` would reveal.
+//
+// So if you ADD an entry here: state the reason as something falsifiable, and
+// prefer gating the subtree with a test over describing it as inert. At zero
+// this reads as a ban, which this repo prefers to an allowlist — but it is
+// deliberately still a Record, because a genuinely shelved subtree is a real
+// case and forcing it into the include would ratchet dead code.
+const KNOWN_UNMEASURED: Record<string, string> = {}
 
 /** Extract the `components/<subdir>` prefixes named in the config's coverage include.
  *
