@@ -29,8 +29,13 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "golazos-listing-cache": 20,
   "ufc-listing-cache": 20,
   // pinnacle-listing-cache retired 2026-06-09 (Flowty teardown; cron-job.org
-  // entry deleted, route removed) — ASK now on-chain via
-  // pinnacle-listings-reconcile, floor via pinnacle_catalog.
+  // entry deleted, route removed). Its on-chain successor
+  // pinnacle-listings-reconcile was itself retired 2026-07-17 and its route
+  // deleted 2026-08-21 (zero runs in pipeline_runs_daily, no pg_cron job), so
+  // NEITHER belongs in this map: an entry here for a pipeline with no cron and
+  // no route reads as a false "expected but missing" red. Pinnacle ASK is now
+  // the render floor pinnacle_catalog.floor_ask, rewritten daily by
+  // pinnacle_catalog_set_floor_asks.
   "sync-flowty-listings": 20,
   // Sales indexers
   "topshot-sales-indexer": 20,

@@ -81,10 +81,21 @@ async function runPinnacleSync(startedAtIso: string) {
     //
     // Flowty teardown (2026-06-08): pinnacle_refresh_editions_ask() is NO LONGER called
     // here. It sourced pinnacle_editions.ask_price from pinnacle_cached_listings — a
-    // dead-Flowty cache frozen at 2026-05-27 — and overwrote the genuinely-fresh on-chain
-    // ASK that pinnacle-listings-reconcile writes every ~15 min (ask_source=
-    // 'pinnacle_direct', from pinnacle_listing_events). The reconcile cron is now the sole
-    // ASK writer; this route owns only the render-FMV recompute, which is independent.
+    // dead-Flowty cache frozen at 2026-05-27 — and overwrote the then-fresh on-chain ASK
+    // that pinnacle-listings-reconcile wrote every ~15 min (ask_source='pinnacle_direct').
+    //
+    // ⚠ UPDATED 2026-08-21 — the sentence that used to end this comment ("the reconcile
+    // cron is now the sole ASK writer") is NO LONGER TRUE, and a stale comment naming a
+    // live writer is worse than no comment. ASK-unify retired reconcile on 2026-07-17;
+    // its route was deleted 2026-08-21 after measuring zero runs in pipeline_runs_daily
+    // (retained indefinitely) and no pg_cron job. So pinnacle_editions.ask/ask_price is
+    // FROZEN — 328 rows, freshest ask_updated_at 2026-07-17T14:09Z, and deliberately
+    // read by nothing (app/api/wallet/seed cut over the same day). The canonical ASK is
+    // the render-grain pinnacle_catalog.floor_ask, rewritten daily by
+    // pinnacle_catalog_set_floor_asks. The pinnacle_ask_stale_hours pager was retired
+    // with the writer, so nothing pages on the frozen column either.
+    //
+    // This route still owns only the render-FMV recompute, which is independent of both.
     const fmvRecalcRender = await supabaseAdmin.rpc("pinnacle_fmv_recalc_render_all");
     if (fmvRecalcRender.error) errors.push(`pinnacle_fmv_recalc_render_all: ${fmvRecalcRender.error.message}`);
 

@@ -157,7 +157,15 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 // 2026-08-20 (fourth): 51 -> 50. `sales-indexer` (topshot-sales-indexer, 180-min
 //   arm), converted alongside behavioural tests for its partial-scan cursor hold
 //   — it was also the worst REACHABLE branch coverage in app/api at 59.3%.
-const BUDGET = 50
+// 2026-08-21 (fifth): 50 -> 49, and ⚠ NOT by converting a route. The population
+//   SHRANK: app/api/cron/pinnacle-listings-reconcile was deleted (retired
+//   2026-07-17 behind ASK_UNIFY_RETIRED; measured before deleting — no pg_cron
+//   job, watchlist row is_active=false, and ZERO rows in pipeline_runs_daily,
+//   which is retained indefinitely, so it had not run at all). It was one of the
+//   un-heartbeated routes, so the budget has to follow it down or it silently
+//   banks a slot for the next route that ships without a heartbeat. Re-derived
+//   from the failing no-slack assertion, not by subtracting one.
+const BUDGET = 49
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

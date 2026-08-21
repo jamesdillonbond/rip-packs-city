@@ -421,7 +421,24 @@ describe("allday-offers-indexer — cursor + control flow", () => {
     expect(body).toMatchObject({ ok: true, message: "already up to date", currentHeight: 0 })
   })
 
-  it("an OfferAvailable events HTTP error degrades that range to empty and still advances the cursor", async () => {
+  // ⚠ INVERTED 2026-08-21. Do not "restore" the old expectations.
+  //
+  // This test's previous title was "an OfferAvailable events HTTP error degrades
+  // that range to empty and still advances the cursor", and it asserted exactly
+  // that: `{ ok: true, offersSeen: 0, cursorAfter: "1250" }` plus a cursor write
+  // of 1250 after a 500. Every one of those assertions was pinning a permanent
+  // data-loss bug in place, described in its own title as a graceful degrade.
+  //
+  // What actually happened: `fetchEventRange` swallowed the non-2xx into
+  // `return []`, so the chunk loop finished normally, step 4 advanced the cursor
+  // to the sealed tip, and the run logged ok=true. Nothing re-reads a block
+  // below the cursor, so every offer in 1001-1250 was gone for good — with no
+  // error, no flag, and a test asserting it was fine.
+  //
+  // Per CLAUDE.md a test that pins the defect it was named to prevent is
+  // INVERTED, never deleted: the assertion is what held the defect in place.
+  // Same fixture, same 500, opposite claim.
+  it("an OfferAvailable events HTTP error aborts the tick and leaves the cursor alone", async () => {
     fetchMock = installFetchMock([
       jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
       jsonRoute("OfferAvailable", [], { status: 500 }),
@@ -430,10 +447,21 @@ describe("allday-offers-indexer — cursor + control flow", () => {
     ])
     const spy = install({ event_cursor: { data: { last_processed_block: 1000 }, error: null } })
     const body = await (await POST(req())).json()
-    expect(body).toMatchObject({ ok: true, offersSeen: 0, cursorAfter: "1250" })
-    expect(spy.writes.event_cursor?.find((w) => w.method === "update")?.rows[0]).toMatchObject({
-      last_processed_block: 1250,
-    })
+
+    // ⚠ THE ASSERTION THAT PROTECTS THE DATA, as an ABSENCE: the cursor is not
+    // written at all, so blocks 1001-1250 are re-scanned next tick. A write of
+    // 1250 here — the old expectation — is silent permanent loss.
+    expect(
+      spy.writes.event_cursor ?? [],
+      "a failed range must leave the cursor untouched so the blocks are re-scanned",
+    ).toHaveLength(0)
+
+    // ⚠ And the run must REPORT the failure rather than claim a clean scan.
+    // ok:true with offersSeen:0 was the worst part of the old contract: it is
+    // indistinguishable from a genuinely quiet 250 blocks, which is precisely
+    // what made the loss unfalsifiable.
+    expect(body.ok, "a tick that failed to read its range is not ok").toBe(false)
+    expect(String(body.error ?? ""), "the run must name the HTTP failure").toMatch(/HTTP 500/)
   })
 })
 

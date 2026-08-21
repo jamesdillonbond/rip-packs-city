@@ -119,8 +119,24 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[${PIPELINE_NAME}] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}`)
-    return []
+    // ⚠ THROW, DO NOT `return []`. Swallowing a non-2xx made the range read as
+    // GENUINELY EMPTY: the chunk loop completed normally, step 4 below advanced
+    // the cursor to targetHeight, and the run logged ok=true — over blocks that
+    // nothing had read. Nothing revisits a block below the cursor, so every
+    // offer in that range was lost permanently.
+    //
+    // Throwing is the whole fix here because the scan already sits inside one
+    // try/catch whose catch fires BEFORE the cursor update: an aborted tick
+    // leaves the cursor where it was and logs ok=false with the error, so the
+    // range is re-scanned next tick. That is already how this route behaves for
+    // a THROWN network error — the swallow was the only path that diverged.
+    //
+    // Same defect and same one-line fix as the 7 block-scan indexers repaired
+    // 2026-08-21; found by the same day's sweep. See
+    // docs/overnight/inbox/2026-08-21T1420Z-an-http-error-defeats-the-cursor-hold-in-7-of-8-indexers.md
+    throw new Error(
+      `events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}`
+    )
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []

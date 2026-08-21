@@ -375,7 +375,7 @@ describe("allday-listings-indexer — ListingAvailable ingestion", () => {
     expect(extra.v2_dapper_typeids_seen).toContain(ALLDAY_NFT)
   })
 
-  it("filters non-AllDay nftTypes + missing storefrontAddress, surfaces the V2 Dapper typeid roster, survives a 500 event fetch", async () => {
+  it("filters non-AllDay nftTypes + missing storefrontAddress, surfacing the V2 Dapper typeid roster", async () => {
     const tx1 = "d".repeat(64)
     fetchMock = installFetchMock(
       flowRestStubs({
@@ -402,8 +402,6 @@ describe("allday-listings-indexer — ListingAvailable ingestion", () => {
             payload: v1AvailPayload({ nftId: "888", lrid: "9104", price: "1.00000000", seller: null }),
           }),
         ],
-        // The Flowty fork leg 500s this tick — fetchEventRange degrades to [].
-        v2FlowtyAvailStatus: 500,
       }),
     )
     const spy = install({
@@ -421,8 +419,79 @@ describe("allday-listings-indexer — ListingAvailable ingestion", () => {
     expect(extra.events_pre_filter).toBe(2)
     expect(extra.events_post_filter).toBe(0)
     expect(extra.v2_dapper_typeids_seen).toContain("A.edf9df96c92f4595.Pinnacle.NFT")
-    // The 500 leg did not poison the run — cursor still advanced.
+    // Every leg read cleanly, so this IS a complete scan and the cursor is
+    // entitled to advance to the sealed tip.
     expect(log?.p_cursor_after).toBe("1250")
+    expect(extra.partial_scan ?? false).toBe(false)
+  })
+
+  // ⚠ THIS TEST IS AN INVERSION, 2026-08-21. Do not "restore" it.
+  //
+  // It used to be the tail of the case above, and it asserted the DEFECT as
+  // correct behaviour. Verbatim, the two lines that were here:
+  //
+  //     // The Flowty fork leg 500s this tick — fetchEventRange degrades to [].
+  //     // The 500 leg did not poison the run — cursor still advanced.
+  //     expect(log?.p_cursor_after).toBe("1250")
+  //
+  // "Did not poison the run" was exactly backwards. `fetchEventRange` swallowed
+  // the non-2xx into `return []`, so the chunk read as GENUINELY EMPTY, the
+  // chunk loop never recorded a failure, and the cursor advanced to 1250 over a
+  // range that nothing had read. Nothing revisits a block below the cursor, so
+  // every listing in those blocks was lost PERMANENTLY — behind an `ok: true`
+  // run with `partial_scan` unset. The test did not miss the behaviour; it
+  // pinned it, and its own comment called the loss a graceful degrade.
+  //
+  // Per CLAUDE.md a test that pins the defect it was named to prevent gets
+  // INVERTED, never deleted: the assertion is what held the defect in place, so
+  // the same fixture now has to prove the opposite. Same 500, opposite claim.
+  it("a 500 on ONE storefront leg holds the cursor — it does not degrade to an empty leg", async () => {
+    const tx1 = "d".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        v2DapperAvail: [
+          eventBlock({
+            height: 1100,
+            txId: tx1,
+            eventType: V2_DAPPER_AVAIL,
+            payload: v2AvailPayload({
+              nftId: "999",
+              lrid: "9103",
+              price: "5.00000000",
+              typeID: ALLDAY_NFT,
+            }),
+          }),
+        ],
+        // ⚠ ONE leg of three fails. That is the case that made the old
+        // assertion look reasonable: the other two legs return real data, so
+        // the run has something to show and reads healthy. It is still a range
+        // that was never fully read.
+        v2FlowtyAvailStatus: 500,
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+
+    // ⚠ THE INVERTED ASSERTION. 1000 = the cursor STAYS where it was, because
+    // the single chunk 1001-1250 failed. 1250 is the old, wrong answer and is
+    // silent permanent loss.
+    expect(
+      log?.p_cursor_after,
+      "a 500 on any storefront leg must hold the cursor below the failed chunk",
+    ).toBe("1000")
+
+    // And the run must SAY it was partial. A held cursor with a clean-looking
+    // log is only half the fix: without the flag the short range is invisible
+    // in pipeline_runs, so nobody can tell a quiet tick from a failing one.
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.partial_scan, "the run must be flagged partial").toBe(true)
+    expect(extra.first_failed_chunk, "the run must name the failed chunk").toBe(1001)
   })
 })
 

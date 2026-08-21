@@ -1100,4 +1100,80 @@ describe("allday-sales-indexer — on-chain edition metadata fallback (buildOnCh
     expect(extra?.first_failed_chunk).toBe(1001)
     expect(extra?.cursor_held_from).toBe(1500)
   })
+
+  // ⚠ THE HTTP PATH, WHICH USED TO BE THE HOLE. This case began life as a probe
+  // that FAILED: with an HTTP 500 on chunk 1001-1250 the cursor advanced to 1500
+  // instead of holding at 1000, because `fetchEventRange` swallowed `!res.ok`
+  // into `[]` and the chunk read as genuinely EMPTY. The catch above only ever
+  // saw THROWN errors, so the cap never fired and those blocks were never
+  // revisited — permanent loss, behind a clean `ok: true` run.
+  //
+  // ⚠ ITS SIBLING ABOVE CANNOT CATCH THIS, and that is the lesson worth keeping:
+  // every cursor-hold test in this family simulated failure by THROWING
+  // (ECONNRESET), which is the path that already worked. "The chunk failed" and
+  // "the chunk threw" were not the same set, and the whole family was blind to
+  // the difference. Fixed 2026-08-21 across 7 routes; this is the regression.
+  it("an upstream HTTP error holds the cursor too, not just a thrown one", async () => {
+    const tx1 = "a".repeat(64)
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1500" } }]),
+      {
+        match: (u: string) =>
+          u.includes("start_height=1001") && u.includes(encodeURIComponent(V2_DAPPER_TYPE)),
+        respond: () => ({ status: 500, ok: false, json: {}, text: "upstream boom" }),
+      },
+      // ⚠ The THIRD chunk (1251-1500) is served EMPTY on purpose. The shared
+      // `flowRestStubs` fixture answers every V2-Dapper chunk with the same
+      // block-900 event, so without this the surviving chunks BOTH emit it and
+      // the row count below stops distinguishing "the first chunk's read was
+      // kept" from "every chunk was replayed" — the assertion would pass for the
+      // wrong reason. Empty here makes the surviving row uniquely the first
+      // chunk's, which is the property a partial scan has to hold.
+      jsonRoute("start_height=1251", []),
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({
+            height: 900,
+            txId: tx1,
+            eventType: V2_DAPPER_TYPE,
+            payload: v2DapperSalePayload("555", "12.34000000"),
+          }),
+        ],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 750 }, error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "555", edition_key: "789", serial_number: 33 }],
+        error: null,
+      },
+      editions: { data: [{ id: "uuid-789", external_id: "789" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // 1000 = the failed chunk (1001) - 1. Not 1500.
+    const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
+    expect(
+      cursorUpdate?.rows[0],
+      "an HTTP 500 must hold the cursor exactly as a thrown error does",
+    ).toMatchObject({ last_processed_block: 1000 })
+
+    // And it must be REPORTED as partial, not logged as a clean full scan —
+    // otherwise the hold works and no operator ever learns the range was short.
+    const log = terminalLog(spy.rpcCalls, "allday-sales-indexer")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra?.partial_scan).toBe(true)
+    expect(extra?.first_failed_chunk).toBe(1001)
+
+    // A partial scan KEEPS what it successfully read — holding the cursor must
+    // not also throw away the chunks that worked. The one surviving row is the
+    // FIRST chunk's (block 900); the third chunk is stubbed empty, so this
+    // cannot pass by replaying the same fixture through every chunk.
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({ nft_id: "555", block_height: 900 })
+  })
 })

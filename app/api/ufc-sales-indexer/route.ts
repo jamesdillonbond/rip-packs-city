@@ -123,8 +123,23 @@ async function fetchEventRange(type: string, start: number, end: number): Promis
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[ufc-sales-indexer] events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}`)
-    return []
+    // ⚠ THROW, DO NOT `return []`. The chunk loop's catch is what records
+    // `firstFailedChunkStart` and holds the cursor at the failed chunk; it only
+    // ever sees THROWN errors. Swallowing a non-2xx into an empty array made the
+    // chunk read as GENUINELY EMPTY, so the cursor advanced past a range that
+    // was never read — and nothing revisits a block below the cursor, so those
+    // sales were lost permanently, with a clean `ok: true` run and no
+    // `partial_scan` flag to show for it.
+    //
+    // Proven by execution 2026-08-21, not inferred: with an HTTP 500 on chunk
+    // 1001-1250 the cursor advanced to 1500 instead of holding at 1000, while
+    // the same fixture throwing ECONNRESET held correctly. 7 of the 8 indexers
+    // in this family shared the swallow; `sales-indexer` was immune only because
+    // it reaches Flow through fcl, which throws.
+    // See docs/overnight/inbox/2026-08-21T1420Z-an-http-error-defeats-the-cursor-hold-in-7-of-8-indexers.md
+    throw new Error(
+      `events ${start}-${end} ${type.split(".").pop()} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`
+    )
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []

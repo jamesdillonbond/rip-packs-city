@@ -447,7 +447,21 @@ describe("golazos-offers-indexer — cursor + control flow", () => {
     expect(body).toMatchObject({ ok: true, message: "already up to date", currentHeight: 0 })
   })
 
-  it("an OfferAvailable events HTTP error degrades that range to empty and still advances the cursor", async () => {
+  // ⚠ INVERTED 2026-08-21 — the THIRD copy of this defect-pinning test found in
+  // one pass (allday-listings-indexer-deep, allday-offers-indexer-deep, here).
+  // It was a verbatim copy of the AllDay one, which is the point: the assertion
+  // spread by copy-paste exactly as the bug it was protecting did.
+  //
+  // Its previous title was "an OfferAvailable events HTTP error degrades that
+  // range to empty and still advances the cursor" and it asserted
+  // `{ ok: true, offersSeen: 0, cursorAfter: "1250" }` plus a cursor write of
+  // 1250 after a 500. `fetchEventRange` swallowed the non-2xx into `return []`,
+  // the loop finished normally, the cursor advanced over blocks nothing had
+  // read, and the run logged ok=true. Nothing re-reads a block below the cursor,
+  // so those offers were gone permanently — asserted as correct behaviour.
+  //
+  // Per CLAUDE.md: INVERTED, never deleted. Same fixture, opposite claim.
+  it("an OfferAvailable events HTTP error aborts the tick and leaves the cursor alone", async () => {
     fetchMock = installFetchMock([
       jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
       jsonRoute("OfferAvailable", [], { status: 500 }),
@@ -456,10 +470,20 @@ describe("golazos-offers-indexer — cursor + control flow", () => {
     ])
     const spy = install({ event_cursor: { data: { last_processed_block: 1000 }, error: null } })
     const body = await (await POST(req())).json()
-    expect(body).toMatchObject({ ok: true, offersSeen: 0, cursorAfter: "1250" })
-    expect(spy.writes.event_cursor?.find((w) => w.method === "update")?.rows[0]).toMatchObject({
-      last_processed_block: 1250,
-    })
+
+    // ⚠ Stated as an ABSENCE: the cursor is not written at all, so 1001-1250 is
+    // re-scanned next tick. A write of 1250 — the old expectation — is silent
+    // permanent loss.
+    expect(
+      spy.writes.event_cursor ?? [],
+      "a failed range must leave the cursor untouched so the blocks are re-scanned",
+    ).toHaveLength(0)
+
+    // ⚠ And the tick must REPORT the failure. ok:true with offersSeen:0 is
+    // indistinguishable from a genuinely quiet 250 blocks, which is exactly what
+    // made this loss unfalsifiable.
+    expect(body.ok, "a tick that failed to read its range is not ok").toBe(false)
+    expect(String(body.error ?? ""), "the run must name the HTTP failure").toMatch(/HTTP 500/)
   })
 })
 
