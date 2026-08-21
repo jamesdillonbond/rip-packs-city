@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · FILED + SELF-CORRECTION (Claude Code, interactive) — a 120× measured win on the estate's largest reader, and the withdrawal of my own "permanently backlogged" claim from four hours earlier
+
+⚠ **WITHDRAWN, before anyone acts on it.** Tonight's 23:15Z filing called `refresh_wmc_fmv_changed` "a permanent backlog at a ~61% duty cycle". **The cost figures stand** (8.06% of all `shared_blks_read`, 69,954 blocks ≈ 546 MB per call, 6 calls/hour); **the backlog reading does not.** I inferred it from one fact — its p50 is pinned at 364–377 s for 19 consecutive hours against a budget of `statement_timeout × 0.6` ≈ 366 s. **Always spending your whole allowance is consistent with a backlog and does not establish one**, and two measurements cut against it: the queue at a 6-minute cutoff is **897 editions**, not tens of thousands, and FMV production is near zero for those same 19 hours (1–466/hr vs ~2,800–4,100/hr), so there is almost nothing arriving to back up. **What is established is that it spends its full budget; WHY is unresolved** — and it is not decomposable from here, because `pg_stat_statements` runs `track = top` so the loop's inner statements never appear as rows. Same shape as the error I corrected in the deals filing this afternoon: a number that is *consistent with* a story is not the story.
+
+✅ **What IS established, and it is a concrete lever.** The function opens by building `_rwfc_recent` from `fmv_snapshots WHERE computed_at > cutoff`. `EXPLAIN (ANALYZE, BUFFERS)`, same cutoff, same 897 output rows:
+
+| plan | buffers | exec |
+|---|---:|---:|
+| **as written** — planner picks `fmv_snapshots_2026_edition_id_computed_at_idx` | **8,720**, then **9,003** re-run | 2.87 s → **4.63 s** |
+| **filter wrapped in a `MATERIALIZED` CTE** — planner picks `idx_fmv_snapshots_2026_computed_at_desc`, then sorts | **74** | **3.8 ms** |
+
+⚠ **Checked warm-vs-warm rather than assumed** (the rule that nearly killed a correct rewrite once): re-run warm the incumbent got **more** expensive, 8,720 → 9,003 buffers, which is what a scan larger than the cache budget does. It cannot get cheaper — the chosen index leads on `edition_id` while the predicate is on `computed_at`, so there is no range to seek and the whole 2026 index is walked. The planner takes that deal because `DISTINCT ON` needs `ORDER BY edition_id, computed_at DESC` and this index supplies it for free, on a **418× row overestimate** (374,991 est vs 897 actual). ⚠ **Equivalence diffed as a SET, not a count:** `EXCEPT` both directions — 897 vs 897, **0 only-in-incumbent, 0 only-in-candidate**. The sort the candidate pays for is `quicksort Memory: 60kB`.
+
+⚠ **THE LEVER IS BOUNDED AND THE ARITHMETIC SAYS SO: ~9,000 of 69,954 blocks is ~13% of the function, ~1% of the estate's reads.** It is **not** a fix for the 20-hour band, and presenting it as one would repeat exactly the error the 23:15Z filing corrected in the deals filing — a real optimisation on a component that is not the driver. The remaining ~87% is the `LOOP` (pops `v_chunk := 5`, then a correlated `LIMIT 1` on `fmv_snapshots` plus an `UPDATE … FROM` join against `wallet_moments_cache`'s 2.49M rows) and is unmeasured.
+
+⛔ **NOT SHIPPED — FMV logic is on the off-limits list**, and it needs a low-traffic window because `apply_migration` costs a ~10–20 s burst of user-facing `PGRST002` 500s. ⚠ **And do NOT add an index:** `idx_fmv_snapshots_2026_computed_at_desc` already exists and is the one the candidate plan uses — this is a plan-choice problem, not a missing-index problem. I expected a missing index and was wrong; recorded so nobody creates a duplicate. Full write-up: `docs/overnight/inbox/2026-08-22T0010Z-…`.
+
+**No code, DB or prod-state change in this commit — filing + ledger only. Revert:** n/a.
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — CI failed with EVERY TEST PASSING: an async effect wrote state ~300 ms after its own teardown
 
 **CI run `32536511776` on `f3289d34`: `Test Files 241 passed · Tests 2989 passed · Errors 1 error`, exit 1.** ⚠ **A green test count is not a green job** — vitest failed it on one **unhandled rejection**, which is the only reason the components gate caught this at all.
