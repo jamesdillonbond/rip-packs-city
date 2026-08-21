@@ -1,5 +1,84 @@
 # An upstream HTTP error defeats the cursor hold in 7 of 8 block-scan indexers
 
+> ## ⚠ AMENDED 2026-08-21 (PT ~00:35, same day) — THE TITLE UNDERSTATES THIS BY MORE THAN HALF. RESOLVED IN PART.
+>
+> **The real population is 17 routes, not 8, and EVERY ONE OF THEM had the
+> defect.** "7 of 8" was measured against the wrong denominator: I derived the
+> family from routes containing `firstFailedChunkStart`, which is the symbol for
+> the cursor-HOLD, not for the event FETCH. Ten more routes define the same
+> `fetchEventRange` and carry the same swallow; none contains that symbol,
+> because none of them implements a hold at all. **I measured a proxy and
+> reported it as the property — the fifth time this pass.** The guard that was
+> supposed to protect this family had the same blind spot, by the same
+> derivation, which is why the swallow survived in them.
+>
+> Corrected census, `grep -rl 'async function fetchEventRange' app/api`, 17 files:
+>
+> | group | n | state |
+> |---|---|---|
+> | block-scan indexers (allday/golazos/topshot/ufc × listings+sales) | 7 | ✅ **FIXED + tested 2026-08-21** |
+> | offers indexers (allday/golazos/topshot) | 3 | ✅ **FIXED + tested 2026-08-21** |
+> | `pinnacle-{listings,sales}-indexer` | 2 | ❌ open — fix is NOT the one-liner |
+> | `*-sales-history-backfill` (allday/golazos/pinnacle/topshot-flowty/ufc) | 5 | ❌ open — fix is NOT the one-liner |
+>
+> ### Shipped (10 routes)
+>
+> `fetchEventRange` now THROWS on a non-2xx. For the 7 block-scan indexers the
+> chunk `catch` then records `firstFailedChunkStart` and caps the cursor as it
+> always intended to; for the 3 offers indexers the whole scan already sits in
+> one `try/catch` whose catch fires BEFORE the cursor update, so the tick aborts
+> with the cursor untouched and `ok=false` logged.
+>
+> Covered by `__tests__/indexer-http-error-holds-cursor.test.ts` (table-driven
+> over all 10, no-slack membership assertion) — **every one of the 10 verified by
+> mutation: reinstating the swallow reddens exactly that route's case.**
+>
+> ### ⚠ TWO EXISTING TESTS WERE PINNING THE DEFECT AS CORRECT
+>
+> This is the part worth keeping. The bug was not untested; it was **asserted**:
+>
+> - `api-allday-listings-indexer-deep` — *"…survives a 500 event fetch"*, ending
+>   `// The 500 leg did not poison the run — cursor still advanced.` with
+>   `expect(log?.p_cursor_after).toBe("1250")`.
+> - `api-allday-offers-indexer-deep` — *"an OfferAvailable events HTTP error
+>   degrades that range to empty and still advances the cursor"*, asserting
+>   `{ ok: true, offersSeen: 0, cursorAfter: "1250" }`.
+>
+> Both called permanent data loss a graceful degrade, **in the test title**. Both
+> are now INVERTED in place per CLAUDE.md (never deleted — the assertion is what
+> held the defect there). The generalisable tell: a test title containing
+> *"survives"*, *"degrades to"* or *"still advances"* is a claim that a failure
+> was ABSORBED, and absorbing a failed read is the honesty canon's core defect.
+> **Grep test TITLES for that shape; it is where this class hides.**
+>
+> ### Still open, and why they are not one-line fixes (measured, not assumed)
+>
+> - **`pinnacle-listings-indexer`** — swallows, AND has no hold: the chunk catch
+>   neither breaks nor caps, and the cursor is set to `targetHeight`
+>   unconditionally after the loop. Throwing alone changes nothing.
+> - **`pinnacle-sales-indexer`** — swallows, AND advances the cursor PER CHUNK
+>   inside a catch that does not `break`, so a later chunk leapfrogs a failed one
+>   **even on a thrown error**. Also unaffected by the throw alone.
+> - **The 5 `*-sales-history-backfill` crons** — swallow non-2xx *and* thrown
+>   errors into `{blocks: [], belowFloor: false}`, then advance the backward
+>   cursor with `const newLow = belowFloor ? start : start` (both branches
+>   identical — a no-op ternary) unconditionally. These walk HISTORY, so a
+>   skipped range is never revisited by anything. They also have a LEGITIMATE
+>   non-throwing case (a 404 `"is less than"` below the node's block floor), so
+>   the fix must distinguish it rather than throw on every non-2xx.
+>
+> All seven are held by a **shrink-only ratchet** in
+> `__tests__/indexer-cursor-hold-on-partial-scan-guard.test.ts` (`KNOWN_SWALLOWERS`,
+> asserted by exact equality): fixing one reddens the guard until it is delisted,
+> and a new route cannot join. Mutation-verified in three directions — a fixed
+> route regressing, a listed route being fixed without delisting, and a brand-new
+> route landing with the swallow.
+>
+> **Trevor's call:** the Pinnacle pair sits on a live Pinnacle ingest path and
+> needs the full partial-scan pattern, not a one-liner; the backfills need the
+> below-floor case preserved. Neither was shipped blind.
+
+
 **Filed 2026-08-21 (PT 2026-08-21 ~07:20), Claude Code interactive. PROVEN by
 execution, not by reading. NOT fixed — the fix touches 7 production ingest routes
 with a permanent-data-loss failure mode, which is Trevor's call.**
