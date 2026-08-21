@@ -125,8 +125,23 @@ export function boardStatus(label: string, ok: boolean): BoardStatus {
  * boards discarded `source` and so could not see it.
  *
  * `stale-cache` is deliberately NOT degraded: it serves COMPLETE last-good data
- * carrying its own `fetchedAt`/`cache_stale` meta, which the clients already
- * surface as an age. Flagging it would cry wolf on the cache working as designed.
+ * carrying its own `fetchedAt`/`cache_stale` meta, which the clients surface as
+ * an age. Flagging it would cry wolf on the cache working as designed.
+ *
+ * ⚠ THAT SECOND CLAUSE IS A CLAIM ABOUT OTHER FILES, AND IT WAS FALSE WHEN WRITTEN.
+ * /insights/rookies and /insights/first-mint both built `meta.fetched_at` into
+ * their payload and neither rendered it, so a stale snapshot reached the reader with
+ * no banner AND no timestamp — indistinguishable from live data. That is not an edge
+ * case on this estate: measured 2026-08-21 over 509 warm ticks / 48h, `deals` failed
+ * 78.2% of refreshes (worst snapshot 15.1h old) and `first-mint` 63.7% (worst 5.6h),
+ * so the stale leg is the NORMAL path. Both were fixed and the premise is now a
+ * CHECKED property, derived from every page.tsx that calls readBoardOrLive:
+ * `__tests__/cached-boards-surface-their-snapshot-age.test.ts`. If you ever suppress
+ * a notice because "the client already shows it", enforce that somewhere.
+ *
+ * Still OPEN, and a product decision rather than a defect: whether a snapshot past
+ * BOARD_SNAPSHOT_STALE_CEILING_MS (2h — the age the CRON itself calls reportable)
+ * should also carry a banner, not just a stamp. Filed, not decided here.
  */
 export function degradedFromSource(source: string, label: string): DegradedSummary | null {
   return source === "live-degraded" ? summarizeDegraded([boardStatus(label, false)]) : null

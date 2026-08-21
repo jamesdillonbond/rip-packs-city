@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { slugifyName } from "@/lib/entity-labels"
 
@@ -135,6 +136,28 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
           lock-rate, average serial price, mint-#1 trophy presence. Refreshes
           daily.
         </p>
+        {/*
+          FRESHNESS IS NOT OPTIONAL ON A SNAPSHOT-CACHED BOARD. This page is served
+          through readBoardOrLive, whose stale-cache leg hands back the last-good
+          snapshot AT ANY AGE — measured 2026-08-21 at up to 5.6h on this board and
+          15.1h on /insights/deals. degradedFromSource deliberately does NOT flag
+          stale-cache, and its stated reason is that "the clients already surface
+          as an age" — which was false here: the payload has carried meta.fetched_at
+          since the board shipped and nothing rendered it. No banner AND no stamp
+          means a reader cannot tell hours-old data from live.
+
+          iso is passed through UNCOALESCED on purpose. FreshnessStamp renders "—"
+          for a missing timestamp, which means exactly "none was supplied";
+          defaulting to Date.now() here would stamp RENDER time on a stale snapshot
+          and turn a silent gap into a false claim.
+        */}
+        <div className="rpc-rk-meta-row">
+          <span>
+            Updated <FreshnessStamp iso={data?.meta?.fetched_at ?? null} />
+          </span>
+          <span className="rpc-rk-meta-sep">·</span>
+          <span>No signup</span>
+        </div>
       </section>
 
       <DegradedDataNotice summary={initialDegraded} />
@@ -307,6 +330,8 @@ const CSS = `
 .rpc-rk-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-rk-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
 .rpc-rk-lede strong { color: var(--rpc-text-primary); }
+.rpc-rk-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 14px; }
+.rpc-rk-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
 
 .rpc-rk-kpi-row { max-width: 1180px; margin: 0 auto 24px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .rpc-rk-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
