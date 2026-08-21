@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — an instrument used 18 times in this ledger and referenced NOWHERE else, which is why I missed it today
+
+**Docs only.** Follow-on from correcting my own pack-opens filing: the thing that made that filing wrong was writing *"the instrument that would settle it does not exist here"* about `net._http_response` — **after having queried that table during the same investigation.**
+
+⚠ **THE MEASUREMENT THAT MAKES THIS WORTH A COMMIT, not just a fix:** `net._http_response` appears **18 times in `docs/overnight/ledger.md` and ZERO times in `CLAUDE.md` or any `docs/reference/*.md`.** That is exactly the failure CLAUDE.md predicts — *"a fact left only in a session log stops being read"* — demonstrated on the same day, by me, on a fact the ledger already carried eighteen times. **Eighteen uses is not a hint that it is well known; it is evidence it keeps being re-derived.**
+
+**Swept for the class rather than fixing the one instance.** Extracted every backticked identifier with ≥8 ledger mentions and no presence in the reference docs: **58 of them.** ⚠ **I did NOT bulk-promote.** Reading them, the large majority are DB objects (`pack_table_rows`, `get_set_detail`, `editions.jersey_number`, …) whose home is `schema-truth.md`, generated from the live DB — prose duplication there would rot against a generated file and is the wrong medicine. The ones that are *instruments or lessons* rather than schema are few, and `net._http_response` / `net.http_get` is the clearest.
+
+**Promoted into [cron-and-schedulers.md](../reference/cron-and-schedulers.md)** with what makes it usable rather than just named:
+- It is written **server-side by pg_cron with no application code and no edge-function deploy**, so it works even when a function sits behind a deploy blocker — the exact situation that parked my filing.
+- A **truth table** splitting the three states `pipeline_runs` cannot: no `job_run_details` row = never dispatched · dispatched with no response row = in flight or aged out · `timed_out=true` + NULL `status_code` = the caller gave up (the function may still be running) · 2xx + body = answered.
+- ⚠ **`cron.job_run_details.status = 'succeeded'` means the `net.http_get` was QUEUED**, nothing more; `return_message` is `"1 row"` on every success.
+- **Both attribution traps, measured:** the table is shared by every http cron job, so `content LIKE '%backfill%'` matched **162 rows belonging to other functions** and a minute-of-hour filter matches every job on that minute — discriminate on a field only the target emits. And **there is no join key** from `job_run_details` to `_http_response`; correlate by time plus a discriminator, and say which you used.
+- **Retention ~6 h** (measured 08-21) — sample while the window is open.
+- ⚠ **Mask the gate key when reading `cron.job.command`** (`regexp_replace(command, 'key=[^&'']+', 'key=***')`) — that exposure has now happened twice.
+
+**CLAUDE.md pointer added by proper displacement, not by growth.** The `pipeline_runs` retention bullet's first half is already mirrored verbatim in the cron doc, so it was compressed there; the half that was NOT mirrored — *"never read `pipeline_runs_daily` for RECENCY, it is a six-hourly rollup and fabricates silences up to 6 h"* — was moved **verbatim into the cron doc with a provenance note** before the CLAUDE.md line was shortened. **39,920 chars, 81 headroom** (up from 37). Counted with `node -e`, never `wc`.
+
+**Also checked and found ALREADY CORRECT, so no work was manufactured:** the wallet-backfill upsert failures behind ~2,970 Vercel errors/24h (`[wallet-backfill-allday] upsert err chunk=…` 1,948 alone). `upsertWmcChunks` tallies `chunkErrors` / `chunkRowsLost` / `firstChunkError`, and **all four runners** (`runIdOnlyBackfill`, `runAllDayDetailsBackfill`, `runPinnacleDetailsBackfill`, `runPaginatedDetailsBackfill`) plus `app/api/wallet-backfill/route.ts` consume it into `ok: false` with the loss named. Hardened by a prior pass; verified per-runner rather than assumed from one.
+
+**Revert:** `git revert <sha>` — docs only, no code, no DB, no prod state.
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — the pack-opens timeout fix has a scoping constraint neither pass stated, and the twin that shares the bug must not be changed with it
 
 **Docs only.** Third pass on the pack-opens filing. The previous amendment's arithmetic is right and I re-verified it independently — `28 s × 2 tries` = **56.4 s** (inside pg_net's 90 s), `30 s × 3` = **91.2 s** (outside it, which would blind `net._http_response` for exactly the failure case it was diagnosed from). **The value stands. Where it may be applied does not.**
