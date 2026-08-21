@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // POST /api/admin/drain-fmv-cold-tail?collection=all&limit=200
 // Authorization: Bearer $INGEST_SECRET_TOKEN  OR  ?token=$INGEST_SECRET_TOKEN
@@ -163,33 +164,22 @@ export async function POST(req: NextRequest) {
     //       WHERE dr.pipeline = 'drain-fmv-cold-tail'
     //         AND dr.started_at BETWEEN hb.started_at - interval '5 s'
     //                              AND hb.started_at + interval '5 s');  -- = kills
-    try {
-      await (supabaseAdmin as any).from("pipeline_runs").insert({
-        pipeline: "drain-fmv-cold-tail-heartbeat",
-        started_at: new Date(startedAt).toISOString(),
-        finished_at: new Date(startedAt).toISOString(),
-        ok: true,
-        // Explicitly NULL, not the column default 0: this row measures nothing.
-        // A 0 here would be a fabricated measurement — the exact shape that made
-        // this pipeline look inert in a retirement sweep on 2026-08-16.
-        rows_found: null,
-        rows_written: null,
-        extra: {
-          phase: "started",
-          collection_filter: collection,
-          limit,
-          order,
-          budget_ms: DRAIN_BUDGET_MS,
-          max_duration_s: 60,
-        },
-      })
-    } catch (hbErr) {
-      console.log(
-        `[drain-fmv-cold-tail] heartbeat insert failed (non-fatal): ${
-          hbErr instanceof Error ? hbErr.message : String(hbErr)
-        }`
-      )
-    }
+    // 2026-08-20: moved to `lib/pipeline/heartbeat.ts`. This site was the ONLY
+    // one of five that had the row shape fully right, so the helper was written
+    // from it — but even here `rows_skipped` was omitted and therefore took the
+    // column default 0, so the "explicitly NULL" comment was two-thirds true.
+    // That is the argument for one implementation in one place.
+    await writeInvocationHeartbeat({
+      pipeline: "drain-fmv-cold-tail",
+      startedAtMs: startedAt,
+      extra: {
+        collection_filter: collection,
+        limit,
+        order,
+        budget_ms: DRAIN_BUDGET_MS,
+        max_duration_s: 60,
+      },
+    })
 
     const results: ResultRow[] = []
     const skipped: string[] = []

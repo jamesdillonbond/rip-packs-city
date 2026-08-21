@@ -357,3 +357,78 @@ describe("candy-listings-indexer — sealed-pack asks", () => {
   })
 })
 
+
+// ── INVOCATION HEARTBEAT ────────────────────────────────────────────────────
+//
+// Added 2026-08-20 alongside `lib/pipeline/heartbeat.ts`. This route HAD a
+// heartbeat and no test for it, which is how its shape drifted from the other
+// four copies unnoticed: it wrote through `log_pipeline_run`, whose missing
+// `p_finished_at` let `duration_ms` (GENERATED from finished_at - started_at)
+// publish the RPC call's own latency — measured live at up to 47,462 ms on this
+// pipeline's markers.
+//
+// ⚠ These cases pin the row SHAPE and the fact that the marker precedes the
+// work. They do NOT detect a maxDuration kill, and no vitest case can; the
+// detection is a correlation query over `pipeline_runs`.
+describe("candy-listings-indexer — invocation heartbeat", () => {
+  const heartbeat = (spy: ReturnType<typeof install>) =>
+    (spy.writes.pipeline_runs ?? [])
+      .filter((w) => w.method === "insert")
+      .flatMap((w) => w.rows)
+      .find((r) => r.pipeline === "candy-listings-indexer-heartbeat")
+
+  it("writes the marker under a SEPARATE pipeline name, never an extra own-name row", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({
+      wallet_moments_cache: { data: [], error: null },
+      candy_packs: { data: [], error: null },
+      candy_listings: [{ data: null, error: null, count: 0 }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // ⚠ Load-bearing, not cosmetic: this pipeline is on
+    // `pipeline_cadence_watchlist`, so a marker under the REAL name would
+    // refresh `last_run` every tick and silence `detect_stalled_pipelines()` on
+    // exactly the outage the marker exists to expose.
+    const hb = heartbeat(spy)
+    expect(hb, "no heartbeat row was written").toBeTruthy()
+    expect(hb!.pipeline).not.toBe("candy-listings-indexer")
+    expect(hb!.collection_slug).toBe("candy_mlb")
+    expect((hb!.extra as Record<string, unknown>).phase).toBe("started")
+  })
+
+  it("leaves every rows_* column NULL and pins the duration to zero", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({
+      wallet_moments_cache: { data: [], error: null },
+      candy_packs: { data: [], error: null },
+      candy_listings: [{ data: null, error: null, count: 0 }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const hb = heartbeat(spy)!
+    // ⚠ NULL, not the column default 0. A marker measures nothing, so a 0 is a
+    // number nobody read — the shape that made a live pipeline look inert in the
+    // 2026-08-16 retirement sweep.
+    expect(hb.rows_found).toBeNull()
+    expect(hb.rows_written).toBeNull()
+    expect(hb.rows_skipped).toBeNull()
+    expect(hb.finished_at, "duration_ms is GENERATED from the pair").toBe(hb.started_at)
+    expect(hb.ok, "a marker must not inflate v_pipeline_failure_rates").toBe(true)
+  })
+
+  it("an unauthorized request writes NO heartbeat — 'neither row' must keep meaning 'never reached'", async () => {
+    const spy = install({})
+
+    await POST(req({}))
+    await runDeferred()
+
+    // The three-state reading collapses if an unauthenticated probe can mint a
+    // marker: "heartbeat only" would stop meaning "killed mid-flight".
+    expect(heartbeat(spy)).toBeUndefined()
+  })
+})

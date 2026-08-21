@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { solUsd } from "@/lib/chains/solana/das"
 import {
   CANDY_MLB_ME_SYMBOL,
@@ -193,26 +194,24 @@ async function handleSweep(req: NextRequest) {
   // finished_at = started_at; it cannot be pinned through this RPC without a
   // migration, and the sibling candy-offers-indexer heartbeat has the identical
   // property. Filed rather than diverging from the established call here.
-  try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: `${PIPELINE_NAME}-heartbeat`,
-      p_started_at: startedAtIso,
-      p_rows_found: 0,
-      p_rows_written: 0,
-      p_rows_skipped: 0,
-      p_ok: true,
-      p_error: null,
-      p_collection_slug: CANDY_MLB_SLUG,
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { phase: "invoked" },
-    })
-  } catch (e) {
-    // Non-fatal: the heartbeat is diagnostic. Never let it break the sweep.
-    console.log(
-      `[${PIPELINE_NAME}] heartbeat log failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
-    )
-  }
+  // 2026-08-20: moved to `lib/pipeline/heartbeat.ts`. This site used the
+  // `log_pipeline_run` RPC, which has NO `p_finished_at` parameter — so
+  // `finished_at` took its `now()` default and `duration_ms` (GENERATED from the
+  // pair) published this call's own latency as a run duration: measured live at
+  // up to 47,462 ms across these three candy markers. The site documented the
+  // trap ("read `extra`/`ok`, never the duration") rather than fixing it,
+  // because from inside the RPC it was unfixable. The helper writes the table
+  // directly, so the duration is a hard 0 and the rows_* columns are NULL rather
+  // than a fabricated 0.
+  //
+  // ⚠ `phase` was `"invoked"` here and `"started"` at the other two sites — a
+  // divergence nobody could see from inside either file, and one that would
+  // silently exclude these rows from any correlation query keyed on the phase.
+  await writeInvocationHeartbeat({
+    pipeline: PIPELINE_NAME,
+    startedAtMs: startedMs,
+    collectionSlug: CANDY_MLB_SLUG,
+  })
 
   if (!candyMeSymbolReady()) {
     await logRun(startedAtIso, 0, 0, 0, true, null, { skip_reason: "discovery_pending" })

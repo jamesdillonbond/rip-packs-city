@@ -4,6 +4,7 @@ import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -227,33 +228,21 @@ export async function POST(req: NextRequest) {
     //         AND fr.started_at BETWEEN hb.started_at - interval '5 s'
     //                              AND hb.started_at + interval '5 s');  -- = kills
     // Telemetry only.
-    try {
-      await (supabaseAdmin as any)
-        .from("pipeline_runs")
-        .insert({
-          pipeline: "fmv-recalc-heartbeat",
-          started_at: new Date(startTime).toISOString(),
-          // ⚠ finished_at pinned to started_at (2026-08-15) — telemetry only, no
-          // behaviour change. `duration_ms` is GENERATED ALWAYS AS
-          // (finished_at - started_at) and `finished_at` DEFAULTS TO now(), so
-          // omitting it made these marker rows publish the latency of their own
-          // INSERT as though it were the run's duration: measured live, 514 rows
-          // spanning 42ms-56s of pure insert cost, indistinguishable from a real
-          // reading. A hard 0 is an obvious sentinel instead. This does NOT touch
-          // the kill-detection correlation below, which keys on started_at and a
-          // NOT EXISTS against the terminal fmv-recalc row.
-          finished_at: new Date(startTime).toISOString(),
-          ok: true,
-          cursor_before: String(offset),
-          cursor_after: String(offset),
-          extra: { phase: "started", offset, edition_limit: limit, max_duration_s: 300 },
-        })
-    } catch (hbErr) {
-      console.warn(
-        "[FMV-RECALC] heartbeat insert failed (non-fatal):",
-        hbErr instanceof Error ? hbErr.message : hbErr
-      )
-    }
+    //
+    // 2026-08-20: the hand-rolled insert that stood here moved to
+    // `lib/pipeline/heartbeat.ts`. It was one of FIVE copies of this contract and
+    // no two agreed — this one wrote `rows_found`/`rows_written` as the column
+    // default 0 across all 564 of its live rows, which is the fabricated-
+    // measurement shape (`?? 0` on a count) that made a live pipeline read as
+    // inert in the 2026-08-16 retirement sweep. The helper sends them NULL. It
+    // also keeps the `finished_at` pin that landed here on 2026-08-15 — the
+    // reason is now in the helper's own comment rather than repeated per site.
+    await writeInvocationHeartbeat({
+      pipeline: "fmv-recalc",
+      startedAtMs: startTime,
+      cursor: String(offset),
+      extra: { offset, edition_limit: limit, max_duration_s: 300 },
+    })
     try {
 
     const windowStart = new Date(

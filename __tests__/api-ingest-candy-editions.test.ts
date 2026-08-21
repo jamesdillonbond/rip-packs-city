@@ -18,6 +18,12 @@ const st = vi.hoisted(() => ({
   paginateThrows: false,
   heartbeatThrows: false,
   runs: [] as any[],
+  // The invocation heartbeat moved from the `log_pipeline_run` RPC to a direct
+  // `pipeline_runs` INSERT on 2026-08-20 (lib/pipeline/heartbeat.ts), because
+  // the RPC has no `p_finished_at` and therefore cannot stop `duration_ms` from
+  // publishing its own call latency. Captured separately so the terminal row
+  // (still an RPC) and the marker row cannot be confused for one another.
+  hbRows: [] as any[],
   captured: null as null | (() => Promise<void>),
 }))
 
@@ -28,13 +34,19 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (_name: string, args: any) => {
-      if (st.heartbeatThrows && String(args?.p_pipeline).endsWith("-heartbeat")) {
-        throw new Error("heartbeat insert failed")
-      }
       st.runs.push(args)
       return { data: null, error: null }
     },
     from(table: string) {
+      if (table === "pipeline_runs") {
+        return {
+          insert: async (row: any) => {
+            if (st.heartbeatThrows) throw new Error("heartbeat insert failed")
+            st.hbRows.push(row)
+            return { error: null }
+          },
+        }
+      }
       return {
         upsert: () => ({
           select: async () =>
@@ -77,7 +89,7 @@ import { GET, POST } from "@/app/api/ingest/candy-editions/route"
 // assertions at the heartbeat, where `p_ok` is always true and `p_extra`
 // carries none of the fields under test.
 const terminal = () => st.runs.find((r) => r.p_pipeline === "candy-editions-ingest")
-const heartbeat = () => st.runs.find((r) => r.p_pipeline === "candy-editions-ingest-heartbeat")
+const heartbeat = () => st.hbRows.find((r) => r.pipeline === "candy-editions-ingest-heartbeat")
 
 beforeEach(() => {
   vi.unstubAllEnvs()
@@ -91,6 +103,10 @@ beforeEach(() => {
   st.paginateThrows = false
   st.heartbeatThrows = false
   st.runs = []
+  // ⚠ Reset alongside `runs`. Omitting this leaked marker rows between cases and
+  // made the "a failing heartbeat is non-fatal" test find a PREVIOUS test's row,
+  // i.e. it would have passed while asserting nothing about its own fixture.
+  st.hbRows = []
   st.captured = null
 })
 
@@ -298,8 +314,20 @@ describe("candy-editions — invocation heartbeat", () => {
     await st.captured!()
 
     expect(heartbeat()).toBeTruthy()
-    expect(heartbeat().p_extra.phase).toBe("invoked")
-    expect(heartbeat().p_collection_slug).toBe("candy_mlb")
+    // `phase` normalised "invoked" -> "started" when the five hand-rolled
+    // copies were unified: two sites already said "started", and a correlation
+    // query keyed on the phase would silently have skipped the other three.
+    expect(heartbeat().extra.phase).toBe("started")
+    expect(heartbeat().collection_slug).toBe("candy_mlb")
+    // ⚠ NULL, not the column default 0. A marker row measures nothing, and a 0
+    // here is the fabricated-measurement shape that made a live pipeline read
+    // as inert in the 2026-08-16 retirement sweep.
+    expect(heartbeat().rows_found).toBeNull()
+    expect(heartbeat().rows_written).toBeNull()
+    expect(heartbeat().rows_skipped).toBeNull()
+    // duration_ms is GENERATED from (finished_at - started_at); pinning them
+    // equal is what keeps it from publishing this INSERT's own latency.
+    expect(heartbeat().finished_at).toBe(heartbeat().started_at)
 
     // The name must differ from the watched pipeline. A marker under
     // "candy-editions-ingest" would refresh last_run every tick and silence
