@@ -160,6 +160,10 @@ const crossCollectionInitial = {
     avg_moments_per_wallet: 240,
     median_moments_per_wallet: 180,
     cohort_total_fmv_usd: 4500000,
+    // The mats' own rebuild instant, deliberately DIFFERENT from meta.fetched_at
+    // (the read time): the board renders this one, and the two being distinguishable
+    // is the point — see ApiResponse's note in CrossCollectionBoardClient.
+    computed_at: "2026-07-30T04:10:00.000Z",
   },
   wallets: [
     {

@@ -10,6 +10,7 @@
 // progressive enhancement and only refetches when the sort changes.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import Link from "next/link"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -23,6 +24,13 @@ type Stats = {
   avg_moments_per_wallet: number | null
   median_moments_per_wallet: number | null
   cohort_total_fmv_usd: number | null
+  /**
+   * When the cohort MATS were last rebuilt — NOT when this page read them.
+   * Already returned by the stats select("*"); it was simply never typed or
+   * rendered. See the meta.fetched_at note below for why the distinction is
+   * the whole point on this board.
+   */
+  computed_at: string | null
 } | null
 
 type Wallet = {
@@ -45,6 +53,15 @@ type SetOverlapRow = {
 }
 
 export type ApiResponse = {
+  /**
+   * ⚠ `fetched_at` is stamped `new Date()` at READ time by both the page and
+   * the API route, so it is the age of the REQUEST, never of the data. It must
+   * not be rendered as freshness on this board: the cohort mats are rebuilt by
+   * a daily pg_cron pair (rpc-ccm-step1/step2) that has failed with a statement
+   * timeout on every run since 2026-08-18, leaving the tables 4d19h stale as of
+   * 2026-08-21 — while `fetched_at` would have read "updated seconds ago".
+   * The honest instant is `stats.computed_at`, which the mats carry per row.
+   */
   meta: { fetched_at: string }
   stats: Stats
   wallets: Wallet[]
@@ -141,6 +158,13 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
           and UFC Strike. Top Shot&apos;s site can&apos;t surface this cohort
           because it doesn&apos;t cross collection boundaries. We can.
         </p>
+        <div className="rpc-cc-meta-row">
+          <span>
+            Cohort data computed <FreshnessStamp iso={stats?.computed_at ?? null} />
+          </span>
+          <span className="rpc-cc-meta-sep">·</span>
+          <span>Rebuilt daily</span>
+        </div>
       </section>
 
       <section className="rpc-cc-kpi-row" aria-label="Cohort summary">
@@ -369,6 +393,8 @@ const CSS = `
 .rpc-cc-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-cc-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
 .rpc-cc-lede strong { color: var(--rpc-text-primary); }
+.rpc-cc-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 14px; }
+.rpc-cc-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
 
 .rpc-cc-kpi-row { max-width: 1180px; margin: 0 auto 18px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .rpc-cc-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }

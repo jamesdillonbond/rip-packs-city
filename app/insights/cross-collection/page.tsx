@@ -19,6 +19,13 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import CrossCollectionBoardClient, { type ApiResponse } from "./CrossCollectionBoardClient"
 
 // Match the API route's 30-minute edge cache (cohort tables refresh daily/manual).
+//
+// ⚠ `meta.fetched_at` below is the READ time, not the data's. The client renders
+// `stats.computed_at` instead — the mats' own rebuild instant, which `select("*")`
+// has always returned. Measured 2026-08-21: the daily rebuild pair
+// (rpc-ccm-step1/step2) had failed with a statement timeout on every run since
+// 08-18, so this board was serving a 4-day-19-hour-old whale map with nothing on
+// screen saying so.
 export const revalidate = 1800
 
 async function fetchInitial(): Promise<{ initial: ApiResponse; ok: boolean }> {
