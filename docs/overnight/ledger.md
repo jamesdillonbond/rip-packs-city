@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — covered rpc-mcp-proxy's six tool handlers: argument coercion, sniper slug routing, wallet-filter gaps; workers gate re-seated again
+
+**Area (8) continued.** After sports-proxy, the next-largest uncovered cluster in the workers gate was `workers/rpc-mcp-proxy/index.ts` — **74.74% st / 53.75% br** (re-measured, not quoted from the filing). The existing `worker-rpc-mcp-handler.test.ts` covers the HTTP entry surface (auth, quota, body validation, dispatch envelopes) and **exactly one of the six tools**; the other five and every branch inside `get_sniper_deals` / `lookup_wallet` were unexecuted.
+
+⚠ **WHY THE PAYLOAD IS THE ASSERTION.** An MCP client is an LLM emitting loosely-typed JSON — `serial` arrives as the string `"7"`, `limit` as `500`, `wallet_address` as `"  0xAbC  "`. The worker is the only thing between that and a Postgres function with typed parameters, and **a coercion that silently stopped happening would still return a well-formed MCP envelope**. So every case reads the BODY the worker POSTed to Supabase, never only the response. Asserting "one call to `get_top_deals`" passes with every argument wrong.
+
+**31 cases** in `__tests__/worker-rpc-mcp-tool-args.test.ts`, via a fetch stub that records `{fn, body}` per Supabase RPC:
+
+- **Coercion** — `serial: "7"` → `7`; an omitted serial → **`null`, not `0`** (`0` reads as "serial #0" downstream); numeric `dist_id`/`set_id` → strings; the `wallet_address` → `p_wallet` / `p_wallet_address` **rename on two RPCs in one handler**, both normalized.
+- **Sniper routing** — unknown slug short-circuits with **no deals RPC called at all**; a hostile slug is sanitized into the gap tag rather than echoed; `nba_top_shot` → `get_top_deals` with the slug translated to its uuid; `nfl_all_day` → `get_allday_sniper_deals`, asserted to carry **no collection parameter in any form**; the three *known-but-unsupported* slugs report `no_sniper_rpc_for_collection`, distinctly from `unknown_collection_slug`.
+- **Limit clamp** — 7 table-driven cases pinning `undefined→25 · 500→100 · 0→1 · -9→1 · "30"→30`.
+- **`lookup_wallet` honesty** — a known filter discloses itself in `gaps` (an agent reading a filtered total as the wallet total reports a wrong net worth); an **unknown** filter returns the data UNFILTERED plus a gap, because silently returning an empty portfolio for a typo'd slug reads as *"this wallet holds nothing"*; each null leg is flagged **separately**.
+- **Envelope + telemetry** — a null adapter result becomes a gap-flagged payload with `isError` **false** ("we looked and found nothing" ≠ "the lookup failed"); a 5xx tags `upstream_supabase_unavailable`, a malformed 200 body tags `adapter_exception` (the upstream was reachable — conflating them misdirects triage); `gaps_count` reaches `mcp_log_tool_call`; a failing telemetry write does not fail the tool call.
+
+**Proven it can fail — 10 mutation controls, all RED, tree restored byte-identical:** wallet not normalized · upper clamp removed · default 25→50 · serial `null`→`0` · unknown-slug guard removed · gap tag always `upstream` · Top Shot uuid swapped for All Day's · null result not gap-flagged · portfolio filter skipped · summary-null gap dropped.
+
+**Result:** `rpc-mcp-proxy/index.ts` **74.74 → 95.37 st, 53.75 → 81.29 br**. Gate totals **86.40 / 73.01 / 86.11 / 89.23 → 88.34 / 76.32 / 89.81 / 91.28**, measured **identical across three consecutive runs** before the thresholds moved to `88.15 / 76.15 / 89.6 / 91.1`, and the new seat was proven to REJECT (branches temporarily set to 76.45 → exit 1). Suite 1325 files / 14,317 tests green, `tsc` 0.
+
+**Revert path:** `git revert <sha>` (delete `__tests__/worker-rpc-mcp-tool-args.test.ts` + restore the four thresholds to `86.25 / 72.85 / 85.95 / 89.05`). No production code changed — test + config only.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — covered the sports-proxy retry/rotation branches, the lowest-coverage cluster in the workers gate and the code behind CLAUDE.md's #1 open item; gate re-seated on THREE stable samples
 
 **Area (8):** *"`sports-proxy/index.ts` 66.3% st / 44.1% br (115 uncovered statements) … the workers gate has the lowest branch threshold of the three (72.1) and these two are most of the reason."* Re-measured before acting: **67.15 st / 44.53 br**.
