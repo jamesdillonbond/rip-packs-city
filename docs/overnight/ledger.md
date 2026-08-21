@@ -30,6 +30,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `tsc --noEmit` exit 0 · brand-token guard clean · **full vitest 1,320 files / 14,247 tests green**. Re-measured before pushing: active connections **35 → 7**, IO waiters **12 → 6**.
 
+⚠ **POST-DEPLOY, AND THE PRECISE CLAIM MATTERS.** The rebuild (`73d89d13`, `dpl_14UMQK…`) **passed — "Build Completed in 2 m"**, `/insights` prerendered with a 30 m revalidate, READY with `www.rippackscity.com` aliased and `lambdaRuntimeStats` present. The same ~15 boards logged `read exceeded 8000ms` and fell back, exactly as in the failed build. **But `[insights/hub] read exceeded 8000ms` does NOT appear**, so the hub read completed inside its budget this time and **the bound did not fire.**
+
+**So the passing build is NOT evidence the bound works** — saturation had also eased between the two builds (active connections 35 → 7, IO waiters 12 → 6), which is a sufficient explanation on its own. The evidence that the bound works is the CONTROL, not the deploy: reverting only `app/insights/page.tsx` reds 2 arms of the widened guard. Recorded because "it built fine after my fix" is the same shape as reading a cache hit as a correct change.
+
+✅ Side effect worth naming: this deploy also carried `a1a5f4f9`, the heartbeat conversions that had been sitting on `main` **undeployed** since their build ERRORed. Those four routes are now actually in production.
+
 **Revert path:** `git revert <this code sha>` — 2 files. No DB, no migration, no cron. ⚠ Reverting restores the unbounded hub read AND re-opens the guard's blind spot, i.e. it re-arms a coin-flip on every future deploy.
 
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "do it all") — a CONCURRENT SESSION shipped the same heartbeat item mid-flight, so I threw my duplicate away and contributed only what was missing: the four `maxDuration = 800` routes, the highest kill risk in the fleet
