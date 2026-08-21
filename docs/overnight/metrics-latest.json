@@ -1,49 +1,53 @@
 {
-  "run": "nightly-20260818T0804-cloud-nopush",
-  "captured_at_utc": "2026-08-18T08:15Z",
-  "captured_at_pt": "2026-08-18T01:15 PT",
-  "mode": "NO-PUSH (no git creds; dry-run push fatal)",
-  "origin_main_baseline": "3c33e6ad",
-  "latest_migration_applied": "20260818052724",
+  "run": "interactive-20260821T1730Z-cloud-PUSH-AVAILABLE",
+  "captured_at_utc": "2026-08-21T17:20Z",
+  "captured_at_pt": "2026-08-21T10:20 PT",
+  "mode": "PUSH WORKING (session created with this repo as source; `git push --dry-run` clean). DB read-only this pass — nothing shipped to prod state.",
+  "origin_main_baseline": "27a2ff57",
+  "latest_migration_applied": "20260818205106",
   "demand_gate": {
     "total_users": 21,
-    "wau_signins_7d": 1,
+    "wau_signins_7d": 0,
     "roadmap_gate_wau": 50,
-    "note": "users 20 (2026-07-26) -> 21; WAU still ~0-1. The only metric that matters and it has not moved."
+    "note": "21 users unchanged since 2026-08-18. WAU sign-ins 1 -> 0. The only metric that matters and it still has not moved."
   },
-  "db_size_mb": 13191,
-  "db_size_mb_prev": 13114,
-  "total_editions": 27199,
-  "fmv_high_med_by_collection": {
-    "nba_top_shot": {"HIGH": 82844, "MEDIUM": 227362},
-    "nfl_all_day": {"HIGH": 12651, "MEDIUM": 46138},
-    "candy_mlb": {"HIGH": 122, "MEDIUM": 1422},
-    "ufc_strike": {"HIGH": 88, "MEDIUM": 510},
-    "laliga_golazos": {"HIGH": 114, "MEDIUM": 80},
-    "pinnacle": "separate table (pinnacle_fmv_*), not counted here"
-  },
+  "db_size_mb": 13638,
+  "db_size_mb_prev": 13191,
+  "total_editions": 27242,
   "security": {
-    "public_security_invariants": "clean (0 rows)",
-    "anon_write_surface": "clean (0 rows)",
-    "rls_off_public_tables": 0,
-    "anon_authenticated_write_holes": 0
+    "check_secdef_anon_exec_drift": "clean (empty array)",
+    "check_public_security_invariants": "clean (0 rows)",
+    "check_anon_write_surface": "clean (0 rows)",
+    "check_edge_fn_http_failures": "clean (empty array)"
   },
   "trust_health": {
-    "total_arms": 38,
-    "breached_count": 4,
-    "breached": [
-      {"metric": "board_mv_refresh_stale_hours", "value": 8.06, "breach_at": 8, "class": "saturation (MV refresh crons timing out); marginal"},
-      {"metric": "fmv_sweep_wedge_hours", "value": 8.06, "breach_at": 3, "class": "known recurring (page-zero-poison / saturation)"},
-      {"metric": "public_board_slow_count", "value": 14, "breach_at": 1, "class": "known saturation collateral"},
-      {"metric": "unmapped_resolution_backlog_max", "value": 308, "breach_at": 100, "class": "known AllDay permanent floor; do NOT raise breach_at"}
-    ],
-    "cleared_since_last_night": ["panini_sale_price_capture_dry_days (20 -> ok; 08-17 re-point migration 20260818052724 CONFIRMED working)"]
+    "sampled": false,
+    "reason": "v_rpc_trust_health timed out at the 60s MCP ceiling, which is its DOCUMENTED behaviour (CLAUDE.md: read the sentinel's Trust Health check instead). The sentinel was not run this pass. NOT a claim that the board is clean."
   },
-  "stalled_pipelines_count": 9,
-  "pgcron_recent_failures_count": 27,
-  "pgcron_note": "all statement-timeout / job-startup-timeout = disk-IO saturation collateral (one root cause, do not investigate). Top: rpc-backfill-wmc-fmv-confidence 47/286, rpc-reconcile-saved-wallet-stats 15/24.",
-  "vercel": {"latest_production_deploy": "dpl_F7VpcrVufi57mumecVqochJ9HK82", "commit": "3c33e6ad", "state": "READY", "error_deploys": 0},
-  "shipped": 0,
-  "reverted": 0,
-  "artifacts_repaired": 0
+  "pipeline_health": {
+    "failure_rate_pct_by_hour_30h": "oscillates 1-24% with no sustained spike; hourly peaks at 03:00/09:00/15:00/21:00Z track heavy scheduled jobs. Chronic background churn, NOT an active saturation incident.",
+    "stalled_pipelines": 10,
+    "alerts": 28,
+    "dominant_error_class": "canceling statement due to statement timeout / upstream request timeout / Timed out acquiring connection from connection pool",
+    "note": "Denominators carried deliberately. A failures-only read of this board looks like a platform-wide outage; the hourly series shows it is not."
+  },
+  "findings_filed_this_pass": [
+    {
+      "file": "docs/overnight/inbox/2026-08-21T1730Z-vercel-runtime-error-route-attribution-is-smeared.md",
+      "class": "INSTRUMENT DEFECT",
+      "one_line": "get_runtime_errors' routes=/users= are smeared; 64 of ~110 hits belong to one cron and the rest are attributed to ~50 unrelated pages including / and /pricing."
+    },
+    {
+      "file": "docs/overnight/inbox/2026-08-21T1735Z-allday-pack-opens-backfill-throughput-collapsed-1000x.md",
+      "class": "CHARACTERISED, NOT FIXED",
+      "one_line": "allday-pack-opens-backfill fell 118 -> 7 runs/day on 2026-08-11; cursor rate 3.4M -> ~4.5k blocks/day; ETA to floor ~12 years. pg_cron and auth ruled out; the ~90% missing terminal rows are NOT explained."
+    }
+  ],
+  "shipped_to_prod_state": "NONE. No migration, no data mutation, no edge-function deploy.",
+  "operator_blockers_unchanged": [
+    "gate-key rotation for cron jobs 20/55/56/83/84/44 (ingest-allday-pack-opens last deployed 2026-08-07T17:56Z, re-verified today)",
+    "atlas-proxy wrangler deploy + Cloudflare-egress probe (topshot-active-listings-ingest still egress_blocked)",
+    "spork-proxy health probe to settle which of the two sources is deployed",
+    "authenticated E2E coverage (needs a production test account + GHA secret)"
+  ]
 }
