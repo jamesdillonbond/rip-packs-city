@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — covered the sports-proxy retry/rotation branches, the lowest-coverage cluster in the workers gate and the code behind CLAUDE.md's #1 open item; gate re-seated on THREE stable samples
+
+**Area (8):** *"`sports-proxy/index.ts` 66.3% st / 44.1% br (115 uncovered statements) … the workers gate has the lowest branch threshold of the three (72.1) and these two are most of the reason."* Re-measured before acting: **67.15 st / 44.53 br**.
+
+⚠ **WHY THIS CLUSTER AND NOT A BIGGER ONE.** The largest uncovered block was lines 165–205 — the **403/401 retry with fingerprint rotation** and the stats.nba.com 5xx backoff. That is not an arbitrary coverage target: **the sports-proxy 403 is CLAUDE.md's highest-value open item**, and its two documented causes are exactly what this code reacts to. Both decisions are invisible in production — a wrong one surfaces as "the lane is down", never as an error naming the branch — so a test is the only place they can be checked.
+
+**7 cases** driving the real worker through `worker.fetch(request, env)` with a **per-call sequenced** fetch stub (the sibling test's substring stub returns one fixed response per URL and therefore *could not* express "the second call differs from the first"):
+
+- DK **403** → retried exactly once, **and the User-Agent changes**
+- DK **401** → same path (documented: same Akamai bucket)
+- DK **200** → **not** retried — the control that stops the two above passing on a version that retries unconditionally
+- DK **500** → **not** retried — 403/401 are a bot signal a new fingerprint can fix; a 500 is upstream breakage and retrying burns budget
+- stats **5xx** → 3 attempts, fingerprint rotates between them
+- stats **4xx** → returns on attempt ONE (the discriminating case; without it the worker re-asks for a 404 until its budget is gone)
+- stats **network throw** → treated as transient and retried
+
+⚠ **THE ROTATION IS THE ASSERTION, NOT THE CALL COUNT.** Retrying with the SAME fingerprint is precisely what the code was written to avoid, and it is indistinguishable by call count. Proven load-bearing: mutating `pickFingerprint(fp1)` to `fp1` reds **exactly the two rotation cases**; widening the DK condition to `status >= 400` reds the no-retry-on-500 case.
+
+⚠ **A FIXTURE BUG OF MINE, CAUGHT BY THE DATA NOT BY LUCK:** my first draft posted `{}` to `/nba/scoreboard`, which **400s on gameDate validation before any fetch** — the three stats cases recorded ZERO upstream calls and were asserting against a request that never left the validator. A test that never reaches the code under test passes for the wrong reason; the zero-call count is what exposed it.
+
+**Coverage moved, and every point came from ADDING tests:**
+
+| | before | after |
+|---|---|---|
+| `sports-proxy/index.ts` | 67.15 / 44.53 / 61.11 / 71.52 | **72.14 / 46.96 / 72.22 / 75.93** |
+| workers gate overall | 85.59 / 72.61 / 84.25 / 88.53 | **86.40 / 73.01 / 86.11 / 89.23** |
+
+**Thresholds re-seated 85.1/72.1/83.8/88.1 → 86.25/72.85/85.95/89.05.** ⚠ **Measured stable BEFORE raising, not assumed:** three consecutive runs on the unchanged tree returned **86.40 / 73.01 / 86.11 / 89.23 exactly**. That check is not ceremony — testing-and-ci.md documents the COMPONENT gate's `functions` wobbling ~0.1pt on an unchanged tree, and seating a threshold against one sample of a jittery metric is how a gate starts failing on nothing. This gate showed no jitter, so the margin is the usual ~0.15. **And the raised gate was proven to still ENFORCE:** setting branches to 99.9 exits 1 with `Coverage for branches (73.01%) does not meet global threshold`.
+
+**Verified:** `tsc --noEmit` exit 0 · **full vitest 1,324 files / 14,286 tests green** · workers gate exit 0 at the new thresholds.
+
+**Revert path:** `git revert <this sha>` — 2 files (1 new test, the threshold block). No worker source changed, no code, no DB, nothing deployed. Reverting lowers the gate back; it changes no runtime behaviour.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — the blocking corruption guard now has a test, driven against a REAL throwaway git repo, and its documented blind spot is PINNED rather than remembered
 
 **Area (8):** *"`check-tree-corruption.mjs` is a blocking CI guard with **no test of its own**."* It is the guard for the Windows-to-sandbox mount class — NUL-byte injection and silent truncation — and its **first real run found a committed NUL byte in a URL sanitiser**, so the failure mode is not hypothetical.
