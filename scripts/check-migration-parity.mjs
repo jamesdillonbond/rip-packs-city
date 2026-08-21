@@ -50,11 +50,22 @@
  *
  * WHY THE WINDOW IS BOUNDED
  * -------------------------
- * Production carries ~2,478 migration rows against ~402 committed versioned files.
- * The bulk of that gap is historical MCP-applied work from before the repo kept files,
- * and it is NOT actionable — a check that reports ~2,000 findings is noise nobody
- * reads. So this only looks at a recent window (default 14 days), where "there is no
- * file for this" genuinely means "someone's commit is missing".
+ * Production carries far more migration rows than the repo has committed versioned
+ * files (2,570 vs 596 measured 2026-08-20; it was 2,478 vs ~402 on 2026-08-10 — both
+ * are DATED SAMPLES, re-derive before quoting either). The bulk of that gap is
+ * historical MCP-applied work from before the repo kept files, and it is NOT
+ * actionable — a check that reports ~2,000 findings is noise nobody reads. So this
+ * only looks at a recent window (default 14 days), where "there is no file for this"
+ * genuinely means "someone's commit is missing".
+ *
+ * ⚠ THE RECENT WINDOW IS NOW CLEAN, AND THAT IS WHAT MADE THE JOB ENFORCING.
+ * Re-derived 2026-08-20 against the live table: drift at 3d / 7d / 14d was 3 / 5 / 5,
+ * all five being one afternoon's rpc_search_catalog v2/v3/v4 prototypes plus their
+ * own drops. They were recovered byte-exactly from prod (md5 compared against
+ * `md5(array_to_string(statements, E'\n'))`, all five matching) and committed, taking
+ * every window to 0 — so .github/workflows/migration-parity.yml dropped its `|| true`
+ * the same day. See __tests__/migration-parity-workflow-is-enforcing.test.ts, which
+ * pins that posture so it cannot quietly revert to warning-only.
  *
  * EXIT CODES: 0 clean · 1 drift found · 2 config/query error.
  */

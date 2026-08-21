@@ -26,16 +26,32 @@ name: Migration parity
 #
 # The check READS ONLY supabase_migrations.schema_migrations — it mutates nothing.
 #
-# POSTURE — REPORTS, DOES NOT FAIL (deliberate, matches how db-pin-staleness.yml
-# was introduced). At a 14-day window the first real run found 114 pre-existing
-# fileless migrations: genuine drift, but a historical backlog that predates this
-# job. Failing daily on a backlog nobody scheduled would train everyone to ignore
-# the job — the exact failure mode the 2026-08-08 "permanently red arm" note
-# warns about. So it runs at a SHORT window (3 days), which is what catches a
-# fresh push outage, and annotates rather than reds.
+# POSTURE — ENFORCING since 2026-08-20. It was introduced reporting-only, for a
+# stated and correct reason: at a 14-day window the first real run found 114
+# pre-existing fileless migrations, a historical backlog nobody had scheduled,
+# and failing daily on it would have trained everyone to ignore the job — the
+# "permanently red arm" failure mode. The exit condition recorded here was
+# "delete the `|| true` once the backlog is cleared".
 #
-# TO MAKE IT ENFORCING once the backlog is cleared: delete the `|| true` and the
-# `::warning::` wrapper below so the step's exit code stands (1 = drift found).
+# ⚠ THAT CONDITION WAS MET AND NOBODY RE-CHECKED, which is the recorded shape of
+# a decision-not-to-act. RE-DERIVED 2026-08-20 against the live table, not quoted
+# from this comment: the 14-day backlog is 5, not 114 — and all 5 are one
+# afternoon's `rpc_search_catalog` v2/v3/v4 prototypes plus their own drops,
+# recovered byte-exactly from prod (md5-verified against
+# `md5(array_to_string(statements, E'\n'))`) and committed in the same commit
+# that flipped this posture. Backlog at 3d / 7d / 14d is now 0 / 0 / 0.
+#
+# ⚠ WHY THE EXIT CODE IS CAPTURED RATHER THAN LEFT TO STAND. Every `run:` block
+# here is `bash -e`, so simply deleting the `|| true` would abort the step ON the
+# npm line and leave BOTH greps below as dead code — the annotations that name
+# WHICH migrations drifted would never print, on exactly the run where they
+# matter. So the status is captured with `|| RC=$?`, the annotations run, and the
+# step exits with the captured code at the end. Exit 2 (the check could not run
+# at all) fails too: a check that cannot answer is not a pass.
+#
+# The window stays at 3 days — short enough that a red run always means a FRESH
+# push outage, never a backlog. This is a daily schedule, not a PR gate, so a red
+# run is a notification and blocks nobody's merge.
 #
 # OPERATOR NOTE: needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo
 # secrets (both already exist — db-pin-staleness.yml uses them). Without them it
@@ -78,18 +94,28 @@ jobs:
             echo "::warning::NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured — skipping the migration-parity check."
             exit 0
           fi
-          # 0 clean · 1 drift · 2 config/query error. Reporting-only for now (see header).
+          # 0 clean · 1 drift · 2 config/query error.
           # 2>&1 is LOAD-BEARING: every drift line is console.error, and a bare pipe
           # captures stdout only — so parity.log held just the one-line summary and
           # BOTH greps below silently never matched. Verified empirically 2026-08-10;
           # it means the drift annotation had never fired, including on the run that
           # found 114 fileless migrations. Do not "tidy" the redirect away.
-          npm run db:migrations:check 2>&1 | tee parity.log || true
+          #
+          # ⚠ `|| RC=$?` is what keeps the annotations reachable. This block runs
+          # under `bash -e`, so a bare failing pipeline would abort the step HERE and
+          # the two greps would never execute — dead code that reads as coverage, on
+          # precisely the run that found something. Capture, annotate, then exit.
+          RC=0
+          npm run db:migrations:check 2>&1 | tee parity.log || RC=$?
           if grep -q 'applied to PRODUCTION with no committed file' parity.log; then
-            echo "::warning::Production is ahead of supabase/migrations/ — a migration was applied (probably via MCP) and its file was never committed, so it has no committed revert path. See the job log for the list."
+            echo "::error::Production is ahead of supabase/migrations/ — a migration was applied (probably via MCP) and its file was never committed, so it has no committed revert path. See the job log for the list."
           fi
           # Distinct annotation: the file EXISTS but was never `git add`ed. Cheapest fix
           # of the two, and the state a push outage leaves behind — worth its own line.
           if grep -q '^UNTRACKED (' parity.log; then
-            echo "::warning::A migration .sql exists in the working tree but was never committed. One 'git add' closes it — see the [UNTRACKED] rows in the job log."
+            echo "::error::A migration .sql exists in the working tree but was never committed. One 'git add' closes it — see the [UNTRACKED] rows in the job log."
           fi
+          if [ "$RC" -eq 2 ]; then
+            echo "::error::migration-parity could not RUN (config or query error). A check that cannot answer is not a pass — see the job log."
+          fi
+          exit "$RC"
