@@ -370,7 +370,24 @@ describe("AdminFeedbackClient — stats, filters and search", () => {
     // dies — with the debounce at 0 the request fires inside the first advance
     // and the `toBe(before)` reds. Verified by mutation, not asserted.
     await mountDashboard()
+    // ⚠ THE FAKE-TIMER REWRITE ABOVE FIXED THE WRONG HALF, AND THIS RED AGAIN:
+    // run 32534550813 on `main` (2026-08-21, an EDGE-FUNCTION-ONLY commit) failed
+    // here with the same `expected 2 to be 1`. The wall clock was never the only
+    // race. The component issues TWO mount fetches — the auth probe in the first
+    // effect, then fetchRows once `authed` flips — and mountDashboard resolves on
+    // the HEADING, which paints in the same commit that merely SCHEDULES the
+    // fetchRows effect. So `before` is captured at 1 on a loaded runner and at 2
+    // on a fast one, and the debounce assertion inherits a setup race that has
+    // nothing to do with debouncing. That is why it keeps failing on commits
+    // whose diff cannot reach this component.
+    //
+    // Waiting for a ROW pins the second fetch as resolved AND rendered, so the
+    // count is terminal (fetchRows deps are stable until a keystroke) before it
+    // becomes a baseline. Assert the baseline itself rather than trusting it:
+    // a bare waitFor would pass at 1 if the wait were ever wrong.
+    await screen.findByText("Sniper feed shows a stale ask")
     const before = fetchMock.mock.calls.length
+    expect(before).toBe(2)
     const box = screen.getByPlaceholderText(/search summary/i)
 
     vi.useFakeTimers()
