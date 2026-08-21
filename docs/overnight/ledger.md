@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — the remaining 7 cursor-swallowers fixed, and the population moved 17 → 19 because it was still derived from a proxy
+
+**Closes the 2026-08-21 filing.** The earlier pass this morning fixed 10 of 17 and left seven as "Trevor's call — not one-line fixes". They are done, and looking for them turned up **two more instances the guard could not see**.
+
+⚠ **THE POPULATION WAS DERIVED FROM A PROXY THREE TIMES IN A ROW.** Each derivation stands in for the property and each one leaked:
+
+| derivation | found | blind to |
+|---|---|---|
+| `firstFailedChunkStart` (the cursor HOLD) | 8 | every route with no hold |
+| `async function fetchEventRange` (the fetcher's NAME) | 17 | every route whose fetcher is called something else |
+| `v1/events` (the URL — **cannot vary**) | 22 | — |
+
+The name-based sweep hid two live instances, both with a cursor, both losing data:
+- **`lib/pinnacle/flow-events.ts`** (`fetchCompletedPinnacleSales`, reached from `app/api/pinnacle/ingest-events`) — outside the guard **twice over**: a different fetcher name *and* outside `app/api`, which the grep was scoped to. Its fetcher already threw, so it had only the second half: the cursor was written to `currentHeight` unconditionally, and a failed **upsert** advanced it too (a range fetched but not persisted is just as unread). Both now hold; `new_cursor` reports what was WRITTEN rather than the head.
+- **`app/api/admin/backfill-offer-fill-sales`** (`fetchCompletedRange`) — here the one-line throw *is* the whole fix: no per-chunk catch, so a throw reaches the outer catch and skips the `event_cursor` upsert.
+
+**The seven:**
+- **`pinnacle-listings-indexer`** — throw + the full partial-scan pattern (cap at `firstFailedChunkStart - 1`, `partial_scan` / `first_failed_chunk` / `cursor_held_from`), and `blocks_scanned` now reports what was READ instead of the range intended — a measured-looking number for blocks nothing fetched.
+- **`pinnacle-sales-indexer`** — throw + **`break`**, the strategy `ufc-sales-indexer` uses, because this loop writes the cursor PER CHUNK. ⚠ My first attempt gated the per-chunk write instead and **the guard rejected it, correctly**: gating leaves later chunks doing work the held cursor guarantees will be redone next tick.
+- **the 5 `*-sales-history-backfill` crons** — throw on every non-2xx **except** the 404 whose body says `"is less than"`, the node's block floor and a legitimate stop for a backward walk. ⚠ **Mutation-verified in BOTH directions**: reinstating the swallow reddens, and making the below-floor case throw *also* reddens.
+
+**Two reporting defects found on the way, both the fabricated-number shape:** `allday`'s `const newLow = belowFloor ? start : start` — a no-op ternary that read like a below-floor branch (⚠ the filing generalised it to all five; **re-derived, it was only in allday**) — and all five recomputing `cursor_after` from `ceiling - scanWindow` at log time **independently of whether the write happened**, so a failed tick logged a cursor movement that did not occur. That is the one instrument someone would use to notice this whole class.
+
+⚠ **FIVE MORE TESTS WERE PINNING THE DEFECT — running total EIGHT for this one class.** Four backfill `-edges` suites asserted *"…and **treats any other status as an empty range**"*; `api-pinnacle-sales-indexer-observability` asserted *"a non-OK /v1/events response **yields an EMPTY window, and the tick still logs ok:true**"* under a comment calling it *"the silent-loss shape … pinned so the trade-off stays deliberate"*. It was not a trade-off. All inverted **in place**, never deleted.
+
+**Guard rebuilt on the URL.** `KNOWN_SWALLOWERS` is now **empty**. ⚠ `swallowsEmpty()` replaces the old regex, because `{ blocks: [], belowFloor: true }` IS an empty result and IS correct — **the old regex would have punished the correct fix** and pushed the next person to weaken the check. Three new arms: every `/v1/events` reader in `app/` + `lib/` must be in the fetcher family, in `NO_BLOCK_CURSOR` **whose property is re-asserted** (the exemption dies the moment one gains a cursor), or in `OTHER_FETCHERS` with its own throw check.
+
+**Proven it can fail — 29 mutation controls, all RED, tree restored byte-identical:** 21 across the seven routes (swallow restored ×7, below-floor also throws ×5, `cursor_after` back to the prediction ×5, cap removed, partial_scan dropped, break removed, blocks_scanned back to the intended range); 4 on `lib/pinnacle/flow-events.ts`; 4 on the guard (offer-fill regresses, a brand-new `/v1/events` reader appears unaccounted, a no-cursor exemption gains a cursor, a real member delisted).
+
+⚠ **One trap worth keeping:** my first offer-fill comment mentioned the sibling fetcher's name, and the guard's grep reads source text — the file enrolled itself in the wrong population and the count arm went 17 → 18. The guard caught it. **A comment naming a symbol a guard greps for is a membership change.**
+
+**Verified:** `npx tsc --noEmit` exit 0; full `npm test` **1327 files / 14,377 tests** green (1326 / 14,351 before).
+
+**Revert:** `git revert <sha>` restores the swallow in 9 files, the 5 pinning assertions, the no-op ternary and the predicted `cursor_after`. **DB untouched** — this change reads no database and applies no migration.
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — every event-range fetcher in the repo swallowed an HTTP error into an empty range; 10 of 17 fixed, 3 tests were asserting the data loss as correct
 
 **What shipped.** `fetchEventRange` now THROWS on a non-2xx in **10 ingest routes**: the 7 block-scan indexers (`{allday,golazos,topshot,ufc}-listings-indexer`, `{allday,golazos,ufc}-sales-indexer`) and the 3 offers indexers (`{allday,golazos,topshot}-offers-indexer`). Previously it logged and `return []`, so an upstream 500 was delivered to the chunk loop as a range that read fine and was **genuinely empty**. The loop's `catch` only ever sees THROWN errors, so `firstFailedChunkStart` stayed null, the cursor advanced past blocks nothing had read, `partial_scan` stayed false and the run logged `ok: true`. Nothing revisits a block below the cursor, so every sale/listing/offer in that range was lost **permanently**. Proven by execution, not by reading: with a 500 on chunk 1001-1250 the cursor advanced to 1500 instead of holding at 1000, while the same fixture throwing ECONNRESET held correctly.

@@ -1,5 +1,79 @@
 # An upstream HTTP error defeats the cursor hold in 7 of 8 block-scan indexers
 
+> ## ✅ RESOLVED 2026-08-21 (PT, later the same day) — ALL 19 INSTANCES FIXED.
+>
+> **The population moved twice more after the first amendment below, and the
+> reason is the same each time: it was derived from a PROXY for the property.**
+>
+> | derivation | found | what it missed |
+> |---|---|---|
+> | `firstFailedChunkStart` (the cursor HOLD) | 8 | every route with no hold |
+> | `async function fetchEventRange` (the fetcher's NAME) | 17 | every route whose fetcher is called something else |
+> | `v1/events` (the URL — cannot vary) | 22 | — |
+>
+> The name-based sweep hid **two live instances**, both with a cursor and both
+> with the identical swallow:
+>
+> - **`lib/pinnacle/flow-events.ts`** (`fetchCompletedPinnacleSales`, reached from
+>   `app/api/pinnacle/ingest-events`) — outside the guard twice over: a different
+>   fetcher name AND outside `app/api`, which the grep was scoped to. Its fetcher
+>   already threw, so it had only the second half of the defect: the cursor was
+>   written to `currentHeight` unconditionally, and a failed **upsert** advanced
+>   it too. A test asserted this — *"captures a fetch throw as a chunk error and
+>   **still advances the cursor**"* — now inverted.
+> - **`app/api/admin/backfill-offer-fill-sales`** (`fetchCompletedRange`) — the
+>   one-line throw was sufficient here, because its chunk loop has no per-chunk
+>   catch, so a throw reaches the outer catch and skips the cursor upsert.
+>
+> ### The seven that were "Trevor's call" are done
+>
+> - **`pinnacle-listings-indexer`** — throw + the full partial-scan pattern
+>   (`firstFailedChunkStart`, cap at `-1`, `partial_scan` / `first_failed_chunk` /
+>   `cursor_held_from`, and `blocks_scanned` now reporting what was READ rather
+>   than the range intended).
+> - **`pinnacle-sales-indexer`** — throw + **`break`** on the first failed chunk,
+>   the same strategy `ufc-sales-indexer` uses, because this loop writes the
+>   cursor PER CHUNK. ⚠ A first attempt gated the per-chunk write instead; the
+>   guard rejected it, correctly — gating leaves later chunks doing work that the
+>   held cursor guarantees will be redone next tick anyway.
+> - **the 5 `*-sales-history-backfill` crons** — throw on every non-2xx **except**
+>   the 404 whose body says `"is less than"`, which is the node's block floor and
+>   a legitimate stop for a backward walk. ⚠ Verified by mutation in BOTH
+>   directions: reinstating the swallow reddens, and making the below-floor case
+>   throw as well also reddens. Also fixed two reporting defects found on the way:
+>   `allday`'s `const newLow = belowFloor ? start : start` (a no-op ternary that
+>   read like a below-floor branch — ⚠ the filing below generalised it to all
+>   five; it was only in allday), and all five recomputing `cursor_after` from
+>   `ceiling - scanWindow` at log time **independently of whether the write
+>   happened**, so a failed tick logged a cursor movement that did not occur.
+>
+> ### Five more tests were pinning the defect, on top of the three already found
+>
+> All inverted in place, never deleted. Four backfill `-edges` suites asserted
+> *"…and **treats any other status as an empty range**"*, and
+> `api-pinnacle-sales-indexer-observability` asserted *"a non-OK /v1/events
+> response **yields an EMPTY window, and the tick still logs ok:true**"* — with a
+> comment calling it *"the silent-loss shape … pinned so the trade-off stays
+> deliberate"*. It was not a trade-off. **Running total: 8 tests across this one
+> class asserted permanent data loss as correct behaviour.**
+>
+> ### The guard now derives from the URL
+>
+> `KNOWN_SWALLOWERS` is **empty**. `swallowsEmpty()` replaces the old regex so the
+> legitimate `{ blocks: [], belowFloor: true }` sentinel is not mistaken for a
+> swallow — ⚠ without that, the guard would have punished the correct fix and
+> pushed the next person to weaken it. Three new arms: every `/v1/events` reader
+> in `app/` + `lib/` must be in the fetcher family, in a `NO_BLOCK_CURSOR`
+> exemption **whose property is re-asserted**, or in `OTHER_FETCHERS` with its own
+> throw check. Mutation-verified four ways.
+>
+> ⚠ **One trap worth keeping:** the first version of the offer-fill fix mentioned
+> the sibling fetcher's name in a code comment, and the guard's grep reads source
+> text — so the file enrolled itself in the wrong population and the count arm
+> went 17 → 18. The guard caught it. **A comment naming a symbol a guard greps
+> for is a membership change.**
+
+
 > ## ⚠ AMENDED 2026-08-21 (PT ~00:35, same day) — THE TITLE UNDERSTATES THIS BY MORE THAN HALF. RESOLVED IN PART.
 >
 > **The real population is 17 routes, not 8, and EVERY ONE OF THEM had the
