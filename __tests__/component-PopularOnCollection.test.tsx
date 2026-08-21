@@ -2,12 +2,20 @@
 import { describe, it, expect } from "vitest"
 import { distinctSlugLinks } from "@/components/entity/PopularOnCollection"
 
-// PopularOnCollection's DEFAULT export is an ASYNC SERVER COMPONENT
-// (`export default async function` with top-level `await` over supabaseAdmin) —
-// it CANNOT be rendered in jsdom. Only its exported pure helper
-// `distinctSlugLinks` is unit-testable, so this file covers that helper's
-// branches: dedupe, cap, null/empty filtering, the exhibition-team drop, and the
-// slug/href shaping (slugifyName roundtrip + encodeURIComponent).
+// This file covers the exported pure helper `distinctSlugLinks`: dedupe, cap,
+// null/empty filtering, the exhibition-team drop, and the slug/href shaping
+// (slugifyName roundtrip + encodeURIComponent).
+//
+// ⚠ CORRECTED 2026-08-20 — this header used to end "the DEFAULT export is an
+// async server component ... it CANNOT be rendered in jsdom", and that premise
+// outlived its cause. It was true while the component held its own supabaseAdmin
+// client; the two reads moved to lib/entity/popular-on-collection-fetchers on
+// 2026-08-17, and an async server component whose data arrives through an
+// injectable module renders fine by awaiting it first:
+// `render(await PopularOnCollection({ collection }))`. The component body — the
+// honesty log, the Pinnacle branches, the hub rows — is covered in
+// __tests__/component-PopularOnCollection-render.test.tsx. Left standing, the
+// stale sentence held this file at 31.5% statements inside a gate it was in.
 
 describe("PopularOnCollection.distinctSlugLinks", () => {
   it("dedupes by slug and preserves first-seen order", () => {

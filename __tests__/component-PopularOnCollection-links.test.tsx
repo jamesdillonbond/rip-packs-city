@@ -8,7 +8,13 @@ import { describe, it, expect, vi } from "vitest"
 // pin each branch (blank/dedup/exhibition/cap). Named .test.tsx so it runs under
 // the component-coverage gate (the file it exercises lives in components/).
 //
-// The module references supabaseAdmin at import time, so stub it before import.
+// ⚠ The stub below is VESTIGIAL and kept only as a cheap guard. This module
+// stopped referencing supabaseAdmin on 2026-08-17 (the reads moved to
+// lib/entity/popular-on-collection-fetchers), which is also what made the
+// component body renderable — see
+// __tests__/component-PopularOnCollection-render.test.tsx. Removing it would be
+// safe today; leaving it means a re-introduced direct client cannot quietly
+// reach a live Supabase from this suite.
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 
 import { distinctSlugLinks } from "@/components/entity/PopularOnCollection"

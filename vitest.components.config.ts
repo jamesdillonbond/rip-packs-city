@@ -658,11 +658,32 @@ export default defineConfig({
       //     LOWER a threshold; it does not oblige raising one to the maximum the
       //     current sample allows. Raise it once the spread is known, not once a
       //     single run permits it.
+      //   2026-08-20 (later, same day): re-seated again after
+      //     components/entity/PopularOnCollection went 31.5 -> 100 st, 34.9 ->
+      //     97.7 br, 7.7 -> 100 fn. It had been the worst-covered file in the
+      //     gate by a wide margin, held there by a STALE PREMISE rather than by
+      //     difficulty: both its test files opened by asserting the async server
+      //     component "CANNOT be rendered in jsdom". True when written; the two
+      //     reads moved into lib/entity/popular-on-collection-fetchers on
+      //     08-17, and `render(await Component({...}))` has worked ever since.
+      //     Nobody re-checked, so the file kept its 31.5% inside a gate it was
+      //     already in. Both stale headers are corrected in the same commit.
+      //
+      //     ⚠ THIS TIME `functions` IS RAISED, and the reason is that the
+      //     wobble was MEASURED rather than assumed away. Three consecutive runs
+      //     on the new tree: 89.51 / 89.48 / 89.59 — a 0.11pt spread, matching
+      //     the figure recorded in testing-and-ci.md exactly. So the seat below
+      //     is set 0.18 under the LOWEST sample (1.6x the observed spread), not
+      //     under the highest. The other three metrics are seated the same way,
+      //     under their minimum of three: st 90.97, br 82.09, lines 93.89.
+      //     Raising against a known spread is the thing the 89.1 note asked for
+      //     ("raise it once the spread is known"); raising against one sample
+      //     is what it forbade.
       thresholds: {
-        statements: 90.6,
-        branches: 81.8,
-        functions: 89.1,
-        lines: 93.5,
+        statements: 90.85,
+        branches: 81.95,
+        functions: 89.3,
+        lines: 93.75,
       },
     },
   },
