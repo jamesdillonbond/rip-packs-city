@@ -142,10 +142,43 @@ const MAX_TX = 180               // cap tx_results fetches / run (opens are spar
 const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function j(url: string, tries = 3, headers: Record<string, string> = {}): Promise<{ ok: true; data: any } | { ok: false; status: number }> {
+// ── Per-attempt abort budgets ───────────────────────────────────────────────
+//
+// ⚠ THESE WERE ONE HARDCODED `15000` SHARED BY FIVE CALL SITES, and that is a
+// trap rather than a tidiness issue. Only TWO of the five route to the spork
+// proxy (`eventsFetch` / `txFetch`); the other three — including `tip()` — go to
+// rest-mainnet and are the HEALTHY lane (jobid 20 `forward`, p50 2.6 s). Raising
+// the shared literal to fix the spork lane would also raise it for the healthy
+// one, which carries the SAME 90 000 ms `net.http_get` budget, for no benefit.
+//
+// ⚠ THE OPEN BUG THIS EXISTS FOR (measured 2026-08-21, not yet fixed): the spork
+// caller aborts at 15 s while `workers/spork-proxy` allows ITSELF
+// `REQUEST_TIMEOUT_MS = 25_000`, so the caller quits 10 s before the worker may
+// answer. `status 0` on 40 of 42 backfill runs / 72h is that abort — a
+// worker-side timeout would read `504`, which is what proves which side gives up.
+//
+// ⚠ RAISING `SPORK_TIMEOUT_MS` MEANS LOWERING `SPORK_TRIES`. The abort multiplies
+// by the retry count, and the whole tick has to answer inside pg_net's 90 s or no
+// response body is recorded at all — which would blind `net._http_response`, the
+// only instrument that diagnosed this. The arithmetic is asserted in
+// __tests__/edge-allday-pack-opens-timeout-budget.test.ts, so a value that does
+// not fit reddens CI instead of shipping:
+//
+//     28 s x 2 tries = 56.4 s   ✅ fits, and each attempt outlasts the worker
+//     28 s x 3 tries = 85.2 s   ⚠ fits, but leaves 4.8 s for the rest of the tick
+//     30 s x 3 tries = 91.2 s   ❌ exceeds pg_net's 90 s — no body ever recorded
+//
+// Values below are UNCHANGED from the shared literal: this commit is purely the
+// scoping, so the number itself stays a decision for the gate-key rotation window
+// (the only window in which this function can be deployed at all).
+const REST_TIMEOUT_MS = 15_000
+const SPORK_TIMEOUT_MS = 15_000
+const SPORK_TRIES = 3
+
+async function j(url: string, tries = 3, headers: Record<string, string> = {}, timeoutMs = REST_TIMEOUT_MS): Promise<{ ok: true; data: any } | { ok: false; status: number }> {
   for (let a = 1; a <= tries; a++) {
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json", ...headers }, signal: AbortSignal.timeout(15000) })
+      const r = await fetch(url, { headers: { Accept: "application/json", ...headers }, signal: AbortSignal.timeout(timeoutMs) })
       if (r.ok) return { ok: true, data: await r.json() }
       if ((r.status === 429 || r.status >= 500) && a < tries) { await sleep(400 * a); continue }
       return { ok: false, status: r.status }
@@ -167,7 +200,7 @@ const sporkHeaders = { Authorization: `Bearer ${SPORK_SECRET}` }
 // caller, so [lo,hi] never crosses CURRENT_SPORK_MIN or a spork boundary.
 function eventsFetch(type: string, lo: number, hi: number) {
   if (hi < CURRENT_SPORK_MIN && SPORK_AVAILABLE) {
-    return j(`${SPORK_URL}/?event_type=${encodeURIComponent(type)}&start_height=${lo}&end_height=${hi}`, 3, sporkHeaders)
+    return j(`${SPORK_URL}/?event_type=${encodeURIComponent(type)}&start_height=${lo}&end_height=${hi}`, SPORK_TRIES, sporkHeaders, SPORK_TIMEOUT_MS)
   }
   return j(`${REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${lo}&end_height=${hi}`)
 }
@@ -177,7 +210,7 @@ function eventsFetch(type: string, lo: number, hi: number) {
 // read events via txEvents() to normalize the two shapes.
 function txFetch(txh: string, block: number) {
   if (block < CURRENT_SPORK_MIN && SPORK_AVAILABLE) {
-    return j(`${SPORK_URL}/?tx=${txh}`, 3, sporkHeaders)
+    return j(`${SPORK_URL}/?tx=${txh}`, SPORK_TRIES, sporkHeaders, SPORK_TIMEOUT_MS)
   }
   return j(`${REST}/v1/transaction_results/${txh}`)
 }
