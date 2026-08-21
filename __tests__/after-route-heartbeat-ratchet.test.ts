@@ -211,6 +211,31 @@ describe("after() routes that log a pipeline run must write an invocation heartb
   })
 })
 
+describe("the helper is not a museum piece", () => {
+  it("lib/pipeline/heartbeat.ts has real production callers, not just tests", () => {
+    // ⚠ THE DEFECT THIS PREVENTS IS ONE THIS REPO ALREADY HAS ELSEWHERE, and it
+    // is invisible in every coverage number. `supabase/functions/_shared`'s four
+    // pack-EV modules are fully tested and imported by NOTHING in production —
+    // the 1,583-line edge function they mirror computes the +EV badge inline —
+    // so they measure as covered while the shipped code is untested. A `lib/`
+    // module whose only importers are tests is worse than no module: it reads as
+    // shared infrastructure in a grep and is dead weight in fact.
+    //
+    // Counted rather than merely asserted non-empty, so an accidental mass
+    // revert of the conversions reds here as well as on the budget.
+    const callers = QUALIFYING.filter((r) => r.hasHeartbeat).map((r) => r.rel)
+
+    expect(
+      callers.length,
+      "lib/pipeline/heartbeat.ts has no production caller — it would be a tested " +
+        "module that nothing ships, the shape `_shared`'s pack-EV mirrors already have",
+    ).toBeGreaterThan(0)
+    // The seed set alone is five; anything at or below that means conversions
+    // were reverted without the budget moving.
+    expect(callers.length).toBeGreaterThanOrEqual(5)
+  })
+})
+
 describe("nobody re-rolls the heartbeat by hand", () => {
   it("no route writes a '-heartbeat' pipeline_runs row without the helper", () => {
     // ⚠ The failure this catches is a REGRESSION TO THE STARTING STATE: a sixth
