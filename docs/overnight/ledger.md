@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8, last item) — the rendered-DOM monitor was missing 8 pages Google is told to crawl; the guard that was supposed to catch that was blind to everything outside /insights
+
+**Area (8), final item.** The filing said *"E2E touches zero signed-in surfaces (55 public paths, 6h cadence, never on `pull_request`)."* The signed-in half needs a production test account + session secrets in GHA — **auth is on the night pass's off-limits list and stays an operator decision, not shipped here.** What re-derivation found instead was a gap in the *public* half that nothing was watching.
+
+⚠ **A GUARD WRITTEN TO STOP LIST-DRIFT HAD THE SAME BLIND SPOT IT WAS BUILT FOR.** `__tests__/e2e-smoke-covers-public-insights-boards.test.ts` (shipped 08-17 after the monitor was found holding 5 of 30 boards) derives its population by walking `app/insights/*`. So **everything outside `/insights` was outside it by construction** — this repo's own *"ask what a passing guard is structurally SILENT about"* rule, turned on a guard written to satisfy that rule. Measured: complete for boards, **missing eight non-insights pages**, every one of them in the sitemap.
+
+⚠ **THE FIRST POPULATION I REACHED FOR WAS WRONG, AND SAYING SO IS THE POINT.** Sweeping `app/**/page.tsx` with `isPublicPath` returns **24 unlisted public paths — 12 of them `/admin/**`**. Those are public only in the sense that `proxy.ts` does not redirect them; each admin page enforces its own `RPC_ADMIN_TOKEN` bearer check at the page level and shows an anonymous visitor nothing. A guard demanding those be smoke-tested anonymously would have rebuilt, on twelve pages, exactly the cry-wolf failure `e2e/smoke.spec.ts` documents for `/analytics` (4/4 red every run, *"rendered only 0 chars"*, until they were removed). **`isPublicPath` answers "does the proxy gate this", which is not "does an anonymous visitor see content".**
+
+**The correct population is the SITEMAP** — this repo asserting a path renders real content to an anonymous crawler. A URL we advertise to Googlebot and never check renders is exactly the gap worth closing.
+
+**Shipped:**
+- `lib/sitemap-data.ts` — the hand-authored segment-0 block extracted to an exported **`STATIC_SITEMAP_PAGES`**, which `staticPages` now maps. ⚠ **Verified byte-identical output**: same 10 paths, same `changeFrequency`, same `priority`, same order, `/` still emitting bare `BASE_URL`. Exporting it is what stops the test from restating the list and rebuilding the curated list the monitor already drifted on once.
+- `e2e/smoke.spec.ts` — **+8 pages**: `/about`, `/privacy`, `/terms`, `/legal/fmv-methodology`, the three `/blog` pages, `/nba/fast-break`. 55 → 63.
+- `__tests__/e2e-smoke-covers-sitemap-static-pages.test.ts` — **6 cases**. Every static sitemap page must be in the monitor; every one must still pass `isPublicPath`, so a page that stops being public fails **here**, in a sub-second blocking test, rather than turning the 6-hourly live monitor permanently red. One-way by design (the monitor legitimately covers 30 boards and 22 collection tabs the sitemap builds from live rows), and the not-vacuous arm asserts the **enumerators**, never a missing-count, so it is satisfiable at zero.
+
+⚠ **NOT PROBED LIVE, stated rather than implied** — the sandbox has no egress to production (`$HTTPS_PROXY/__agentproxy/status` shows `connect_rejected … gateway answered 403 to CONNECT` for `www.rippackscity.com:443`; measured, not assumed). Same convention as the 23 boards added 08-17: the first scheduled run is the validation, and a failure on one of these is a **true positive** — they are already advertised to Googlebot — so triage it, do not delete the line.
+
+**Proven it can fail — 6 mutation controls, all RED, tree restored:** `/blog` dropped from the monitor · `/nba/fast-break` dropped · `/about` dropped · a new sitemap page added with no monitor entry · a sitemap page swapped for a gated one (`/dashboard`) · `STATIC_SITEMAP_PAGES` renamed out from under the import.
+
+Suite **1327 files / 14,337 tests** green, `tsc` 0.
+
+**Revert path:** `git revert <sha>` (drop the 8 spec entries + the new test, and inline `STATIC_SITEMAP_PAGES` back into `staticPages`). No route or product behaviour changed; the sitemap's emitted URLs are unchanged.
+
+**Left for Trevor — the half this could not ship:** authenticated E2E coverage needs a production test account and its session secret in GHA. Also still open from earlier tonight: the `infrastructure/spork-proxy-worker/` deletion, which wants an operator health-probe of `spork-proxy.<account>.workers.dev/health` first.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — PopularOnCollection was 31.5% covered because a PREMISE went stale, not because it was hard; component gate re-seated against a MEASURED wobble
 
 **Area (8) continued.** Re-derived the filing's three worst component files rather than quoting them: `CollectionTabClient` **142 uncovered branches / 75.6%** (but already 96 tests — diminishing), `ErrorTriageClient` **64.0% br** (admin-only), and `components/entity/PopularOnCollection.tsx` **31.5% st / 34.9% br / 7.7% fn** — worst by a wide margin, in a 240-line file that already had **two** test suites.
