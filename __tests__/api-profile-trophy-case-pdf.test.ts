@@ -23,6 +23,32 @@ import { NextRequest } from "next/server"
 // an outage, and conflating them would report an outage as an empty case.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠ EXPLICIT TIMEOUT — MEASURED, NOT GUESSED (2026-08-20).
+//
+// This file flaked on `main` in the blocking unit-tests job: "400s with no
+// username" — a guard that returns before ANY I/O (route.tsx:475, the first
+// statement after reading the query param) — died with "Test timed out in
+// 5000ms". It had passed minutes earlier on the identical tree, and it fails on
+// whoever's commit happens to be running, which is the documented worst property
+// of a flake.
+//
+// Cause is structural, not logical. `call()` does a dynamic
+// `await import("@/app/api/profile/trophy-case/pdf/route")` — 844 lines pulling
+// in `pdf-lib` + `@pdf-lib/fontkit` — and `vi.resetModules()` in afterEach means
+// all 15 tests pay that import, not just the first. Measured on an idle box:
+// 426 ms for this single test, 9.78 s for the file. Under the full 1321-file
+// parallel run a starved worker blew that past 5 s.
+//
+// ⚠ RAISING THE BUDGET IS THE CORRECT FIX HERE, and the repo's own discriminator
+// says why: the question is "does the assertion depend on the clock?" — not
+// "does the test contain a timing knob". A 400 is a 400 at any elapsed time, so
+// there is no window to be wrong about. That is the OPPOSITE of the debounce
+// flakes (AdminFeedbackClient et al.), which asserted a NON-OCCURRENCE inside a
+// window and therefore needed fake timers rather than a bigger budget.
+//
+// 20 s = ~47x the measured idle cost and ~4x the point where it actually failed.
+vi.setConfig({ testTimeout: 20_000 })
+
 const PDF_MAGIC = "%PDF-"
 
 /** A slab row shaped as the trophy RPC returns it. */
