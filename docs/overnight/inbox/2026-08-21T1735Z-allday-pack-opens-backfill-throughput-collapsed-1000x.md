@@ -83,3 +83,97 @@ is unchanged: complete the rotation as ONE window (secrets + deploy + repoint `?
 
 `medium`. No data loss and no user-facing surface is wrong — AllDay pack-open *history* simply stops
 filling in. The watchlist row is already correct and should stay active.
+
+---
+
+# ⚠ RE-DERIVED 2026-08-21 ~11:00 PT — MECHANISM ESTABLISHED, AND THE PROPOSED LEVER IS A NO-OP
+
+**Everything above is measurement-accurate; two of its conclusions are not.** Re-derived with an
+instrument the filing did not consider — **`net._http_response`, which pg_net populates server-side and
+retains ~6h.** It needs no heartbeat, no edge-function deploy, and is therefore not blocked by the
+gate-key BLOCKER. **The "instrument that would settle it" already existed.**
+
+## 1. ⚠ REFUTED: "the `status 0` wedge cleared and was transient"
+
+It never cleared. **The failing block TRACKS THE CURSOR** — it is not a fixed bad band the walk passed
+through. Last 72h of `allday-pack-opens-backfill`, newest first:
+
+| run_at (UTC) | scan_err block | cursor_before | cursor_after |
+|---|---:|---:|---:|
+| 08-21 14:36 | 84,699,998 | 84,703,248 | 84,700,248 |
+| 08-21 13:56 | 84,702,998 | 84,703,748 | 84,703,248 |
+| 08-21 06:46 | 84,703,498 | 84,704,748 | 84,703,748 |
+| 08-20 21:16 | 84,704,498 | 84,704,748 | 84,704,748 |
+| 08-20 19:16 | 84,704,748 | 84,704,998 | 84,704,998 |
+
+The error block descends **with** the cursor. **`status 0` on 40 of 42 runs / 72h** (2 × `status 503`),
+most recent 08-21 14:36Z. The band framing came from reading a snapshot of *where the walk happened to
+be*, which is the "a snapshot is not a distribution" shape — the band moved because the walk moved.
+
+## 2. ESTABLISHED: why ~90% of invocations leave no `pipeline_runs` row
+
+`net._http_response` over a 5h57m window (11:42–17:39Z), attributing by response body
+(`pulls_written` + `"mode":"backfill"` — ⚠ a bare `LIKE '%backfill%'` matches other functions and gave
+162 false rows on the first pass), and by the 90s-timeout lag signature (⚠ **only 1 of the 8 pg_cron jobs
+firing on a minute ending in 6 uses a 90 s timeout**, so that signature is unambiguous):
+
+| | count |
+|---|---:|
+| pg_cron dispatches (jobid 55) | **35** (30 succeeded, 5 failed at dispatch) |
+| returned a backfill response body | **1** |
+| timed out at pg_net's 90 s | **15** |
+| terminal `pipeline_runs` rows | **2** |
+
+The runs that leave no row are the ones whose HTTP call died. **jobid 20 (forward) returned 10 bodies of
+12 dispatches in the same window** — the positive control holds, and now points somewhere specific.
+
+## 3. ⚠ THE ROOT CAUSE IS A TIMEOUT MISMATCH, AND THE ERROR CODE PROVES WHICH SIDE
+
+**100% of backfill runs route `spork`; forward routes `rest`.** That is the whole difference between the
+broken job and its healthy twin — same function, same key, same 90 s pg_cron timeout.
+
+- Caller (`supabase/functions/ingest-allday-pack-opens/index.ts`, `j()`): 3 attempts, each
+  **`AbortSignal.timeout(15000)`**. On a thrown fetch it returns **`status 0`**.
+- Worker (`workers/spork-proxy/index.ts`, events path): **`REQUEST_TIMEOUT_MS = 25_000`**, and on its own
+  abort it returns **504 `upstream_timeout`** (502 `upstream_fetch_failed` on a failed fetch).
+
+⚠ **The caller gives up 10 s before the worker is allowed to answer.** This is not inferred from the
+durations — **the status code discriminates**: if the worker were the one timing out we would see `504`,
+and we see `0` on 40 of 42. A slow-but-successful spork query is thrown away by the caller every time.
+It also explains the 15 pg_net 90 s kills: 3 × 15 s aborts plus backoff is most of a 90 s budget.
+
+## 4. ⚠ REFUTED: `&blocks=N` is the wrong lever — it would change nothing
+
+Measured over 72h: **avg cursor advance per run = 226 blocks, max 3,000**, against `MAX_BLOCKS = 25000`.
+`EVENT_RANGE` is **250**, so **the average run completes about ONE event query before the scan dies**
+(`avg_queries = 2`). The block window is nowhere near binding — it is ~1% utilised.
+
+Lowering `blocks` reduces the queries a run *would* make; it does nothing about the per-query latency that
+is actually failing, so throughput per run stays at ~1 query. ⚠ It is worse than a no-op as a diagnosis,
+because a spell of faster spork responses would make the change look like it worked. **Do not pull it.**
+
+⚠ Also checked and refuted as the cap: the tx-resolve budget. `resolve_exhausted` is **0 of 44 runs**
+and `avg tx_fetched = 4` against `MAX_TX = 180`. That was my own first hypothesis; its control killed it.
+
+## 5. The actual fix, and it is still deploy-gated
+
+**Align the two timeouts** — raise the caller's per-attempt abort above the worker's budget (15 s → 30 s,
+a one-line change in `j()`'s `AbortSignal.timeout`), or lower `REQUEST_TIMEOUT_MS` below 15 s so the
+worker returns an honest 504 instead of being cut off. The first is better: a 504 is still a failed query.
+
+The caller side is an edge-function deploy, so it belongs **in the same window as the gate-key rotation**
+that already blocks this function — it is one extra line in a deploy that has to happen anyway. The worker
+side is an operator `wrangler deploy`.
+
+⚠ **The heartbeat is still worth adding** (CLAUDE.md mandates it for this shape) — but it is no longer the
+blocker for a diagnosis, and this filing should not have been parked waiting for it.
+
+## 6. The durable lesson
+
+**"The instrument that would settle it does not exist here" was wrong, and that is the reusable part.**
+`net._http_response` records `status_code`, `timed_out` and `error_msg` for **every** `net.http_get` pg_cron
+makes, server-side, with no application code involved. Any pipeline invoked by pg_cron via `net.http_get`
+can be split into *never dispatched* / *dispatched and killed* / *answered* from that table alone. Reach for
+it before concluding a pipeline is unobservable — especially when the application-side instrument is behind
+a deploy blocker.
+
