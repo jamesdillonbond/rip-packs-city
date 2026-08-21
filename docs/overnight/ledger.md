@@ -8,6 +8,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, third wave) — three retention deleters pinned, and `pipeline_runs` turns out to have THREE overlapping retention policies of which two delete nothing, ever
+
+**How I got here:** the coverage filing ranked "the 22 unpinned unscheduled deleters, deleters first" — over-deletion produces an ABSENCE, not an error, so nothing downstream raises and every reader silently agrees with the smaller number.
+
+⚠ **THE FILING POINTED AT THE WRONG DELETER, and re-deriving found something better.** It named `purge_old_pipeline_runs` as top target. Measured: that function is **not** what governs `pipeline_runs` retention. **Three** functions delete from that table:
+
+| function | retention | column | reached via | rows actually deleted |
+|---|---|---|---|---|
+| `prune_pipeline_runs(3)` | **3 days** | `started_at` | pg_cron `rpc-prune-pipeline-runs`, every 6h | **all of them** |
+| `prune_log_tables()` | 14 days | `started_at` | `/api/cron/prune-logs` | **0** |
+| `purge_old_pipeline_runs()` | 7 days | `finished_at` | `run_weekly_log_purges()` | **0** |
+
+Because the 3-day sweep runs every 6h, nothing ever survives to 7 or 14 days, so **the other two legs are permanent no-ops that read as retention policy.** Confirmed from the run records, not by reasoning: `prune-log-tables` logged `pipeline_runs_deleted: 0` on 08-18, 08-19 and 08-20, and `weekly-db-maintenance` logged `pipeline_runs_deleted: 0` on 08-18 and 08-19 — every run. ✅ CLAUDE.md's **"~73h retention"** is correct and now has a mechanism: oldest row measured at **73h**, which is `prune_pipeline_runs(3)` plus up to 6h of schedule slack. `prune_pipeline_runs` was **already pinned**, so the highest-stakes deleter on the most important telemetry table was never the gap.
+
+**Shipped — three pins, chosen for what over-deletion COSTS rather than for size:**
+
+1. **`purge_old_support_conversations`** (90d). ⚠ The load-bearing clause is not the age, it is **`feedback_type IS NULL`** — a conversation the user gave feedback on is kept forever, and that feedback is the only durable record of what a real collector told us the product got wrong. Not re-fetchable from anywhere. Deleting 26–56 rows/day live.
+2. **`purge_old_usage_events`** (31d). Backs the **active-user count**, and the roadmap gates monetization on "50+ weekly active users". A retention bug moves the headline metric **DOWN** — the direction that reads as "not ready yet", so nobody questions it.
+3. **`purge_old_wallet_holdings_snapshots`** (90d). ⚠ The one whose cutoff is **DATE arithmetic** (`CURRENT_DATE - p_days_keep`) rather than `NOW() - interval` like every sibling — correct, because `snapshot_at` is a `date`. Pinned so a consistency pass cannot harmonise it and move the boundary by up to 24h.
+
+All three were **fileless migrations** (applied via MCP, file never committed), so they could not be pinned at all until a source existed. Snapshotted into `supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql` — ⚠ **a provenance file, byte-identical to prod, deliberately NOT applied** (applying costs a ~10–20s PGRST002 burst for a no-op). Same pattern as the 2026-08-12 snapshots, which are likewise unregistered in `schema_migrations`.
+
+**Verification:** every boundary row sits EXACTLY on its cutoff (`NOW()` is transaction-stable), so `<` → `<=` is observable. Mutation-tested: 3/3 killed on support-conversations (boundary, the feedback exemption, hardcoded retention), 2/2 on usage-events, 3/3 on wallet-snapshots. Full suite **177 files**, `tsc` clean.
+
+⚠ **One mutation SURVIVED and it corrected my own comment.** I claimed the wallet-snapshots pin catches "a `NOW() - interval` rewrite". It does not catch `(NOW() - interval '90 days')::date` — that truncates to the same value (both yield `2026-05-22`), so it is **equivalent, not a defect**, and a test reddening on it would punish a correct rewrite. It DOES catch the uncast comparison, which is the one a reviewer would actually write. The comment now names both cases explicitly instead of claiming the general property.
+
+⚠ **A concurrent session pinned `prune_log_tables` in the same lane** (`fd999a38`) and made the drift guard's PINS list self-checking; my three entries rebased in cleanly, 192 guard tests green. Its pin does not record that the `pipeline_runs` leg is a dead no-op — that finding is here, not there.
+
+**Revert path:** `git revert` by message — `test(db): pin three retention deleters…`. Tests + one unapplied provenance migration; no DB or prod-state change.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — "do all of them", area 5) — a live three-DELETE function had NO migration anywhere in the repo, and the drift guard's own list had 2 unregistered pins
 
 **Worked the rest of coverage-filing area (5).** Three findings, each one found by re-deriving rather than by reading the filing.
