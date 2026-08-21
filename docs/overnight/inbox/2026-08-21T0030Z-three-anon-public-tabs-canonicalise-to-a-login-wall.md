@@ -76,3 +76,36 @@ collection roots, so signed-in users are the only ones who see the doubling ther
 Top Shot ships all three folded tabs and All Day ships one. The count grows with any
 collection that adds them, and the defect is per-TAB, not per-URL — a fifth folded tab
 inherits it automatically.
+
+---
+
+## ✅ RESOLVED 2026-08-20 (PT) — option 2 chosen by Trevor, shipped in `24e85fdd`
+
+Canonical now points at the **public parent tab** each folded page was folded into, grounded in
+`lib/collections.ts`'s own one-line pitches: `challenges`→`play`, `pack-sniper`→`packs`,
+`hot-floors`→`market` (see `FOLDED_TAB_PARENT` in `lib/seo.ts`).
+
+Three things this filing did not anticipate, all found during implementation:
+
+1. ⚠ **A naive parent mapping would have MOVED the broken target.** UFC ships no `play`, so
+   `/ufc/challenges` → `/ufc/play` is another non-existent tab. `foldedTabCanonical()` falls
+   back to `/overview` — the one tab every published collection ships, anon-public,
+   self-canonical, sitemapped — whenever the collection lacks the parent.
+2. ⚠ **`pack-sniper` and `hot-floors` have ZERO inbound links anywhere in the app.**
+   Direct-URL-only orphans; only `challenges` is linked (`components/play/PlayHub.tsx`). So
+   two of the three mappings rest on the pitches, not on observed navigation — recorded in
+   the code so the next reader knows which is evidence and which is reasoning.
+3. ⚠ **A SECOND omission from the same cause:** these three never got `FeatureTabGate`, the
+   component built in the SAME 2026-07-18 reorg for exactly this. **11 anon-public URLs**
+   (e.g. `/ufc/challenges`) rendered the raw tab for a collection that does not ship it.
+   Fixed in the same layouts — the gate is a transparent pass-through when the collection
+   does expose the page.
+
+Guarded by `__tests__/folded-tab-canonicals-are-anon-public.test.ts`, which asserts the
+PROPERTY (every folded canonical resolves to a URL `isPublicPath` accepts) rather than the
+mapping — pinning "challenges → play" would pass just as happily the day `/play` gets gated.
+
+**Still open from this filing:** the **D24 doubled title** (`… — Rip Packs City | Rip Packs
+City`) is untouched, as option 2 implied. Its blast radius stays small — the five
+`COLLECTION_LAYOUT_META` titles that carry it otherwise render only on the auth-gated
+collection roots, so signed-in users are the only ones who see the doubling there.
