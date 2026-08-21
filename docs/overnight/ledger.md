@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED — CODE ONLY, DEPLOY WITHHELD (Claude Code, interactive) — the pack-opens spork timeout is now a scoped constant with its budget asserted in CI, so the rotation-window edit cannot damage the healthy lane
+
+**Fourth pass on the pack-opens filing, and the first one that ships code.** The prior pass established the correctness constraint: `AbortSignal.timeout(15000)` was a **hardcoded literal inside `j()` shared by five call sites**, of which only **two** route to spork (`eventsFetch` / `txFetch`); the other three — including `tip()` — are rest-mainnet, i.e. the HEALTHY lane (jobid 20 `forward`, p50 2.6 s) carrying the **same 90 000 ms** `net.http_get` budget. **"Raise the spork timeout" was never a one-line edit** — done as written it would spend the working job's entire margin for no benefit to that job.
+
+**Shipped (behaviour-neutral, verified):** `REST_TIMEOUT_MS` / `SPORK_TIMEOUT_MS` / `SPORK_TRIES` as named constants, a fourth `timeoutMs` parameter on `j()` defaulting to `REST_TIMEOUT_MS`, and the two spork call sites passing the spork pair. ⚠ **Every value is unchanged from the old shared literal** — this commit is the SCOPING only. A test pins that explicitly, so the parameterisation cannot be mistaken for the fix; the number itself stays a decision for the gate-key rotation window, which is the only window in which this function can be deployed at all.
+
+⚠ **THE CONSTRAINT IS NOW ARITHMETIC IN CI, NOT ADVICE IN A COMMENT.** `__tests__/edge-allday-pack-opens-timeout-budget.test.ts` computes `SPORK_TIMEOUT_MS × SPORK_TRIES + Σ 400·a` from the source and asserts it against pg_net's budget:
+
+| candidate | worst case | verdict |
+|---|---|---|
+| 15 s × 3 (today) | 46.2 s | ✅ |
+| **28 s × 2** | **56.4 s** | ✅ each attempt now outlasts the worker's 25 s |
+| 28 s × 3 | 85.2 s | ⚠ fits 90 s, leaves 4.8 s for the whole rest of the tick |
+| **30 s × 3** *(the obvious value)* | **91.2 s** | ❌ **exceeds 90 s** |
+
+⚠ **The obvious value is the one that breaks it, and breaks it in the worst possible way:** at 91.2 s no failing tick can return a response body, which **blinds `net._http_response` — the only instrument that diagnosed this bug.** A fix that erases its own diagnostic is worse than the bug. The assertion is `≤ 75 000`, not `≤ 90 000`, and the 15 s margin is the point rather than a rounding choice: pg_net's budget covers the WHOLE tick, and a tick issues many event queries plus a terminal `pipeline_runs` write.
+
+**Proven it can fail — 6 mutation controls, all RED, tree restored byte-identical:** `30 s × 3` · `28 s × 3` (the one that merely *fits*) · back to a shared inline literal · a REST call site taking the spork budget · a spork call site losing it · and the backoff changed without updating the budget (the guards-the-guard arm — if `sleep(400 * a)` moves, the arithmetic is wrong).
+
+**Deliberately NOT done — the twin.** `ingest-topshot-pack-opens-history` has a byte-identical `j()` and the same spork routing, and it is **LIVE** (2,094 all-time runs), so dormancy is not the reason to leave it. The reason is that its backfill is **FINISHED** — `done: true` on 270 of 272 runs/72h, cursor 61,808,846 already below its floor 65,264,619 — so it early-returns and never reaches `eventsFetch`; `status 0` count **0**. Changing it would be scope with no mechanism behind it.
+
+**Verified:** `tsc` 0 · full suite **1330 files / 14,411 tests** green (1329 / 14,406 before).
+
+⚠ **NOT DEPLOYED, and this is the environment's limit, not the artifact's.** `ingest-allday-pack-opens` is one of the six functions in the 2026-08-18 gate-key BLOCKER (last deployed 2026-08-07T17:56Z, `updated_at` re-verified unchanged today): its deployed body carries a 27-char literal while the repo body reads `ALLDAY_PACK_OPENS_GATE_KEY`, so deploying the repo copy would 403 **both** jobid 20 and 55. **Commit this as usual — it rides the rotation window, exactly like the 2026-08-13 `ingest-allday-pack-opens` fix already waiting there.**
+
+**Revert:** `git revert <sha>` (restores the shared `15000` literal and drops the budget test). No DB, no migration, no deploy, no prod-state change.
+
 ### 2026-08-21 · FILED (Claude Code, interactive) — the flagship `deals` board fails ~80% of refreshes, runs up to 15.1h stale, and the failure is ~20h/day rather than the 05–08:30Z saturation window
 
 **Docs only, nothing shipped.** Picks up the loose end the 17:30Z Vercel-attribution filing left explicitly open — *"the underlying timeouts are real … nothing here says the boards are healthy."*
