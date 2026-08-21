@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive) — CLAUDE.md: promoted "a NUMBER IS NOT IMMUNITY — re-TEST a stated exit condition, never re-read it"
+
+The night's transferable rule, from the migration-parity close. CLAUDE.md already said a filed decision-not-to-act is a hypothesis and that **"the tell is a cost stated with no number in it."** ⚠ **The migration-parity posture HAD a number — 114 fileless migrations — and a written exit condition, and it still went stale for ten days**, because a decision whose reasoning still reads sound is never re-opened. Re-derived: 114 → 5, and the enforcing 3-day window was already 0.
+
+**Displacement done properly rather than by deletion:** the addition put the file at **40,144 — over the 40,000 limit**. Two bullets already mirrored verbatim in `tooling-gotchas.md` were compressed in place (`Bash-green ≠ push-green`, `get_runtime_logs`), and one **non-mirrored** passage (the `(non-fast-forward)` / 08-18 escalation incident) was moved **verbatim into `tooling-gotchas.md` with a provenance note** before its CLAUDE.md line was shortened to the rule alone. Final **39,880 — 121 chars of headroom, up from the 52 it started at**. ⚠ Counted with `node -e '….length'`, never `wc` (`wc -c` reads several hundred high on this file).
+
+Session log for the whole area-8 close appended to `docs/sessions/2026-08.md` under the existing Aug 20 entry.
+
+**Revert path:** `git revert <sha>` — docs only; no code, no DB, no prod state.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8, closed) — the migration-parity job's "once the backlog is cleared" condition had been MET for days; backlog recovered from prod and the job is now ENFORCING
 
 **Area (8), last item.** The filing listed `check-migration-parity.mjs` as *"warning-only"* — flagged as a candidate, **not** a defect, because the workflow's own header explains the posture and names its exit condition: *"TO MAKE IT ENFORCING once the backlog is cleared: delete the `|| true`."*
