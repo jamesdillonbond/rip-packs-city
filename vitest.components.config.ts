@@ -641,11 +641,28 @@ export default defineConfig({
       //     mutation: re-keying it onto a null identity passed tsc AND the full
       //     11,958-test suite. A near-miss earning a comment instead of a test
       //     is the shape to watch for.
+      //   2026-08-20 (test-coverage analysis pass): re-seated against measured
+      //     actuals of 90.75 / 81.93 / 89.31 / 93.65 (239 files, 2,962 tests),
+      //     after the last four `components/` subtrees (legal, play, ui, visual)
+      //     joined the include above WITH their tests, taking the gate from 215
+      //     measured files to 220. Every metric rose.
+      //
+      //     ⚠ `functions` DELIBERATELY LEFT AT 89.1 rather than raised to ~89.2.
+      //     This is the exact metric whose ±0.1pt wobble on an UNCHANGED tree is
+      //     recorded in `testing-and-ci.md` — three runs measured 89.10 / 89.13 /
+      //     89.20, the low sample clearing by 0.004pt. One source of that was
+      //     found and fixed (`CollectionTabClient`'s intermittently-vacuous Load
+      //     More case) but explicitly NOT proven to be the only one. Raising to
+      //     within 0.11 of the live value would rebuild that flake by hand, and
+      //     the flake fails on somebody ELSE's commit. The rule here is never to
+      //     LOWER a threshold; it does not oblige raising one to the maximum the
+      //     current sample allows. Raise it once the spread is known, not once a
+      //     single run permits it.
       thresholds: {
-        statements: 90.3,
-        branches: 81.6,
+        statements: 90.6,
+        branches: 81.8,
         functions: 89.1,
-        lines: 93.2,
+        lines: 93.5,
       },
     },
   },

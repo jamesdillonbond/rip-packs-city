@@ -839,11 +839,23 @@ export default defineConfig({
       //     drift the component gate's history records compounding into ~13
       //     points, so it is re-seated in the SAME pass that measured it, back to
       //     the documented ~0.4 margin.
+      //   2026-08-20 (test-coverage analysis pass): re-seated against measured
+      //     actuals of 91.92 / 79.53 / 93.72 / 93.97 (1320 files, 14,246 tests).
+      //     Three changes moved it, all UPWARD, and none of them by loosening:
+      //       * `supabase/functions/_shared/**` joined the include above. Those
+      //         29 modules measured 98.31 / 92.76 / 100 BEFORE widening — above
+      //         the aggregate in every metric — which is the only shape of
+      //         include-widening allowed here. Widening to buy headroom is the
+      //         thing this comment block exists to prevent.
+      //       * `lib/edition/legacy-redirect.ts` went 0% -> 100%.
+      //       * `lib/pipeline/heartbeat.ts` landed already covered.
+      //     Margins held at ~0.12, the documented size: big enough to survive a
+      //     concurrent merge, small enough that a real drop still reds.
       thresholds: {
-        statements: 91.3,
-        branches: 78.6,
-        functions: 93.1,
-        lines: 93.4,
+        statements: 91.8,
+        branches: 79.4,
+        functions: 93.6,
+        lines: 93.85,
       },
     },
   },
