@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-20 · SHIPPED (Claude Code, interactive — area 8) — the blocking corruption guard now has a test, driven against a REAL throwaway git repo, and its documented blind spot is PINNED rather than remembered
+
+**Area (8):** *"`check-tree-corruption.mjs` is a blocking CI guard with **no test of its own**."* It is the guard for the Windows-to-sandbox mount class — NUL-byte injection and silent truncation — and its **first real run found a committed NUL byte in a URL sanitiser**, so the failure mode is not hypothetical.
+
+**8 cases, all shelling out to the REAL script.** ⚠ Re-implementing its logic in the test and asserting on that would pin my copy, not the file CI runs — the "vacuous assertion that reads as coverage" shape this repo has a canon for. Each case builds a scratch `git init` repo and runs `node scripts/check-tree-corruption.mjs` with `cwd` set to it.
+
+Covered: a clean tree passes **and reports its inspected-file count** (the count is the load-bearing half — exit 0 is also what a guard inspecting nothing returns); a NUL is blocked and the file named; a **strict prefix of HEAD** is reported as `truncated: n of m bytes`; **an ordinary shorter edit is NOT flagged** (the discriminating case — without it the guard blocks routine deletions and the next person disables it); binary extensions are skipped, asserted against a fixture proven to really contain a NUL; and a brand-new file with no HEAD copy does not read as a shrink.
+
+⚠ **AND THE BLIND SPOT IS NOW A TEST, NOT A MEMORY.** CLAUDE.md records that the default staged-only mode *"inspects NOTHING on a CI checkout (`0 file(s) checked`, exit 0)"* — the origin of the standing rule *"ask what RUNS a guard, not only whether it passes."* That behaviour is now pinned explicitly, with a note that if a future edit makes bare mode audit the tree, **the test SHOULD fail and be inverted deliberately**. Paired with its complement — staged mode DOES catch a staged NUL — so the pin cannot be misread as "staged mode is broken". It is the emptiness that lies, not the mode.
+
+⚠ **A TRAP I HIT WHILE WRITING IT, AND IT IS THE FUNNY ONE: my first draft contained a LITERAL NUL BYTE in the fixture, so committing it would have made the very guard under test block the repo.** The tool refused the command first. The NUL is now built at runtime from a JS escape sequence — verified: `readFileSync(...).includes(0)` is **false** on the committed file. **A fixture for a corruption guard has to describe the corruption without containing it.**
+
+**Both mutations kill tests, so the suite is not decorative:** removing the NUL check reds the 2 NUL cases; weakening the strict-prefix comparison to a plain `c.length < h.length` reds the discriminating case. Restored, 8/8.
+
+**Verified:** `tsc --noEmit` exit 0 · **full vitest 1,323 files / 14,279 tests green** · and the real guard run over the actual tree: **4,819 files checked, clean**, including the new test file.
+
+**Revert path:** `git revert <this sha>` — 1 new test file. No script change, no code, no DB. The guard itself is untouched; only its coverage changed.
+
 ### 2026-08-20 · SHIPPED (Claude Code, interactive — test-coverage pass, fourth wave) — the partial-scan cursor hold on `sales-indexer` was held by a GREP, and it is the branch where a bug loses sales permanently
 
 **How I got here:** re-derived the branch-coverage ranking from a fresh run rather than trusting the filing, after four of its items had already been refuted. `app/api/sales-indexer/route.ts` was the **worst REACHABLE branch coverage in `app/api` at 59.31%** — the worst overall, `cron/pinnacle-listings-reconcile`, being ~73 lines of unreachable rollback code (filed separately).
