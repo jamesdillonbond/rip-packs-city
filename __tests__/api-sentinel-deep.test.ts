@@ -487,6 +487,73 @@ describe("POST /api/sentinel — full battery", () => {
     expect(report.status).toBe("CRITICAL")
   })
 
+  // ⚠ A NULL `silent_minutes` is the arm's MOST SEVERE reading — detect_stalled_pipelines()
+  // found no run at all in `pipeline_runs` (~73h retention) — and it used to render as the
+  // literal "silent nullm". That reads as a cosmetic template bug, so the worst case was
+  // the least legible thing in the alert. Measured 2026-08-22: `candy-editions-ingest` had
+  // missed three consecutive daily ticks on a collection public since 07-31, and the alert
+  // said `silent nullm`.
+  it("a NULL silent_minutes renders as a stated fact, never as the string 'nullm'", async () => {
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "candy-editions-ingest", severity: "medium", silent_minutes: null, max_silent_minutes: 1800, last_run: null },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const silence = check(report, "Pipeline Silence")
+    // Assert the ABSENCE of the false/garbled claim, not merely the presence of some text.
+    expect(silence.detail).not.toContain("nullm")
+    expect(silence.detail).not.toContain("null")
+    expect(silence.detail).toContain("candy-editions-ingest")
+    expect(silence.status).toBe("warn")
+  })
+
+  it("does NOT invent a silence figure when silent_minutes is NULL", async () => {
+    // ⚠ THIS IS A FORWARD PIN, NOT A REGRESSION TEST — stated because a reader would
+    // otherwise assume it caught the nullm bug. It passes on the ORIGINAL buggy code too
+    // (the string "nullm" happens to contain no digit), so it discriminates nothing about
+    // that defect. What it does catch is the tempting WRONG FIX: substituting a computed
+    // figure for the null. The arm cannot distinguish "stalled past the retention window"
+    // from "never ran once", so any number here would be fabricated — the shape this repo
+    // tracks. The test above is the one that reds on the original bug.
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "candy-editions-ingest", severity: "medium", silent_minutes: null, max_silent_minutes: 1800, last_run: null },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const detail = check(report, "Pipeline Silence").detail as string
+    // The only number in the line must be the threshold itself (1800), never a silence figure.
+    const silenceClause = detail.slice(0, detail.indexOf("(>"))
+    expect(silenceClause).not.toMatch(/\d/)
+    expect(detail).toContain("1800m")
+  })
+
+  it("still renders a real silent_minutes unchanged — the null branch must not swallow the normal case", async () => {
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "pinnacle-sync", severity: "medium", silent_minutes: 3191, max_silent_minutes: 1560 },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(check(report, "Pipeline Silence").detail).toContain("pinnacle-sync silent 3191m")
+  })
+
   it("config thresholds override the hardcoded defaults", async () => {
     const f = greenFixtures()
     // Raise the sales critical bar above the observed count: 1500 <= 2000 -> critical.

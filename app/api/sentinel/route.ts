@@ -581,7 +581,26 @@ export async function POST(req: NextRequest) {
         stalled.length === 0
           ? "All watchlisted pipelines running within their max-silent window"
           : stalled
-              .map((s) => `${s.pipeline} silent ${s.silent_minutes}m (>${s.max_silent_minutes}m, ${s.severity})`)
+              .map((s) => {
+                // ⚠ `silent_minutes` is NULL when detect_stalled_pipelines() found NO
+                // run at all in `pipeline_runs`, which retains only ~73h. That is the
+                // MOST SEVERE silence this arm can report, and it rendered as the
+                // literal string "silent nullm" — which reads as a cosmetic template
+                // bug and gets skimmed past, so the worst case was the least legible.
+                // Measured 2026-08-22: `candy-editions-ingest` last ran 08-19 08:40Z
+                // (three consecutive missed daily ticks, on a collection public since
+                // 2026-07-31) and the alert said `silent nullm`.
+                //
+                // ⚠ DO NOT substitute a number here. The RPC cannot distinguish
+                // "stalled past the retention window" from "never ran once", so any
+                // figure would be invented — the fabricated-number shape this repo
+                // tracks. Name both possibilities instead, and name neither as fact.
+                const silence =
+                  s.silent_minutes == null
+                    ? "silent beyond the pipeline_runs retention window (never ran, or stalled past it)"
+                    : `silent ${s.silent_minutes}m`;
+                return `${s.pipeline} ${silence} (>${s.max_silent_minutes}m, ${s.severity})`;
+              })
               .join("; ");
       checks.push({ name: "Pipeline Silence", status, detail, value: stalled.length });
     }
