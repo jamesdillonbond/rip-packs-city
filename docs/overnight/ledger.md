@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FIXED (Claude Code, interactive) — my rwfc migration turned CI red on `main`; the guard was right and the marker, not a REVOKE, was the correct fix
+
+**Docs/migration comment only — no DB or prod-state change.** `34ac51a03` (the rwfc temp-build migration) failed `migration-new-function-states-its-anon-exec-decision`, and **four subsequent commits inherited the red** — mine and two from a concurrent session. First red was mine.
+
+⚠ **THE GUARD OFFERS TWO REMEDIES AND THE OBVIOUS ONE WOULD HAVE CHANGED PRODUCTION.** Its message leads with `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated`, which is right for a genuinely NEW function. **This migration is a `CREATE OR REPLACE` of an existing one, and `CREATE OR REPLACE` does not reset a function ACL** — so a REVOKE here is not a no-op, it is a live ACL change smuggled in under a performance fix. The guard says so in its own second paragraph, and taking the first remedy because it appears first is the trap.
+
+✅ **CHECKED WHAT WAS ACTUALLY TRUE RATHER THAN WRITING THE MARKER THAT MAKES CI GREEN.** `has_function_privilege` on the live function: **anon false, authenticated false, service_role true**, SECURITY DEFINER. So `-- anon-exec: intentional` would have been a **false statement committed to satisfy a guard** — the vacuous-assertion shape this repo already tracks. The honest marker is `unchanged — already REVOKED in prod`, which is also the form the sibling cross-collection migration used for exactly this reason.
+
+**Validated before pushing, both directions:** stashed the marker and reproduced the failure naming this exact file, restored it and watched the same guard pass, then ran all four migration guards (**24 tests, green**). ⚠ `npm ci` first — a fresh cloud sandbox has no `node_modules`, and without it the run dies on `MODULE_NOT_FOUND … vitest.config.ts`, which reads as a broken config.
+
+**Revert:** `git revert <sha>` (comment only; the migration remains unapplied either way).
+
 ### 2026-08-22 · MEASURED (Claude Code, interactive) — the P0 stale-branch exposure is bounded to ONE branch, and deleting it is necessary but NOT sufficient
 
 **Read-only, nothing shipped.** Bounding check on today's P0 (`inbox/2026-08-22T1620Z-P0-…`), which named `origin/claude/todo-implementation-e4tib3` as carrying the pre-purge blob. **The obvious next question is whether it is a class or an instance.** It is an instance.
