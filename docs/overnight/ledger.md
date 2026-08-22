@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — the cross-collection revert path is now executable SQL, and the healthy-window apply is scheduled instead of remembered
+
+**Docs/SQL only, still unapplied — no production change.** Two gaps closed on yesterday's ready-to-apply lock-window fix.
+
+⚠ **THE REVERT PATH WAS A SENTENCE, NOT SQL — AND IT WAS NOT RECOVERABLE FROM GIT.** The migration said "re-apply the previous bodies", which is not a revert path if someone needs it at 3am. Worse, **these two functions are part of the fileless-migration population** — applied to prod via MCP with no committed file — so before today their only copy anywhere was `pg_proc`. Reverting would have meant reconstructing them by hand from a ledger description, which CLAUDE.md explicitly forbids ("Recover the SQL from PROD — do NOT retype it from a ledger entry"). Both bodies are now captured verbatim via `pg_get_functiondef` and appended to the migration as a commented, copy-pasteable revert block.
+
+⚠ **ASSERTED, NOT EYEBALLED, THAT THE REVERT BLOCK CANNOT EXECUTE.** A single uncommented line in it would re-apply the OLD body *after* the new one during `apply_migration` — silently undoing the migration while reporting success. Checked programmatically: **0 uncommented lines** in the block, exactly the 2 intended `CREATE OR REPLACE` targets in the executable half, and `CREATE TEMP TABLE` appearing **2× in the executable half and 0× in the revert half**. ⚠ The first version of that check reported a false positive because it sliced from the marker's TEXT rather than its LINE START, cutting the marker's own `-- ` prefix — the same line-start-vs-substring trap the ledger splice rule exists for.
+
+⚠ **THE APPLY IS NOW SCHEDULED, NOT REMEMBERED.** It is 02:34Z — hour 2, inside the measured 01:00–19:00Z degraded band — so applying now would pay a ~10–20 s user-facing `PGRST002` burst at the worst hour, and a manual catch-up would run exactly where it fails. **The board is now 118.4 h stale (4d22h).** Rather than leave the window to memory, a self-wake is scheduled for **20:15Z** carrying the full runbook: re-TEST the hour (abort if not 20–23Z), apply, verify `prosrc`, run both refreshes manually to un-stale the board, move jobids 60/4 to 23:10/23:25Z, and schedule the next-day check that `cron.alter_job` actually took.
+
+**Why that matters more than the convenience:** this ESCALATION exists *because* a stated exit condition — "escalate only if it fails a second consecutive day" — was written down and never re-tested; it has now failed five. Leaving "apply it in the healthy window" as a note in a ledger entry is the identical failure mode one turn later. **A scheduled wake tests the condition; a note hopes someone re-reads it.**
+
+**Verified:** the revert block is inert by assertion; migration still unapplied; no code, no DB change.
+
+**Revert:** `git revert <sha>` (comment-only addition to an unapplied migration).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — four unguarded reads in Fast Break, and a market claim published out of a failed query
 
 Followed the health sweep downstream. `sync-nba-projections` is 8/8 `all_upstreams_failed` (the known sports-proxy 403), so I asked the honesty question about its consumers rather than the upstream: **does anything render a starved read as a fact?** Four reads never destructured `error` at all. ⚠ **supabase-js RETURNS errors rather than throwing**, so each degraded silently into a confident answer at HTTP 200 — and none of the four logged anything, so they were unfalsifiable from outside.

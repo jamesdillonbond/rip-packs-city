@@ -64,8 +64,10 @@
 -- anon-exec: unchanged — already REVOKED in prod, SECURITY DEFINER, pg_cron-only caller (refresh_cross_collection_cohort_step1)
 -- anon-exec: unchanged — already REVOKED in prod, SECURITY DEFINER, pg_cron-only caller (refresh_cross_collection_cohort_step2)
 --
--- Revert: re-apply the previous bodies — they are the same statements with the
--- TRUNCATE moved back to the top and the temp table removed.
+-- Revert: the EXACT pre-change bodies are reproduced verbatim at the FOOT of this
+-- file, captured from prod via pg_get_functiondef. ⚠ They are not recoverable from
+-- git history — these two functions are fileless migrations, so before this file
+-- their only copy was pg_proc.
 
 CREATE OR REPLACE FUNCTION public.refresh_cross_collection_cohort_step1()
  RETURNS jsonb
@@ -151,3 +153,97 @@ BEGIN
   RETURN jsonb_build_object('set_overlap_rows', v_set_count, 'computed_at', v_started);
 END;
 $function$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- REVERT — the EXACT pre-change bodies, captured from prod via
+-- `pg_get_functiondef` on 2026-08-21 PT (02:34Z on the 22nd) and reproduced
+-- byte-for-byte below.
+--
+-- ⚠ COMMITTED AS EXECUTABLE SQL, NOT AS A DESCRIPTION, ON PURPOSE. CLAUDE.md's
+-- ledger rule asks every shipped change for a revert path, and "re-apply the
+-- previous bodies" is not one if nobody can produce them at 3am. It also cannot
+-- be recovered from the git history of this repo: these two functions are part
+-- of the fileless-migration population — applied to prod via MCP with no
+-- committed file — so before this block their only copy was in `pg_proc`.
+--
+-- To revert: run everything between the BEGIN/END markers below. It is a plain
+-- `CREATE OR REPLACE`, so it restores the bodies without touching ACLs, and
+-- re-running it is idempotent.
+--
+-- >>> BEGIN revert (verbatim prod bodies, 2026-08-21 PT) >>>
+--
+-- CREATE OR REPLACE FUNCTION public.refresh_cross_collection_cohort_step1()
+--  RETURNS jsonb
+--  LANGUAGE plpgsql
+--  SECURITY DEFINER
+--  SET search_path TO 'public', 'pg_temp'
+--  SET statement_timeout TO '180s'
+-- AS $function$
+-- DECLARE
+--   v_cohort_count int := 0;
+--   v_started timestamptz := NOW();
+-- BEGIN
+--   TRUNCATE TABLE public.cross_collection_cohort_mat;
+--
+--   INSERT INTO public.cross_collection_cohort_mat (
+--     wallet_address, n_collections, total_moments,
+--     ts_moments, allday_moments, golazos_moments, pinnacle_moments, ufc_moments,
+--     approx_fmv_usd, computed_at
+--   )
+--   SELECT
+--     w.wallet_address,
+--     COUNT(DISTINCT w.collection_id),
+--     COUNT(*),
+--     COUNT(*) FILTER (WHERE w.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'),
+--     COUNT(*) FILTER (WHERE w.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'),
+--     COUNT(*) FILTER (WHERE w.collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75'),
+--     COUNT(*) FILTER (WHERE w.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'),
+--     COUNT(*) FILTER (WHERE w.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023'),
+--     ROUND(SUM(COALESCE(w.fmv_usd, 0))::numeric, 2),
+--     v_started
+--   FROM wallet_moments_cache w
+--   GROUP BY w.wallet_address
+--   HAVING COUNT(DISTINCT w.collection_id) >= 3;
+--
+--   GET DIAGNOSTICS v_cohort_count = ROW_COUNT;
+--   RETURN jsonb_build_object('cohort_size', v_cohort_count, 'computed_at', v_started);
+-- END;
+-- $function$;
+--
+-- CREATE OR REPLACE FUNCTION public.refresh_cross_collection_cohort_step2()
+--  RETURNS jsonb
+--  LANGUAGE plpgsql
+--  SECURITY DEFINER
+--  SET search_path TO 'public', 'pg_temp'
+--  SET statement_timeout TO '300s'
+-- AS $function$
+-- DECLARE
+--   v_set_count int := 0;
+--   v_started timestamptz := NOW();
+-- BEGIN
+--   TRUNCATE TABLE public.cross_collection_ts_set_overlap_mat;
+--
+--   INSERT INTO public.cross_collection_ts_set_overlap_mat (set_id, set_name, cohort_holders, moments_in_cohort, computed_at)
+--   SELECT
+--     e.set_id,
+--     MAX(e.set_name),
+--     COUNT(DISTINCT w.wallet_address),
+--     COUNT(*),
+--     v_started
+--   FROM public.cross_collection_cohort_mat c
+--   JOIN wallet_moments_cache w
+--     ON w.wallet_address = c.wallet_address
+--    AND w.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+--   JOIN editions e
+--     ON e.external_id::text = w.edition_key
+--    AND e.collection_id = w.collection_id
+--   WHERE e.set_id IS NOT NULL
+--     AND e.set_name IS NOT NULL
+--   GROUP BY e.set_id;
+--
+--   GET DIAGNOSTICS v_set_count = ROW_COUNT;
+--   RETURN jsonb_build_object('set_overlap_rows', v_set_count, 'computed_at', v_started);
+-- END;
+-- $function$;
+--
+-- <<< END revert <<<
