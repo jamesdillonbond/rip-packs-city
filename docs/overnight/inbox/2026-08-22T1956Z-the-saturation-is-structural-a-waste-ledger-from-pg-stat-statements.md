@@ -246,8 +246,15 @@ and the tell is a cost stated with no number in it.
    **Trevor's call, not a batch-size tweak.** *Separately real:* its temp build reads **66 MB / 3.58s to
    return 612 rows** off a **619× row misestimate** that picks an index whose `computed_at` is the second
    column. ~84 GB/window.
-5. **Find the `sales` caller with no `sold_at` predicate (3.5).** Restoring partition pruning is a
-   predicate, not a rewrite.
+5. **The `sales` partition fan-out — callers IDENTIFIED, and the obvious fix is probably WRONG.**
+   Scanning `pg_proc.prosrc` for `FROM public.sales`, the heavy readers carrying **no `sold_at` predicate**
+   are `promote_unmapped_sales` (138 GB + 104 GB across two signatures), `resolve_sales_ingest_unresolved`,
+   `claim_sales_counterparty_batch`, `backfill_nft_edition_map_from_sales` (67 GB, mean 188s, max 590s) and
+   `fmv_backfill_candidates`. ⚠ **Do NOT just add a date predicate.** These are BACKFILLS over sales that
+   were never mapped, and an unmapped sale can be arbitrarily old — that is the entire point of them, so a
+   `sold_at > now() - N` filter would silently stop them ever reaching the tail they exist to drain. The
+   lever is an **index supporting the unmapped predicate, or a cursor**, not partition pruning. Filed this
+   way deliberately: the one-line version of this item is a correctness regression waiting to happen.
 6. **Edition-page ISR may be over-revalidating (NEW, not in the original filing).**
    `app/(collections)/[collection]/edition/[slug]/page.tsx` is `revalidate = 600` over a ~100k-edition
    catalogue, driving `get_edition_recent_sales` at **476 calls/hour** and `get_edition_market_bundle` at

@@ -179,12 +179,22 @@ reset with the stats collector, so `last_autovacuum IS NULL` / `autovacuum_count
 **relative to that reset, not lifetime**. I nearly filed "`pack_rips` is 83.8% dead tuples, never
 vacuumed" — `pg_class.reltuples` says **3.65M rows in 95,894 pages ≈ 215 B/row**, i.e. normal.
 
-✅ **VERIFIED IN PROD, first rotated tick (20:45:06Z, deploy `dpl_DSr5cW26GazQrrxL7QgyPppxpUTP` READY —
-`ready` > `buildingAt`, prod aliases attached, `lambdaRuntimeStats` present).** `per_tick: 2`, warmed
-`["panini-squeeze","deals"]` — correctly the two STALEST (19 and 9 min) — skipped the three fresh ones, and
-**both boards that had been failing 76% / 75% of the time succeeded** (4,673 and 119 rows). Duration
-**16,827 ms against the previous near-constant ~31,000 ms.** ⚠ **One tick is not a trend** — it is the right
-SHAPE, not proof; the 48h fail rates are the instrument, and they straddle the change for two days.
+✅ **VERIFIED IN PROD — three consecutive ticks, 6/6 warms succeeded.** Deploy
+`dpl_DSr5cW26GazQrrxL7QgyPppxpUTP` READY on all three corroborating signals (`ready` > `buildingAt`, prod
+aliases attached, `lambdaRuntimeStats` present); ⚠ checked PER COMMIT, since a later push superseded it.
+
+| tick (Z) | warmed | outcome | duration_ms |
+|---|---|---|---|
+| 20:45:06 | `panini-squeeze`, `deals` | both ok | **16,827** |
+| 20:50:06 | `rookies`, `first-mint` | both ok | **12,885** |
+| 20:55:31 | `candy-mlb`, `deals` | both ok | **5,826** |
+
+Selection is correctly stalest-first and cycles all five boards; **every board that had been failing
+57–76% of the time warmed on its first rotated attempt**; duration fell from a near-constant **~31,000 ms**
+to **5,826 ms**, which is the corroborating signal that contention — not the boards themselves — was the
+binding constraint. ⚠ **Three ticks over 15 minutes is a SHAPE, not proof.** The instrument is the 48h
+per-board fail rate, and it straddles the change for two days — read `extra->'rotation'` alongside it or a
+correct 2-of-5 tick reads as a coverage collapse.
 
 **Follow-up in the same push — the stale comment that nearly cost a wrong ship.** The headers on
 `app/api/public/insights/{panini-squeeze,candy-mlb}/route.ts` and the two `proxy.ts` gate comments asserted
