@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, sep } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // BAN AT ZERO on rendering a `topshot_orderbook` figure without disclosing that
 // its source is retired. (deep-audit D12 → D12b)
@@ -38,48 +39,22 @@ const ROOTS = ["app", "components"]
 const DISCLOSURE_MODULE = "ts-listings-retired"
 const TOKEN = "topshot_orderbook"
 
-/**
- * Blank out comments, tracking string/template state.
- *
- * ⚠ NOT a regex. The obvious `src.replace(/\/\*[\s\S]*?\*\//g, "")` is WRONG on
- * this codebase and silently under-reports: a line comment mentioning a path
- * like `/api/*` opens a block comment that never closes until the next `*​/`
- * hundreds of lines later, swallowing real code. Measured on
- * CollectionAnalyticsClient.tsx, that idiom made a file that DOES read
- * `topshot_orderbook` look like it does not — i.e. it would have hidden exactly
- * the defect this guard is for.
- */
-function stripComments(src: string): string {
-  let out = ""
-  let i = 0
-  let state: "code" | "line" | "block" | "sq" | "dq" | "tpl" = "code"
-  while (i < src.length) {
-    const c = src[i]
-    const d = src[i + 1]
-    if (state === "code") {
-      if (c === "/" && d === "/") { state = "line"; out += "  "; i += 2; continue }
-      if (c === "/" && d === "*") { state = "block"; out += "  "; i += 2; continue }
-      if (c === "'") state = "sq"
-      else if (c === '"') state = "dq"
-      else if (c === "`") state = "tpl"
-      out += c; i++; continue
-    }
-    if (state === "line") {
-      if (c === "\n") { state = "code"; out += c } else out += " "
-      i++; continue
-    }
-    if (state === "block") {
-      if (c === "*" && d === "/") { state = "code"; out += "  "; i += 2; continue }
-      out += c === "\n" ? c : " "; i++; continue
-    }
-    // inside a string/template: copy verbatim, honour escapes
-    const esc = String.fromCharCode(92)
-    if (c === esc) { out += src.slice(i, i + 2); i += 2; continue }
-    if ((state === "sq" && c === "'") || (state === "dq" && c === '"') || (state === "tpl" && c === "`")) state = "code"
-    out += c; i++
-  }
-  return out
-}
+// ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+//
+// This file originally carried its own hand-rolled state machine, written
+// because the regex idiom copy-pasted across the suite blanks real source (a
+// line comment mentioning a glob path opens a block comment that closes at the
+// next close-marker anywhere in the file — register R42).
+//
+// ⚠ THAT REPLACEMENT WAS ALSO BLIND, and the correction is the lesson: it had
+// no REGEX-LITERAL state, so a regex ending in an escaped slash presents a bare
+// line-comment marker and blanks the rest of the line — 80 occurrences across
+// 66 files, including the guards' own comment-stripping bodies. Writing a
+// second stripper to fix the first one reproduced the first one's failure mode.
+// Hence: one shared helper, and nobody hand-rolls a 38th copy.
+//
+// The positive control below now exercises the SHARED helper, which is the only
+// way this file can notice if that helper ever regresses.
 
 function* walk(dir: string): Generator<string> {
   let entries

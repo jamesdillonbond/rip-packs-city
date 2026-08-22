@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · CORRECTION + REGISTER (Claude Code, interactive) — my two P1 filings were both advanced by a concurrent session, and both CORRECTED me; the register said otherwise until now
+
+**No new findings. This entry exists because the register was carrying MY stale text for two items another session had already resolved — and a register row that contradicts the ledger is worse than no row, because the register is the document that exists to stop anyone re-deriving.**
+
+**R42 — the stripper blind spot. RESOLVED, and my filing was wrong twice.**
+- ⚠ **The state-machine stripper I recommended lifting was ALSO BLIND.** It had no **regex-literal state**, so a regex ending in an escaped slash presents a bare `//` and blanks the rest of the line — **80 occurrences across 66 files, including the guards' own comment-stripping bodies.** Lifting it verbatim would have swapped one blind stripper for another. **I wrote a second stripper to fix the first and reproduced the first one's failure mode.**
+- ⚠ **"20 guards" UNDERCOUNTED.** 30 more files run the block regex with **no line strip at all**, and the swallow comes from the **block regex alone** — the line-strip ordering was never what made it dangerous.
+- ✅ Now **24 guards on `scripts/lib/strip-comments.mjs`, 0 defective copies left**; `lib/seo.ts` discharged empirically rather than left standing as a scary open item; the three guards over `supabase/functions/**` correctly recorded as **UNMEASURED, not clean**. **32 hydration sites** were real casualties.
+- **I migrated my own D12b guard in this commit** — it was the file the sweep named as the one not to lift, so leaving it would have left a known-blind copy behind the very finding. Re-proved it still reddens on the defect after the swap.
+
+**R43 — the bundle fold. The one defect is real and fixed; THE GENERALIZATION IS REFUTED.**
+- 🚨 **Do not write the blanket lint rule.** The fold is **CONSTANT-FOLDING**, which requires **every** interpolation to be compile-time constant. The D12b site qualified because both were module-level string-literal `const`s — which is exactly why the served chunk had them **inlined**. ⚠ **A template with a runtime interpolation cannot be folded at all, so it cannot lose a quasi this way.**
+- **42 at-risk-SHAPED sites, ZERO constant-foldable.** Every user-facing site my filing named — `alerts-send` outbound copy, the wallet-page `description` + JSON-LD, `stale-fmv-monitor`, `data-integrity`, `pinnacle-events-ingest` — is **specifically clear**, and my INCONCLUSIVE wallet-page probe does not need re-running.
+- ⚠ **The zero means something only because of the POSITIVE CONTROL**: against the pre-fix source at `e0f3186dc` the same detector flags the real site and names both constants.
+- ✅ The shipped guard bans the **PRECONDITION at population zero**, not the shape — banning 42 sites to prevent a defect none can exhibit is the "cost stated with no number in it" shape my own filing warned about and then nearly committed.
+
+⚠ **The division of labour is worth recording: that session could not render production at all** (its egress proxy 403s CONNECT to the site), so it settled the question analytically; **this box rendered the live chunk in a real browser**, which is what caught the defect in the first place. Neither instrument alone was sufficient — and neither of us knew the other was working the same filing.
+
+**Both memories corrected in the same turn**, because a memory that tells a future session to lift a blind stripper is worse than no memory.
+
+**Revert:** `git revert <this commit>` — register + one guard's stripper import. No production code, no DB change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — seven register items closed, two REFUTED on re-measurement, and a guard that argued against its own first half
 
 **Continuing the run-3 sweep. Every item was re-derived before acting, and two of them dissolved.**
