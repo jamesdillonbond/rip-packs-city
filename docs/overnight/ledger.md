@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · MEASURED (Claude Code, interactive) — the All Day headroom is real and is 320 editions, ask-corroboration is Top-Shot-only BY DESIGN, and two apparent bugs dissolved on reading the code
+
+**Read-only, nothing shipped.** Closes the open item from the 02:56Z gate measurement — *"`nfl_all_day` is where algorithmic headroom most plausibly sits, stated as a place to LOOK since I did not audit the confidence thresholds."* Audited.
+
+**The number.** `escalateConfidence()` lifts LOW→MEDIUM when a live ask agrees with the sales median within **±25%** at **≥3 sales**. Applying that exact test to All Day: **717** editions are LOW with ≥3 sales · **705** of them (98.3%) have a live floor ask · 672 have a computable 30d median · **320 (47.6%) fall inside the band and would lift**. That is **All Day 22.7% → 27.9% (+5.2pp)** and **the gate 31.3% → 32.3% (+1.1pp)**. ⚠ Approximate in a stated way: I used a flat 30d `sales` median while recalc may widen to 90d and trims outliers first. The ELIGIBILITY figures (717/705) are exact.
+
+⚠ **TWO THINGS LOOKED EXACTLY LIKE BUGS AND ARE NOT. I nearly filed both, and reading the code is what stopped me — the data pointed hard at each.**
+1. **"All Day's `edition_offers.low_ask` is never populated."** True, and damning-looking: `low_ask > 0` on **0 of 2,292** All Day rows vs **12,259 of 12,464** Top Shot rows, both feeds updated within the hour. **It is the BID side** — `highest_offer > 0` on **2,292 of 2,292**. Different column semantics per collection, working as intended.
+2. **"The Top-Shot-only limitation is an expired premise."** The corroboration comment says the ask is *"Absent for … (e.g. All Day)"*, and `allday_edition_floor_ask` now carries **4,350 live rows** the deals board reads — so the premise looks stale. **It is deliberate, not stale.** Fifty lines on, recalc builds a SEPARATE All Day ask map precisely so *"the All Day floor never leaks into ask-corroboration (`editionAskById` stays Top-Shot-only **by design**): the ceiling only ever LOWERS an overstated FMV, corroboration RAISES confidence, so the two want different, independently-reasoned inputs."* **All Day's floor ask is already fetched in the same function and deliberately withheld.**
+
+**So this is a DECISION with a number, not a defect.** For: 320 editions, on the same test Top Shot already passes, off a signal already loaded in the same request — no new pipeline. Against, in the author's own recorded measurement: raising confidence off a noisy input is not symmetric with lowering an overstated price, and All Day's floor ask IS noisy — **2026-08-08: 1,549 of 2,970 priced All Day editions had FMV above their live floor, avg 1.74×, max ~17×**, "a confident wrong number that fabricates 'deals'."
+
+⚠ **The reconciliation is itself a measurement:** the ±25% band IS the independence test, and it demonstrably works harder on the noisier feed — **52.4% of All Day candidates rejected vs ~42% for Top Shot** (from the modelled "~1,291 rescue / ~915 correctly stay LOW"). Whether that is ENOUGH independence is Trevor's call.
+
+**If taken:** pass All Day's `floor_ask` into `editionAskById` keyed by `edition_id` (simpler than Top Shot's `external_id` path). ⚠ **Do NOT implement it by merging `editionCeilingAskById` into `editionAskById`** — that erases the separation deliberately; the two maps want independent reasoning even when carrying identical numbers.
+
+⚠ **Not shipped for a STRUCTURAL reason, not just caution:** FMV/pricing route logic is off-limits for autonomous shipping, and **unlike a migration a route change goes live on push — there is no "committed but unapplied" state to stage it in.** That asymmetry is worth remembering when a finding is ready but the decision is not.
+
+**Verified:** read-only — catalogue reads, scoped index-backed laterals, one aggregate over All Day's 10,482 30d sales. No writes, no `EXPLAIN ANALYZE`. Full detail: [docs/overnight/inbox/2026-08-22T0320Z-ask-corroboration-is-top-shot-only-BY-DESIGN-and-it-is-worth-320-allday-editions.md](inbox/2026-08-22T0320Z-ask-corroboration-is-top-shot-only-BY-DESIGN-and-it-is-worth-320-allday-editions.md).
+
+**Revert:** nothing to revert — docs only.
+
 ### 2026-08-21 · SELF-CORRECTION (Claude Code, interactive) — my FMV-starvation filing implied a cause it never measured, and the accuracy gate is liquidity-capped
 
 The 02:56Z accuracy-gate filing landed from a concurrent session while I was working. It bears directly on my own 23:15Z filing, so I re-derived its load-bearing half rather than accepting it, then qualified mine.
