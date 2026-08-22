@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — fifth pin closed, and a size delta that lies about what changed
+
+**What shipped.** `get_challenge_plan` re-pinned: a snapshot migration
+(`20260822205500_…_sargable_wallet_join.sql`), the test's verbatim DDL, its PINS entry, and **three new
+assertions**. Known-issues **#24** goes 2 open → **1**. Only `get_pack_detail_bundle` remains.
+
+**It is the SIBLING of `get_active_challenges` and drifted in the same pass** — the `owned` CTE took the
+identical rewrite, `lower(wmc.wallet_address) = lower(p_wallet)` → `wmc.wallet_address IN (p_wallet,
+lower(p_wallet))`: sargable, because a `lower()` on the column cannot use an index, and narrower in exactly
+the same way.
+
+⚠ **The size delta actively misleads here, and it is worth recording as a rule.** This body got **57
+characters SHORTER** while the predicate grew by 6 — because the other change is a **dropped comment** on
+the `pick` CTE. Sizing the drift first (as I did across all three remaining pins) is a good way to pick an
+order, but **a size delta is not a change summary**: a shrinking function can still be gaining logic, and
+here −57 concealed a semantic change entirely.
+
+**What was pinned.** The case semantics, *and* the consequence: with a differently-cased wallet every slot
+reads unowned, so `costToComplete` returns the full **30+40** instead of **40** — the miss shows up in the
+PRICE, which is what a user actually acts on. Plus an exact-form control so neither case can pass for the
+wrong reason. Mutation-tested: restoring the old predicate reds it.
+
+**Verified:** body hashes **`b7bee3bbd5b74675214c2580725e22e7`** across live `prosrc`, the test and the
+migration (transcription checked against the DB's own `md5(pg_get_functiondef)`, `cfc1fa02…`) ·
+`npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.17%) · 195 guard tests · **178** DB-invariant files on a
+local Postgres 16. Anon-exec via the **marker, not a REVOKE**; `has_function_privilege` confirms
+anon/authenticated false, service_role true.
+
+⚠ **Migration deliberately NOT applied** — byte-identical to live. **No DB or prod state changed.**
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): re-pin get_challenge_plan`
+(find by message, not by a recorded sha), then delete the new migration file.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the cross-collection board is live again after 136.5 h, and the "apply it in the healthy window" instruction was finally inside its own window
 
 **R22 / D-A7 is CLOSED.** `cross_collection_cohort_mat` and `cross_collection_ts_set_overlap_mat` had been frozen at **2026-08-17 04:10Z / 04:25Z** — **136.5 h** by the time this ran, escalating 1 h/h for a fifth night, under a rendered **"REBUILT DAILY"** label. Three things shipped, in order.
