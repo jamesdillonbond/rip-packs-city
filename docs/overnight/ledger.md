@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — candy-editions moved out of the degraded band, and the stagger pass refuted the framing I had been using for the band itself
+
+**CODE (`vercel.json`) + PROD DB STATE (watchlist notes).** Closes lever (a) of the 16:00Z candy filing, which I had left unshipped pending a stagger pass. I did the pass; it gave a clean answer.
+
+✅ **`/api/ingest/candy-editions` moved `40 8 * * *` → `10 22 * * *`.** Recall the defect: `maxDuration` is already the Vercel Pro **hard cap of 800 s**, and the route was being killed there — confirmed directly, `Task timed out after 800 seconds`, **count 3, last 2026-08-22T08:40:05Z**, the cron minute exactly, matching the three missed days one-for-one. Raising the ceiling is not available; moving the work is.
+
+**Slot chosen from measurement, not preference — busy-seconds per UTC hour from `cron.job_run_details`, 3-day sample:** hour 8 (old slot) **21,666 s** · hour 20 6,736 · hour 21 7,132 · **hour 22 5,045** · hour 23 3,683. Startup timeouts: hour 8 = 3, hours 20/22/23 = **0**. **Hour 22Z holds ZERO other Vercel crons** (21Z has three; 23Z is where the cross-collection escalation wants jobids 60/4 at 23:10/23:25). 22:10 clears the 22:37 pg_cron jobid 200 by 27 min, and candy's worst successful run is **507.6 s**, finishing ~22:19.
+
+🚨 **AND THE PASS REFUTED MY OWN EARLIER FRAMING, which is the part worth keeping.** Two hours ago I wrote that the startup-timeout lever is "reducing overlap", and it would have been natural to extend that to the band. **The data says the band is not a scheduling problem at all: the pg_cron RUN COUNT is FLAT across all 24 hours — 480–552 per hour — while busy-seconds swing 10× (3,683 at hour 23 → 39,098 at hour 12).** Same number of jobs, up to ten times the wall time. That is precisely what the documented **disk-IO burst-credit** model predicts as credits deplete through the day and regenerate overnight.
+
+⚠ **So staggering buys two narrow things and NOT the band:** it lets *an individual job* finish (this move), and it relieves the **startup-timeout class**, which genuinely is concurrency-driven (`max_worker_processes = 6` vs `cron.max_running_jobs = 32`). **Do not read this move, or any future stagger, as an attack on the 20-hour band.** The band's lever remains cutting TOTAL daily IO.
+
+⚠ **A VERCEL CRON CHANGE ONLY TAKES EFFECT ON DEPLOY** — verify the deploy for this commit reached READY, then verify the next run lands ~22:10Z rather than 08:40Z. The watchlist note for `candy-editions-ingest` was updated in the same turn so it no longer reads "NOT FIXED"; lever (b) (`paginateGroup` chunking, ingest-route logic) remains unshipped and is still the durable fix.
+
+**Verified:** `vercel.json` re-parsed as JSON after the edit with **36 crons** and exactly one `candy-editions` entry at the new schedule; occurrence count asserted before the replace; **63 tests green** across the 7 suites that touch cron config or candy (`api-ingest-candy-editions`, `after-route-heartbeat-ratchet`, `smoke-test-has-a-guaranteed-cadence`, `fossil-drain-schedule-is-retired`, `api-cron-purge-stale-listings`, `api-cron-topshot-catalog-backfill`, `memory-doc-links-guard`); memory-doc link guard exit 0.
+
+**Revert:** `git revert <sha>` restores `40 8 * * *` (redeploy required for it to take). The watchlist note append is additive text — trim below its `✅ 2026-08-22 LATER THE SAME DAY` marker.
+
 ### 2026-08-22 · MEASURED / BLOCKED (Claude Code, interactive) — the pg_cron `job startup timeout` class has a named cause at last, and a near-miss that would have frozen a stale MV permanently
 
 **NOTHING SHIPPED. No code, no DB, no prod-state change** — the one fix worth making is refused by a privilege split (below). Triage of an 11-item pipeline alert.

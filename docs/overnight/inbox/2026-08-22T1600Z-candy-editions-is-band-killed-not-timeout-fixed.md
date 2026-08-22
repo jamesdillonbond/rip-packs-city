@@ -64,7 +64,41 @@ at 8×+.
 cap** — above it the deploy goes to ERROR *invisibly*. CLAUDE.md is explicit: cut work, or move out of
 the band; never raise a timeout, never upgrade the tier.
 
-## 5. ⚠ Why I did NOT ship a fix, stated rather than quietly skipped
+## 5. ✅ UPDATE — lever (a) SHIPPED later the same day, once the stagger pass existed
+
+The section below said (a) needed a stagger pass I had not done. **I then did it, and it produced a
+clean answer**, so the cron moved `40 8 * * *` → **`10 22 * * *`**.
+
+**Busy-seconds per UTC hour from `cron.job_run_details`, 3-day sample** — the instrument, not the
+schedule strings:
+
+| hour | busy_s | startup timeouts | Vercel crons |
+|---|---:|---:|---:|
+| 8 (old slot) | 21,666 | 3 | 1 (this one) |
+| 20 | 6,736 | 0 | 1 |
+| 21 | 7,132 | 3 | 3 |
+| **22** | **5,045** | **0** | **0** |
+| 23 | 3,683 | 0 | 0 (but jobids 60/4 are proposed for 23:10/23:25) |
+
+**Hour 22Z holds zero other Vercel crons**, and 22:10 clears the 22:37 pg_cron jobid 200 by 27 minutes
+— candy's worst successful run is 507.6 s, so it finishes ~22:19.
+
+### 🚨 The pass also produced a finding that reframes the band
+
+**The pg_cron run COUNT is flat across all 24 hours — 480–552 per hour — while busy-seconds swing 10×**
+(3,683 at hour 23 → 39,098 at hour 12). **So the 01:00–19:00Z band is not caused by more jobs being
+scheduled; it is the same work taking up to 10× longer**, exactly what the documented disk-IO
+burst-credit model predicts as credits deplete through the day and regenerate overnight.
+
+⚠ **Therefore staggering does NOT fix the band, and this move must not be read as an attack on it.**
+Staggering fixes two narrower things: *this* job (it now runs where it can finish) and the
+**startup-timeout class**, which genuinely is concurrency-driven (`max_worker_processes = 6` vs
+`cron.max_running_jobs = 32`).
+
+⚠ **A Vercel cron change only takes effect ON DEPLOY** — confirm the deploy reached READY, then confirm
+the next run lands ~22:10Z rather than 08:40Z.
+
+## 5b. The original reasoning, kept for the record
 
 Two candidate levers, both real, neither taken:
 
