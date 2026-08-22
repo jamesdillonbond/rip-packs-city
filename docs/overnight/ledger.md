@@ -8,6 +8,99 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the 5-minute insights warm now ROTATES: peak concurrency 5 → 2
+
+**CODE.** Trevor: "feels like we've been very saturated for a while now… any waste?" This is the largest
+avoidable load the measurement found.
+
+**BASELINE (pg_stat_statements, 10d18h since its 08-12 reset, `dealloc = 0` so the population is complete):**
+**8,227 GB** read = 765 GB/day ≈ **8.9 MB/s sustained** against a 22 MB/s throttled floor, and **1,171 hours**
+of query execution in **258 hours** of wall clock ⇒ **≈4.5 backends busy at all times on 2 cores.** ⚠ The
+saturation is the STEADY STATE, not a spell — every "spell" in this file is this floor plus a bump.
+
+**WHAT SHIPPED:** `app/api/cron/refresh-insights-cache/route.ts` warmed **all five** boards every tick via
+`Promise.all(WARM_BOARDS)`, at `*/5` = **288 ticks/day**. That is ~9 heavy view queries in parallel (panini's
+fetch is PAGED). It now warms only the **stalest `WARM_BOARDS_PER_TICK` = 2**, via the new pure
+`selectBoardsToWarm()` in `lib/insights/board-cache.ts`.
+
+**WHY, measured over 516 ticks / 48h of `pipeline_runs`:** panini-squeeze failed **76.0%** of warms, deals
+**74.8%**, first-mint **56.8%** — and `pipeline_runs.error` names ONE cause for every single failure,
+`canceling statement due to statement timeout`. That wall is **`service_role`'s `statement_timeout = 30s`
+in `pg_roles.rolconfig`**, which is why every board statement's `max_exec_time` is pinned at **29.4–29.9s**.
+The boards are plain views (`relkind='v'`) recomputed per call at **52–95 MB and 11.5–16.7s MEAN**. Caught
+in the act: `pg_stat_activity` showed **7 backends ACTIVE, every one `wait_event_type='IO'`, all on
+`cross_collection_deals_board`**. ⚠ **The tick was manufacturing the contention that killed its own queries,
+and a KILLED query is the most expensive run of the tick** — full read, nothing stored. ~10% of the
+database's entire disk-read volume, most of it discarded.
+
+⚠ **This costs no freshness.** At a 57–76% failure rate the warm-everything loop was already delivering
+`deals` and `panini-squeeze` at **~175-minute gaps** (observed climbing 156→165→170→175 across consecutive
+ticks) — **past the 120-minute `BOARD_SNAPSHOT_STALE_CEILING_MS`.** Rotation gives each board ~12.5 min
+nominal, and a board that keeps failing stays stalest and therefore keeps a slot every tick, which is the
+retry budget it wants. **The starvation is the design, and it is pinned by a test** so nobody "fixes" it
+into round-robin and halves a struggling board's retries.
+
+**Tests:** `api-cron-refresh-insights-cache.test.ts` INVERTED, not deleted — it asserted `warmed===4 /
+total===5` (the old every-board contract) and now asserts the cap, that warmed+skipped is the whole
+watchlist, that selection is stalest-first, and that a failing board's REASON still reaches `p_error`. Mock
+gained a thenable `select()` so snapshot ages are drivable at all. +9 cases on `selectBoardsToWarm`
+including a ban at population zero (`WARM_BOARDS_PER_TICK < WARM_BOARDS.length`, or the cap is a no-op) and
+a NaN-comparator pin. 49 tests green, `tsc --noEmit` clean.
+
+**Revert path:** `git revert <sha of this commit>` — restores `Promise.all(WARM_BOARDS)`. No DB half.
+
+**⚠ DELIBERATELY NOT SHIPPED, with the numbers, so nobody re-derives these as easy wins:**
+
+- **`refresh_wmc_fmv_changed` — biggest single consumer, and I am NOT touching it.** 79.7h of a 168h week
+  (**47% duty cycle of one backend, permanently**), **684 GB = 8.3% of all reads**, 9.0% of all query time,
+  avg 285.9s against its 300s budget. ⚠ **It is NOT behind** (`rwfc_state.last_cutoff` 17m45s) and the work
+  is NOT large: measured inflow is **4–144 distinct editions per 10 min**. The cost is **write
+  amplification** — the UPDATE plan is healthy (nested loop + `idx_wmc_coll_ek_serial_cover`, no seq scan),
+  but `wallet_moments_cache` carries **15 indexes**, `fmv_usd` sits in three of their predicates/INCLUDEs
+  (`idx_wmc_fmv_null`, `idx_wmc_cohort_cover`), so **every fmv write is non-HOT** across ~23,400 row updates
+  per run. ⚠ **There is no unused index to drop — all 15 have non-zero `idx_scan`.** The fix is schema or
+  architecture (stop denormalising fmv into wmc), i.e. Trevor's call, not a batch-size tweak.
+  ⚠ Its `v_chunk := 5` is commented as sized for "the SMALLEST caller budget (service_role 30s)" but the
+  pg_cron caller runs as `postgres`; raising it would amortise ~120 statements, NOT the row updates that
+  dominate. *A LIMIT bounds output, not cost.*
+- **Its temp-table build is a separate, real 84 GB:** `SELECT DISTINCT ON (edition_id) … WHERE computed_at >
+  cutoff` reads **8,489 buffers / 66 MB / 3.58s to return 612 rows**, because a **619× row misestimate**
+  (379,130 est vs 612 actual — the planner cannot see through the cutoff parameter) picks
+  `fmv_snapshots_2026_edition_id_computed_at_idx`, where `computed_at` is the **second** column, i.e. a full
+  index scan. `idx_fmv_snapshots_2026_computed_at_desc` exists and is a leading-column match. Filed, not
+  changed — it is inside the function above.
+- **The timing-out pack-EV crons are a SYMPTOM, not a cause — do not re-tune them yet.**
+  `rpc-backfill-historical-pack-ev` (7.85 failed h/wk), `rpc-atlas-pack-ev` (6.01), `rpc-refresh-mv-pack-ev-latest`
+  (4.53), `rpc-refresh-allday-pack-realized` (3.33, **74% fail**), `rpc-thin-sale-ask-disclosure-refresh`
+  (**100% fail, 0 successes in the window**). ⚠ **Their successes take 113–178s and their failures pin at the
+  wall** — bimodal, so the batch sizes are not obviously wrong; they blow up under contention. **Re-tuning
+  now would be tuning against a confounded measurement** (this file's own rule). Re-measure after the
+  rotation has run a full day. **25.2% of ALL pg_cron time — 66.0 of 261.6 hours/week — is currently rolled
+  back on statement timeouts**, plus **677 launches that returned `job startup timeout`** (pg_cron could not
+  get a background worker — those ingest ticks silently did not run).
+
+⚠ **THREE THINGS I GOT WRONG ON THE WAY IN, because each is a trap that will catch the next session:**
+1. **`collections.is_active` is NOT the /insights launch switch.** Panini and Candy are `is_active=false`,
+   `proxy.ts` gates them, and their route headers still read **"STAGED: gated pre-launch"** — but
+   `lib/launch-flags.ts` was flipped `true` on **07-31 / 08-01**. Both boards are live public product and
+   their ~690 GB is legitimate. I had an "8.4% of all IO is warming boards nobody can see" finding built on
+   it. **Read `lib/launch-flags.ts`, never a route header.** (Those headers are now stale and worth a cleanup.)
+2. **`warmBoard` never applied `BOARD_LIVE_TIMEOUT_MS`.** The 8s ceiling is documented at length in
+   `board-cache.ts` and used only by `readBoardOrLive`. **Read the call site, not the constant's docstring.**
+3. **The warm failure telemetry is NOT silent.** I read `extra->'boards'[].error` (which by design carries
+   only `{key, ok, row_count}`) and nearly filed "the instrument built to explain this class records NULL."
+   The reasons are in the **`pipeline_runs.error` column**, and they are complete.
+
+⚠ **ONE MEASUREMENT CORRECTION for anyone reading `pg_stat_user_tables` right now:** its counters were
+reset with the stats collector, so `last_autovacuum IS NULL` / `autovacuum_count = 0` / `n_live_tup` are all
+**relative to that reset, not lifetime**. I nearly filed "`pack_rips` is 83.8% dead tuples, never
+vacuumed" — `pg_class.reltuples` says **3.65M rows in 95,894 pages ≈ 215 B/row**, i.e. normal.
+
+**Next measurement (do this before changing anything else):** re-read the 48h per-board fail rates and
+`sum(shared_blks_read)`; only ONE variable moved, so the delta is attributable. If failure rates drop,
+lower the `*/5` cadence next; if they do not, materialise the five board views — they are the 52–95 MB/call
+plain views and that is the larger structural lever.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a one-line pin drift that looked like a live pricing defect, and the control that refuted it
 
 **What shipped.** `get_active_challenges` re-pinned: a snapshot migration
