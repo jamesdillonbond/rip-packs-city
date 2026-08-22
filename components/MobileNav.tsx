@@ -318,10 +318,25 @@ export default function MobileNav() {
             </>
           );
 
+          // ⚠ The tap target is the ELEMENT box, not the bar. With `padding: 0`
+          // each tab was only as big as its glyph + 8px caption: MEASURED
+          // 2026-08-22 in Chromium at 390x844, "PACKS" was **32x26px** and
+          // SNIPER/WALLET 32x32 — under the 44px floor (§9, WCAG 2.5.5) in BOTH
+          // axes, on the product's most-tapped control set, inside a bar that
+          // was already 60px tall. 28px of that bar was dead space that looked
+          // tappable and was not.
+          //
+          // Stretching to the bar's full height and padding out to a 44px floor
+          // is a HIT-AREA change only: the content stays centered, so the nav
+          // renders identically. Do not swap this back to a fixed height —
+          // alignSelf:stretch keeps it correct if NAV_HEIGHT ever moves.
           const baseStyle: React.CSSProperties = {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
+            alignSelf: "stretch",
+            minWidth: 44,
             gap: 2,
             textDecoration: "none",
             color,
@@ -329,7 +344,7 @@ export default function MobileNav() {
             background: "transparent",
             border: "none",
             cursor: "pointer",
-            padding: 0,
+            padding: "0 10px",
             fontFamily: "inherit",
           };
 

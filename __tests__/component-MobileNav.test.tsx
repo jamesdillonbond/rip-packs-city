@@ -28,6 +28,37 @@ describe("MobileNav", () => {
     expect(getByText("COLLECTIONS")).toBeTruthy()
   })
 
+  // ⚠ MEASURED, then pinned. In Chromium at 390x844 the five tabs were
+  // 37x32 / 32x32 / **26x32** / 32x32 / 58x32 — under the 44px floor (§9,
+  // WCAG 2.5.5) in BOTH axes, on the product's most-tapped control set, inside
+  // a bar that was already 60px tall. jsdom cannot measure a box, so what is
+  // pinned here is the three style facts that PRODUCE the 44px: the bar is
+  // tall enough, each tab stretches to it, and each tab is at least 44 wide.
+  // Drop any one and the target silently shrinks back with every test green.
+  it("gives every bottom tab a >=44px tap target in both axes", () => {
+    const { container } = render(<MobileNav />)
+    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+    // 1. Stretching is only worth anything if the bar clears the floor itself.
+    expect(parseInt(bar.style.height, 10)).toBeGreaterThanOrEqual(44)
+
+    const tabs = Array.from(bar.children).filter(
+      (c) => c.tagName === "A" || c.tagName === "BUTTON",
+    ) as HTMLElement[]
+    expect(tabs.length).toBe(5)
+
+    for (const tab of tabs) {
+      const label = (tab.textContent ?? "").trim()
+      // 2. Fills the bar's height — NOT a hardcoded px, so this stays true if
+      //    NAV_HEIGHT moves.
+      expect(`${label}:${tab.style.alignSelf}`).toBe(`${label}:stretch`)
+      // 3. Clears the floor horizontally. The narrowest ("PACKS") measured 26px.
+      expect(`${label}:${parseInt(tab.style.minWidth, 10) >= 44}`).toBe(`${label}:true`)
+      // Assert the ABSENCE of the zero padding that caused this: a tab hugging
+      // its 8px caption is the defect, whatever the rest of the style says.
+      expect(`${label}:${tab.style.padding}`).not.toBe(`${label}:0px`)
+    }
+  })
+
   it("opens the Collections sheet from the collections tab and closes it", () => {
     const { getByText, getByLabelText, container } = render(<MobileNav />)
     // Sheet is closed initially.

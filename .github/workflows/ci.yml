@@ -65,8 +65,10 @@ jobs:
       # media query cannot override. That shipped: WalletSearchBand measured
       # 350px tall at 390x844 against the ~100px it specified, above the fold on
       # every /[collection]/* and /insights/* page, while desktop stayed correct
-      # at 82px — which is why tsc, eslint and both coverage gates were green
-      # through it. Ban at population zero (0 when this landed). Pure node.
+      # at 82px — which is why every gate in this file stayed green through it.
+      # (eslint was clean on those files too, though note this repo does NOT run
+      # eslint in CI at all — do not cite it as coverage anywhere.)
+      # Ban at population zero (0 when this landed). Pure node.
       # ⚠ Joins by CLASS NAME, not by resolved DOM ancestry, so a hit is
       # something to LOOK AT. It asserts its own reach (files, media blocks,
       # responsively-directed classes) and fails loudly rather than passing

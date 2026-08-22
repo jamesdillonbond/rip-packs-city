@@ -1,7 +1,12 @@
 name: E2E DOM Smoke
 
 # Rendered-DOM smoke over the PUBLIC deployed surfaces (e2e/smoke.spec.ts) plus
-# the entity/detail pages discovered live from the sitemap (e2e/entity-smoke.spec.ts).
+# the entity/detail pages discovered live from the sitemap (e2e/entity-smoke.spec.ts)
+# and the mobile LAYOUT monitor (e2e/mobile-layout.spec.ts) — measured boxes at a
+# phone viewport, the class where WalletSearchBand rendered 350px tall against
+# the ~100px it specified for four weeks with every other gate green, because
+# jsdom returns a zero box and coverage sees whether a line RAN, not what it
+# measured. Its assertions are bans at population zero as of 2026-08-22.
 # This is a MONITOR, not a pull_request gate: it drives a real browser against
 # the live site and asserts each public page renders actual content (not just an
 # HTTP 200 streaming shell) with no error boundary — the "200-but-broken-DOM"
@@ -39,7 +44,7 @@ jobs:
         env:
           # workflow_dispatch input wins; otherwise production.
           SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
-        run: npx playwright test smoke.spec.ts entity-smoke.spec.ts smoke-selfcheck.spec.ts
+        run: npx playwright test smoke.spec.ts entity-smoke.spec.ts smoke-selfcheck.spec.ts mobile-layout.spec.ts
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
