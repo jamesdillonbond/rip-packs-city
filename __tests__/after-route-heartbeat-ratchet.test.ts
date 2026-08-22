@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ── THE INVOCATION-HEARTBEAT RATCHET ───────────────────────────────────────
 //
@@ -89,9 +90,8 @@ const API = path.join(ROOT, "app", "api")
  * match a route that merely mentions it in prose and vouch for a route that
  * never calls it.
  */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1 ")
-}
+/* Shared stripper — the local copy ran the block regex first, so a line comment
+ * containing an open-comment swallowed source to the next close anywhere in the file. */
 
 /** Every `route.ts`/`route.tsx` under `app/api`, by walk — never a list. */
 function apiRoutes(dir = API, out: string[] = []): string[] {

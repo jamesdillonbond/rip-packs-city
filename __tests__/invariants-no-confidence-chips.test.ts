@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync } from "fs"
 import path from "path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ARCHITECTURE GUARD — no FMV confidence-tier labels on user surfaces.
 //
@@ -89,9 +90,7 @@ describe("invariant: no FMV confidence-tier labels render on user surfaces", () 
       const src = readFileSync(file, "utf8")
       // Strip comments so a "do not reintroduce" note (like the one left in
       // DealsBoardClient) can describe the removed chip without tripping this.
-      const code = src
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^[ \t]*\/\/.*$/gm, "")
+      const code = stripComments(src)
       for (const { re, what } of BANNED) {
         const m = re.exec(code)
         if (m) {

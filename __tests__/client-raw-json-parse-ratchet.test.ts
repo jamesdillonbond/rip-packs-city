@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // BAN on `fetch(url).then((r) => r.json())` — parsing a body without ever
 // checking the status — in `"use client"` code.
@@ -57,16 +58,14 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-/** Comments removed — line AND block. A guard must not read its own prose as
- *  evidence, and the converted files quote the banned pattern to explain the
- *  fix. This header alone would otherwise register as several offenders. */
-function stripComments(src: string): string {
-  return src
-    .split("\n")
-    .map((l) => (l.trimStart().startsWith("//") ? "" : l))
-    .join("\n")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-}
+/* Comments removed — line AND block — by the ONE shared stripper (imported
+ * above). A guard must not read its own prose as evidence, and the converted
+ * files quote the banned pattern to explain the fix; this header alone would
+ * otherwise register as several offenders.
+ *
+ * ⚠ The local version this replaced stripped whole-line comments and THEN block
+ * comments, so a TRAILING `// … /* …` still opened a block comment that ran to
+ * the next close anywhere in the file. */
 
 // ⚠ THE PARENTHESES ARE OPTIONAL, and they were NOT when this ban shipped.
 // The first version required `(r) =>` and so was blind to `r => r.json()` —
