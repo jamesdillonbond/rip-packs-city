@@ -16,12 +16,28 @@ export async function GET(req: NextRequest) {
 
   try {
     // Resolve edition_id from external_id
-    const { data: edition } = await supabaseAdmin
+    // ⚠ "Edition not found" is a statement ABOUT THE CATALOGUE, and a failed read
+    // is not evidence for it. With the error swallowed, `edition` came back
+    // undefined and this 404'd — telling a reader that a moment they are looking
+    // at does not exist, on a public entity surface. 404 stays for a genuinely
+    // absent row; a failed lookup is now a 5xx that says so.
+    const { data: edition, error: editionErr } = await supabaseAdmin
       .from("editions")
       .select("id")
       .eq("external_id", editionKey)
-      .single()
+      // ⚠ .maybeSingle(), not .single(), and deliberately. `.single()` reports a
+      // genuine zero-row miss as an ERROR (PGRST116), which would force this guard
+      // to special-case a magic code string the rest of this repo never uses — and
+      // getting that string wrong turns a real not-found into a 5xx. maybeSingle
+      // returns { data: null, error: null } for no rows, so "absent" and "failed"
+      // are already distinct and the guard below needs no exception. Outcomes are
+      // unchanged for 0 and 1 rows; a duplicate external_id now surfaces instead
+      // of silently 404ing.
+      .maybeSingle()
 
+    if (editionErr) {
+      return apiErrorResponse(editionErr, "api/edition-stats")
+    }
     if (!edition?.id) {
       return NextResponse.json({ error: "Edition not found" }, { status: 404 })
     }

@@ -13,11 +13,13 @@ const state: {
   costBasis: { data: any; error: any }
   acq: { data: any; error: any }
   configRow: any
+  configError: any
   rpcCalls: Array<{ fn: string; params: any }>
 } = {
   costBasis: { data: [], error: null },
   acq: { data: null, error: null },
   configRow: null,
+  configError: null,
   rpcCalls: [],
 }
 
@@ -25,7 +27,7 @@ vi.mock("@supabase/supabase-js", () => {
   const b: any = {
     select: () => b,
     eq: () => b,
-    single: async () => ({ data: state.configRow }),
+    single: async () => ({ data: state.configRow, error: state.configError }),
   }
   return {
     createClient: () => ({
@@ -47,6 +49,7 @@ beforeEach(() => {
   state.costBasis = { data: [], error: null }
   state.acq = { data: null, error: null }
   state.configRow = null
+  state.configError = null
   state.rpcCalls = []
 })
 
@@ -87,6 +90,33 @@ describe("GET /api/cost-basis", () => {
 
   it("does not pass p_collection_id for an unknown collection slug", async () => {
     await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000&collection=not-a-collection"))
+    expect(state.rpcCalls[0].params.p_collection_id).toBeUndefined()
+  })
+
+  it("does NOT silently widen the scope when the collection lookup fails", async () => {
+    // The defect this pins is not an empty answer, it is a DIFFERENT one.
+    // resolveCollectionId returned `string | null`, and the caller reads null as
+    // "no collection filter was asked for" — so a failed collection_config read
+    // dropped p_collection_id and the RPC returned EVERY collection the wallet
+    // holds, rendered inside a single-collection tab, about the reader's own money.
+    //
+    // The load-bearing assertion is the second one: a 500 alone would also be
+    // satisfied by code that still fired the unscoped query first.
+    state.configError = { message: "statement timeout" }
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000&collection=nfl-all-day"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(
+      state.rpcCalls.find((c) => c.fn === "get_wallet_cost_basis"),
+      "the unscoped cost-basis RPC must never be issued after a failed scope lookup",
+    ).toBeUndefined()
+  })
+
+  it("still answers unscoped when NO collection was requested at all", async () => {
+    // The control that keeps the fix honest. Without it, "500 when id is null"
+    // would break the legitimate all-collections call the same helper serves —
+    // turning a real feature into an error page.
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000"))
+    expect(res.status).toBe(200)
     expect(state.rpcCalls[0].params.p_collection_id).toBeUndefined()
   })
 
