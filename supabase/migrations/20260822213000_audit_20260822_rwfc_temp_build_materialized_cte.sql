@@ -16,6 +16,12 @@
 -- These are fileless migrations: the pre-change body existed ONLY in pg_proc, so the
 -- commented block at the foot is the only copy outside the database. Do not delete it.
 
+-- ── anon-execute decision (guard: __tests__/migration-new-function-states-its-anon-exec-decision.test.ts) ──
+-- anon-exec: unchanged — already REVOKED in prod, SECURITY DEFINER, service_role-only caller (refresh_wmc_fmv_changed)
+-- Verified live 2026-08-22: has_function_privilege anon=false, authenticated=false, service_role=true.
+-- This is a REPLACE of an existing function, and CREATE OR REPLACE does not reset a function ACL, so
+-- adding a REVOKE here would be a production ACL change dressed as a no-op. The marker is the correct form.
+
 CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(p_since_minutes integer DEFAULT 30, p_limit integer DEFAULT 50000)
  RETURNS integer
  LANGUAGE plpgsql
