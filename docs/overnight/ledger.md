@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — today's lessons promoted out of this ledger into the files that are actually read before a session knows its topic
+
+**Docs only.** ⚠ **This file is a RECORD, not a steer** — a lesson that lives only here is read by someone already reconstructing history, which is the wrong moment. Three destinations, each chosen for who lands there:
+
+✅ **[cron-and-schedulers.md](../reference/cron-and-schedulers.md)** — the `job startup timeout` mechanism (`max_worker_processes = 6` vs `cron.max_running_jobs = 32`, 169 timeouts / 28 jobs / 24 h) **together with the correction that must travel with it**: the 01:00–19:00Z band is NOT scheduling density (run count flat 480–552/hr while busy-seconds swing 10×), so staggering fixes an individual job and the startup-timeout class and **not** the band. Plus the busy-seconds-per-hour table for choosing a slot, and the **`cron_heavy` ownership block** — 42 of 93 jobs no session role can reschedule, with the note that this file's own 08-22 success on jobids 83/84 was on `postgres`-owned jobs and does not generalise.
+
+✅ **[tooling-gotchas.md](../reference/tooling-gotchas.md)** — *a `filter-repo` purge only rewrites the refs you PUSH, and the tell is a merge-base at the ROOT COMMIT*, with the one-line `for-each-ref` completion check. ⚠ **Filed as a SECURITY gotcha on purpose:** this repo already knew the root-re-hash mechanism — the 08-05 SessionStart self-heal is about exactly it — but it lived as a *branch-alignment* note, so nobody drew the security conclusion beside it for nineteen days. Carries the three things that keep such a write-up honest: measure values-free with a control, "commits ahead" is a re-hash artefact (4,024 → one real commit), and deletion is necessary but not sufficient because PII does not expire with the cookies.
+
+✅ **[focus.md](focus.md)** — the steers, because that is what the next pass reads: the two arms I re-pointed (**do not re-activate `pinnacle-sync`**; `wallet-username-resolver` is 450 min now **and its cadence arm is blind to its 84% failure rate**), the two new CI guards (do not duplicate), and the operator-only set stated as operator-only.
+
+✅ **Session log** entry prepended to [docs/sessions/2026-08.md](../sessions/2026-08.md) covering the whole afternoon.
+
+⚠ **CLAUDE.md deliberately UNTOUCHED at 39,930 / 40,000 (Node `.length`, headroom 70).** Every one of these has a natural reference-doc home, and a new rule there must DISPLACE one — spending the last 70 characters on material that reads better with its full case history would be the wrong trade.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-22 · FIXED (Claude Code, interactive) — I turned CI red on `main` and two more tests turned out to pin the leak as the contract
 
 **CODE (tests only). Main was RED for ~15 minutes on `e2b07af0d`; this is the repair.**

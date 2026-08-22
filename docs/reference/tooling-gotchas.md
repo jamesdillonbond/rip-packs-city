@@ -145,6 +145,41 @@ every call (despite a cron named `rpc-refresh-mv-pack-ev-latest`). **Read `pg_vi
 `pg_proc.prosrc` instead of executing the object** when the question is about shape rather than data;
 it is instant and it answered what three timed-out queries could not.
 
+### 🚨 A `filter-repo` purge only rewrites the refs you PUSH — the tell for an unpurged one is a merge-base at the ROOT COMMIT (measured 2026-08-22)
+
+The 2026-08-03 `git filter-repo` + force-push purged a leaked credential file from **`main`**. It did
+**not** rewrite `origin/claude/todo-implementation-e4tib3`, which branches from the **root commit** and
+therefore still carries the entire pre-purge history — **on a public repo**. Blob `02a86fcb` of
+`scripts/fetch-allday-collection.mjs` is reachable there and not from `main`, introduced by
+**`1c3e01a8f`**, the exact sha the ledger's P0 names as the leak's origin.
+
+⚠ **This repo already knew the mechanism and drew the wrong conclusion from it.** The 08-05 SessionStart
+self-heal fix is about precisely this root re-hash — but it was filed as a **branch-alignment** gotcha,
+so nobody drew the **security** conclusion sitting next to it for nineteen days.
+
+**After ANY history purge, the completion check is not "the force-push succeeded":**
+
+```bash
+for b in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+  echo "$b $(git merge-base origin/main "$b")"    # a merge-base equal to the ROOT commit = UNPURGED
+done
+```
+
+**Three things that make the write-up honest, all of which cut against alarm:**
+
+- ⚠ **Measure values-free.** Every figure should be a `grep -c` or a reachability boolean — never read,
+  print or decode the credential. Compare a suspect blob against `main`'s sanitized one as a **control**
+  (`eyJ` JWT markers: 2 vs 0; `process.env`: 2 vs 4) so the instrument is shown to discriminate.
+- ⚠ **"Commits ahead" is a re-hash ARTEFACT, not lost work.** `e4tib3` reads **4,024 commits ahead**;
+  tested on a CONTENT property (tip tree matches no tree in `main`) the honest figure is **one** draft
+  commit. Sizing it down is as much a part of the finding as raising it.
+- ⚠ **Deleting the branch is necessary but NOT sufficient**, and the expired-credential half is not the
+  point: unreachable objects stay fetchable **by sha** until GC, and the **PII in an RS256 token payload
+  does not expire** even after the session cookies do. Rotation, not purging, is the remedy.
+
+⛔ **Remote delete-ref 403s from the sandbox** (push-to-ref is allowed), so the deletion is an operator
+action via the GitHub UI — and it should be preceded by triaging whatever unique work the branch holds.
+
 ### ⚠ A `send_later` reminder SELF-BINDS to the calling session, and dies with it (measured 2026-08-22)
 
 `mcp__Claude_Code_Remote__send_later` is a thin wrapper over a **self-bound** one-shot Routine: it fires

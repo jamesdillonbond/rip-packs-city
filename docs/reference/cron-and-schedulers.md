@@ -145,6 +145,70 @@ arithmetic*, so `net._http_response` logged `timed_out` on one of the healthiest
 Do not credit it with a throughput win, and do not read the residual `timed_out` share as a before/after
 measurement without bucketing by the requested timeout.
 
+## 🚨 `job startup timeout` — the cause is a CONFIG MISMATCH, and the ledger named it a "global condition" twice before this (measured 2026-08-22)
+
+```
+max_worker_processes   = 6
+cron.max_running_jobs  = 32
+```
+
+pg_cron runs **each job as a background worker**, drawn from `max_worker_processes` — a pool of **6**,
+shared with parallel-query workers and the logical-replication launcher. `cron.max_running_jobs = 32`
+tells pg_cron it may run 32 at once. **When more jobs overlap than there are worker slots, pg_cron
+cannot launch one and records `job startup timeout` — the function body never runs, so NOTHING reaches
+`pipeline_runs` and both `detect_stalled_pipelines()` and the cron-silent checks are structurally blind
+to it.**
+
+Measured over 24 h on 2026-08-22: **169 startup timeouts across 28 distinct jobs** (a 30-minute alert
+slice showed only 18/12), **peak concurrency 17**, **252 minutes/day above 5 concurrent**.
+
+⚠ **Precision caveat on that concurrency figure** — it expands each run over its start→end minutes and
+so also counts runs that themselves died of startup timeout. It overstates. The direction is not in
+doubt (17 against a pool of 6); do not quote 17 as exact.
+
+⛔ **The lever is NOT raising `max_worker_processes`** — it is compute-tier-linked, needs a restart, and
+CLAUDE.md forbids buying the way out. **The lever is reducing overlap.**
+
+### 🚨 …but the 01:00–19:00Z BAND is NOT a scheduling problem, and conflating the two is the trap
+
+⚠ **Measured the same day: the pg_cron RUN COUNT is FLAT across all 24 hours — 480–552 per hour — while
+busy-seconds swing 10×** (3,683 at hour 23 → 39,098 at hour 12). **Same number of jobs, up to ten times
+the wall time.** That is what the documented disk-IO **burst-credit** model predicts as credits deplete
+through the day and regenerate overnight.
+
+**So staggering buys exactly two things, and the band is not one of them:** it lets an *individual* job
+finish (move it into 20:00–00:00Z), and it relieves the **startup-timeout class**, which genuinely is
+concurrency-driven. **The band's lever remains cutting TOTAL daily IO.** Busy-seconds per UTC hour,
+3-day sample, for choosing a slot:
+
+| hour | busy_s | startup timeouts |
+|---|---:|---:|
+| 8 | 21,666 | 3 |
+| 12 | 39,098 | 66 |
+| 20 | 6,736 | 0 |
+| 21 | 7,132 | 3 |
+| 22 | **5,045** | **0** |
+| 23 | **3,683** | **0** |
+
+## ⛔ You probably CANNOT reschedule the job you need to — 42 of 93 are owned by `cron_heavy`
+
+Measured 2026-08-22, and it blocks a whole class of fixes from any session:
+
+| role | owns a `cron_heavy` job? | may EXECUTE `cron.alter_job`? |
+|---|---|---|
+| `postgres` (what Supabase MCP runs as) | **no** | yes |
+| `cron_heavy` (owner of 42 jobs; `postgres` is a member) | yes | **no** — `permission denied for function alter_job` |
+
+`has_table_privilege('postgres','cron.job','UPDATE')` is **false**, so the direct-catalog fallback is
+closed too. **Job ownership splits 51 `postgres` / 42 `cron_heavy`, and no session-reachable role can
+reschedule any of the 42.**
+
+⚠ **The ledger implies otherwise** — its 2026-08-22 entry records a successful `cron.alter_job` on
+jobids 83/84, which happen to be `postgres`-owned. **Check `cron.job.username` before planning a
+schedule change.** Routing around it means either granting `cron_heavy` EXECUTE (a privilege change on
+the role that runs the heavy fleet) or reassigning ownership — **both are Trevor's call, neither is a
+chore.** The operator path that works today is the Supabase SQL editor.
+
 ## ⚠ A cursored walker MUST write its `pipeline_runs` row BEFORE it writes its cursor
 
 **Measured 2026-08-21, re-derived and sharpened 2026-08-22.** `app/api/pinnacle/ingest-events`

@@ -10,6 +10,39 @@
 2. **Prefer DB/artifact work that does not need a push.** Cloud-sandbox passes have repeatedly been NO-PUSH. Work that lands as a migration or an artifact ships; work that needs a git push may not. (⚠ Push from Trevor's **local** box is fine — verified 2026-08-17 — so a NO-PUSH night is a *sandbox* limitation, not a repo one.)
 3. **Do not open new investigations into disk-IO saturation symptoms.** The fmv-recalc kill rate, `public_board_slow_count`, the board-warm failures, the pg_cron statement-timeouts and the `get_collection_stats` timeout are **one root cause** (disk-IO budget on the SMALL 2 GB instance). The lever is cutting work — page size, precompute, fan-out — **never** raising a timeout and never upgrading the tier.
 
+## STEER — added 2026-08-22 (a long interactive day; these change what the next pass should and should not do)
+
+- 🚨 **`job startup timeout` now has a NAMED CAUSE — stop treating it as ambient.** `max_worker_processes = 6`
+  against `cron.max_running_jobs = 32`; pg_cron cannot get a background worker, so the body never runs
+  and **nothing reaches `pipeline_runs`**. 169 timeouts / 28 jobs in 24 h. Detail + the hour table:
+  [cron-and-schedulers.md](../reference/cron-and-schedulers.md).
+- ⛔ **BUT DO NOT extend that to the 01:00–19:00Z band.** Measured 08-22: pg_cron **run count is FLAT all
+  day** (480–552/hr) while busy-seconds swing **10×**. The band is not caused by scheduling density —
+  it is the same work taking longer (burst-credit depletion). **Staggering fixes an individual job and
+  the startup-timeout class, NOT the band.** Anyone proposing "stagger the crons" as a band fix has
+  mis-read this.
+- ⛔ **Before planning ANY `cron.alter_job`, read `cron.job.username`.** 42 of 93 jobs are owned by
+  `cron_heavy`, and **no session-reachable role can reschedule those** (`postgres` may EXECUTE but does
+  not own; `cron_heavy` owns but may not EXECUTE; `postgres` cannot UPDATE `cron.job`). The ledger's
+  08-22 success on jobids 83/84 was on `postgres`-owned jobs and does not generalise.
+- ⚠ **`pinnacle-sync`'s cadence arm was DEACTIVATED and replaced by `pinnacle-fmv-recalc` @ 1560 min.**
+  The old arm watched a best-effort log line whose write is swallowed by design; the work is fine. **Do
+  not re-activate it** — and note the new arm is blind to "the 10:07Z HTTP caller stopped", which the
+  22:37Z pg_cron backstop makes invisible to users anyway.
+- ⚠ **`wallet-username-resolver`'s cadence arm is 450 min now (was 75).** Trevor cut the cron to every
+  3 h on 08-18 and the arm was never re-pointed, so it fired on every tick. Its **failure rate is a
+  separate, still-live problem** (84% via the pooler) — the cadence arm is structurally blind to it, so
+  do not read a quiet cadence arm as a healthy resolver.
+- 🚨 **OPEN, OPERATOR-ONLY, and none of it is fixable from a sandbox:** pg_cron **jobid 70** is the SOLE
+  refresher of `mv_topshot_misattrib_candidates` and has failed 15 of 16 runs since 08-07 (the MV is
+  stale since 08-16) — the one-line fix is blocked by the ownership split above. **atlas-proxy** still
+  needs a `wrangler deploy`. **`topshot-moments-hydrator`'s cron is declared in NO repo file** and a
+  `wrangler deploy` would delete it. And the **P0 stale branch `e4tib3`** still carries the pre-purge
+  credential blob on a public repo.
+- ✅ **Two new CI guards exist; do not duplicate them.** `check-memory-doc-links.mjs` (CLAUDE.md +
+  `docs/reference/**` pointers) and `check-driver-message-leaks.mjs` (ungated handlers returning
+  `err.message`). Both are ban-at-population-zero and both carry their own inspected-count assertions.
+
 ## STEER — do NOT re-flag these (current)
 
 - **The three standing trust breaches are all known-class.** `panini_sale_price_capture_dry_days` (an arm that is **crying wolf** — it counts dry days on a field deliberately abandoned and replaced on 08-08, while the replacement works at ~22%; the fix is to RE-POINT the arm, not to chase the capture), `unmapped_resolution_backlog_max` (AllDay permanent floor — its own text says do NOT raise `breach_at`), `public_board_slow_count` (saturation collateral; **do not characterize its direction from fewer than several days** — it has been called both "climbing" and "oscillating down" on ~1-day windows and both were fair).
