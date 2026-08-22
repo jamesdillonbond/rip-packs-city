@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sentinel now proves no arm can disappear from its own report
+
+**What shipped.** Two behavioural tests in `__tests__/api-sentinel-branches.test.ts` pinning a property the
+alerting surface never asserted: **every arm present in a healthy run must still be present when every read
+fails.** Two failure shapes, because they are different states and only one was ever handled — every read
+**ERRORING**, and every read returning **NO PAYLOAD with no error**.
+
+⚠ **Deliberately NOT a roster of expected arm names.** CLAUDE.md: *"a guard that NAMES its instances — three
+have died on a rename."* Here the **healthy run defines the roster** and the failing runs must not lose any
+of it, so a rename changes both sides at once and the test stays true, while a vanished arm reds it. Both
+cases also assert the healthy run produced **more than 10** arms first, so "nothing went missing" cannot
+pass vacuously off an empty report.
+
+**Measured, not assumed.** Before writing it I checked what the route already guarantees: **17 catch blocks,
+13 of which push a check**, and the other four are the two notification senders plus two that capture into
+`historicalErr` / `ingestErr` — both **verified consumed** by a later push. So arm coverage was already
+sound and the earlier missing-`else` was the single hole. ⚠ **The error-run case passes on the PRE-FIX route
+too** — it was never the broken one, and it is kept as the control that says so. The **null-payload** case is
+the one that bites: against `510a9bd13` it produces **12 arms instead of 13** and names
+`FMV Confidence (canonical TS)` as the missing one.
+
+⚠ **Note what this catches that today's ban-at-zero guard does NOT.** `check-unhandled-third-state.mjs` bans
+one SYNTACTIC route to vanishing. This pins the OUTCOME, so any future way an arm can fall silent — a new
+conditional, an early return, a refactor — reds it without the guard needing to learn the shape.
+
+**Verified:** `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.16% statements, 45156/48997) · all five
+repo guards exit 0 · negative control on `510a9bd13`: 4 red, 25 green; restored: 29 green.
+
+**Revert path:** `git revert` the commit whose message begins `test(sentinel): pin that no arm can
+disappear` (find by message, not by a recorded sha). Test-only — no runtime code, no DB or prod state.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a population of zero is not a share of zero, on both roadmap gate meters
 
 **What shipped.** `app/api/sentinel/route.ts` — the `FMV Confidence (canonical TS)` and `Edition Coverage`
