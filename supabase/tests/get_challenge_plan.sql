@@ -45,7 +45,7 @@ floor AS (
 ),
 owned AS (
   SELECT DISTINCT wmc.edition_key FROM public.wallet_moments_cache wmc
-  WHERE lower(wmc.wallet_address) = lower(p_wallet) AND wmc.collection_id = (SELECT collection_id FROM ch)
+  WHERE wmc.wallet_address IN (p_wallet, lower(p_wallet)) AND wmc.collection_id = (SELECT collection_id FROM ch)
 ),
 elig AS (
   SELECT cse.slot_order, cse.external_id, e.player_name, e.tier::text AS tier, e.thumbnail_url,
@@ -68,7 +68,7 @@ slot_state AS (
   FROM sm LEFT JOIN elig el ON el.slot_order = sm.slot_order
   GROUP BY sm.slot_order, sm.label, sm.play_category, sm.help_text
 ),
-pick AS (  -- cheapest eligible moment per slot (the buy recommendation)
+pick AS (
   SELECT DISTINCT ON (el.slot_order) el.slot_order, el.external_id, el.player_name, el.tier,
          el.thumbnail_url, el.fmv_usd, el.low_ask, el.lock_rate_pct, el.burn_rate_pct
   FROM elig el
@@ -135,6 +135,29 @@ SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-000
 SELECT _assert((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'costToComplete')::numeric = 40, 'cost-to-complete = slot2 cheapest-unowned (40); slot3 NULL ignored');
 SELECT _assert((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'netEv')::numeric = 160, 'netEv = 100 * packsPerUser 2 - cost 40 = 160');
 SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'worthIt'), 'true', 'positive netEv -> worthIt');
+
+-- ── WALLET MATCHING IS EXACT-OR-LOWERCASE, same rewrite as get_active_challenges ──
+-- Re-pinned 2026-08-22. This function drifted in the SAME pass as its sibling: the
+-- `owned` CTE moved from `lower(wmc.wallet_address) = lower(p_wallet)` to
+-- `wmc.wallet_address IN (p_wallet, lower(p_wallet))`, which is sargable (a lower()
+-- on the column cannot use an index) but NARROWER — a stored address whose case
+-- differs from both the argument and its lowercase form no longer matches, so its
+-- slots read as unowned and costToComplete reads as full price.
+-- (The other -57 chars are a dropped comment on the `pick` CTE, not logic.)
+--
+-- ⚠ MEASURED 2026-08-22 and currently harmless: 384 mixed-case wallets in
+-- wallet_moments_cache, none with a lowercase duplicate; 436 wallets own a challenge
+-- slot edition all-time; the two sets are DISJOINT. See known-issues #24 — the first
+-- reading of this looked like a live defect and was refuted by a positive control.
+SELECT _assert_eq((get_challenge_plan('0xwallet00000001','00000000-0000-0000-0000-0000000c0001')->>'ownedCount'), '0',
+  'a differently-cased form of the SAME stored wallet does NOT match — ownership is
+   exact-or-lowercase, not case-insensitive');
+SELECT _assert((get_challenge_plan('0xwallet00000001','00000000-0000-0000-0000-0000000c0001')->>'costToComplete')::numeric = 70,
+  'and the miss shows up in the PRICE: every slot reads unowned, so cost-to-complete
+   is the full 30+40 rather than 40');
+SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'ownedCount'), '1',
+  'while the exact stored form still matches — the control that keeps the two cases
+   above from passing for the wrong reason');
 
 -- Slots array + per-slot picks (look up by slotOrder, not position).
 SELECT _assert_eq(jsonb_array_length(get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->'slots')::text, '3', '3 slot objects');

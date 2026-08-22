@@ -738,7 +738,7 @@ const PINS = [
     fn: "get_challenge_plan",
     test: "supabase/tests/get_challenge_plan.sql",
     migration:
-      "supabase/migrations/20260801231100_audit_20260801_snapshot_get_challenge_plan.sql",
+      "supabase/migrations/20260822205500_audit_20260822_snapshot_get_challenge_plan_sargable_wallet_join.sql",
   },
   {
     fn: "refresh_challenge_costs",
