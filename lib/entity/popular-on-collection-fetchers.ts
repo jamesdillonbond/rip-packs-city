@@ -32,10 +32,44 @@
 // return `{ data, ok }` so "empty because the collection has none" and "empty
 // because the read failed" stay separable, and the caller logs the second.
 
+// ⚠ BOTH READS ARE BOUNDED (2026-08-22), and the reason is measured, not
+// precautionary. `PopularOnCollection` is awaited by
+// `app/(collections)/[collection]/overview/layout.tsx` with no Suspense
+// boundary, so a slow read here holds the whole document stream. On 2026-08-22
+// the 13:15Z scheduled DOM smoke failed with `page.goto: Timeout 30000ms` on
+// FOUR collections' /overview at once, and the runtime log for that window says
+// exactly why: `[popular-on-collection] hubs read failed collection=ufc: Timed
+// out acquiring connection from connection pool.` Vercel logged **200** for
+// every one of those requests — the streaming shell answers immediately, so the
+// only visible symptom is a document that never finishes.
+//
+// This is the FOURTH instance of the class `withBoardBudget`'s own docstring
+// describes, on the same error string. Its first three fixes each bounded the
+// ONE page that failed; the guard written to make it shape-level
+// (`__tests__/insights-server-pages-bound-their-reads.test.ts`) derives its
+// population by walking `app/insights`, so this file was outside it BY
+// CONSTRUCTION — the repo's own "ask what a passing guard is structurally
+// SILENT about" rule, again.
+//
+// ⚠ The bound REJECTS, which lands in the `catch` each fetcher already has and
+// produces the same `{ ok:false, reason }` an errored read produces. That is
+// deliberate: a merely-SLOW read errors nowhere, so without this it could not
+// reach the honest-degraded branch documented above. No new failure policy.
+
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export type FetchResult<T> = { data: T; ok: boolean; reason?: string }
+
+/**
+ * What a supabase-js query resolves to. Named because the query builder is a
+ * THENABLE rather than a Promise, so `withBoardBudget`'s generic infers
+ * `unknown` through it and `data`/`error` stop existing on the result. The
+ * shape is spelled here once rather than `as any`-ed at each call site — an
+ * `any` there would also swallow a future column-shape mistake.
+ */
+export type SupabaseRows<T> = { data: T[] | null; error: { message: string } | null }
 
 /** Minimal structural shape so tests can inject without the full client type. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,15 +109,20 @@ export async function fetchHubRows(
   // true so this can never be mistaken for an outage.
   if (!uuid) return { data: EMPTY_HUB_ROWS, ok: true }
   try {
-    const [edRes, seriesRes] = await Promise.all([
-      client
-        .from("editions")
-        .select("set_name, player_name, team_name")
-        .eq("collection_id", uuid)
-        .order("last_updated_at", { ascending: false, nullsFirst: false })
-        .limit(1000),
-      client.from("collection_series").select("display_label").eq("collection_id", uuid).limit(60),
-    ])
+    const [edRes, seriesRes] = await withBoardBudget(
+      Promise.all([
+        client
+          .from("editions")
+          .select("set_name, player_name, team_name")
+          .eq("collection_id", uuid)
+          .order("last_updated_at", { ascending: false, nullsFirst: false })
+          .limit(1000),
+        client.from("collection_series").select("display_label").eq("collection_id", uuid).limit(60),
+      ]),
+      `popular-on-collection/hubs ${collection}`,
+      undefined,
+      "",
+    )
     // ⚠ Destructure the error on BOTH. Either one failing makes the result
     // partial, and a partial hub set is exactly what used to render as a
     // complete one.
@@ -108,13 +147,18 @@ export async function fetchLinkRows(
 ): Promise<FetchResult<RawLinkRow[]>> {
   try {
     if (collection === "disney-pinnacle") {
-      const { data, error } = await client
-        .from("pinnacle_editions")
-        .select("id, character_name, set_name")
-        .not("thumbnail_url", "is", null)
-        .not("character_name", "is", null)
-        .order("mint_count", { ascending: true, nullsFirst: false })
-        .limit(18)
+      const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
+        client
+          .from("pinnacle_editions")
+          .select("id, character_name, set_name")
+          .not("thumbnail_url", "is", null)
+          .not("character_name", "is", null)
+          .order("mint_count", { ascending: true, nullsFirst: false })
+          .limit(18),
+        "popular-on-collection/links disney-pinnacle",
+        undefined,
+        "",
+      )
       if (error) return { data: [], ok: false, reason: error.message }
       return { data: Array.isArray(data) ? data : [], ok: true }
     }
@@ -125,15 +169,20 @@ export async function fetchLinkRows(
     // Team moments (player_name null — WNBA Skyline, Season Rewind, ...) carry a
     // team_name + play_type instead of a player; allow them in and render via
     // tileSubject as "{team} {play}". Player moments keep player_name.
-    const { data, error } = await client
-      .from("editions")
-      .select("external_id, player_name, team_name, play_type, set_name")
-      .eq("collection_id", uuid)
-      .not("thumbnail_url", "is", null)
-      .or("player_name.not.is.null,team_name.not.is.null")
-      .not("external_id", "is", null)
-      .order("circulation_count", { ascending: true, nullsFirst: false })
-      .limit(18)
+    const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
+      client
+        .from("editions")
+        .select("external_id, player_name, team_name, play_type, set_name")
+        .eq("collection_id", uuid)
+        .not("thumbnail_url", "is", null)
+        .or("player_name.not.is.null,team_name.not.is.null")
+        .not("external_id", "is", null)
+        .order("circulation_count", { ascending: true, nullsFirst: false })
+        .limit(18),
+      `popular-on-collection/links ${collection}`,
+      undefined,
+      "",
+    )
     if (error) return { data: [], ok: false, reason: error.message }
     return { data: Array.isArray(data) ? data : [], ok: true }
   } catch (e) {

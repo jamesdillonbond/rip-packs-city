@@ -124,6 +124,16 @@ export async function withBoardBudget<T>(
   p: Promise<T>,
   label: string,
   timeoutMs: number = BOARD_LIVE_TIMEOUT_MS,
+  /**
+   * Log/message namespace. Defaults to `insights/` so all 36 existing call
+   * sites keep their exact message. Added 2026-08-22 for the FIRST caller
+   * outside /insights — `lib/entity/popular-on-collection-fetchers.ts`, which
+   * hit this same class on the /overview pages. An `[insights/...]` prefix on a
+   * non-insights surface is not a cosmetic wart: it sends an operator grepping
+   * for the wrong subsystem, and this repo has already lost time to a
+   * plausible-looking label naming the wrong object.
+   */
+  prefix: string = "insights/",
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -131,7 +141,7 @@ export async function withBoardBudget<T>(
       p,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`[insights/${label}] read exceeded ${timeoutMs}ms`)),
+          () => reject(new Error(`[${prefix}${label}] read exceeded ${timeoutMs}ms`)),
           timeoutMs,
         )
       }),

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
 
 // Drives the two reads behind the /overview internal-link block. They lived
@@ -36,6 +36,78 @@ const throwingClient = (message: string) => ({
   from() {
     throw new Error(message)
   },
+})
+
+/** A read that never settles — the SLOW case, which errors nowhere on its own. */
+function hangingClient() {
+  return {
+    from() {
+      const builder: Record<string, unknown> = {}
+      for (const m of ["select", "eq", "order", "limit", "not", "or"]) builder[m] = () => builder
+      builder.then = () => new Promise(() => {})
+      return builder
+    },
+  }
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+// ⚠ THE SLOW CASE IS ITS OWN FAILURE MODE AND HAD NO TEST UNTIL 2026-08-22.
+//
+// Every case above drives a read that RETURNS something — a row set or an
+// error. A read that merely hangs returns neither, so none of them could
+// observe it, and `PopularOnCollection` is awaited by the /overview segment
+// layout with no Suspense boundary: a hanging read there holds the entire
+// document stream. On 2026-08-22 the scheduled DOM smoke failed with
+// `page.goto: Timeout 30000ms` on FOUR collections' /overview at once, and the
+// runtime log named it: "Timed out acquiring connection from connection pool."
+// Vercel logged 200 for every one of those requests.
+//
+// These pin that a hang reaches the SAME honest-degraded result an error does.
+describe("a read that HANGS degrades like a read that fails", () => {
+  it("fetchHubRows gives up on the budget and reports ok:false", async () => {
+    vi.useFakeTimers()
+    const p = fetchHubRows("nba-top-shot", hangingClient())
+    await vi.advanceTimersByTimeAsync(8_000)
+    const r = await p
+    expect(r.ok).toBe(false)
+    // The reason must name the bound, so an operator can tell a slow read from
+    // a broken one in the [popular-on-collection] log line.
+    expect(r.reason).toMatch(/read exceeded 8000ms/)
+    // ⚠ And it must NOT be namespaced under insights/ — this surface is not a
+    // board, and a label naming the wrong subsystem sends the reader elsewhere.
+    expect(r.reason).not.toMatch(/insights\//)
+    expect(r.reason).toMatch(/popular-on-collection\/hubs nba-top-shot/)
+    // Payload is the same empty shape a genuine miss produces: the honesty is
+    // carried by `ok`, never by a distinguishable payload.
+    expect(r.data).toEqual({ editions: [], series: [] })
+  })
+
+  it("fetchLinkRows gives up on the budget and reports ok:false", async () => {
+    vi.useFakeTimers()
+    const p = fetchLinkRows("nba-top-shot", hangingClient())
+    await vi.advanceTimersByTimeAsync(8_000)
+    const r = await p
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/read exceeded 8000ms/)
+    expect(r.data).toEqual([])
+  })
+
+  it("does NOT fire the budget on a read that answers in time", async () => {
+    // The no-change control. Without it this pair would pass against a fetcher
+    // that reported ok:false unconditionally.
+    vi.useFakeTimers()
+    const p = fetchHubRows(
+      "nba-top-shot",
+      client({ editions: okRes([{ set_name: "Base Set" }]), collection_series: okRes([]) }),
+    )
+    await vi.advanceTimersByTimeAsync(8_000)
+    const r = await p
+    expect(r.ok).toBe(true)
+    expect(r.reason).toBeUndefined()
+  })
 })
 
 describe("fetchHubRows", () => {
