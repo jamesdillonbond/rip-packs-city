@@ -10,6 +10,7 @@
 // audience least likely to try again and most likely to record the 404.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -41,11 +42,30 @@ export async function lookupLegacyEdition(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
 ): Promise<LegacyEditionLookup> {
-  const { data, error } = await db
-    .from("editions")
-    .select("external_id, collections!inner(slug)")
-    .eq("id", id)
-    .maybeSingle()
+  // ⚠ BOUNDED 2026-08-22, and the try/catch is part of the same change rather
+  // than incidental: this function had an `if (error)` branch but no catch, so
+  // a rejecting budget would have propagated to an error boundary — turning a
+  // slow page into a broken one, which is worse than slow. The catch maps a
+  // hang onto the SAME `{ ok: false }` an errored read already produced.
+  let data: unknown
+  let error: { message: string } | null = null
+  try {
+    // The supabase query builder is a THENABLE, not a Promise, so the generic
+    // infers `unknown` through it and `data`/`error` stop existing. Name it.
+    ;({ data, error } = await withBoardBudget<{ data: unknown; error: { message: string } | null }>(
+      db
+        .from("editions")
+        .select("external_id, collections!inner(slug)")
+        .eq("id", id)
+        .maybeSingle(),
+      `edition/legacy-redirect ${id}`,
+      undefined,
+      "",
+    ))
+  } catch (e) {
+    console.error("[edition/legacy-redirect] lookup failed", e instanceof Error ? e.message : e)
+    return { target: null, ok: false }
+  }
   if (error) {
     console.error("[edition/legacy-redirect] lookup error", error.message)
     return { target: null, ok: false }

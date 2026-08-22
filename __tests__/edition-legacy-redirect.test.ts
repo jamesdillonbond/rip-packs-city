@@ -197,3 +197,29 @@ describe("UUID_RE — the page's only gate before it touches the DB", () => {
     expect(UUID_RE.test(ID)).toBe(true)
   })
 })
+
+
+// ⚠ THE SLOW CASE, added 2026-08-22 alongside the budget. This function had an
+// `if (error)` branch and NO catch, so a hang had nowhere to land — and the
+// budget REJECTS, so adding it without a catch would have replaced a slow page
+// with a thrown error boundary. Both halves shipped together; this pins that.
+describe("a HANGING lookup degrades instead of throwing", () => {
+  afterEach(() => vi.useRealTimers())
+
+  const hangingDb = () => {
+    const b: Record<string, unknown> = {}
+    for (const m of ["select", "eq", "maybeSingle"]) b[m] = () => b
+    b.then = () => new Promise(() => {})
+    return { from: () => b }
+  }
+
+  it("returns ok:false rather than rejecting", async () => {
+    vi.useFakeTimers()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = lookupLegacyEdition("some-id", hangingDb() as any)
+    await vi.advanceTimersByTimeAsync(8_000)
+    // Assert the ABSENCE of a rejection, not merely the presence of a shape:
+    // an unbounded version of this would leave the promise pending forever.
+    await expect(p).resolves.toEqual({ target: null, ok: false })
+  })
+})

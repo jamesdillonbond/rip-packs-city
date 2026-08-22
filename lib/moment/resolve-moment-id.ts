@@ -20,6 +20,7 @@
 // something honest to the user can, without re-deriving what was lost here.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export type MomentIdResolution = {
   /** False ONLY on a successful read that returned nothing. Fail-open otherwise. */
@@ -38,7 +39,17 @@ export async function resolveMomentId(
   client: RpcClient = supabaseAdmin as unknown as RpcClient,
 ): Promise<MomentIdResolution> {
   try {
-    const { data, error } = await client.rpc("resolve_moment_id", { p_id: id })
+    // ⚠ BOUNDED 2026-08-22. A read that merely HANGS errors nowhere, so without
+    // this the `catch` below — and the degraded result it produces — were
+    // unreachable from the failure mode that actually took /overview down on
+    // 2026-08-22 ("Timed out acquiring connection from connection pool"). The
+    // budget REJECTS, which lands in that existing catch: no new failure policy.
+    const { data, error } = await withBoardBudget(
+      client.rpc("resolve_moment_id", { p_id: id }),
+      `moment/resolve-moment-id ${id}`,
+      undefined,
+      "",
+    )
     if (error) {
       // supabase-js RETURNS this rather than throwing, so the catch below never
       // sees it. Handling only the throw would leave the branch that actually

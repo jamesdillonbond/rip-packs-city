@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import { resolveMomentId } from "@/lib/moment/resolve-moment-id"
 
 // Drives `/moment/[id]`'s only data read, which lived inline in the layout until
@@ -67,5 +67,36 @@ describe("resolveMomentId", () => {
     // is preserved here so a shape change upstream cannot silently 404 a moment.
     expect((await resolveMomentId("x", ok({ id: "x" }))).resolves).toBe(true)
     expect((await resolveMomentId("x", ok(null))).resolves).toBe(false)
+  })
+})
+
+
+// ⚠ THE SLOW CASE, added 2026-08-22. Every case above drives a read that RETURNS
+// something; a read that merely HANGS returns neither data nor error, so none of
+// them could observe it — and a hang is exactly what took four collections'
+// /overview pages down that day ("Timed out acquiring connection from connection
+// pool", logged at HTTP 200 because the streaming shell answers instantly).
+describe("a HANGING read degrades instead of hanging the page", () => {
+  afterEach(() => vi.useRealTimers())
+
+  it("gives up on the budget and reports degraded", async () => {
+    vi.useFakeTimers()
+    const hanging = { rpc: () => new Promise<never>(() => {}) } as never
+    const p = resolveMomentId("abc", hanging)
+    await vi.advanceTimersByTimeAsync(8_000)
+    const r = await p
+    // `resolves: true` is the deliberate fail-OPEN here — see the module: a
+    // degraded lookup must not 404 a moment that exists.
+    expect(r).toMatchObject({ resolves: true, degraded: true })
+    expect(r.reason).toMatch(/read exceeded 8000ms/)
+    expect(r.reason).not.toMatch(/insights\//)
+  })
+
+  it("does NOT fire the budget on a read that answers in time", async () => {
+    vi.useFakeTimers()
+    const fast = { rpc: async () => ({ data: [{ id: "x" }], error: null }) } as never
+    const p = resolveMomentId("abc", fast)
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(await p).toEqual({ resolves: true, degraded: false })
   })
 })

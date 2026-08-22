@@ -75,6 +75,20 @@ jobs:
       # vacuously if the CSS parser stops seeing anything — the first cut
       # reported 3 in-scope files when the real number was 32.
       - run: node scripts/check-responsive-flex-basis.mjs
+      # Unbounded-server-read RATCHET — the count of async server page/layout
+      # files under app/** that can reach a Supabase read with no budget
+      # primitive may only FALL. Fourth occurrence of one class, same error
+      # string every time ("Timed out acquiring connection from connection
+      # pool"): first-mint, /analytics/sets, two ERRORed production builds on
+      # /insights/market(+pulse), and on 2026-08-22 four collections' /overview
+      # hanging 30s. The existing BAN
+      # (__tests__/insights-server-pages-bound-their-reads.test.ts) walks
+      # app/insights, so every one of these was outside it BY CONSTRUCTION.
+      # ⚠ A ratchet, not a ban: the population cannot be driven to zero in one
+      # pass (several pages have no degraded branch to reject INTO yet, and
+      # bounding those turns a slow page into an error boundary). Lower the
+      # ceiling in the commit that bounds a page; never raise it. Pure node.
+      - run: node scripts/check-unbounded-server-reads.mjs
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30
