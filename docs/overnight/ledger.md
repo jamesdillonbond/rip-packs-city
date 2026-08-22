@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the layout monitor's band check asserted PRESENCE after a run reported "4 skipped" and I could not tell which
+
+**CODE (test only).** Small, but it closes the exact hole I spent the day writing about.
+
+✅ **Production verification of the /overview bound first:** `e2e-smoke` run 32594580169, dispatched against production on **921d52b7** minutes after the deploy — **success, 92 passed, 4 skipped, 1 pre-existing flaky, 0 failed**. That timing is the point: a deploy empties the ISR entry, so those were COLD first-requests to all five `/overview` pages, performing the newly-bounded read inline, and `smoke.spec.ts` asserts rendered DOM on every one. The fix's success path is verified in the exact condition that used to break.
+
+⚠ **But "4 skipped" is where I stopped being able to tell.** The CI tail names the flaky test and not the skipped ones, so **I could not confirm whether the band check ran or skipped** — and it had a `test.skip(band === null)` branch. A skip inside a 97-test monitor is invisible: that branch would have turned *"the band stopped rendering at all"* — a worse regression than it being too tall — into a silent non-result. **The guard-measuring-nothing shape, in a spec I wrote this morning while quoting that rule.**
+
+✅ **It now ASSERTS PRESENCE.** A fresh Playwright context has empty localStorage and no session, which are the band's only two self-removal conditions, so on `/nba-top-shot/collection` it must render. The one legitimate absence is the documented kill switch (`NEXT_PUBLIC_WALLET_BAND=off`); the test says to delete it with the band rather than soften it back to a skip. ⚠ **Not a claim the band is fine in prod** — the 18:58Z run DID verify the band property directly on production (0 skipped that run), so what is unverified is only whether the 19:43Z run re-checked it.
+
+**Verified:** 7/7 local, `npx tsc --noEmit` exit 0.
+
+**Revert:** `git revert <sha>` (test only).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the /overview 30s timeouts have a named cause, it is the FOURTH instance of one class, and 23 more sit in the guard's blind spot
 
 **CODE + a filing.** Ran down the slowness signal filed 25 minutes ago instead of leaving it as a hypothesis. It had a specific, logged cause.
