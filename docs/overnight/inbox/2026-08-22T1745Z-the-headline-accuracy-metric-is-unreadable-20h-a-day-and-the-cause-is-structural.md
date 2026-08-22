@@ -90,9 +90,23 @@ that the MCP cap abandons the RESULT, not the query. I checked: mine was still r
 3966238, `mgmt-api`), moved to cancel it, and it had already ended — verified **0 `mgmt-api` sessions
 active** afterwards. **I did not retry the shape**, because retrying stacks copies onto the saturation.
 
-## 5. What must happen before anyone ships this
+## 5. ✅ ARMED — the measurement is scheduled, not left as a wish
 
-1. **Measure in the 20:00–00:00Z window, warm-vs-warm, comparing BUFFERS not milliseconds.** Hour 23Z is
+A fresh-session routine (`trig_01H3p6o5iB7yyjLVzrbbviaA`) fires **2026-08-22 23:10Z** — hour 23 is the
+quietest measured (3,683 busy-s vs hour 12's 39,098) and it is clear of the 20:15Z and 21:15Z applies.
+⚠ **It is a MEASURE-ONLY task: it writes no migration and ships nothing.** ⚠ **And it opens with a
+capability check** — `create_trigger` warned it stores no MCP connectors, so the fired session may have
+no Supabase tools at all; step 0 tells it to report and stop rather than improvise. A runbook that
+silently cannot execute is the same defect class as everything else in this filing.
+
+Its runbook, in order — and every gate is a STOP, not a warning:
+
+
+
+1. **Hard gate on the hour, then a POSITIVE CONTROL on `pg_stat_activity`** — if most active sessions
+   are in IO wait the window is not quiet, and it must reschedule rather than collect numbers nobody can
+   read. Then measure **warm-vs-warm, comparing BUFFERS not milliseconds** (each form run twice, second
+   run used). Hour 23Z is
    the quietest measured (3,683 busy-s vs hour 12's 39,098). A cold candidate against a warm incumbent
    has already read as *5.6× slower* in this repo and nearly killed a correct rewrite.
 2. ⚠ **Check the TIE case before claiming equivalence.** `DISTINCT ON (edition_id) ORDER BY edition_id,

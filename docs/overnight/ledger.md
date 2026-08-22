@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · ARMED (Claude Code, interactive) — the accuracy-meter measurement is scheduled for the quiet window, so the mission item is not left as a filing
+
+**Not in git — a scheduled Routine.** Follow-through on the 17:45Z filing: the roadmap's headline metric is unreadable ~20 h a day, the cause is structural, and **my candidate rewrite is UNMEASURED because its one ANALYZE run hit the 60 s cap during a saturation spell.** A filing that ends there is a wish, not a fix.
+
+✅ **`trig_01H3p6o5iB7yyjLVzrbbviaA` fires 2026-08-22 23:10Z**, fresh-session. Hour 23 is the quietest measured (**3,683 busy-s** vs hour 12's 39,098) and it is clear of tonight's 20:15Z and 21:15Z applies.
+
+⛔ **MEASURE-ONLY by construction — it writes no migration and ships nothing.** The output is numbers plus a filing, including a null result.
+
+⚠ **Every step in its runbook is a STOP, not a warning**, because the failure mode here is collecting numbers nobody can read: (0) **capability check** — `create_trigger` warned it stores **no MCP connectors**, so the fired session may have no Supabase tools; report and stop rather than improvise · (1) hard gate on the UTC hour · (2) **positive control on `pg_stat_activity`** — if most active sessions are in IO wait, reschedule, because during saturation no duration is interpretable · (3) **the TIE CHECK, which can invalidate the whole rewrite** — `DISTINCT ON` and `ORDER BY … LIMIT 1` both break ties arbitrarily, so an edition with two snapshots at the same `computed_at` and different `confidence` would tally differently, and a confidence tally is this arm's entire output · (4) warm-vs-warm, **buffers not ms**, each form run twice, **and no retry on a 60 s timeout** because retries stack copies onto the saturation · (5) `EXCEPT` both directions on the full predicate.
+
+⚠ **The runbook explicitly tells it NOT to treat the lateral rewrite as the assumed winner** — a nightly materialised tally would make the metric readable **all day** rather than merely cheaper in-band, and that alternative is uncosted.
+
+**Revert:** delete `trig_01H3p6o5iB7yyjLVzrbbviaA`. Nothing else to unwind — it changes no code and no DB state.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the "What's your collection worth?" wallet band is now ANON-ONLY
 
 **CODE.** Trevor, from a screenshot of `/nba-top-shot/collection` while signed in: the band asking a signed-in collector to paste a wallet address is noise — "we should already know their wallet address and have it warmed up when they land on this page."
