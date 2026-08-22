@@ -28,10 +28,18 @@ const PHONE = { width: 390, height: 844 }
 // Public routes measured clean (overflow 0) at both 390px and 320px on
 // 2026-08-22. Keep this list to public pages — a redirect to /login measures
 // the login page, not the page named.
+//
+// ⚠ `/[collection]/overview` is deliberately ABSENT, and must not be "restored".
+// The 2026-08-22 13:15Z scheduled run failed with `page.goto: Timeout 30000ms`
+// on FOUR collections' /overview plus /insights/underpriced-serials — inside the
+// documented 01:00-19:00Z degraded band — while the 07:16Z and 18:58Z runs were
+// clean. That is a SLOWNESS signal, `smoke.spec.ts` already reports it, and a
+// navigation timeout here would surface as a LAYOUT alarm. A monitor that cries
+// wolf stops being read. The overview page shares this layout's chrome with the
+// three collection routes below, so dropping it costs no layout coverage.
 const ROUTES = [
   "/",
   "/insights",
-  "/nba-top-shot/overview",
   "/nba-top-shot/collection",
   "/nba-top-shot/market",
   "/nba-top-shot/sniper",
@@ -129,7 +137,9 @@ test.describe("mobile layout", () => {
     // inline style is the one declaration a media query cannot override.
     // Measured 350px before, 102px after. The threshold is deliberately loose:
     // this is a "did it become a hero again" check, not a pixel pin.
-    await page.goto("/nba-top-shot/overview", { waitUntil: "domcontentloaded" })
+    // /collection, not /overview — see the note on ROUTES above. The band mounts
+    // from the (collections) LAYOUT, so every tab under it carries one.
+    await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
     await page.waitForTimeout(1500)
 
     const band = await page.evaluate(() => {

@@ -26,6 +26,11 @@
 //   * A container whose direction is flipped by an inline style or by a JS
 //     branch rather than by CSS is outside it, as is any child whose basis is
 //     computed at runtime rather than written as a literal.
+//
+// Tailwind's responsive direction utilities (`flex-col sm:flex-row`) ARE covered
+// — they were the guard's one documented hole, measured at population zero
+// (11 files use such a utility, none of them carries an inline length basis), so
+// closing it cost nothing and keeps that zero from drifting upward unnoticed.
 //   * It only knows the media queries written in CSS text in this repo —
 //     template literals and .css files. A Tailwind responsive direction utility
 //     (`flex-col sm:flex-row`) is NOT parsed.
@@ -53,6 +58,11 @@ const EXT = /\.(tsx|ts|css)$/
 // An inline flex shorthand carrying a LENGTH basis. A unitless basis (flex: 1)
 // and a keyword one (flex: "1 1 auto") are both safe under an axis flip.
 const INLINE_LENGTH_BASIS = /flex:\s*["'`]\s*\d+\s+\d+\s+\d+(?:px|rem|em|%)\s*["'`]/g
+
+// Tailwind says the same thing as a media query, in a class attribute:
+// `flex-col sm:flex-row` is a breakpoint-conditional main axis. No CSS text to
+// parse, so it needs its own signal.
+const TAILWIND_RESPONSIVE_DIRECTION = /\b(?:sm|md|lg|xl|2xl):flex-(?:row|col)\b/
 // Any RESPONSIVE direction change is the precondition, not just a flip TO
 // column: a mobile-first container that is column by default and becomes row
 // under a min-width query is column at exactly the narrow widths where the
@@ -147,7 +157,9 @@ for (const file of files) {
   const used = [...responsiveDirectionClasses].filter((c) =>
     new RegExp(`(?:^|[\\s"'\`.])${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|[\\s"'\`])`).test(src),
   )
-  if (used.length === 0) continue
+  const tw = TAILWIND_RESPONSIVE_DIRECTION.test(src)
+  if (used.length === 0 && !tw) continue
+  if (tw) used.push("(tailwind responsive flex-direction utility)")
 
   const lines = src.split("\n")
   for (const m of basisMatches) {
@@ -177,7 +189,8 @@ if (files.length === 0 || mediaBlocksSeen === 0 || responsiveDirectionClasses.si
 if (hits.length > 0) {
   console.error(
     "\n[responsive-flex-basis] An inline flex shorthand with a LENGTH basis sits in a file\n" +
-      "whose CSS changes a container's flex-direction at a breakpoint. flex-basis sizes\n" +
+      "that changes a container's flex-direction at a breakpoint (CSS rule or Tailwind\n" +
+      "responsive utility — the line below names which). flex-basis sizes\n" +
       "the MAIN axis, so under that flip the width-basis becomes a HEIGHT — and a media query\n" +
       "cannot override an inline style. Move the shorthand into the CSS block (see\n" +
       "components/WalletSearchBand.tsx's .rpc-wsb-input), or confirm the two are unrelated:\n"
