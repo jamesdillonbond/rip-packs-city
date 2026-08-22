@@ -47,7 +47,7 @@ slot AS (
   LEFT JOIN public.mv_topshot_set_play_catalog mv ON mv.external_id = cse.external_id
   LEFT JOIN public.wallet_moments_cache o
     ON o.edition_key = cse.external_id AND o.collection_id = p_collection_id
-   AND p_wallet IS NOT NULL AND lower(o.wallet_address) = lower(p_wallet)
+   AND p_wallet IS NOT NULL AND o.wallet_address IN (p_wallet, lower(p_wallet))
   GROUP BY cse.challenge_id, cse.slot_order
 ),
 totals AS (
@@ -120,6 +120,39 @@ SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000c
 -- Empty collection -> activeCount 0, challenges [].
 SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000dddd')->>'activeCount'), '0', 'no challenges -> activeCount 0');
 SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000dddd')->'challenges')::text, '[]', 'no challenges -> [] not null');
+
+-- ── WALLET MATCHING IS EXACT-OR-LOWERCASE, which is NARROWER than it was ──
+-- Re-pinned 2026-08-22. The ONLY drift in this function was one line — the
+-- ownership join moved from
+--     lower(o.wallet_address) = lower(p_wallet)        -- any case matched
+-- to
+--     o.wallet_address IN (p_wallet, lower(p_wallet))  -- sargable, but narrower
+-- The rewrite makes the predicate index-usable; wrapping the column in lower()
+-- cannot use an index on wallet_address. It is ALSO a semantic narrowing: a stored
+-- address whose case differs from BOTH the argument and its lowercase form no
+-- longer matches, so its slots read as UNOWNED and costToComplete reads as full
+-- price — on the "is this challenge worth it" verdict.
+--
+-- ⚠ MEASURED 2026-08-22, and currently HARMLESS: wallet_moments_cache holds 25,447
+-- mixed-case rows across 384 wallets, NONE of which has a lowercase duplicate; 436
+-- wallets own at least one challenge slot edition all-time; and the two sets are
+-- DISJOINT. All 31 challenges are `ended` (latest 2026-07-16) besides.
+-- ⚠ The first pass at this read as a live defect and was refuted only by a POSITIVE
+-- CONTROL: "0 affected wallets" was vacuous because the active-challenge population
+-- is empty. The 436 figure is the control that makes the zero mean something.
+--
+-- Pinned so the narrowing stops being silent: if ingest ever writes a mixed-case
+-- address for a wallet that owns a slot, THIS is the line that decides.
+SELECT _assert_eq(
+  (get_active_challenges('0xwallet00000001','00000000-0000-0000-0000-00000000cccc')->'challenges'->0->>'ownedCount'),
+  '0',
+  'a differently-cased form of the SAME stored wallet does NOT match — ownership is
+   exact-or-lowercase, not case-insensitive');
+SELECT _assert_eq(
+  (get_active_challenges('0xWALLET00000001','00000000-0000-0000-0000-00000000cccc')->'challenges'->0->>'ownedCount'),
+  '1',
+  'while the exact stored form still matches — the control that keeps the case above
+   from passing for the wrong reason');
 
 SELECT '✓ get_active_challenges invariants pass' AS result;
 ROLLBACK;
