@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the stripper finding was UNDERCOUNTED: 30 more files are blind, and the line strip was never what made it dangerous
+
+**The original filing scoped this to "20 guards sharing an exact copy-pasted shape". That scoping was too
+narrow, and the mechanism says why:** the swallow comes from the **block regex ALONE** — a line comment
+containing an open-comment eats to the next close anywhere in the file. **The line-comment strip is not part
+of the defect.** So every file running `.replace(/\/\*[\s\S]*?\*\//g, …)` is exposed, whether or not it also
+strips line comments.
+
+**Measured: 30 further files** run the block regex with **no line strip at all**. Over
+`app`/`components`/`lib`/`workers` that strip **destroys 48,825 characters across 13 product files** the
+shared stripper keeps — **the same top offenders** (`CollectionAnalyticsClient`, `support-chat`,
+`ErrorTriageClient`), which is the corroboration that it is one mechanism and not a second coincidence.
+
+**Migrated the three that both walk a product tree and are honesty guards:** `client-raw-json-parse`,
+`invariants-no-confidence-chips`, `after-route-heartbeat`. All pass. The rest are narrow readers, or walk
+`supabase/migrations`, which is outside the affected set.
+
+🚨 **ONE RED DURING THIS BATCH WAS **MY** BUG, NOT A DISCOVERY, AND IT IS RECORDED BECAUSE THE TWO LOOK
+IDENTICAL.** `client-raw-json-parse` blew the stack: its local helper was itself named `stripComments`, so
+replacing only the BODY made it call itself. The earlier batches replaced the **whole function** and so
+never had the hazard. ⚠ **A red in the middle of a migration reads as a finding** — this session had
+already produced two genuine ones, which is exactly the context that makes the third feel confirmed.
+**Read the failure, not the count.** The wrapper is now removed rather than delegating.
+
+✅ **DEPLOY CONFIRMED, and not from the lagging `state` field.** `d97dcd741` (the thin-volume three-state
+fix) is **READY** with `ready = 1787442358707`, production aliases attached (`www.rippackscity.com`), and
+`lambdaRuntimeStats` present — the three corroborating signals, because `get_deployment.state` is on record
+here as reporting `BUILDING` for ~45 minutes on a live deploy.
+⚠ **The docs-tip trap did NOT bite, but only by luck of ordering** — I committed code first and the ledger
+second, which CLAUDE.md warns suppresses the deploy. What actually happened is that the docs-only tip was
+**CANCELED** by `ignoreCommand` and the code deploy proceeded. **Do not read that as the rule being wrong;
+commit the ledger first.**
+
+**REVERT:** `git revert 9ef0cc796` (guards only, no production code in that commit).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the bundle-fold scare is REFUTED (do not write the lint rule), and the fail-open it uncovered is fixed
 
 **Two things, and the first is a NEGATIVE result that saves work rather than creating it.**
