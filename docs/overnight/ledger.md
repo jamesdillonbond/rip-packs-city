@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — R18: the Candy MLB panels contradicted their own banner, and a production bundle was rendering a sentence the source does not contain
+
+**Two things, the second found only because the first was verified in a real browser.**
+
+**1 · R18 (P1) — a failed read published as a market fact, contradicted ~200 px above it.** `/insights/candy-mlb` carried the site's best honesty banner — *"6 of 10 sections could not be loaded (Pack market, **Offer spread**, …) … treat the affected sections as unknown rather than zero"* — while the SPREAD tab below it showed a badge of **0** and read **"No offers or asks yet."**, and the MARKET tab on the same page reported **"WITH A BEST OFFER: 26"**. The banner was the hardened half; the panels were not.
+
+The rows array **cannot** distinguish the three states — a failed read and a genuinely empty section both arrive as `[]` — so the panel has to consume `degraded`, which is the only thing that knows. Added `sectionEmptyCopy()` and `sectionBadge()` in `CandyBoardClient` and wired **all six** panels (Deals, Offer spread, Serials, Scarcity, Holders, Players), not just the reported one — fixing one of six is precisely what turned D12 into D12b earlier today.
+
+⚠ **The tab badge was the same defect in miniature and is easy to miss.** A failed section rendered a badge of **0**. A badge is a COUNT, so 0 is a claim about the market — the documented `?? 0` shape one layer up. It now renders **no badge** when the section failed. Absent is honest; zero is not.
+
+**Tests (6, proven to fail):** reverting just the spread panel + badge reddens 3 of them. Includes a **no-change control** — a genuinely empty section must still say "No offers or asks yet.", or the fix would be dishonest in the opposite direction — a **sibling control** (a failed section must not make other panels claim failure), and a **join pin**: the client matches `degraded.failed` by STRING, so a label renamed in `lib/insights/candy-board.ts` alone would silently fall back to the healthy copy with every behavioural test still green. That test asserts every label the client keys on still exists server-side.
+
+**2 · ⚠⚠ A PRODUCTION BUNDLE RENDERED A SENTENCE THE COMMITTED SOURCE DOES NOT CONTAIN.** Verifying the D12b card in a real browser showed *"…switched off on 2026-05-26**written on** 2026-05-15…"* — the phrase **" and its last row was "** simply absent. Every step was checked rather than assumed: the committed source contains it (`grep -c` = 1 at `origin/main` **and** at the deployed commit `e0f3186d`); only one commit has ever touched that file, so no concurrent session edited it; and **the served JS chunk itself is wrong**, with the date constants inlined as literals — so the bundler (`"bundler": "turbopack"`) constant-folded the `+`-joined template literals and **dropped the tail quasi of the first one**.
+
+⚠ **No source-level instrument could see this.** `npx tsc --noEmit` was clean, the unit suite evaluates the module directly and gets the correct string, and the deploy was READY. **A green typecheck, a green test suite and a READY deploy together do not establish that the string a user reads is the string in the repo — only rendering production does.** Fixed by collapsing the constant to ONE template literal, with a comment saying why it must not be re-split.
+
+⚠ **The generalization is UNVERIFIED and is filed as such.** A structural scan finds **28 sites** with the at-risk shape (text after a template's final `${}`, joined by `+` to another template), including two wallet-page metadata strings and outbound alert copy. An attempt to confirm the wallet-page instance was **INCONCLUSIVE, not negative** — that request served the ROOT metadata, so the branch never ran. Do not read it as an all-clear, and do not write a blanket lint rule off one unreproduced instance. Verification plan: `docs/overnight/inbox/2026-08-22T2135Z-production-bundle-dropped-a-string-segment-the-source-contained.md`.
+
+**Verified:** `npx tsc --noEmit` exit 0 · all 6 candy suites + both new guards green (74 tests) · D12b re-verified anonymously in a real browser: **"1 listings" gone, "$5.0k" gone, "No live listings" correctly absent**, disclosure present.
+
+**Revert:** `git revert <this commit>` and the docs commit before it. No DB change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sixth and last stale DB pin; known-issues #24 is CLOSED
 
 **What shipped.** `get_pack_detail_bundle` re-pinned: a snapshot migration
