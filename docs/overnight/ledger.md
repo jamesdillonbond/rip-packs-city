@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FIXED (Claude Code, interactive) — I turned CI red on `main` and two more tests turned out to pin the leak as the contract
+
+**CODE (tests only). Main was RED for ~15 minutes on `e2b07af0d`; this is the repair.**
+
+🚨 **MY MISS, stated plainly: I ran targeted suites and did not run the full gate before pushing.** `npm run test:coverage` failed on **2 of 14,483** cases — both in the `allday-pack-listings` family, both pinning the behaviour I had just fixed. **9 of 10 CI jobs were green, including the new leak guard**, so the guard was fine; the gap was my pre-push check.
+
+⚠ **THE PROCESS DEFECT IS SPECIFIC AND WORTH THE ENTRY: I did the right check for the FIRST batch of files and skipped it for the SECOND.** Earlier in the session I ran `ls __tests__ | grep -i <route>` before touching alerts/achievements/wallet-intel and duly found and inverted three tests. For the four handler fixes an hour later I went straight to `tsc` + the guard. **The habit was not the problem; applying it to only one of two batches was.** After changing a route, grep `__tests__` for that route name — every time, every batch — and run `npm run test:coverage`, not a hand-picked subset, before pushing route changes.
+
+✅ **BOTH TESTS INVERTED, NOT DELETED — and they are the 4th and 5th of the day.** `api-allday-pack-listings-ingest` asserted `body.error === "rpc down"` **and** `listings: []`; `api-allday-pack-listings` asserted `listings: []` in the error body. So this route had **two** suites independently holding the leak *and* the fake-empty in place. Each is reversed with a comment naming what it used to assert.
+
+⚠ **Checked the rest of the batch rather than assuming:** grepped `__tests__` for `seed-golazos-badges`, `seed-allday-badges` and `badge-sync` — **6 suites, 44 cases, all green**, no further pins. The two failures were confined to the one route.
+
+**Verified this time by the gate CI actually runs:** `npm run test:coverage` locally → **exit 0**, 14,483 cases, coverage 92.15% statements / 79.74% branches / 93.86% functions / 94.19% lines.
+
+**Revert:** `git revert <sha>` restores the two original assertions (and re-reds CI).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test+CI) — 4 more leaks that a FILE-level guard would have called clean, and a handler-scoped guard so the class cannot regrow
 
 **CODE + TEST + a blocking CI step. No DB, no migration.** Direct continuation of the leak commit an hour earlier, which fixed 5 sites and left 68.
