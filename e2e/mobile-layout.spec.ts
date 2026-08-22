@@ -153,11 +153,23 @@ test.describe("mobile layout", () => {
       }
     })
 
-    // The band removes itself for a visitor whose wallet is already known and
-    // for a signed-in one. A fresh monitor context is neither, but if it is ever
-    // legitimately absent there is nothing to measure — skip rather than invent
-    // a pass, and say which happened.
-    test.skip(band === null, "wallet band not rendered on this run")
+    // ⚠ THIS ASSERTS PRESENCE RATHER THAN SKIPPING, and the change was made
+    // 2026-08-22 after watching a run report "4 skipped" with no way to tell
+    // from the CI tail WHICH tests skipped. A skip inside a 97-test monitor is
+    // invisible, so `test.skip(band === null)` would have turned "the band
+    // stopped rendering entirely" — a worse regression than it being too tall —
+    // into a silent non-result. That is the guard-measuring-nothing shape.
+    //
+    // A fresh Playwright context has empty localStorage and no session, which
+    // are the band's only two self-removal conditions, so on THIS route it must
+    // render. The one legitimate absence is the documented kill switch
+    // (NEXT_PUBLIC_WALLET_BAND=off). If that is ever set, delete this test with
+    // the band rather than softening it back to a skip.
+    expect(
+      band,
+      "wallet band absent on /nba-top-shot/collection for a fresh anonymous context — " +
+        "either it stopped rendering, or NEXT_PUBLIC_WALLET_BAND=off was set",
+    ).not.toBeNull()
 
     expect(band!.h, `wallet band is ${band!.h}px tall at ${PHONE.width}px`).toBeLessThanOrEqual(160)
     // …and the 52px input inside it is the reason the band has any height at all.
