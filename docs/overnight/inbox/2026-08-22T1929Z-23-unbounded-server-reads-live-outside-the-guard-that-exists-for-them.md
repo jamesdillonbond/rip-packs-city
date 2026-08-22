@@ -1,0 +1,123 @@
+# The unbounded-server-read class bit a FOURTH time — and 23 more instances sit outside the guard written to stop it
+
+**Filed 2026-08-22 12:29 PT (19:29Z), Claude Code interactive. The measured instance is FIXED and pushed;
+the population below is MEASURED and deliberately NOT swept.**
+
+---
+
+## 1. What happened, with the log line
+
+The 13:15Z scheduled DOM smoke failed with `page.goto: Timeout 30000ms exceeded` on **four collections'
+`/overview`** at once. The Vercel runtime log for that window names the cause exactly:
+
+```
+13:22:38 GET /ufc/overview 200 [warn/serverless-middleware]
+  [popular-on-collection] hubs read failed collection=ufc: Timed out acquiring connection from connection pool.
+13:22:02 GET /ufc/overview 200 [warn/serverless-middleware]
+  [popular-on-collection] links read failed collection=ufc: Timed out acquiring connection from connection pool.
+```
+
+⚠ **Vercel logged `200` for every one of those requests.** The streaming shell answers immediately, so a
+read that hangs shows up as a document that never finishes — never as an error. This is the
+"200-but-broken-DOM" class CLAUDE.md already warns about, in its latency form.
+
+**The mechanism, end to end:** `app/(collections)/[collection]/overview/layout.tsx` — the overview
+SEGMENT's own layout, not the shared `[collection]/layout.tsx` — awaits `<PopularOnCollection>`, an async
+server component, **with no Suspense boundary**. Its two reads were unbounded. The segment is
+`revalidate = 3600`, so with a cold ISR entry (every deploy empties it) the first request per collection
+performs the read inline and the whole document waits on it.
+
+⚠ **I got this wrong once on the way in, and the correction is the useful part.** I first concluded "the
+overview page does no server work" — true of `overview/page.tsx`, of `[collection]/layout.tsx`, of
+`(collections)/layout.tsx` and of the root layout, all of which I grepped. The read is in a **nested
+segment layout**. A grep of "the page and its layouts" is not a grep of the segment's layouts.
+
+## 2. Fixed (shipped)
+
+`lib/entity/popular-on-collection-fetchers.ts` — both reads now go through `withBoardBudget`. The bound
+REJECTS, which lands in the `catch` each fetcher already had and produces the same `{ok:false, reason}`
+an errored read produces, so **no new failure policy** — it just makes the honest-degraded branch
+reachable from a SLOW read, which errors nowhere on its own. `withBoardBudget` gained an optional
+`prefix` (default `"insights/"`, so all 36 existing call sites are byte-identical) because an
+`[insights/...]` label on a non-insights surface sends an operator to the wrong subsystem.
+
+Tests: three cases pinning that a HANGING read degrades exactly like a failing one, plus a no-change
+control that a fast read never trips the budget. Negative control run: removing the bound reddens both
+hang cases and leaves the control green.
+
+## 3. The finding this file is actually for
+
+`withBoardBudget`'s own docstring says this class had been fixed three times, each time **on the one page
+that failed rather than on the shape**, and that
+`__tests__/insights-server-pages-bound-their-reads.test.ts` is "the shape-level fix". It is not — it walks
+`app/insights`, so **everything outside `/insights` is outside it BY CONSTRUCTION**. That is this repo's
+own recorded rule ("ask what a passing guard is structurally SILENT about") landing on the guard written
+to satisfy it. `PopularOnCollection` was a live instance sitting in that blind spot.
+
+**Measured population, 2026-08-22:** of **81** async server `page.tsx`/`layout.tsx` files under `app/**`,
+**23 reach a DB read with no budget primitive anywhere — and 0 of them are under `app/insights`.**
+
+```
+app/(analytics)/analytics/sets/[set_id]/page.tsx        via lib/analytics-sets-dashboard-compute.ts
+app/(analytics)/analytics/wallets/[address]/page.tsx    via components/analytics/WalletProfile.tsx
+app/(analytics)/analytics/wallets/page.tsx              direct query
+app/(collections)/[collection]/challenges/page.tsx      direct query
+app/(collections)/[collection]/edition/[slug]/page.tsx  via lib/badges/server-art.ts
+app/(collections)/[collection]/fast-break/page.tsx      via components/fast-break/FastBreakClient.tsx
+app/(collections)/[collection]/hot-floors/page.tsx      direct query
+app/(collections)/[collection]/pack/[id]/page.tsx       direct query
+app/(collections)/[collection]/pack/dist/[distId]/page.tsx  via lib/pack-dist/fetchers.ts
+app/(collections)/[collection]/pack-sniper/page.tsx     via lib/packs/live-pack-listings.ts
+app/(collections)/[collection]/player/[slug]/page.tsx   via lib/player-page-view.ts
+app/(collections)/[collection]/road-to-the-ring/page.tsx via components/rtr/RTRClient.tsx
+app/(collections)/[collection]/series/[slug]/page.tsx   direct query
+app/(collections)/[collection]/set/[slug]/page.tsx      via lib/set-detail/tier-mix.ts
+app/(collections)/[collection]/team/[slug]/page.tsx     via components/entity/TeamChecklist.tsx
+app/admin/flowty-errors/page.tsx                        direct query
+app/edition/[id]/page.tsx                               via lib/edition/legacy-redirect.ts
+app/moment/[id]/layout.tsx                              via lib/moment/resolve-moment-id.ts
+app/moment/[id]/page.tsx                                via lib/badges/server-art.ts
+app/my-teams/page.tsx                                   via lib/fan-teams/fetchers.ts
+app/pinnacle/moment/[id]/page.tsx                       via lib/pinnacle/moment-detail.ts
+app/profile/[username]/page.tsx                         via lib/profile/public-profile.ts
+app/profile/[username]/trophy-case/page.tsx             via lib/profile/public-profile.ts
+```
+
+⚠ **23 is a FLOOR, and my instrument's limit is the reason.** It follows **one** level of delegation.
+`app/(collections)/[collection]/overview/layout.tsx` — the file that actually broke today — does **not**
+appear in that list, because its read is two levels down (layout → component → lib). Anything else with
+that shape is also missing. `app/admin/**` is likely a legitimate exclusion (operator-gated, not
+prerendered) but I did not verify that.
+
+## 4. What I did NOT do, and why
+
+**No ban-at-zero guard.** This repo's ban only works when the population is driven to zero in the same
+pass, and 23+ surfaces is far past what one session should sweep — several are on the roadmap's
+untouchable list (pack-EV, sniper, FMV route logic). A ban here would ship a 23-entry allowlist, which is
+the "curated list drifts" failure already recorded twice.
+
+**No blanket sweep.** Each of these needs a judgement about what the degraded render should say, and
+several have no honest-degraded branch to reject INTO yet — bounding those without first giving them one
+would convert a slow page into a thrown error boundary, which is worse.
+
+**The decision this file asks for**, in rising cost:
+
+1. **Bound the PUBLIC prerendered ones first** — the entity pages (`edition`, `player`, `set`, `team`,
+   `series`, `moment`) are the crawled corpus and the ones a build export can die on. ~8 surfaces.
+2. **Ratchet, not ban** — a count that may only fall. Fits the existing population without an allowlist.
+3. **Widen the existing guard's derivation** to `app/**` and two levels of delegation, wired to that
+   ratchet — so the next instance is caught by the guard that was already meant to catch it.
+
+⚠ Option 3 is the one that stops the recurrence; 1 is the one that reduces today's risk. They are not
+alternatives.
+
+## 5. Re-derivation
+
+* Runtime log: Vercel MCP `get_runtime_logs`, project `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`,
+  `environment: "production"`, `since/until` 13:10–13:25Z, `source: ["serverless"]`. ⚠ Without the
+  `source` filter the warn lines do not surface — the default view showed 47 clean `200` lines for
+  `/nba-top-shot/overview` and nothing else, which reads as a healthy page.
+* Population scan: walk `app/**` for `page.tsx`/`layout.tsx`, drop `"use client"` and non-`async default`,
+  strip comments, then look for `readBoardOrLive` / `fetchBoardForPage` / `withBoardBudget` /
+  `withPagedBoardBudget` in the file or in one level of imported `@/lib/**` or `@/components/**`.
+* ⚠ Numbers are a dated sample. Re-run before quoting.

@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the /overview 30s timeouts have a named cause, it is the FOURTH instance of one class, and 23 more sit in the guard's blind spot
+
+**CODE + a filing.** Ran down the slowness signal filed 25 minutes ago instead of leaving it as a hypothesis. It had a specific, logged cause.
+
+🚨 **THE CAUSE, from the runtime log for the 13:15Z window:** `[popular-on-collection] hubs read failed collection=ufc: Timed out acquiring connection from connection pool.` — and the same for `links`. ⚠ **Vercel logged `200` for every one of those requests.** The streaming shell answers instantly, so a read that hangs is only ever visible as a document that never finishes. This is the "200-but-broken-DOM" class in its LATENCY form.
+
+**The mechanism end to end:** `app/(collections)/[collection]/overview/layout.tsx` — the overview SEGMENT's own layout — awaits `<PopularOnCollection>`, an async server component, **with no Suspense boundary**, and its two reads were unbounded. The segment is `revalidate = 3600`, and every deploy empties the ISR entry, so the first request per collection does the read inline with the whole document waiting on it.
+
+⚠ **MY OWN FILING'S §3 WAS WRONG AND I AM CORRECTING IT, NOT QUIETLY DROPPING IT.** I first concluded "the overview page does no server work" — true of `overview/page.tsx`, `[collection]/layout.tsx`, `(collections)/layout.tsx` and the root layout, all four of which I grepped for `await`/`fetch`/`supabase`. **The read is in a NESTED SEGMENT layout.** Grepping "the page and its layouts" is not grepping "the segment's layouts", and in the App Router those are different sets. The filing's suggested next step (compare against `withBoardBudget` treatment) turned out to be right for the wrong reason.
+
+✅ **FIXED: `lib/entity/popular-on-collection-fetchers.ts` bounds both reads with `withBoardBudget`.** The bound REJECTS, landing in the `catch` each fetcher already had, producing the same `{ok:false, reason}` an errored read produces — **no new failure policy**, it just makes the existing honest-degraded branch reachable from a read that is merely SLOW and therefore errors nowhere. `withBoardBudget` gained an optional `prefix` (default `"insights/"`, so all **36** existing call sites are byte-identical) because an `[insights/…]` label on a non-insights surface sends an operator to the wrong subsystem.
+
+⚠ **Considered and REJECTED: wrapping the component in `<Suspense>`.** It would also unblock the stream, but this block exists to put server-rendered internal links in the DELIVERED HTML for crawl equity — its header says so — and streaming them in trades that away. Bounding preserves the success path byte-for-byte and only changes behaviour when the read was already failing.
+
+**Tests: 3 new.** Two pin that a HANGING read degrades exactly like a failing one (reason names the bound, is NOT namespaced under `insights/`, payload is the same empty shape), one is the no-change control that a fast read never trips the budget. ⚠ **Negative control run:** stripping the bound reddens both hang cases (they time out) and leaves the control green. Every pre-existing case in that file drives a read that RETURNS something, so **none of them could observe a hang** — that is why this shipped untested for months.
+
+🚨 **THE SHAPE FINDING, and it is the one worth acting on.** `withBoardBudget`'s docstring says this class was fixed three times, each on the ONE page that failed, and that `__tests__/insights-server-pages-bound-their-reads.test.ts` is "the shape-level fix". **It is not** — it walks `app/insights`, so everything outside `/insights` is outside it BY CONSTRUCTION. This repo's own *"ask what a passing guard is structurally SILENT about"* rule, landing on the guard written to satisfy it. **Measured: of 81 async server `page.tsx`/`layout.tsx` files under `app/**`, 23 reach a DB read with no budget primitive — and 0 of them are under `app/insights`.** ⚠ **23 is a FLOOR**: my scan follows ONE level of delegation, so `overview/layout.tsx` — the file that actually broke today — is not even in its own list. Filed with three costed options: `docs/overnight/inbox/2026-08-22T1929Z-23-unbounded-server-reads-live-outside-the-guard-that-exists-for-them.md`.
+
+⛔ **Deliberately did NOT sweep the 23 or add a ban.** A ban only works at population zero, several of these are on the roadmap's untouchable list, and some have no honest-degraded branch to reject INTO yet — bounding those would turn a slow page into a thrown error boundary, which is worse.
+
+⚠ **Instrument note that cost me a wrong conclusion for ten minutes:** `get_runtime_logs` WITHOUT `source: ["serverless"]` returned 47 clean `200` lines for `/nba-top-shot/overview` and nothing else, which reads as a healthy page. The `warn` lines carrying the actual cause only surfaced with the source filter.
+
+**Verified:** `npm run test:coverage` exit 0, **14,508**; `test:coverage:components` exit 0, **3,007**; `npx tsc --noEmit` exit 0; all five guard scripts exit 0; the four `PopularOnCollection` suites + `insights-server-pages-bound-their-reads` green (68 cases) after the change.
+
+**Revert:** `git revert <sha>`. Reverting restores the unbounded reads — prefer raising the budget over reverting if 8s proves too tight.
+
 ### 2026-08-22 · FOUND (Claude Code, interactive) — a SECOND daily detector is red and unread, and nothing in the estate reads either of them
 
 **Docs only — no code, no DB, no prod state.** Registered as known-issues **#24** and **#25**.
