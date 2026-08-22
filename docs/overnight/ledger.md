@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the stripper sweep is COMPLETE: 24 guards migrated, 0 defective copies left
+
+**What shipped.** The remaining **17 guards** (5 + 8 + 4) moved to `scripts/lib/strip-comments.mjs`,
+finishing the migration begun earlier tonight. **Verified by re-running the detector, not asserted:** the
+only two files still containing the block-before-line shape are the ones that carry it **deliberately** —
+the shared helper's own documentation and the test that keeps it as a NEGATIVE CONTROL. Full suite green
+at the time of the production change: **1,342 files / 14,593 tests**.
+
+⚠ **PER-GUARD EXPOSURE WAS ANSWERED RATHER THAN ASSUMED, because "still passes" and "was never blind" are
+DIFFERENT CLAIMS and only a before/after count separates them.** The filing left this explicitly open.
+- `pinnacle-router-fmv-same-row` reads `app/api/smoke-test/route.ts`, which IS in the affected set — it was
+  genuinely blind on part of its input and still passes. **A real negative result.**
+- `entity-sections-do-not-conclude-from-a-failed-read` — its roots contain **no** affected file, so the
+  migration is a **no-op today**. Kept for the next file that lands under those roots.
+- `check-unbounded-server-reads` — population **17 under BOTH strippers**, so its roots were never
+  affected. Measured both ways rather than inferred.
+- ⚠ `edge-allday-pack-opens`, `edge-cursor-throw`, `collection-tab-autopaginate` target
+  `supabase/functions/**`, which the 103,590-char measurement **did not walk**. Their exposure is
+  **UNMEASURED, not clean** — do not read their passing runs as evidence either way.
+
+**Two shapes needed care rather than a blanket rewrite:**
+- `paginated-range` blanks comments **and then strings**, and only the comment half moved. **The ordering is
+  load-bearing** — a retry label containing the text `"wmc.range("` had previously been reported as an
+  offender — so it is now stated in a comment instead of being implicit in the chain order.
+- `no-rewards-promises` also stripped JSX `{/* */}`. The shared stripper blanks the body and leaves the
+  braces: equivalent for content matching, and safer, since its failure direction is **keeping too much**.
+
+**REVERT:** `git revert 2e2cd2fd4 08f8ffdc2 c9d1d5aa0` (no production code in these three — guards and one
+script only; the production change was the earlier `toLocaleString` commit).
+
+⚠ **WHAT THIS DOES AND DOES NOT BUY.** It removes a whole class of silent blindness from 24 guards. It does
+**not** re-validate any past guard result: every population those guards reported before tonight was
+measured against a partly-blanked corpus, and only the two that went red have actually been re-derived.
+**`lib/seo.ts` remains the one to re-check by hand** — 141 of its lines were invisible, including
+`OG_INHERITED` and `TWITTER_INHERITED`, the surface behind the OG shallow-merge rule.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the blind stripper's first real casualties: 32 hydration sites fixed, and a ratchet that had been calibrated against a blanked corpus
 
 **What shipped.** 7 guards migrated to the shared stripper (1 earlier + 6 here), **32 bare
