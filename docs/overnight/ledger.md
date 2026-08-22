@@ -8,6 +8,97 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the deals board is MATERIALIZED: 12,905 ms → 1.98 ms, and the guard that watches it was blind to what that change introduced
+
+**DB only. Zero app-code change** — the swap is behind the existing view name, so nothing in
+`app/` or `lib/` moved and no deploy was needed. Trevor: "materialize the deals board and ship it."
+
+**THE MEASUREMENT.** `cross_collection_deals_board`'s Top Shot arm, `topshot_deals_vs_fmv`, alone:
+**29,146 buffers / 228 MB in 10,501 ms to return TWELVE rows.** 85% of it one node — a per-edition
+latest-FMV subquery at `loops=6211`, `hit=19666 read=5178` = **24,844 buffers** — and ⚠ **its
+`confidence IN (HIGH,MEDIUM)` filter is applied AFTER the per-edition `LIMIT 1`**, so 6,211 index
+descents are paid for and mostly discarded (6,211 → 2,156 → 12 rows). Against `service_role`'s 30s
+wall the board failed **74.8%** of 516 warm ticks / 48h, every failure a full-price read storing
+nothing. **172 rows out, the whole input scanned every time.**
+
+**AFTER, same query the fetcher actually issues** (`DEALS_COLS`, `discount_pct >= 10`, order, limit 200):
+
+| | before | after |
+|---|---|---|
+| execution | **12,905 ms** mean (max 29,813 — the 30s wall) | **1.977 ms** |
+| buffers | ~10,000 read | **12** (`hit=4 read=8`) |
+| MV size | — | **112 kB** |
+| refresh | — | **8,883 ms**, every 20 min |
+
+**Shipped:** `mv_cross_collection_deals` (+ unique index on `(collection_slug, external_id)` —
+verified 172/172 distinct, zero NULLs, so `CONCURRENTLY` works) · the view rebodied to read it ·
+`refresh_cross_collection_deals()` · pg_cron **jobid 352** `12,32,52 * * * *` ·
+`pipeline_cadence_watchlist` row. Files: `supabase/migrations/2026082221{5525,5648,5715}_*`,
+`20260822220100_*`, and `20260822221500_*` (the last records the non-DDL cron/watchlist state, which
+`apply_migration` never sees).
+
+⚠ **THE GUARD THAT WATCHES THIS BOARD IS STRUCTURALLY BLIND TO WHAT MATERIALISING IT INTRODUCED, and
+that is the part worth reading.** Before today the board was computed live, so *"the data is stale"*
+was **not an expressible failure**. Now it is. And `cross_collection_deals_board` sits in
+`public_board_liveness_watchlist` with `min_rows=1, max_ms=15400` — **a frozen MV returns its last 172
+rows in ~2 ms and passes that check perfectly, for ever.** So the refresh logs a `pipeline_runs` row
+(`cross-collection-deals-mv`) and is registered in `pipeline_cadence_watchlist` at 70 min (~3.5 missed
+ticks): **silence is the alarm.** ⚠ Cadence, not a self-reported error, because a thrown `REFRESH`
+rolls back the transaction **and takes the log row with it** — `try/catch` cannot rescue that. The
+reason lives in `cron.job_run_details`. **Every other MV in this schema is a bare `REFRESH` with no
+freshness instrument at all; that gap is now 20 wide instead of 21.**
+
+⚠ **THE `is_active` PREDICATE IN THE NEW VIEW BODY IS LOAD-BEARING, NOT TIDINESS.** The old body read
+`editions`, whose RLS policy is `collection_id IN (SELECT c.id FROM collections WHERE c.is_active IS
+TRUE)`. **A materialized view is not RLS-governed.** Materialising without that guard would mean a
+collection deactivated tomorrow keeps serving rows out of the MV until the next refresh — the swap
+would have quietly WIDENED what a public board exposes. Restating it keeps the old semantics under
+both roles: anon via `collections`' own RLS, `service_role` (which bypasses RLS) via the explicit WHERE.
+
+**How the swap was made safe, in order — each one a recorded trap in this file:**
+- Built the MV from **`pg_get_viewdef()`**, not transcription, so it is definitionally the same query.
+- **Verified content equality BEFORE swapping**: 172 = 172, `EXCEPT` **0 rows in both directions**.
+- **Verified 20/20 columns, zero name and zero type mismatches** — `CREATE OR REPLACE VIEW` cannot
+  rename or reorder and fails `42P16`, and the union's `external_id` resolves to `varchar` not `text`.
+- **Restated `WITH (security_invoker = on)`** — a replace with no `WITH` clause RESETS reloptions and
+  silently strips it (four occurrences on record). Confirmed still `{security_invoker=on}` after.
+- **Explicit `REVOKE … FROM PUBLIC, anon, authenticated`** on the MV before granting, because this DB
+  carries both a PUBLIC default and `ALTER DEFAULT PRIVILEGES` — a new relation can arrive readable by
+  anon with nobody writing a GRANT. Verified `has_table_privilege`: anon **false**, authenticated
+  **false**, service_role true. Matches the house pattern — **all 20 pre-existing MVs are
+  service_role-only** — and all four readers of this board are service_role
+  (`deals/route.ts`, `support-chat` via `SUPABASE_SERVICE_ROLE_KEY`, `topshot-deal-floor-serials`,
+  `fetchDealsDefault`), so nothing reads it as anon.
+- **Post-flight:** `check_secdef_anon_exec_drift` 0, `check_secdef_anon_execute_violations` 0,
+  `check_public_security_invariants` 0 rows, `check_anon_write_surface` 0 rows. Supabase advisors:
+  212 lints, **0 ERROR**, and **zero mentions of the new objects** — no `materialized_view_in_api`
+  (anon cannot select it), no `security_definer_view`.
+- **Positive control on the refresh**, not an assumption: ran it and read `pipeline_runs` separately —
+  `ok=true`, `rows_found=172`, `refresh_ms=8883`.
+
+⚠ **CADENCE WAS CHOSEN FROM THE READ RATE, AND THE OBVIOUS CHOICE WAS WRONG.** The view was computed
+**984 times / 258h = 3.81/h**, so a 15-min refresh (4/h) would have been **read-NEGATIVE** — more full
+computations than the reads it replaces. 20 min (3/h) is ~21% fewer computations *and* collapses every
+read. 30 min would save ~47% at the cost of freshness; one `cron.alter_job` away. **Materialising is
+only a win below the current read rate — "it is cached now" is not the argument.**
+
+**REVERT (full, in order):**
+```
+SELECT cron.unschedule('rpc-refresh-cross-collection-deals');
+UPDATE public.pipeline_cadence_watchlist SET is_active=false WHERE pipeline='cross-collection-deals-mv';
+-- restore the 3-arm UNION ALL body from this commit's parent:
+--   git show <this-sha>^:supabase/migrations/  (body also in audit_20260607_cross_collection_deals_board_view)
+CREATE OR REPLACE VIEW public.cross_collection_deals_board WITH (security_invoker = on) AS <old body>;
+DROP MATERIALIZED VIEW public.mv_cross_collection_deals;
+DROP FUNCTION public.refresh_cross_collection_deals();
+```
+
+⚠ **NOT DONE, deliberately, and the numbers are why.** The same lateral shape sits in
+`topshot_first_mint_troph*` (52 MB/call, 13.1s, 56.8% warm failure) and `panini_squeeze_board` (71
+MB/call, PAGED). **They are the same fix and each needs its own read-rate check** — panini is computed
+**5,276 times/window vs deals' 984**, so its break-even cadence is completely different and copying
+`12,32,52` onto it would very likely be read-negative. Do the arithmetic per board.
+
 ### 2026-08-22 · SHIPPED TO PROD DB (Claude Code, interactive) — jobid 70 moved out of the degraded band; known-issues #19 CLOSED, with no grant made
 
 **Applied migration `20260822215445_audit_20260822_move_jobid70_misattrib_refresh_out_of_the_degraded_band`.**
