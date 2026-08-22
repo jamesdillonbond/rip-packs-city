@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the blind stripper's first real casualties: 32 hydration sites fixed, and a ratchet that had been calibrated against a blanked corpus
+
+**What shipped.** 7 guards migrated to the shared stripper (1 earlier + 6 here), **32 bare
+`.toLocaleString()` calls converted to `"en-US"`** in `CollectionAnalyticsClient.tsx`, the site-wide Rule B
+ceiling **lowered 101 → 79**, and the client-collapse budget **39 → 43 with a per-site triage**.
+**16 guards remain on local strippers.**
+
+**The migration produced 2 reds out of 6, and the filing's rule was the load-bearing one: a red here is a
+FINDING, not a regression.** Both trace to the same file — `CollectionAnalyticsClient.tsx`, ~19.6k chars
+blanked by the block-before-line stripper, which is also the file that carried the D12b P0.
+
+✅ **HYDRATION GUARD — fixed rather than re-baselined.** 10 bare `.toLocaleString()` were hidden there. A
+runtime locale differs between server and client, so these are genuine hydration risks. **All 32 bare calls
+in the file now pass `"en-US"`**, which is exactly what the guard's own failure message asks for. ⚠ **The
+ceiling was then LOWERED to the measured population (79), not left at 101** — a ratchet left slack is a
+ratchet that silently permits the next 22. The number was measured by setting the ceiling to 0 and reading
+what the guard reported, not predicted: 111 − 32 = 79, and the guard reported **79**.
+
+⚠ **COLLAPSE RATCHET 39 → 43 — A MEASUREMENT CHANGE, AND THE ONLY REASON THAT IS DEFENSIBLE IS THAT EACH
+SITE WAS READ FIRST.** No new collapse site was written. **The budget of 39 matched the BLIND count
+exactly**, which is the tell that it had been calibrated against a blanked corpus. All four newly-visible
+sites (lines **441, 524, 590, 663**) do `.then((r) => (r.ok ? r.json() : null))` **and then discriminate the
+null** — `if (j) setData(...) else setFailed(true)` — the honest three-state contract. **They match the
+regex on SHAPE, not on defect: the pattern cannot see the branch that follows it.** Raising a ratchet to
+green it is the documented wrong move; raising it after reading every site it newly names is not the same
+act, and the diff is recorded in the guard itself.
+
+🚨 **ONE REAL DEFECT FOUND AND DELIBERATELY NOT ABSORBED — filed, not fixed here.**
+`CollectionAnalyticsClient.tsx:906` reads `/api/ready` for the thin-volume notice and swallows failure with
+`.catch(() => {})`, leaving `thinVolumeReady = false`. **So an outage renders as "volume is fine", and a
+genuinely thin-volume market gets NO warning** — a guard failing OPEN, which CLAUDE.md names as one of the
+worst honesty sub-classes because its output is silence. ⚠ **It was already inside the old budget of 39, so
+it is NOT what moved this number** — it is called out precisely so a future reader does not mistake the
+budget bump for having covered it.
+
+**REVERT:** `git revert <this commit>`. The only production change is `.toLocaleString()` →
+`.toLocaleString("en-US")` in one client component; for a US-locale server the rendered output is
+unchanged, and the point is that it is now the same on both sides.
+
+⚠ **NEXT:** the 16 remaining guards are NOT expected to be quiet — two of the first six went red, and both
+reds were real. Migrate one per commit and triage every red; do not batch a red.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — one shared comment stripper, because the PROPOSED fix was blind too
 
 **What shipped.** `scripts/lib/strip-comments.mjs` (the single implementation, replacing 37 local copies)
