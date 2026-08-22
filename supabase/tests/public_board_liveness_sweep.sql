@@ -17,9 +17,13 @@
 -- the operator's next action differs completely.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260810233442_audit_20260810_board_liveness_honest_sweep_decoupled.sql),
--- whose body was verified byte-identical to live prod via prosrc md5 on
--- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- (supabase/migrations/20260822203000_audit_20260822_snapshot_public_board_liveness_sweep_predictive_skip.sql).
+-- Re-pinned 2026-08-22: db-pin-staleness had reported this pin STALE on every run
+-- since 2026-08-10 (known-issues #24). The drift is a coherent feature, not rot —
+-- least-recently-probed ROTATION, a 14-day per-board MEDIAN cost estimate, and a
+-- PREDICTIVE SKIP that declines to start a board which will not fit the remaining
+-- budget, plus the `skipped` counter. The slow-vs-empty split below is unchanged.
+-- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -40,12 +44,22 @@ CREATE TABLE public.public_board_liveness_state (
   checked_at timestamptz
 );
 
+-- The 14-day per-board MEDIAN that drives the predictive skip is read from here.
+-- Left EMPTY for every assertion above: with no history the estimate falls back to
+-- max_ms * 2, which fits the default budget, so the classification cases below run
+-- a full sweep exactly as before. It is populated only by the last block.
+CREATE TABLE public.public_board_liveness_history (
+  view_name  text,
+  elapsed_ms integer,
+  checked_at timestamptz
+);
+
 -- >>> BEGIN verbatim public_board_liveness_sweep (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.public_board_liveness_sweep(p_budget_ms integer DEFAULT 600000)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   r         record;
@@ -57,26 +71,57 @@ DECLARE
   v_ms      integer;
   v_err     text;
   v_sqlst   text;
+  v_spent   numeric;
   n_probed  integer := 0;
   n_empty   integer := 0;
   n_slow    integer := 0;
+  n_skipped integer := 0;
   n_active  integer;
   v_bust    boolean := false;
 BEGIN
   SELECT count(*) INTO n_active FROM public.public_board_liveness_watchlist WHERE is_active;
 
   FOR r IN
-    SELECT view_name, min_rows, max_ms
-      FROM public.public_board_liveness_watchlist
-     WHERE is_active
-     ORDER BY view_name
+    WITH est AS (
+      -- MEDIAN, not p90. See migration header: summing per-board p90 overstates a
+      -- real sweep ~10x and would skip boards that routinely finish inside budget.
+      SELECT h.view_name,
+             percentile_disc(0.5) WITHIN GROUP (ORDER BY h.elapsed_ms) AS p50_ms
+        FROM public.public_board_liveness_history h
+       WHERE h.checked_at > now() - interval '14 days'
+         AND h.elapsed_ms IS NOT NULL
+       GROUP BY h.view_name
+    )
+    SELECT w.view_name,
+           w.min_rows,
+           w.max_ms,
+           COALESCE(e.p50_ms, w.max_ms * 2)::numeric AS est_ms
+      FROM public.public_board_liveness_watchlist w
+      LEFT JOIN public.public_board_liveness_state s ON s.view_name = w.view_name
+      LEFT JOIN est e                                ON e.view_name = w.view_name
+     WHERE w.is_active
+     -- ROTATION: least-recently-probed first. Never-probed boards (NULL) lead.
+     -- view_name is the tiebreak so the order stays deterministic within a tick.
+     ORDER BY s.checked_at NULLS FIRST, w.view_name
   LOOP
-    -- Soft deadline, checked BETWEEN boards only. It cannot preempt a single long board;
-    -- one pathological view can overrun it (94.5s observed). That is accepted: the overrun
-    -- is recorded as that board's honest elapsed_ms, which is the measurement we want.
-    IF EXTRACT(epoch FROM clock_timestamp() - v_t0) * 1000 > p_budget_ms THEN
+    v_spent := EXTRACT(epoch FROM clock_timestamp() - v_t0) * 1000;
+
+    IF v_spent > p_budget_ms THEN
       v_bust := true;
       EXIT;
+    END IF;
+
+    -- PREDICTIVE SKIP. A running board cannot be preempted (a per-board
+    -- statement_timeout does not work: the timer is armed once at the top-level
+    -- statement and is re-armed by neither SET LOCAL nor COMMIT -- both verified
+    -- empirically 2026-08-16). So we decline to START a board whose median cost
+    -- will not fit in what is left. The first board is exempt, which guarantees
+    -- forward progress on even the most pathological view; rotation then moves it
+    -- to the back of the next cycle.
+    IF n_probed > 0 AND v_spent + r.est_ms > p_budget_ms THEN
+      n_skipped := n_skipped + 1;
+      v_bust    := true;   -- coverage is incomplete this tick; stay INCONCLUSIVE
+      CONTINUE;
     END IF;
 
     v_cnt := NULL; v_ms := NULL; v_err := NULL; v_sqlst := NULL;
@@ -125,6 +170,7 @@ BEGIN
   RETURN jsonb_build_object(
     'probed', n_probed,
     'active', n_active,
+    'skipped', n_skipped,
     'empty_or_error', n_empty,
     'slow', n_slow,
     'budget_exhausted', v_bust,
@@ -226,6 +272,53 @@ SELECT _assert_eq((public.public_board_liveness_sweep(-1) ->> 'probed'), '0',
   'and the probed count reflects what was actually checked, not the watchlist size');
 SELECT _assert_eq((public.public_board_liveness_sweep(-1) ->> 'active'), '4',
   'while active still reports how many SHOULD have been checked');
+
+-- ── PREDICTIVE SKIP: declining to START a board is still INCOMPLETE coverage ──
+-- Added when this pin was re-pointed 2026-08-22. The live sweep estimates each
+-- board's cost from its OWN 14-day median and declines to start one that will not
+-- fit in the budget left, because a running board cannot be preempted (a per-board
+-- statement_timeout is armed once at the top-level statement and is re-armed by
+-- neither SET LOCAL nor COMMIT).
+--
+-- ⚠ THE PROPERTY WORTH PINNING IS THE LAST LINE OF THAT BRANCH, not the counter:
+-- a skip also sets budget_exhausted. Without it a tick that quietly checked one
+-- board of four would report probed=1 with budget_exhausted=false and read as a
+-- clean sweep of a short watchlist — the same false-green the -1 case above
+-- guards, arriving by a different door.
+INSERT INTO public.public_board_liveness_history (view_name, elapsed_ms, checked_at)
+SELECT view_name, 999999, now() - interval '1 day'
+  FROM public.public_board_liveness_watchlist WHERE is_active;
+
+-- Rotation is least-recently-probed first, so board_missing (oldest) must lead.
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '3 hours' WHERE view_name = 'board_missing';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '2 hours' WHERE view_name = 'board_raises';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '1 hour'  WHERE view_name = 'board_empty';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '30 minutes' WHERE view_name = 'board_healthy';
+
+SELECT _assert_eq((public.public_board_liveness_sweep(5000) ->> 'skipped'), '3',
+  'a board whose median cost cannot fit the remaining budget is SKIPPED, not probed');
+SELECT _assert_eq((public.public_board_liveness_sweep(5000) ->> 'probed'), '1',
+  'the FIRST board is exempt from the skip, so the sweep always makes forward progress
+   rather than starving a watchlist whose every board looks too expensive');
+SELECT _assert_eq((public.public_board_liveness_sweep(5000) ->> 'budget_exhausted'), 'true',
+  'a SKIP marks the tick inconclusive — partial coverage must never read as a clean sweep');
+SELECT _assert_eq((public.public_board_liveness_sweep(5000) ->> 'active'), '4',
+  'and active still reports how many SHOULD have been checked');
+
+-- Rotation itself, and it needs its own ISOLATED tick. Each sweep above probes the
+-- least-recently-checked board and stamps it now(), so the four assertion calls
+-- rotate through all four boards — which is the feature working, but it destroys
+-- the ordering this check depends on. Re-seed, take exactly ONE tick, then compare.
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '3 hours' WHERE view_name = 'board_missing';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '2 hours' WHERE view_name = 'board_raises';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '1 hour'  WHERE view_name = 'board_empty';
+UPDATE public.public_board_liveness_state SET checked_at = now() - interval '30 minutes' WHERE view_name = 'board_healthy';
+SELECT public.public_board_liveness_sweep(5000);
+SELECT _assert(
+  (SELECT checked_at FROM public.public_board_liveness_state WHERE view_name = 'board_missing')
+  > (SELECT checked_at FROM public.public_board_liveness_state WHERE view_name = 'board_empty'),
+  'rotation probes the least-recently-checked board first, so a starved board cannot
+   stay starved across ticks');
 
 SELECT '✓ public_board_liveness_sweep invariants pass' AS result;
 ROLLBACK;

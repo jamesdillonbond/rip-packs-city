@@ -1075,7 +1075,7 @@ const PINS = [
     fn: "public_board_liveness_sweep",
     test: "supabase/tests/public_board_liveness_sweep.sql",
     migration:
-      "supabase/migrations/20260810233442_audit_20260810_board_liveness_honest_sweep_decoupled.sql",
+      "supabase/migrations/20260822203000_audit_20260822_snapshot_public_board_liveness_sweep_predictive_skip.sql",
   },
   {
     // pg_cron `29 * * * *`. Feeds `unmapped_resolution_backlog_max`, also
