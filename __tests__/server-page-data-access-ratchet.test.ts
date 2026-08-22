@@ -173,7 +173,17 @@ const NON_PAGE_BUDGET = 0
 
 const COMPONENTS_DIR = join(process.cwd(), "components")
 
-/** Every .ts/.tsx outside `app/api`, which the primary gate already measures. */
+/**
+ * Every .ts/.tsx outside `app/api` — the route tree, which this guard is not about.
+ *
+ * ⚠ This used to read "which the primary gate already measures", and that is
+ * false for the honesty property. The primary gate is the COVERAGE gate: it
+ * measures whether lines execute, and an unhandled supabase error has no branch
+ * to be uncovered, so a happy-path route test covers it completely. The route
+ * tree was unchecked for that class until 2026-08-21, when it yielded 7 live
+ * instances and a measured 259 reads that never destructure `error`.
+ * Excluding app/api here is still correct — just not for that reason.
+ */
 function allSourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)

@@ -108,7 +108,19 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
     if (statSync(full).isDirectory()) {
-      // app/api/** is the ROUTE tree — server code, already in the primary gate.
+      // app/api/** is the ROUTE tree, excluded because this guard is about CLIENT
+      // components collapsing a failure into an empty render.
+      //
+      // ⚠ THE EXCLUSION IS RIGHT; THE REASON IT USED TO GIVE WAS NOT. It said
+      // "already in the primary gate", and the primary gate is the vitest
+      // COVERAGE gate — which measures whether lines EXECUTE, not whether errors
+      // are handled. An unguarded `const { data } = await supabase…` has no error
+      // branch to be uncovered, so a happy-path route test gives it 100% coverage.
+      // Nothing was checking the route tree for this class, and on 2026-08-21 that
+      // cost 7 live instances (4 in Fast Break, then cost-basis / market-movers /
+      // edition-stats) plus a measured 259 reads that never destructure `error`.
+      // Do NOT re-derive "app/api is covered" from this line.
+      // See docs/overnight/inbox/2026-08-21T1945Z-259-route-reads-…
       if (entry === "api" && dir === join(process.cwd(), "app")) continue
       walk(full, out)
     } else if (entry.endsWith(".tsx") || entry.endsWith(".ts")) {
