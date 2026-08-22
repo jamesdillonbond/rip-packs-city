@@ -98,6 +98,58 @@ const chk = (r: { checks: Check[] }, name: string) => {
   return c
 }
 
+// ── ARM COMPLETENESS, and why it is not a name roster ──
+// An alerting surface fails in a way ordinary code does not: its output is
+// SILENCE, so a missing arm is indistinguishable from a healthy one. CLAUDE.md
+// calls this the unfalsifiable class and it happened here — the FMV Confidence
+// arm branched on `error`, then on `data`, with no else, so a read that returned
+// NEITHER pushed nothing and the roadmap's headline metric vanished from its own
+// report.
+//
+// ⚠ The obvious guard is a hardcoded roster of expected arm names, and CLAUDE.md
+// warns against exactly that: "a guard that NAMES its instances — three have died
+// on a rename." So this pins the property BEHAVIOURALLY instead. The healthy run
+// defines the roster, and the failing runs must not lose any of it. A rename
+// changes both sides at once and the test stays true, while a vanished arm reds it.
+//
+// Two failure shapes, because they are genuinely different states and only one of
+// them was ever handled: every read ERRORING, and every read returning NO PAYLOAD
+// with no error. Verified against the pre-fix route: the null-payload run produced
+// 12 arms instead of 13 and named the missing one.
+describe("sentinel — no arm may disappear from its own report", () => {
+  function allFixturesAs(shape: Record<string, unknown>): Fixtures {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(greenFixtures())) out[k] = shape
+    return out as Fixtures
+  }
+
+  it("keeps every healthy arm when every read ERRORS", async () => {
+    const greenNames = (await run()).checks.map((c) => c.name).sort()
+    // Guard against a vacuous pass: if the healthy run produced almost nothing,
+    // "no arm went missing" would be trivially true and would pin nothing.
+    expect(greenNames.length).toBeGreaterThan(10)
+
+    const failed = await run(
+      allFixturesAs({ data: null, count: null, error: { message: "canceling statement due to statement timeout" } }),
+      []
+    )
+    const failedNames = failed.checks.map((c) => c.name)
+    expect(greenNames.filter((n) => !failedNames.includes(n))).toEqual([])
+  })
+
+  it("keeps every healthy arm when every read returns NO PAYLOAD and no error", async () => {
+    const greenNames = (await run()).checks.map((c) => c.name).sort()
+    expect(greenNames.length).toBeGreaterThan(10)
+
+    // The state that actually bit: supabase-js RETURNS rather than throws, so this
+    // is a read that neither failed nor delivered. It is not an error and it is
+    // not a zero.
+    const nulled = await run(allFixturesAs({ data: null, count: null, error: null }), [])
+    const nullNames = nulled.checks.map((c) => c.name)
+    expect(greenNames.filter((n) => !nullNames.includes(n))).toEqual([])
+  })
+})
+
 describe("sentinel — sales-ingest health arms", () => {
   it("a non-saturation ingest-health RPC error pages the collection lane critical and warns the source lane", async () => {
     const r = await run({ "rpc:sentinel_sales_ingest_health": { data: null, error: { message: "relation missing" } } as never })
