@@ -1,8 +1,17 @@
 -- audit_20260821_cross_collection_refresh_lock_window
 --
--- ⚠ READY TO APPLY — NOT YET APPLIED. Apply it in the healthy window (20:00–00:00Z),
--- not in the 01:00–19:00Z degraded band, because `apply_migration` costs a ~10–20 s
--- burst of user-facing PGRST002 500s from schema-cache re-introspection.
+-- ✅ APPLIED TO PRODUCTION 2026-08-22 ~20:35Z (13:35 PT), inside the healthy window,
+-- via Supabase MCP apply_migration as `audit_20260821_cross_collection_refresh_lock_window`.
+-- Verified after apply: both functions carry the temp-table build (`prosrc ILIKE '%CREATE TEMP
+-- TABLE%'` = true) and their ACLs are unchanged (anon/authenticated EXECUTE still false).
+--
+-- THE SCHEDULE MOVE IS ALSO DONE (it was the required follow-through, not optional):
+-- jobid 60 `rpc-ccm-step1` 04:10Z → 23:10Z, jobid 4 `rpc-ccm-step2` 04:25Z → 23:25Z.
+-- ⚠ The `cron.alter_job` recipe below does NOT work here — it is a permission pincer
+-- (`postgres` does not own job 60; `cron_heavy` has no EXECUTE on alter_job). The move
+-- was made with `SET LOCAL ROLE cron_heavy; cron.schedule(<same name>, <new sched>,
+-- <same command>)`, which updates IN PLACE: both jobids were preserved (no 109→332-style
+-- churn) and job 60 kept its `cron_heavy` ownership and 600s role budget.
 --
 -- WHAT THIS CHANGES, AND WHY IT IS NOT A JUDGEMENT CALL
 --
@@ -43,8 +52,18 @@
 -- ⚠ WHAT THIS DOES NOT FIX: the queries are not one bit faster, so the 04:10Z runs
 -- will keep timing out. This removes the OBJECTION to moving them, it is not a
 -- substitute for the move. After applying, the schedule move is a chore:
---     SELECT cron.alter_job(60, schedule := '10 23 * * *');
---     SELECT cron.alter_job(4,  schedule := '25 23 * * *');
+--     ⛔ THESE TWO LINES DO NOT WORK — kept only so the correction has something to point at.
+--     SELECT cron.alter_job(60, schedule := '10 23 * * *');   -- ERROR: does not own it
+--     SELECT cron.alter_job(4,  schedule := '25 23 * * *');   -- (pincer; see header)
+--     ✅ WHAT ACTUALLY WORKED, 2026-08-22 (both jobids preserved, ownership retained):
+--       DO $x$ DECLARE c60 text; c4 text; BEGIN
+--         SELECT command INTO c60 FROM cron.job WHERE jobid=60;
+--         SELECT command INTO c4  FROM cron.job WHERE jobid=4;
+--         SET LOCAL ROLE cron_heavy;                      -- load-bearing: keeps the 600s budget
+--         PERFORM cron.schedule('rpc-ccm-step1', '10 23 * * *', c60);
+--         RESET ROLE;                                     -- job 4 is postgres-owned
+--         PERFORM cron.schedule('rpc-ccm-step2', '25 23 * * *', c4);
+--       END $x$;
 -- ⚠ then VERIFY it took — `cron.alter_job(schedule := …)` is recorded as having
 -- silently not taken effect once; read `cron.job_run_details.start_time` the next
 -- day and, if either still fires at 04:10/04:25Z, `cron.schedule` a fresh job and
