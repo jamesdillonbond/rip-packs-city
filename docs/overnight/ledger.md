@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — the `/api/sets` driver-message leak, found by grepping the EXPRESSION: 73 sites, 5 fixed, and 3 tests that pinned the leak as the contract
+
+**CODE + TEST. No DB, no migration.** Continuing the honesty backlog. ⚠ **The route I opened was not the defect I found** — I went to `app/api/alerts` for its unlooked reads, established those were a *labelled best-effort preview* (benign), and noticed on the way past that its catch returned `err.message` raw.
+
+🚨 **THE DEFECT CLASS.** `lib/api-error.ts` exists because `/api/sets` handed Postgres's own text to end users — *"ERROR / canceling statement due to statement timeout"* under a heading — which is both a dead page and an internal-detail leak. **Grepping the EXPRESSION rather than the file, per this file's own rule, found `{ error: err.message }` at 73 sites across 57 route files.**
+
+⚠ **THAT IS A POPULATION, NOT A DEFECT LIST, and most of it is CORRECT.** `/api/admin/**` is token-gated operator surface and `/api/cron/**` is called by schedulers, not browsers — a driver message there is useful, not a leak. **Scoped instead to the unambiguous set:** the **4 files that already import `apiErrorResponse` and use it on some paths but not others** (the decision was made in-file and these sites missed it), plus the one that is **anon-facing**.
+
+✅ **FIXED — 5 sites in 4 files.** `app/api/alerts` (GET + POST catches; PATCH/DELETE already used the helper) · `app/api/alerts/subscriptions` · `app/api/profile/achievements` · `app/api/public/wallet-intel`. ⚠ **The wallet-intel one needed no helper at all** — that file already had the right answer **14 lines up**: its rpc-error path returns the fixed copy *"Failed to fetch wallet intel"* while its outer catch leaked. Matched to the existing copy, so **the status code is unchanged** and the change is purely what the client is told.
+
+🚨 **`profile/achievements` was TWO defects in one line: it leaked AND it returned HTTP 200 for a failed recompute** — `{ triggered: false, error: … }` — so any consumer checking `r.ok` read *"succeeded, nothing triggered"*. Verified the caller before changing the status: `AchievementsCard` does `.catch(){}.finally()` and **ignores the response entirely**, so the change is safe there. ⚠ **Noted, not fixed (scope):** that component sets "Updated" unconditionally, so it says so even when the recompute failed.
+
+⚠ **THREE EXISTING TESTS PINNED THE LEAK AS THE CONTRACT, AND WERE INVERTED RATHER THAN DELETED.** `expect(body.error).toBe("read boom")` · `toBe("upsert boom")` · `expect(body.triggered).toBe(false)` with `toBe("network down")`. **A passing test asserting a promise is what holds that promise in place** — each is reversed in place with a comment saying what it used to assert and why. ⚠ **And the inversions assert the ABSENCE of the leak, not the presence of an error string** — plus one keeps `typeof body.error === "string"` so the fix cannot swing into silence, which would be its own defect.
+
+⚠ **Honest scope: 73 → 68 sites.** This did not sweep the class and deliberately does not claim to. The remaining 68 are overwhelmingly admin/cron, where the same expression is the *right* behaviour — the "same expression, opposite correctness" split this file already records for the swallowed-`error` population.
+
+**Also triaged and left alone, with the reason:** `app/api/alerts`' three unlooked reads feed `fetchMarketData`, which the file's own header calls a *"best-effort preview"* and which names the pg_cron dispatcher as the authoritative trigger — so a failed enrichment degrades a preview, not an alert. `app/api/teams/follow` GET returns `following:false` on a failed read (wrong button state, idempotent click) — real but low severity, and its POST/DELETE already handle `error` with scoped filters.
+
+⚠ **A DETECTOR OF MINE RETURNED A FALSE ZERO AND THE POSITIVE CONTROL CAUGHT IT.** A read-modify-write scan reported **0 routes** repo-wide, which is implausible for a platform with saved wallets and watchlists. Cause: the WRITE regex had **two** capture groups so `findall` yielded tuples while READ yielded strings — **the set intersection was structurally always empty**. Fixed (non-capturing verb group) → **116 routes**, 67 with an unlooked read. **Reported here because the zero was a pure instrument artifact, exactly the class this file keeps recording, and it was a control — not the result — that exposed it.**
+
+**Verified:** `npx tsc --noEmit` clean · **92 cases green** across the six alerts/achievements suites, plus 4 in `api-public-wallet-intel` · leak detector re-run on all 4 touched files reads **0** · memory-doc-link and brand-token guards exit 0.
+
+**Revert:** `git revert <sha>` — restores the raw messages and the three original assertions.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — `/api/profile/me` asserted "you have no wallet on file" out of a failed read, and the 200 made it undetectable
 
 **CODE + TEST. No DB, no migration.** Tier 2 of the 08-21 honesty filing's triage order — *a false claim about the reader's OWN account*, which CLAUDE.md names as a worst sub-class because it is actionable.
