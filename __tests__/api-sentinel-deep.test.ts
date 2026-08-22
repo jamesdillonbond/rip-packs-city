@@ -80,6 +80,21 @@ function greenFixtures(): Fixtures {
       error: null,
     },
     "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    // Dune Spend: 20% of the datapoint cycle at 25% elapsed, credits barely
+    // touched -> on pace, ok.
+    "rpc:dune_spend_report": {
+      data: {
+        configured: true,
+        cycle_datapoints_pct: 20,
+        cycle_elapsed_pct: 25,
+        credits_est_left: 2400,
+        cycle_credit_cap: 2500,
+        days_left_in_cycle: 23,
+        on_pace: true,
+        by_pipeline: [{ pipeline: "ownership-sync-dune", datapoints_cycle: 200000 }],
+      },
+      error: null,
+    },
     // Ownership Index Freshness reads the most recent productive run of either
     // ownership writer. Fresh => ok.
     pipeline_runs: {
@@ -217,6 +232,71 @@ describe("POST /api/sentinel — full battery", () => {
     expect(check(report, "Trust Health").detail).toBe("2/2 trust metrics ok")
     expect(check(report, "Sniper Feed").detail).toBe("2 deals (topshot: 1, allday: 1)")
     expect(check(report, "Ownership Index Freshness").status).toBe("ok")
+    expect(check(report, "Dune Spend (cycle)").status).toBe("ok")
+    expect(check(report, "Dune Spend (cycle)").detail).toContain("20% of datapoints at 25%")
+  })
+
+  // Dune Spend — the only surface where either Dune meter is visible. The plan is
+  // 1,000,000 datapoints + 2,500 credits per cycle and ONE ownership walk is
+  // 684,498 datapoints (68.4%), so a single run is the difference between "on
+  // pace" and "the month is gone".
+  describe("Dune Spend (cycle)", () => {
+    const spend = (over: Record<string, unknown>) => {
+      const f = greenFixtures() as any
+      f["rpc:dune_spend_report"] = {
+        data: { ...(f["rpc:dune_spend_report"].data as object), ...over },
+        error: null,
+      }
+      return f
+    }
+
+    it("warns when spend has passed 95% of the cycle's datapoints", async () => {
+      install(spend({ cycle_datapoints_pct: 97, cycle_elapsed_pct: 90, on_pace: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      expect(check(report, "Dune Spend (cycle)").status).toBe("warn")
+    })
+
+    it("warns on BURN RATE even while total spend is low — 40% spent at 5% elapsed", async () => {
+      // The failure that has no threshold breach yet: two walks landed in the
+      // first days of a cycle. Reading only the total would call this healthy
+      // right up until the month is gone.
+      install(spend({ cycle_datapoints_pct: 40, cycle_elapsed_pct: 5, on_pace: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("PROJECTED TO EXHAUST")
+    })
+
+    it("warns when the CREDIT meter is nearly spent though datapoints are untouched", async () => {
+      // Two meters, different lanes: the cursored backfills buy one execution
+      // per window and can exhaust credits while the datapoint gauge reads calm.
+      install(spend({ cycle_datapoints_pct: 3, credits_est_left: 100, cycle_credit_cap: 2500 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("% of credits")
+    })
+
+    it("reports an unreadable meter as unreadable, never as 0% spent", async () => {
+      const f = greenFixtures() as any
+      f["rpc:dune_spend_report"] = { data: null, error: { message: "pool timeout" } }
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("pool timeout")
+      expect(c.detail).not.toContain("0% of datapoints")
+    })
+
+    it("says so plainly when no lane has spent yet, rather than printing an empty list", async () => {
+      install(spend({ by_pipeline: [], cycle_datapoints_pct: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("no lane has spent yet")
+    })
   })
 
   // Ownership Index Freshness — the arm added after ownership-onchain-walk failed

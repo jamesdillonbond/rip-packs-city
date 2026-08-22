@@ -164,6 +164,11 @@ async function run(req: NextRequest) {
     // day it would otherwise repeat, and that is exactly when nobody is looking
     // for a budget bug. Read lazily so a drained tick costs nothing.
     let budget: DuneBudget | null = null;
+    // Datapoints are the binding meter (Dune's cycle limit is 1,000,000 of
+    // them); rows are the secondary per-day bound. This lane's work is
+    // RESUMABLE — the cursor advances only on a completed window — so unlike the
+    // ownership walk it may stop anywhere, and its min_start is 0.
+    let dpAllowance = 0;
     let rowsAllowance = 0;
     let budgetStopped = false;
 
@@ -185,12 +190,13 @@ async function run(req: NextRequest) {
           break;
         }
         if (budget === null) {
-          budget = await readDuneBudget();
+          budget = await readDuneBudget(PIPELINE_NAME);
+          dpAllowance = budget.datapointsAllowedNow;
           rowsAllowance = budget.rowsAllowedNow;
         }
         // Stop at the WINDOW boundary: the cursor advances only on a completed
         // window, so this is resumable and loses nothing.
-        if (rowsAllowance <= 0) {
+        if (!budget.canStart || dpAllowance <= 0 || rowsAllowance <= 0) {
           budgetStopped = true;
           break;
         }
@@ -269,6 +275,7 @@ async function run(req: NextRequest) {
           const rows = j.result?.rows ?? [];
           found += rows.length;
           rowsAllowance -= rows.length;
+          dpAllowance -= rows.length * columnCount(rows);
           await recordDuneUsage({
             pipeline: PIPELINE_NAME,
             endpoint: "results",
@@ -348,7 +355,11 @@ async function run(req: NextRequest) {
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
           ...(budget
-            ? { budget_rows_allowed: budget.rowsAllowedNow, budget_rows_left: rowsAllowance }
+            ? {
+                budget_datapoints_allowed: budget.datapointsAllowedNow,
+                budget_datapoints_left: dpAllowance,
+                budget_rows_left: rowsAllowance,
+              }
             : {}),
           ...(budgetStopped ? { budget_stopped: true, budget_reason: budget?.reason } : {}),
         },

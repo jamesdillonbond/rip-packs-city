@@ -1045,6 +1045,72 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Dune spend (2026-08-22). ⚠ THIS IS THE ONLY PLACE THE DUNE METERS ARE
+  // VISIBLE. The credits gauge on dune.com is not the meter that stops us — it
+  // read ~900 of 2,500 on 2026-07-19 while the API was already answering
+  // `HTTP 402 … configured datapoint limit`. The plan is 1,000,000 datapoints +
+  // 2,500 credits per cycle, and ONE ownership walk is 684,498 datapoints
+  // (68.4%), so the difference between "on pace" and "the month is gone" is a
+  // single run. Warn, never page: exhausting a monthly budget is an operator
+  // decision to make, not a 3am wake-up.
+  try {
+    const { data: dune, error: duneErr } = await supabase.rpc("dune_spend_report");
+    if (duneErr) {
+      const sat = isSaturationError(duneErr.message);
+      checks.push({
+        name: "Dune Spend (cycle)",
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${duneErr.message}`,
+      });
+    } else if (!dune || typeof dune !== "object") {
+      // ⚠ An unreadable meter is reported as unreadable. Rendering it as 0%
+      // would be the "failed read published as a fact" class, on the one
+      // instrument that says whether the month's budget still exists.
+      checks.push({
+        name: "Dune Spend (cycle)",
+        status: "warn",
+        detail: "spend report unreadable (no payload)",
+      });
+    } else {
+      const d = dune as Record<string, any>;
+      const dpPct = Number(d.cycle_datapoints_pct);
+      const elapsedPct = Number(d.cycle_elapsed_pct);
+      const creditsLeft = d.credits_est_left == null ? null : Number(d.credits_est_left);
+      const creditCap = d.cycle_credit_cap == null ? null : Number(d.cycle_credit_cap);
+      const creditPct =
+        creditsLeft != null && creditCap ? Math.round(100 * (1 - creditsLeft / creditCap)) : null;
+      // Two independent ways to be in trouble, and a lane can be in the second
+      // without ever touching the first: spend past the cap, or spend at a rate
+      // that reaches it before the cycle ends.
+      const overspent = Number.isFinite(dpPct) && dpPct >= 95;
+      const offPace = d.on_pace === false && Number.isFinite(dpPct) && dpPct > elapsedPct + 20;
+      const creditsGone = creditPct != null && creditPct >= 90;
+      const lanes: any[] = Array.isArray(d.by_pipeline) ? d.by_pipeline : [];
+      const spent = lanes
+        .filter((l) => Number(l.datapoints_cycle) > 0)
+        .map((l) => `${l.pipeline}=${Number(l.datapoints_cycle).toLocaleString()}dp`)
+        .join(", ");
+      checks.push({
+        name: "Dune Spend (cycle)",
+        status: overspent || creditsGone || offPace ? "warn" : "ok",
+        detail:
+          `${Number.isFinite(dpPct) ? dpPct : "?"}% of datapoints at ` +
+          `${Number.isFinite(elapsedPct) ? elapsedPct : "?"}% of the cycle` +
+          (creditPct != null ? `; ~${creditPct}% of credits (est)` : "") +
+          `; ${d.days_left_in_cycle ?? "?"}d left` +
+          (spent ? `; ${spent}` : "; no lane has spent yet") +
+          (offPace ? " — PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" : ""),
+        value: `${Number.isFinite(dpPct) ? dpPct : "?"}%`,
+      });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Dune Spend (cycle)",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
+  }
+
   // Trust health (2026-07-16): surface v_rpc_trust_health (23 metrics as of
   // 2026-07-27, when the three Candy arms landed) in the
   // sentinel digest — per-collection FMV staleness, impossible-parallel serials,

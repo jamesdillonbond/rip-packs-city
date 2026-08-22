@@ -47,7 +47,15 @@ const BUDGET_ALLOWS = {
     data: {
       configured: true,
       paused: false,
+      pipeline_enabled: true,
+      can_start: true,
+      // Two meters. Datapoints (rows x columns) is what Dune's 1,000,000/cycle
+      // limit is denominated in and is what the routes decrement; rows are the
+      // secondary per-day bound.
+      datapoints_allowed_now: 700000,
       rows_allowed_now: 150000,
+      min_start_datapoints: 600000,
+      credits_est_left: 2500,
       day_row_cap: 150000,
       rows_today: 0,
     },
@@ -437,16 +445,20 @@ describe("POST /api/cron/sync-topshot-ownership-dune — configured walk (after 
 // gone by 06:11. Two properties are pinned here — a lane with no allowance buys
 // NOTHING (not "less"), and a stale cache is never re-bought.
 describe("POST /api/cron/sync-topshot-ownership-dune — spend budget", () => {
+  // Starts from the ALLOWING shape so a test says only what it is changing —
+  // otherwise a forgotten field silently turns every case into a failed read.
   const budget = (over: Record<string, unknown>) => ({
     "rpc:dune_budget_status": {
-      data: { configured: true, paused: false, day_row_cap: 150000, ...over },
+      data: { ...BUDGET_ALLOWS["rpc:dune_budget_status"].data, ...over },
       error: null,
     },
   })
 
   it("no allowance: makes NO Dune request at all and logs an ok budget stop", async () => {
     configureDune()
-    const spy = install(budget({ rows_allowed_now: 0, rows_today: 150000 }))
+    const spy = install(
+      budget({ datapoints_allowed_now: 0, rows_allowed_now: 0, can_start: false, rows_today: 150000 })
+    )
     const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
 
     await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
@@ -462,9 +474,37 @@ describe("POST /api/cron/sync-topshot-ownership-dune — spend budget", () => {
     expect(extra.budget_read).toBe("ok")
   })
 
+  it("enough budget to SPEND but not to FINISH: refuses to start, buys nothing", async () => {
+    // 🚨 The case the whole allocation exists for. One walk is 684,498
+    // datapoints of a 1,000,000 cycle; this walk restarts at offset 0 every run,
+    // so spending a 300k remainder buys 44% of a walk AND leaves the table
+    // capped at the offset reached. A lane whose unit of work is atomic must
+    // decline, not truncate.
+    configureDune()
+    const spy = install(
+      budget({ datapoints_allowed_now: 300000, rows_allowed_now: 150000, can_start: false })
+    )
+    const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    const row = logRow(spy)
+    expect(row!.args!.p_ok).toBe(true) // deliberate, not a failure
+    const extra = row!.args!.p_extra as any
+    expect(extra.budget_stopped).toBe(true)
+    // ⚠ The reason must distinguish "no budget" from "not enough to finish" —
+    // they call for opposite operator actions (wait vs. raise the reservation).
+    expect(String(extra.budget_reason)).toContain("needed to start")
+    expect(extra.budget_datapoints_allowed).toBe(300000)
+  })
+
   it("paused: the one-row kill switch stops the lane with no Dune request", async () => {
     configureDune()
-    const spy = install(budget({ paused: true, rows_allowed_now: 0 }))
+    const spy = install(
+      budget({ paused: true, datapoints_allowed_now: 0, rows_allowed_now: 0, can_start: false })
+    )
     const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
 
     await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
@@ -493,7 +533,9 @@ describe("POST /api/cron/sync-topshot-ownership-dune — spend budget", () => {
 
   it("mid-walk exhaustion stops at the page boundary and records where it stopped", async () => {
     configureDune()
-    const spy = install(budget({ rows_allowed_now: 1000 }))
+    // Exactly one full page of headroom on the datapoint meter: 1000 rows x 5
+    // columns. The second page must therefore never be bought.
+    const spy = install(budget({ datapoints_allowed_now: 5000, rows_allowed_now: 1000 }))
     const fullPage = Array.from({ length: 1000 }, (_, i) => okRow({ nft_id: `n${i}` }))
     stubDune({
       results: [
@@ -517,7 +559,7 @@ describe("POST /api/cron/sync-topshot-ownership-dune — spend budget", () => {
 
   it("writes one ledger row per results page, with the exact rows and columns bought", async () => {
     configureDune()
-    const spy = install(budget({ rows_allowed_now: 150000 }))
+    const spy = install(budget({}))
     stubDune({ results: [{ json: { result: { rows: [okRow(), okRow({ nft_id: "n2" })] }, next_offset: null } }] })
 
     await mod.POST(

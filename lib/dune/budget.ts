@@ -43,9 +43,23 @@ export interface DuneBudget {
   configured: boolean
   /** The one-row kill switch (`dune_budget_state.paused`). */
   paused: boolean
-  /** Rows this lane may still buy right now. 0 means stop. */
+  /**
+   * Datapoints this lane may still buy — the BINDING meter, because that is the
+   * unit Dune's cycle limit is expressed in (1,000,000/cycle on this plan).
+   */
+  datapointsAllowedNow: number
+  /** Secondary rows/day bound. Exact, where datapoints are rows x columns. */
   rowsAllowedNow: number
-  /** Why it is 0, when it is 0 — goes straight into `pipeline_runs.extra`. */
+  /**
+   * ⚠ NOT `allowance > 0`. A lane whose walk restarts at offset 0 must be able
+   * to FINISH: a run that stops half way has spent the datapoints AND left the
+   * table capped at the offset it reached. `min_start_datapoints` in
+   * `dune_budget_allocation` is what makes that decidable per lane.
+   */
+  canStart: boolean
+  /** What this lane needs before it may begin. 0 for lanes with resumable work. */
+  minStartDatapoints: number
+  /** Why it may not start, when it may not — goes into `pipeline_runs.extra`. */
   reason: string | null
   /** The full status payload, for `extra` so a paced run is diagnosable later. */
   raw: Record<string, unknown> | null
@@ -55,7 +69,10 @@ const FAILED = (reason: string): DuneBudget => ({
   read: "failed",
   configured: false,
   paused: false,
+  datapointsAllowedNow: 0,
   rowsAllowedNow: 0,
+  canStart: false,
+  minStartDatapoints: 0,
   reason,
   raw: null,
 })
@@ -71,12 +88,14 @@ function toInt(v: unknown): number | null {
  * smoothed into a permissive default.
  */
 export async function readDuneBudget(
+  /** The lane's `pipeline_runs` name — the key of its `dune_budget_allocation` row. */
+  pipeline: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
 ): Promise<DuneBudget> {
   let payload: unknown
   try {
-    const { data, error } = await db.rpc("dune_budget_status")
+    const { data, error } = await db.rpc("dune_budget_status", { p_pipeline: pipeline })
     if (error) return FAILED(`budget read: ${error.message}`)
     payload = data
   } catch (e) {
@@ -95,20 +114,43 @@ export async function readDuneBudget(
     }
   }
 
-  const allowed = toInt(raw.rows_allowed_now)
-  if (allowed === null) return { ...FAILED("budget read: rows_allowed_now unreadable"), raw }
+  // ⚠ Both meters must PARSE. A missing datapoint allowance is not "fall back to
+  // rows" — rows are the secondary bound, and treating an unreadable primary
+  // meter as absent would authorise spending against the meter that stops us.
+  const dpAllowed = toInt(raw.datapoints_allowed_now)
+  const rowsAllowed = toInt(raw.rows_allowed_now)
+  if (dpAllowed === null) {
+    return { ...FAILED("budget read: datapoints_allowed_now unreadable"), raw }
+  }
+  if (rowsAllowed === null) {
+    return { ...FAILED("budget read: rows_allowed_now unreadable"), raw }
+  }
 
   const paused = raw.paused === true
+  const minStart = toInt(raw.min_start_datapoints) ?? 0
+  const dp = Math.max(0, dpAllowed)
+  const rows = Math.max(0, rowsAllowed)
+  const canStart = raw.can_start === true && dp > 0 && rows > 0
+
   return {
     read: "ok",
     configured: true,
     paused,
-    rowsAllowedNow: Math.max(0, allowed),
+    datapointsAllowedNow: dp,
+    rowsAllowedNow: rows,
+    canStart,
+    minStartDatapoints: minStart,
     reason: paused
       ? "dune_budget_state.paused"
-      : allowed <= 0
-        ? "day/cycle row cap reached"
-        : null,
+      : raw.pipeline_enabled === false
+        ? "lane disabled in dune_budget_allocation"
+        : toInt(raw.credits_est_left) === 0
+          ? "credit meter spent (est) — an execute would 402, and a stale walk buys nothing"
+          : dp <= 0 || rows <= 0
+            ? "datapoint/row cap reached"
+            : !canStart
+              ? `insufficient to finish: ${dp} datapoints available, ${minStart} needed to start`
+              : null,
     raw,
   }
 }
@@ -161,6 +203,7 @@ export async function logDuneBudgetStop(
   db: any = supabaseAdmin,
 ): Promise<void> {
   const failed = opts.budget.read === "failed"
+  const b = opts.budget
   try {
     await db.rpc("log_pipeline_run", {
       p_pipeline: opts.pipeline,
@@ -173,10 +216,12 @@ export async function logDuneBudgetStop(
       p_error: failed ? `dune budget unreadable: ${opts.budget.reason ?? "unknown"}` : null,
       p_extra: {
         budget_stopped: true,
-        budget_read: opts.budget.read,
-        budget_reason: opts.budget.reason,
-        budget_paused: opts.budget.paused,
-        budget_status: opts.budget.raw,
+        budget_read: b.read,
+        budget_reason: b.reason,
+        budget_paused: b.paused,
+        budget_datapoints_allowed: b.datapointsAllowedNow,
+        budget_min_start: b.minStartDatapoints,
+        budget_status: b.raw,
         ...(opts.extra ?? {}),
       },
     })

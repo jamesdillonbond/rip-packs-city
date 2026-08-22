@@ -189,14 +189,22 @@ async function run(req: NextRequest) {
     let cachedTotalRows: number | null = null;
 
     // ── Dune spend budget (2026-08-22) ──────────────────────────────────────
-    // ⚠ This walk is the largest single Dune purchase in the repo — 114,083 rows
-    // x 6 columns per full pass — and until now nothing counted it. Ask before
-    // buying: a tick with no allowance does NO Dune I/O at all, rather than
-    // walking until Dune answers 402. Caps live in `dune_budget_state`, so
-    // changing the pace is one UPDATE, not a deploy.
-    const budget = await readDuneBudget();
+    // 🚨 ONE FULL WALK IS 68.4% OF THE MONTH. 114,083 rows x 6 columns =
+    // 684,498 datapoints against a 1,000,000-datapoint cycle. That is why the
+    // weekly cadence 402'd on 08-10 and 08-17: the second walk of a cycle cannot
+    // fit, and no amount of retrying changes the arithmetic.
+    //
+    // ⚠ `canStart`, NOT `allowance > 0`. This walk restarts at offset 0 every
+    // run, so a partial walk spends datapoints AND leaves the table capped at
+    // the offset reached (an abort at offset 20000 once did exactly that). The
+    // lane therefore DECLINES TO START unless it can finish — 600,000 datapoints
+    // (`dune_budget_allocation.min_start_datapoints`) — rather than buying 44% of
+    // a walk. Caps and reservations live in the DB: changing the pace is one
+    // UPDATE, not a deploy.
+    const budget = await readDuneBudget(PIPELINE_NAME);
+    let dpAllowance = budget.datapointsAllowedNow;
     let rowsAllowance = budget.rowsAllowedNow;
-    if (rowsAllowance <= 0) {
+    if (!budget.canStart) {
       await logDuneBudgetStop({
         pipeline: PIPELINE_NAME,
         startedAt,
@@ -338,6 +346,7 @@ async function run(req: NextRequest) {
               };
               const probeRows = pj.result?.rows ?? [];
               rowsAllowance -= probeRows.length;
+              dpAllowance -= probeRows.length * columnCount(probeRows);
               await recordDuneUsage({
                 pipeline: PIPELINE_NAME,
                 endpoint: "results",
@@ -372,8 +381,11 @@ async function run(req: NextRequest) {
       while (true) {
         if (walkSkip) break;
         // Out of allowance mid-walk: stop cleanly with the offset recorded
-        // rather than paging on until Dune refuses.
-        if (rowsAllowance <= 0) {
+        // rather than paging on until Dune refuses. Reaching here at all means
+        // the pre-flight `canStart` was satisfied and something else (a
+        // concurrent lane, or a walk larger than the reservation) consumed the
+        // difference — so it is a real event worth seeing in `extra`.
+        if (dpAllowance <= 0 || rowsAllowance <= 0) {
           budgetStopped = true;
           break;
         }
@@ -409,6 +421,7 @@ async function run(req: NextRequest) {
         const rows = j.result?.rows ?? [];
         found += rows.length;
         rowsAllowance -= rows.length;
+        dpAllowance -= rows.length * columnCount(rows);
         // Per PAGE, not per run: a run killed at maxDuration has still spent
         // every datapoint it bought, and a ledger written only at the end would
         // under-count exactly the runs that overspent.
@@ -496,8 +509,9 @@ async function run(req: NextRequest) {
           // nothing; `budget_stopped` marks a run cut short by the day/cycle
           // cap. Both are absent (not 0/false-by-default) on a normal run, so
           // `extra_key_counts` in pipeline_runs_daily counts them directly.
+          budget_datapoints_allowed: budget.datapointsAllowedNow,
+          budget_datapoints_left: dpAllowance,
           budget_rows_allowed: budget.rowsAllowedNow,
-          budget_rows_left: rowsAllowance,
           ...(walkSkip ? { walk_skipped: walkSkip } : {}),
           ...(budgetStopped ? { budget_stopped: true } : {}),
           ...(duneRowsHeld !== null ? { dune_rows_held: duneRowsHeld } : {}),

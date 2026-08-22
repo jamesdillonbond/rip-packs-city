@@ -47,7 +47,15 @@ const BUDGET_ALLOWS = {
     data: {
       configured: true,
       paused: false,
+      pipeline_enabled: true,
+      can_start: true,
+      // Two meters. Datapoints (rows x columns) is what Dune's 1,000,000/cycle
+      // limit is denominated in and is what the routes decrement; rows are the
+      // secondary per-day bound.
+      datapoints_allowed_now: 700000,
       rows_allowed_now: 150000,
+      min_start_datapoints: 600000,
+      credits_est_left: 2500,
       day_row_cap: 150000,
       rows_today: 0,
     },
@@ -267,7 +275,12 @@ describe("sync-sales-ingest-dune — spend budget", () => {
     configure()
     const spy = install({
       "rpc:dune_budget_status": {
-        data: { configured: true, paused: false, rows_allowed_now: 0, day_row_cap: 150000 },
+        data: {
+          ...BUDGET_ALLOWS["rpc:dune_budget_status"].data,
+          datapoints_allowed_now: 0,
+          rows_allowed_now: 0,
+          can_start: false,
+        },
         error: null,
       },
     })
