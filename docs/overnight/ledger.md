@@ -8,6 +8,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — #23: canary CONFIRMED live, then 4 more edge functions redeployed under a proof, not a guess
+
+**Canary verdict: PASS, and only one row was ever admissible evidence.** `ufc-stub-thumbnail-resolver`
+logged **22:42:09Z, ok=true, 618 ms** — the first tick after the 22:21:45Z deploy. ⚠ Every one of its
+1,143 prior green rows predates the deploy and says nothing about v23; `rows_found = 0` is the healthy
+no-op (no null-thumbnail UFC editions remain) and still proves the module booted and its bare
+`@supabase/supabase-js` specifier resolved — which is the whole thing the import map was missing.
+
+**Then 4 more, each redeployed only after being PROVED behaviour-neutral** (v→v, all `import_map` false→
+**true**, all `verify_jwt: false` preserved, no repo file changed):
+`match-topshot-players` 27→28 · `seed-ufc-editions` 37→38 · `backfill-topshot-subeditions` 19→20 ·
+`sync-nba-odds` 25→26. **5 of 25 now on the import map; 20 remain.**
+
+🚨 **THE PROOF, because "it's only the import map" was an ASSUMPTION I nearly shipped on.** A redeploy
+pushes current `main` live, so it ships every unshipped behaviour change too — invisible here, since
+tier 2 needs a `sbp_…` PAT this sandbox lacks. ⚠ **My first bound was BACKWARDS:** I diffed from
+`ea789b3eb^` (just before the shared import map) and called it an upper bound. It is a **LOWER** bound —
+a deployed build can be far OLDER than the import map, so that diff understates the delta. **The sound
+bound is each function's FIRST commit, which no deployed artifact can predate.** Under it, only **4 of 24**
+are import-only (dirs with exactly 2 commits: creation + the import refactor, so the deployed build can
+only be the creation source). The other 20 would ship 6–1,366 changed lines. **Those 4 are exactly what
+shipped; nothing else was touched.**
+
+🚨 **A DEFECT IN MY OWN TRIAGE, caught by deploying — `pipeline_runs.pipeline` IS NOT THE FUNCTION SLUG.**
+I keyed a dormancy query on the deployed slug. **4 of the 24 self-report under a different name**
+(`backfill-topshot-subeditions` → `topshot-subedition-backfill`, `backfill-allday-listing-serials` →
+`allday-listing-serial-backfill`, `backfill-topshot-base-parallel-probe` → `topshot-base-parallel-probe`,
+`ingest-topshot-atlas-pool` → `topshot-atlas-pool-ingest`). Re-queried on the correct key, **2 of my 7
+"dormant" functions are LIVE**: `backfill-allday-listing-serials` has **186 runs and ran TODAY**, and
+`backfill-topshot-subeditions` ran **08-21** (17 all-time). ⚠ **A slug-keyed query returns zero rows and
+no error — it looks exactly like dormancy.** The correction is good news for the deploy (subeditions will
+actually produce a verification signal) and bad news for the method: **the earlier known-issues note
+naming 7 dormant functions was measured against the wrong key and is corrected in place.**
+
+⚠ **VERIFICATION ASYMMETRY, stated rather than glossed.** The canary ran every 30 min, so it confirmed in
+21 minutes. **None of these 4 has that cadence** — `match-topshot-players` ~3 runs/week, `subeditions`
+~daily, `seed-ufc-editions` never calls `log_pipeline_run` at all, `sync-nba-odds` is seasonally dormant
+(NBA season ended 08-04). **What is confirmed for all four is metadata only** (`ACTIVE`, `import_map:
+true`, version bumped) — runtime confirmation comes later or, for `seed-ufc-editions`, not from this table
+at all. The 23:52Z routine was repointed at the CORRECT pipeline names to check them.
+
+⚠ **Escaping was a real hazard, not a formality.** Content goes through the MCP call as JSON; the files
+carry backslashes and non-ASCII (`seed-ufc-editions` 2, `sync-nba-odds` 1 + 6). A hand-escaping slip would
+still BUNDLE and deploy — a silently corrupted function. Every payload after the first was generated with
+`python -c json.dumps(...)` and copied verbatim. `match-topshot-players` was hand-escaped but verified to
+contain **zero** backslashes first.
+
+**REVERT (per function, independently):** redeploy the same `files` with `import_map_path` **OMITTED** —
+that restores the previous artifact shape exactly. No repo change to revert on any of the five.
+
+⛔ **The remaining 20 are NOT cleared by this.** They ship real behaviour deltas of unknown size, the list
+includes `compute-*-pack-ev` and `ingest-*` (off-limits for autonomous shipping), and the gate stays the
+06:40Z `edge-fn-drift` content census — the first run whose census status is legible.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — panini + first-mint materialized too; all 3 failing boards now read MVs, and I had the break-even backwards
 
 **DB only, zero app-code change** (each swap sits behind its existing view name). Follows the deals
