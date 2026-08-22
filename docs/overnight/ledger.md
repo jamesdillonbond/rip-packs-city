@@ -8,6 +8,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED TO PROD DB (Claude Code, interactive) — the accuracy meter is 14x cheaper, and the number it was hiding is 61.0%
+
+**Applied migration `20260822215222_audit_20260822_sentinel_fmv_confidence_lateral_rewrite`** —
+`sentinel_fmv_confidence_canonical_ts_split()` moved off `fmv_current` onto a lateral latest-per-edition
+read. ⚠ **This is a PROD DB change** (the first of this session), made in the quiet window; the repo file is
+verified **byte-identical** to what was applied (`md5 36cdcf90…`, 3,161 chars, the only delta a trailing
+newline).
+
+**MEASURED warm-vs-warm, not estimated** (21:5xZ, io_wait 3 of 4 sessions — low absolute load, not a spell):
+| | buffers | time |
+|---|---|---|
+| incumbent | **1,170,580** | 1,629.8 ms |
+| candidate | **83,299** | 146.6 ms |
+
+**14.05× fewer buffers, 11.1× faster.** The plan confirms the filed diagnosis exactly: the incumbent's
+`Unique` over `Merge Append` walks **1,221,595 rows** to yield 27,075 uniques before the join narrows to
+13,241, because the editions predicate cannot push through a `DISTINCT ON` view.
+
+⚠ **THIS REVISES THE 08-22 §7 DECISION, and that is the point worth keeping.** The "nightly materialised
+tally" call was made on the planner's **3.3×** estimate, reasoning that a merely-cheaper in-band query could
+still be killed in a spell. The measurement came in at **14×** — 4× better than the estimate — which makes
+the in-band read survivable and removes the *readability* half of the argument. **A decision made on an
+estimate is itself a hypothesis; when the measurement lands, re-derive it.** The tally is still the right
+destination for the OTHER half — a gate metric needs a **series**, which this rewrite does not provide at
+all — but it is no longer urgent, and it is now a product decision rather than a firefight.
+
+**Correctness, proven not assumed:** EXCEPT both directions on the full predicate — 14 groups each, **0
+only-in-incumbent, 0 only-in-candidate**, 13,241 editions both sides. Tie check: **17** canonical editions
+have two snapshots sharing their max `computed_at`, but **ZERO** carry differing `confidence`, so the two
+forms cannot disagree here. ⚠ **The tie population is non-zero**, so a materialised tally (frozen once, read
+all day) must add a deterministic secondary ordering first — an arbitrary tie-break freezes into the number.
+
+⚠ **Deliberately NOT included:** `AND s.computed_at <= now()` would prune the empty 2027 partition, which
+the candidate plan shows costing **26,482 of its 83,299 buffers** across 13,241 zero-row loops (a further
+~1.45×). Left out because the EXCEPT proof covers THIS exact form — **shipping an untested variation
+alongside a verified one is how a proof stops being a proof.** Filed as the obvious next win.
+
+🔑 **The number the roadmap could not read for ~20 h a day, now readable in 147 ms: base HIGH+MED = 61.0%**
+(5,770 of 9,460 — the arm's warn threshold is 25%). Parallel 23.2% (3,781). Combined **50.2%** across 13,241.
+Base split: MEDIUM 3,684 · LOW 2,421 · HIGH 2,086 · ASK_ONLY 539 · STALE 535 · NO_DATA 192 · SALES_ONLY 3.
+
+**Revert path (DB):** re-apply the prior body — the same statement with
+`FROM public.fmv_current fc JOIN public.editions e ON e.id = fc.edition_id` in place of the CTE + LATERAL;
+the migration file's footer carries it. **Repo:** `git revert` the commit whose message begins
+`feat(sentinel): lateral rewrite`.
+
 ### 2026-08-22 · FIXED (Claude Code, interactive) — the wrap-up check-in would have died on archive, and that is a gotcha worth keeping
 
 **Docs + one Routine swap — no code, no DB, no prod state.**
