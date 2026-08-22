@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · VERIFIED (Claude Code, interactive) — pg_cron jobid 70's first run in the new window: 36.4 s, and the contention hypothesis is confirmed harder than predicted
+
+**Observed, not inferred.** `rpc-refresh-misattrib-candidates` (jobid 70) fired at **23:35:00.065Z** in its
+new slot and **succeeded at 23:35:36.42Z — 36.36 s**, return message `1 row`.
+
+**Both halves were checked, because a missing row would have been a WORSE failure than a wall-kill and
+reads the same as "nothing to report":** it STARTED (observed `status='running'` live at 23:35, before the
+result existed) and it FINISHED.
+
+**The numbers, against the recorded history:** 12 consecutive wall-kills at exactly **600 s**
+(`canceling statement due to statement timeout` on `REFRESH MATERIALIZED VIEW
+public.mv_topshot_misattrib_candidates`), one prior success at **187.6 s**. This run is **16.5× under the
+wall and 5.2× faster than the single previous success.** ⚠ **That is a stronger result than the hypothesis
+predicted** — the theory was "contention, not data growth", which only required getting under 600 s;
+landing at 36 s says the 15:35Z window was costing this job **roughly 5× even on its good day.**
+
+**The MV actually refreshed — verified rather than assumed from the exit status:**
+`mv_topshot_misattrib_candidates` holds **20,516 rows** and its stats timestamp is **23:35:46Z**, seconds
+after the refresh returned. It had been stale since **2026-08-16**.
+
+⚠ **ONE RUN IS ONE SAMPLE, AND ITEM 19 IS NOT MARKED RESOLVED ON IT.** A single success in a quiet window
+is exactly what the 08-16 run looked like before twelve failures followed it. What this establishes is that
+the move was correct and the job is no longer wedged; what it does NOT establish is a stable band. **Read
+the next few nights before closing it** — and note the honest asymmetry: another success adds little, while
+a single wall-kill at 23:35Z would refute the whole diagnosis.
+
+**REVERT (unchanged):** `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-refresh-misattrib-candidates',
+'35 15 * * *', 'SELECT public.refresh_topshot_misattrib_candidates()'); RESET ROLE;`
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the stripper sweep is COMPLETE: 24 guards migrated, 0 defective copies left
 
 **What shipped.** The remaining **17 guards** (5 + 8 + 4) moved to `scripts/lib/strip-comments.mjs`,
