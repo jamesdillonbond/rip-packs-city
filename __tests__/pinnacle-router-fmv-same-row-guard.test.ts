@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Replaces the retired smoke check "Pinnacle FMV not borrowed across characters
 // (drift guard)" (removed 2026-08-14 from app/api/smoke-test/route.ts).
@@ -35,9 +36,15 @@ const SRC = readFileSync(join(process.cwd(), "lib/concierge/pinnacle-router.ts")
  * streamed`, `collection-analytics-failed-vs-empty-guard`, the OG empty-copy
  * sweep) — and the header above names every table this guard forbids.
  */
-function stripComments(s: string): string {
-  return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * also blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 const CODE = stripComments(SRC)
 

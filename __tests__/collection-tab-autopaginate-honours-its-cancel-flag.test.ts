@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // CI run 32536511776 failed the component job with ALL 2,989 tests passing:
 //
@@ -45,9 +46,15 @@ const SRC = path.resolve(
  * guards have fired on the comment documenting the fix); it took ninety seconds
  * to reproduce here. `[^:]` before `//` preserves `https://` in string literals.
  */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * also blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 /** The text of `async function <name>()`'s body, by brace matching. */
 function functionBody(src: string, name: string): string | null {

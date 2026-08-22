@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // COMPLETENESS: no entity-page section may CONCLUDE about the data from a read
 // that failed.
@@ -71,9 +72,15 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
-function stripComments(s: string): string {
-  return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * also blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 const FILES = ROOTS.flatMap((r) => walk(r))
 
