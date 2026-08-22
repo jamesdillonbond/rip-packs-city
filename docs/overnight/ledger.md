@@ -8,6 +8,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED TO PROD DB (Claude Code, interactive) — jobid 70 moved out of the degraded band; known-issues #19 CLOSED, with no grant made
+
+**Applied migration `20260822215445_audit_20260822_move_jobid70_misattrib_refresh_out_of_the_degraded_band`.**
+`rpc-refresh-misattrib-candidates` moves **15:35Z → 23:35Z**. Repo file verified **byte-identical** to what
+was applied (`md5 4899f249…`, 2,689 chars).
+
+⚠ **The blocker was neither the database nor a missing privilege — it was me not reading the file.**
+CLAUDE.md's own 08-17 correction already records the working path: `apply_migration` with
+`SET LOCAL ROLE cron_heavy … RESET ROLE`. Earlier today I hit a harness denial on `execute_sql` + `SET ROLE`,
+recorded "operator-only", and proposed a privilege grant. **The documented path worked first try.**
+*A "cannot" filed from one blocked tool call is a claim about that call, not about the system.*
+
+⚠ **`RESET ROLE` is load-bearing:** `apply_migration` appends its own INSERT into
+`supabase_migrations.schema_migrations`, which `cron_heavy` cannot write, so leaving the role set fails the
+entire migration.
+
+✅ **The migration asserts its own success rather than hoping.** `cron.schedule` UPSERTS on
+`(jobname, username)` and returns the jobid; a `RAISE EXCEPTION` rolls the whole transaction back unless it
+is **70**, because any other value means it created a DUPLICATE and would have left **two** heavy refreshes
+scheduled. **Verified after apply:** schedule `35 23 * * *` · jobid still **70** · `job_count = 1` for that
+jobname · owner `cron_heavy` · exactly one job at 23:35 (itself).
+
+**No grant was made and none was needed** — `cron_heavy` already holds EXECUTE on `cron.schedule`; the
+earlier proposal to grant it `cron.alter_job` would have widened a privilege to buy a capability the role
+already had by another door.
+
+**Why it matters:** jobid 70 is the SOLE caller of `refresh_topshot_misattrib_candidates()` and had failed
+**13 of its last 14 runs**, twelve killed at the 600 s wall, leaving `mv_topshot_misattrib_candidates`
+unrefreshed since 2026-08-16. The one success (08-16) took **187.6 s**, 4.2× under the wall — contention,
+not data growth.
+
+⚠ **VERIFY, do not assume:** the first 23:35Z run (tonight, ~100 minutes after this entry) is the proof —
+a schedule change here is on record as having silently not taken once. Read `cron.job_run_details` for jobid
+70 and confirm it both STARTED at 23:35Z and FINISHED under the 600 s wall.
+
+**Revert path (DB):** `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-refresh-misattrib-candidates',
+'35 15 * * *', 'SELECT public.refresh_topshot_misattrib_candidates()'); RESET ROLE;` — also in the migration
+footer. **Repo:** `git revert` the commit whose message begins `fix(cron): move jobid 70`.
+
 ### 2026-08-22 · SHIPPED TO PROD DB (Claude Code, interactive) — the accuracy meter is 14x cheaper, and the number it was hiding is 61.0%
 
 **Applied migration `20260822215222_audit_20260822_sentinel_fmv_confidence_lateral_rewrite`** —
