@@ -29,6 +29,17 @@ jobs:
       # regrows a hardcoded #E03A2F / 'Barlow Condensed' / 'Share Tech Mono'
       # literal instead of the var(--rpc-*) tokens. Pure node, no deps.
       - run: node scripts/check-brand-tokens.mjs
+      # Memory-doc link guard — fails if a relative link in CLAUDE.md or
+      # docs/reference/**.md stops resolving. The 2026-08-17 restructure bet the
+      # memory architecture on those pointers: detail was moved OUT of CLAUDE.md
+      # and replaced with one-line links, so a dead pointer reads as "never
+      # written" rather than "broken". Ban at population zero (the gated set was
+      # brought to 0 in the commit that added this). Pure node, no deps.
+      # ⚠ Deliberately NOT tree-wide: 558 of 919 relative links under docs/ are
+      # broken, almost all in docs/sessions, docs/overnight and docs/archive,
+      # which are frozen history CLAUDE.md forbids rewriting — gating those
+      # would make this permanently red and therefore unreadable.
+      - run: node scripts/check-memory-doc-links.mjs
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30

@@ -6,7 +6,7 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 The repo has a real automated test suite. Run it before shipping non-trivial code changes.
 
-- **Runner:** [vitest](vitest.config.ts) (`npm test` = `vitest run`; `npm run test:watch`; `npm run test:coverage`). Setup file `vitest.setup.ts`; `@` alias resolves to repo root.
+- **Runner:** [vitest](../../vitest.config.ts) (`npm test` = `vitest run`; `npm run test:watch`; `npm run test:coverage`). Setup file `vitest.setup.ts`; `@` alias resolves to repo root.
 - **Two measured layers (coverage `include`: `lib/**/*.{ts,tsx}` + `app/**/route.{ts,tsx}` + `proxy.ts`):**
   - **Route handlers** — every `app/api/**/route.ts` is imported and its auth/param guards are exercised; a large subset also drive the 2xx success/accept path by stubbing the `after()` / Supabase seam. Since 2026-07-16/17, flagship route BODIES are also driven end-to-end via the integration harness (below) — sniper-feed 48%, pack-ev 69%, support-chat 22.6% — but the deepest inline surfaces (Flow REST/Cadence scans, SSE streams) still can't be cleanly driven, so a modest line % on the remaining routes is expected.
   - **Pure `lib/**` logic** — unit tests for decode/FMV/pack-EV/market-adapter/logger modules.
