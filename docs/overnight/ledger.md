@@ -140,7 +140,7 @@ anon/authenticated false, service_role true.
 
 **Revert path.** DB: re-run the verbatim pre-change function bodies reproduced at the foot of `supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql` (plain `CREATE OR REPLACE`, idempotent, touches no ACL). Schedules: the same `SET LOCAL ROLE cron_heavy; cron.schedule(…)` block with `'10 4 * * *'` / `'25 4 * * *'`. The refreshed data needs no revert — it is the correct current computation. Repo: `git revert <this commit>` for the migration-header correction only.
 
-### 2026-08-22 · SHIPPED (Claude Code, interactive) — the 5-minute insights warm now ROTATES: peak concurrency 5 → 2
+### 2026-08-22 · SHIPPED THEN REVERTED SAME HOUR (Claude Code, interactive) — insights warm rotation locked onto the one board that cannot finish
 
 **CODE.** Trevor: "feels like we've been very saturated for a while now… any waste?" This is the largest
 avoidable load the measurement found.
@@ -228,35 +228,66 @@ reset with the stats collector, so `last_autovacuum IS NULL` / `autovacuum_count
 **relative to that reset, not lifetime**. I nearly filed "`pack_rips` is 83.8% dead tuples, never
 vacuumed" — `pg_class.reltuples` says **3.65M rows in 95,894 pages ≈ 215 B/row**, i.e. normal.
 
-✅ **VERIFIED IN PROD — three consecutive ticks, 6/6 warms succeeded.** Deploy
-`dpl_DSr5cW26GazQrrxL7QgyPppxpUTP` READY on all three corroborating signals (`ready` > `buildingAt`, prod
-aliases attached, `lambdaRuntimeStats` present); ⚠ checked PER COMMIT, since a later push superseded it.
+🚨 **REVERTED at 21:14 PT in `3836b31b` — it caused a live degradation and I did not anticipate the
+mechanism. The revert is the honest headline; the early "verified" reading below is kept because being
+wrong in a legible way is the point of this file.**
 
-| tick (Z) | warmed | outcome | duration_ms |
-|---|---|---|---|
-| 20:45:06 | `panini-squeeze`, `deals` | both ok | **16,827** |
-| 20:50:06 | `rookies`, `first-mint` | both ok | **12,885** |
-| 20:55:31 | `candy-mlb`, `deals` | both ok | **5,826** |
+**What the first fifteen minutes looked like — and why it was not enough evidence.** Three rotated ticks,
+6/6 warms ok, durations **16,827 → 12,885 → 5,826 ms** against a near-constant ~31,000 ms before; snapshot
+ages laddering **5.5 / 5.5 / 10.8 / 10.8 / 15.7 min** against a 120-min ceiling, which is the rotation's own
+predicted DISTRIBUTION and not merely "nothing is stale". I called it a shape rather than proof, corroborated
+it on a second independent instrument, and it was still wrong. ⚠ **Fifteen good minutes cannot see a failure
+mode that needs a slow board to be SELECTED, and for the first three ticks the rotation kept handing the slot
+to boards that could finish.**
 
-Selection is correctly stalest-first and cycles all five boards; **every board that had been failing
-57–76% of the time warmed on its first rotated attempt**; duration fell from a near-constant **~31,000 ms**
-to **5,826 ms**, which is the corroborating signal that contention — not the boards themselves — was the
-binding constraint. ⚠ **Three ticks over 15 minutes is a SHAPE, not proof.** The instrument is the 48h
-per-board fail rate, and it straddles the change for two days — read `extra->'rotation'` alongside it or a
-correct 2-of-5 tick reads as a coverage collapse.
+**THE MECHANISM, from `[panini-squeeze] backing view error: canceling statement due to statement timeout`
+followed by `Vercel Runtime Timeout Error: Task timed out after 60 seconds`:**
 
-**Follow-up in the same push — the stale comment that nearly cost a wrong ship.** The headers on
-`app/api/public/insights/{panini-squeeze,candy-mlb}/route.ts` and the two `proxy.ts` gate comments asserted
-**"STAGED: gated pre-launch"** three weeks after Trevor flipped both flags (Candy 07-31, Panini 08-01). They
-now name the FLAG that owns the state instead of restating it, so they cannot go stale again. ⚠ The reason
-this mattered: combined with `is_active = false`, that header convinced this very audit that 4.6% of all
-disk reads were warming a board nobody could see — a finding I had fully written up before checking
-`lib/launch-flags.ts`. **Comment-only; no behavior change.**
+`panini-squeeze` is both the slowest board **and a PAGED fetch** — its errors are labelled `page 0` / `page 1`
+— so one warm issues SEVERAL statements that can each run to the `service_role` 30s wall. It is therefore
+**permanently the stalest board**, so stalest-first selected it on essentially every tick, paired it with one
+other board, and blew the route's `maxDuration = 60`. **A 504 writes no snapshot AND no `pipeline_runs` row**,
+so panini got staler, so it was selected again. Ticks **21:01:30, 21:05:20, 21:10:20 all 504'd**; nothing
+refreshed after 20:55:36 and ages climbed 16.7 → 22.0 → **27.0 min** with the tick doing no work at all.
 
-**Next measurement (do this before changing anything else):** re-read the 48h per-board fail rates and
-`sum(shared_blks_read)`; only ONE variable moved, so the delta is attributable. If failure rates drop,
-lower the `*/5` cadence next; if they do not, materialise the five board views — they are the 52–95 MB/call
-plain views and that is the larger structural lever.
+⚠ **The property that broke it is the one I defended in the commit message AND PINNED IN A TEST** — "a board
+that keeps failing stays stalest and therefore keeps its slot, which is the retry budget it wants". That is
+correct when a board fails FAST. It is a lock-up when the board fails by **consuming the entire tick budget**,
+because the retry it earns is the thing preventing every other board from being served. **A test that pins a
+property does not make the property right; it only makes it durable.**
+
+⚠ **The old code was wasteful but BOUNDED, and that distinction is the whole lesson.** Warming five in
+parallel finished in ~31s because panini failing at its first page did not block the other four. Rotation
+removed the parallelism that was accidentally capping the tick. **Wasteful-but-bounded beat
+efficient-but-stuck**, and the measurement that would have caught it — worst-case tick duration when the
+PATHOLOGICAL board is selected — is one I never took, because I measured the AVERAGE and the average improved.
+
+⚠ **A second defect, mine, found while diagnosing and NOT the cause:** the rotation added a **second
+`readBoardSnapshotAges()`, unbounded, running BEFORE the warm**. `board-cache.ts` documents at length that
+every leg of this ladder needs a bound ("it is UNBOUNDED, and `readBoardOrLive` calls it up to TWICE") and I
+added a third caller without applying it. ⚠ **Position, not cost, is what made it dangerous**: a stall in the
+pre-warm read spends the whole 60s having warmed nothing, where the post-warm one only loses the log row.
+The bounded version is written and stashed, not shipped.
+
+**RE-LANDING REQUIRES THREE THINGS THIS ATTEMPT LACKED** (none is optional):
+1. **An overall budget on the warm phase**, so the route always logs before the lambda is killed. ⚠ **A 504
+   is an UNFALSIFIABLE failure — no run row at all** — which is why this took three ticks to notice rather
+   than one; `pipeline_runs` simply had nothing to show.
+2. **Bounds on BOTH `readBoardSnapshotAges` legs** (written, stashed).
+3. **A selection rule that cannot lock onto a board that never completes** — stalest-first needs either a
+   cost-aware skip (`public_board_liveness_sweep` already implements exactly this: a PREDICTIVE SKIP off each
+   view's median `elapsed_ms`, with the first item exempt so progress is guaranteed) or a fairness floor. ⚠
+   **That prior art was in this repo, solving this exact problem, and I did not look for it.**
+
+**Next measurement:** the before-snapshot in the inbox filing is still valid and still worth diffing, but
+⚠ **the rotation window is now POISONED as an A/B** — 20:45–21:14 contains three ticks that did no work at
+all, so any "reads went down" reading across it is measuring an outage, not an optimisation.
+
+**The structural lever is unchanged and is now clearly the FIRST thing to do, not the second: materialise the
+five board views.** They are 52–95 MB/call plain views at 11.5–16.7s mean against a 30s wall. ⚠ **Rationing
+how often a board that cannot finish gets attempted was always the weaker idea** — this attempt failed
+because it rationed rather than fixed, and `panini_squeeze_board` in particular cannot be made safe by
+scheduling while a single warm needs several 30s-capable statements to complete.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a one-line pin drift that looked like a live pricing defect, and the control that refuted it
 
