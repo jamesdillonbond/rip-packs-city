@@ -1,53 +1,55 @@
 {
-  "run": "interactive-20260821T1730Z-cloud-PUSH-AVAILABLE",
-  "captured_at_utc": "2026-08-21T17:20Z",
-  "captured_at_pt": "2026-08-21T10:20 PT",
-  "mode": "PUSH WORKING (session created with this repo as source; `git push --dry-run` clean). DB read-only this pass — nothing shipped to prod state.",
-  "origin_main_baseline": "27a2ff57",
-  "latest_migration_applied": "20260818205106",
+  "run": "nightly-20260822T0803Z-cloud-NOPUSH",
+  "captured_at_utc": "2026-08-22T08:10Z",
+  "captured_at_pt": "2026-08-22T01:10 PT",
+  "mode": "NO-PUSH (desktop Cowork; remote.origin.pushurl EMPTY, `git push --dry-run` fatal: could not read Username). DB reads only this pass — nothing shipped to prod state. This blocker is specific to THIS session; Trevor's box and Claude Code push normally via the PAT in remote.origin.pushurl.",
+  "origin_main_baseline": "35e14290",
+  "genuine_overnight": true,
   "demand_gate": {
     "total_users": 21,
     "wau_signins_7d": 0,
+    "new_users_7d": 0,
     "roadmap_gate_wau": 50,
-    "note": "21 users unchanged since 2026-08-18. WAU sign-ins 1 -> 0. The only metric that matters and it still has not moved."
+    "note": "21 users / 0 WAU / 0 new. UNCHANGED since 2026-08-18. The only metric that matters and it has not moved. Not a lever a night pass can pull."
   },
-  "db_size_mb": 13638,
-  "db_size_mb_prev": 13191,
-  "total_editions": 27242,
+  "db_size_mb": 13679,
+  "db_size_mb_prev": 13638,
+  "total_editions": 27246,
+  "total_editions_prev": 27242,
+  "saturation": {
+    "io_wait_active": "4-5 of 5-6 active sessions in IO wait (DataFileRead), sampled 4x over ~8 min",
+    "verdict": "PRESENT but MODERATE and low absolute concurrency. NOT the severe spell of 08-20 (24/27). Timings partially uninterpretable; compare buffers not wall time. rpc_ops_snapshot() itself timed out on its sentinel_fmv_confidence_rows leg."
+  },
   "security": {
     "check_secdef_anon_exec_drift": "clean (empty array)",
-    "check_public_security_invariants": "clean (0 rows)",
-    "check_anon_write_surface": "clean (0 rows)",
-    "check_edge_fn_http_failures": "clean (empty array)"
+    "public_tables_rls_off": "clean (0 rows)",
+    "anon_authenticated_write_on_rls_off": "clean (0 rows)"
   },
-  "trust_health": {
-    "sampled": false,
-    "reason": "v_rpc_trust_health timed out at the 60s MCP ceiling, which is its DOCUMENTED behaviour (CLAUDE.md: read the sentinel's Trust Health check instead). The sentinel was not run this pass. NOT a claim that the board is clean."
+  "fmv_confidence_raw_snapshot_counts": {
+    "note": "RAW fmv_snapshots row counts per collection — NOT the liquidity-predicated accuracy gate (that is measured separately at ~31% overall, see inbox 2026-08-22T0256Z). Pinnacle FMV lives in its own table, not sampled here.",
+    "nba_top_shot": {"HIGH": 91063, "MEDIUM": 249834, "LOW": 360575, "ASK_ONLY": 48290, "SALES_ONLY": 15650, "STALE": 18194, "NO_DATA": 42387},
+    "nfl_all_day": {"HIGH": 13416, "MEDIUM": 51429, "LOW": 250629, "ASK_ONLY": 13812, "SALES_ONLY": 4235, "STALE": 27281, "NO_DATA": 14957},
+    "laliga_golazos": {"HIGH": 114, "MEDIUM": 85, "LOW": 2122, "ASK_ONLY": 820, "SALES_ONLY": 386, "STALE": 3406, "NO_DATA": 4391},
+    "ufc_strike": {"HIGH": 88, "MEDIUM": 510, "LOW": 317, "ASK_ONLY": 88, "STALE": 556, "NO_DATA": 2302}
   },
   "pipeline_health": {
-    "failure_rate_pct_by_hour_30h": "oscillates 1-24% with no sustained spike; hourly peaks at 03:00/09:00/15:00/21:00Z track heavy scheduled jobs. Chronic background churn, NOT an active saturation incident.",
-    "stalled_pipelines": 10,
-    "alerts": 28,
     "dominant_error_class": "canceling statement due to statement timeout / upstream request timeout / Timed out acquiring connection from connection pool",
-    "note": "Denominators carried deliberately. A failures-only read of this board looks like a platform-wide outage; the hourly series shows it is not."
+    "high_sev_failure_rate_pipelines": ["allday-buyer-backfill 81.3%", "allday-pack-opens-backfill 75.0%", "compute-allday-pack-ev 68.0%", "fmv-recalc 56.7%", "populate-pinnacle-wmc-fmv 73.6%", "refresh_wmc_fmv_drift_active 59.1%", "run-insider-detectors 63.3%", "topshot-active-listings-ingest 66.7% egress_blocked", "topshot-fmv-populate 88.9%", "wallet-username-resolver 83.3%"],
+    "note": "All saturation-class (known disk-IO-budget root cause per focus.md). Honest-degradation path absorbing it. Denominators carried. topshot-active-listings-ingest is the atlas-proxy egress_blocked operator item, not saturation."
   },
-  "findings_filed_this_pass": [
-    {
-      "file": "docs/overnight/inbox/2026-08-21T1730Z-vercel-runtime-error-route-attribution-is-smeared.md",
-      "class": "INSTRUMENT DEFECT",
-      "one_line": "get_runtime_errors' routes=/users= are smeared; 64 of ~110 hits belong to one cron and the rest are attributed to ~50 unrelated pages including / and /pricing."
-    },
-    {
-      "file": "docs/overnight/inbox/2026-08-21T1735Z-allday-pack-opens-backfill-throughput-collapsed-1000x.md",
-      "class": "CHARACTERISED, NOT FIXED",
-      "one_line": "allday-pack-opens-backfill fell 118 -> 7 runs/day on 2026-08-11; cursor rate 3.4M -> ~4.5k blocks/day; ETA to floor ~12 years. pg_cron and auth ruled out; the ~90% missing terminal rows are NOT explained."
-    }
-  ],
-  "shipped_to_prod_state": "NONE. No migration, no data mutation, no edge-function deploy.",
+  "cross_collection_mats_stale": {
+    "ccm_cohort_age_h": 124.0,
+    "ccm_set_overlap_age_h": 123.7,
+    "newest": "2026-08-17T04:10Z / 04:25Z",
+    "note": "OPEN ESCALATION carried from 08-21T2340Z (failed every day since 08-18). rpc-ccm-step1/step2 pg_cron jobs still timing out (statement timeout on the INSERT...SELECT). Now 124h stale, up from ~76h at 08-20. QUEUED — fix needs an expensive-refresh restructure in a quiet window, not shippable mid-saturation via MCP."
+  },
+  "sentry_new_issues_24h": 0,
+  "vercel_runtime_errors": "all saturation-class; no new non-saturation class in 24h. DEP0169 url.parse warning benign (no CVE).",
+  "shipped_to_prod_state": "NONE. No migration, no data mutation, no edge-function deploy, no artifact change.",
   "operator_blockers_unchanged": [
-    "gate-key rotation for cron jobs 20/55/56/83/84/44 (ingest-allday-pack-opens last deployed 2026-08-07T17:56Z, re-verified today)",
-    "atlas-proxy wrangler deploy + Cloudflare-egress probe (topshot-active-listings-ingest still egress_blocked)",
-    "spork-proxy health probe to settle which of the two sources is deployed",
-    "authenticated E2E coverage (needs a production test account + GHA secret)"
+    "git push credentials in cloud/desktop-Cowork sessions (blocks all code deploys; Trevor's box + Claude Code unaffected)",
+    "atlas-proxy wrangler deploy + Cloudflare-egress probe (topshot-active-listings-ingest egress_blocked)",
+    "sports-proxy 403 (two causes, ESPN slate-gated until ~Oct)",
+    "gate-key rotation for cron jobs (verified last 08-16, all 14)"
   ]
 }

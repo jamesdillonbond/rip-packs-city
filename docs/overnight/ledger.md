@@ -1183,6 +1183,19 @@ FROM cron.job WHERE jobid IN (83, 84);
 
 **Revert:** `git revert <sha>` (docs only). The Routine change is not in git — to undo it, delete `trig_01L4TBXNYcUAqYDC4h4pDwkR`.
 
+### 2026-08-22 · NIGHTLY (cloud, NO-PUSH) — quiet honest pass, nothing shipped; cross-collection mats now 124h stale (escalation, night 3)
+
+**Genuine overnight (~01:03 PT, DB `now()`, no skew). NO-PUSH** (`remote.origin.pushurl` empty; `git push --dry-run` fatal). Ship budget unused. Security **3/3 clean**. Sentry **0 new/24h**. Demand gate **21 users / 0 WAU / 0 new — UNCHANGED since 08-18**. Saturation PRESENT but MODERATE (io-wait 4–5 of 5–6 active, `DataFileRead`, no lock-waits — not the 24/27 severe spell of 08-20); `rpc_ops_snapshot()` timed out on its FMV-confidence leg, ran checks individually. DB 13,638→13,679 MB (+41), editions 27,242→27,246 (+4).
+
+**Health:** every high-sev pipeline failure + every Vercel runtime error is **saturation-class** (statement/upstream timeout, connection-pool) — known disk-IO-budget root cause, honest-degradation absorbing it, no new class. `topshot-active-listings-ingest` 67% is the atlas-proxy `egress_blocked` operator item.
+
+**Post-ship watch:** prior nightly (08-20) shipped nothing; 08-21 interactive sessions read-only. Nothing to revert. The 08-20 `oldest_cache_h` "regression" is resolved as a measurement artifact by 08-22T0130Z (it measures a population the sweep excludes by construction).
+
+**QUEUED (unchanged, carried):** (1) **cross-collection mats 124h stale** — `cross_collection_cohort_mat`/`ts_set_overlap_mat` frozen at 2026-08-17 04:10Z; `rpc-ccm-step1/step2` timing out on the `INSERT…SELECT` every cycle since 08-18. Night 3. Not autonomously shippable — needs buffer measurement + work-cutting in a genuinely idle window (desktop/Claude Code); a manual MCP re-run mid-saturation is the documented anti-pattern. (2) All saturation "cut-work" levers stay decision/off-limits-gated (`refresh_wmc_fmv_changed` 120×, pack-EV lateral, ask-corroboration 320 All Day editions). (3) Operator: git-push creds, atlas-proxy, sports-proxy 403.
+
+**Revert:** nothing to revert — read-only pass, docs only. Handoff: [docs/handoff-2026-08-22-overnight-pass.md](../handoff-2026-08-22-overnight-pass.md).
+
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — session wrap: the exclusion-premise rule promoted into CLAUDE.md by displacement, session log closed
 
 **Docs only — no code, DB or prod-state change.**
