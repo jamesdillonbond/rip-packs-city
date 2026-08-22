@@ -83,9 +83,28 @@ function readPins() {
 // ── DDL extraction, mirroring the guard's own parser ─────────────────────────
 // Skips `CREATE OR REPLACE FUNCTION` occurrences that sit inside a `--` comment,
 // since migrations routinely carry the prior version commented out in a note.
+//
+// ⚠ PROCEDURE, NOT JUST FUNCTION — and this parser is the SECOND copy.
+// __tests__/db-invariants-drift-guard.test.ts hit exactly this bug and fixed it on
+// 2026-08-16 (its FN_KINDS), recording that a FUNCTION-only needle "made every
+// PROCEDURE in this database UNPINNABLE". This file's header says it mirrors that
+// parser — and it did not get the same fix, so the mirror was broken for six days
+// while the comment claiming the mirror sat right here.
+//
+// The consequence was NOT a loud failure. `reconcile_all_saved_wallet_stats` is a
+// PROCEDURE, so its DDL could never be extracted, the pin reported
+// NO_DDL_IN_MIGRATION every run, and — the part that matters — the live-drift
+// comparison for it NEVER RAN. It writes the cached portfolio figures every
+// collector sees on their saved wallets, and it was in the PINS array looking
+// covered the whole time. A pin that cannot parse its own DDL asserts nothing.
+const DDL_KINDS = ['FUNCTION', 'PROCEDURE']
 function bodiesOf(src, name) {
-  const needle = `CREATE OR REPLACE FUNCTION public.${name}`
   const out = []
+  for (const kind of DDL_KINDS) bodiesOfKind(src, name, kind, out)
+  return out
+}
+function bodiesOfKind(src, name, kind, out) {
+  const needle = `CREATE OR REPLACE ${kind} public.${name}`
   let from = 0
   for (;;) {
     const i = src.indexOf(needle, from)
@@ -102,7 +121,6 @@ function bodiesOf(src, name) {
     }
     from = i + needle.length
   }
-  return out
 }
 
 const collapse = (s) => s.replace(/\s+/g, ' ').trim()

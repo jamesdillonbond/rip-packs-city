@@ -3,22 +3,35 @@
 // function DDL is byte-identical (whitespace-normalized) to the LIVE database
 // definition captured via pg_get_functiondef. Usage:
 //   node scripts/verify-live-ddl.mjs <migration.sql> <fn> <expected_norm_md5>
-// It extracts the fn DDL exactly as __tests__/db-invariants-drift-guard.test.ts
-// does, normalizes whitespace, strips a single trailing ';' (pg_get_functiondef
+// It extracts the fn DDL as __tests__/db-invariants-drift-guard.test.ts does
+// (FUNCTION *and* PROCEDURE — see DDL_KINDS below; this claim was false between
+// 2026-08-16 and 2026-08-22, when only the guard handled procedures),
+// normalizes whitespace, strips a single trailing ';' (pg_get_functiondef
 // emits no trailing semicolon), md5s, and compares to the expected live md5.
 import { readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 
+// ⚠ PROCEDURE too — this is the THIRD copy of this parser. The drift guard fixed
+// its FUNCTION-only needle on 2026-08-16 (a PROCEDURE was otherwise UNPINNABLE);
+// scripts/check-db-pin-staleness.mjs was fixed on 2026-08-22; this one still said
+// FUNCTION only, while its own header above claimed it "extracts the fn DDL
+// exactly as __tests__/db-invariants-drift-guard.test.ts does". It did not.
+// Found by grepping the EXPRESSION rather than the file, which is the only reason
+// a third copy turned up at all.
+const DDL_KINDS = ["FUNCTION", "PROCEDURE"]
 function findFnStart(src, name) {
-  const needle = `CREATE OR REPLACE FUNCTION public.${name}`
-  let from = 0
-  for (;;) {
-    const idx = src.indexOf(needle, from)
-    if (idx < 0) return -1
-    const lineStart = src.lastIndexOf("\n", idx) + 1
-    if (!src.slice(lineStart, idx).includes("--")) return idx
-    from = idx + needle.length
+  for (const kind of DDL_KINDS) {
+    const needle = `CREATE OR REPLACE ${kind} public.${name}`
+    let from = 0
+    for (;;) {
+      const idx = src.indexOf(needle, from)
+      if (idx < 0) break
+      const lineStart = src.lastIndexOf("\n", idx) + 1
+      if (!src.slice(lineStart, idx).includes("--")) return idx
+      from = idx + needle.length
+    }
   }
+  return -1
 }
 function extractSqlFn(src, name) {
   const start = findFnStart(src, name)

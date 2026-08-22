@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "fs"
+import { readFileSync, readdirSync } from "fs"
 import { resolve } from "path"
 
 // The live-drift check (scripts/check-db-pin-staleness.mjs) is the ONLY thing
@@ -50,3 +50,75 @@ describe("db-pin staleness parser coverage", () => {
     expect(captured).toBe(expected)
   })
 })
+
+// ── EVERY copy of the DDL extractor must handle PROCEDURE, not just FUNCTION ──
+//
+// There are THREE copies of this parser in the repo and they are supposed to
+// mirror each other. On 2026-08-16 the drift guard learned about PROCEDURE,
+// recording that a FUNCTION-only needle "made every PROCEDURE in this database
+// UNPINNABLE". The other two did not get the fix:
+//
+//   * scripts/check-db-pin-staleness.mjs — its own comment says it "mirrors the
+//     guard's own parser". For six days it did not. The consequence was NOT a
+//     loud failure: `reconcile_all_saved_wallet_stats` is a PROCEDURE, so its DDL
+//     could never be extracted, the pin reported NO_DDL_IN_MIGRATION on every run,
+//     and the live-drift comparison for it NEVER RAN — on a procedure that writes
+//     the cached portfolio figures every collector sees on their saved wallets.
+//     It sat in the PINS array looking covered the entire time.
+//   * scripts/verify-live-ddl.mjs — its header claimed it "extracts the fn DDL
+//     exactly as db-invariants-drift-guard.test.ts does". It did not.
+//
+// ⚠ The file set is DERIVED BY SCANNING, not listed. CLAUDE.md records that a
+// guard naming its instances dies on a rename, and a curated list here would also
+// miss a FOURTH copy — which is exactly how the third one was found (by grepping
+// the expression, not the file). The scan carries its own floor: if it stops
+// finding at least the three known copies, the detector has broken and the test
+// fails rather than passing on an empty population.
+describe("every DDL-extractor copy handles PROCEDURE", () => {
+  // A file builds a DDL needle if it interpolates `public.${...}` into a
+  // `CREATE OR REPLACE ...` template literal.
+  const NEEDLE_SHAPE = /`CREATE OR REPLACE [^`]*public\.\$\{/
+
+  function extractorFiles(): string[] {
+    const roots = ["scripts", "__tests__"]
+    const hits: string[] = []
+    for (const root of roots) {
+      const dir = resolve(process.cwd(), root)
+      for (const f of readdirSync(dir)) {
+        if (!/\.(mjs|ts)$/.test(f)) continue
+        const full = resolve(dir, f)
+        let src: string
+        try {
+          src = readFileSync(full, "utf-8")
+        } catch {
+          continue
+        }
+        if (NEEDLE_SHAPE.test(src)) hits.push(`${root}/${f}`)
+      }
+    }
+    return hits
+  }
+
+  it("finds the DDL-extractor copies at all (positive control)", () => {
+    const files = extractorFiles()
+    // Fails loudly if the scan stops matching — a clean result from a broken
+    // detector is indistinguishable from a clean repo.
+    expect(files.length).toBeGreaterThanOrEqual(3)
+    expect(files).toContain("scripts/check-db-pin-staleness.mjs")
+    expect(files).toContain("scripts/verify-live-ddl.mjs")
+    expect(files).toContain("__tests__/db-invariants-drift-guard.test.ts")
+  })
+
+  it("each copy accepts PROCEDURE as well as FUNCTION", () => {
+    const offenders: string[] = []
+    for (const rel of extractorFiles()) {
+      const src = readFileSync(resolve(process.cwd(), rel), "utf-8")
+      // Strip line comments first: at least six guards in this repo have fired on
+      // the comment documenting the fix rather than the code implementing it.
+      const code = src.replace(/^\s*(\/\/|--).*$/gm, "")
+      if (!/\bPROCEDURE\b/.test(code)) offenders.push(rel)
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
