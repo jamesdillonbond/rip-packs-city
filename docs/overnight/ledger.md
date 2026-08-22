@@ -318,6 +318,21 @@ other board, and blew the route's `maxDuration = 60`. **A 504 writes no snapshot
 so panini got staler, so it was selected again. Ticks **21:01:30, 21:05:20, 21:10:20 all 504'd**; nothing
 refreshed after 20:55:36 and ages climbed 16.7 → 22.0 → **27.0 min** with the tick doing no work at all.
 
+⚠ **THE ONE NUMBER THAT SETTLES IT, from the last rotated tick and the first two reverted ones:**
+
+| 21:15:20Z | rotation | **2 boards** | **52,921 ms** |
+|---|---|---|---|
+| 21:20:46Z | reverted | 5 boards | 31,265 ms |
+| 21:25:46Z | reverted | 5 boards | **26,472 ms — all five ok** |
+
+**The rotated tick spent twice as long on two boards as the reverted tick spends on five.** That is a direct
+refutation of the premise the change was built on — "peak concurrency 5 → 2 is strictly less load". It is
+less CONCURRENCY and MORE wall-clock, because the five boards were never competing for the tick's time in
+the first place; they overlap, and the slow one sets the floor either way. Serialising them just removed the
+overlap and left panini's several 30s-capable statements to run end to end. ⚠ **"Fewer things at once" is
+not a synonym for "less work", and on an IO-bound instance the parallel version was ALSO getting the other
+four boards done inside panini's own latency.**
+
 ⚠ **The property that broke it is the one I defended in the commit message AND PINNED IN A TEST** — "a board
 that keeps failing stays stalest and therefore keeps its slot, which is the retry budget it wants". That is
 correct when a board fails FAST. It is a lock-up when the board fails by **consuming the entire tick budget**,
