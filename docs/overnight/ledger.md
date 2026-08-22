@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FIXED (Claude Code, interactive) — the wrap-up check-in would have died on archive, and that is a gotcha worth keeping
+
+**Docs + one Routine swap — no code, no DB, no prod state.**
+
+While closing the session I found that the verification I had armed for 2026-08-23 07:35Z was a
+`send_later`, which is a thin wrapper over `create_trigger` that **binds to the calling session**
+(`persist_session: true`). Archiving this thread would very likely have killed it. ⚠ **`list_triggers`
+carries the proof**: an older reminder sits there with `ended_reason: auto_disabled_session_gone` — it never
+fired, and nothing announced that it hadn't.
+
+**A monitor that quietly stops existing fails identically to the thing it was watching for**, which is the
+same class this repo already records for the concierge's lost positive control. Replaced
+`trig_012KtFpYAGJ6hYUFUySmTcCt` (session-bound) with **`trig_01D1kNfxsp9raii9iARWEcQe`**, a
+`create_new_session_on_fire` Routine carrying a fully standalone prompt, and deleted the old one.
+
+⚠ **And the replacement needed a STEP 0 capability check**: the tool warned it stores **no MCP connectors**,
+so the fired session may have no `mcp__github__*` tools — and the whole task is reading two GitHub Actions
+logs. It now reports and STOPS rather than improvising, matching the pattern the other RPC routines use.
+**An armed task that silently cannot run is the same defect as the unread detectors it was created to check.**
+
+Recorded in [tooling-gotchas.md](../reference/tooling-gotchas.md): use `send_later` only for work that is
+meaningful inside the conversation; use a fresh-session Routine for anything that must outlive the thread.
+
+**Revert path:** `git revert` the commit whose message begins `docs: a send_later check-in dies` (find by
+message, not by a recorded sha); the Routine swap is undone by deleting `trig_01D1kNfxsp9raii9iARWEcQe`.
+
 ### 2026-08-22 · MEMORY (Claude Code, interactive) — session wrap: durable lessons promoted out of the transcript
 
 **Docs only — no code, no DB, no prod state.** Closing a long interactive session by writing its durable

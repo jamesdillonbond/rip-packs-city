@@ -301,3 +301,23 @@ pins. It is not a change summary. `get_challenge_plan` measured **57 characters 
 count** — which reads like a trim — while the predicate grew by 6: the other change was a **dropped
 comment**, and the negative delta concealed a semantic rewrite entirely. **A shrinking function can be
 gaining logic. Only the diff is the measurement.**
+
+## A `send_later` check-in DIES when its session is archived — use a fresh-session Routine for anything that must outlive the thread (2026-08-22)
+
+`send_later` is a thin wrapper over `create_trigger` that **binds to the calling session**
+(`persist_session: true`, `persistent_session_id: session_…`). That is exactly right for "remind me later in
+this conversation" and exactly wrong for a verification that must happen after the thread is archived.
+⚠ **`list_triggers` carries the proof**: an older reminder sits there with
+`ended_reason: auto_disabled_session_gone` — it never fired, and nothing announced that it hadn't.
+
+**A monitor that quietly stops existing fails identically to the thing it was watching for** — the same
+class this repo already records for the concierge's lost positive control. So, when wrapping up a session:
+
+- **Outlives the thread** → `create_trigger` with `create_new_session_on_fire: true` and a **fully
+  standalone prompt** ("assume NO prior context"), because the fired session inherits nothing.
+- **Only meaningful inside this conversation** → `send_later` is fine; expect it to die with the session.
+
+⚠ **A fresh-session Routine created this way stores NO MCP connectors** — the tool warns about it — so the
+fired session may have no `mcp__github__*` / Supabase tools at all. **Open every such prompt with a STEP 0
+capability check that reports and STOPS rather than improvising.** The existing RPC routines already do this;
+copy that pattern rather than assuming the tools will be there.
