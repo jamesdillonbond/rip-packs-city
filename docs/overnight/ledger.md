@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — the honesty guards stop at `app/api`, so 259 route reads never look at their error; 4 triaged and fixed
+
+Asked why the four Fast Break defects I fixed an hour earlier had survived ~20 honesty guards. **Because two of the most relevant ones explicitly exclude `app/api/**`**, both giving the same reason in code: *"the ROUTE tree — server code, already in the primary gate"*. ⚠ **That is a claim about a DIFFERENT INSTRUMENT and it does not hold.** The primary gate is the vitest **coverage** gate; coverage measures whether lines EXECUTE, and **an unhandled error branch does not exist to be uncovered** — a happy-path route test gives an unguarded `const { data } = await supabase…` 100% coverage. Reasonable for avoiding duplicate coverage measurement; wrong as a reason to skip honesty checking. **Same shape as `degradedFromSource`'s "the clients already surface as an age", which I fixed earlier tonight.**
+
+| | |
+|---|---:|
+| route files scanned | 453 |
+| reads **with** `error` destructured — **positive control** | **492** |
+| reads **without** | **259** |
+| files carrying ≥1 | **106** |
+
+⚠ **MY FIRST MEASUREMENT SAID 32, AND IT WAS WRONG BY 8×.** The detector used `[^\n;]*?` between `await` and `.from(` — which **cannot cross a newline**, and this repo overwhelmingly puts `.from()`/`.rpc()` on the line AFTER `await`. It saw only single-line calls. **I caught it because the count barely moved after I fixed four instances**, not because I reviewed the regex. **This is the exact defect class the filing is about, committed by me, inside the instrument built to find it.** The positive control is load-bearing too: 492 reads in the same tree DO destructure `error`, which is what makes "259" a finding rather than a regex that matches everything.
+
+**SHIPPED — 4 instances, triaged individually on one criterion: does a swallowed error become a CLAIM?**
+
+- ⚠ **`app/api/cost-basis/route.ts` — not an empty answer but a DIFFERENT one.** `resolveCollectionId` returned `string | null`, and the caller reads null as "no collection filter requested" — so a failed `collection_config` read dropped `p_collection_id` and the RPC returned **every collection the wallet holds, rendered inside a single-collection tab**, about the reader's own money. On the live path the ambiguity is total: `CollectionTabClient` always sends `&collection=<slug>` from the route param, so null can ONLY mean the read failed. Now a discriminated result, and **the unscoped query is never issued** — which is the load-bearing assertion, since a 500 alone would also be satisfied by code that fired it first.
+- **`app/api/market-movers/route.ts`** — **both** failure paths published `{ movers: [] }` (the swallowed error AND a bare `catch`), under `s-maxage=300`. One failed read served *"nothing moved in 24 hours"* — a market claim — to every visitor for five minutes.
+- **`app/api/edition-stats/route.ts`** — a failed lookup rendered **404 "Edition not found"**, a claim about the catalogue, on a public entity surface. Switched to `.maybeSingle()` so absent and unreadable stop sharing an outcome. ⚠ I first wrote a `PGRST116` special-case and **backed it out: the repo has zero other uses of that string**, and getting it wrong turns a real not-found into a 5xx. `maybeSingle` removes the magic string entirely.
+- **The acquisition-enrich read in `cost-basis` was left non-fatal ON PURPOSE** — a null `acquisition_method` renders nothing in `SlabFooter`, so it degrades a field without making a claim. Logging was what was missing, not a status code. **Same expression, opposite correctness, in one file.**
+
+⚠ **AN EXISTING TEST WAS INVERTED, NOT DELETED** — `api-market-movers.test.ts` carried *"swallows an RPC throw to an empty movers list"*, and its header described the swallow as the contract. **A passing test asserting a promise is what holds that promise in place.** Also added the returned-error case the throw-case never covered, which is the path the live RPC actually takes.
+
+⚠ **TWO EXISTING TESTS FAILED FOR A DIFFERENT REASON AND I DID NOT TOUCH THEIR ASSERTIONS** — `404s when the edition is not found` and the bestTimeToBuy happy path reddened because the mock only stubbed `.single()`. Those assertions are correct; the MOCK was incomplete. Fixed the mock (both methods now stubbed, with a note saying why) rather than the expectations. **Distinguishing "my change broke a contract" from "my change broke a fixture" is the whole job at that moment.**
+
+**Mutation controls: 5, all red before green** — reverting the cost-basis discriminated result reds 1; ⚠ **the over-broad version (`!resolved.ok || !resolved.id`, which 500s whenever no collection was requested) reds 4**, including the control that keeps the legitimate all-collections call working; restoring the movers `catch`, the movers returned-error, and the edition-stats guard each red 1. Tree restored byte-identical after each.
+
+⚠ **THE REMAINING 255 ARE NOT A TO-DO LIST AND I DID NOT SWEEP THEM.** CLAUDE.md already records what happens: a file-scoped version of this predicate produced **12 false positives on a clean tree**. ⛔ The largest cluster, `app/api/support-chat/**` (26 + 6), is **off-limits** for autonomous shipping — and is exactly where a swallowed read becomes a *spoken* claim, so it wants a human pass. **I also did not add a guard**, because a ban would red 255 correct and incorrect files alike and a curated list drifts; a guard over a population I have not read would be the `[^\n;]` mistake one level up. Triage order + the full reasoning: `docs/overnight/inbox/2026-08-21T1945Z-…`.
+
+`tsc` 0. Primary **1335 files / 14,446 tests** green.
+
+**Revert:** `git revert <sha>` (code-only; no DB or prod-state change).
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — the cross-collection revert path is now executable SQL, and the healthy-window apply is scheduled instead of remembered
 
 **Docs/SQL only, still unapplied — no production change.** Two gaps closed on yesterday's ready-to-apply lock-window fix.
