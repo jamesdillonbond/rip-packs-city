@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FOUND + FIXED (Claude Code, interactive) — 25 edge functions are not running `main`, and the detector saying so could not tell a census from a silence
+
+**The finding (operator work, now known-issues #23).** `.github/workflows/edge-fn-drift.yml` has failed
+**every scheduled run since 2026-08-09 — 14 consecutive**; run #1 on 08-08 is the only pass it ever had.
+⚠ **It is not broken, it is LOUDLY CORRECT** — the exact state CLAUDE.md says is indistinguishable from a
+broken instrument at a glance, on the one detector that can see a function merged and never deployed. **Read
+the LOG, not the badge.** Current: `DRIFT: 25`.
+
+**Diffed the SET, not the count, per the rule:** 08-09 reported **30**, 08-22 **25**, and the five that
+cleared are a strict subset — `backfill-allday-pack-supply`, `backfill-pack-opens-api`,
+`backfill-topshot-pack-supply`, `compute-pinnacle-pack-ev`, `snapshot-institutional-wallets`. **Nothing new
+drifted in 14 days**, so this is a shrinking backlog, not churn.
+
+**The cause is uniform, not 25 bugs.** Tier 1 is a proof: repo source uses a **bare** specifier (cannot
+resolve without an import map) while the deployed artifact reports `import_map: false`, so the deployed
+build cannot be current source — it would not have booted. They run an older pre-import-map build and are
+**not hard-down**. ⛔ **Not shipped from here:** the list includes `compute-*-pack-ev` and `ingest-*`
+(off-limits), and the guard's own message warns that redeploying **without** `import_map_path` converts a
+stale-but-working function into a **hard-down** one.
+
+**What WAS fixed here — the detector's reporting.** `scripts/check-edge-fn-drift.mjs` tier 2, which its own
+header calls *"the only census"* (tier 1 being *"a LOWER BOUND"*), swallowed every body-read failure into a
+bare `catch {}` commented *"tier 1 still covers it"*. It does not. **A run whose census read nothing printed
+the identical DRIFT number to one that completed and found nothing** — the failed-read-rendered-as-an-answer
+defect, committed by a detector against itself. Worse, the **persisted artifact carried no tier-2 field at
+all**, so a function tier 1 called clean but whose body had drifted was written down as `"clean"` — the
+series asserting the opposite of the finding. Now: `bodies_read` / `bodies_failed` / `content_drifted` in
+the report, a `ran` **positive control** (false ⇒ nothing may be presented as a census), a `clean_tier1_only`
+verdict, a per-run census line in the log, `::error::` when the census did not run, and **no all-clear it did
+not earn** — a 200 carrying no `index.ts` now counts as a FAILED read, not a clean one.
+
+⚠ **Consequence, stated rather than buried: the 25 is a LOWER BOUND.** Whether the census ever ran is not
+knowable from the 14 archived logs. **The next 06:40Z run is the first with a legible census status.**
+
+**Verified:** tier 2 extracted as exported `runContentCensus({fetchBody})` so it is testable without the
+network; **9 new cases**, and **both new properties mutation-tested** — forcing `ran: true` reds 2, treating
+an empty body as a successful read reds 1. `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.16%,
+45156/48997) · all five repo guards exit 0.
+
+**Revert path:** `git revert` the commit whose message begins `fix(edge-drift): tier 2 must report`
+(find by message, not by a recorded sha). Script + test + docs only — no DB, no deploy, no prod state.
+
 ### 2026-08-22 · VERIFIED IN PRODUCTION (Claude Code, interactive) — the layout monitor's first real run passed, and it caught a slowness signal on the way in
 
 **CODE (small) + one filing.** Closes the verification gap the last three entries all ended on: this sandbox cannot reach `www.rippackscity.com` (agent proxy answers **403 to CONNECT**, org network policy), so every measurement today was against a local build. **The new monitor is `workflow_dispatch`-enabled, so I dispatched it and read the result** — which is the point of having put it there.
