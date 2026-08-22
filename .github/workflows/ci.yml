@@ -49,6 +49,15 @@ jobs:
       # ⚠ The exclusion is PER HANDLER, not per file: a gated POST does not vouch
       # for the ungated GET beside it. That exact shape was 4 live handlers.
       - run: node scripts/check-driver-message-leaks.mjs
+      # Unhandled-third-state guard — bans `if (error) {…} else if (data) {…}`
+      # with no final else. A read returning NEITHER an error nor a payload then
+      # renders nothing at all. The measured instance was the sentinel's headline
+      # FMV-confidence arm, which VANISHED from its own report rather than saying
+      # it could not be read — silence in an alert cannot be falsified.
+      # Ban at population zero (measured: 1 instance, fixed). The script runs a
+      # positive AND a negative control on synthetic fixtures before reporting, and
+      # fails if it inspected nothing.
+      - run: node scripts/check-unhandled-third-state.mjs
       # Responsive flex-basis guard — fails if an inline `flex: "1 1 300px"`
       # sits in a file that also uses a class whose flex-direction CHANGES at a
       # breakpoint. flex-basis sizes the MAIN axis, so a width-basis becomes a
