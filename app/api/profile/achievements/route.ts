@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ triggered: true, result });
   } catch (err: any) {
-    return NextResponse.json({ triggered: false, error: err?.message ?? "error" });
+    // ⚠ TWO defects in one line. It leaked `err.message` (the /api/sets shape), and it
+    // returned HTTP 200 for a FAILED recompute — so any consumer checking `r.ok` read
+    // "succeeded, nothing triggered". The GET paths above already use the helper.
+    return apiErrorResponse(err, "api/profile/achievements POST");
   }
 }

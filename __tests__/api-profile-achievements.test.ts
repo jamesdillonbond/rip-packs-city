@@ -171,13 +171,21 @@ describe("POST /api/profile/achievements (guards only — happy path fans to an 
     vi.unstubAllGlobals()
   })
 
-  it("reports triggered:false when the edge fetch throws", async () => {
+  // ⚠ INVERTED 2026-08-22, not deleted — it pinned TWO defects as the contract.
+  // The old assertions were `triggered === false` on an HTTP 200, plus
+  // `error === "network down"`: a FAILED recompute reported as a successful
+  // request that simply triggered nothing, with the raw message attached. Any
+  // consumer checking `r.ok` read "succeeded". A passing test asserting a
+  // promise is what holds that promise in place, so this is reversed in place.
+  it("fails loudly, and without leaking the message, when the edge fetch throws", async () => {
     process.env.INGEST_SECRET_TOKEN = "x"
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down") }) as any)
     const res = await POST(preq({ ownerKey: "trevor" }))
+    // A failed recompute must NOT look like a completed one.
+    expect(res.ok).toBe(false)
     const body = await res.json()
-    expect(body.triggered).toBe(false)
-    expect(body.error).toBe("network down")
+    expect(body.triggered).not.toBe(false)
+    expect(JSON.stringify(body)).not.toContain("network down")
     vi.unstubAllGlobals()
   })
 })

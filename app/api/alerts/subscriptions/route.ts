@@ -172,7 +172,8 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: any) {
     console.error("[alerts/subscriptions POST]", err?.message);
-    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
+    // ⚠ Raw driver message — same leak shape; the other paths here already use the helper.
+    return apiErrorResponse(err, "api/alerts/subscriptions");
   }
 }
 

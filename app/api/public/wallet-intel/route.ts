@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
     })
   } catch (err: any) {
     console.error("[wallet-intel] error:", err?.message ?? err)
-    return NextResponse.json({ error: err?.message ?? "Internal server error" }, { status: 500 })
+    // ⚠ ANON-FACING, and this file already had the right answer 14 lines up:
+    // the rpc-error path returns the fixed copy "Failed to fetch wallet intel".
+    // This catch leaked `err.message` instead — the /api/sets shape, to anonymous
+    // visitors. Matched to the existing copy so the status is unchanged.
+    return NextResponse.json({ error: "Failed to fetch wallet intel" }, { status: 500 })
   }
 }

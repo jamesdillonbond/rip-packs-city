@@ -162,7 +162,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(enriched);
   } catch (err: any) {
     console.error("[alerts GET]", err?.message);
-    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
+    // ⚠ Was a raw `err?.message` — the /api/sets leak shape lib/api-error.ts exists
+    // to prevent (under the disk-IO band that message is Postgres's own text).
+    // PATCH and DELETE in this same file already used the helper; these missed it.
+    return apiErrorResponse(err, "api/alerts");
   }
 }
 
@@ -229,7 +232,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
     console.error("[alerts POST]", err?.message);
-    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
+    // ⚠ Was a raw `err?.message` — the /api/sets leak shape lib/api-error.ts exists
+    // to prevent (under the disk-IO band that message is Postgres's own text).
+    // PATCH and DELETE in this same file already used the helper; these missed it.
+    return apiErrorResponse(err, "api/alerts");
   }
 }
 

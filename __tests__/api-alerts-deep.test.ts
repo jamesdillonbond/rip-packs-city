@@ -244,12 +244,22 @@ describe("GET /api/alerts — remaining branches", () => {
     expect((await res.json())).toHaveLength(1)
   })
 
-  it("500s when the fmv_alerts read errors", async () => {
+  // ⚠ INVERTED 2026-08-22, not deleted. This asserted `error === "read boom"` —
+  // i.e. it pinned the /api/sets LEAK as the contract: the driver's own message
+  // handed to the client. Under the disk-IO band that string is Postgres's
+  // "canceling statement due to statement timeout". A passing test asserting a
+  // promise is what holds that promise in place, so the assertion is reversed
+  // rather than removed.
+  it("fails without leaking the driver message when the fmv_alerts read errors", async () => {
     state.user = { id: "u1", email: "a@b.co" }
     install({ fmv_alerts: { data: null, error: { message: "read boom" } } })
     const res = await GET(getReq())
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("read boom")
+    expect(res.ok).toBe(false)
+    const body = await res.json()
+    expect(JSON.stringify(body)).not.toContain("read boom")
+    // Still says SOMETHING actionable — silence would be its own defect.
+    expect(typeof body.error).toBe("string")
+    expect(body.error.length).toBeGreaterThan(0)
   })
 })
 
@@ -301,12 +311,15 @@ describe("POST /api/alerts — channel / collection / email / error branches", (
     expect((await res.json()).error).toBe("Invalid JSON body")
   })
 
-  it("500s when the upsert errors", async () => {
+  // ⚠ INVERTED 2026-08-22 — same reason as the GET case above.
+  it("fails without leaking the driver message when the upsert errors", async () => {
     state.user = { id: "u1", email: "a@b.co" }
     install({ fmv_alerts: { data: null, error: { message: "upsert boom" } } })
     const res = await POST(bodyReq({ edition_key: "9:9", alert_type: "fmv_below", threshold: 5 }))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("upsert boom")
+    expect(res.ok).toBe(false)
+    const body = await res.json()
+    expect(JSON.stringify(body)).not.toContain("upsert boom")
+    expect(typeof body.error).toBe("string")
   })
 })
 
