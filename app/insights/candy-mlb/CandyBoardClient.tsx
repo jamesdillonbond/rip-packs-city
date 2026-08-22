@@ -304,6 +304,47 @@ const MARKET_TIERS = [
   { k: "LEGENDARY", label: "Rainbows" },
 ];
 
+// ── Per-panel degraded copy (deep-audit R18) ────────────────────────────────
+// The page-level banner already names which sections failed and tells the reader
+// to "treat the affected sections as unknown rather than zero". Every panel then
+// re-derived emptiness from a zero-length array and published "No offers or asks
+// yet." — contradicting the banner ~200px above it on the same screen.
+//
+// The rows array cannot distinguish the three states on its own: a failed read
+// and a genuinely empty section both arrive as []. `degraded` is the only thing
+// that knows, so the panel has to consume it rather than guess.
+//
+// ⚠ Keyed on the SAME label strings the server builds its BoardStatus list from
+// (lib/insights/candy-board.ts). If a label is renamed on one side only, this
+// silently falls back to the healthy copy — which is why the labels are pinned
+// by a test rather than trusted.
+function sectionEmptyCopy(
+  label: string,
+  degraded: DegradedSummary | null | undefined,
+  healthyCopy: string
+): string {
+  if (degraded?.failed?.includes(label)) {
+    return "Couldn't load this section — treat it as unknown, not zero. Reload shortly."
+  }
+  if (degraded?.truncated?.includes(label)) {
+    return "This section is showing an incomplete slice — some rows could not be read."
+  }
+  return healthyCopy
+}
+
+/** Row count for a tab badge, or null when the section did not load. */
+// ⚠ A failed section previously rendered a badge of 0, which is the documented
+// "?? 0 publishes a measured zero" shape one layer up: the badge is a COUNT, and
+// 0 is a claim about the market. Absent is honest; zero is not.
+function sectionBadge(
+  label: string,
+  degraded: DegradedSummary | null | undefined,
+  rows: unknown[]
+): number | null {
+  if (degraded?.failed?.includes(label)) return null
+  return rows.length
+}
+
 export default function CandyBoardClient({
   initialRows,
   packEv = null,
@@ -569,7 +610,13 @@ export default function CandyBoardClient({
       <div className="cdy-tabs">
         {TABS.map((t) => {
           const count =
-            t.k === "deals" ? deals.length : t.k === "spread" ? spreads.length : t.k === "holders" ? holders.length : null;
+            t.k === "deals"
+              ? sectionBadge("Deals", degraded, deals)
+              : t.k === "spread"
+                ? sectionBadge("Offer spread", degraded, spreads)
+                : t.k === "holders"
+                  ? sectionBadge("Holders", degraded, holders)
+                  : null;
           return (
             <button key={t.k} className={tab === t.k ? "on" : ""} onClick={() => setTab(t.k)}>
               {t.label}
@@ -762,7 +809,7 @@ export default function CandyBoardClient({
             <b>median sale</b>, and both numbers are shown so you can judge which one to believe. The book is thin —
             treat these as <b>indicative, not arbitrage</b>.
           </div>
-          <DataTable rows={deals} cols={dealCols} defaultSort="discount_vs_median_pct" empty="No underpriced listings yet — the ask feed is live and will populate when listings open." />
+          <DataTable rows={deals} cols={dealCols} defaultSort="discount_vs_median_pct" empty={sectionEmptyCopy("Deals", degraded, "No underpriced listings yet — the ask feed is live and will populate when listings open.")} />
         </>
       )}
 
@@ -776,7 +823,7 @@ export default function CandyBoardClient({
             numbers. <b>Spread (same copy)</b> is filled in only where the cheapest listed copy carries a bid of its
             own, which is the only comparison you could actually trade against.
           </div>
-          <DataTable rows={spreads} cols={spreadCols} defaultSort="best_offer_usd" empty="No offers or asks yet." />
+          <DataTable rows={spreads} cols={spreadCols} defaultSort="best_offer_usd" empty={sectionEmptyCopy("Offer spread", degraded, "No offers or asks yet.")} />
         </>
       )}
 
@@ -791,7 +838,7 @@ export default function CandyBoardClient({
           {/* cap 550 -> 800: DataTable slices silently (r.slice(0, cap)) with no
               "showing N of M" indicator, and the jersey_match arm raises the
               theoretical max from 500 to 625. 800 keeps it un-truncated. */}
-          <DataTable rows={serials} cols={serialCols} defaultSort="fmv_usd" empty="No special serials." cap={800} />
+          <DataTable rows={serials} cols={serialCols} defaultSort="fmv_usd" empty={sectionEmptyCopy("Serials", degraded, "No special serials.")} cap={800} />
         </>
       )}
 
@@ -802,7 +849,7 @@ export default function CandyBoardClient({
             <b>circulating</b> serials are in collector hands. Lowest <b>% Out</b> = most squeezed. Sorted most-squeezed
             first.
           </div>
-          <DataTable rows={scarcity} cols={scarcityCols} defaultSort="circulating_pct" empty="No scarcity data." cap={130} />
+          <DataTable rows={scarcity} cols={scarcityCols} defaultSort="circulating_pct" empty={sectionEmptyCopy("Scarcity", degraded, "No scarcity data.")} cap={130} />
           <div className="cdy-note">
             <b>Sealed</b> is the treasury/max-holder reserve; <b>circulating</b> excludes it. Drop 3 (Jul 29) added
             forward supply, so circulating % has moved since.
@@ -823,7 +870,7 @@ export default function CandyBoardClient({
               the table rendered only 250 — 157 holders silently dropped. 800
               keeps it un-truncated with headroom (mirrors the Serials cap and
               the fetch limit raised alongside it in page.tsx). */}
-          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty="No holders." cap={800} />
+          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty={sectionEmptyCopy("Holders", degraded, "No holders.")} cap={800} />
         </>
       )}
 
@@ -852,7 +899,7 @@ export default function CandyBoardClient({
             <b>Per-player rollup.</b> The Rainbow premium is real but <b>thin</b> — only {num(rainbow?.priced)} of{" "}
             {num(rainbow?.editions)} Rainbows have a sale, so the multiple is an early signal, not a settled ratio.
           </div>
-          <DataTable rows={players} cols={playerCols} defaultSort="top_fmv" empty="No players." />
+          <DataTable rows={players} cols={playerCols} defaultSort="top_fmv" empty={sectionEmptyCopy("Players", degraded, "No players.")} />
         </>
       )}
     </div>

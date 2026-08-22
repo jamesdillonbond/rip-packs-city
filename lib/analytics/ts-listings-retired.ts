@@ -53,7 +53,12 @@ export const TS_ORDERBOOK_RETIRED_LABEL = "This feed is retired."
  * ⚠ It reports rather than concludes, and it never implies an absence of live
  * Top Shot asks — there are plenty, they just are not in this table.
  */
+// ⚠ ONE template literal on ONE line, NOT `+`-concatenated template literals.
+// MEASURED 2026-08-22: the previous form was three backtick strings joined with
+// `+`, and the PRODUCTION BUNDLE dropped the tail of the first one — the page
+// rendered "...switched off on 2026-05-26written on 2026-05-15...", losing
+// " and its last row was ". The committed source was correct and contained the
+// phrase; only the built chunk was wrong, so no source-level test could see it.
+// Do not re-split this string.
 export const TS_ORDERBOOK_RETIRED_BODY =
-  `The Top Shot orderbook sampler was switched off on ${TS_LISTINGS_RETIRED_ON} and its last row was ` +
-  `written on ${TS_LISTINGS_LAST_ROW_ON}, so no depth is shown here rather than a figure derived from ` +
-  `a single stale row. Live Top Shot ask data is on the Sniper deal feed.`
+  `The Top Shot orderbook sampler was switched off on ${TS_LISTINGS_RETIRED_ON} and its last row was written on ${TS_LISTINGS_LAST_ROW_ON}, so no depth is shown here rather than a figure derived from a single stale row. Live Top Shot ask data is on the Sniper deal feed.`
