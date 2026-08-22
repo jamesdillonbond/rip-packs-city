@@ -8,6 +8,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a broken MIRROR made a live procedure's drift check silently never run, and there was a third copy
+
+**What shipped.** `PROCEDURE` support in `scripts/check-db-pin-staleness.mjs` and
+`scripts/verify-live-ddl.mjs`, plus a scanning test that fails if any copy of the DDL extractor stops
+accepting it. Known-issues **#24** goes 5 open → **4**.
+
+**The second closed pin was never stale.** `reconcile_all_saved_wallet_stats` reported
+`NO_DDL_IN_MIGRATION` because it is a **PROCEDURE**, while the checker only ever searched for
+`CREATE OR REPLACE FUNCTION public.<name>`. The pin, the migration and the test were **all correct the whole
+time — the CHECKER could not parse them.**
+
+⚠ **And that is worse than a false alarm.** Because extraction failed, the live-drift comparison for that
+procedure **never ran at all**, while it sat in the PINS array looking covered — on a procedure that writes
+the cached portfolio figures every collector sees on their saved wallets. **A pin that cannot parse its own
+DDL asserts nothing**, and it reports that fact in a way that reads like a chore rather than a gap.
+
+⚠ **This was a MIRROR that broke, and the mirror claim was sitting in the file.**
+`__tests__/db-invariants-drift-guard.test.ts` learned about `PROCEDURE` on **2026-08-16**, recording that a
+FUNCTION-only needle *"made every PROCEDURE in this database UNPINNABLE"*. The checker — whose own comment
+says it *"mirrors the guard's own parser"* — did not get the fix, for six days. ⚠ **Grepping the EXPRESSION
+rather than the file then turned up a THIRD copy**, `scripts/verify-live-ddl.mjs`, also FUNCTION-only, whose
+header likewise claimed it extracts DDL *"exactly as"* the drift guard does. Neither claim was true. **The
+lesson is the one CLAUDE.md already states and this is a fresh instance: a comment asserting a mirror is not
+a mirror, and only grepping the expression finds copy number three.**
+
+**Verified, not asserted:** with the fix the extractor pulls exactly one body, hashing
+**`b276cb4eea98ba5dcb0d1923da9cf5b4`** identically across live `prosrc`, the migration and the test — so the
+pin reads clean with **no content change at all**. Negative control: reverted to FUNCTION-only,
+`verify-live-ddl.mjs` prints *"not found"* on the same file; restored, it prints `OK`.
+
+**The new test derives its file set BY SCANNING** for the needle-construction shape rather than listing the
+three files — a curated list is precisely how copy three was missed, and CLAUDE.md records that a guard
+naming its instances dies on a rename. It carries its own floor (≥3 copies must be found, or the detector
+has broken) and strips comments before matching, since guards here have repeatedly fired on the comment
+documenting a fix rather than the code implementing it. Mutation-tested: reverting one copy reds it and it
+names that file.
+
+**Verified:** `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.16%, 45156/48997) · six repo guards exit
+0 · 178 DB-invariant files pass on a local Postgres 16.
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): every DDL-extractor copy`
+(find by message, not by a recorded sha). Scripts + tests + docs only — no DB, no migration, no prod state.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — closed 1 of the 6 stale DB pins the long way, and the diff refuted the probe that found it
 
 **What shipped.** `get_set_detail` re-pinned: a new snapshot migration
