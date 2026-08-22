@@ -44,15 +44,13 @@
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "./lib/strip-comments.mjs"
 
 // ⚠ RATCHET BASELINE. This may only ever go DOWN. Lower it in the same commit
 // that bounds a page — never raise it to make a build pass.
 const MAX_UNBOUNDED = 17
 
-const strip = (s) =>
-  s
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ""))
-    .replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1)
+const strip = (s) => stripComments(s)
 
 const USE_CLIENT = /^\s*["']use client["']/
 const DIRECT_QUERY = /(?<![A-Za-z])(?<!Array)\.from\s*\(\s*["'`]|\.rpc\s*(?:as any\))?\s*\(\s*["'`]/

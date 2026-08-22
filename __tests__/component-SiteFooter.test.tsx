@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs"
 import SiteFooter from "@/components/SiteFooter"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 import { publishedCollections, publishedChainsBadge } from "@/lib/collections"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 afterEach(cleanup)
 
@@ -53,9 +54,7 @@ describe("SiteFooter — staged boards are never linked site-wide", () => {
     // A flip to false is a rollback, and rollback is when this matters most: an
     // ungated footer would then point all ~18K pages at a board that 302s to
     // /login and answers 200 with login HTML, which no status check catches.
-    const src = readFileSync("components/SiteFooter.tsx", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    const src = stripComments(readFileSync("components/SiteFooter.tsx", "utf8"))
     for (const [flag, href] of [
       ["CANDY_MLB_PUBLIC", "/insights/candy-mlb"],
       ["PANINI_PUBLIC", "/insights/panini-squeeze"],
@@ -121,9 +120,7 @@ describe("SiteFooter — collection links come from the registry", () => {
     // SOLANA" the day the candy-mlb registry entry publishes, and a hardcoded
     // literal would leave every page on the site footer-claiming Flow for a
     // Solana-backed board. That exact defect (P4) is why the helper exists.
-    const src = readFileSync("components/SiteFooter.tsx", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    const src = stripComments(readFileSync("components/SiteFooter.tsx", "utf8"))
     expect(src, "SiteFooter must call publishedChainsBadge()").toMatch(/publishedChainsBadge\(\)/)
     expect(src, "SiteFooter must not hardcode a BUILT ON <chain> string").not.toMatch(
       /["'`]BUILT ON /i,

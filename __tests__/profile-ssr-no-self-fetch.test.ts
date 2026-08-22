@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /profile/[username] must NOT reach its data over HTTP.
@@ -49,9 +50,7 @@ const read = (p: string) => fs.readFileSync(p, "utf8")
 // A guard that fires on its own documentation trains people to delete the
 // documentation.
 const codeOf = (p: string) =>
-  read(p)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+  stripComments(read(p))
 
 describe("/profile/[username] SSR shell", () => {
   // Comments stripped throughout: this page's header documents the removed

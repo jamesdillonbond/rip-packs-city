@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // RATCHET: a PostgREST `.range()` read whose query chain carries no `.order()`.
 //
@@ -98,9 +99,8 @@ function walk(dir: string, out: string[] = []): string[] {
  * reported as an offender AFTER the real defect there had been fixed.
  */
 export function blankNonCode(src: string): string {
-  let s = src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + " ".repeat(m.length - p.length))
+  // Comments first (shared stripper), then strings — order matters.
+  let s = stripComments(src)
   s = s
     .replace(/`(?:\\.|[^`\\])*`/g, (m) => m.replace(/[^\n]/g, " "))
     .replace(/'(?:\\.|[^'\\\n])*'/g, (m) => " ".repeat(m.length))
