@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FIXED (Claude Code, interactive) — my navigation test was red on PRODUCTION and green locally on the same code, and the assertion itself was wrong
+
+**CODE (test only). I turned the scheduled monitor red; this is the repair, and the lesson is about what a browser monitor can honestly assert.**
+
+🚨 **The assertion hit-tested the four EXTREMES of each control's 44px area.** Against production it failed, identically on all three attempts, on exactly one control: **`"✨Pinnacle (up)"`** — the point 6px above one switcher pill was owned by something else. Locally, all eight tests passed on the same commit.
+
+⚠ **The difference is the environment, and that is precisely why the assertion was wrong.** The local build runs with non-working Supabase credentials and does not render every piece of chrome production does. **Whether an unrelated element paints over a control's MARGIN is not a property this monitor can hold** — and a monitor that cries wolf stops being read, which is the failure mode I had written into that same file's header eight hours earlier.
+
+✅ **Reworked to measure the EFFECTIVE HIT BOX** — the union of the element's own box and its `.rpc-tap44` `::after` (used px via `getComputedStyle(el, "::after")`), which is what the product actually promises: the control OWNS a 44px box. The centre-coverage check stays, so anything covering the control ITSELF still fails. Implementation-independent: it passes the grown tab bar and the overlaid chrome equally.
+
+🚨 **AND MY FIRST NEGATIVE CONTROL FOR THE REWORK WAS VACUOUS — THE SAME TRAP, TWICE IN ONE DAY.** `git stash push` on the five tap-target files reverted **nothing**, because they had been COMMITTED an hour earlier, so I re-measured the fixed code and the control "passed". ⚠ **I had written this exact gotcha into `tooling-gotchas.md` in the previous commit.** Redone with `git checkout <sha>~1 -- <files>`: the test fails and names all seven tabs at `76x35`, `85x35`, … **Reading the rule is not the same as applying it; check `git status` after the revert.**
+
+⚠ **The rework opened a NEW hole, closed in the same pass:** removing `.rpc-tap44` from a control does not make it fail the size check — **it drops out of the selector entirely**, and the seven tabs alone keep `checked` above its floor. The overlay half of the fix could have been deleted with the test still green. Now counted SEPARATELY (`.rpc-tap44` >= 5, the switcher pills being the stable minimum on that route).
+
+⚠ **ALSO RED, and NOT mine as far as I can show — stated as open rather than closed:** `entity - moment detail page renders` failed on `/moment/f29c19d0-...` with **"rendered only 25 chars"** (an empty shell at 200). My `resolve-moment-id` bound shipped into that window and is on that page's path, so I treated it as the prime suspect and tested the gap between my doubles and reality: **every existing double returns a real Promise, while supabase returns a lazy BUILDER (a thenable)**. Drove the builder shape through the budget — happy path and genuine-not-found both correct. The layout also **fails OPEN** on degraded, so a fired bound renders the page rather than blanking it. ⚠ **That is evidence, not proof.** The URL is discovered live from the sitemap (and `discoverEntityPath` has been flaky all day), so the next run may probe a different moment. **Re-dispatch and check before concluding either way.**
+
+**Verified:** `npx tsc --noEmit` exit 0; `e2e/mobile-layout.spec.ts` **8/8** local; negative control (real revert) reddens it.
+
+**Revert:** `git revert <sha>` (test only).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — fifth pin closed, and a size delta that lies about what changed
 
 **What shipped.** `get_challenge_plan` re-pinned: a snapshot migration
