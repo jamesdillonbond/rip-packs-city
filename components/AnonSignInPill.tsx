@@ -40,6 +40,10 @@ export default function AnonSignInPill() {
   return (
     <Link
       href={`/login${next}`}
+      // rpc-tap44: this pill measured 20x60px — the shortest control on the
+      // site, and the anonymous visitor's only visible path to an account.
+      // Hit area only; the pill's own 9px/2px-padding look is deliberate chrome.
+      className="rpc-tap44"
       style={{
         fontFamily: "var(--font-mono)",
         fontSize: 9,

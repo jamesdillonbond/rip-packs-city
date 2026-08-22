@@ -46,6 +46,9 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
       title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+      // rpc-tap44: the visible box is a deliberate 30x30 icon button in the
+      // header; the HIT area was the same 30x30, under the floor in both axes.
+      className="rpc-tap44"
       style={{
         display: "inline-flex",
         alignItems: "center",

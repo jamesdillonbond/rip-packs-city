@@ -1076,3 +1076,40 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
     justify-content: center;
   }
 }
+
+/* ── Tap-target floor (§9 / WCAG 2.5.5) ─────────────────────────────────────
+   MEASURED 2026-08-22 in Chromium at 390x844: 86 distinct controls rendered
+   under the 44px floor. Most of them are in-view FILTER chips at 27-31px, and
+   those are a deliberate density choice for a tool whose users scan hundreds of
+   moments — enlarging them would make the product worse on the screen it
+   matters most. See the exception written into RPC_DESIGN_SYSTEM §9.
+
+   NAVIGATION is the half with no such defence. A collector who mis-taps a
+   filter re-taps it; one who mis-taps the tab bar lands on the wrong page.
+
+   This class raises the HIT AREA to 44x44 with ZERO visual change: the
+   ::after overlay is a child, so a click on it still targets the element, and
+   nothing about the element's own box, border or spacing moves. Use it for a
+   small bordered control whose visible size is deliberate; grow the padding
+   instead when the control SHOULD look chunkier.
+
+   ⚠ The overlay can overflow past the element and steal a neighbour's clicks.
+   `e2e/mobile-layout.spec.ts` asserts, per control, that a point at the centre
+   of every NEIGHBOUR still hit-tests to that neighbour — apply this class and
+   run that spec, do not eyeball it. */
+.rpc-tap44 {
+  position: relative;
+}
+.rpc-tap44::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  /* Purely a hit area — never paints, and must not become a focus ring. */
+  pointer-events: auto;
+}

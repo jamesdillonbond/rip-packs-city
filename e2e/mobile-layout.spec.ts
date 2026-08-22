@@ -130,6 +130,60 @@ test.describe("mobile layout", () => {
     ).toEqual([])
   })
 
+  test("navigation clears the 44px floor as a HIT AREA, however it gets there", async ({ page }) => {
+    // MEASURED 2026-08-22: the collection tab bar was 35px, the collection
+    // switcher pills 30px, the theme toggle 30x30 and the anon Sign-in pill
+    // 20x60 — all under §9 / WCAG 2.5.5, all on navigation, where a mis-tap
+    // costs a page load rather than a re-tap.
+    //
+    // ⚠ Two different fixes landed, so this asserts the PROPERTY rather than
+    // either implementation: the tab bar GREW to 44px (tabs should look
+    // chunkier, and its overlay lost a stacking fight with `main`), while the
+    // small chrome controls kept their deliberate size and got `.rpc-tap44`,
+    // an invisible ::after that raises only the hit area. A box check would
+    // pass the first and fail the second; a hit test covers both, and would
+    // also catch an overlay that silently stops working.
+    await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
+    await page.waitForTimeout(1500)
+
+    const result = await page.evaluate(() => {
+      const inside = (el: Element, hit: Element | null) =>
+        !!hit && (hit === el || el.contains(hit) || hit.contains(el))
+      const bad: string[] = []
+      let checked = 0
+      for (const el of Array.from(document.querySelectorAll(".rpc-coll-tab, .rpc-tap44"))) {
+        const b = el.getBoundingClientRect()
+        if (b.width === 0 || b.height === 0) continue
+        const cx = b.left + b.width / 2
+        const cy = b.top + b.height / 2
+        // ⚠ elementFromPoint returns null OUTSIDE the viewport, and both the tab
+        // bar and the switcher row are overflow-x:auto — a control scrolled out
+        // of view would otherwise read as a broken hit area. It read exactly
+        // that way on the first run of this probe.
+        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) continue
+        checked++
+        const label =
+          (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 20) ||
+          el.getAttribute("aria-label") ||
+          el.tagName
+        for (const [dir, x, y] of [
+          ["up", cx, cy - 21],
+          ["down", cx, cy + 21],
+          ["left", cx - 21, cy],
+          ["right", cx + 21, cy],
+        ] as Array<[string, number, number]>) {
+          if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue
+          if (!inside(el, document.elementFromPoint(x, y))) bad.push(`${label} (${dir})`)
+        }
+      }
+      return { bad, checked }
+    })
+
+    // Not vacuous: a selector that stops matching must FAIL, not pass quietly.
+    expect(result.checked, "no navigation controls were in view to check").toBeGreaterThanOrEqual(6)
+    expect(result.bad, "navigation controls whose 44px hit area is not reachable").toEqual([])
+  })
+
   test("the wallet band stays one band, not a hero", async ({ page }) => {
     // The original defect: an inline `flex: "1 1 300px"` on the input wrapper.
     // flex-basis sizes the MAIN axis, and the band's max-width:640px rule flips

@@ -99,7 +99,10 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
           }
 
           return (
-            <Link key={col.id} href={targetPath} style={chipStyle}>
+            // rpc-tap44: the pills measured 30px tall on 5 routes. They ARE the
+            // cross-collection navigation, so the hit area goes to the floor;
+            // the aria-disabled sibling above is not interactive and needs none.
+            <Link key={col.id} href={targetPath} className="rpc-tap44" style={chipStyle}>
               <span style={{ fontSize: 13 }}>{col.icon}</span>
               {col.shortLabel}
             </Link>
