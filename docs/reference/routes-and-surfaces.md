@@ -2,6 +2,31 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⚠ THREE switches mean "live", and they are DESIGNED to disagree
+
+**`collections.is_active` is NOT the public-visibility switch.** Read as one, it says the opposite of
+the truth for any partially-launched collection, and acting on it takes a live public surface dark.
+
+| switch | governs |
+|---|---|
+| `collections.is_active` (Postgres) | RLS-gated anon PostgREST reads, ~11 cross-collection rollups, the smoke freshness grader |
+| `published` on the entry in `lib/collections.ts` | nav, collection switcher, footer links, the `/<collection>/*` tab routes |
+| `*_PUBLIC` in [lib/launch-flags.ts](../../lib/launch-flags.ts) | the `/insights/<board>` page + its public JSON + its OG card, enforced in `proxy.ts` |
+
+**A partial launch — insights board shipped, collection surfaces not — is a legitimate deliberate
+state**, and as of 2026-08-22 it is the state BOTH `candy_mlb` and `panini_blockchain` are in:
+`is_active = false` in Postgres while `CANDY_MLB_PUBLIC` and `PANINI_PUBLIC` are **both `true`**, so
+both boards are reachable, indexed and in the sitemap.
+
+⚠ **The DB flag is the one you find FIRST and it answers a DIFFERENT question.** Measured 2026-08-22
+while ranking the disk-IO budget: `panini_squeeze_board` + the `candy_*` boards are **605 GB / 7.75% of
+all database disk reads**, and `is_active = false` on both collections makes "unlaunched boards nobody
+can see" the obvious conclusion. It is wrong, and a session came one step from filing it and
+recommending both be dropped from `WARM_BOARDS`. **Anyone auditing cost, dead code or "unused"
+collections walks into this.** The full go-live ordering for a partial launch is recorded in the Candy
+paragraph of [chain-strategy.md](chain-strategy.md) — accurate, but buried where a cost audit will
+never look, which is why it is restated here.
+
 ## Route structure
 
 Feature pages live at `app/(collections)/[collection]/`. The layout at that level provides header, nav, and ticker — pages must NOT include standalone headers.

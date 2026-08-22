@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — session wrap-up) — two durable lessons promoted out of where nobody would find them, and the scheduled apply re-armed because a self-bound routine dies with its session
+
+**Docs only, plus one operational change to a scheduled Routine.**
+
+⚠ **THE OPERATIONAL ONE FIRST, because it would have failed silently.** The 20:15Z cross-collection apply was scheduled via `send_later`, which **self-binds to the calling session**. This thread is being archived, and the routine list contains the proof that matters: `trig_017CHH…` carries `ended_reason: "auto_disabled_session_gone"` — **a self-bound routine auto-disabled when its session went away.** The apply would have died the same way, silently, with the board left stale. Replaced with a FRESH-SESSION routine (`trig_01L4TBXNYcUAqYDC4h4pDwkR`, 2026-08-22 20:15Z, push+email) carrying a standalone runbook; the self-bound one (`trig_018Lb1…`) is deleted. ⚠ **And the replacement opens with a CAPABILITY CHECK**, because `create_trigger` warned that it stores **no MCP connectors** — the fired session may have no Supabase tools at all. A runbook that silently cannot execute is the same defect class this whole thread was about, so step 0 is "check for Supabase MCP; if absent, report to Trevor with the runbook and STOP rather than improvise."
+
+**Promoted, both out of files where the audience that needs them would never look:**
+1. ⚠ **`collections.is_active` is NOT the public-visibility switch** → [routes-and-surfaces.md](../reference/routes-and-surfaces.md). Three switches mean "live" and are DESIGNED to disagree (`is_active` = anon reads + rollups · `published` in `lib/collections.ts` = nav + tab routes · `*_PUBLIC` in `lib/launch-flags.ts` = the insights board, enforced in `proxy.ts`). **The distinction WAS already recorded — buried at the end of a ~4,000-word Candy paragraph in `chain-strategy.md`, which a cost or dead-code audit will never open**, and whose own wording ("often confused with it") says it has bitten before. Restated where a surface auditor lands, with a pointer back.
+2. ⚠ **A grep-able form of the sixth vacuous shape** → [testing-and-ci.md](../reference/testing-and-ci.md). **Grep test TITLES for `survives` / `degrades to` / `still advances` / `does not poison`** — three tests in the indexer family did not merely fail to assert, they **asserted permanent data loss as correct and said so in their own titles**. Judge by the SUBJECT, not the word: the below-spork-floor 404 case and the 429 window-halving case use the same phrasing and are correct.
+
+⚠ **Nothing added to CLAUDE.md deliberately — it measures 39,914 of its 40,000 limit (Node `.length`, the binding instrument), 86 characters of headroom.** A new rule there must DISPLACE one, and a displacement is the wrong move at a wrap-up with a concurrent session editing the same file.
+
+**Session log** entry for the 08-21/22 thread prepended to [docs/sessions/2026-08.md](../sessions/2026-08.md) — the cursor-swallow sweep across 19 walkers, the accuracy gate at 31.3%, the four near-misses the code refuted, and what is left open.
+
+**Verified:** `git status` clean before and after; ledger heading count +1; swallowed-headings check 3; future-dated check 0.
+
+**Revert:** `git revert <sha>` (docs only). The Routine change is not in git — to undo it, delete `trig_01L4TBXNYcUAqYDC4h4pDwkR`.
+
 ### 2026-08-21 · SHIPPED (Claude Code, interactive) — session wrap: the exclusion-premise rule promoted into CLAUDE.md by displacement, session log closed
 
 **Docs only — no code, DB or prod-state change.**
