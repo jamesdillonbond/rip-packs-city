@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { isClientSource } from "./helpers/client-directive"
 import { join, relative, sep } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // RATCHET on the single idiom behind every account-level honesty defect found
 // on 2026-08-16: a client-side read that funnels a FAILURE into the same value
@@ -78,7 +79,28 @@ const ROOTS = ["app", "components"]
  * and checks the first STATEMENT. Measurement expanding is the one legitimate
  * reason a ratchet number moves the wrong way (same precedent as widening the
  * coverage-gate `include`). THE RULE IS UNCHANGED — down only from here. */
-const BUDGET = 39
+/*
+ * ⚠ 39 -> 43 ON 2026-08-22, AND THIS IS A MEASUREMENT CHANGE, NOT A REGRESSION.
+ * No new collapse site was written. This guard's local comment stripper blanked
+ * block-before-line, hiding ~19.6k chars of CollectionAnalyticsClient.tsx; the
+ * budget of 39 was therefore calibrated against a blanked corpus and matched the
+ * blind count EXACTLY. With the shared stripper the same file shows 8 sites
+ * rather than 4.
+ *
+ * ⚠ THE FOUR NEWLY-VISIBLE SITES WERE TRIAGED INDIVIDUALLY BEFORE THIS NUMBER
+ * MOVED — raising a ratchet to green it is the documented wrong move. Lines 441,
+ * 524, 590 and 663 of CollectionAnalyticsClient.tsx each `.then((r) => (r.ok ?
+ * r.json() : null))` AND THEN DISCRIMINATE the null (`if (j) setData(...) else
+ * setFailed(true)`), which is the honest contract. They match the regex on
+ * SHAPE, not on defect — the pattern cannot see the branch that follows.
+ *
+ * ⚠ ONE PRE-EXISTING SITE IS A REAL FAIL-OPEN AND IS DELIBERATELY NOT COUNTED AS
+ * FIXED HERE: line 906 (`/api/ready`, thin-volume notice) swallows the failure
+ * with `.catch(() => {})`, so an outage renders as "volume is fine" and a genuine
+ * thin-volume market gets no warning. It was already inside the old budget, so it
+ * is not what moved this number; it is filed rather than silently absorbed.
+ */
+const BUDGET = 43
 
 /**
  * A failure funnelled into the success-with-nothing value.
@@ -139,12 +161,14 @@ function walk(dir: string, out: string[] = []): string[] {
  * conversions this ratchet is meant to reward. At least the sixth instance of
  * this trap in this repo.
  */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (m, p1) => p1 + " ".repeat(m.length - p1.length))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy here stripped BLOCK comments before LINE comments, so an
+ * ordinary line comment mentioning a glob path opened a block comment that ran
+ * to the next close-comment anywhere in the file, blanking real source this
+ * guard then reported as clean (103,590 chars across 49 product files).
+ * Do not re-inline a local copy.
+ */
 
 function collapseSites(): { file: string; count: number }[] {
   const out: { file: string; count: number }[] = []

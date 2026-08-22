@@ -361,7 +361,7 @@ function MarketplaceBreakdownCard({
           <div className="flex items-center gap-4 text-[11px] text-[color:var(--rpc-text-secondary)]">
             <span>Volume {fmt(enriched[0].volume)}</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span>{enriched[0].transactions.toLocaleString()} sales</span>
+            <span>{enriched[0].transactions.toLocaleString("en-US")} sales</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span style={{ color: enriched[0].color }} className="font-bold">100%</span>
           </div>
@@ -393,10 +393,10 @@ function MarketplaceBreakdownCard({
               <BarChart data={enriched} margin={{ top: 10, right: 16, bottom: 30, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis dataKey="label" tick={{ fill: "#a1a1aa", fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
-                <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => Number(v).toLocaleString()} />
+                <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(v) => Number(v).toLocaleString("en-US")} />
                 <ReTooltip
                   contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }}
-                  formatter={(v) => [Number(v).toLocaleString(), "Sales"] as [string, string]}
+                  formatter={(v) => [Number(v).toLocaleString("en-US"), "Sales"] as [string, string]}
                 />
                 <Bar dataKey="transactions" radius={[4, 4, 0, 0]}>
                   {enriched.map((r) => (
@@ -494,7 +494,7 @@ function OrderBookCard({ short }: { short: string }) {
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {count.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">listings</span>
+            {count.toLocaleString("en-US")} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">listings</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
@@ -566,11 +566,11 @@ function FmvHealthCard({ short }: { short: string }) {
             )}
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
-            <span style={{ color: "var(--rpc-success)" }}>{totals.high.toLocaleString()} high</span>
+            <span style={{ color: "var(--rpc-success)" }}>{totals.high.toLocaleString("en-US")} high</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span style={{ color: "var(--rpc-warning)" }}>{totals.low.toLocaleString()} low</span>
+            <span style={{ color: "var(--rpc-warning)" }}>{totals.low.toLocaleString("en-US")} low</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString()} editions</span>
+            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString("en-US")} editions</span>
           </div>
         </>
       )}
@@ -621,12 +621,12 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {tracked.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">packs tracked</span>
+            {tracked.toLocaleString("en-US")} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">packs tracked</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Positive EV</div>
-              <div style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{positive.toLocaleString()}</div>
+              <div style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{positive.toLocaleString("en-US")}</div>
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Avg ratio</div>
@@ -698,7 +698,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
         </div>
         {row && (
           <div className="text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString()} editions · {fmt(fmv)} reliable FMV
+            {total.toLocaleString("en-US")} editions · {fmt(fmv)} reliable FMV
           </div>
         )}
       </div>
@@ -725,7 +725,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
                 <div
                   key={b.key}
                   style={{ width: `${pct}%`, background: b.color }}
-                  title={`${b.label} · ${value.toLocaleString()} (${pct.toFixed(1)}%)`}
+                  title={`${b.label} · ${value.toLocaleString("en-US")} (${pct.toFixed(1)}%)`}
                 />
               )
             })}
@@ -742,7 +742,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
                     <span className="inline-block h-2 w-2 rounded-full" style={{ background: b.color }} />
                     <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">{b.label}</span>
                   </div>
-                  <div className="mt-1 text-base font-bold text-[color:var(--rpc-text-primary)]">{value.toLocaleString()}</div>
+                  <div className="mt-1 text-base font-bold text-[color:var(--rpc-text-primary)]">{value.toLocaleString("en-US")}</div>
                   <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{pct.toFixed(1)}%</div>
                 </div>
               )
@@ -814,7 +814,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
                     {r.username || shortAddr(r.addr)}
                   </Link>
                 </td>
-                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{r.sale_count.toLocaleString()}</td>
+                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{r.sale_count.toLocaleString("en-US")}</td>
                 <td className="py-1.5 text-right text-[color:var(--rpc-text-primary)]">{fmt(r.total_volume_usd)}</td>
               </tr>
             ))}
@@ -1168,9 +1168,9 @@ function AnalyticsInner() {
             return (
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
-                <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString())} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
+                <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString("en-US"))} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
                 <KpiCard label="Avg Sale Price" value={kpi(fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
-                <KpiCard label="Unique Editions" value={kpi(uniqueEds.toLocaleString())} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
+                <KpiCard label="Unique Editions" value={kpi(uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
               </div>
             )
           })()}
@@ -1297,7 +1297,7 @@ function AnalyticsInner() {
                                 {tier || "—"}
                               </span>
                             </td>
-                            <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(e.sale_count).toLocaleString()}</td>
+                            <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(e.sale_count).toLocaleString("en-US")}</td>
                             <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(e.volume)}</td>
                             <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(e.avg_price)}</td>
                           </tr>
@@ -1324,7 +1324,7 @@ function AnalyticsInner() {
                     <LineChart data={avgPricePivot.data}>
                       <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
                       <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
-                      <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                      <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                       <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
                       <Legend />
                       {avgPricePivot.tiers.map((t) => (
@@ -1396,7 +1396,7 @@ function AnalyticsInner() {
                             {pct >= 0 ? "+" : ""}{pct.toFixed(0)}%
                           </div>
                           <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)]">
-                            {Number(b.badged_sales).toLocaleString()} badged / {Number(b.unbadged_sales).toLocaleString()} unbadged
+                            {Number(b.badged_sales).toLocaleString("en-US")} badged / {Number(b.unbadged_sales).toLocaleString("en-US")} unbadged
                           </div>
                         </div>
                       )
@@ -1427,7 +1427,7 @@ function AnalyticsInner() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
-                        <XAxis type="number" stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                        <XAxis type="number" stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                         <YAxis type="category" dataKey="name" stroke="#71717a" tick={{ fontSize: 10 }} width={100} />
                         <ReTooltip
                           contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }}
@@ -1436,7 +1436,7 @@ function AnalyticsInner() {
                             return [
                               <span key="body">
                                 {fmtUsd(Number(v) || 0)}
-                                <div style={{ fontSize: 10, color: "#a1a1aa" }}>Avg {fmtUsd(row.avg_price || 0)} · {Number(row.sale_count).toLocaleString()} sales</div>
+                                <div style={{ fontSize: 10, color: "#a1a1aa" }}>Avg {fmtUsd(row.avg_price || 0)} · {Number(row.sale_count).toLocaleString("en-US")} sales</div>
                               </span>,
                               "Volume",
                             ]
@@ -1466,7 +1466,7 @@ function AnalyticsInner() {
                       <AreaChart data={dailySeriesPivot}>
                         <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
                         <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
-                        <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString()}`} />
+                        <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                         <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
                         <Legend />
                         {topSeriesKeys.map((s, i) => {
@@ -1545,7 +1545,7 @@ function AnalyticsInner() {
                             </span>
                           </td>
                           <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{seriesLabel(p.series)}</td>
-                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(p.sale_count).toLocaleString()}</td>
+                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(p.sale_count).toLocaleString("en-US")}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(p.volume)}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(p.avg_price)}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-muted)]">{fmtUsd(p.min_price)}</td>
@@ -1621,15 +1621,15 @@ function AnalyticsInner() {
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Packs Pulled</div>
-                        <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString()}</div>
+                        <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString("en-US")}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Marketplace Buys</div>
-                        <div className="text-3xl font-black text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>{acq!.marketplace_count.toLocaleString()}</div>
+                        <div className="text-3xl font-black text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>{acq!.marketplace_count.toLocaleString("en-US")}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Challenge Rewards</div>
-                        <div className="text-3xl font-black" style={{ color: "var(--rpc-warning)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString()}</div>
+                        <div className="text-3xl font-black" style={{ color: "var(--rpc-warning)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString("en-US")}</div>
                       </div>
                     </div>
                     {acqTotal > 0 && (
@@ -1659,12 +1659,12 @@ function AnalyticsInner() {
                   <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                     <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Unlocked FMV</div>
                     <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{fmt(data.locked.unlocked_fmv)}</div>
-                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.unlocked_count.toLocaleString()} moments</div>
+                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.unlocked_count.toLocaleString("en-US")} moments</div>
                   </div>
                   <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                     <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Locked FMV</div>
                     <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{fmt(data.locked.locked_fmv)}</div>
-                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.locked_count.toLocaleString()} moments</div>
+                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.locked_count.toLocaleString("en-US")} moments</div>
                   </div>
                 </div>
                 <div className="mt-2 text-[11px] text-[color:var(--rpc-text-muted)]">Locked moments cannot be listed or traded.</div>
@@ -1698,7 +1698,7 @@ function AnalyticsInner() {
                           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Top Shot</div>
                           <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--rpc-red)", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)", fontFamily: "var(--font-mono)" }}>TS</span>
                         </div>
-                        <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(ts.count ?? 0).toLocaleString()}</div>
+                        <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(ts.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(ts.avg_price ?? 0))}</div>
                       </div>
@@ -1707,7 +1707,7 @@ function AnalyticsInner() {
                           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Flowty</div>
                           <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--tier-uncommon)", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)", fontFamily: "var(--font-mono)" }}>Flowty</span>
                         </div>
-                        <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(fl.count ?? 0).toLocaleString()}</div>
+                        <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(fl.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(fl.avg_price ?? 0))}</div>
                       </div>
@@ -1736,7 +1736,7 @@ function AnalyticsInner() {
                         <div className="relative flex-1 h-5 rounded bg-[var(--rpc-surface)] overflow-hidden">
                           <div className="absolute inset-y-0 left-0" style={{ width: `${w}%`, background: color, opacity: 0.35 }} />
                           <div className="absolute inset-0 flex items-center px-2 text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
-                            {t.count.toLocaleString()} · {fmt(t.fmv)}
+                            {t.count.toLocaleString("en-US")} · {fmt(t.fmv)}
                           </div>
                         </div>
                       </div>
@@ -1763,7 +1763,7 @@ function AnalyticsInner() {
                       {data.series.map((s) => (
                         <tr key={s.label} className="border-b border-[color:var(--rpc-border)]">
                           <td className="py-1.5 text-[color:var(--rpc-text-secondary)]">{s.label}</td>
-                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{s.count.toLocaleString()}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{s.count.toLocaleString("en-US")}</td>
                           <td className="py-1.5 text-right text-[color:var(--rpc-text-primary)]">{fmt(s.fmv)}</td>
                         </tr>
                       ))}

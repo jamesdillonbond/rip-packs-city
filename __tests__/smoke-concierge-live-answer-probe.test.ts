@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The live "concierge answers rather than returning a fallback" probe: the ONLY
@@ -36,12 +37,14 @@ import { join } from "node:path"
 const ROUTE = join(process.cwd(), "app", "api", "smoke-test", "route.ts")
 const WORKFLOW = join(process.cwd(), ".github", "workflows", "smoke-tests.yml")
 
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (m, p1) => p1 + " ".repeat(m.length - p1.length))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy here stripped BLOCK comments before LINE comments, so an
+ * ordinary line comment mentioning a glob path opened a block comment that ran
+ * to the next close-comment anywhere in the file, blanking real source this
+ * guard then reported as clean (103,590 chars across 49 product files).
+ * Do not re-inline a local copy.
+ */
 
 /** The probe's implementation block, comments blanked. */
 function probeBlock(src: string): string {

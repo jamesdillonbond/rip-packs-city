@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // BAN: a hydrated /insights board must not format a date with the RUNTIME
 // timezone, or any value with the RUNTIME locale.
@@ -43,7 +44,7 @@ import { join, relative, sep } from "node:path"
 // its own predicate over ALL of app/ + components/ (client files only):
 //
 //   Rule A (date/time, runtime timezone) ...   5 sites
-//   Rule B (runtime locale) ................ 101 sites across 42 files
+//   Rule B (runtime locale) ................ 79 sites (was 101; see note below)
 //
 // Of the 5 Rule-A sites, exactly ONE was a live defect, and it was worse than a
 // hydration mismatch. PaniniOverviewClient rendered a MODULE CONSTANT's
@@ -86,7 +87,7 @@ const SITE_ROOTS = ["app", "components"]
 // red when the population is driven down — the failure mode this repo shipped
 // once as server-page-data-access-ratchet's `pages.length > 10`. Lower it when
 // you drain some; never raise it to make a new violation pass.
-const RULE_B_SITEWIDE_CEILING = 101
+const RULE_B_SITEWIDE_CEILING = 79
 
 /**
  * Blank out comments, preserving offsets.
@@ -96,12 +97,14 @@ const RULE_B_SITEWIDE_CEILING = 101
  * version without this reports its own documentation as the offender. This
  * repo has shipped that exact bug at least six times.
  */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (m, p1) => p1 + " ".repeat(m.length - p1.length))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy here stripped BLOCK comments before LINE comments, so an
+ * ordinary line comment mentioning a glob path opened a block comment that ran
+ * to the next close-comment anywhere in the file, blanking real source this
+ * guard then reported as clean (103,590 chars across 49 product files).
+ * Do not re-inline a local copy.
+ */
 
 function isClientFile(src: string): boolean {
   return src.slice(0, 300).includes("use client")
