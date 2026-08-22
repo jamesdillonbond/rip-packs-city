@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection } from "@/lib/collections"
+import { apiErrorResponse } from "@/lib/api-error"
 
 /**
  * GET /api/collection-series?collection=nfl-all-day
@@ -21,21 +22,47 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ series: [] })
   }
 
-  const { data: config } = await (supabaseAdmin as any)
+  // ⚠ THERE ARE THREE STATES HERE, NOT TWO — read failed / read ok + no config
+  // row / read ok + config found. Both reads below used to swallow `error`, and
+  // supabase-js RETURNS errors rather than throwing, so a failed read resolved
+  // `{ data: null, error }` and fell straight into the `{ series: [] }` branch.
+  // The consumer (CollectionTabClient) then sets an EMPTY series filter, i.e.
+  // the page states "this collection has no series" out of a timeout — and the
+  // success path is cached `s-maxage=300, stale-while-revalidate=600`, so one
+  // failed read served that claim to every visitor for up to 15 minutes.
+  //
+  // ⚠ `.single()` → `.maybeSingle()` is load-bearing, not tidying: `.single()`
+  // raises PGRST116 when it matches zero rows, so "this collection has no
+  // config row" and "the read failed" arrived as the SAME error and could not
+  // be told apart. Same fix as app/api/edition-stats.
+  //
+  // ⚠ The error responses carry `Cache-Control: no-store` (apiErrorResponse),
+  // which is what keeps a transient failure from being cached for 15 minutes.
+  // The cache header below must stay on the SUCCESS path only.
+  const { data: config, error: configError } = await (supabaseAdmin as any)
     .from("collection_config")
     .select("collection_id")
     .eq("flow_contract_name", contractName)
-    .single()
+    .maybeSingle()
 
+  if (configError) {
+    return apiErrorResponse(configError, "collection-series/config", "Series filters are unavailable right now.")
+  }
+
+  // Genuinely absent, not unreadable — an honest empty.
   if (!config?.collection_id) {
     return NextResponse.json({ series: [] })
   }
 
-  const { data: series } = await (supabaseAdmin as any)
+  const { data: series, error: seriesError } = await (supabaseAdmin as any)
     .from("collection_series")
     .select("series_number, display_label, season")
     .eq("collection_id", config.collection_id)
     .order("series_number", { ascending: true })
+
+  if (seriesError) {
+    return apiErrorResponse(seriesError, "collection-series/series", "Series filters are unavailable right now.")
+  }
 
   return NextResponse.json(
     { series: series ?? [] },
