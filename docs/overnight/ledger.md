@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the bundle-fold scare is REFUTED (do not write the lint rule), and the fail-open it uncovered is fixed
+
+**Two things, and the first is a NEGATIVE result that saves work rather than creating it.**
+
+🚨 **THE `+`-JOINED TEMPLATE GENERALIZATION DOES NOT HOLD — 42 shaped sites, ZERO foldable.** The 2135Z
+filing measured one real defect (production rendered a sentence the source does not contain) and listed 28
+at-risk sites, recommending a blanket lint rule if it reproduced. **It does not reproduce, and the reason
+is structural:** the bundler dropped a quasi while **CONSTANT-FOLDING**, which requires **every**
+interpolation in the chain to be compile-time constant. The D12b site qualified — both interpolations were
+module-level **string-literal `const`s**, which is why the served chunk had the dates **inlined**. ⚠ **A
+template carrying a runtime interpolation cannot be folded at all**, so it cannot lose a quasi this way.
+Across `app`/`components`/`lib`/`workers`: **42 at-risk-SHAPED concatenations, 0 constant-foldable.** The 8
+whose interpolations are all bare identifiers were each opened — every one mixes in a runtime local.
+✅ **Every user-facing worry the filing named is specifically clear**: `alerts-send` (outbound alert copy),
+the wallet-page `description` and JSON-LD, `stale-fmv-monitor`, `data-integrity`, `pinnacle-events-ingest`.
+**The INCONCLUSIVE wallet-page probe does not need re-running.**
+
+⚠ **THE POSITIVE CONTROL IS WHAT MAKES THAT ZERO MEAN ANYTHING.** Run against the **pre-fix** source
+recovered from git (`e0f3186dc`), the same detector flags that site as foldable and names both constants.
+⚠ **And production could not be rendered from here at all** — the egress proxy 403s CONNECT to
+`www.rippackscity.com` as well as `*.supabase.co`, so `curl` returns `000` for a healthy and a broken page
+alike. **The analytic route was not second-best; it was the only decisive one available.**
+
+✅ **New guard: `no-constant-foldable-joined-templates` — a BAN AT POPULATION ZERO on the PRECONDITION, not
+the output.** ⚠ **Deliberately a ban and not a cleanup:** a blanket rule would have banned 42 sites to
+prevent a defect none can exhibit — the "cost stated with no number in it" shape. What is **not**
+established is that turbopack's fold is correct in general (**one fold, one dropped quasi**), so the
+population is pinned at zero rather than the shape tolerated. Carries both controls plus a
+files-inspected floor (>500), because a guard that silently walks nothing exits clean and reads as coverage.
+
+✅ **FIXED — the fail-open found during the guard sweep.** `CollectionAnalyticsClient`'s thin-volume notice
+read `/api/ready` and ended `.catch(() => {})`, so a failed read left the caveat unrendered. ⚠ **Worse than
+a wrong number: that notice exists to TEMPER the analytics below it**, so suppressing it silently overstated
+confidence in **every figure on the page**, and its output was silence — the failure was unfalsifiable. Now
+three states; a payload missing `per_collection`, or missing this collection, counts as **could-not-check**
+rather than adequate. ⚠ **The ratchet budget did NOT drop for this, and that is correct** — it counts the
+`.then((r) => (r.ok ? r.json() : null))` SHAPE, which is unchanged; what changed is the branch after it,
+which the regex cannot see. **Lowering it would claim a reduction the instrument never measured.**
+
+**REVERT:** `git revert d97dcd741`. The production change is confined to one client component (a new
+`thinVolumeUnknown` state and its notice).
+
 ### 2026-08-22 · VERIFIED (Claude Code, interactive) — pg_cron jobid 70's first run in the new window: 36.4 s, and the contention hypothesis is confirmed harder than predicted
 
 **Observed, not inferred.** `rpc-refresh-misattrib-candidates` (jobid 70) fired at **23:35:00.065Z** in its
