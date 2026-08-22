@@ -8,6 +8,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · DECIDED (Claude Code, interactive) — both open decisions closed, and the accuracy meter's arm could vanish from its own report
+
+**Decision 1 — pg_cron jobid 70 / the `cron_heavy` privilege question: do NOT grant, because no grant is
+needed.** Re-derived live: `postgres` IS a member of `cron_heavy`, and `cron_heavy` already holds EXECUTE
+on `cron.schedule` and both `cron.unschedule` overloads — only `cron.alter_job` is missing, and
+`cron.schedule` upserts on `(jobname, username)`. Granting `alter_job` would widen a privilege to buy a
+capability the role already has by another door. ⚠ **known-issues item 19's "NO session-reachable role can
+reschedule" headline is REFUTED and has been corrected in place**, with a two-line self-checking operator
+recipe (`cron.schedule` returns the jobid; it must come back `70`, else `cron.unschedule` the duplicate).
+⚠ **The remaining blocker is the HARNESS, not the database** — the auto-mode classifier denies `SET ROLE`,
+which is why this ledger entry records a decision and a recipe rather than an applied change. **Nothing
+was applied to the DB this turn.** Transferable lesson, now in item 19: *"the sandbox could not do it" is
+not evidence that the DATABASE forbids it* — that conflation is what turned a two-line fix into a
+privilege-grant proposal. Band evidence for the 23:35Z move, re-derived: 13 of the last 14 runs failed,
+twelve at the 600 s wall; the one success (08-16) took **187.6 s**, 4.2× under it. Target minute verified
+collision-free (positive control: the same predicate returns jobid 70 at 15:35).
+
+**Decision 2 — the FMV-confidence accuracy meter becomes a NIGHTLY MATERIALISED TALLY**, not a cheaper
+in-band query. Recorded as §7 of the 17:45Z filing and in `focus.md`. A 3.3× cheaper query still runs
+in-band and can still be killed in a saturation spell; and a GATE metric needs a SERIES, which the in-band
+rewrite does not provide at all. ⚠ **The lateral rewrite is not the alternative — it is the tally's
+WRITER**, so the armed 23:10Z measurement keeps its full value; `trig_01H3p6o5iB7yyjLVzrbbviaA` was
+repointed at that question, its tie check promoted to BLOCKING (a tally is computed once and read all day,
+so an arbitrary tie-break freezes into the published number). **No table, no writer, no migration — the
+rewrite remains UNMEASURED and must not be adopted on its planner cost.**
+
+**Shipped (code):** `app/api/sentinel/route.ts` — the FMV-confidence arm's `else if (data)` had **no
+`else`**, so a no-error/no-payload read pushed nothing and **the headline accuracy check disappeared from
+the sentinel report** rather than reporting itself unreadable. That is the unfalsifiable-alert class, on
+the one metric the roadmap is steered by. Added the third-state branch; it claims no percentage. Swept the
+file — this was the only instance. Pinned by `__tests__/api-sentinel-branches.test.ts` → *"keeps the
+confidence arm present, and claims no percentage, when the RPC returns no payload"*, which asserts the
+**absence of a percentage** rather than the presence of an error string, so it cannot be satisfied by a
+version that also publishes a fabricated `0%`. Negative control against the pre-fix route: exactly that one
+test red, 24 others green.
+
+**Verified:** `npx tsc --noEmit` exit 0 · `npm run test:coverage` exit 0 (92.15% statements, 45148/48993) ·
+memory-doc-links, driver-message-leaks, brand-tokens and the newly-arrived responsive-flex-basis guards all
+exit 0 · CLAUDE.md unchanged at 39,930/40,000 (Node `.length`).
+
+**Revert path:** code — `git revert` the commit whose message begins `fix(sentinel): the confidence arm
+must not vanish` (find by message, not by a recorded sha). Docs/decisions — revert the docs commit whose
+message begins `docs: close both open decisions`. No DB state changed, so there is no DB half to revert.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the wallet band was 350px tall on mobile, an inline flex-basis became a HEIGHT, and there is now a guard for the class
 
 **CODE.** Follow-on from the anon-only band change two entries down. Trevor's screenshot showed the band as a huge mostly-empty card; I had read that as a screenshot artefact. It was not.

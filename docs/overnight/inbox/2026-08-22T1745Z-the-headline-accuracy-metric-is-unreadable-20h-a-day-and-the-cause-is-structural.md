@@ -126,3 +126,50 @@ the arm could also be re-scoped or precomputed, and a nightly materialised tally
 readable **all** day rather than merely cheaper to compute in-band. **That alternative was not costed
 and may well be the better answer** — a metric steered by a roadmap arguably should not be recomputed
 from 1.2M rows on every sentinel tick at all.
+
+---
+
+## 7. ✅ DECISION 2026-08-22 — the destination is a NIGHTLY MATERIALISED TALLY
+
+Decided on architecture. **It does not wait on §5's measurement, and it does not make that measurement
+moot** — the two are complementary, which is the part that is easy to get backwards:
+
+1. **The lateral rewrite is not an ALTERNATIVE to the tally; it is the tally's WRITER.** A nightly tally
+   still has to compute the split once. The cheap query is what should compute it. So §5's measurement
+   keeps its full value — only its question changes, from *"should the sentinel arm run this in-band?"*
+   to *"is this the right query for the nightly writer?"*. The tie check (§5 step 2) matters **more**
+   under this decision, not less: a tally is written once and then read all day, so a tie-breaking
+   disagreement would be frozen into the number rather than re-rolled each tick.
+2. **The tally fixes the stated defect; the rewrite only lowers its probability.** The defect is
+   *unreadable ~20 h a day*. A 3.3× cheaper query still runs in-band, still inside the 01:00–19:00Z
+   band, and can still be killed in a saturation spell — it reduces the odds without removing the
+   dependency on disk-IO conditions. A tally read is a handful of rows from a small table and is
+   readable at any hour, including during a spell.
+3. **A GATE metric needs a SERIES, and this is the larger of the two defects.** This repo's own rule is
+   that a directional claim needs a distribution, not a snapshot. The arm today can only answer *"what
+   is the share right now"*; the roadmap's actual question is *"is accuracy improving"*, which it cannot
+   answer at all. A dated tally table answers both, and the in-band rewrite does not touch this.
+4. **Cost falls and becomes bounded** — one computation per night instead of one per sentinel tick.
+
+⚠ **The honesty canon applies to the NEW design, and differently.** Reading a stored tally introduces a
+failure mode the in-band query does not have: **a stale row that still renders as a current number.** The
+arm must therefore report the tally's `computed_at` and warn when it is older than roughly one writer
+interval — and must never present a stale share as today's. The three states are unchanged (read failed
+· read ok + genuinely empty · read ok + **stale**), and "stale" is the new third state. A tally that
+silently ages is strictly worse than a query that loudly times out, because a timeout is falsifiable.
+
+⚠ **What this decision does NOT authorise.** Nothing has shipped: no table, no writer, no migration, and
+the sentinel arm still calls the RPC. §4's finding stands — the rewrite remains **unmeasured** and must
+not be adopted on its planner cost. When the writer is scheduled, pick a minute in the quiet window that
+does **not** collide with the 23:35Z slot proposed for pg_cron jobid 70 (known-issues item 19).
+
+✅ **Shipped alongside this decision (2026-08-22):** the arm's `else if (data)` had no `else`, so a
+no-error/no-payload read pushed **nothing** and the headline accuracy check **disappeared from the
+sentinel report** rather than reporting itself unreadable — the unfalsifiable-alert class, on the one
+metric the roadmap is steered by. Fixed in `app/api/sentinel/route.ts` with an explicit third-state
+branch that claims no percentage, pinned by
+`__tests__/api-sentinel-branches.test.ts` → *"keeps the confidence arm present, and claims no percentage,
+when the RPC returns no payload"*. The test asserts the **absence of a percentage**, not the presence of
+an error string, so it cannot be satisfied by a version that also publishes a fabricated `0%`; negative
+control run against the pre-fix route showed exactly that one test red.
+

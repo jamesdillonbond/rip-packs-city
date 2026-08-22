@@ -110,6 +110,30 @@ saturation being measured. Take a positive control first (`count(*) FILTER (WHER
 over `pg_stat_activity`); if most active sessions are in IO wait, **every duration that hour is
 uninterpretable** — compare Buffers, never wall time.
 
+## DECIDED 2026-08-22 — two open decisions closed, so nobody re-opens them
+
+- ✅ **pg_cron jobid 70 / the `cron_heavy` privilege question: do NOT grant, no grant is needed.**
+  `postgres` IS a member of `cron_heavy`, and `cron_heavy` already holds EXECUTE on `cron.schedule` and
+  `cron.unschedule` — only `cron.alter_job` is missing, and `cron.schedule` upserts on
+  `(jobname, username)`, so rescheduling under the job's own role updates it in place. Granting
+  `alter_job` would widen a privilege to buy a capability the role already has by another door.
+  ⚠ **The blocker is the HARNESS, not the database** — the Claude Code auto-mode classifier denies
+  `SET ROLE`. The two-line self-checking recipe (and what to do if it returns a jobid other than 70) is
+  in **known-issues item 19**, which has been corrected: its old "NO session-reachable role can
+  reschedule" headline was **REFUTED**. **Transferable:** *"the sandbox could not do it" is not evidence
+  that the DATABASE forbids it* — that conflation turned a two-line fix into a privilege-grant proposal.
+- ✅ **The FMV-confidence accuracy meter: the destination is a NIGHTLY MATERIALISED TALLY**, not a
+  cheaper in-band query. Rationale in §7 of
+  `inbox/2026-08-22T1745Z-the-headline-accuracy-metric-is-unreadable-20h-a-day-…md`. The short form: a
+  3.3× cheaper query still runs in-band and can still be killed in a spell — it lowers the odds without
+  removing the dependency; and **a GATE metric needs a SERIES, which the in-band rewrite does not
+  provide at all**. ⚠ **The lateral rewrite is NOT the alternative — it is the tally's WRITER**, so the
+  23:10Z measurement (`trig_01H3p6o5iB7yyjLVzrbbviaA`) keeps its full value and has been repointed at
+  that question. ⚠ **The tie check is now BLOCKING**: a tally is computed once and read all day, so an
+  arbitrary tie-break is frozen into the published number. ⚠ **New third state for the redesign:
+  STALE** — a stored tally that silently ages is worse than a query that loudly times out, because a
+  timeout is falsifiable. Nothing has shipped: no table, no writer, no migration.
+
 ## RETIRED STEERS — these were in this file and are now WRONG; do not re-add
 
 - ⛔ **"TS on-chain unmapped spike — do NOT skip/retire this class."** `topshot-flowty-unmapped-drain` was **deliberately RETIRED 2026-08-16** (schedule removed from `vercel.json`, verified absent) because its queue reached **0 open** and proving emptiness cost a full backlog scan on ~73 ticks/day. The old steer now argues against a decision that was correctly made.
