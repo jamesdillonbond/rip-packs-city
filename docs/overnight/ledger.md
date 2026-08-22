@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · VERIFIED IN PRODUCTION (Claude Code, interactive) — the layout monitor's first real run passed, and it caught a slowness signal on the way in
+
+**CODE (small) + one filing.** Closes the verification gap the last three entries all ended on: this sandbox cannot reach `www.rippackscity.com` (agent proxy answers **403 to CONNECT**, org network policy), so every measurement today was against a local build. **The new monitor is `workflow_dispatch`-enabled, so I dispatched it and read the result** — which is the point of having put it there.
+
+✅ **`e2e-smoke.yml` run 32592337927 (18:58Z, dispatched, against production): `success` — 97 passed, 1 pre-existing flaky, 2.4 min.** ⚠ **Arithmetic control, because "success" alone would not prove MY tests ran:** the prior run was 76 passed + 5 failed + 2 flaky + 7 skipped = **90 tests**; this one is 97 + 1 = **98**. The difference is exactly the **8** I added, and **nothing skipped** — so the band assertion did not quietly take its `test.skip` branch. All three properties hold **on the deployed site, with real data**:
+
+- the wallet band renders for an anonymous visitor and is **≤160px** (the 350px defect is gone in prod, not just locally);
+- the five bottom-nav tabs are **≥44px in both axes**;
+- **no horizontal scroll at 390px** on the public routes — which was my live worry, since the local sweep ran with no data and a wide real table could have overflowed. It did not.
+
+🚨 **THE MONITOR'S PREVIOUS SCHEDULED RUN (13:15Z) HAD FAILED, and that is a production signal, not my doing.** Five public pages exceeded **`page.goto` 30s to `domcontentloaded`** — `/overview` on **four** collections plus `/insights/underpriced-serials`; Pinnacle's overview failed then passed on retry. **`domcontentloaded` is the cheap milestone**: 30s to reach it is not a slow chart, it is a document that has not arrived. 07:16Z was clean, 18:58Z was clean. 13:15Z sits inside the documented **01:00–19:00Z** degraded band — but so does 07:16Z, so the band is a RISK WINDOW, not a schedule. ⚠ **The new information is not a new subsystem** — it is that the saturation this repo already tracks has a measured **user-facing expression**, and those five pages are where it lands first. Two readings (page's own server reads vs lambda cold starts) are both consistent with the evidence and I did **not** separate them. Filed: `docs/overnight/inbox/2026-08-22T1905Z-five-public-pages-exceeded-30s-to-domcontentloaded-inside-the-degraded-band.md`.
+
+✅ **Acted on it in the only place I should:** `/[collection]/overview` is now **OUT** of `e2e/mobile-layout.spec.ts`'s route list, with the reason written at the list so nobody "restores" it. A navigation timeout there would raise a **LAYOUT** alarm for a **slowness** cause, and `smoke.spec.ts` already reports that class correctly. ⛔ **Deliberately did NOT raise the 30s navigation timeout** — that would make the monitor stop reporting the thing it just caught. The instrument is working; the page is the problem. The overview page shares its chrome with the three collection routes still in the list, so no layout coverage was lost.
+
+✅ **Also capped the spec's `networkidle` wait at 5s.** A page with a polling client block never reaches networkidle, and the uncapped wait cost the full navigation timeout **per route** — 32s each locally, which would have pushed this monitor's 10-minute job budget while looking like a slow site rather than a slow test. Local run: **2.3 min → 32s, 7/7 green.**
+
+✅ **Closed the flex-basis guard's one documented hole.** `scripts/check-responsive-flex-basis.mjs` now also treats a **Tailwind responsive direction utility** (`flex-col sm:flex-row`) as an in-scope signal, not only a CSS media block. ⚠ **Measured the hole before closing it, and it was EMPTY: 11 files use such a utility, none carries an inline length basis** — so this costs nothing today and stops that zero drifting up unnoticed. Negative control: a synthetic `flex: "1 1 260px"` injected into `components/analytics/FilterBar.tsx` (a Tailwind-direction file) exits 1 and names the signal; removed, clean again.
+
+**Verified:** `npm run test:coverage` exit 0, **14,501**; `test:coverage:components` exit 0, **3,007**; `npx tsc --noEmit` exit 0; all **five** CI guard scripts exit 0; `e2e/mobile-layout.spec.ts` **7/7** local and **8/8** against production before the route trim.
+
+**Revert:** `git revert <sha>` (spec + guard). Neither touches product code.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sentinel now proves no arm can disappear from its own report
 
 **What shipped.** Two behavioural tests in `__tests__/api-sentinel-branches.test.ts` pinning a property the
