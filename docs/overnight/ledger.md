@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — `/api/profile/me` asserted "you have no wallet on file" out of a failed read, and the 200 made it undetectable
+
+**CODE + TEST. No DB, no migration.** Tier 2 of the 08-21 honesty filing's triage order — *a false claim about the reader's OWN account*, which CLAUDE.md names as a worst sub-class because it is actionable.
+
+🚨 **THE DEFECT.** Both identity lookups in `app/api/profile/me/route.ts` (`allow_list`, then the `saved_wallets` fallback) swallowed `error`. supabase-js **RETURNS** errors rather than throwing, so a failed read resolved `{ data: null, error }` and the route answered **200 with `wallet_addr: null`** — asserting an absence about the reader's own account that it had never established.
+
+⚠ **AND THE 200 IS WHAT MADE IT INVISIBLE.** `DashboardClient` already carries a `meFailed` flag written for exactly this case, with a comment about not rendering *"Not signed in"* at a collector who is. **It never fired, because the request had not failed.** An honest consumer was defeated by a dishonest route.
+
+**The chain, traced rather than assumed:** the file's own note says `wallet_addr` is what the Pro badge and the concierge key on. `useSessionOwner → useProStatus(walletAddr) → isPro:false → ProBadge renders null` — **a failed read takes the PRO badge away from a paying member, site-wide**, and hands the concierge no wallet. Nothing was logged either, so this has been unobservable.
+
+✅ **FIXED IN THE ROUTE:** both reads destructure `error`, log it, and set `identity_degraded` so `username`/`wallet_addr` are marked **UNKNOWN rather than known-absent**. ⚠ **Deliberately still 200 with the user object** — `getCurrentUser()` succeeded, so *signed in* IS known; returning 5xx would render a signed-in reader as **ANON on every public board** that calls this unconditionally, trading a quiet false claim for a louder one.
+
+✅ **AND ONE LAYER UP, because a route fix alone would not have been a panel fix:** `useSessionOwner` mapped a non-ok response — and a rejected fetch — straight onto the signed-out shape. Same three-states error, one level higher: **request failed / signed out / signed in**. Both branches now set `degraded`.
+
+⚠ **PROBADGE WAS ALREADY CORRECT AND WAS LEFT ALONE — stated because "fix every layer" would have been the wrong instinct.** It renders `null` on a null wallet, which is **withholding on unknown**, exactly what this file prescribes for a state you cannot establish. The defect was never that it claimed too much; it was that nothing upstream could tell it the difference, and nothing logged. **The honest value of this change is that the failure is now visible and detectable — not that a badge is restored.**
+
+⚠ **PROVEN THE TESTS SEE IT — 3 of the new cases red on the reproduced defects** (both route guards stripped, and the hook's failure branch collapsed back), then **22/22 green on restore**. **Controls are in the suite on purpose, both directions:** a genuinely-absent wallet asserts `identity_degraded === false`, a healthy read asserts `false`, and a real signed-out reader asserts `degraded === false` — an always-true flag would have satisfied every failure case and meant nothing.
+
+⚠ **An existing exhaustive `toEqual` broke on the added field, and that is a FEATURE — it is what caught it.** Updated rather than loosened, with a note saying so: an identity field silently appearing or vanishing is precisely what this hook must not do quietly.
+
+⚠ **A process slip worth recording: I nearly lost the file.** The negative-control backup used a `cp A || cp B` fallback, the first `cp` succeeded to an unintended path, and the restore then read the second — `cannot stat`. Recovered intact from the real backup. **This file's own rule is to key a backup on the FULL PATH; a shell fallback that silently picks a different destination defeats it just as well as a shared basename.**
+
+**Verified:** `npx tsc --noEmit` clean · 46 cases green across `api-profile-me`, `hook-useSessionOwner`, `api-collection-series`, `no-client-wallet-connect`, `memory-doc-links-guard` · brand-token and memory-doc-link guards exit 0. Hook consumers enumerated before changing the interface: **ProBadge only**.
+
+**Revert:** `git revert <sha>` — restores the swallow in both files.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — a failed read on `/api/collection-series` published "this collection has no series" and CACHED it for 15 minutes
 
 **CODE + TEST. No DB, no migration.** Working the 08-21 honesty filing's own triage order (tier 1 = public/cached surfaces, where a false claim reaches everyone and outlives the failure) rather than sweeping its 259-read population, which that filing explicitly warns against.
