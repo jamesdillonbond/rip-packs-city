@@ -26,8 +26,13 @@ export default async function DealsPage() {
   // query fails under disk-IO saturation (nc1 PUBLIC-BOARD-CACHING).
   const { payload, source } = await readBoardOrLive("deals", () => fetchDealsDefault())
   const initialRows = (payload.rows as Row[]) ?? []
-  const initialFetchedAt =
-    (payload.fetched_at as string) ?? new Date().toISOString()
+  // ⚠ UNCOALESCED ON PURPOSE, and it used to be `?? new Date().toISOString()`.
+  // This board reads a materialized view since 2026-08-22, so the rows can be a full
+  // refresh interval older than this render. `data_as_of` is when they were actually
+  // computed; substituting now() when it is missing would restate the exact claim the
+  // field exists to correct, and would do it precisely when the refresh is broken.
+  // FreshnessStamp renders null as "—", which is the honest answer.
+  const initialFetchedAt = (payload.data_as_of as string | null) ?? null
   return (
     <DealsBoardClient
       initialRows={initialRows}

@@ -44,7 +44,7 @@ export type Row = {
 }
 
 type ApiResponse = {
-  meta: { fetched_at: string; total_rows: number; elapsed_ms: number }
+  meta: { fetched_at: string; data_as_of: string | null; total_rows: number; elapsed_ms: number }
   rows: Row[]
 }
 
@@ -210,7 +210,8 @@ export default function DealsBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
-        setFetchedAt(j.meta?.fetched_at ?? null)
+        // data_as_of = age of the ROWS; meta.fetched_at is only when the API answered.
+        setFetchedAt(j.meta?.data_as_of ?? null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")

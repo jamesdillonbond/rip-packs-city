@@ -28,7 +28,9 @@ export default async function PaniniSqueezePage() {
       coverage={(payload.coverage as any) ?? null}
       totals={(payload.totals as any) ?? null}
       degraded={(payload.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Panini squeeze board")}
-      fetchedAt={(payload.fetchedAt as string) ?? new Date().toISOString()}
+      // ⚠ UNCOALESCED ON PURPOSE — was `?? new Date().toISOString()`. Materialized
+      // 2026-08-22: dataAsOf is when the rows were computed, fetchedAt only when we asked.
+      fetchedAt={(payload.dataAsOf as string | null) ?? null}
     />
   );
 }

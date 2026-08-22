@@ -153,7 +153,8 @@ export default function PaniniSqueezeClient({
   degraded = null,
 }: {
   initialRows: Row[];
-  fetchedAt: string;
+  /** Age of the ROWS (MV refresh time), not when the page rendered. null = unknown -> "—". */
+  fetchedAt: string | null;
   coverage?: Coverage | null;
   totals?: Totals | null;
   /** Non-null only when the backing query FAILED — see lib/insights/board-status.ts. */

@@ -16,6 +16,13 @@ import FirstMintBoardClient, { type ApiResponse as FirstMintResponse } from "@/a
 // Assertions read <time dateTime>, not the visible text: FreshnessStamp formats in
 // UTC for SSR and swaps to the viewer's zone after mount, so the text is
 // environment-dependent by design while dateTime is the machine-readable instant.
+//
+// ⚠ EXTENDED 2026-08-22. "The age of the data they are serving" gained a second layer
+// when three boards were materialised: the SNAPSHOT instant is no longer the oldest
+// thing in the payload — the MV's refresh instant is. A board that stamps the snapshot
+// while its rows came from a 30-minute-old MV is understating staleness on a surface
+// whose subject is listings that disappear. first-mint's fixture below therefore supplies
+// a LATER fetched_at than data_as_of, so a regression to the request clock reddens here.
 
 const SNAPSHOT_ISO = "2026-08-15T04:30:00.000Z"
 
@@ -26,9 +33,21 @@ const rookiesInitial = (fetchedAt: string | undefined): RookiesResponse =>
     rows: [],
   })
 
-const firstMintInitial = (fetchedAt: string | undefined): FirstMintResponse =>
+// ⚠ first-mint diverges from rookies since 2026-08-22: its board reads a MATERIALIZED
+// view, so the rows can be a full refresh interval older than the snapshot that carries
+// them. It therefore stamps `meta.data_as_of` (when the rows were computed) rather than
+// `meta.fetched_at` (when the fetch answered). rookies is still live-computed, where the
+// two coincide and `fetched_at` remains correct.
+//
+// The fixture sets fetched_at to a DIFFERENT, LATER instant on purpose: that turns this
+// from "renders some timestamp" into "prefers the age of the DATA over the age of the
+// REQUEST", which is precisely the regression the materialisation introduced.
+const firstMintInitial = (dataAsOf: string | undefined): FirstMintResponse =>
   ({
-    meta: fetchedAt === undefined ? ({} as { fetched_at: string }) : { fetched_at: fetchedAt },
+    meta:
+      dataAsOf === undefined
+        ? ({} as { fetched_at: string })
+        : { fetched_at: "2026-08-21T19:45:00.000Z", data_as_of: dataAsOf },
     stats: null,
     trophies: [],
   }) as unknown as FirstMintResponse

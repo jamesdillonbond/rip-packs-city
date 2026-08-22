@@ -8,6 +8,62 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the three materialized boards were telling users "Updated just now" about rows up to 30 minutes old. That was MY regression, from four hours earlier.
+
+**CODE.** Trevor: "do what you think is best for the platform and for our users." This is the answer,
+and it is a cleanup of my own damage rather than a new optimisation.
+
+**WHAT I BROKE.** `fetched_at: new Date().toISOString()` is the house convention across ~20 insights
+routes and it was HONEST for a live-computed view — the fetch computed the rows, so fetch time *was*
+data time. The snapshot layer stayed honest for the same reason: a 175-minute-old snapshot carried the
+175-minute-old stamp taken when it was built. **Materialising `deals` / `panini-squeeze` / `first-mint`
+silently broke that identity** and nothing in the stack could see it, because the field name still
+described what the code did. `app/insights/deals/DealsBoardClient.tsx` renders that value as
+**`Updated <FreshnessStamp iso={fetchedAt} />`**, so the page told a collector the board was current
+while its rows could be a full refresh interval (now 30 min) old — **on a board whose entire subject is
+listings that disappear.** A stale "deal" is exactly the thing that wastes a collector's trip.
+
+⚠ **The error was bounded and one-directional: it UNDERSTATED staleness by up to 30 minutes, and it did
+so most at the exact moment the refresh pipeline was broken.** Understating is the dangerous direction —
+overstating costs a user nothing.
+
+✅ **`lib/insights/mv-freshness.ts`** — `readMvAsOf(board)` reads when the MV was last refreshed
+SUCCESSFULLY, from the `pipeline_runs` rows the refresh functions already write (`cross-collection-deals-mv`,
+`panini-squeeze-mv`, `topshot-first-mint-mv`). **Measured 4 shared buffers** on
+`pipeline_runs_pipeline_started_idx (pipeline, started_at DESC)` — no new table, no new object.
+
+⚠ **IT RETURNS `null`, NEVER `now()`, ON EVERY FAILURE PATH** (error, throw, no row, non-string,
+unparseable). A `now()` fallback would restate the precise lie the module exists to remove **and would
+do it exactly when the board is most stale**. `FreshnessStamp` already renders null as `—`, which is the
+honest output. ⚠ Two pages were ALSO coalescing — `app/insights/{deals,panini-squeeze}/page.tsx` both
+had `?? new Date().toISOString()` — so the fabrication existed in the render path independently of my
+change; both removed.
+
+✅ **Wired through both paths that feed the stamp**: the server render (`fetchDealsDefault`,
+`fetchFirstMintDefault`, `fetchPaniniSqueezeDefault` → snapshot payload → page) and the client's filter
+refetch (`/api/public/insights/{deals,first-mint,panini-squeeze}` → `meta.data_as_of`). ⚠ `fetched_at`
+is KEPT and still means "when we answered" — it is not renamed, because it remains correct for the ~17
+insights routes that are still live-computed. **Only the three materialized boards read `data_as_of`.**
+
+**Tests — the existing guard caught this before I did, which is the good news.**
+`component-cached-boards-render-snapshot-age.test.tsx` ("stamps the SNAPSHOT's instant, not the render
+clock") went red on the first full run. ⚠ **INVERTED, not deleted, and STRENGTHENED**: first-mint's
+fixture now supplies a *later* `fetched_at` than `data_as_of`, turning "renders some timestamp" into
+**"prefers the age of the DATA over the age of the REQUEST"** — the exact regression. New
+`insights-materialized-board-freshness.test.ts` (10 cases) pins null on all five failure paths, asserts
+no failure path yields a value within a second of now, pins the board→pipeline name contract with the
+migrations, and adds a **ban at population zero** on `?? new Date()` in the two pages (comments stripped
+first — at least six guards here have fired on the comment documenting the fix).
+
+**1,343 files / 14,603 tests green, `tsc --noEmit` clean.**
+
+**Revert:** `git revert <sha>` — restores `fetched_at` as the stamp on all three. No DB half; the MVs,
+refresh functions and crons are untouched.
+
+⚠ **Left alone deliberately: `app/insights/candy-mlb/page.tsx` still has `?? new Date().toISOString()`.**
+Candy is NOT materialized, so its `fetchedAt` is genuinely the data time and the coalesce is latent
+rather than live. Filed, not swept — a fix there is a different change with a different justification.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a ratchet so the stripper sweep cannot quietly unwind, and a baseline I got wrong first
 
 **What shipped.** `__tests__/guards-use-the-shared-comment-stripper.test.ts` — a **down-only ratchet** on

@@ -58,6 +58,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
@@ -126,6 +127,9 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
+      // ⚠ How old the ROWS are (this board reads a materialized view since 2026-08-22).
+      // `fetched_at` is only when we answered. null = cannot tell, never now().
+      data_as_of: await readMvAsOf("deals"),
       source: "cross_collection_deals_board",
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,

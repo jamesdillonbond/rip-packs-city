@@ -44,7 +44,11 @@ export type Trophy = {
   multiplier: number | null
 }
 
-export type ApiResponse = { meta: { fetched_at: string }; stats: Stats; trophies: Trophy[] }
+export type ApiResponse = {
+  meta: { fetched_at: string; data_as_of?: string | null }
+  stats: Stats
+  trophies: Trophy[]
+}
 
 type MultBucket = "ALL" | "5X" | "10X" | "50X" | "100X"
 type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
@@ -195,7 +199,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
         */}
         <div className="rpc-fm-meta-row">
           <span>
-            Updated <FreshnessStamp iso={data?.meta?.fetched_at ?? null} />
+            Updated <FreshnessStamp iso={data?.meta?.data_as_of ?? null} />
           </span>
           <span className="rpc-fm-meta-sep">·</span>
           <span>No signup</span>

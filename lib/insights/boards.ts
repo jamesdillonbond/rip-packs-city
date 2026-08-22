@@ -12,6 +12,7 @@
 // The `db` param defaults to supabaseAdmin but is injectable for unit tests.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { readMvAsOf } from "@/lib/insights/mv-freshness"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
 import { describeBoardFailures } from "@/lib/insights/board-cache"
 
@@ -24,7 +25,7 @@ const DEALS_COLS =
 /** Below FMV board default view: discount_pct >= 10, biggest discount first, top 200. */
 export async function fetchDealsDefault(
   db: Db = supabaseAdmin
-): Promise<BoardLiveResult<{ rows: unknown[]; fetched_at: string }>> {
+): Promise<BoardLiveResult<{ rows: unknown[]; fetched_at: string; data_as_of: string | null }>> {
   const { data, error } = await db
     .from("cross_collection_deals_board")
     .select(DEALS_COLS)
@@ -32,8 +33,13 @@ export async function fetchDealsDefault(
     .order("discount_pct", { ascending: false })
     .limit(200)
   const rows = (data ?? []) as unknown[]
+  // ⚠ `fetched_at` is when WE asked; `data_as_of` is how old the rows actually are.
+  // Since 2026-08-22 this board reads a materialized view, so those are no longer the same
+  // thing and only the second one answers "is this deal still live?". null = cannot tell,
+  // NEVER now() — see lib/insights/mv-freshness.ts.
+  const dataAsOf = await readMvAsOf("deals", db as never)
   return {
-    payload: { rows, fetched_at: new Date().toISOString() },
+    payload: { rows, fetched_at: new Date().toISOString(), data_as_of: dataAsOf },
     ok: !error,
     rowCount: rows.length,
     error: describeBoardFailures([
@@ -79,7 +85,11 @@ const TROPHY_COLS =
 export async function fetchFirstMintDefault(
   db: Db = supabaseAdmin
 ): Promise<
-  BoardLiveResult<{ meta: { fetched_at: string }; stats: unknown; trophies: unknown[] }>
+  BoardLiveResult<{
+    meta: { fetched_at: string; data_as_of: string | null }
+    stats: unknown
+    trophies: unknown[]
+  }>
 > {
   const [statsRes, trophiesRes] = await Promise.all([
     db.from("topshot_first_mint_trophy_stats").select("*").limit(1),
@@ -90,9 +100,11 @@ export async function fetchFirstMintDefault(
       .limit(100),
   ])
   const trophies = (trophiesRes.data ?? []) as unknown[]
+  // Materialized 2026-08-22 — see the deals comment above and mv-freshness.ts.
+  const dataAsOf = await readMvAsOf("first-mint", db as never)
   return {
     payload: {
-      meta: { fetched_at: new Date().toISOString() },
+      meta: { fetched_at: new Date().toISOString(), data_as_of: dataAsOf },
       stats: statsRes.data?.[0] ?? null,
       trophies,
     },

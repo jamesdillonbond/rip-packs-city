@@ -6,6 +6,7 @@
 // saturation audit that 4.6% of the database's disk reads were warming a board nobody could see. Ask the flag.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
@@ -134,6 +135,9 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
+      // ⚠ How old the ROWS are (this board reads a materialized view since 2026-08-22).
+      // `fetched_at` is only when we answered. null = cannot tell, never now().
+      data_as_of: await readMvAsOf("panini-squeeze"),
       source: "panini_squeeze_board",
       set: "2026 Prizm World Cup Soccer",
       ...boardRowMeta(data?.length ?? 0, limit),

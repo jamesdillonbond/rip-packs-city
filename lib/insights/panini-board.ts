@@ -16,6 +16,7 @@
 // cron (warmBoard). `db` defaults to supabaseAdmin but is injectable for tests.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { readMvAsOf } from "@/lib/insights/mv-freshness"
 import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
 
@@ -109,10 +110,13 @@ async function fetchTotals(db: Db): Promise<any> {
 export async function fetchPaniniSqueezeDefault(
   db: Db = supabaseAdmin
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [rows, coverage, totals] = await Promise.all([
+  const [rows, coverage, totals, dataAsOf] = await Promise.all([
     fetchRows(db),
     fetchCoverage(db),
     fetchTotals(db),
+    // ⚠ Materialized 2026-08-22, so fetchedAt (when WE asked) and the age of the rows are
+    // no longer the same thing. null = cannot tell, never now(). See mv-freshness.ts.
+    readMvAsOf("panini-squeeze", db as never),
   ])
 
   // ⚠ `ok` here must be "usable", NOT "the query succeeded" — summarizeDegraded
@@ -142,6 +146,7 @@ export async function fetchPaniniSqueezeDefault(
       totals,
       degraded: summarizeDegraded([status]),
       fetchedAt: new Date().toISOString(),
+      dataAsOf,
     },
     ok: rows.ok && !rows.partial, // complete board only — never cache a truncated ranking
     rowCount: rows.rows.length,
