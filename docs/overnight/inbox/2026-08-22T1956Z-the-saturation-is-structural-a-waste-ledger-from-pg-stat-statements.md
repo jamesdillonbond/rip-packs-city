@@ -328,3 +328,77 @@ GROUP BY 1;
 ⚠ **A tick now covers 2 boards, not 5.** Read `extra->'rotation'` (`warmed_keys` / `skipped_keys`)
 alongside it, or a correct 2-of-5 tick reads as a coverage collapse — and the 48h window straddles the
 change for two days, so rows on both sides of it are mixed.
+
+---
+
+## 7. The worst board view, measured to the arm (2026-08-22 ~21:40Z)
+
+Follow-up after the rotation revert, since materialising these views became item 1. **Measure before
+materialising: two of the three candidate fixes below are worse than they look.**
+
+`cross_collection_deals_board` is a 3-way `UNION ALL` (Top Shot / Pinnacle / All Day). Its Top Shot arm,
+`topshot_deals_vs_fmv`, measured **alone**:
+
+```
+Aggregate  Buffers: shared hit=20010 read=9136        -- 29,146 buffers = 228 MB
+Execution Time: 10501 ms                              -- to return TWELVE rows
+```
+
+**85% of that is one node.** A per-edition latest-FMV subquery, `loops=6211`, `hit=19666 read=5178`
+= **24,844 of the 29,146 buffers**:
+
+```
+->  Subquery Scan on lf (actual rows=0 loops=6211)
+      Filter: confidence = ANY('{HIGH,MEDIUM}') AND fmv_usd > 0
+      Rows Removed by Filter: 1
+      ->  Limit -> Index Scan using fmv_snapshots_2026_collection_id_edition_id_computed_at_idx
+```
+
+⚠ **The confidence filter is applied AFTER the per-edition `LIMIT 1`.** So the view pays 6,211 index
+descents to take each edition's single latest snapshot, and then discards most of them for failing the
+filter — 6,211 lookups → 2,156 rows → **12 output rows**. This is the same lateral shape CLAUDE.md already
+records for `compute_pack_ev_per_edition_weighted` (18,766 vs 1,046,192 buffers).
+
+### The three fixes, and why two are traps
+
+1. ⚠ **"Replace the lateral with a set-based `DISTINCT ON`" — DO NOT assume this wins.** It trades 6,211
+   targeted descents (~4 buffers each) for a scan of the whole collection's slice of `fmv_snapshots_2026`
+   (202 MB heap + a 90–116 MB index). That is plausibly MORE work, not less. It needs a warm-vs-warm
+   buffers comparison before anyone writes it, not a rewrite on the strength of the pack-EV precedent.
+2. ⚠ **"Add `confidence` to the covering index so the lookup goes index-only" — viable but MARGINAL, and I
+   am filing the number that says so rather than the recommendation.** `fmv_snapshots_2026_coll_ed_ct_fmv_idx`
+   already INCLUDEs `fmv_usd` but not `confidence`, so the planner picks the smaller plain index and visits
+   the heap. ✅ Index-only is genuinely available here — **`fmv_snapshots_2026` is 99.8% all-visible**
+   (`relallvisible` 25,765 / `relpages` 25,826), so the usual blocker does not apply. **But the saving is
+   ~1 heap buffer of ~4 per loop — roughly 6,000 of 29,146 buffers, ~25%** — bought with permanent write
+   amplification on the hottest partitioned table (13,835 edition writes/day), and `CREATE INDEX
+   CONCURRENTLY` is reachable only via a one-statement pg_cron job. **Cost/benefit is genuinely close to
+   even. Do not ship it as an "easy win".**
+3. ✅ **Materialise it. 228 MB and 10.5s to produce 12 rows is not a query to tune, it is a query to
+   precompute.** The output is tiny and changes slowly; the input is scanned in full every time. This is
+   the one with an order-of-magnitude payoff, and it also removes the 30s-wall failure mode that the
+   reverted rotation was trying to schedule around.
+
+⚠ **A semantic subtlety for whoever writes it:** the arm's meaning is "the edition's LATEST snapshot must be
+HIGH/MEDIUM", not "the edition has SOME recent HIGH/MEDIUM snapshot". Pre-filtering editions to those with a
+qualifying snapshot would shrink the candidate set before the expensive step and looks like a free win — it
+is a **different board**. Confirm which one is intended before changing the filter's position.
+
+### Two dead ends from the same pass, recorded so nobody re-walks them
+
+- ⚠ **The `count=exact` full-table scan on the pack-sales indexers (§3.6 sibling) is real and large but NOT
+  safely fixable from here.** `allday_pack_sales_history` and `topshot_pack_sales_history` are each read with
+  `pgrst_source_count AS (SELECT $3 FROM <table>)` — PostgREST's exact count, an unfiltered full scan on
+  **every** request: 2,144 × 130 MB + 1,794 × 147 MB = **529 GB, 6.4% of all reads**, ~9s per call, every
+  3 minutes. ⛔ **The two edge functions have NO SOURCE IN THE REPO** (deploy-only), and the deploy skill
+  explicitly forbids hand-transcribing ingest functions ("a wrong digit will not crash — it silently
+  mis-walks block ranges"). Needs an operator with the real source, not an agent session.
+  ⚠ Those same queries are `SELECT * … LIMIT/OFFSET` with **no `ORDER BY`** — this repo's documented
+  unstable-pagination ban. Worth checking for correctness, not just cost.
+- ⚠ **"VACUUM so the count can go index-only" — REFUTED as a fix, and the refutation is the useful part.**
+  The visibility map on those two tables is empty (`allday` **10 of 18,109 pages all-visible = 0.1%**,
+  `topshot` 18.6%), which is exactly why the count seq-scans. My first hypothesis was a pinned xmin horizon.
+  **Measured and false**: `idle_in_transaction = 0`, `max(age(backend_xmin)) = 273`, zero replication slots,
+  zero prepared transactions. Nothing is holding the horizon; the VM is being re-dirtied by the indexers'
+  own constant upsert traffic. A manual VACUUM would help for minutes and then decay, while adding IO to a
+  saturated instance now. **Not worth doing.**
