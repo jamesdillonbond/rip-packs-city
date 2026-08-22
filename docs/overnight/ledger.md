@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a RATCHET for the unbounded-server-read class, plus the two bounds that were provably safe
+
+**CODE.** Trevor delegated the call on the 19-surface filing, so this is the decision executed rather than re-asked.
+
+**THE DECISION:** a **ratchet, not a ban, and not a sweep.** ⚠ **A ban needs population zero**, and this one cannot be driven there in a pass: several of the surfaces are on the roadmap's untouchable list, and **several have no honest-degraded branch to reject INTO** — bounding those blind would turn a slow page into a **thrown error boundary, which is worse than slow.** A ban would therefore ship an 18-entry allowlist, and *"a curated list drifts"* is already recorded twice here. A ratchet needs no allowlist: the number may only fall.
+
+✅ **NEW `scripts/check-unbounded-server-reads.mjs`, wired into the `typecheck` job.** Walks `app/**` for async server `page.tsx`/`layout.tsx`, follows `@/lib/**` + `@/components/**` imports to depth 3, and counts those reaching a Supabase read with no budget primitive. **Ceiling 17, lowered from 19 in this same commit by the two bounds below.** Negative control: at ceiling 16 it exits 1. It asserts its own reach (files walked, async-server count) and fails loudly rather than passing vacuously.
+
+⚠ **THE FIRST COUNT WAS 31 AND WRONG — `Array.from(` matched a loose `/\.from\s*\(/`** and put `app/page.tsx` and `app/(collections)/layout.tsx` on the list via a client hook with no DB in it. supabase-js takes a STRING first argument on both `.from()` and `.rpc()`, so the pattern now requires one: **31 → 19**. ⚠ **My earlier filing's "23" is superseded** — re-derive, do not quote it.
+
+✅ **Bounded, both verified safe rather than assumed:**
+- **`lib/moment/resolve-moment-id.ts`** — already had a `catch` producing a degraded result, so the rejecting budget lands in it. **Negative control run: stripping the bound reddens the new hang test.**
+- **`lib/edition/legacy-redirect.ts`** — had an `if (error)` branch but **NO catch**, so the budget and a `try/catch` shipped **together**. Adding the bound alone would have replaced a slow page with an error boundary. ⚠ **Honest gap: my strip-the-bound control for this one did not produce a clean baseline, so its hang test is verified by construction (an unbounded promise never settles) rather than by a run.**
+
+⛔ **Deliberately NOT bounded: the other 17.** Each needs a judgement about what its degraded render should say, and that is a per-page decision, not a sweep. The ratchet turns them from a filing nobody re-reads into a number CI watches.
+
+⚠ **The guard's own blind spots, stated because a count invites over-trust:** import following stops at depth 3 and misses barrels/dynamic imports; **it cannot tell a read that BLOCKS the stream from one inside `<Suspense>`**, which is a legitimate answer to this class and still counts here.
+
+**Verified:** `npm run test:coverage` exit 0, **14,522**; `npx tsc --noEmit` exit 0; all **six** guard scripts exit 0; `ci.yml` parses.
+
+**Revert:** `git revert <sha>`. Dropping the ratchet alone = remove its `- run:` line from `.github/workflows/ci.yml`.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — Dune cannot be spent in a day any more: a ledger, a per-UTC-day cap, and the stale walk that re-bought 114k rows a week
 
 **CODE + a MIGRATION (applied).** Trevor asked how to stop the next cycle burning in one day; it refreshes ~08-24 (confirmed live: `dune_budget_status().cycle_end = 2026-08-24`, 2 days left).
