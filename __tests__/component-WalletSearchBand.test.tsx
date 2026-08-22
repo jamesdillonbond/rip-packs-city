@@ -10,7 +10,7 @@
 //   - the band is in the FIRST render pass (so it ships in the SSR HTML) and
 //     suppresses itself on the routes that already are the wallet tool
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, act, fireEvent } from "@testing-library/react"
+import { render, cleanup, act, fireEvent, waitFor } from "@testing-library/react"
 
 const pushMock = vi.fn()
 let mockPath = "/nba-top-shot/edition/223:7506::19"
@@ -23,6 +23,37 @@ vi.mock("next/navigation", () => ({
 const trackMock = vi.fn()
 vi.mock("@/lib/track-funnel", () => ({
   trackFunnelEvent: (...a: unknown[]) => trackMock(...a),
+}))
+
+// Auth. The band is an ANON acquisition affordance: a signed-in collector
+// already has a wallet on their account, so the band must not render for them.
+// `throws` reproduces a browser client that cannot be constructed (missing env)
+// and `rejects` a failed getUser() — in BOTH the band must stay up, because
+// hiding an entry point on a FAILED read would publish "we know who you are"
+// out of an error.
+const auth = vi.hoisted(() => ({
+  user: null as { id: string } | null,
+  rejects: false,
+  throws: false,
+  onChange: null as ((e: string, s: { user?: unknown } | null) => void) | null,
+}))
+
+vi.mock("@/lib/auth/supabase-client", () => ({
+  getSupabaseBrowser: () => {
+    if (auth.throws) throw new Error("no browser client")
+    return {
+      auth: {
+        getUser: async () => {
+          if (auth.rejects) throw new Error("auth read failed")
+          return { data: { user: auth.user } }
+        },
+        onAuthStateChange: (cb: (e: string, s: { user?: unknown } | null) => void) => {
+          auth.onChange = cb
+          return { data: { subscription: { unsubscribe: () => {} } } }
+        },
+      },
+    }
+  },
 }))
 
 import WalletSearchBand from "@/components/WalletSearchBand"
@@ -41,6 +72,10 @@ beforeEach(() => {
   trackMock.mockReset()
   localStorage.clear()
   mockPath = "/nba-top-shot/edition/223:7506::19"
+  auth.user = null
+  auth.rejects = false
+  auth.throws = false
+  auth.onChange = null
 })
 afterEach(cleanup)
 
@@ -128,6 +163,45 @@ describe("WalletSearchBand", () => {
     })
     expect(container.querySelector("input")).toBeNull()
     vi.useRealTimers()
+  })
+
+  it("renders NOTHING for a signed-in visitor — we already know their wallet", async () => {
+    auth.user = { id: "u1" }
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    await waitFor(() => expect(container.querySelector("input")).toBeNull())
+    // Assert the ABSENCE of the whole section, not just of the input: the copy
+    // ("What's your collection worth?") is the half the user asked to remove.
+    expect(container.querySelector("[data-rpc-wallet-band]")).toBeNull()
+    expect(container.textContent ?? "").not.toContain("collection worth")
+  })
+
+  it("renders nothing for a signed-in visitor on the insights placement too", async () => {
+    auth.user = { id: "u1" }
+    mockPath = "/insights/first-mint"
+    const { container } = render(<WalletSearchBand scope="insights" />)
+    await waitFor(() => expect(container.querySelector("input")).toBeNull())
+  })
+
+  it("re-appears when that session ends", async () => {
+    auth.user = { id: "u1" }
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    await waitFor(() => expect(container.querySelector("input")).toBeNull())
+    act(() => {
+      auth.onChange?.("SIGNED_OUT", null)
+    })
+    await waitFor(() => expect(container.querySelector("input")).toBeTruthy())
+  })
+
+  it("KEEPS the band when the auth read FAILS (a failed read is not a session)", async () => {
+    auth.rejects = true
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    await waitFor(() => expect(container.querySelector("input")).toBeTruthy())
+    // and again when the browser client itself cannot be constructed
+    cleanup()
+    auth.rejects = false
+    auth.throws = true
+    const b = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    await waitFor(() => expect(b.container.querySelector("input")).toBeTruthy())
   })
 
   it("keeps the touch target at or above the 44px mobile minimum (§9)", () => {

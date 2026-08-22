@@ -34,10 +34,19 @@
 // It renders on the server pass (so the entry point is in the delivered HTML
 // and is crawlable/verifiable) and removes itself client-side once a wallet is
 // already known, so a returning collector is never nagged.
+//
+// WHO IT IS FOR (2026-08-22): ANONYMOUS visitors only. A SIGNED-IN collector
+// already has a wallet on their account — the collection tab auto-loads it on
+// mount (rpc_last_wallet / rpc_owner_key), WalletHydrator keeps the session
+// warm and WalletPreloader pre-fetches the owned set — so asking them to paste
+// an address is pure noise at the top of every tab. The auth check is
+// affirmative-only: we hide on a KNOWN session, never on a failed/unknown auth
+// read, so a Supabase hiccup leaves the anon entry point exactly where it is.
 
 import { useEffect, useState, type ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import WalletSearch from "@/components/WalletSearch"
+import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
 
 // Kill switch. Absent/anything-but-"off" = on, so no env var is required to
 // ship; setting NEXT_PUBLIC_WALLET_BAND=off in Vercel disables both placements
@@ -102,6 +111,40 @@ export default function WalletSearchBand({
 }) {
   const pathname = usePathname()
   const [hasWallet, setHasWallet] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
+
+  // Signed-in visitors never see the band. Mirrors AnonSignInPill's contract
+  // (components/AnonSignInPill.tsx) so the two affordances agree on what
+  // "signed in" means. Only a resolved session flips this — a rejected
+  // getUser(), a missing browser client, or a still-pending check all leave
+  // `signedIn` false and the band rendered, which is the anon default.
+  useEffect(() => {
+    let active = true
+    let unsubscribe: (() => void) | undefined
+    try {
+      const supabase = getSupabaseBrowser()
+      supabase.auth
+        .getUser()
+        .then(({ data }: { data: { user: unknown } | null }) => {
+          if (active) setSignedIn(!!data?.user)
+        })
+        .catch(() => {
+          /* auth read failed — stay anon, keep the band up */
+        })
+      const { data: sub } = supabase.auth.onAuthStateChange(
+        (_e: string, session: { user?: unknown } | null) => {
+          if (active) setSignedIn(!!session?.user)
+        },
+      )
+      unsubscribe = () => sub?.subscription?.unsubscribe()
+    } catch {
+      /* no browser client (missing env) — stay anon */
+    }
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
+  }, [])
 
   useEffect(() => {
     // Deferred one tick on purpose. The band MUST be in the server-rendered
@@ -129,7 +172,7 @@ export default function WalletSearchBand({
     }
   }, [])
 
-  if (DISABLED || hasWallet) return null
+  if (DISABLED || hasWallet || signedIn) return null
   if (pathname && SUPPRESSED.has(pathname)) return null
 
   const copy =
