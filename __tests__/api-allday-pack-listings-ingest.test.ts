@@ -121,12 +121,18 @@ describe("POST /api/allday-pack-listings — deferred ingest body", () => {
 })
 
 describe("GET /api/allday-pack-listings — rpc error", () => {
-  it("rpc error → 500 with an empty listings array", async () => {
+  // ⚠ INVERTED 2026-08-22, not deleted. It pinned TWO defects as the contract:
+  // `error === "rpc down"` (the /api/sets driver-message leak, on an UNGATED GET
+  // whose sibling POST is token-gated) and `listings: []` shipped with the
+  // failure. Reversed in place.
+  it("rpc error → fails without leaking the driver message or faking an empty list", async () => {
     st.rpc = { data: null, error: { message: "rpc down" } }
     const res = await GET()
-    expect(res.status).toBe(500)
+    expect(res.ok).toBe(false)
     const body = await res.json()
-    expect(body.error).toBe("rpc down")
-    expect(body.listings).toEqual([])
+    expect(JSON.stringify(body)).not.toContain("rpc down")
+    expect(body.listings).toBeUndefined()
+    // Still says something — silence would be its own defect.
+    expect(typeof body.error).toBe("string")
   })
 })

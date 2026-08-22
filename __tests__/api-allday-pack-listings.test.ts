@@ -54,10 +54,16 @@ describe("/api/allday-pack-listings", () => {
     expect(body.listings[0].lowestAsk).toBe(12)
   })
 
-  it("GET 500s on an RPC error", async () => {
+  // ⚠ INVERTED 2026-08-22, not deleted. This asserted `listings: []` IN THE ERROR
+  // BODY — an empty answer packaged alongside the failure, on an anon-reachable
+  // product route. A passing test asserting a promise is what holds that promise
+  // in place, so the assertion is reversed rather than removed.
+  it("GET fails without shipping an empty listings array alongside the error", async () => {
     rpc.error = { message: "db down" }
     const res = await GET()
-    expect(res.status).toBe(500)
-    expect((await res.json()).listings).toEqual([])
+    expect(res.ok).toBe(false)
+    const body = await res.json()
+    expect(body.listings).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("db down")
   })
 })
