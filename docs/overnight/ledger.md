@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a one-line pin drift that looked like a live pricing defect, and the control that refuted it
+
+**What shipped.** `get_active_challenges` re-pinned: a snapshot migration
+(`20260822204500_…_sargable_wallet_join.sql`), the test's verbatim DDL, its PINS entry, and **two new
+assertions**. Known-issues **#24** goes 3 open → **2**.
+
+**The entire drift is ONE LINE**, in the ownership join:
+`lower(o.wallet_address) = lower(p_wallet)` → `o.wallet_address IN (p_wallet, lower(p_wallet))`.
+That makes the predicate **sargable** — wrapping the column in `lower()` cannot use an index on
+`wallet_address` — but it is **also a semantic narrowing**: a stored address whose case differs from BOTH
+the argument and its lowercase form no longer matches, so its slots read as UNOWNED and `costToComplete`
+reads as full price, on the *"is this challenge worth it"* verdict.
+
+🚨 **I read this as a live pricing defect and I was wrong. The correction is the transferable part.**
+The chain looked damning: 25,447 mixed-case rows across **384** wallets in `wallet_moments_cache`; **zero**
+of them carry a lowercase duplicate row to fall back on; and `ADDR_RE` (`/^0x[a-fA-F0-9]{16}$/`) accepts
+both cases, so the route passes the user's casing straight through. Every step was true.
+⚠ **Then the positive control killed it.** My first impact query returned *"0 affected wallets"* — which
+was **VACUOUS**: there are **zero active challenges** right now, so the query could not have returned
+anything else. Re-measured against the whole all-time slot population: **436 wallets own a challenge slot
+edition, and NONE of them is mixed-case — the two sets are disjoint.** All 31 challenges are `ended`
+(latest 2026-07-16). **The 436 is what makes the zero mean something; without it the zero meant nothing.**
+*A cheap positive control is the difference between a finding and a scare, and it cost one query.*
+
+**What was pinned as a result.** Rather than silently blessing the narrower predicate, the test now asserts
+the case semantics outright — a differently-cased form of the same stored wallet returns `ownedCount = 0` —
+**with its own exact-form control** so it cannot pass for the wrong reason. Mutation-tested: restoring the
+old `lower() = lower()` predicate reds it. If ingest ever writes a mixed-case address for a wallet that owns
+a slot, that line is what decides, and it is now visible instead of silent.
+
+**Verified:** body hashes **`535a8deeda732e37cc397a05c5fee612`** across live `prosrc`, the test and the
+migration (transcription checked against the DB's own `md5(pg_get_functiondef)`, `7e7b0cb0…`) ·
+`npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.16%, 45156/48997) · 195 guard tests · **178**
+DB-invariant files on a local Postgres 16. Anon-exec via the **marker, not a REVOKE**;
+`has_function_privilege` confirms anon/authenticated false, service_role true.
+
+⚠ **Migration deliberately NOT applied** — byte-identical to live. **No DB or prod state changed.**
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): re-pin get_active_challenges`
+(find by message, not by a recorded sha), then delete the new migration file.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — memory pass: the day's durable lessons promoted, two filings marked superseded, session logged
 
 **Docs only.** ⚠ **This file is a RECORD, not a steer** — a lesson living only here is read by someone already reconstructing history, which is the wrong moment.
