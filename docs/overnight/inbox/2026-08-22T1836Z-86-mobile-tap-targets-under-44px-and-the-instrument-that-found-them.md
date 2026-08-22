@@ -1,3 +1,15 @@
+> # ✅ RESOLVED 2026-08-22 — DECIDED AND SHIPPED. Do not re-open as an open question.
+>
+> Trevor delegated the call. **Option 1 + option 3, together:** the 44px floor now binds NAVIGATION and
+> primary actions, and the in-view filter controls are **EXEMPT IN WRITING** in `RPC_DESIGN_SYSTEM.md` §9.
+> Shipped: `.rpc-coll-tab` 35px → 44px (grew the box), and `.rpc-tap44` — an invisible `::after` that
+> raises only the hit area — on the collection switcher pills (30px), the theme toggle (30×30) and the
+> anon Sign-in pill (20×60). `e2e/mobile-layout.spec.ts` hit-tests the property so it cannot regress.
+>
+> ⚠ **The ~70 filter-row controls were deliberately NOT changed.** That is the written exception, not
+> debt: RPC is a scanning tool and a mis-tapped filter is re-tapped in place. **Do not "fix" it without a
+> measurement showing mis-taps cost something.**
+
 # 86 distinct mobile controls are under the 44px tap-target floor — a DESIGN decision, not a bug list
 
 **Filed 2026-08-22 11:36 PT (18:36Z), Claude Code interactive. MEASURED, nothing shipped from this

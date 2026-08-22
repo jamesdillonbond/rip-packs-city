@@ -195,3 +195,64 @@ session inherits none of this conversation. ⚠ **And it must open with a CAPABI
 stores **no MCP connectors**, so the fired session may have no Supabase/Vercel tools at all. A runbook that
 cannot execute must **report and STOP**, never improvise — a half-run migration is worse than a missed one,
 and "the schedule fired" reads as "the work happened" in every instrument that records it.
+
+---
+
+## `git stash push <path>` on an already-COMMITTED path is a silent no-op — and it fakes a negative control (2026-08-22)
+
+To prove an assertion could actually fail, I reverted the fix with
+`git stash push components/WalletSearchBand.tsx` and re-measured: **102px, test still green.** The obvious
+reading is "the assertion is vacuous". The truth was the opposite — **the file had no working-tree
+changes** (the fix had been committed in an earlier round), so the stash stashed nothing and I had
+measured the fixed code twice.
+
+`git stash push <path>` on an unmodified path **prints nothing and exits 0**. The tell was `git stash pop`
+answering **"No stash entries found"**.
+
+⚠ **A negative control that "passes" is itself a claim that needs a control.** Confirm the revert actually
+reverted — by `git status` on the path, or by watching the MEASUREMENT move — before concluding a test is
+vacuous. Redone properly (re-introduce the defect with `sed`, measure, `git checkout --`): 350px, and the
+spec failed with the height in its message.
+
+Same family as the `git commit -m` backtick trap already recorded above: a git command that succeeds while
+doing nothing you intended.
+
+⚠ **Related, same session:** a backtick inside a CSS **template literal** (`` const CSS = `…` ``) terminates
+the literal. A comment quoting `flex:1 1 300px` in backticks broke the build; the dev server's parse error
+was the only reason it surfaced.
+
+---
+
+## `get_runtime_logs` without `source` hides the lines that carry the cause (2026-08-22)
+
+Investigating four `/overview` pages that hung 30s, the default Vercel MCP `get_runtime_logs` view returned
+**47 clean `200` lines** for `/nba-top-shot/overview` and nothing else — which reads as a healthy page and
+cost ten minutes on the wrong hypothesis.
+
+Adding **`source: ["serverless"]`** surfaced the `warn` lines:
+
+```
+[popular-on-collection] hubs read failed collection=ufc: Timed out acquiring connection from connection pool.
+```
+
+⚠ Pair it with `environment: "production"` and a SHORT window (`since`/`until` around the incident).
+`group_by: "requestPath"` first to find which paths were busy, then filter. Remember CLAUDE.md's existing
+notes: `console.warn` is not indexed by the plain log view, and `get_runtime_errors` route attribution is
+SMEARED — re-group on `requestPath`.
+
+---
+
+## Driving Chromium from a Claude Code web sandbox (2026-08-22)
+
+* Playwright's own browser build is **absent** — the repo pins a newer revision than `/opt/pw-browsers`
+  carries, and `npx playwright install` is not the answer here. Pass
+  `executablePath: "/opt/pw-browsers/chromium"` (a symlink to the 1194 build) plus `--no-sandbox`.
+  `playwright.config.ts` already reads `PW_CHROMIUM_PATH` for exactly this.
+* ⚠ The agent proxy answers **403 to CONNECT for www.rippackscity.com** — an organization network-policy
+  denial, not a transient failure, so **do not retry it**. Production cannot be browsed from the sandbox.
+  Measure against a local `npm run dev`, or dispatch `e2e-smoke.yml` (it is `workflow_dispatch`-enabled)
+  and read the run.
+* ⚠ A script importing `playwright` must live **inside the repo** — Node resolves from the file's own
+  directory, so a probe written to the scratchpad dies on `ERR_MODULE_NOT_FOUND`.
+* ⚠ `elementFromPoint` returns **null outside the viewport**, and **`NEXTJS-PORTAL`** (the dev
+  error-overlay root, absent in production) intercepts points. Both read as failures if unfiltered.

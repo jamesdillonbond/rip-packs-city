@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — memory pass: the day's durable lessons promoted, two filings marked superseded, session logged
+
+**Docs only.** ⚠ **This file is a RECORD, not a steer** — a lesson living only here is read by someone already reconstructing history, which is the wrong moment.
+
+✅ **CLAUDE.md gained the one rule a session needs BEFORE it knows its subsystem: NOTHING here measures LAYOUT.** jsdom returns a ZERO box for every element, so a band shipped 350px tall against the ~100px it specified for four weeks with every gate green; `e2e/mobile-layout.spec.ts` is the only instrument. ⚠ **The file is at its size EQUILIBRIUM, so this DISPLACED two bullets** — the `check-tree-corruption` and `edge-fn-drift` cases were condensed to their rules, and their full text moved **VERBATIM** into `testing-and-ci.md` under a "Displaced from CLAUDE.md" heading. **39,972 / 40,000 (Node `.length`, headroom 28.)**
+
+✅ **[testing-and-ci.md](../reference/testing-and-ci.md)** — the layout instrument (why the class is invisible, the flex-basis mechanism, the monitor's posture, the two `elementFromPoint` false positives, how to run it from a sandbox), the **unbounded-server-read ratchet** with all four occurrences and the `Array.from(` counting error, and the **eslint decision** (5,925 errors / 5,633 `no-explicit-any` — do not wire it, do not cite it as coverage).
+
+✅ **[tooling-gotchas.md](../reference/tooling-gotchas.md)** — `git stash push` on an already-COMMITTED path is a silent no-op that **fakes a negative control**; `get_runtime_logs` without `source: ["serverless"]` hides the warn lines carrying the cause; driving Chromium from a web sandbox (absent browser build, the **403-to-CONNECT** org policy on production, the repo-relative import requirement).
+
+✅ **[RPC_DESIGN_SYSTEM.md](../../RPC_DESIGN_SYSTEM.md) §9** — the tap-target rule rewritten with what BINDS, what is EXEMPT by decision, that it is a tap AREA not a box size, and the `.rpc-tap44` stacking caveat. §0's checklist line updated to match.
+
+✅ **Two inbox filings marked at the TOP rather than left to be quoted:** the 86-tap-target one is **RESOLVED** (decided + shipped, with the exemption restated so it is not re-opened as debt); the unbounded-reads one is **PARTLY RESOLVED** and its own title's "23" is flagged **WRONG** with the corrected 19→17 and the re-derivation. ⚠ **A filed number nobody marks gets quoted** — that is the failure this repo records, so the correction goes where the reader lands, not only here.
+
+✅ **Session entry** prepended to [docs/sessions/2026-08.md](../sessions/2026-08.md) covering the whole arc.
+
+**Verified:** `npx tsc --noEmit` exit 0; all six guard scripts exit 0; `check-memory-doc-links` clean.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a RATCHET for the unbounded-server-read class, plus the two bounds that were provably safe
 
 **CODE.** Trevor delegated the call on the 19-surface filing, so this is the decision executed rather than re-asked.

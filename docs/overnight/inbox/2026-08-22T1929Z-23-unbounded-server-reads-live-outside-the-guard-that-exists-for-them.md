@@ -1,3 +1,19 @@
+> # ⚠ PARTLY RESOLVED 2026-08-22 — and **the headline "23" in this file's own title is WRONG**.
+>
+> **RE-DERIVE, DO NOT QUOTE THIS FILE'S NUMBERS.** The scan behind them matched `Array.from(` with a loose
+> `/\.from\s*\(/` and counted client modules with no DB in them. supabase-js takes a STRING first argument
+> on both `.from()` and `.rpc()`; with that required, and imports followed to depth 3, the count is **19**,
+> not 23 — and it is **17** after the two bounds below.
+>
+> **SHIPPED since:** `scripts/check-unbounded-server-reads.mjs`, a **RATCHET** wired into the `typecheck`
+> CI job (ceiling 17, may only fall), plus bounds on `lib/moment/resolve-moment-id.ts` and
+> `lib/edition/legacy-redirect.ts`. §4's "no ban, no blanket sweep" reasoning still stands and is why this
+> is a ratchet.
+>
+> **STILL OPEN:** the remaining 17. Each needs a per-page judgement about what its degraded render should
+> say — several have no honest-degraded branch to reject INTO, and bounding those turns a slow page into a
+> thrown error boundary. Burn them down one at a time, lowering the ceiling in the same commit.
+
 # The unbounded-server-read class bit a FOURTH time — and 23 more instances sit outside the guard written to stop it
 
 **Filed 2026-08-22 12:29 PT (19:29Z), Claude Code interactive. The measured instance is FIXED and pushed;

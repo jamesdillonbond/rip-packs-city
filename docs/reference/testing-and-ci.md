@@ -404,3 +404,158 @@ coverage"*. Now `coverage` / `coverage-components` / `coverage-workers`, pinned 
 `__tests__/vitest-gates-have-distinct-coverage-dirs.test.ts`, which **globs `vitest*.config.*`** so a
 fourth gate is covered the day it lands. CI was never affected (separate jobs); the cost was entirely
 on local and agent runs.
+
+---
+
+## LAYOUT is a defect class no gate in this repo can see (2026-08-22)
+
+**Promoted from CLAUDE.md's "Guards, tests and instruments" section, which now carries only the one-line rule.**
+
+### Why it is invisible
+
+`vitest` + jsdom returns a **zero box** from `getBoundingClientRect()` for every element, and coverage
+measures whether a line RAN, not what it measured. So a component can render at 3.5× its specified size
+with `tsc`, eslint and both coverage gates green — the MARKUP is correct; only the LAYOUT is wrong.
+
+### The case that proved it
+
+`components/WalletSearchBand.tsx` specified "~112px total — one band, not a hero" in its own header
+comment and rendered **350px** tall at 390×844 (and at 320px) for four weeks, above the fold on every
+`/[collection]/*` and `/insights/*` page, for the anonymous mobile visitor the band exists for.
+
+Cause: the input wrapper carried `style={{ flex: "1 1 300px" }}`. **`flex-basis` sizes the MAIN axis**,
+and `.rpc-wsb`'s `@media (max-width:640px)` rule flips that axis from width to HEIGHT — so the 300px
+width-basis became a 300px height, and **an inline style is exactly the one declaration a media query
+cannot override**. Desktop was correct throughout (82px at 1440 / 1024 / 700 before and after), which is
+why nobody caught it. After the fix: 102px.
+
+The generalisation: **a size that changes MEANING at a breakpoint must not be an inline style.** Guarded
+by `scripts/check-responsive-flex-basis.mjs` (ban at population zero; joins by class name so a component
+styled by the global token sheet is in scope; also covers Tailwind's `flex-col sm:flex-row`).
+
+### The instrument
+
+`e2e/mobile-layout.spec.ts`, in the scheduled `e2e-smoke.yml` monitor (NOT the PR gate — same posture as
+`smoke.spec.ts`, a live hiccup must never block a merge). It runs against `SMOKE_BASE_URL`, so it is the
+only thing here that can check a layout claim **against production**. Every assertion is a ban at a
+population that was zero when it landed:
+
+* no horizontal scroll at 390px on five public routes;
+* the bottom `MobileNav` tabs ≥44px in both axes;
+* navigation controls' 44px HIT AREA reachable (hit-tested, not box-measured — see below);
+* the wallet band ≤160px tall.
+
+⚠ **`/[collection]/overview` is deliberately absent from its route list.** The 2026-08-22 13:15Z run
+failed with `page.goto: Timeout 30000ms` on four collections' overview pages; that is a SLOWNESS signal
+`smoke.spec.ts` already reports, and a navigation timeout in the layout spec would raise a LAYOUT alarm
+for it. A monitor that cries wolf stops being read.
+
+⚠ **It asserts PRESENCE rather than skipping.** The band check originally had `test.skip(band === null)`.
+A post-deploy run reported "4 skipped" and the CI tail names the flaky test but NOT the skipped ones — so
+"the band stopped rendering entirely", a worse regression than it being too tall, would have been a
+silent non-result inside a 97-test monitor.
+
+### Running it locally
+
+`npm run dev` with placeholder Supabase env, then
+`SMOKE_BASE_URL=http://localhost:3000 PW_CHROMIUM_PATH=/opt/pw-browsers/chromium npx playwright test e2e/mobile-layout.spec.ts`.
+⚠ In a Claude Code web sandbox, Playwright's own browser build is ABSENT (the repo pins a newer revision
+than `/opt/pw-browsers` carries) — pass `executablePath` and `--no-sandbox`. ⚠ The agent proxy answers
+**403 to CONNECT for www.rippackscity.com** (org network policy, not a transient failure), so production
+cannot be measured from there at all; dispatch the workflow instead.
+
+⚠ **A local dev build runs with non-working Supabase credentials**, so data-driven controls are absent.
+A clean local result means "the chrome and the empty-state layout are clean", never "the page is clean".
+
+### Two `elementFromPoint` false positives that cost a wrong reading
+
+1. It returns **null for any coordinate outside the VIEWPORT**. The collection tab bar and the switcher
+   row are `overflow-x: auto`, so a control scrolled out of view read as a broken hit area.
+2. **`NEXTJS-PORTAL`** — the DEV error-overlay root, absent in production — intercepts points and reads
+   as click theft.
+
+---
+
+## The unbounded-server-read ratchet (2026-08-22)
+
+Fourth occurrence of one class, **the same error string every time** — `Timed out acquiring connection
+from connection pool`:
+
+1. `first-mint` → `BOARD_LIVE_TIMEOUT_MS`
+2. `/analytics/sets` → `SET_DETAIL_TIMEOUT_MS`
+3. `/insights/market` + `market-pulse` → **two ERRORed production builds**, 2026-08-15
+4. `/[collection]/overview` → four collections' pages hung 30s, 2026-08-22
+
+⚠ **Occurrences 1–3 were each fixed on the ONE page that failed**, and
+`__tests__/insights-server-pages-bound-their-reads.test.ts` was written to make it shape-level. It walks
+`app/insights`, so **occurrence 4 was outside it BY CONSTRUCTION** — this repo's own "ask what a passing
+guard is structurally SILENT about" rule landing on the guard written to satisfy it.
+
+`scripts/check-unbounded-server-reads.mjs` is the population that ban cannot see: async server
+`page.tsx`/`layout.tsx` under `app/**`, imports followed to depth 3, counting those that reach a Supabase
+read with no budget primitive. **A RATCHET, not a ban** — the population cannot be driven to zero in one
+pass (several surfaces are on the roadmap's untouchable list, and several have **no honest-degraded
+branch to reject INTO**, so bounding them blind turns a slow page into a thrown error boundary, which is
+worse than slow). Ceiling started at 17. **Lower it in the commit that bounds a page; never raise it.**
+
+⚠ **The first count was 31 and wrong: `Array.from(` matched a loose `/\.from\s*\(/`.** supabase-js takes
+a STRING first argument on both `.from()` and `.rpc()`, so the pattern requires one — 31 → 19. An earlier
+filing's "23" is superseded.
+
+⚠ **Blind spots:** depth-3 import following misses barrels and dynamic imports, and **it cannot tell a
+read that BLOCKS the stream from one inside `<Suspense>`** — Suspense is a legitimate answer to this class
+and still counts here.
+
+### The `/overview` mechanism, because it generalises
+
+`app/(collections)/[collection]/overview/layout.tsx` — the overview **SEGMENT's own layout**, not the
+shared `[collection]/layout.tsx` — awaits `<PopularOnCollection>`, an async server component, with **no
+Suspense boundary**. `revalidate = 3600`, and every deploy empties the ISR entry, so the first request per
+collection does the read inline with the whole document waiting on it.
+
+⚠ **Vercel logged `200` for every one of those requests.** The streaming shell answers instantly, so a
+read that hangs is only ever visible as a document that never finishes — the "200-but-broken-DOM" class in
+its LATENCY form.
+
+⚠ **Grepping "the page and its layouts" is not grepping "the segment's layouts".** I first concluded the
+overview page did no server work — true of `overview/page.tsx`, `[collection]/layout.tsx`,
+`(collections)/layout.tsx` and the root layout. In the App Router those are different sets.
+
+⚠ **Suspense was considered and rejected here.** It would also unblock the stream, but that block exists
+to put server-rendered internal links in the DELIVERED HTML for crawl equity. Bounding leaves the success
+path byte-for-byte identical and only changes behaviour when the read was already failing.
+
+`withBoardBudget` gained an optional `prefix` (default `"insights/"`, so all 36 existing call sites are
+byte-identical) — an `[insights/…]` label on a non-insights surface sends an operator to the wrong
+subsystem.
+
+---
+
+## eslint is NOT in CI, and that is a decision (2026-08-22)
+
+`grep eslint .github/workflows` returns nothing; `package.json` has the script and no job calls it.
+**Do not cite eslint as coverage anywhere**, and do not wire it in without re-making this decision:
+
+`npx eslint .` reports **6,373 problems (5,925 errors)**, of which **5,633 are
+`@typescript-eslint/no-explicit-any`** — a convention CLAUDE.md explicitly sanctions ("Supabase client
+typed `any` in API routes"). Adding the gate would make CI permanently red on a rule the repo chose.
+
+The one subset worth a look is `react-hooks/set-state-in-effect` (**60** instances, a real correctness
+smell — `components/MobileNav.tsx:44` is one). 60 is not a ban either; it would need a ratchet.
+
+---
+
+## Displaced from CLAUDE.md — full case histories (verbatim)
+
+Both bullets below were condensed to their rule in CLAUDE.md on 2026-08-22 to make room for the LAYOUT
+instrument. The rules still stand; only the examples moved.
+
+> - ⚠ **Ask what RUNS a guard, not only whether it passes** — `check-tree-corruption.mjs` had no CI job
+>   and one manual caller, and its default staged-only mode inspects **nothing** on a CI checkout
+>   (`0 file(s) checked`, exit 0). Wiring it naively ships the theatre: **assert the count it inspected**.
+>   Its first real run found a committed NUL byte in a URL sanitiser.
+
+> - ⚠ **A permanently-red or permanently-zero instrument is indistinguishable from a broken one at a
+>   glance** — `edge-fn-drift` was loudly correct for a week while naming the function fabricating 161k
+>   rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can
+>   see a FAILURE** — an unreachable monitor and a green build look identical.
