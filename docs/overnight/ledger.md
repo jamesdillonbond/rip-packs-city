@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — D12b: the public Top Shot analytics tab was publishing a 99-day-old single row as market depth, and the guard that should have caught it was blind to 19.6k chars of the file
+
+**P0 closed.** `/nba-top-shot/analytics` rendered **"ORDER BOOK DEPTH · 1 listings · MEDIAN ASK $5.0k · P90 ASK $5.0k"** to anonymous visitors. Re-derived today, not inherited: `ts_listings` holds **exactly 1 row**, `max(ingested_at) = 2026-05-15 14:43Z`, **99.3 days stale**; the sampler was retired 2026-05-26.
+
+**Why it survived D12.** D12 was closed on `components/analytics/ListingsDashboard.tsx`. The same `topshot_orderbook` leg was still rendered by `OrderBookCard` in the per-collection analytics tab. One fix, two surfaces, register marked RESOLVED — the documented **"fix per PANEL, not per page"** failure.
+
+**The fourth state.** `OrderBookCard` was *well* hardened: it had explicit read-failed, read-ok-empty and read-ok-populated branches and a comment naming the honesty class. It had no concept of **read-ok-but-the-source-is-retired**, so `count === 0` was false and the stale row rendered as a market statistic.
+
+**Shipped:**
+- `lib/analytics/ts-listings-retired.ts` (new) — one home for the retirement facts and copy, so this is not a third copy-paste.
+- `OrderBookCard` — a retired-source branch placed **before** the failed/count tests, because for Top Shot the fetch outcome is irrelevant: a SUCCESSFUL read of a dead table is still not a market fact.
+- `lib/analytics/methodology.ts` — the public methodology page said *"Top Shot orderbook depth is sampled to roughly 100-200 listings on each scan"* in the **present tense** about a sampler dead three months. **A stale disclosure is worse than none** — it is the exact sentence D12 was filed on.
+- `app/(analytics)/analytics/listings/page.tsx` — the **indexed** metadata description carried the same claim.
+- `__tests__/retired-orderbook-source-not-rendered-ratchet.test.ts` (new) — **ban at zero**, derived by walking `app/` + `components/` rather than naming the two known files, and **proven to fail**: removing the disclosure import reddens it and names the file.
+
+⚠ **The obvious DB-side fix would have made it worse and was NOT taken.** Nulling the `topshot_orderbook` leg of `analytics_listings_summary` reads as the clean server-side repair, but the card branches `count === 0 → "No live listings."` — which would be published for a collection carrying **12,259 live `low_ask` rows**. Both branches lie; only the component can tell the truth. That reasoning is recorded in the new module so it is not re-litigated.
+
+⚠⚠ **A GUARD BLIND SPOT FOUND BY BUILDING THE GUARD, and it is the bigger finding.** My first version returned **0 offenders on the file that demonstrably contains the defect**. Cause: the `stripComments` helper copy-pasted across the test suite strips **block comments before line comments**, so an ordinary line comment mentioning a path like `/api/*` opens a block comment that the regex closes at the next `*/` hundreds of lines later. Measured across 1,315 files: **35 local `stripComments` definitions, 20 with the buggy order, 55 files where it blanks real source, 109,123 characters hidden** — including **19,649 chars of `CollectionAnalyticsClient.tsx`** (the D12b surface itself) and **3,707 of `lib/seo.ts`** (the module behind R10 and R31). Any honesty ratchet walking `app/` has been structurally silent over that region. The new guard uses a state-machine stripper with its own **positive control** asserting the stripper survives a `/api/*` comment. Full measurement + the migration trap (these are ratchets with frozen budgets; fixing the stripper will reveal real reds that must be triaged, not budget-raised): `docs/overnight/inbox/2026-08-22T2105Z-stripcomments-hides-109k-chars-of-real-source-from-20-guards.md`.
+
+**Tests inverted, not deleted.** `component-CollectionAnalyticsClient.test.tsx` had *"order book: renders the depth when there is any"* asserting the card printed **12,400** for Top Shot — a test pinning the defect. It now asserts Top Shot discloses the retirement and that the body does **not** contain 12,400. The failed-vs-empty and genuine-zero tests were retargeted to All Day, which reads `marketplace_listings`, a live source, and a new test proves the retirement branch did not leak to other collections.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, 0 lines) · full `npm test` **14,512 passed / 7 failed**, and **all 7 re-run on a stashed, clean `origin/main` tree**: 5 fail identically there (pre-existing/environmental — `api-ingest-backfill`, `driver-message-leak-guard`, `worker-test-completeness`) and 2 pass in isolation (parallel-load timeouts). **Zero regressions attributable to this change.**
+
+**Revert:** `git revert <this commit>` and the docs commit before it. No DB change, so there is no DB half.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — Dune has TWO meters, one ownership walk is 87.7% of the month, and the number I sized the budget on was the wrong quantity
 
 **CODE + 3 MIGRATIONS (all applied) + a sentinel arm.** Follows this morning's day-cap ledger. Trevor supplied the plan limits — **1,000,000 datapoints + 2,500 credits per cycle, reset day 24** — and asked for monitoring and throttling that lets the budget actually be *used* as intended. The limits change the design, not just the constants.
