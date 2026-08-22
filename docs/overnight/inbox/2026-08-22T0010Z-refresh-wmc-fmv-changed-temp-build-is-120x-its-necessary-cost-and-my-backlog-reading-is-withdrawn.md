@@ -58,6 +58,33 @@ removes the ordering incentive; the sort it then pays for is `quicksort Memory: 
 ⚠ **Equivalence checked as a SET, not a count** (CLAUDE.md: diff the set): `EXCEPT` both directions —
 897 vs 897, **0 rows only-in-incumbent, 0 rows only-in-candidate**.
 
+## 2b. ⚠ STRONGER, added after four samples: THE COST DOES NOT TRACK THE OUTPUT AT ALL
+
+The cron advanced the cutoff between my measurements, which handed me the decisive control for free.
+Same statement, same session, four runs over ~25 minutes as the queue drained and refilled:
+
+| output rows | buffers | exec |
+|---:|---:|---:|
+| 897 | 8,720 | 2.87 s |
+| 897 | 9,003 | 4.63 s |
+| **0** | **7,877** | **3.36 s** |
+| 490 | 8,323 | 1.95 s |
+
+**It costs ~8,000–9,000 buffers to return 897 rows, 490 rows, or NOTHING.** The floor is a full walk of
+the 2026 index, paid on every call whether or not anything qualifies — the predicate bounds the OUTPUT,
+not the COST. That is CLAUDE.md's own recorded rule, and the same family as `drain_fmv_cold_tail`
+burning 86,275 buffers / 32.9 s to return **zero** candidates.
+
+⚠ **The zero-row run needed a positive control and has one:** the identical predicate returned 897
+before and 490 after, tracking `rwfc_state.last_cutoff` as the real cron moved it. The zero was a
+genuine empty window right after a tick, not a broken query.
+
+**This partly answers the question §1 leaves open.** It does not explain 366 s, but it establishes the
+shape: the function pays a fixed per-call floor six times an hour, all day, *including through the 19
+hours when FMV produces almost nothing for it to do*. Under the band's measured 3–18× that floor alone
+is ~10–60 s per call for an empty queue. **"It has nothing to do" and "it is cheap" are not the same
+statement here, and I assumed they were when I called it backlogged.**
+
 ## 3. ⚠ The lever is real but BOUNDED, and the arithmetic says so
 
 **~9,000 of 69,954 blocks/call is ~13%.** So this rewrite removes roughly an eighth of the function's
