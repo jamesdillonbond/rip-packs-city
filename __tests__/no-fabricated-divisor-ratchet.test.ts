@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // BAN (population ZERO) on dividing by a FABRICATED denominator — `x / (y || 1)`,
 // `x / (y ?? 1)`, and the same shape with any other invented constant.
@@ -69,12 +70,23 @@ const OPT_OUT_LOOKBACK = 3
  * offenders that are documentation — including its own — which is at least the
  * seventh instance of that trap in this repo.
  */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (m, p1) => p1 + " ".repeat(m.length - p1.length))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper. The local copy that stood
+ * here stripped BLOCK comments before LINE comments, so any ordinary line
+ * comment mentioning a glob path opened a block comment that ran to the next
+ * `*​/` anywhere in the file — blanking real source this guard then reported as
+ * clean. Across this guard's roots that hid 103,590 characters in 49 files.
+ * Do not re-inline a local copy. See scripts/lib/strip-comments.mjs.
+ *
+ * ⚠ THE MIGRATION WAS PROVED IN BOTH DIRECTIONS, not just re-run. Injecting
+ * `totalX / (totalY || 1)` at lib/seo.ts:196 — inside a region the old stripper
+ * blanked (141 of that file's lines were invisible to it, including
+ * OG_INHERITED and TWITTER_INHERITED) — this guard now REPORTS it, at the right
+ * line, and with the old stripper restored the identical injection PASSED. A
+ * migration that only still-passes cannot tell "fixed" from "never broken".
+ * On the clean tree it passes, so no hidden fabricated divisor existed in the
+ * 49 newly-visible files — a real negative result, not an absence of looking.
+ */
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
