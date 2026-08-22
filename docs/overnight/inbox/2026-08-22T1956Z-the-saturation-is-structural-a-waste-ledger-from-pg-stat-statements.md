@@ -104,14 +104,24 @@ Observed at filing, climbing linearly across consecutive ticks (156 → 165 → 
 ⚠ **The cadence is set far above the rate at which these boards can complete.** A board averaging 13s
 against a 30s wall, retried every 300s, is not a cache being kept warm — it is a load generator.
 
-### 3.2 The failure telemetry added to answer "why" is recording NULL
+### 3.2 ~~The failure telemetry is recording NULL~~ — **RETRACTED, I was reading the wrong column**
 
-`warmBoard` returns `error: res.error`, and the 2026-08-12 header in `board-cache.ts` says this was added
-precisely because "a board failing 84% of the time produced telemetry that said only that it failed."
-Over the trailing 24 h, **every failed board row has `error` = NULL** (panini 195, deals 188, first-mint
-145, rookies 58, candy 36). The board fetchers are not populating `res.error`, so the fix landed on the
-carrier and never on the source. **The instrument built to explain this class is silent about it** —
-the repo's own "ask what a passing guard is structurally silent about", one level down.
+⚠ **This section originally claimed the warm telemetry records no reason. That is WRONG, and the
+retraction is the useful part.** I queried `extra->'boards'[].error`, which by design carries only
+`{key, ok, row_count}`. The reasons live in the **`pipeline_runs.error` COLUMN**, they are complete, and
+they are unanimous:
+
+```
+deals: cross_collection_deals_board: canceling statement due to statement timeout;
+first-mint: topshot_first_mint_trophy_stats: canceling statement due to statement timeout,
+            topshot_first_mint_trophies: canceling statement due to statement timeout;
+panini-squeeze: panini_squeeze_board: page 0: canceling statement due to statement timeout
+```
+
+**Every single failure is the `service_role` 30s wall** (`pg_roles.rolconfig`), which is also why every
+board statement's `max_exec_time` is pinned at 29.4–29.9s. The `page 0` / `page 1` prefix shows panini's
+fetch is PAGED — several 30s-capable statements per warm, which is why its call count (5,276) exceeds the
+tick count. **Read the column before concluding an instrument is silent.**
 
 ### 3.3 A quarter of all pg_cron execution time is rolled back on a statement timeout
 
@@ -210,25 +220,43 @@ none of the batch** — on a cursored indexer that is permanent loss.
 
 ## 4. What I would do, in order of GB recovered per line changed
 
-Each of these is a **decision**, not a diagnosis — none is shipped, and 3.6 in particular has a recorded
-data-loss trap in front of it.
+**Updated 2026-08-22 after shipping item 1.** Items 3 and 4 are now DECISIONS NOT TO ACT, each with the
+number that justifies it — this file's own rule is that a decision not to act is the one nobody re-checks,
+and the tell is a cost stated with no number in it.
 
-1. **Drop `refresh-insights-cache` from `*/5` toward the boards' real completion rate**, or split the
-   watchlist so `deals` / `first-mint` / `panini-squeeze` warm on a slower lane than `rookies` /
-   `candy-mlb`. Today 3 of 5 boards pay full IO 288×/day to store nothing 57–76% of the time.
-2. **Materialize the five hot board views.** They are `relkind = 'v'` and cost 52–95 MB *per call*.
-   An MV refreshed on the boards' real change cadence turns ~810 GB/window into a rounding error, and
-   removes the 30s-wall failure mode entirely. This is the largest single lever.
-3. **Fix the NULL `error` in the warm telemetry (3.2) before tuning anything above it** — right now
-   there is no instrument that can say whether a warm died at the 30s wall or failed for another reason,
-   so any cadence change would be evaluated blind.
-4. **Re-tune the always-failing cron batch sizes (3.3)** — `rpc-thin-sale-ask-disclosure-refresh` (100%)
-   and `rpc-refresh-allday-pack-realized` (74%) do ten minutes of work per attempt and land none of it.
-   Shrink the batch to fit the timeout; do not raise the timeout on a saturated instance.
-5. **Re-measure `refresh_wmc_fmv_changed`'s `v_chunk` against the pg_cron caller's real budget (3.4).**
-   Biggest single consumer in the database. Compare **buffers**, warm-vs-warm, at a quiet hour.
-6. **Find the `sales` caller with no `sold_at` predicate (3.5).** Restoring partition pruning is a
+1. ✅ **SHIPPED (`83075d67`) — the warm tick now ROTATES.** `refresh-insights-cache` warmed all five boards
+   every tick via `Promise.all(WARM_BOARDS)`; it now warms only the stalest `WARM_BOARDS_PER_TICK = 2`.
+   Peak concurrency 5 → 2. Costs no freshness: at a 57–76% failure rate the old loop already delivered
+   `deals`/`panini-squeeze` at ~175-minute gaps, past the 120-minute ceiling.
+2. **Materialize the five hot board views — now the largest remaining lever.** They are `relkind = 'v'` and
+   cost 52–95 MB and 11.5–16.7s *per call*, so even at 2 boards/tick they will keep dying at the 30s wall
+   whenever the instance is busy. An MV refreshed on the boards' real change cadence removes the failure
+   mode outright rather than rationing it.
+3. ⛔ **Do NOT re-tune the timing-out pack-EV crons yet — they are a SYMPTOM.** Measured: their
+   **successes take 113–178s and their failures pin at the wall** (`rpc-refresh-allday-pack-realized`:
+   20 failures at 600.0–602.7s vs 7 successes averaging 113s). Bimodal, so the batch sizes are not
+   obviously wrong — they blow up under contention. Re-tuning now is tuning against a confounded
+   measurement. **Re-measure after the rotation has run a full day.**
+4. ⛔ **`refresh_wmc_fmv_changed`'s `v_chunk` is NOT the lever, and that is now measured rather than
+   assumed.** Inflow is only **4–144 distinct editions per 10 min**, and the UPDATE plan is healthy (nested
+   loop + `idx_wmc_coll_ek_serial_cover`, no seq scan). The cost is **write amplification**:
+   `wallet_moments_cache` carries **15 indexes** and `fmv_usd` sits in three of their predicates/INCLUDEs,
+   so every fmv write is **non-HOT** across ~23,400 row updates per run. ⚠ **No index is droppable — all 15
+   have non-zero `idx_scan`.** The real fix is schema or architecture (stop denormalising fmv into wmc):
+   **Trevor's call, not a batch-size tweak.** *Separately real:* its temp build reads **66 MB / 3.58s to
+   return 612 rows** off a **619× row misestimate** that picks an index whose `computed_at` is the second
+   column. ~84 GB/window.
+5. **Find the `sales` caller with no `sold_at` predicate (3.5).** Restoring partition pruning is a
    predicate, not a rewrite.
+6. **Edition-page ISR may be over-revalidating (NEW, not in the original filing).**
+   `app/(collections)/[collection]/edition/[slug]/page.tsx` is `revalidate = 600` over a ~100k-edition
+   catalogue, driving `get_edition_recent_sales` at **476 calls/hour** and `get_edition_market_bundle` at
+   **236/hour** — **201 GB (2.4%)**. Measured FMV inflow is 4–144 editions per 10 min, so the overwhelming
+   majority of revalidations recompute unchanged data. ⚠ **Deliberately NOT filed as waste**: ask freshness
+   moves faster than FMV, so this is a product/SEO decision, not a defect. Numbers given so it can be decided.
+7. **`query_sql` (the Cowork artifact RPC) is 250 GB / 3.0%** at **56 calls/hour**, 2,560 ms mean — one every
+   ~64s, continuously, for dashboards a human opens occasionally. Worth checking whether an artifact polls
+   on a timer.
 
 ---
 
@@ -251,3 +279,35 @@ data-loss trap in front of it.
 - ⚠ **`n_live_tup` / `last_autovacuum` / `autovacuum_count` are all relative to the last stats-collector
   reset**, and a reset makes a healthy table look like a never-vacuumed 84%-dead one. Cross-check with
   `pg_class.reltuples` and `relpages` before filing bloat.
+
+---
+
+## 6. BEFORE-SNAPSHOT for measuring the rotation (captured 2026-08-22 20:41:45Z)
+
+⚠ `pg_stat_statements` is CUMULATIVE since its 2026-08-12 01:33:59Z reset, so an "after" reading is
+meaningless without this. **Diff against these numbers; do not compare against the percentages above.**
+
+| counter | value at 20:41:45Z |
+|---|---|
+| `sum(shared_blks_read)`, all statements | **1,083,705,591** blocks = 8,269 GB |
+| `sum(total_exec_time)`, all statements | **4,230,308** s |
+| `sum(shared_blks_read)`, the 5 warm boards' views | **112,489,356** blocks = 858 GB |
+| `panini_squeeze_board` calls | **5,293** |
+| `dealloc` | **0** (population still complete) |
+
+Rotation went live with `83075d67`. **Only ONE variable moved, so the delta is attributable** — which is
+exactly why items 3 and 4 above are deliberately not being changed in the same window.
+
+The check that matters is the per-board 48h fail rate:
+
+```sql
+SELECT b->>'key' AS board, count(*) AS ticks,
+       count(*) FILTER (WHERE (b->>'ok')::boolean) AS warmed
+FROM pipeline_runs pr, jsonb_array_elements(pr.extra->'boards') b
+WHERE pr.pipeline='refresh-insights-cache' AND pr.started_at > now() - interval '48 hours'
+GROUP BY 1;
+```
+
+⚠ **A tick now covers 2 boards, not 5.** Read `extra->'rotation'` (`warmed_keys` / `skipped_keys`)
+alongside it, or a correct 2-of-5 tick reads as a coverage collapse — and the 48h window straddles the
+change for two days, so rows on both sides of it are mixed.
