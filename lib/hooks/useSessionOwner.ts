@@ -9,6 +9,17 @@ export interface SessionOwner {
   email: string | null
   displayName: string | null
   loading: boolean
+  /**
+   * True when the server could not READ the identity enrichment, so
+   * `walletAddr` / `username` are UNKNOWN rather than known-absent.
+   *
+   * ⚠ Set from the route's `identity_degraded`, and ALSO when this fetch itself
+   * fails — otherwise the hook would collapse "the request died" into the same
+   * signed-out shape it uses for a genuine anon reader, which is the defect one
+   * layer up. Anything that would make a CLAIM from a null wallet ("not a
+   * member") should withhold while this is true.
+   */
+  degraded: boolean
 }
 
 const EMPTY: Omit<SessionOwner, 'loading'> = {
@@ -17,6 +28,7 @@ const EMPTY: Omit<SessionOwner, 'loading'> = {
   username: null,
   email: null,
   displayName: null,
+  degraded: false,
 }
 
 /**
@@ -41,9 +53,16 @@ export function useSessionOwner(): SessionOwner {
   useEffect(() => {
     let cancelled = false
     fetch('/api/profile/me', { cache: 'no-store', credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : { __failed: true }))
       .then((d) => {
         if (cancelled) return
+        // ⚠ THREE STATES, NOT TWO: request failed / signed out / signed in.
+        // Collapsing the first into the second renders a signed-in reader as
+        // anon, which is a false claim about their own account.
+        if (d?.__failed) {
+          setState({ ...EMPTY, degraded: true, loading: false })
+          return
+        }
         const u = d?.user
         if (!u) {
           setState({ ...EMPTY, loading: false })
@@ -55,11 +74,13 @@ export function useSessionOwner(): SessionOwner {
           username: u.username ?? null,
           email: u.email ?? null,
           displayName: u.display_name ?? null,
+          degraded: !!u.identity_degraded,
           loading: false,
         })
       })
       .catch(() => {
-        if (!cancelled) setState({ ...EMPTY, loading: false })
+        // A network/parse failure is UNKNOWN, not signed-out — same reason as above.
+        if (!cancelled) setState({ ...EMPTY, degraded: true, loading: false })
       })
     return () => {
       cancelled = true

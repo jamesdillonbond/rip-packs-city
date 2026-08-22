@@ -42,6 +42,10 @@ describe("useSessionOwner", () => {
       walletAddr: "0xbd94cade097e50ac",
       displayName: "Whale",
       loading: false,
+      // Added 2026-08-22. Kept in this EXHAUSTIVE deep-equal on purpose: it is
+      // what caught the field being added, and a new identity field silently
+      // appearing (or vanishing) is exactly what this hook must not do quietly.
+      degraded: false,
     })
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/profile/me",
@@ -78,6 +82,58 @@ describe("useSessionOwner", () => {
     const { result } = renderHook(() => useSessionOwner())
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.walletAddr).toBeNull()
+  })
+
+  // ⚠ THREE STATES, NOT TWO: request failed / signed out / signed in. The hook
+  // collapsed the first into the second, so a signed-in reader whose request died
+  // rendered as anon — a false claim about their own account, one layer up from
+  // the route defect these tests were added alongside.
+  //
+  // ⚠ Assertions pin `degraded` as a DISCRIMINATOR, with both controls present:
+  // an always-true flag would satisfy the failure cases and mean nothing.
+  it("marks degraded when the request is not ok — not silently signed out", async () => {
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve({ ok: false, json: () => Promise.resolve({}) } as Response),
+    )
+    const { result } = renderHook(() => useSessionOwner())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.degraded).toBe(true)
+    expect(result.current.walletAddr).toBeNull()
+  })
+
+  it("marks degraded when the fetch itself rejects", async () => {
+    fetchMock.mockReturnValueOnce(Promise.reject(new Error("network down")))
+    const { result } = renderHook(() => useSessionOwner())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.degraded).toBe(true)
+  })
+
+  it("propagates identity_degraded from the route for a signed-in reader", async () => {
+    fetchMock.mockReturnValueOnce(
+      okJson({ user: { id: "u1", email: "me@x.com", wallet_addr: null, identity_degraded: true } }),
+    )
+    const { result } = renderHook(() => useSessionOwner())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.userId).toBe("u1")
+    expect(result.current.degraded).toBe(true)
+  })
+
+  it("CONTROL: a genuine signed-out reader is NOT degraded", async () => {
+    fetchMock.mockReturnValueOnce(okJson({ user: null }))
+    const { result } = renderHook(() => useSessionOwner())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.degraded).toBe(false)
+    expect(result.current.userId).toBeNull()
+  })
+
+  it("CONTROL: a healthy signed-in reader is NOT degraded", async () => {
+    fetchMock.mockReturnValueOnce(
+      okJson({ user: { id: "u1", wallet_addr: "0xabc", identity_degraded: false } }),
+    )
+    const { result } = renderHook(() => useSessionOwner())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.degraded).toBe(false)
+    expect(result.current.walletAddr).toBe("0xabc")
   })
 
   it("does not set state after unmount", async () => {

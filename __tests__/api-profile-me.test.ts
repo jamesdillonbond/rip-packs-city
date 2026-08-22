@@ -118,5 +118,71 @@ describe("GET /api/profile/me", () => {
     const body = await res.json()
     expect(body.user.wallet_addr).toBeNull()
     expect(body.user.username).toBeNull()
+    // CONTROL: genuinely absent is NOT degraded. Without this, identity_degraded
+    // being always-true would satisfy every test below and mean nothing.
+    expect(body.user.identity_degraded).toBe(false)
+  })
+})
+
+// ⚠ "YOU HAVE NO WALLET ON FILE" vs "WE COULD NOT READ WHETHER YOU DO".
+// Both lookups swallowed `error`, and supabase-js RETURNS errors rather than
+// throwing, so a failed read resolved `{ data: null, error }` and this route
+// answered 200 with `wallet_addr: null` — asserting an absence about the
+// reader's OWN ACCOUNT that it had not established.
+//
+// Why it bites: wallet_addr is what the Pro badge keys on
+// (useSessionOwner -> useProStatus(walletAddr) -> isPro:false), so a failed read
+// takes the badge away from a paying member. And the 200 made it UNDETECTABLE —
+// DashboardClient carries a `meFailed` flag for exactly this case and it never
+// fired, because the request had not failed.
+describe("GET /api/profile/me — a failed lookup is not a known absence", () => {
+  const TIMEOUT = { code: "57014", message: "canceling statement due to statement timeout" }
+
+  it("flags identity_degraded when the allow_list read fails", async () => {
+    state.user = { id: "u6", email: "g@h.com" }
+    state.allow = { data: null, error: TIMEOUT }
+    state.saved = { data: null, error: null }
+    const body = await (await GET()).json()
+    expect(body.user.identity_degraded).toBe(true)
+  })
+
+  it("flags identity_degraded when the saved_wallets fallback fails", async () => {
+    state.user = { id: "u7", email: "g@h.com" }
+    state.allow = { data: null, error: null }
+    state.saved = { data: null, error: TIMEOUT }
+    const body = await (await GET()).json()
+    expect(body.user.identity_degraded).toBe(true)
+  })
+
+  it("still reports the signed-in fact, which IS known — it must not render as anon", async () => {
+    // getCurrentUser() succeeded, so "signed in" is established even though the
+    // enrichment is not. Returning 5xx here would make a signed-in reader render
+    // as ANON on every public board that calls this unconditionally — trading a
+    // quiet false claim for a louder one.
+    state.user = { id: "u8", email: "g@h.com" }
+    state.allow = { data: null, error: TIMEOUT }
+    state.saved = { data: null, error: TIMEOUT }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.user).not.toBeNull()
+    expect(body.user.id).toBe("u8")
+  })
+
+  it("does not leak the driver message into the response", async () => {
+    state.user = { id: "u9", email: "g@h.com" }
+    state.allow = { data: null, error: TIMEOUT }
+    state.saved = { data: null, error: null }
+    const body = await (await GET()).json()
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
+  it("CONTROL: a successful enriched read is not degraded", async () => {
+    state.user = { id: "u10", email: "g@h.com" }
+    state.allow = { data: { username: "whale", wallet_addr: "0xabc" }, error: null }
+    state.saved = { data: null, error: null }
+    const body = await (await GET()).json()
+    expect(body.user.wallet_addr).toBe("0xabc")
+    expect(body.user.identity_degraded).toBe(false)
   })
 })
