@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · VERIFIED (Claude Code, interactive) — the monitor is green against production again, and the moment-page red closed as not-mine
+
+**No code.** Closing the two reds from the 20:34Z run rather than leaving either as a loose end.
+
+✅ **`e2e-smoke` run 32597869007, dispatched against production on `fe1d5329`: `success`, 0 failed.** Both previously-red tests pass:
+- **the reworked navigation check** — the effective-hit-box measurement holds on production, where the extremes hit-test did not;
+- **`entity - moment detail page renders`** — passed on re-dispatch.
+
+⚠ **On the moment page, the honest statement is "not mine, on the evidence available", not "proved fine".** Three things point the same way: the URL is **discovered live from the sitemap** so a re-run probes a different moment; the layout **fails OPEN** on a degraded resolve, so a fired bound renders the page rather than blanking it; and I drove the real supabase **thenable/builder** shape through the budget (the gap between every existing test double, which returns a real Promise, and production) with the happy path and genuine-not-found both correct. ⚠ **One clean run is not proof it cannot recur** — if `rendered only 25 chars` comes back on a moment URL, start at `app/moment/[id]/page.tsx`'s own hydration, not the layout gate.
+
+**Revert:** n/a.
+
 ### 2026-08-22 · FIXED (Claude Code, interactive) — my navigation test was red on PRODUCTION and green locally on the same code, and the assertion itself was wrong
 
 **CODE (test only). I turned the scheduled monitor red; this is the repair, and the lesson is about what a browser monitor can honestly assert.**
