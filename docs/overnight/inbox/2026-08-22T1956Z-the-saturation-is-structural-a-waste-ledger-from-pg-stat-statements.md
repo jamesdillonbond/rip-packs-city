@@ -548,3 +548,70 @@ being done, not its effect.** Diff from this marker instead, after a quiet hour:
 
 The three board-view counters should now be almost FLAT (they are served from MVs); the growth moves to
 `refresh_*` instead. That per-statement comparison is attributable in a way the whole-DB rate is not.
+
+---
+
+## 9. The unmapped-sales backlog is a SELF-REINFORCING cost — 242 GB (2.9%) to promote 0.42 rows a run
+
+Measured 2026-08-22 ~23:05Z. **Not shipped: `promote_unmapped_sales` writes to `public.sales`, which is
+core ingest logic and on the autonomous off-limits list. This is a diagnosis for an operator.**
+
+### The numbers
+
+| | |
+|---|---|
+| `unmapped_sales` rows | **132,818** — **106,218 unresolved** (80%) |
+| composition | **99.0% `nfl_all_day`** (105,140); ufc 1,069; golazos 9 |
+| never even attempted | **64,673** (`onchain_attempts = 0`), oldest **2026-05-21** |
+| drain rate | **~252 resolved/day** vs ~136 ingested — net **−108/day** |
+| implied time to drain | **~2.7 years** |
+| `promote_unmapped_sales`, 48h | **840 runs → 354 rows written = 0.42 rows/run**, 12 fails |
+| its read cost | **242 GB/window** across two signatures (7,880 + 21,588 blocks/call) |
+
+⚠ The drain rate is from a DISTRIBUTION, not a snapshot — 8 days: 3 / 183 / 421 / 206 / 527 / 282 / 152 /
+243, mean ~252. The single-day figure was representative.
+
+### Root cause, and why the obvious fixes are wrong
+
+`pg_stat_user_tables`: **`unmapped_sales` has 3,310 seq scans × 73 MB = 235 GB**, which matches the
+242 GB measured on the function almost exactly. `nft_edition_map` adds 3,350 × 16 MB = 51 GB.
+
+The function opens with `WITH candidates AS (SELECT ... FROM unmapped_sales WHERE resolved_at IS NULL …)`.
+
+⚠ **The seq scan is the CORRECT plan and no index will fix it.** `resolved_at IS NULL` matches **106,218
+of 132,818 rows — 80%** — and at that selectivity Postgres is right to scan. The table already carries
+**TEN indexes**, several well-targeted partials (`unmapped_sales_unresolved_idx` on
+`(collection_id, sold_at DESC) WHERE resolved_at IS NULL`), and they are used 66,234 times for other
+paths. **Adding an eleventh will not help this one.**
+
+⚠ **"Call it less often" is also wrong, and this is the part that looks obvious and is not.**
+`promote_unmapped_sales` is not a poll — it is a POST-INGEST HOOK invoked at the end of every sales
+indexer (`allday-sales-history-backfill`, `topshot-flowty-sales-history-backfill`,
+`ufc-sales-history-backfill`, `golazos-sales-indexer`, `golazos-discover-buyers`,
+`recover-v1-budget-exhausted`, plus pg_cron 215 hourly). That is why there are 840 runs in 48 h from one
+1×/hour cron. Cutting the cadence would delay promotion of freshly-ingested sales into `public.sales` —
+a real product cost, for a saving that is not where the money is.
+
+**The cost is proportional to the BACKLOG, and it is paid on every call whether or not anything is
+promotable.** 0.42 rows per 60–170 MB call. The bigger the backlog gets, the more each of the 842 calls
+costs — which is why this is self-reinforcing rather than merely wasteful.
+
+### The two fixes that would actually work — both need an operator decision
+
+1. **Shrink the candidate set at the source.** 64,673 rows are three months old and have NEVER been
+   attempted. If they are unresolvable, archiving them removes ~61% of the scan on every future call.
+   The function already has a `v_archived` counter, so an archive path exists — **but whether those rows
+   are genuinely dead is a data judgement, not an engineering one.**
+2. **Make the candidate CTE selective instead of exhaustive** — drive it from rows whose `nft_id` is
+   actually in `nft_edition_map` (an indexed join) rather than from "everything unresolved" and filtering
+   after. That converts an 80%-selectivity scan into an index probe. ⚠ Verify it cannot change WHICH rows
+   get promoted before touching it; the function has at least four promotion paths and one
+   insert-suppressing trigger (`allday_sales_cross_source_dedup`) it deliberately mirrors.
+
+### The upstream is the actual bottleneck, and it is failing a third of the time
+
+The DB-side promoter has almost nothing to promote because the on-chain resolver that feeds it is barely
+keeping up: `allday-unmapped-resolver` **211 runs / 377 rows / 73 FAILS (35%)** in 48 h, avg 79 s;
+`allday-unmapped-resolver-tail` **14 runs / 70 rows / 9 fails (64%)**, avg 113 s. ⚠ **Fixing the promoter's
+cost does not drain the backlog** — that needs the resolver's failure rate looked at, and it is
+external-API bound (Flow REST), not DB bound. Two separate problems that look like one.
