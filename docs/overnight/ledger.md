@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the wallet band was 350px tall on mobile, an inline flex-basis became a HEIGHT, and there is now a guard for the class
+
+**CODE.** Follow-on from the anon-only band change two entries down. Trevor's screenshot showed the band as a huge mostly-empty card; I had read that as a screenshot artefact. It was not.
+
+🚨 **MEASURED, not inferred — and my first read was wrong.** Chromium at 390x844 against a local dev build: the band rendered **350px** tall (identically at 320px) against the **~100px** its own header comment specified. Desktop was correct the whole time — **1440 / 1024 / 700 all measured 82px before and after the fix**, which is the no-change control and also the reason nobody caught it. After the fix: **102px** at 390, **82px** at every desktop width, inner input wrapper **300px → 52px**.
+
+⚠ **THE MECHANISM, because it generalises.** The input wrapper carried `style={{flex: "1 1 300px"}}`. **`flex-basis` sizes the MAIN axis**, and `.rpc-wsb`'s `@media (max-width:640px)` rule flips that axis from width to HEIGHT — so the 300px width-basis became a 300px height. **An inline style is exactly the one declaration a media query cannot override**, so the breakpoint rule was powerless. The shorthand now lives in `.rpc-wsb-input` inside the same CSS block, with `flex:0 0 auto` in the mobile query. `maxWidth` is breakpoint-independent and stays inline, deliberately.
+
+⚠ **NOTHING WE ALREADY RUN COULD HAVE SEEN IT.** `tsc`, eslint, both coverage gates and every guard were green through it for four weeks. The defect is not expressible in the DOM — the markup is correct — only in the LAYOUT. That is what justified building an instrument rather than just fixing the file.
+
+✅ **`components/WalletSearch.tsx` gained an optional `className` prop** (wrapper only, default undefined, no behaviour change) so a caller whose sizing changes at a breakpoint can express it in CSS. 4 bindings exist; 3 are untouched.
+
+✅ **NEW GUARD `scripts/check-responsive-flex-basis.mjs`, wired into the `typecheck` job of `ci.yml`.** Ban at population zero — **0 when it landed**, negative control confirmed (re-inserting the inline flex exits 1 and names the offending class `rpc-wsb`). Current reach: **1,217 files, 71 media blocks, 4 classes that change flex-direction responsively**.
+
+⚠ **The guard's own build repeated two of this file's recorded lessons, so they are worth restating.** (1) Its first cut closed each `@media` with a regex and reported **3** in-scope files when the true number was **32** — ~90% of the tree outside it BY CONSTRUCTION while it printed "clean"; it brace-COUNTS now, and it **asserts its own reach** (files, media blocks, resolved classes) and fails loudly rather than passing vacuously if any of those hits zero. (2) It joins by **CLASS NAME, not per file** — the first version's per-file join was blind to every component styled by `app/rpc-tokens.css`, the guard's derivation fixing its own blast radius. (3) **Comments are stripped before matching**: WalletSearchBand's header now spells the bad expression out in prose, and without stripping the guard is red on the fixed tree — the seventh time a guard has fired on the comment documenting its own fix.
+
+⚠ **Also caught by this: backticks inside a CSS template literal.** A comment I added inside `const CSS = ...` used backticks around `flex:1 1 300px` and terminated the literal — the dev server's parse error was the only reason I saw it. Same family as the `git commit -m` backtick trap already recorded here.
+
+**Tests: 4 new (2 band, 2 WalletSearch bindings).** Negative control run — reverting the CSS move reddens both band tests. They pin the PROPERTY (no inline `flex`/`flexBasis` on the wrapper; the mobile override present **inside** the media block, since outside it the rule is inert), not the spelling.
+
+**Verified:** `npm run test:coverage` exit 0, **14,491** cases; `npm run test:coverage:components` exit 0, **3,006**; `npx tsc --noEmit` exit 0; eslint on all four changed files exit 0; all four CI guard scripts exit 0; `ci.yml` parses.
+
+⚠ **ONE THING I COULD NOT DO FROM THIS SANDBOX, stated rather than glossed:** the agent proxy answers **403 to CONNECT for www.rippackscity.com** (org network policy), so every measurement above is against a LOCAL dev build, not production. Re-measure the deployed page before treating the 102px as confirmed in prod.
+
+**Revert:** `git revert <sha>`. The guard alone can be dropped by deleting its `- run:` line from `.github/workflows/ci.yml`.
+
 ### 2026-08-22 · ARMED (Claude Code, interactive) — the accuracy-meter measurement is scheduled for the quiet window, so the mission item is not left as a filing
 
 **Not in git — a scheduled Routine.** Follow-through on the 17:45Z filing: the roadmap's headline metric is unreadable ~20 h a day, the cause is structural, and **my candidate rewrite is UNMEASURED because its one ANALYZE run hit the 60 s cap during a saturation spell.** A filing that ends there is a wish, not a fix.
