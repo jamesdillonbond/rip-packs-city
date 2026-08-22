@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — a failed read on `/api/collection-series` published "this collection has no series" and CACHED it for 15 minutes
+
+**CODE + TEST. No DB, no migration.** Working the 08-21 honesty filing's own triage order (tier 1 = public/cached surfaces, where a false claim reaches everyone and outlives the failure) rather than sweeping its 259-read population, which that filing explicitly warns against.
+
+🚨 **THE DEFECT.** Both reads in `app/api/collection-series/route.ts` swallowed `error`. supabase-js **RETURNS** errors rather than throwing, so a timeout resolved `{ data: null, error }` and fell straight into the `{ series: [] }` branch. `CollectionTabClient` then sets an **EMPTY series filter** — the Collection tab states *"this collection has no series"* out of a database timeout. ⚠ **And the success path is cached `public, s-maxage=300, stale-while-revalidate=600`, so ONE failed read served that claim to every visitor for up to 15 minutes.** That cache is exactly what made this tier 1 rather than a cosmetic gap.
+
+⚠ **`.single()` → `.maybeSingle()` is load-bearing here, not tidying.** `.single()` raises `PGRST116` on zero rows, so *"this collection has no config row"* and *"the read failed"* arrived as **the same error** and could not be told apart — the third state existed but was unreachable. Same fix as `app/api/edition-stats`. The three states are now distinct: **read failed** → `apiErrorResponse` (per the canon table for a user-reachable API route) · **read ok + absent** → an honest `{ series: [] }` · **read ok + found** → the list.
+
+✅ **The client needed NO change, which is the tell that the route was the defect.** `CollectionTabClient` already does `r.ok ? r.json() : null` and returns early on a non-ok — i.e. it leaves the existing filter alone. It was doing the right thing and the route was lying to it.
+
+⚠ **`apiErrorResponse` sets `Cache-Control: no-store`**, so a transient failure can no longer be cached at all — and a test pins that the **success** path keeps `s-maxage=300`, because the lazy repair for "a failure got cached" is to drop caching entirely and put a DB read on every collection-page load.
+
+⚠ **PROVEN THE TESTS SEE THE DEFECT — and the negative control was isolated deliberately.** I stripped only the two error guards (keeping `maybeSingle`, so the mock stayed valid) to reproduce the swallow without confounding it with the `.single()` change: **3 of the 5 new cases went red**, then all 8 green on restore. ⚠ **The other 2 are labelled IN THEIR OWN COMMENTS as what they actually are** — one is a FORWARD pin (it passes pre-fix, and catches the tempting wrong fix of surfacing `error.message`, the `/api/sets` leak), the other guards MY fix rather than the original defect. Counting either as a regression test would overstate the suite by 40%.
+
+⚠ **The mock had to change too, and that is the quieter lesson:** it previously yielded `{ data }` only. A mock that cannot express `{ data: null, error }` cannot express the failure the suite exists to pin, so the old `const { data } = …` would have passed against it forever.
+
+**Triaged and deliberately NOT changed — 4 of the 7 tier-1 files.** `special-serial-owners`, `recent-sales`, `analytics/top-buyers` and `analytics/insider/signals` all degrade a **FIELD** (a username, an FMV that renders `null`, a player/set name) rather than making a claim — the filing's own criterion, *does a swallowed error become a CLAIM?*, and the same split it recorded for `lib/alerts.ts`. ⚠ `market-sparklines` has **zero in-repo consumers**; I did **not** call it dead or harden it, because this file records that Cowork artifacts live outside both repo and catalogue.
+
+**Verified:** `npx tsc --noEmit` clean · 16 cases green across `api-collection-series` + `lib-collection-series-param` · memory-doc link guard and brand-token guard both exit 0.
+
+**Revert:** `git revert <sha>` — restores the swallow and the `.single()`.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — candy-editions moved out of the degraded band, and the stagger pass refuted the framing I had been using for the band itself
 
 **CODE (`vercel.json`) + PROD DB STATE (watchlist notes).** Closes lever (a) of the 16:00Z candy filing, which I had left unshipped pending a stagger pass. I did the pass; it gave a clean answer.
