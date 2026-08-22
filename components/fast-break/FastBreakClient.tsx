@@ -49,6 +49,13 @@ interface MissingPlayer {
   teamAbbr: string | null
   projFp: number | null
   cheapestListing: { momentId: string | null; askUsd: number; url: string | null } | null
+  /**
+   * true = we could not look up a listing (the read failed, or we had no player
+   * name to search on). NOT the same as looking and finding none — which is the
+   * only case that earns the flat "Not currently listed" claim below.
+   * Optional so a cached payload from before this shipped renders as before.
+   */
+  listingUnknown?: boolean
 }
 
 interface OptimizeResponse {
@@ -508,6 +515,10 @@ export default function FastBreakClient({
                   >
                     Buy on Sniper · ${m.cheapestListing.askUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </a>
+                ) : m.listingUnknown ? (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+                    Listing unavailable — refresh
+                  </span>
                 ) : (
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
                     Not currently listed

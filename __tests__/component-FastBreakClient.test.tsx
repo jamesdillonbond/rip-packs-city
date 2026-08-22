@@ -217,6 +217,57 @@ describe("FastBreakClient", () => {
     expect(screen.getByText("Unknown player")).toBeTruthy()
   })
 
+  it("distinguishes 'we looked and found none' from 'we could not look'", () => {
+    // "Not currently listed" is a flat market claim, and it is actionable in the
+    // wrong direction: someone shopping for that player reads it and stops
+    // looking. It is only EARNED by a listings query that came back empty. The
+    // route now sets listingUnknown when it could not ask at all — the read
+    // failed, or there was no player name to search on (which is itself usually
+    // a failed name read compounding into a listing claim).
+    //
+    // Both states are asserted in ONE render on purpose: the defect was that
+    // they were indistinguishable, so a test showing only the new copy would
+    // pass against a client that had stopped rendering the real claim entirely.
+    setWarm({
+      "fb-optimize": {
+        data: {
+          walletAddr: props.walletAddr,
+          runId: props.runId,
+          gameDate: props.gameDate,
+          lineupSize: 2,
+          eligibleCount: 1,
+          consideredCount: 1,
+          lineup: null,
+          alternates: [],
+          missingPlayers: [
+            {
+              nbaPlayerId: "known",
+              fullName: "Looked And Found None",
+              teamAbbr: "POR",
+              projFp: 30,
+              cheapestListing: null,
+              listingUnknown: false,
+            },
+            {
+              nbaPlayerId: "unknown",
+              fullName: "Could Not Look",
+              teamAbbr: "LAL",
+              projFp: 31,
+              cheapestListing: null,
+              listingUnknown: true,
+            },
+          ],
+        },
+      },
+      "fb-uses": { data: { runId: props.runId, uses: [] } },
+    })
+    render(<FastBreakClient {...props} />)
+    expect(screen.getByText("Not currently listed")).toBeTruthy()
+    expect(screen.getByText(/Listing unavailable/i)).toBeTruthy()
+    // And the two are not the same string, which is the whole point.
+    expect(screen.queryAllByText("Not currently listed")).toHaveLength(1)
+  })
+
   it("renders run progress grouped by tier when uses are present", () => {
     setWarm({
       "fb-optimize": { data: { walletAddr: props.walletAddr, runId: props.runId, gameDate: props.gameDate, lineupSize: 2, eligibleCount: 0, consideredCount: 0, lineup: null, alternates: [], missingPlayers: [] } },

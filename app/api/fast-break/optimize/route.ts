@@ -108,10 +108,26 @@ export async function POST(req: NextRequest) {
 
     const gameDate = todayInET()
 
-    const { data: games } = await supabase
+    // ⚠ THE ERROR IS LOAD-BEARING AND WAS NOT EVEN DESTRUCTURED. supabase-js
+    // RETURNS errors rather than throwing, so a failed slate read left `games`
+    // undefined, `?? []` made it an empty slate, the projections block was
+    // skipped entirely, every eligible player was `continue`d for want of a
+    // projection, and the route answered 200 with `lineup: null` — byte-identical
+    // to the legitimate "no games scheduled tonight" reply the test above pins.
+    // A user reads that as "nothing to play for", not "we failed to ask".
+    // 500 here matches this route's own handling of runErr and projErr, and the
+    // client throws on a non-2xx, so it already surfaces as an error state.
+    const { data: games, error: gamesErr } = await supabase
       .from("nba_games")
       .select("id, home_team_abbr, away_team_abbr, tipoff_at")
       .eq("game_date", gameDate)
+    if (gamesErr) {
+      console.error("[fast-break-optimize] games:", gamesErr.message)
+      return NextResponse.json(
+        { error: "games_lookup_failed" },
+        { status: 500, headers: ROUTE_HEADERS },
+      )
+    }
     const gameIds = (games ?? []).map(g => g.id)
     const gameLookup = new Map((games ?? []).map(g => [g.id, g]))
 
@@ -189,10 +205,15 @@ export async function POST(req: NextRequest) {
 
     const missingPlayers: any[] = []
     if (missingIds.length > 0) {
-      const { data: missingMeta } = await supabase
+      // Unlike the slate above, a failed name read degrades a FIELD in a
+      // secondary panel rather than invalidating the lineup, so it must not 500
+      // and blank a correct recommendation. It must not be SILENT either — this
+      // read logged nothing at all before.
+      const { data: missingMeta, error: missingMetaErr } = await supabase
         .from("nba_players")
         .select("id, full_name, current_team_abbr")
         .in("id", missingIds)
+      if (missingMetaErr) console.error("[fast-break-optimize] missing meta:", missingMetaErr.message)
       const metaMap = new Map((missingMeta ?? []).map(m => [m.id, m]))
 
       for (const id of missingIds) {
@@ -200,14 +221,30 @@ export async function POST(req: NextRequest) {
         const meta = metaMap.get(id)
         const fullName = meta?.full_name ?? null
         let cheapest: { momentId: string | null; askUsd: number; url: string | null } | null = null
+        // ⚠ THREE STATES, NOT TWO. `cheapest === null` used to mean both "we
+        // queried and this player has nothing for sale" and "we never got to
+        // ask", and the client renders the first of those as the flat market
+        // claim "Not currently listed". That claim is only EARNED by a query
+        // that came back empty. It is also actionable in the wrong direction: a
+        // user shopping for that player reads it and stops looking.
+        //
+        // Two distinct ways we never got to ask, and both used to render as the
+        // claim: the listings read itself failed, OR `fullName` is null so the
+        // lookup below is skipped — which includes the case where the name read
+        // above just errored, so that failure compounds into this one.
+        let listingUnknown = false
         if (fullName) {
-          const { data: listingRows } = await supabase
+          const { data: listingRows, error: listingErr } = await supabase
             .from("cached_listings")
             .select("moment_id, ask_price, buy_url")
             .eq("collection_id", NBA_TOP_SHOT_UUID)
             .eq("player_name", fullName)
             .order("ask_price", { ascending: true })
             .limit(1)
+          if (listingErr) {
+            console.error("[fast-break-optimize] listings:", listingErr.message)
+            listingUnknown = true
+          }
           const listing = (listingRows ?? [])[0]
           if (listing && listing.ask_price != null) {
             cheapest = {
@@ -216,6 +253,9 @@ export async function POST(req: NextRequest) {
               url: listing.buy_url ?? null,
             }
           }
+        } else {
+          // No name to search on — we could not look, so we must not conclude.
+          listingUnknown = true
         }
         missingPlayers.push({
           nbaPlayerId: id,
@@ -223,6 +263,8 @@ export async function POST(req: NextRequest) {
           teamAbbr: meta?.current_team_abbr ?? null,
           projFp: ranked?.proj_fp_dk != null ? Number(ranked.proj_fp_dk) : null,
           cheapestListing: cheapest,
+          /** true = we could not look. NOT the same as looked-and-found-none. */
+          listingUnknown,
         })
       }
     }

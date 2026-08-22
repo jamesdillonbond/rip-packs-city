@@ -86,10 +86,26 @@ export async function GET() {
     const playerIds = Array.from(new Set((projRows ?? []).map(r => r.nba_player_id)))
     const playerMetaMap = new Map<string, { full_name: string; current_team_abbr: string | null; position: string | null }>()
     if (playerIds.length > 0) {
-      const { data: playerRows } = await supabase
+      // ⚠ The only read in this route whose error was not destructured, on a
+      // route that 500s honestly for run/games/projections. A failed name join
+      // left playerRows undefined, `?? []` emptied the map, and every projection
+      // went out at HTTP 200 with fullName, teamAbbr, position AND opponentTeam
+      // all null — the "read ok + unrenderable" third state, published as data
+      // and logged nowhere. Same treatment as its three siblings.
+      //
+      // NOTE ON REACH, stated rather than implied: no in-repo caller fetches
+      // /api/fast-break/today (the clients call /optimize, /uses, /lineup), and
+      // the NBA season ended 2026-08-04 so `games` is empty and this branch is
+      // unreachable until ~October. Fixed because it is three lines and the
+      // branch comes back, not because it is burning today.
+      const { data: playerRows, error: playerErr } = await supabase
         .from("nba_players")
         .select("id, full_name, current_team_abbr, position")
         .in("id", playerIds)
+      if (playerErr) {
+        console.error("[fast-break-today] player meta lookup:", playerErr.message)
+        return NextResponse.json({ error: "internal_error" }, { status: 500, headers: ROUTE_HEADERS })
+      }
       for (const r of playerRows ?? []) {
         playerMetaMap.set(r.id, {
           full_name: r.full_name,

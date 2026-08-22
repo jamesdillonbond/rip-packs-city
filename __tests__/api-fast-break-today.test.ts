@@ -102,4 +102,31 @@ describe("GET /api/fast-break/today", () => {
       position: "G",
     })
   })
+
+  it("500s on a player-META lookup error rather than publishing nameless projections", async () => {
+    // The only read in this route whose error was not destructured. Before the
+    // fix it returned HTTP 200 with the projection present and fullName,
+    // teamAbbr, position AND opponentTeam all null — the "read ok +
+    // unrenderable" third state, published as data and logged nowhere.
+    // opponentTeam goes null too because its branch is gated on teamAbbr, so a
+    // single failed join silently emptied four fields.
+    //
+    // The happy path directly above is the control: same shape, error: null,
+    // and every one of those four fields populated. Without it, "500 on error"
+    // would be satisfied by a route that 500s unconditionally.
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = {
+      list: { data: [{ id: "g1", external_game_id: "x1", game_date: "2026-07-20", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: "t", status: "scheduled" }], error: null },
+    }
+    state.tables.nba_player_projections = {
+      list: { data: [{ nba_player_id: "p1", game_id: "g1", proj_fp_dk: 50, proj_minutes: 34, injury_status: "ACTIVE" }], error: null },
+    }
+    state.tables.nba_players = { list: { data: null, error: { message: "statement timeout" } } }
+    const res = await GET()
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toBe("internal_error")
+    // And specifically NOT a 200 carrying a projection with a null name.
+    expect(body.projections).toBeUndefined()
+  })
 })
