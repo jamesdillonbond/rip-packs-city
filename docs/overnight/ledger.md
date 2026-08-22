@@ -8,6 +8,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEASURED (Claude Code, interactive) — the P0 stale-branch exposure is bounded to ONE branch, and deleting it is necessary but NOT sufficient
+
+**Read-only, nothing shipped.** Bounding check on today's P0 (`inbox/2026-08-22T1620Z-P0-…`), which named `origin/claude/todo-implementation-e4tib3` as carrying the pre-purge blob. **The obvious next question is whether it is a class or an instance.** It is an instance.
+
+**Every remote branch, tested by the same instrument** — is the introducing commit `1c3e01a8f` an ancestor, and how many `eyJ` JWT markers does the tip's copy of `scripts/fetch-allday-collection.mjs` carry:
+
+| branch | pre-purge history | `eyJ` at tip |
+|---|---|---:|
+| `claude/todo-implementation-e4tib3` | **CARRIES** | **2** |
+| `claude/todo-implementation-qi4350` | clean | 0 |
+| `main` *(control)* | clean | 0 |
+
+⚠ **The control is what makes this readable:** `main` is sanitized and reads 0, `qi4350` reads 0 and is not a descendant of the introducing commit, so the instrument distinguishes the two states rather than returning 0 for everything. ⚠ **No credential value was read, printed or decoded** — every cell is a `grep -c` count or a reachability boolean.
+
+✅ **So the sweep stops at one branch.** `origin/claude/todo-implementation-qi4350` needs nothing, and a future session should not re-derive that.
+
+🚨 **BUT DELETING THE BRANCH IS NECESSARY, NOT SUFFICIENT, and this is the part most likely to be mis-scoped.** Deleting a ref does not immediately make the blob unreachable on GitHub: an unreferenced object stays fetchable **by direct SHA** until GitHub garbage-collects, which is not on the operator's clock. **The credential must be treated as compromised and rotated regardless of how fast the branch comes down** — the deletion limits future discovery, it does not undo past exposure. ⚠ Also note the branch tip itself carries the markers, not merely its history, so this is not a git-archaeology-only exposure.
+
+⚠ **NOT ATTEMPTED FROM HERE, deliberately:** deleting a REMOTE branch 403s from the sandbox (push-to-ref allowed, delete-ref denied — this file already records it). **Operator action, plus a GitHub-support request if the object needs purging before GC.**
+
+**Revert:** nothing to revert — read-only.
+
+### 2026-08-22 · MEASURED (Claude Code, interactive) — a never-run walker turns out to DUPLICATE a live pipeline, so wiring it would have put two writers on one table
+
+**Docs only — nothing applied, no DB or prod-state change.** Re-derivation of the 08-21 never-run-walkers filing, per this file's own rule that a filed finding is a hypothesis.
+
+✅ **Its measurements all hold.** `topshot-listings-indexer`, `golazos-offers-indexer`, `ufc-listings-indexer` still read **0 runs all-time** in `pipeline_runs_daily` (retained indefinitely, so a zero is a real absence) — ⚠ **with the controls in the SAME query**: `golazos-listings-indexer` 2,273 and `allday-offers-indexer` 1,703, both ran today. `backfill_state.id = 'pinnacle_flow_events'` is still absent; control, the table is live with 10 other ids and a `last_run_at` from today.
+
+⚠ **BUT ITS OPTION 3 IS SUPERSEDED, and the correction has teeth.** The filing treated `app/api/pinnacle/ingest-events` as an unwired walker needing a telemetry decision. It is a **second implementation of a pipeline that is already running**: same event (`NFTStorefrontV2.ListingCompleted`), same NFT-type filter, **same destination table (`pinnacle_sales`)** as the live `pinnacle-sales-indexer` (1,438 runs, ran today) — from an **independent cursor** (`backfill_state` vs `event_cursor`). **So it is not a coverage gap, and wiring it would not have been merely redundant: it would have put two uncoordinated writers on one table.** Same class as `topshot-listings-indexer`. **Two of the four are duplicates; only two are real decisions.**
+
+⚠ **THE NEAR-MISS, RECORDED BECAUSE THE TIDY ANSWER WAS WRONG.** I first took the live `pinnacle-events-ingest` (2,272 runs) for the substitute — the names sit one hyphen apart. **It is not**: that route ingests `ListingAvailable` into `pinnacle_listing_events`. LISTINGS vs SALES. **Reading the two route headers separated them; the names actively misled.** Compare by event type + destination table + cursor store, never by name — the same shape this file already records for inferring a callee from a `cron.job` name.
+
+✅ **The remaining two are real gaps, confirmed by ENUMERATION rather than by search:** every `ufc%` and `golazos%` pipeline in `pipeline_runs_daily` was listed, and there is **no Golazos offers pipeline and no UFC listings pipeline of any name.**
+
+⚠ **CROSS-LINK: `ufc-listings-indexer` and the open "UFC Strike — deprecate or wire" item are ONE decision**, not two — wiring it means building ingest for a collection whose deprecation is on the table. ⛔ **Stated as UNVERIFIED: I could not re-derive UFC Strike's market state — `max(sold_at)` and a 30/90-day count both TIMED OUT at 60 s** at 14:5xZ, inside the band. The "zero sales in 90 days" figure is a dated sample from the 02:56Z filing, cited not confirmed. **Re-measure in the 20:00–00:00Z window before deciding on it.**
+
+**Promoted, because a rule in one inbox filing is read by nobody:** *a cursored walker must write its `pipeline_runs` row BEFORE its cursor* — it can otherwise run, fail and advance with zero observability — plus the check-for-a-live-duplicate-by-destination rule, into [cron-and-schedulers.md](../reference/cron-and-schedulers.md). **Session log** for this thread prepended to [docs/sessions/2026-08.md](../sessions/2026-08.md).
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-22 · 🚨 P0 FILED, NOT FIXED (Claude Code, interactive) — the 2026-08-03 credential purge was DEFEATED by a stale branch of the PUBLIC repo, and the PII is still fetchable
 
 **Docs only. NOTHING was deleted and nothing can be from here — this is an OPERATOR hand-off.** Found while sweeping for unfinished tasks; it was not on any list.
