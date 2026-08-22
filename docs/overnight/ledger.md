@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FOUND (Claude Code, interactive) — a SECOND daily detector is red and unread, and nothing in the estate reads either of them
+
+**Docs only — no code, no DB, no prod state.** Registered as known-issues **#24** and **#25**.
+
+**#24 — `db-pin-staleness` has been red every scheduled run since 2026-08-10, 13 consecutive.** ⚠ **Working,
+not broken:** `checked 187 pins — 181 clean, 6 needing attention`. Runs #1–2 (08-02/03) are its only passes.
+Five are `STALE` — `get_set_detail`, `get_pack_detail_bundle`, `get_active_challenges`, `get_challenge_plan`,
+`public_board_liveness_sweep`. ⚠ **The sixth is a different class:** `reconcile_all_saved_wallet_stats`
+reports **`NO_DDL_IN_MIGRATION`** — its named migration contains no DDL for it, so the pin cannot be
+compared at all. A **broken** pin, not a stale one; repointing is not its fix. All six verified live and
+readable (`pg_get_functiondef` length + md5, 2026-08-22).
+
+🚨 **The trap, recorded because the obvious fix is the wrong one.** The check's own remedy says *"a stale pin
+usually means the assertions describe old behaviour."* **Repointing the five without reviewing their
+assertions converts a loud, correct alarm into a silent green while the tests still assert superseded
+behaviour** — strictly worse than the current red. The assertion review is the work; the capture is trivial.
+
+**#25 — the systemic one: nothing reads these instruments.** Three credentialed detectors run daily and are
+the only things that can see their rot classes. Measured today: **edge-fn-drift red 14, db-pin-staleness red
+13, migration-parity 14/14 green** — and both red ones are **loudly correct**. CLAUDE.md already records this
+happening to `edge-fn-drift` once; it has now happened to it **again, and to a second detector at the same
+time**, which makes it a property of the estate rather than an incident. **The sentinel — the thing actually
+read — has no GitHub Actions arm at all.** ⚠ **The fix is not another workflow** (a watchdog nobody reads,
+one level up): it is a sentinel arm warning on a failure STREAK, since a single red is normal for a detector
+doing its job. ⛔ **Blocked on a secrets decision, not a design one** — the sentinel runs on Vercel and needs
+a GitHub token with `actions: read`, and secrets/env are off-limits for autonomous change. Until then,
+reading the three logs is a **manual** step in any health sweep, now recorded in `focus.md`.
+
+**Method note worth keeping:** both findings came from applying CLAUDE.md's *"ask what RUNS a guard"* to the
+three `check-*.mjs` scripts that are NOT wired into `ci.yml`. They are not unwired — each has its own daily
+workflow — so the question that paid was the next one down: **not whether they run, but whether anyone reads
+what they say.**
+
+**Revert path:** `git revert` the commit whose message begins `docs: register #24 and #25` (find by message,
+not by a recorded sha).
+
 ### 2026-08-22 · FOUND + FIXED (Claude Code, interactive) — 25 edge functions are not running `main`, and the detector saying so could not tell a census from a silence
 
 **The finding (operator work, now known-issues #23).** `.github/workflows/edge-fn-drift.yml` has failed

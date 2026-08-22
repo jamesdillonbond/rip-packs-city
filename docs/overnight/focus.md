@@ -110,6 +110,23 @@ saturation being measured. Take a positive control first (`count(*) FILTER (WHER
 over `pg_stat_activity`); if most active sessions are in IO wait, **every duration that hour is
 uninterpretable** — compare Buffers, never wall time.
 
+## STANDING — read the three daily instrument LOGS, not their badges (added 2026-08-22)
+
+Three credentialed detectors run daily and are the only things that can see their rot classes:
+`edge-fn-drift` (06:40Z) · `db-pin-staleness` (07:20Z) · `migration-parity` (07:40Z). **Measured 2026-08-22:
+edge-fn-drift red 14 consecutive runs, db-pin-staleness red 13, migration-parity 14/14 green — and BOTH red
+ones are LOUDLY CORRECT, not broken.** 25 edge functions are not running `main`; 6 of 187 DB pins no longer
+match live. Details: known-issues **#23**, **#24**.
+
+⚠ **Nothing surfaces them (#25).** The sentinel — the thing actually read — has no GitHub Actions arm, so a
+correct detector can stay red indefinitely and nobody notices. Until that is fixed, **reading these three
+logs is a MANUAL step in any health sweep**, and CLAUDE.md's rule applies literally: *check the LOG, not the
+badge* — a permanently-red instrument and a broken one look identical.
+
+⚠ **Do NOT "fix" #24 by repointing the pins.** The check's own remedy says a stale pin usually means the
+assertions describe old behaviour. Repointing without reviewing them converts a working alarm into a silent
+green — strictly worse than the red. The assertion review IS the work.
+
 ## DECIDED 2026-08-22 — two open decisions closed, so nobody re-opens them
 
 - ✅ **pg_cron jobid 70 / the `cron_heavy` privilege question: do NOT grant, no grant is needed.**
