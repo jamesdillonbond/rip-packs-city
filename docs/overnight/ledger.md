@@ -8,6 +8,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEMORY (Claude Code, interactive) — session wrap: durable lessons promoted out of the transcript
+
+**Docs only — no code, no DB, no prod state.** Closing a long interactive session by writing its durable
+findings where they will actually be read, per CLAUDE.md's rule that *a fact left only in a session log stops
+being read*.
+
+⚠ **NOTHING went into CLAUDE.md: it is at 39,972 / 40,000 — 28 characters of headroom.** Adding there would
+have required displacing existing text, so every lesson went to the matching `docs/reference/*.md` instead.
+**Anyone tempted to add to CLAUDE.md should check `node -e` length first; it is at its size equilibrium.**
+
+**Promoted:**
+- [testing-and-ci.md](../reference/testing-and-ci.md) — the 2026-08-22 instrument audit (*ask not whether a
+  guard runs but whether anyone READS it*: edge-fn-drift red 14 runs, db-pin-staleness red 13, both loudly
+  correct); the tier-2 census that could not distinguish *clean* from *did not look*; the broken parser
+  mirror across three copies; and the **local Postgres 16 recipe** for running all 178 DB-invariant files.
+- [key-files-and-honesty.md](../reference/key-files-and-honesty.md) — canon instances **25 and 26**, both on
+  the sentinel's headline accuracy arm: an ALERT that vanished from its own report, and *a population of zero
+  is not a share of zero*. Includes why the fix copy says **"not zero"** rather than **"not 0%"**.
+- [tooling-gotchas.md](../reference/tooling-gotchas.md) — *"the sandbox could not do it" is NOT evidence the
+  DATABASE forbids it*; `git push | tail` printing a success banner over a rejected push; and *sizing a drift
+  is not reading it*.
+- [database.md](../reference/database.md) — the re-pinning recipe (hash-verify the transcription against the
+  DB's own md5; the assertion review IS the work; MARKER not REVOKE on a snapshot) and what all six pins
+  taught.
+- [docs/sessions/2026-08.md](../sessions/2026-08.md) — the session entry itself.
+- `focus.md` — the *"do NOT repoint the pins"* steer was **retired rather than left standing**: it has been
+  honoured, and a stale steer misleads exactly the reader who trusts the file.
+
+⚠ **Open, and deliberately left VERIFIABLE rather than claimed closed:** `trig_012KtFpYAGJ6hYUFUySmTcCt`
+fires **2026-08-23 07:35Z** to read the two morning detectors — `db-pin-staleness` (should be **187 clean,
+0 needing attention**, first green since 08-03, which is the real proof #24 is closed) and `edge-fn-drift`
+(**first run whose content census is legible**, deciding whether #23's "25 drifted" is a census or still a
+lower bound). known-issues **#23 and #25 remain OPEN and operator-blocked**.
+
+**Revert path:** `git revert` the commit whose message begins `docs: session wrap` (find by message, not by a
+recorded sha).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — R18: the Candy MLB panels contradicted their own banner, and a production bundle was rendering a sentence the source does not contain
 
 **Two things, the second found only because the first was verified in a real browser.**

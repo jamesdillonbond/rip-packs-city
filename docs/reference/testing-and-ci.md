@@ -559,3 +559,67 @@ instrument. The rules still stand; only the examples moved.
 >   glance** — `edge-fn-drift` was loudly correct for a week while naming the function fabricating 161k
 >   rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can
 >   see a FAILURE** — an unreachable monitor and a green build look identical.
+
+## The instrument audit of 2026-08-22 — three daily detectors, and the question that paid
+
+CLAUDE.md's standing rule is **"ask what RUNS a guard, not only whether it passes."** Applied to the three
+`check-*.mjs` scripts that are NOT wired into `ci.yml`, it returned nothing: each has its own daily workflow
+(`edge-fn-drift` 06:40Z · `db-pin-staleness` 07:20Z · `migration-parity` 07:40Z). **The question that paid
+was the next one down: not whether they run, but whether anyone READS what they say.**
+
+Measured that day: **edge-fn-drift red 14 consecutive runs** (since 08-09; run #1 on 08-08 is its only pass
+ever) · **db-pin-staleness red 13** (since 08-10) · migration-parity 14/14 green. ⚠ **Both red ones were
+LOUDLY CORRECT** — 25 edge functions provably not running `main`, and 6 of 187 DB pins no longer matching
+live. Neither was broken; both were being ignored. CLAUDE.md already records this happening to
+`edge-fn-drift` once before, which makes 2026-08-22 the **second** time for that detector and the first for
+a second one — a property of the estate, not an incident. Registered as known-issues **#23/#24/#25**.
+
+⚠ **The structural gap (#25) and why the obvious fix is wrong.** The hourly sentinel is what actually gets
+read, and it has **no GitHub Actions arm**. A watchdog *workflow* would be the same problem one level up —
+something else nobody reads. The fix belongs in the sentinel, keyed on a failure **STREAK** (a single red is
+normal for a detector doing its job), and it is blocked on a secrets decision: the sentinel runs on Vercel
+and needs a GitHub token with `actions: read`.
+
+### A detector that cannot distinguish "clean" from "did not look"
+
+`check-edge-fn-drift.mjs` tier 2 — which its own header calls *"the only census"*, tier 1 being *"a LOWER
+BOUND"* — swallowed every body-read failure into a bare `catch {}` commented *"tier 1 still covers it"*. It
+does not. **A run whose census read nothing printed the identical DRIFT number to one that completed and
+found nothing.** The persisted artifact was worse: it carried no tier-2 field at all, so a function tier 1
+called clean but whose body had drifted was recorded as `"clean"` — the series asserting the opposite of the
+finding. Now reports `bodies_read` / `bodies_failed` / `content_drifted`, carries `ran` as a **positive
+control**, adds a `clean_tier1_only` verdict, and refuses an all-clear it did not earn (a 200 with no
+`index.ts` counts as a FAILED read, else an API shape change silently converts the census into a permanent
+all-clear).
+
+### A comment claiming a mirror is not a mirror
+
+Three copies of the same DDL extractor exist. The drift guard learned about `PROCEDURE` on **2026-08-16**,
+recording that a FUNCTION-only needle *"made every PROCEDURE in this database UNPINNABLE"*.
+`check-db-pin-staleness.mjs` — whose own comment says it *"mirrors the guard's own parser"* — did not get the
+fix for six days. ⚠ **Grepping the EXPRESSION rather than the file then turned up a THIRD copy**,
+`scripts/verify-live-ddl.mjs`, also FUNCTION-only, whose header likewise claimed it extracts DDL *"exactly
+as"* the drift guard does. **Neither mirror claim was true, and only the expression grep found copy three.**
+Consequence: because extraction failed, the live-drift comparison for `reconcile_all_saved_wallet_stats`
+**never ran at all** while it sat in the PINS array looking covered. **A pin that cannot parse its own DDL
+asserts nothing** — and it reports that as a chore (`NO_DDL_IN_MIGRATION`) rather than as a gap.
+Pinned by a test that derives the extractor-copy set **by scanning** for the needle shape (a curated list is
+exactly how copy three was missed), with a floor of ≥3 copies so a broken detector cannot pass.
+
+## Provisioning the DB-invariant suite locally (2026-08-22)
+
+`scripts/run-db-tests.sh` needs only a vanilla Postgres 16, and this sandbox has one. CI provisions it with
+`initdb` + `pg_ctl`; the sandbox runs as **root**, so `initdb` refuses unless invoked through `su postgres`:
+
+```
+PGBIN=/usr/lib/postgresql/16/bin; PGDATA=/var/tmp/pgdata-rpc
+mkdir -p "$PGDATA" /var/tmp/pgrun && chown -R postgres:postgres "$PGDATA" /var/tmp/pgrun
+su postgres -c "$PGBIN/initdb -D $PGDATA -U postgres --auth=trust"
+su postgres -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /var/tmp/pgrun' -l /var/tmp/pg.log -w start"
+DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 178 files
+```
+
+⚠ **It does NOT survive a session resume** — the cluster is stopped even though `/var/tmp/pgdata-rpc`
+remains, so `psql` gives *"Connection refused"*. Re-`pg_ctl start` (re-`initdb` only if the data dir is
+gone). Being able to run all 178 files locally is what made re-pinning six DB functions verifiable rather
+than hopeful — and it caught nothing that CI later disagreed with.

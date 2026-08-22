@@ -123,9 +123,18 @@ correct detector can stay red indefinitely and nobody notices. Until that is fix
 logs is a MANUAL step in any health sweep**, and CLAUDE.md's rule applies literally: *check the LOG, not the
 badge* — a permanently-red instrument and a broken one look identical.
 
-⚠ **Do NOT "fix" #24 by repointing the pins.** The check's own remedy says a stale pin usually means the
-assertions describe old behaviour. Repointing without reviewing them converts a working alarm into a silent
-green — strictly worse than the red. The assertion review IS the work.
+✅ **#24 is RESOLVED as of 2026-08-22 — all six pins re-pinned, assertions reviewed, not merely repointed.**
+The warning that stood here (repointing without reviewing the assertions converts a working alarm into a
+silent green) was honoured: every pin got its own diff, and five gained mutation-tested assertions for the
+behaviour that had drifted. ⚠ **VERIFY, do not assume:** the 07:20Z `db-pin-staleness` run should now report
+**187 clean, 0 needing attention** — its first green since 2026-08-03. If it names a pin instead, read WHICH
+before reopening. Recipe + what the six taught: [database.md](../reference/database.md).
+
+⚠ **#23 and #25 remain OPEN and are operator-blocked.** 25 edge functions are still not running `main`
+(redeploy needs both `deno.json` in `files` AND `import_map_path`, or a stale-but-working function goes
+hard-down — and the list includes off-limits `compute-*-pack-ev` / `ingest-*`). Nothing still reads the
+daily detectors; that fix is a sentinel arm keyed on a failure STREAK, blocked on putting a GitHub token
+with `actions: read` into Vercel env.
 
 ## DECIDED 2026-08-22 — two open decisions closed, so nobody re-opens them
 

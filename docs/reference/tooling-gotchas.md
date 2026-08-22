@@ -256,3 +256,48 @@ SMEARED — re-group on `requestPath`.
   directory, so a probe written to the scratchpad dies on `ERR_MODULE_NOT_FOUND`.
 * ⚠ `elementFromPoint` returns **null outside the viewport**, and **`NEXTJS-PORTAL`** (the dev
   error-overlay root, absent in production) intercepts points. Both read as failures if unfiltered.
+
+## "The sandbox could not do it" is NOT evidence the DATABASE forbids it (2026-08-22)
+
+A filed finding said **"NO session-reachable role can reschedule 42 of 93 pg_cron jobs"**, and it turned a
+two-line fix into a privilege-grant proposal. Re-derived, the privilege half was wrong: `postgres` **is** a
+member of `cron_heavy`, and `cron_heavy` **already holds** EXECUTE on `cron.schedule` and both
+`cron.unschedule` overloads. Only `cron.alter_job` is missing — which `postgres` does hold but cannot use,
+owning none of those jobs and not being superuser here. Since `cron.schedule` upserts on
+`(jobname, username)`, rescheduling *under the job's own role* updates it in place. **No grant is needed, and
+granting `alter_job` would widen a privilege to buy a capability the role already has by another door.**
+
+⚠ **What actually blocks it is the HARNESS**: the Claude Code auto-mode classifier denies `SET ROLE`, and
+after one denial denies cron-schema SQL generally. **Two different boundaries — a harness refusal and a
+database refusal — produce the same "I could not do it", and the filing recorded the stronger claim.**
+Before writing "cannot", say WHICH layer said no. Operator recipe + the self-check are in known-issues #19.
+
+## `git push | tail` reports `tail`'s exit code — and prints a success banner over a FAILED push (2026-08-22)
+
+CLAUDE.md already records that a pipe reports the LAST command's status. The live variant worth naming:
+
+```bash
+for i in 1 2 3 4; do
+  if git push -u origin main 2>&1 | tail -3; then echo "PUSH_OK"; break; fi   # ⚠ tests tail, always 0
+  ...
+done
+```
+
+It printed **`PUSH_OK` over a `(non-fast-forward)` rejection**, and the loop exited on the first attempt.
+Same shape bit again minutes later as `python resolve.py | tail -3 || { fallback }` — the fallback silently
+never ran because the pipeline exited 0. **Redirect to a file and read `$?` on the bare command:**
+
+```bash
+git push origin main > "$SCRATCH/push.log" 2>&1; echo "PUSH_EXIT=$?"; tail -2 "$SCRATCH/push.log"
+```
+
+⚠ **Diagnose from the ERROR STRING**: `(non-fast-forward)` means BEHIND ORIGIN even when `git status` says
+`ahead 2` — the local `origin/main` ref was stale and needed a `fetch` first.
+
+## Sizing a drift is not reading it (2026-08-22)
+
+Cheap sizing (line/char deltas of live `prosrc` vs the pinned copy) is a good way to ORDER a queue of stale
+pins. It is not a change summary. `get_challenge_plan` measured **57 characters SHORTER at identical line
+count** — which reads like a trim — while the predicate grew by 6: the other change was a **dropped
+comment**, and the negative delta concealed a semantic rewrite entirely. **A shrinking function can be
+gaining logic. Only the diff is the measurement.**

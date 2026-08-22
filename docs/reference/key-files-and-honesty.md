@@ -129,3 +129,59 @@ All `.tdillonbond.workers.dev`. Auth surfaces split across rotation domains — 
 
 ---
 
+
+## Two new instances on the sentinel itself (2026-08-22) — an ALERT that vanishes, and a share of zero
+
+Both were on `app/api/sentinel/route.ts`, and both sat on the arm that measures the roadmap's **headline
+metric** (the share of prices at HIGH/MEDIUM confidence). Instances 25 and 26 of the canon.
+
+### 1. The arm could DISAPPEAR from its own report
+
+```ts
+if (error) { checks.push(warn) }
+else if (data) { checks.push(the real answer) }
+// no else — a read returning NEITHER pushed NOTHING AT ALL
+```
+
+`supabase-js` RETURNS rather than throws, so `error: null, data: null` is reachable. The arm then did not
+warn, did not error, and did not render zero — **it was absent**. ⚠ **In an alert, absence reads as "not
+among today's problems", and it is unfalsifiable: there is no wrong value to notice.** This is the worst
+shape in the canon precisely because every other instance leaves something behind to catch.
+
+Now bans at population zero via `scripts/check-unhandled-third-state.mjs` (measured: 1 instance across
+**1,297** files, now 0). ⚠ The guard runs a positive AND a negative control on synthetic fixtures *before*
+reporting, and fails if it inspected nothing — a detector that has stopped matching prints `0 violations`
+and is indistinguishable from a clean tree.
+
+⚠ **A syntactic ban only closes the routes it knows.** Pinned behaviourally too, in
+`__tests__/api-sentinel-branches.test.ts`: **no arm present in a healthy run may disappear when every read
+ERRORS, or when every read returns NO PAYLOAD.** Deliberately **not** a roster of expected arm names —
+CLAUDE.md records that a guard naming its instances dies on a rename — so the healthy run defines the roster
+and a rename changes both sides at once. Verified against the pre-fix route: the null-payload run produced
+**12 arms instead of 13** and named the missing one.
+
+### 2. A POPULATION of zero is not a SHARE of zero
+
+```ts
+const pct = (n: number, d: number) => (d > 0 ? ((n / d) * 100).toFixed(1) : "0")
+```
+
+The sibling of `?? 0` and `|| 1`. It looks like a safe divide-guard — it does avoid `NaN` — but what it
+publishes is a **measurement**. Both gate meters rendered `0%`: `FMV Confidence` whenever the tally returned
+no canonical base editions, `Edition Coverage` whenever the RPC returned no `live`-scope row. ⚠ **The read
+did not have to FAIL for this**: `data = []` is truthy, so a **genuinely empty** tally took the success path
+— the "read ok + genuinely empty" state rendering as a measured zero.
+
+Both now withhold the number. ⚠ **The copy says "not zero", NOT "not 0%", and that is deliberate**: the first
+draft used `0%`, which forced the test to carve a negative lookahead out of its own assertion so the fix's
+wording would not trip it. **A carve-out added to tolerate the fix's own text is how a test stops pinning
+anything.** With the reword the assertion is strict — `expect(detail).not.toContain("%")` — and pins the
+ABSENCE of a percentage rather than the presence of a warning string.
+
+⚠ **Three write-sites were deliberately NOT changed** (`lock_rate_pct` / `burn_rate_pct` in
+`backfill-badges-from-sets`, `allday-badge-ingest`, `badge-sync`): they are typed `number`, not
+`number | null`, and are WRITE payloads rather than display strings, so honesty there is a schema-shaped
+change on ingest logic. **The correct pattern already exists in-repo** at
+`app/api/cron/data-integrity/route.ts:122` (`… : null`). No guard was written for this expression — unlike
+the two-state branch, its population is **majority-correct**, so a ban would red correct code and be
+switched off.
