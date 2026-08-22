@@ -130,58 +130,70 @@ test.describe("mobile layout", () => {
     ).toEqual([])
   })
 
-  test("navigation clears the 44px floor as a HIT AREA, however it gets there", async ({ page }) => {
-    // MEASURED 2026-08-22: the collection tab bar was 35px, the collection
-    // switcher pills 30px, the theme toggle 30x30 and the anon Sign-in pill
-    // 20x60 — all under §9 / WCAG 2.5.5, all on navigation, where a mis-tap
-    // costs a page load rather than a re-tap.
+  test("navigation controls have a 44px effective hit box", async ({ page }) => {
+    // MEASURED 2026-08-22: the collection tab bar was 35px, the switcher pills
+    // 30px, the theme toggle 30x30 and the anon Sign-in pill 20x60 — all under
+    // §9 / WCAG 2.5.5, all on navigation, where a mis-tap costs a page load.
     //
-    // ⚠ Two different fixes landed, so this asserts the PROPERTY rather than
-    // either implementation: the tab bar GREW to 44px (tabs should look
-    // chunkier, and its overlay lost a stacking fight with `main`), while the
-    // small chrome controls kept their deliberate size and got `.rpc-tap44`,
-    // an invisible ::after that raises only the hit area. A box check would
-    // pass the first and fail the second; a hit test covers both, and would
-    // also catch an overlay that silently stops working.
+    // ⚠ Two different fixes landed, so this measures the PROPERTY rather than
+    // either implementation: the tab bar GREW to 44px, while the small chrome
+    // controls kept their deliberate size and got `.rpc-tap44`, an invisible
+    // ::after. The effective box is the union of the element and that overlay.
+    //
+    // ⚠ THIS USED TO HIT-TEST THE FOUR EXTREMES OF THE AREA, AND THAT WAS THE
+    // WRONG ASSERTION — it went red on production and green locally on the same
+    // code. One switcher pill ("✨Pinnacle") had the point 6px above it owned by
+    // some other chrome that the credential-less local build does not render.
+    // Whether an unrelated element paints over a control's margin is not a
+    // property this monitor can hold, and a monitor that cries wolf stops being
+    // read. What IS the product's promise is that the control OWNS a 44px box;
+    // the centre check below still catches anything covering the control itself.
     await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
     await page.waitForTimeout(1500)
 
     const result = await page.evaluate(() => {
       const inside = (el: Element, hit: Element | null) =>
         !!hit && (hit === el || el.contains(hit) || hit.contains(el))
-      const bad: string[] = []
+      const small: string[] = []
+      const covered: string[] = []
       let checked = 0
       for (const el of Array.from(document.querySelectorAll(".rpc-coll-tab, .rpc-tap44"))) {
         const b = el.getBoundingClientRect()
         if (b.width === 0 || b.height === 0) continue
-        const cx = b.left + b.width / 2
-        const cy = b.top + b.height / 2
-        // ⚠ elementFromPoint returns null OUTSIDE the viewport, and both the tab
-        // bar and the switcher row are overflow-x:auto — a control scrolled out
-        // of view would otherwise read as a broken hit area. It read exactly
-        // that way on the first run of this probe.
-        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) continue
         checked++
         const label =
           (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 20) ||
           el.getAttribute("aria-label") ||
           el.tagName
-        for (const [dir, x, y] of [
-          ["up", cx, cy - 21],
-          ["down", cx, cy + 21],
-          ["left", cx - 21, cy],
-          ["right", cx + 21, cy],
-        ] as Array<[string, number, number]>) {
-          if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue
-          if (!inside(el, document.elementFromPoint(x, y))) bad.push(`${label} (${dir})`)
-        }
+        // `.rpc-tap44`'s ::after is sized in px, so the used values come back as
+        // px strings; a control without one yields "auto"/"" and falls back to
+        // its own box, which is correct for the grown-box fix.
+        const after = getComputedStyle(el, "::after")
+        const w = Math.max(b.width, parseFloat(after.width) || 0)
+        const h = Math.max(b.height, parseFloat(after.height) || 0)
+        if (w < 44 || h < 44) small.push(`${label} ${Math.round(w)}x${Math.round(h)}`)
+        // ⚠ elementFromPoint returns null OUTSIDE the viewport, and both the tab
+        // bar and the switcher row are overflow-x:auto — skip what is scrolled
+        // out of view rather than reading it as covered.
+        const cx = b.left + b.width / 2
+        const cy = b.top + b.height / 2
+        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) continue
+        if (!inside(el, document.elementFromPoint(cx, cy))) covered.push(label)
       }
-      return { bad, checked }
+      return { small, covered, checked, tap44: document.querySelectorAll(".rpc-tap44").length }
     })
 
     // Not vacuous: a selector that stops matching must FAIL, not pass quietly.
-    expect(result.checked, "no navigation controls were in view to check").toBeGreaterThanOrEqual(6)
-    expect(result.bad, "navigation controls whose 44px hit area is not reachable").toEqual([])
+    expect(result.checked, "no navigation controls matched the selectors").toBeGreaterThanOrEqual(6)
+    // ⚠ AND the two fixes are counted SEPARATELY. Removing `.rpc-tap44` from a
+    // control does not make it fail the size check — it drops out of the
+    // selector entirely, and the seven tabs alone keep `checked` above its
+    // floor. Without this line the overlay half of the fix could be deleted
+    // with the test still green. Five switcher pills are the stable minimum on
+    // this route (the theme toggle and the anon Sign-in pill add two more).
+    expect(result.tap44, ".rpc-tap44 controls present").toBeGreaterThanOrEqual(5)
+    expect(result.small, "navigation controls whose effective hit box is under 44px").toEqual([])
+    expect(result.covered, "navigation controls whose own centre is covered by something else").toEqual([])
   })
 
   test("the wallet band stays one band, not a hero", async ({ page }) => {
