@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — `pinnacle-sync` was a FALSE stall: the arm watched a best-effort log line while the pipeline that records the actual outcome had no arm at all
+
+**PROD DB STATE (watchlist), no code, no migration.** Continuing the sentinel triage.
+
+🚨 **THE ALERT WAS WRONG AND THE CONTROLS SAID SO.** The board read `pinnacle-sync silent 3194m (>1560m)`. Taken at the same instant: `pinnacle_catalog` **2,482 of 2,564 renders priced**, newest `fmv_computed_at` **2026-08-22T10:07:12.9Z — 5.5 h old**; and `pinnacle-fmv-recalc` ran that morning `ok` with **2,248 rows**, having run on **25 of the last 25 days**. Pinnacle FMV was entirely healthy.
+
+⚠ **WHY IT MISREADS — the route says it itself.** `/api/cron/pinnacle-sync` does exactly one thing (`rpc("pinnacle_fmv_recalc_render_all")`); its own comment reads *"This route still owns only the render-FMV recompute."* **That function logs its own row under a DIFFERENT pipeline name.** The watched row comes from a `logRun()` whose `catch` is **empty on purpose** (*"best-effort observability — never let logging fail the run"*), so it vanishes whenever `after()` is dropped or the log RPC itself fails — **while the work is untouched, because once the RPC is dispatched Postgres runs it to completion whether or not the Lambda survives.** Measured: a `phase:"complete"` row on **2 of 10 retained days**, against work done on **25 of 25**.
+
+⚠ **This is this file's own rule landing on a live arm — measure the OUTCOME, not the self-report.** The outcome pipeline had **no watchlist arm at all** (16 pinnacle arms checked, none was it); the unreliable self-report had one.
+
+⚠ **AND THE ROUTE'S DOCUMENTED 2-STATE TABLE IS INCOMPLETE — I nearly asserted its wrong branch.** It promises *marker + no complete row → "after() was dropped"*. There is a **THIRD** state it does not model: **`after()` completed and `logRun`'s RPC was swallowed by its own empty catch** — entirely plausible at 10:07Z, inside the 01:00–19:00Z band. The DB cannot separate them, so **"after() was dropped" must not be stated as fact from a missing row alone.**
+
+✅ **SHIPPED:** added **`pinnacle-fmv-recalc` @ 1560 min / medium**, and **deactivated `pinnacle-sync`** with its reasoning written into the notes. **Sizing re-derived, not assumed:** 25 days of `pipeline_runs_daily` (retained indefinitely) show a run every day, 1–2×, **longest observed gap exactly 24 h** → 1560 = 26 h, 2 h margin, fires on the first genuinely missed day (the convention the old row used).
+
+⚠ **WHAT IS NO LONGER WATCHED, stated rather than glossed:** *"the 10:07Z cron-job.org caller specifically stopped."* The **22:37Z pg_cron backstop** still recomputes FMV daily, so that failure is invisible to users by design — but the new arm stays green at 1 run/day and **will not tell you**. A `pinnacle-sync-heartbeat` arm would cover it; **deliberately NOT added — no `-heartbeat` arm exists anywhere in that table**, and inventing a convention was out of scope.
+
+**Controls, both directions:** `pinnacle-sync` gone from `detect_stalled_pipelines()`; the new arm active and reading **334 min against 1560** — live and *able* to fire, not green by construction; active-arm count **unchanged at 83** (one out, one in); and the **other four arms still fire**, so nothing real was silenced.
+
+🚨 **ALSO FOUND, NOT SHIPPED — `topshot-moments-hydrator`'s schedule is declared in NO file in this repo.** It is a Cloudflare Worker (all four caller sources enumerated: absent from `vercel.json`, `cron.job`, GHA, and it has no `app/api` route), and `workers/topshot-moments-hydrator/wrangler.toml` has **no `[triggers]`/`crons` block**. It is provably on a ~10-minute cron — **every observed `started_at` minute is ≡ 2 (mod 10)** — yet only **24–49 runs log per day out of ~144 ticks**, with every logged run reporting a full `rows_found: 300`. ⚠ **The hazard is that `wrangler deploy` reconciles cron triggers FROM CONFIG, so deploying this worker from the repo would DELETE a dashboard-set cron and silently kill the pipeline** — same family as the 08-21 two-configs incident. Control: of 17 workers, exactly one (`sales-counterparty-backfill`) declares `crons` in-repo, so the mechanism is used here. **Operator: codify the trigger, and read the CF logs for the current 499-min stall.** Filed: [inbox/2026-08-22T1545Z-pinnacle-sync-was-a-false-stall-and-the-hydrator-schedule-is-in-no-repo-file.md](inbox/2026-08-22T1545Z-pinnacle-sync-was-a-false-stall-and-the-hydrator-schedule-is-in-no-repo-file.md).
+
+**Left firing deliberately:** `classify-acquisitions-multicollection` (215 vs 180) and `allday-pack-opens-backfill` (145 vs 90) drifted UP during the session (192→215, 122→145 within the hour). Widening a threshold to hide the band is the move this file forbids.
+
+**Revert:**
+```sql
+UPDATE pipeline_cadence_watchlist SET is_active = true WHERE pipeline = 'pinnacle-sync';
+DELETE FROM pipeline_cadence_watchlist WHERE pipeline = 'pinnacle-fmv-recalc';
+```
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — sentinel alert triage) — the arm's most severe reading rendered as `silent nullm`, and a crying-wolf arm re-pointed to a cadence Trevor changed four days ago
 
 **CODE + PROD DB STATE.** Triage of a live sentinel WARN. Two fixes shipped, one deliberately not — and the third is the interesting one.
