@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SECURITY · REQUIRED (Claude Code, interactive) — an edge-function gate key was exposed in a session transcript, so the rotation is no longer deferrable; least-privilege migration committed unapplied
+
+**No DB or prod-state change in this entry.** Deliberately terse: this repo is PUBLIC and the exposure is unremediated, so the analysis stays out of it. Detail is with Trevor.
+
+🚨 **A GATE KEY REACHED A SESSION TRANSCRIPT. The item is no longer "small, NOT urgent" — it is required work.** The gate is **the sole auth on a service-role writer**, stated in `supabase/functions/compute-pinnacle-pack-ev/index.ts`'s own header, which also carries the zero-downtime `_OLD` recipe. ⚠ **The ORDER and the fail-closed trap are already recorded** — promoted into [cron-and-schedulers.md](../reference/cron-and-schedulers.md) earlier today, and the 08-16 "CLOSED" filing now opens with a correction banner. **This entry adds only the trigger and the priority change; it does not restate them.**
+
+⚠ **WHICH key is recorded in the Cowork memory files, and those are NOT reachable from a Claude Code sandbox** — there is no memory tool there, verified this session. So closing this out needs a session that can read `rpc-gate-key-rotation.md`. **If it cannot be identified, treat all 14 as compromised.**
+
+**Queued, committed unapplied:** `supabase/migrations/20260822223000_audit_20260822_least_privilege_cron_and_net_tables.sql` — reduces the blanket PUBLIC grants the pg_cron / pg_net extension tables were created with (nothing in this repo granted them) to least privilege. ⚠ **It is NOT a bare revoke, and the difference is load-bearing:** `anon`, `authenticated` **and `postgres`** all hold PUBLIC-derived access there rather than grants of their own, so revoking from PUBLIC alone also strips `postgres` — and **five SECURITY DEFINER functions owned by `postgres` read those tables, two of them trust-board checks** (`check_edge_fn_http_failures`, `check_pgcron_recent_failures`, plus `resolve_topshot_username_live`). A naive revoke takes monitoring dark **while reporting success**. The explicit re-grants prevent that, and the file ends with a positive control that RUNS the two checks rather than reading a privilege table. ✅ **pg_net itself is unaffected — checked, not assumed:** `net.http_get`/`http_post` are SECURITY DEFINER owned by `supabase_admin`, so the queue INSERT on every tick never consults PUBLIC.
+
+**Revert:** `git revert <sha>` (nothing applied). If the migration HAS been applied, uncomment the block at its foot and apply that.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two dropped checks executed: the concierge probe PASSES, and NBA projections has been dark for 18 days on zero arms
 
 **Docs + register only — no code, no migration, no DB or prod-state change.** Ran an open-items sweep; two things were owed a measurement and nobody had taken it.
