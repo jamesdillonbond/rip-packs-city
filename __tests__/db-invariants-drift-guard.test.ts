@@ -342,13 +342,15 @@ const PINS = [
   },
   // These already had a committed migration carrying their current live DDL.
   {
-    // Re-pinned 2026-08-01: get_set_detail now wraps its expensive per-edition FMV
-    // rollup in BEGIN/EXCEPTION WHEN query_canceled to degrade (not throw) on a
-    // request-level statement timeout (Sentry NEXTJS-22). Live DDL moved from the
-    // 2026-06-26 render-level migration to the graceful-timeout migration below.
+    // Re-pinned 2026-08-22: the live body gained the D20 `underlying_set_count`
+    // rollup, so this pin had read STALE on every db-pin-staleness run since
+    // 2026-08-10 (13 consecutive; known-issues #24). That ONE feature was the
+    // entire drift — the lateral latest-FMV read and the Pinnacle branch were
+    // already pinned. The 2026-08-01 graceful-timeout behaviour (BEGIN/EXCEPTION
+    // WHEN query_canceled, Sentry NEXTJS-22) is unchanged and still pinned.
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
-    migration: "supabase/migrations/20260801190000_audit_20260801_get_set_detail_graceful_fmv_timeout.sql",
+    migration: "supabase/migrations/20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql",
   },
   {
     fn: "get_user_top_owned_moments",

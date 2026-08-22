@@ -9,12 +9,24 @@
 --     LATEST fmv_snapshot;
 --   * fmv_total sums fmv_usd > 0; floor_total sums COALESCE(floor,fmv) > 0;
 --     editions_with_fmv counts fmv_usd > 0; edition_count counts all rendered rows;
---   * DISTINCT-latest: the newest snapshot per edition wins (a stale higher one
---     does not inflate the total);
+--   * latest-snapshot-wins: the newest snapshot per edition wins (a stale higher
+--     one does not inflate the total). ⚠ The mechanism is a LEFT JOIN LATERAL
+--     ... ORDER BY computed_at DESC LIMIT 1, NOT `DISTINCT ON` — this line said
+--     "DISTINCT-latest" until 2026-08-22 and had not described its own pinned
+--     DDL for some time. Assertion 4 pins the PROPERTY (freshest 50 beats stale
+--     999), which is why it survived the wording being wrong; a probe for
+--     `DISTINCT ON` against live does NOT indicate drift here;
+--   * D20 underlying_set_count: how many rows of `sets` merge into this slug,
+--     scoped by BOTH collection_id and name — the set page keys a "merged set"
+--     banner on it being > 1;
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801190000_audit_20260801_get_set_detail_graceful_fmv_timeout.sql);
+-- (supabase/migrations/20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
+-- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
+-- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
+-- assumed — the ENTIRE drift was the D20 underlying_set_count rollup. Neither the
+-- lateral FMV read nor the Pinnacle branch changed; both were already pinned.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- That migration wraps the expensive per-edition FMV rollup in BEGIN/EXCEPTION
@@ -39,6 +51,8 @@ CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
   set_name text, fmv_usd numeric, floor_ask numeric);
+CREATE TABLE public.sets (
+  collection_id uuid, name text);
 
 -- >>> BEGIN verbatim get_set_detail (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slug text)
@@ -56,6 +70,7 @@ DECLARE
   v_editions_with_fmv int;
   v_edition_count int;
   v_collection_slug text;
+  v_underlying_set_count int;
 BEGIN
   SELECT * INTO v_set
   FROM sets_summary
@@ -113,12 +128,22 @@ BEGIN
     v_editions_with_fmv := NULL;
   END;
 
+  -- D20: how many underlying `sets` rows merged into this slug. Complete-by-
+  -- construction merge signal (name-identical seasonal repeats included, which
+  -- set_name_variants misses). Reads the 914-row `sets` table — trivially cheap.
+  -- Pinnacle has no `sets` rows → 0 (page keys the banner on > 1).
+  SELECT count(*) INTO v_underlying_set_count
+  FROM sets s
+  WHERE s.collection_id = p_collection_id
+    AND s.name::text = ANY(v_set.set_name_variants);
+
   RETURN jsonb_build_object(
     'collection_id',       v_set.collection_id,
     'collection_slug',     v_collection_slug,
     'set_slug',            v_set.set_slug,
     'set_name',            v_set.set_name,
     'set_name_variants',   v_set.set_name_variants,
+    'underlying_set_count', v_underlying_set_count,
     'edition_count',       v_edition_count,
     'editions_with_fmv',   v_editions_with_fmv,
     'total_circulation',   v_set.total_circulation,
@@ -158,6 +183,16 @@ INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed
   (:e1::uuid,  50,  40, now() - interval '1 hour');
 -- e2 has NO snapshot -> fmv null (counts toward edition_count, not editions_with_fmv).
 
+-- D20 `underlying_set_count`: two `sets` rows merge into this one slug (a
+-- name-identical seasonal repeat), plus one row from a DIFFERENT collection and
+-- one with an unrelated name that must BOTH be excluded. Without the
+-- collection_id predicate the count reads 3; without the name predicate, 3.
+INSERT INTO public.sets (collection_id, name) VALUES
+  (:cid::uuid, 'Base Set'),
+  (:cid::uuid, 'Base'),
+  ('99999999-9999-9999-9999-999999999999'::uuid, 'Base Set'),
+  (:cid::uuid, 'Unrelated Set');
+
 -- ── 1. not found -> NULL ─────────────────────────────────────────────────────
 SELECT _assert(public.get_set_detail(:cid::uuid, 'no-such-set') IS NULL, 'unmatched set slug -> NULL');
 
@@ -170,6 +205,12 @@ SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'editions_wi
 -- ── 4. latest-snapshot-wins: fmv_total = 50 (not the stale 999) ──────────────
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'fmv_total_usd'), '50', 'fmv_total uses the freshest snapshot (50), not the stale 999');
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total_usd'), '40', 'floor_total uses the freshest snapshot (40)');
+
+-- ── 5. D20 underlying_set_count: counts merged `sets` rows, scoped BOTH ways ──
+-- Pinned because the page keys a "merged set" banner on this being > 1, so a
+-- silent 0 or an unscoped 3 both mis-state the page. This is the ONLY behaviour
+-- that had drifted from the pin (see the file header).
+SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'underlying_set_count'), '2', 'underlying_set_count = 2 (other-collection row and unrelated name excluded)');
 
 -- ── 5. envelope passthrough ──────────────────────────────────────────────────
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'set_name'), 'Base Set', 'set_name passthrough');
