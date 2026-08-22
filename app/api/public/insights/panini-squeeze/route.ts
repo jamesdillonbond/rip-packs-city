@@ -1,5 +1,9 @@
-// Public JSON backing the /insights/panini-squeeze page + OG card. STAGED: gated pre-launch by the
-// single `/(?:...)\/panini` line in proxy.ts (returns false -> auth gate). Un-gates at go-live with the page.
+// Public JSON backing the /insights/panini-squeeze page + OG card. Its public/gated state is owned by
+// `PANINI_PUBLIC` in lib/launch-flags.ts, read by the single `/(?:...)\/panini` line in proxy.ts (flag
+// false -> returns false -> auth gate). ⚠ DO NOT restate that state here. This header read "STAGED: gated
+// pre-launch" for the three weeks AFTER Trevor flipped the flag on 2026-08-01, and on 2026-08-22 it — plus
+// `collections.is_active = false`, which governs anon PostgREST reads and NOT this surface — convinced a
+// saturation audit that 4.6% of the database's disk reads were warming a board nobody could see. Ask the flag.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";

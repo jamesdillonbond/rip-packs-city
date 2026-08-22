@@ -1,5 +1,8 @@
-// Public JSON backing the /insights/candy-mlb page. STAGED: gated pre-launch by the single
-// `/(?:...)\/candy` line in proxy.ts (returns false -> auth gate). Un-gates at go-live with the page.
+// Public JSON backing the /insights/candy-mlb page. Its public/gated state is owned by `CANDY_MLB_PUBLIC`
+// in lib/launch-flags.ts, read by the single `/(?:...)\/candy` line in proxy.ts (flag false -> returns
+// false -> auth gate). ⚠ DO NOT restate that state here — this header still said "STAGED: gated pre-launch"
+// three weeks after the 2026-07-31 go-live. Note the line below is still true and is a DIFFERENT switch:
+// `candy_mlb.is_active` stays false and governs anon PostgREST reads, never this surface's visibility.
 // Candy = 2026 MLB Base Series ICONs (chain two, Solana / Magic Eden). Reads Candy DIRECTLY — candy_mlb
 // stays is_active=false, so this needs neither the is_active flip nor the 28-shared-RPC candy-arm fix.
 // HONESTY: best_offer_usd is an OFFER-derived signal, a SEPARATE column, NEVER FMV; the pack-EV block

@@ -96,6 +96,21 @@ reset with the stats collector, so `last_autovacuum IS NULL` / `autovacuum_count
 **relative to that reset, not lifetime**. I nearly filed "`pack_rips` is 83.8% dead tuples, never
 vacuumed" — `pg_class.reltuples` says **3.65M rows in 95,894 pages ≈ 215 B/row**, i.e. normal.
 
+✅ **VERIFIED IN PROD, first rotated tick (20:45:06Z, deploy `dpl_DSr5cW26GazQrrxL7QgyPppxpUTP` READY —
+`ready` > `buildingAt`, prod aliases attached, `lambdaRuntimeStats` present).** `per_tick: 2`, warmed
+`["panini-squeeze","deals"]` — correctly the two STALEST (19 and 9 min) — skipped the three fresh ones, and
+**both boards that had been failing 76% / 75% of the time succeeded** (4,673 and 119 rows). Duration
+**16,827 ms against the previous near-constant ~31,000 ms.** ⚠ **One tick is not a trend** — it is the right
+SHAPE, not proof; the 48h fail rates are the instrument, and they straddle the change for two days.
+
+**Follow-up in the same push — the stale comment that nearly cost a wrong ship.** The headers on
+`app/api/public/insights/{panini-squeeze,candy-mlb}/route.ts` and the two `proxy.ts` gate comments asserted
+**"STAGED: gated pre-launch"** three weeks after Trevor flipped both flags (Candy 07-31, Panini 08-01). They
+now name the FLAG that owns the state instead of restating it, so they cannot go stale again. ⚠ The reason
+this mattered: combined with `is_active = false`, that header convinced this very audit that 4.6% of all
+disk reads were warming a board nobody could see — a finding I had fully written up before checking
+`lib/launch-flags.ts`. **Comment-only; no behavior change.**
+
 **Next measurement (do this before changing anything else):** re-read the 48h per-board fail rates and
 `sum(shared_blks_read)`; only ONE variable moved, so the delta is attributable. If failure rates drop,
 lower the `*/5` cadence next; if they do not, materialise the five board views — they are the 52–95 MB/call

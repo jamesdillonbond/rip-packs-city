@@ -275,7 +275,7 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // Next.js middleware only consumes the `proxy` + `config` exports, so an extra
 // named export changes no runtime behaviour.
 export function isPublicPath(pathname: string, method: string): boolean {
-  // ── Panini WC Prizm surfaces — STAGED, gated pre-launch (no multi-chain public until go-live) ──
+  // ── Panini WC Prizm surfaces — gated iff `PANINI_PUBLIC` is false (live since 2026-08-01) ──
   // Gates the page (/insights/panini-squeeze), its public JSON
   // (/api/public/insights/panini-squeeze) and its OG card (/api/og/insights/panini-squeeze) — all match
   // `…/panini`. Returning false routes them to the auth + allow-list gate, so only signed-in allow-listed
@@ -287,7 +287,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // PANINI_PUBLIC would have silently changed nothing — the trap this wiring removes.)
   if (!PANINI_PUBLIC && /^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname))
     return false
-  // ── Candy MLB ICONs (chain two, Solana) — STAGED, gated pre-launch, same as Panini above ──
+  // ── Candy MLB ICONs (chain two, Solana) — gated iff `CANDY_MLB_PUBLIC` is false (live since 2026-07-31) ──
   // Gates /insights/candy-mlb + /api/public/insights/candy-mlb + /api/og/insights/candy-mlb.
   // GO-LIVE = flip CANDY_MLB_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which
   // simultaneously un-gates these three routes, adds the sitemap slug, adds the /insights hub
