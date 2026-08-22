@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — sentinel alert triage) — the arm's most severe reading rendered as `silent nullm`, and a crying-wolf arm re-pointed to a cadence Trevor changed four days ago
+
+**CODE + PROD DB STATE.** Triage of a live sentinel WARN. Two fixes shipped, one deliberately not — and the third is the interesting one.
+
+🚨 **FIX 1 (code) — `silent nullm` was the WORST case rendering as the LEAST legible string.** `detect_stalled_pipelines()` returns `silent_minutes = NULL` when it finds **no run at all** in `pipeline_runs` (~73 h retention). [app/api/sentinel/route.ts](../../app/api/sentinel/route.ts) interpolated that straight into a template, so the arm's most severe reading printed as `candy-editions-ingest silent nullm` — which reads as a cosmetic template bug and gets skimmed past. ⚠ **The tempting fix is the wrong one: do NOT substitute a number.** The RPC cannot distinguish "stalled past the retention window" from "never ran once", so any figure would be invented — the fabricated-number shape this file tracks. It now names both possibilities and asserts neither.
+
+⚠ **PROVEN THE TEST SEES THE DEFECT, not merely that it passes.** Restored the original expression and watched the new case red with the exact string (`expected 'candy-editions-ingest silent nullm (>…' not to contain 'nullm'`), then restored the fix. **72 sentinel cases green across all three suites.** ⚠ **And one of the three new tests is labelled in its own comment as a FORWARD pin, not a regression test** — it passes on the buggy code too (`"nullm"` contains no digit), so it discriminates nothing about *this* defect; what it catches is the wrong fix. Saying so beats letting it read as coverage it does not provide.
+
+✅ **FIX 2 (DB) — `wallet-username-resolver` re-pointed 75 → 450 min.** ⚠ **This arm had been crying wolf BY CONSTRUCTION since 08-18.** Trevor deliberately cut the cron-job.org cadence 30 min → **every 3 h** that day; nobody re-pointed the arm, so a **180 min** cadence sat under a **75 min** threshold and it fired on *every single tick*, forever. Same class as `panini_sale_price_capture_dry_days`. **Re-derived from `pipeline_runs`, not quoted:** runs/day 46 (08-17) → 13 (08-18, the transition) → 8/7/8/4 since, actual gaps a flat **180.0 min** with two 360.0 min (one missed tick). New value uses the arm's **own stated methodology** (2.5 × median = 450), which clears the observed max of 360 with margin.
+
+⚠ **POSITIVE CONTROL ON THE OUTCOME, and on what I did NOT silence.** `detect_stalled_pipelines()` re-run: `wallet-username-resolver` **gone**, watchlist counts **unchanged at 102 total / 83 active**, and the **other five arms still fire**. A threshold change that quieted the board would have been the failure here.
+
+🚨 **NOT FIXED, and this one refutes a "resolved" note — `candy-editions-ingest`.** Its watchlist note still carries the 08-03/04 diagnosis "being KILLED at the 300 s wall … fix handed off". **That fix SHIPPED** — `maxDuration` is **800** (route line 45, verified in tree) — **and it is silent again for the same reason at a ceiling 2.7× higher.** Last success **08-19 08:40Z**; 08-20/21/22 missed, as were 08-16..18.
+
+⚠ **THE CONTROL IS WHAT MAKES IT READABLE: `rows_written` is byte-identical at 28,483 on EVERY run**, so the work is constant and the entire **8× duration spread is contention** — 61.4 s (07-31) → 507.6 s (08-15), against an 800 s cap. Without that column the climb would read as data growth and the fix would wrongly be "chunk the payload". ✅ **And it is CONFIRMED, not inferred:** `get_runtime_errors` returns `Task timed out after 800 seconds`, **count = 3, last 2026-08-22T08:40:05Z — the cron minute exactly**, matching the three missed days one for one. The cron fires **08:40Z**, inside the measured 01:00–19:00Z band. ⛔ **800 is the Vercel Pro HARD CAP** (above it the deploy ERRORs invisibly), so raising it is neither available nor the lever.
+
+⚠ **Deliberately NOT shipped, stated rather than quietly skipped.** Moving the cron into 20:00–00:00Z is one line — **but it needs a stagger pass over all 36 Vercel crons**, and that window already holds tonight's 20:15Z/21:15Z applies plus the proposed 23:10Z/23:25Z moves for jobids 60/4. Dropping an ~8-minute job in unexamined trades one contention problem for another. The durable fix (`paginateGroup` chunking) is **ingest-route logic — off-limits for autonomous shipping.** The watchlist note was appended with the dated correction so the next responder does not read "fixed" and move on. Filed: [inbox/2026-08-22T1600Z-candy-editions-is-band-killed-not-timeout-fixed.md](inbox/2026-08-22T1600Z-candy-editions-is-band-killed-not-timeout-fixed.md).
+
+**The rest of the alert is saturation collateral and was correctly left alone** — the four `INCONCLUSIVE (db saturated)` arms (Sales Ingest 2h, Trust Health, Sniper Feed, FMV Confidence) and the `support_conversations` connection-pool timeout are the honest-degradation path WORKING, not new defects. `pinnacle-sync` (3,194 m) and `topshot-moments-hydrator` (479 m) are real and remain open; `classify-acquisitions-multicollection` (195 vs 180) and `allday-pack-opens-backfill` (125 vs 90) are marginal band overruns and were **not** re-pointed — widening a threshold to hide the band is the move this file forbids.
+
+**Verified:** `npx tsc --noEmit` clean; 72 sentinel cases green; memory-doc link guard exit 0; `UPDATE … RETURNING` confirmed exactly one row each time.
+
+**Revert:** `git revert <sha>` for the code. DB, both independent:
+```sql
+UPDATE pipeline_cadence_watchlist SET max_silent_minutes = 75 WHERE pipeline = 'wallet-username-resolver';
+-- the candy note append is additive text; trim the block below the 2026-08-22 CORRECTION marker to undo.
+```
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two rotted pointers in the memory docs, a stale cron count, and a guard so they cannot regrow
 
 **Docs + one new guard script + its test + a CI step. No DB, migration or prod-state change.** Continuation of the unfinished-task sweep.
