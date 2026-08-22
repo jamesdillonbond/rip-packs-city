@@ -119,3 +119,12 @@ one-line pointer to make room for newer rules. Nothing was deleted — this is t
 its blind spot is whatever the curated list omits — measured 2026-08-17 at **67 of 150** live pipelines,
 not the 62 filed against all 102 watchlist rows. **Derive the watched set from `pipeline_runs`; make
 *suppression* the curated list.**
+
+⚠ **RE-MEASURED 2026-08-22 14:30Z — the gap GREW while nothing about the arm changed: 76 unwatched of
+158 live pipelines** (same instrument: `distinct pipeline` over `pipeline_runs`, whose window was
+08-19 12:41Z → 08-22 14:27Z, i.e. the documented ~73 h retention). The watchlist itself is
+**unchanged at 102 rows / 83 active**, so every one of the 9 added blind pipelines came from the
+*fleet* moving, not from anyone deactivating an arm. **That is the curated-list failure mode stated
+as a rate rather than an anecdote: the list does not have to rot for its coverage to fall.** ⚠ Both
+readings are dated samples of a moving population — re-derive, and note that the two numbers are
+comparable ONLY because they were taken with the same instrument over the same retention window.

@@ -1,5 +1,16 @@
 # The gate-key rotation item is CLOSED — all 14 gate-keyed crons verified passing
 
+> 🚨 **CORRECTION 2026-08-22 — THIS TITLE IS WRONG AND ACTING ON IT TAKES PIPELINES DARK. THE ITEM IS
+> NOT CLOSED.** What this pass verified is *shapes* — every job carries a `?key=`, none is a placeholder,
+> all match `^rpc_pls_` — and that is a real check, but it is **not** a check that the function on the
+> other end accepts the key it is being sent. **Six of the remaining crons point at secrets that do not
+> exist yet, so rotating them before the secret is set fails those ticks CLOSED**, and a gate-key
+> rejection writes **no `pipeline_runs` row**, so the outage is indistinguishable from "never scheduled"
+> (the 86-hour 08-11 outage's own signature). Safe order, always: **set the secret → deploy the function
+> from repo source → only then rotate the cron.** Rotation stood at **4 of 14** as last reported.
+> Full text: `docs/reference/cron-and-schedulers.md` → *Gate-key rotation — the order is load-bearing*.
+> ⚠ Everything below is left verbatim; read it as the shape sweep it was, not as a closure.
+
 Cowork cloud, 2026-08-16 14:55Z. Read-only verification. **No change this pass**; the one prod
 change (cron 42 rotation) was made 08-15 20:47Z and is ledgered in `b1763bf0`.
 

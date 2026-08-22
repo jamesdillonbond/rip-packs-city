@@ -144,3 +144,19 @@ on `pack_ev_latest` — which turned out to be a plain **VIEW** doing `DISTINCT 
 every call (despite a cron named `rpc-refresh-mv-pack-ev-latest`). **Read `pg_views.definition` /
 `pg_proc.prosrc` instead of executing the object** when the question is about shape rather than data;
 it is instant and it answered what three timed-out queries could not.
+
+### ⚠ A `send_later` reminder SELF-BINDS to the calling session, and dies with it (measured 2026-08-22)
+
+`mcp__Claude_Code_Remote__send_later` is a thin wrapper over a **self-bound** one-shot Routine: it fires
+back into the session that created it. When that session is archived or otherwise goes away, the Routine
+does not migrate and does not fail loudly — the trigger list simply shows
+`ended_reason: "auto_disabled_session_gone"`. A scheduled apply parked that way **never runs, and nothing
+reports it**; the only evidence is a trigger row nobody reads. Proven on `trig_017CHH…`, and a 20:15Z
+cross-collection migration apply was one archive away from the same fate.
+
+**So: anything that must happen after this session ends goes in a FRESH-SESSION Routine**
+(`create_trigger` with `create_new_session_on_fire: true`) carrying a *standalone* runbook — the fired
+session inherits none of this conversation. ⚠ **And it must open with a CAPABILITY CHECK**: `create_trigger`
+stores **no MCP connectors**, so the fired session may have no Supabase/Vercel tools at all. A runbook that
+cannot execute must **report and STOP**, never improvise — a half-run migration is worse than a missed one,
+and "the schedule fired" reads as "the work happened" in every instrument that records it.

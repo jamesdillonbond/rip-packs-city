@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — "make sure CLAUDE.md is up to date") — the memory file re-verified against the live tree and DB; two facts that lived ONLY in yesterday's ledger entry promoted into reference docs, and a filing whose TITLE would cause an outage corrected in place
+
+**Docs only — no code, no DB, no prod-state change.** The DB was read (four `execute_sql` calls, all read-only) purely to re-derive numbers CLAUDE.md quotes.
+
+**Re-verified rather than assumed — what CLAUDE.md claims, checked against the tree:** every `docs/reference/*.md` and `docs/` link resolves (0 missing); all four honesty helpers exist at the paths given; the 7 npm scripts it lists are all in `package.json`; the named guards (`no-fabricated-divisor-ratchet`, `insights-server-pages-bound-their-reads`, `paginated-range-requires-order-ratchet`) all exist; the three cited shas (`92aab30`, `a910745`, `fdf84ee4`) all still resolve post-purge. Live DB: `max_connections` **90** ✅, functions declaring a `statement_timeout` **195** ✅, collections **7 / 5 active** ✅. **Nothing in those was wrong** — recorded because a verification that finds nothing is the reading that stops the next session re-doing it.
+
+**Two numbers had drifted, both corrected:**
+1. **Repo map re-derived (was dated 08-20):** `route.ts` under `app/api/**` **454 → 453** (455 under `app/`, was 456). Every other figure held — 119 `page.tsx`, 295 `lib` modules, 161 `components`, 17 worker dirs (14 `*-proxy` + 3), 39 edge fns, 95 scripts.
+2. ⚠ **The `detect_stalled_pipelines` blind spot GREW: 67 of 150 (08-17) → 76 of 158 (08-22).** Same instrument both times (`distinct pipeline` over `pipeline_runs`, window 08-19 12:41Z → 08-22 14:27Z ≈ the documented ~73 h retention), which is the only reason the two are comparable. **The watchlist itself did not move — 102 rows / 83 active, unchanged — so all 9 new blind pipelines came from the FLEET growing, not from anyone deactivating an arm.** That is the curated-list failure mode as a *rate* instead of an anecdote: the list does not have to rot for its coverage to fall. Full working in [trust-board-and-safety.md](../reference/trust-board-and-safety.md).
+
+**Promoted out of yesterday's ledger entry, which is the one place nobody re-reads:**
+- 🚨 **The gate-key rotation ORDER** → [cron-and-schedulers.md](../reference/cron-and-schedulers.md). Set the secret → deploy the function from repo source → *only then* rotate the cron. Six remaining crons point at secrets that do not exist yet, and a gate-key rejection **writes no `pipeline_runs` row**, so rotating early fails those ticks CLOSED and the outage is indistinguishable from "never scheduled". Also records the 14-of-14 explicit `timeout_milliseconds` state (re-verified live 14:30Z) ⚠ **as an INSTRUMENT fix, not a throughput win.**
+- ⚠ **`send_later` self-binds and dies with its session** → [tooling-gotchas.md](../reference/tooling-gotchas.md). It is a self-bound one-shot Routine; when the session goes away it auto-disables (`ended_reason: "auto_disabled_session_gone"`) **silently**. Anything that must outlive the session needs a fresh-session Routine with a standalone runbook that opens with a capability check.
+
+⚠ **AND THE ONE WITH TEETH: `inbox/2026-08-16T1455Z-gate-key-rotation-item-is-CLOSED-all-14-verified.md` now opens with a correction banner.** Its sweep verified *shapes* — every job has a `?key=`, none is a placeholder, all match `^rpc_pls_` — which is **not** a check that the function on the other end accepts the key. **A title asserting closure is read by exactly the session that will not read the body**, and acting on this one takes pipelines dark. Body left verbatim.
+
+⚠ **NOT re-counted, and saying so rather than letting it read as verified:** the trust board's **38 arms** (08-17). Counting them means evaluating `v_rpc_trust_health`, which this file records as blowing the 60 s budget under the saturation band — and 07:30 PT is inside it. Read the sentinel's `Trust Health` check instead, per CLAUDE.md.
+
+**Size discipline:** CLAUDE.md measured with `node -e` (the binding instrument) at **39,930 of 40,000 — 70 characters of headroom**, down from 86 as found. The blind-spot correction cost 16 characters and buys a number that moved; nothing was displaced, and it stays under.
+
+**Verified:** `git status` clean before; ledger heading count +1; `find-swallowed-ledger-headings.awk` still prints **3**; `find-future-dated-ledger-headings.mjs` prints **0**.
+
+**Revert:** `git revert <sha>` (docs only; nothing to unwind in the DB).
+
 ### 2026-08-22 · COMMITTED-NOT-APPLIED + operational (Claude Code, interactive) — the `refresh_wmc_fmv_changed` temp-build rewrite given a real migration artifact, and both healthy-window applies armed
 
 **A migration file and two scheduled Routines. No DB or prod-state change in this entry — nothing has been applied.**

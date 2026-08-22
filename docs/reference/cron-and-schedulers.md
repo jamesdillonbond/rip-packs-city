@@ -115,6 +115,36 @@ a dispatch record, not an outcome, and `return_message` is `"1 row"` on every su
 `?key=` into the transcript — this has now happened twice. Use
 `regexp_replace(command, 'key=[^&'']+', 'key=***')`.
 
+### 🚨 Gate-key rotation — the order is load-bearing, and the filing that says it is CLOSED is wrong
+
+**Rotating a cron's `?key=` before the edge function's secret exists fails that pipeline's ticks
+CLOSED.** Six of the remaining gate-keyed crons point at secrets that are **not set yet**, so the only
+safe sequence is, in order:
+
+1. **set the secret** on the function (`GATE_KEY` / `*_GATE_KEY`),
+2. **deploy the function from repo source** so it reads the new secret (the `_OLD` dual-accept pattern
+   in the `rpc-edge-fn-deploy` skill makes this zero-downtime),
+3. **only then rotate the `cron.job` command.**
+
+⚠ **`inbox/2026-08-16T1455Z-gate-key-rotation-item-is-CLOSED-all-14-verified.md` says the item is closed
+and all 14 are verified. IT IS NOT CLOSED.** That sweep verified *shapes* — every job has a `?key=`, none
+is a placeholder, all match `^rpc_pls_` — which is a real and useful check but is **not** a check that the
+function on the other end accepts the key it is being sent. A session that reads that filing and proceeds
+to rotate will take those pipelines dark, and a gate-key rejection **writes no `pipeline_runs` row**, so
+the outage looks exactly like "never scheduled" (the 86-hour 08-11 outage's own signature). Rotation
+progress as last reported: **4 of 14** (jobid 26 `rpc-allday-resolve-rip-dist-api` most recently) —
+⚠ taken from an operator close report and NOT re-verified, because confirming a rotation means reading a
+key, which this file forbids; use the md5-fingerprint method in `tooling-gotchas.md` if you must compare.
+
+**Related, and now clean: every `net.http_*` cron caller passes an explicit `timeout_milliseconds`.**
+Jobs **83** / **84** (`rpc-pinnacle-mints-forward` / `-backfill`) were given `timeout_milliseconds := 240000`
+on 2026-08-22 (DB state, **in no commit** — see the ledger entry of that date, which is its only record),
+taking the fleet from 12 of 14 to **14 of 14** (re-verified live 2026-08-22 14:30Z). ⚠ **That fixed an
+INSTRUMENT, not a pipeline** — a 20 s job under a 5 s caller timeout has its reply abandoned *by
+arithmetic*, so `net._http_response` logged `timed_out` on one of the healthiest pipelines in the fleet.
+Do not credit it with a throughput win, and do not read the residual `timed_out` share as a before/after
+measurement without bucketing by the requested timeout.
+
 ## Reading a pipeline's health signals — four shapes learned 2026-08-17
 
 These are generalisations of specific incidents from one session. Each names the instance so it can be
