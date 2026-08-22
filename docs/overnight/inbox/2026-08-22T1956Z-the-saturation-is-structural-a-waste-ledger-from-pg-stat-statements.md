@@ -451,3 +451,100 @@ is a **different board**. Confirm which one is intended before changing the filt
   zero prepared transactions. Nothing is holding the horizon; the VM is being re-dirtied by the indexers'
   own constant upsert traffic. A manual VACUUM would help for minutes and then decay, while adding IO to a
   saturated instance now. **Not worth doing.**
+
+---
+
+## 8. After the three materialisations: what is left, what is NOT worth doing, and a clean marker
+
+Filed 2026-08-22 ~22:58Z, same session. **Two of the three items below are NEGATIVE results** — recorded
+because a wrong "obvious next step" costs more than an unrecorded one.
+
+### 8.1 ⚠ `pg_stat_statements` HAS STARTED EVICTING — `dealloc` is now 1, was 0
+
+Every percentage in sections 0–7 was true over a COMPLETE population. It no longer is: the entries this
+session added (three MVs, three refresh functions, dozens of EXPLAINs) pushed the table past
+`pg_stat_statements.max = 5000` and it has begun discarding. **Re-check `dealloc` before quoting a
+"% of all reads" figure again**, and treat totals as lower bounds once it is non-zero.
+
+### 8.2 ⛔ CANDY BOARDS — MEASURED, AND NOT WORTH MATERIALISING. Do not "finish the set".
+
+The obvious next step after materialising deals / panini / first-mint is the seven `candy_*` boards
+(~345 GB/window combined). **The arithmetic says no**, and it says no because of the very correction
+that made panini a win:
+
+| board | reads/h | MB per read | MB/h now | gb/window |
+|---|---|---|---|---|
+| `candy_scarcity_board` | 2.64 | 95 | 250 | 64 |
+| `candy_player_board` | 3.60 | 58 | 208 | 53 |
+| `candy_parallel_premium` | 3.78 | 53 | 201 | 51 |
+| `candy_offer_spread_board` | 3.78 | 53 | 200 | 51 |
+| `candy_special_serials_board` | 3.80 | 41 | 156 | 40 |
+| `candy_pack_market` | 4.52 | 33 | 148 | 38 |
+| `candy_deals_board` | 9.45 | 10 | 96 | 25 |
+| `candy_secondary_board` | 10.59 | 9 | 91 | 23 |
+
+A `REFRESH ... CONCURRENTLY` measured **1.4–5× the cost of one read** on the three boards actually built
+(panini 356 MB vs 71; first-mint 73 vs 52; deals 104 vs 78). At 2 refreshes/h that puts every candy board
+between **marginal and a net loss** — `candy_scarcity` at 2.64 reads/h would cost 266–950 MB/h to save
+250. **Seven MVs, seven unique keys, seven RLS checks and seven freshness instruments, for somewhere
+between nothing and a small loss.** ⚠ The reason panini won at 20.5 reads/h and candy loses at 2.6–10.6
+is the whole rule in one line: **materialising pays when `refresh_rate × refresh_reads <
+read_rate × read_reads`, and candy's read rates are simply too low.**
+
+### 8.3 The impossible-parallel invariant is SCANNED TWICE, 4× a day each — 183 GB (2.2%)
+
+`raise_impossible_parallel_circ()` (pg_cron 219, `52 */6`) and `rpc_thp_leg_impossible_parallel()`
+(pg_cron 324, `48 0,6,12,18`) run the **same** join —
+
+```sql
+FROM editions e JOIN sales s ON s.edition_id = e.id
+WHERE e.collection_id = '<TS>' AND e.external_id ~ '::'
+  AND e.circulation_count > 0 AND s.serial_number > e.circulation_count
+```
+
+— one to FIX (`UPDATE ... RETURNING`, audited into `impossible_parallel_circ_raises`), the other purely to
+`count(*)` it into `rpc_trust_health_precompute`. **1,236 MB and 52.9 s per call for the self-heal;
+`duration_ms` 488,891 — 8.1 MINUTES — on the monitoring leg's last successful run.** The leg fails 8 of
+25 runs on statement timeout.
+
+⚠ **The cost is NOT a partition seq-scan — I checked and that hypothesis is wrong.** The plan already uses
+per-partition `sales_*_edition_id_*_idx` index scans. The 1.2 GB is ~791k HEAP fetches, because
+`serial_number` is not in the `(edition_id, sold_at)` index so every candidate row must be read to
+evaluate the filter. ⚠ `idx_sales_20XX_ts_edserial_collide (edition_id, serial_number, nft_id)` would be
+index-only — but it is PARTIAL on `nft_id IS NOT NULL`, which the query does not assert, so it is not
+usable without changing what the query counts.
+
+⚠ **NOT a no-op — do not gate it off.** 61 raises in the last 7 days, 176 in 30, most recent 0.4 days ago.
+
+**The fix is a trust-board SEMANTICS decision, which is why it is filed rather than shipped:** the leg
+could read `impossible_parallel_circ_raises` instead of re-scanning, but that measures *"how many were
+fixed last cycle"*, not *"how many are unfixed right now"* — a different metric, and the arm's threshold
+is built on the second. Someone who owns the trust board should pick. A safe half-step: the leg is
+scheduled at `:48`, four minutes BEFORE the `:52` self-heal, so it deliberately measures the pre-heal
+backlog; running it just after would measure the invariant itself and hit a warm cache.
+
+### 8.4 ⚠ REFUTED while investigating 8.3 — the `999` is CORRECT, do not "fix" it
+
+`rpc_thp_leg_impossible_parallel()` has `EXCEPTION WHEN OTHERS THEN INSERT ... VALUES (..., 999, ...)`,
+which reads exactly like this repo's headline defect class: a failed read published as a measurement.
+**It is not.** `v_rpc_trust_health` maps *any* precompute row older than 24 h to `999` itself
+(`CASE WHEN p.computed_at < now() - '24:00:00' THEN 999 ELSE p.value END`), so **999 is the established
+fail-loud sentinel across the whole precompute layer** and the leg is conforming to it. Writing 999 on a
+timeout is the honest thing to do. Recorded so the next reader does not "fix" a working alarm.
+
+### 8.5 Clean measurement marker — 2026-08-22 22:57:47Z
+
+⚠ **The 20:41→22:57 window is USELESS for judging tonight's changes**: it reads 18.12 MB/s against a
+9.07 MB/s baseline, but it contains three MV builds, ~12 `EXPLAIN ANALYZE`s (one 228 MB), a 168 MB
+`count(*)`, and repeated `EXCEPT` comparisons that each run a board view twice. **It measures the work
+being done, not its effect.** Diff from this marker instead, after a quiet hour:
+
+| counter | value at 22:57:47Z |
+|---|---|
+| `sum(shared_blks_read)`, all statements | **1,102,510,232** blocks |
+| `sum(total_exec_time)`, all statements | **4,262,773** s |
+| reads on the 3 materialised board views | **79,501,349** blocks |
+| `dealloc` | **1** ⚠ (was 0 — population no longer complete) |
+
+The three board-view counters should now be almost FLAT (they are served from MVs); the growth moves to
+`refresh_*` instead. That per-statement comparison is attributable in a way the whole-DB rate is not.
