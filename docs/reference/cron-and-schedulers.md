@@ -271,41 +271,74 @@ read shows a flawless weekly pipeline. ⚠ Same family as the documented *"a byt
 much the signature of a CACHE HIT as of a correct change"* — **the tell is the identity of the number, not
 its size.** Diff the value against prior runs; a constant is a hypothesis, not health.
 
-### 2b. The Dune spend budget — what stops us is DATAPOINTS, and until 2026-08-22 nothing counted them
+### 2b. The Dune spend budget — two meters, and one walk is 87.7% of the month
 
-Dune bills two meters. The credits gauge on dune.com is **not** the one that stops the lanes: on 2026-07-19 it
-read ~900 of 2,500 (comfortable) while the API answered `HTTP 402 … would exceed your configured datapoint
-limit per billing cycle`. **Datapoints ≈ rows returned**, so the lever is ROWS, not query count. On 2026-07-24
-the cycle reset at 00:00 UTC and both lanes had spent the entire month by **06:11** — every lane walks flat out
-until the API refuses, which is the DESIGNED behaviour of an unbounded walk, not an accident.
+Dune bills two meters and the credits gauge on dune.com is **not** the one that stops us: it read ~900 of
+2,500 on 2026-07-19 while the API was already answering `HTTP 402 … would exceed your configured datapoint
+limit per billing cycle`. **Plan (operator-confirmed 2026-08-22): 1,000,000 datapoints + 2,500 credits per
+cycle, resetting on the 24th (UTC).**
 
-**Shipped 2026-08-22** (migration `audit_20260822_dune_datapoint_budget_ledger`, `lib/dune/budget.ts`):
+🚨 **The arithmetic that decides the whole design.** `ownership-sync-dune` walks every dune-sourced ownership
+row: **146,100 rows × 6 columns = 876,600 datapoints = 87.7% of the entire cycle, in one run.** The weekly
+cadence it has been on is not merely wasteful, it is impossible — and the 08-10 and 08-17 402s were simply the
+second walk of a month meeting a limit the first had spent. No budget setting changes that; the ways out are
+incremental mode (`DUNE_OWNERSHIP_INCREMENTAL`, needs a `{{set_ids}}` param on the Dune query), a monthly
+cadence, or fewer columns (datapoints are rows × COLUMNS, so dropping one of six saves a flat 16.7%).
 
-- **`dune_api_usage`** — append-only ledger, one row per Dune call, written **per page** (a run killed at
-  `maxDuration` has still spent what it bought). `rows_returned` is exact; `datapoints_est` = rows × columns is
-  an estimate and **nothing enforces on it**.
-- **`dune_budget_state`** — one row: `cycle_anchor_day` (24, derived from the observed 07-24 reset — re-derive
-  it against the Dune billing page), `day_row_cap` (150,000 rows/UTC-day: one full ownership walk fits, a
-  second the same day does not), `cycle_row_cap` (**NULL = the plan's true limit is unknown**; a guess would be
-  a fabricated number), and `paused` — a one-row kill switch for every lane, no deploy.
-- **`dune_budget_status()`** — asked before each purchase. ⚠ **Fails CLOSED**: unreadable or unconfigured
-  authorises **0 rows**, because "cannot read the policy" must never mean "spend freely". A tick stopped by a
-  configured cap logs `ok=true` + `extra.budget_stopped` (paced, not failed); one stopped because the budget
-  could not be READ logs `ok=false` (an unknown state must not report success).
-- Both cursored lanes stop at a **window boundary**, where the cursor only advances on a completed window, so
-  pacing is resumable and loses nothing. The budget is read **lazily**, so the ~24 drained no-op ticks/day of
-  `sales-seller-recovery-dune` still cost nothing.
+⚠ **Two numbers describe that walk and they are NOT interchangeable.** `pipeline_runs.rows_found` is what the
+last EXECUTION returned (114,083); `count(*) from topshot_ownership where source='dune'` is the TABLE, which
+accumulates across executions (146,100). The walk PAYS for the first, but the reservation must be sized to the
+second — a reservation the workload outgrows fails silently, as a lane that stops starting. Inferring the
+budget from `rows_found` understated it by 28% and shipped a `min_start` below the walk it was gating.
 
-⚠ **The ledger only sees traffic through the routes.** Queries run from dune.com, the Dune MCP server, or any
-other client spend from the same cycle and are invisible to it — a low `rows_cycle` is not proof the cycle is
-unspent.
+**Shipped 2026-08-22** — `dune_api_usage` (ledger, one row per call, written per PAGE), `dune_budget_state`
+(policy + `paused` kill switch), `dune_budget_allocation` (per-lane), `dune_budget_status(pipeline)` (the
+gate), `dune_spend_report()` (monitoring), and a **`Dune Spend (cycle)` sentinel arm**.
+
+| lane | reserved | cap | min_start |
+|---|---|---|---|
+| `ownership-sync-dune` | 900,000 | 900,000 | 880,000 |
+| `sales-ingest-dune` | 0 | 100,000 | 0 |
+| `sales-seller-recovery-dune` | 0 | 100,000 | 0 |
+
+- ⚠ **A reservation is protection from the OTHER LANES, not from a human.** Every other enabled lane's *unspent*
+  reservation is subtracted from what a lane may take, which is what "ownership first" means mechanically. An
+  ad-hoc query on dune.com still spends the same cycle and the ledger never sees it, so `datapoints_cycle` is a
+  floor on real usage, never a proof of what is left.
+- ⚠ **`min_start_datapoints` is the part that makes this safe for an ATOMIC walk.** The ownership walk restarts
+  at offset 0 every run, so a partial walk spends the datapoints *and* leaves the table capped at the offset
+  reached. The lane declines to start rather than buying 86% of a walk — `can_start`, not `allowance > 0`.
+- ⚠ **The CREDIT meter zeroes the datapoint allowance too.** Credits are bought by `/execute` (one per window,
+  ~10 credits est.) and are dominated by the CURSORED lanes — 37 + 43 window executions in one 2026-07-24
+  morning. A lane that cannot execute can only serve a stale cached execution, which is the spend that buys
+  nothing. `credits_per_execution` is an ESTIMATE (Dune prices by engine and we cannot read the charge back),
+  calibrated at ~11 from ~900 credits over ~80 executions; it is reported as `credits_est_*` everywhere.
+- **Fails CLOSED.** Unreadable, unconfigured, or a missing allocation row authorises zero. A tick stopped by a
+  configured cap logs `ok=true` + `extra.budget_stopped` (pacing is not a failure); one stopped because the
+  budget could not be READ logs `ok=false` (an unknown state must not report success).
+- **Monitoring:** the sentinel arm warns on three independent conditions — spend ≥95% of the cycle, credits
+  ≥90% spent, or a BURN RATE projected to exhaust before the cycle ends (spend% > elapsed% + 20). ⚠ The third
+  exists because the second failure mode has no threshold breach until it is too late: two walks in the first
+  days of a cycle read as "40% spent" and are already fatal. ⚠ The projection extrapolates the cycle average and
+  its dominant term is one 876k walk, so it swings hard right after a walk lands — read it beside
+  `cycle_datapoints_pct`, never alone.
+
+⚠ **Re-derive the walk cost from the LEDGER, which keeps indefinitely** (`pipeline_runs` retains ~73h against a
+weekly lane, which is why the 2026-08-03 design for this was blocked):
+
+```sql
+select occurred_at::date, sum(datapoints_est) as walk_datapoints, sum(rows_returned) as rows
+  from public.dune_api_usage
+ where pipeline = 'ownership-sync-dune' and endpoint = 'results'
+ group by 1 order by 1 desc;
+```
 
 ⚠ **`ownership-sync-dune` used to re-buy its whole cached execution on every failed refresh.** The route walked
 `/results` "so the table is never emptied", but a failed refresh means `/results` returns the SAME execution
-already ingested — which is exactly why §2 below sees a byte-identical `rows_written`. Two of every three
-weekly runs in a cycle paid full price for rows already held. Since 2026-08-22 the walk runs only when it can
-be shown to add something (empty table, or fewer rows held than the cached execution carries, read with one
-`limit=1` probe); `?forcewalk=1` overrides. The honesty contract is unchanged: a stale run is still `ok=false`.
+already ingested — which is exactly why §2 below sees a byte-identical `rows_written`. Since 2026-08-22 the
+walk runs only when it can be shown to add something (empty table, or fewer rows held than the cached execution
+carries, read with one `limit=1` probe); `?forcewalk=1` overrides. The honesty contract is unchanged: a stale
+run is still `ok=false`.
 
 ### 3. An `ok` that ANDs every step's error slot can never be true if any step is EXPECTED to be cut off
 
