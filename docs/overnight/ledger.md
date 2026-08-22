@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Cowork cloud — logged retroactively by a later Claude Code session) — pg_cron 83/84 given an explicit `timeout_milliseconds`; **the change exists in NO commit and this entry is its only record**
+
+🚨 **DB STATE, NOT CODE — there is no sha to revert and nothing in the repo would tell you this happened.** The 08-18 filing's suggestion ("small, NOT urgent, unshipped") was applied: `cron.job` **83** (`rpc-pinnacle-mints-forward`) and **84** (`rpc-pinnacle-mints-backfill`) now pass `timeout_milliseconds := 240000` to `net.http_*`. **Re-verified live at 2026-08-22 07:15 PT: both carry 240000, and 14 of 14 `net.http_*` cron callers now pass an explicit timeout — previously 12 of 14.**
+
+⚠ **THIS FIXED AN INSTRUMENT, NOT A PIPELINE — do not credit it with a throughput win.** `ingest-pinnacle-mints` was healthy before and is healthy now: **187 runs / 6 h, zero `ok = false`, 44,178 rows written** (forward 32 runs @ 4.4 s avg, backfill 155 @ 15.6 s). The defect was that a 20 s job under a 5 s caller timeout has its reply abandoned *by arithmetic* on every tick, so `net._http_response` recorded `timed_out` on one of the fleet's healthiest pipelines.
+
+**Fresh reading of the instrument, stated as a reading and not a proof.** Over pg_net's full ~6 h retention window (662 responses, oldest 08:15Z): **185 `timed_out` = 27.9%**, hourly range 14.6–42.9%. The 08-18 filing measured **51–52%** on the same instrument. ⚠ **Different day, different window, no control** — this is consistent with removing the 168-strong 5000 ms bucket and is *not* a before/after measurement. Anyone wanting the causal claim must bucket by requested timeout.
+
+⚠ **THE REMAINING FAILURES ARE NOT THIS CHANGE, AND SAYING SO IS THE POINT.** In the same 6 h, `cron.job_run_details` shows **13 failures on jobid 84, 1 on 83, 1 on 26** — every one of them `job startup timeout`, i.e. **pg_cron could not launch a background worker at all**, so the command never ran and no timeout of ours was in play. They cluster 09:08–13:40Z, and **26 and 83 failed in adjacent minutes (09:17Z / 09:16Z)** — an unrelated job failing in the same minute is the signature of a global condition, consistent with the documented 20-hour disk-IO band. Do not read them as a regression from 240000.
+
+**Gate-key rotation moved: jobid 26 (`rpc-allday-resolve-rip-dist-api`) rotated — 4 of 14.** Health after rotation: 5 succeeded / 1 `job startup timeout` in 6 h. ⚠ **Taken from the operator's close report and NOT re-verified here** — confirming a rotation means reading the key, which this file's own secret-safety rule forbids.
+
+🚨 **THE OUTAGE-SHAPED TRAP, RECORDED HERE BECAUSE THE MEMORY FILE THAT CARRIES IT IS NOT IN THIS REPO.** The rotation item was previously marked **"✅ CLOSED 08-16, all 14 verified"** (`inbox/2026-08-16T1455Z-gate-key-rotation-item-is-CLOSED-all-14-verified.md`). **It is not closed.** Six of the remaining crons point at secrets that do not exist yet, so **rotating them before the secrets are set fails those ticks CLOSED**. Safe sequence, in order: **set the secret first → deploy the function from repo source → only then rotate the cron.** A session that reads the "CLOSED" filing and proceeds will take those pipelines dark.
+
+**Revert** (verified as a dry run — 32 bytes removed from each command, no `timeout_milliseconds` left behind; NOT executed):
+
+```sql
+SELECT cron.alter_job(jobid, command => regexp_replace(command, ',\s*timeout_milliseconds\s*:=\s*240000', ''))
+FROM cron.job WHERE jobid IN (83, 84);
+```
+
+⚠ **Provenance, stated because it bounds how much to trust the above.** The Cowork session that made the change wrote a paste-ready entry into a close doc (`claude/session-close-2026-08-22-cowork-cloud.md`) that **exists nowhere in this repo or in a later sandbox**. Every number above was re-measured against the live DB rather than copied from that doc; the two items taken on report alone (the rotation count, the six missing secrets) are labelled as such. **A record that lives only in a session's own sandbox is not a record.**
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — session wrap-up) — two durable lessons promoted out of where nobody would find them, and the scheduled apply re-armed because a self-bound routine dies with its session
 
 **Docs only, plus one operational change to a scheduled Routine.**
