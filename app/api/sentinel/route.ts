@@ -502,6 +502,18 @@ export async function POST(req: NextRequest) {
           `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
         value: `${basePct}% base high+med`,
       });
+    } else {
+      // THREE states, not two. `error` null with `data` null is a read that
+      // returned no payload — it is NOT an error and it is NOT a zero tally.
+      // Without this branch the arm pushed nothing and DISAPPEARED from the
+      // sentinel, which is the unfalsifiable-alert class: the headline accuracy
+      // metric would read as "not among today's problems" precisely when it
+      // could not be read at all. Never substitute a number here.
+      checks.push({
+        name: "FMV Confidence (canonical TS)",
+        status: "warn",
+        detail: "RPC returned no payload (no error, no rows) — confidence split is unreadable, not zero.",
+      });
     }
   } catch (e: any) {
     checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `Exception: ${e.message}` });

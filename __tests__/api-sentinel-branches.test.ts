@@ -84,7 +84,7 @@ beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "sentinel-token"
 })
 
-interface Check { name: string; status: string; detail: string }
+interface Check { name: string; status: string; detail: string; value?: string }
 async function run(over: Fixtures = {}, stubs: FetchStub[] = [sniperOk, telegramOk, resendOk]) {
   const fixtures: Fixtures = { ...greenFixtures(), ...over }
   state.sb = makeInstrumentedSupabaseFixture(fixtures).fixture
@@ -174,6 +174,21 @@ describe("sentinel — confidence / coverage / leak arms", () => {
   it("warns on a confidence RPC error", async () => {
     const r = await run({ "rpc:sentinel_fmv_confidence_canonical_ts_split": { data: null, error: { message: "boom" } } as never })
     expect(chk(r, "FMV Confidence (canonical TS)").status).toBe("warn")
+  })
+  // A no-error/no-payload read used to fall through `else if (data)` and push
+  // NOTHING, so the headline accuracy arm vanished from the report rather than
+  // reporting that it could not be read. The assertion is therefore that the
+  // arm is PRESENT and states no percentage — not merely that some error text
+  // exists somewhere. Asserting presence-of-a-message would pass on a version
+  // that also published a fabricated "0%".
+  it("keeps the confidence arm present, and claims no percentage, when the RPC returns no payload", async () => {
+    const r = await run({ "rpc:sentinel_fmv_confidence_canonical_ts_split": { data: null, error: null } as never })
+    const arm = chk(r, "FMV Confidence (canonical TS)")
+    expect(arm).toBeDefined()
+    expect(arm.status).toBe("warn")
+    // The false claim is a share-of-prices figure derived from a read that returned nothing.
+    expect(arm.detail).not.toMatch(/\d+(\.\d+)?\s*%/)
+    expect(arm.value ?? "").not.toMatch(/\d+(\.\d+)?\s*%/)
   })
   it("warns when live edition coverage is below the threshold", async () => {
     const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 500 }], error: null } as never })
