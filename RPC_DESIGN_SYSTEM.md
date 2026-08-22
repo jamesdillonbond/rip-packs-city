@@ -16,7 +16,7 @@ Run through this on **every** edit. If any box can't be checked, stop and re-rea
 - [ ] Sole exception: `ConsoleGreeting.tsx` `console %c` styling
 - [ ] If file is under `app/(collections)/[collection]/*`: NO header / nav / ticker in this file — the layout owns those
 - [ ] Per-collection accent: ensure `[data-collection="..."]` lives on an ancestor before referencing `var(--rpc-accent)` (the attribute is what binds the per-collection color)
-- [ ] Touch targets ≥44px on mobile-reachable elements
+- [ ] 44px tap AREA on navigation + primary actions (§9 — filter chips are exempt by decision; `.rpc-tap44` raises a hit area without changing the look)
 - [ ] No new Supabase client instances — import from `lib/`
 - [ ] No bypassing FCL for Flow calls
 - [ ] If new page: OG metadata via `/api/og/collection?id={slug}&page={page}`
@@ -374,7 +374,29 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 
 ## §9 — Mobile
 
-- 44px minimum touch targets on anything tappable
+- **44px minimum TAP AREA on navigation and primary actions.** ⚠ Restated 2026-08-22 from
+  "on anything tappable", because that version was **violated 86 times** and a floor nobody can
+  satisfy stops being a rule anyone checks. What the floor now binds, and what it deliberately
+  does not:
+  - **BINDS:** the bottom `MobileNav` tabs, the collection tab bar (`.rpc-coll-tab`), the
+    collection switcher pills, the theme toggle, the anon Sign-in pill, and any primary CTA —
+    anything where a mis-tap costs a page load rather than a re-tap.
+  - **EXEMPT, on purpose:** in-view filter controls — `.rpc-filter-button` (31px), `.rpc-chip`
+    (27px), `.rpc-filter-select` (36px), `.rpc-filter-toggle` (31px). RPC is a scanning tool;
+    a collector reading 200 moments on a phone is better served by density than by chrome, and
+    a mis-tapped filter is re-tapped in place. **This is a decision, not debt** — do not "fix"
+    it without a measurement showing mis-taps cost something.
+  - It is a **TAP AREA**, not a box size. Two sanctioned ways to reach it: grow the control
+    (right when it should look chunkier — the tab bar), or add **`.rpc-tap44`**, an invisible
+    `::after` overlay that raises only the hit area (right when the visible size is deliberate —
+    the theme toggle, the Sign-in pill, the switcher pills).
+  - ⚠ **`.rpc-tap44` can lose a stacking fight.** On the tab bar its lower half hit-tested to
+    `main.rpc-main`, which follows the nav in DOM order and paints over an un-z-indexed absolute
+    child — which is why that one grew its box instead. **Apply the class and run
+    `e2e/mobile-layout.spec.ts`; do not eyeball it.** That spec hit-tests the four extremes of the
+    44px area per control and fails on anything unreachable.
+  - ⚠ **jsdom returns a zero box for every element and coverage sees whether a line RAN, not what
+    it measured** — no unit test can observe this class. The browser monitor is the only instrument.
 - `MobileNav` is 5-tab — coordinate any new top-level route with it
 - Auth uses Supabase IMPLICIT flow; magic links return tokens in URL hash fragment. `/auth/confirm` parses `window.location.hash → setSession`.
 - Respect safe-area insets on full-bleed sections (`env(safe-area-inset-*)`)

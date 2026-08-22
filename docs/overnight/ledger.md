@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — DECIDED the 44px question: navigation clears the floor, filter density is now a written exception
+
+**CODE + the design-system rule.** Trevor delegated the call ("use your best judgement… especially as we look to continue to improve our UX"), so this closes the 86-control filing rather than re-asking.
+
+**THE DECISION, and the reasoning I would defend:** RPC is a SCANNING tool. A collector reading 200 moments on a phone is better served by dense 27–31px filter chips than by chrome, and a mis-tapped filter is re-tapped in place. **Navigation has no such defence** — a mis-tapped tab costs a page load. So: **the floor binds navigation and primary actions; in-view filter controls are EXEMPT, in writing.** ⚠ **The exemption is the load-bearing half.** A floor violated 86 times stops being a rule anyone checks — leaving §9 as "44px on anything tappable" was the option that looked conservative and actually cost the most.
+
+✅ **`RPC_DESIGN_SYSTEM.md` §9 rewritten** (and the §0 checklist line with it): what BINDS, what is EXEMPT by decision and must not be "fixed" without a measurement, that it is a **tap AREA and not a box size**, and the two sanctioned ways to reach it.
+
+✅ **Fixed, all MEASURED before and after in Chromium at 390x844 and 1440x900:**
+
+| control | before | after | how |
+|---|---|---|---|
+| `.rpc-coll-tab` x7 (PRIMARY tab bar) | **35px** | **44px** | grew the box |
+| collection switcher pills x5 | 30px | 44px hit area | `.rpc-tap44` |
+| theme toggle (12 routes) | **30x30** | 44x44 hit area | `.rpc-tap44` |
+| anon Sign-in pill (5 routes) | **20x60** | 44px hit area | `.rpc-tap44` |
+
+✅ **New `.rpc-tap44` in `app/rpc-tokens.css`** — an invisible `::after` overlay that raises ONLY the hit area, so a control whose visible size is deliberate keeps it. The overlay is a CHILD, so a click on it still targets the element.
+
+⚠ **THE TAB BAR GREW ITS BOX RATHER THAN USING THE CLASS, and that is a measurement, not a preference.** `.rpc-tap44`'s lower half hit-tested to `main.rpc-main` — it follows the nav in DOM order and paints over an un-z-indexed absolute child. Winning that fight would have put a 4.5px invisible strip over the top of the page content, **trading a nav mis-tap for a content one**. Tabs are also the control that SHOULD look chunkier. Page content shifts down 9px; horizontal overflow stays **0 at 390 and 320**.
+
+⚠ **CHECKED FOR CLICK THEFT, because an overlay that overflows can steal a neighbour's clicks.** Probe: every interactive element's own centre must still hit-test to itself. **Desktop theft 0 before and 0 after** — the decisive control. At 390px it is 7 before / 8 after; the delta is one filter chip crossing behind the FIXED bottom nav as content shifts 9px, not an overlay defect. ⚠ **Two false-positive classes cost me a wrong reading first:** `elementFromPoint` returns **null outside the viewport** (the tab bar and switcher row are `overflow-x:auto`, so a scrolled-out tab read as a broken hit area), and **`NEXTJS-PORTAL`** — the DEV error-overlay root, absent in production — intercepted several points.
+
+✅ **`e2e/mobile-layout.spec.ts` gained a navigation hit-area test** that asserts the PROPERTY, not either implementation: the four extremes of a 44px area per control must hit-test back to that control. A box check would pass the grown tabs and fail the overlays. It skips off-viewport points, asserts it checked ≥6 controls so a dead selector cannot pass quietly, and **negative control run: reverting the fixes reddens it.**
+
+⛔ **NOT changed: the ~70 filter-row controls.** That is the written exception, not an oversight.
+
+**Verified:** `test:coverage:components` exit 0, **3,007**; `npx tsc --noEmit` exit 0; all five guard scripts exit 0; `e2e/mobile-layout.spec.ts` **8/8** local.
+
+**Revert:** `git revert <sha>`. To keep the hit areas but restore the 35px tab bar, drop `minHeight: 44` from `components/collection-tab-bar.tsx` alone.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a broken MIRROR made a live procedure's drift check silently never run, and there was a third copy
 
 **What shipped.** `PROCEDURE` support in `scripts/check-db-pin-staleness.mjs` and
