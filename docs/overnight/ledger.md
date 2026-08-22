@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a ban-at-zero guard for the shape that let the accuracy arm disappear
+
+**What shipped.** `scripts/check-unhandled-third-state.mjs` + `__tests__/unhandled-third-state-guard.test.ts`
+(8 cases) + a blocking CI step. It bans one syntactic way of having only TWO states where the honesty canon
+requires three: `if (error) {…} else if (data) {…}` with **no final else**, so a read returning neither an
+error nor a payload falls through and renders **nothing**.
+
+**Why it is worth a guard rather than a note.** The one measured instance was the sentinel's
+`FMV Confidence (canonical TS)` arm — the roadmap's headline metric — fixed earlier today. It did not warn,
+did not error and did not show zero; it **vanished from its own report**. Absence in an alert reads as *"not
+among today's problems"*, which is the unfalsifiable class: its output is silence, so there is nothing to
+falsify. A comment in that file would only ever be read by someone already in it.
+
+**Population: 1, now 0** — measured across **1,297** `.ts`/`.tsx` files under `app/ lib/ components/ workers/
+supabase/functions`. So it ships as a **ban at population zero**, per CLAUDE.md's preference for that over an
+allowlist, and it can never punish its own success.
+
+⚠ **The guard carries BOTH controls internally and runs them BEFORE it reports.** A detector that has quietly
+stopped matching prints `0 violations` and is indistinguishable from a clean tree — so it flags a synthetic
+two-branch fixture (must fire) and a synthetic three-branch fixture (must not), and exits 1 if either control
+misbehaves. It also **asserts the count it inspected**: 0 files fails, and on the live tree fewer than 500
+fails, because a collapsed count means the walk lost a root directory, not that the tree got clean. That is
+the `check-tree-corruption.mjs` theatre (`0 file(s) checked, exit 0`) written into a precondition.
+
+**Verified end-to-end, not just green:** run against the pre-fix tree (`510a9bd13`'s `route.ts`) it exits 1
+and names `route.ts:479`; against an empty tree it exits 1 with *"inspected 0 files"*; against the live tree
+it exits 0 over 1,297 files. `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.15% statements) · all five
+repo guards exit 0.
+
+**Revert path:** `git revert` the commit whose message begins `feat(guard): ban the two-state` (find by
+message, not by a recorded sha), which removes the script, its test and the CI step together. No DB or prod
+state touched.
+
 ### 2026-08-22 · DECIDED (Claude Code, interactive) — both open decisions closed, and the accuracy meter's arm could vanish from its own report
 
 **Decision 1 — pg_cron jobid 70 / the `cron_heavy` privilege question: do NOT grant, because no grant is
