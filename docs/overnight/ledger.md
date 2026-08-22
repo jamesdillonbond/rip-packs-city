@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test+CI) — 4 more leaks that a FILE-level guard would have called clean, and a handler-scoped guard so the class cannot regrow
+
+**CODE + TEST + a blocking CI step. No DB, no migration.** Direct continuation of the leak commit an hour earlier, which fixed 5 sites and left 68.
+
+⚠ **I SET OUT TO BUILD A GUARD AND THE SCOPING FOUND MORE DEFECTS — that order matters.** Classifying the 68 by path (`/api/admin`, `/api/cron`) left 21 "user-facing", but that classifier was wrong: most were token-gated ingest routes that simply do not live under those prefixes. **Re-scoping on the AUTH GATE instead of the path** dropped it to 2 — and both turned out to be gated too, by `verifyAdminRequest`, a name my regex had not known.
+
+🚨 **THEN THE GRANULARITY CHANGED THE ANSWER AGAIN, AND THIS FILE PREDICTED IT.** CLAUDE.md records: *"a FILE-level secret grep defended a per-HANDLER exclusion, so a gated POST vouched for the ungated GET beside it (4 dishonest handlers)."* Re-measured per handler: **4 GET handlers leak `error.message` while their file's POST is token-gated** — `seed-golazos-badges`, `seed-allday-badges`, `badge-sync`, and `allday-pack-listings`. **A file-scoped guard calls every one of them clean.** ⚠ Same shape, same count as the recorded incident; I hit it because I re-read the rule before trusting my own file-level pass.
+
+✅ **All four fixed.** ⚠ `allday-pack-listings` GET was the worst of them — it serves **product data**, is anon-reachable, and returned `{ error: error.message, listings: [] }`: the driver message **and** an empty answer packaged with the failure. Verified before changing the body shape that it has **no in-repo consumer** (⚠ not claimed dead — Cowork artifacts sit outside the repo).
+
+✅ **NEW GUARD — `scripts/check-driver-message-leaks.mjs`, wired into `ci.yml` as a blocking step.** Splits every `app/api` route into its exported handlers and asks of **each one** whether **it** is gated. **Ban at population zero for ungated handlers.** Live reading: **595 handlers inspected, 0 ungated leaks, 53 gated operator sites ignored by design.**
+
+⚠ **DELIBERATELY NOT A BAN ON THE EXPRESSION.** ~53 gated sites are *correct* — operator surface reached with a secret, where the driver message is diagnostic. A blanket ban would red them all and the guard would be switched off, which is the "same expression, opposite correctness" split this file already records.
+
+⚠ **THE GUARD CARRIES ITS OWN POSITIVE CONTROL, and that is the part worth copying.** It **fails if the gated count ever reads 0** — because a clean result is only meaningful while the detector still matches something. A guard that silently stops matching otherwise reports success forever. It also asserts the handler count it inspected (the `check-tree-corruption.mjs` theatre trap) and fails, rather than passing, on an empty tree.
+
+⚠ **PROVEN RED BEFORE BEING RELIED ON, on the property that matters:** re-introduced the defect **in an ungated GET whose POST stayed token-gated** → exit 1 naming `GET`; empty root → exit 1, not a clean pass; restored → exit 0. **9 test cases** pin detection, the per-handler-vs-per-file distinction in both directions (a gated sibling does NOT excuse; a gate in the module *preamble* DOES), must-not-red-on-`apiErrorResponse`, must-not-red-on-a-message-that-is-only-LOGGED, cannot-pass-inspecting-nothing, and is-it-wired-to-CI.
+
+⚠ **An occurrence assertion earned its keep mid-edit:** the first patch attempt aborted on *"expected 1 occurrence, found 2"* — the literal appeared in both the GET and the gated POST of the same file. **Nothing was written** (the assert precedes the write; `git status` confirmed clean), and the replacement was redone **scoped to the GET handler's byte range**. A blind `replace()` would have silently rewritten the gated POST too.
+
+**Verified:** `npx tsc --noEmit` clean · **61 cases green** across the new guard suite, memory-doc-links, coverage-gates-wired-to-ci, alerts-deep and profile-achievements · all three node guards exit 0 · `ci.yml` parses as YAML.
+
+**Revert:** `git revert <sha>` — removes the guard, its test, the CI step and the four handler fixes.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive, code+test) — the `/api/sets` driver-message leak, found by grepping the EXPRESSION: 73 sites, 5 fixed, and 3 tests that pinned the leak as the contract
 
 **CODE + TEST. No DB, no migration.** Continuing the honesty backlog. ⚠ **The route I opened was not the defect I found** — I went to `app/api/alerts` for its unlooked reads, established those were a *labelled best-effort preview* (benign), and noticed on the way past that its catch returned `err.message` raw.
