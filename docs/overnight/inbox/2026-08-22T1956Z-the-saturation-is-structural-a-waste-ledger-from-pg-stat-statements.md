@@ -615,3 +615,76 @@ keeping up: `allday-unmapped-resolver` **211 runs / 377 rows / 73 FAILS (35%)** 
 `allday-unmapped-resolver-tail` **14 runs / 70 rows / 9 fails (64%)**, avg 113 s. ⚠ **Fixing the promoter's
 cost does not drain the backlog** — that needs the resolver's failure rate looked at, and it is
 external-API bound (Flow REST), not DB bound. Two separate problems that look like one.
+
+---
+
+## 10. WHERE to measure: cron failure is concentrated in SIX UTC hours, and 21–22Z is the worst window to judge from
+
+Filed 2026-08-22 ~23:15Z. **This section exists because I drew a wrong conclusion from a good-looking
+number and the control caught it. Read §10.2 before quoting any "it improved" reading.**
+
+### 10.1 The hour-of-day map (7 days, `cron.job_run_details`)
+
+| UTC hour | runs | fail % | cron hrs per wall hr | % of cron time ROLLED BACK |
+|---|---|---|---|---|
+| **09** | 1,177 | **25.0** | 1.99 | **45.1** |
+| **13** | 1,124 | **22.9** | 1.90 | **41.4** |
+| **03** | 1,150 | **21.6** | 1.85 | **49.6** |
+| **15** | 1,151 | **20.3** | 1.89 | **37.9** |
+| **12** | 1,226 | **16.2** | **3.75** | **49.6** |
+| **01** | 1,128 | **14.9** | 1.45 | **38.4** |
+| 06 | 1,267 | 4.1 | 2.60 | 26.4 |
+| 04 | 1,174 | 4.0 | 1.52 | 24.2 |
+| 16 / 18 / 07 / 14 | ~1,150 ea | 2.5–3.4 | 1.23–2.90 | 13.6–20.7 |
+| **21 / 22** | ~330 ea | **0.3** | **~0.6** | ~0 |
+
+**Six hours — 01, 03, 09, 12, 13, 15 UTC — carry 15–25% failure and 38–50% of their cron time rolled
+back. The other eighteen run 0.3–4%.** The instance is not uniformly saturated; it has a shape.
+
+⚠ **Total cron time does NOT explain the shape, so do not "fix" it by moving jobs out of the busy hours
+without checking.** Hour **18 has MORE cron time than hour 09 (2.90 vs 1.99) and 8× LESS failure**
+(3.2% vs 25.0%). Whatever gates these hours is not instantaneous concurrency — the burst-credit /
+disk-IO budget model in CLAUDE.md (credits deplete under sustained load, throttling to a 22 MB/s floor)
+fits the shape better than "too many jobs at once", because depletion depends on the PRECEDING hours,
+not the current one. **Not proven — the Supabase IO-metrics API would settle it, and this session could
+not reach it.**
+
+### 10.2 ⚠ MY OWN "IT IMPROVED" READING WAS TIME-OF-DAY, AND THE CONTROL KILLED IT
+
+After tonight's materialisations I measured the trailing 2 h and got **0 cron failures out of 333 runs,
+and cron duty cycle 0.51 vs a 1.54 baseline.** That looks like a decisive win. It is not:
+
+| same 21–22Z window | fail % | cron hrs/wall hr |
+|---|---|---|
+| **08-22 (today, post-change)** | **0.3** | **0.68 ← HIGHEST of the seven days** |
+| 08-21 | 0.3 | 0.62 |
+| 08-20 | 0.6 | 0.54 |
+| 08-19 | 1.5 | 0.54 |
+| 08-18 | 1.8 | 0.53 |
+| 08-17 | 0.6 | 0.58 |
+| 08-16 | 1.5 | 0.62 |
+
+**21–22Z is always quiet** — 0.3–1.8% every day for a week — and today's duty cycle is the HIGHEST of the
+seven because my own session's work is inside it. The "0% vs 6.4%" comparison was a 2-hour quiet window
+against a 24-hour average that is dominated by the six bad hours. ⚠ **A positive needs a no-change
+control, and this is what happens without one.**
+
+### 10.3 So: where the next session should measure
+
+- **Measure in hour 09 or 13 UTC**, against the same hour on prior days. Those are high-failure,
+  high-rollback, and stable week to week (so a change shows up), and neither contains this session's work.
+- ⛔ **Do NOT use 21–22Z** — it cannot show an improvement because there is nothing there to improve, and
+  it is contaminated today.
+- The attributable per-board signal is the `pg_stat_statements` counters on
+  `panini_squeeze_board` / `cross_collection_deals_board` / `topshot_first_mint_troph*`, which should now
+  be near-FLAT with growth moved to the `refresh_*` functions. That comparison does not depend on
+  hour-of-day at all and is the cleanest evidence available.
+- ⚠ `dealloc` is non-zero (§8.1), so whole-population percentages are now lower bounds.
+
+### 10.4 Independent confirmation of the biggest single consumer
+
+`rpc-refresh-wmc-fmv-changed` burned **21.14 hours inside those six bad hours alone** over 7 days — across
+42 wall-hours, i.e. a **50% duty cycle**, matching the 47% derived earlier from `pg_stat_statements` by a
+completely different instrument. It runs `7-57/10` (every 10 min, all day), so it is the constant FLOOR
+rather than the cause of the six-hour shape. It remains the largest single item in the database and its
+fix is still architectural (§4 / ledger 2026-08-22).
