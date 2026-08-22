@@ -8,6 +8,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — re-pinned the board-liveness instrument, and pinned the line that keeps a partial sweep honest
+
+**What shipped.** `public_board_liveness_sweep` re-pinned: a snapshot migration
+(`20260822203000_…_predictive_skip.sql`), the test's verbatim DDL, a new
+`public_board_liveness_history` fixture, its PINS entry, and **three new assertions**.
+Known-issues **#24** goes 4 open → **3**.
+
+⚠ **The drift is a coherent FEATURE, not rot** — and the slow-vs-empty classification the instrument exists
+for is unchanged. What is new: least-recently-probed **rotation**, a 14-day per-board **median** cost
+estimate (p50, deliberately not p90 — the header records that summing p90 overstates a sweep ~10×), a
+**predictive skip** that declines to START a board whose estimate will not fit the remaining budget (a
+running board cannot be preempted), and a `skipped` counter.
+
+🚨 **The property worth pinning is the LAST LINE of the skip branch, not the counter.** A skip *also* sets
+`budget_exhausted`. Without it a tick that quietly checked one board of four would return
+`probed=1, budget_exhausted=false` and read as **a clean sweep of a short watchlist** — the same false-green
+the budget path already guards, arriving by a different door. On an instrument whose output the operator
+uses to decide whether a public board is broken, that is the whole game.
+
+**Three new assertions, each mutation-tested and each killed by its intended case:**
+- delete `v_bust := true` from the skip branch → the *"a SKIP marks the tick inconclusive"* assertion reds;
+- delete the `n_probed > 0` first-board exemption → the skip-count assertion reds (the exemption is what
+  guarantees forward progress on a watchlist whose every board looks too expensive);
+- replace the rotation `ORDER BY s.checked_at NULLS FIRST` with plain alphabetical → the rotation
+  assertion reds.
+
+⚠ **The rotation assertion needs its OWN isolated tick, and the first draft failed because it did not have
+one.** Each sweep probes the least-recently-checked board and stamps it `now()`, so four assertion calls
+rotate through all four boards and destroy the ordering the check depends on. **That failure was the feature
+working**, not a bug — worth recording, because the obvious fix (loosen the assertion) would have been
+wrong; the right one is to re-seed and take exactly one tick.
+
+**Verified:** body hashes **`e5fe398d0b1ac6d330ab1e096cf04c9d`** across live `prosrc`, the test and the
+migration (transcription checked against the DB's own `md5(pg_get_functiondef)`, `583c04a9…`, not by eye) ·
+`npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.16%, 45156/48997) · 198 guard tests · **178** DB-invariant
+files on a local Postgres 16 · six repo guards exit 0. Anon-exec stated with the **marker, not a REVOKE**;
+`has_function_privilege` confirms anon/authenticated already false, service_role true.
+
+⚠ **The migration is deliberately NOT applied** — byte-identical to live, so applying it buys nothing and
+costs a `PGRST002` burst. **No DB or prod state changed.**
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): re-pin public_board_liveness_sweep`
+(find by message, not by a recorded sha), then delete the new migration file.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — DECIDED the 44px question: navigation clears the floor, filter density is now a written exception
 
 **CODE + the design-system rule.** Trevor delegated the call ("use your best judgement… especially as we look to continue to improve our UX"), so this closes the 86-control filing rather than re-asking.
