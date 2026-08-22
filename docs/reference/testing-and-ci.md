@@ -250,6 +250,58 @@ tolerance was fiction.
 
 ---
 
+### ⚠ Look for a monitor whose input set includes another monitor's OUTPUT
+
+**Displaced verbatim from CLAUDE.md on 2026-08-21** to make room for the exclusion-premise rule below,
+which is the same family and cost more. Nothing here changed:
+
+> ⚠ **Look for a monitor whose input set includes another monitor's OUTPUT** — a concierge health check
+> counted its own smoke suite's fixtures and reported an outage that was not happening.
+
+### ⚠ An exclusion justified by ANOTHER instrument is a claim about that instrument — 2026-08-21, 7 live defects
+
+The full case behind CLAUDE.md's one-line rule.
+
+Two of the repo's honesty guards skip the route tree, and both said why in code:
+
+    // app/api/** is the ROUTE tree — server code, already in the primary gate.   (client-failure-collapses-to-empty-ratchet)
+    /** Every .ts/.tsx outside `app/api`, which the primary gate already measures. */  (server-page-data-access-ratchet)
+
+**The exclusions are correct — neither guard is about routes. The REASON was false.** "The primary gate"
+is the vitest **coverage** gate. Coverage measures whether lines EXECUTE; it cannot see an unhandled
+error branch, **because the branch does not exist to be uncovered**. A happy-path route test gives an
+unguarded `const { data } = await supabase…` 100% coverage. So the sentence that read as "this is
+covered elsewhere" meant "nothing checks this".
+
+**What it cost:** 7 live instances found in one evening — 4 in Fast Break (incl. a market claim,
+"Not currently listed", published out of a failed `cached_listings` read) and 3 more in
+`cost-basis` / `market-movers` / `edition-stats`. `cost-basis` was the sharpest: a failed
+`collection_config` read collapsed to `null`, the caller reads null as "no filter requested", and the
+RPC then returned **every** collection the wallet holds inside a single-collection tab — a different
+question answered silently, about the reader's own money.
+
+**Measured population** (multi-line-aware detector, with a positive control):
+
+| tree | files | reads **with** `error` (control) | **without** |
+|---|---:|---:|---:|
+| `app/api/` | 453 | 492 | **259** (35%) |
+| `lib/` | 297 | 101 | **21** (17%) |
+| `workers/` | 17 | 11 | **0** |
+| `components/` | 161 | 0 | **0** |
+
+⚠ **My FIRST measurement said 32 — wrong by 8×.** The detector used `[^\n;]*?` between `await` and
+`.from(`, which **cannot cross a newline**, and this repo puts `.from()` on the next line. Caught only
+because the count barely moved after four fixes. **The positive control is what makes 259 a finding
+rather than a regex that matches everything.**
+
+⚠ **The remainder is NOT a to-do list.** A file-scoped version of this predicate is already recorded as
+producing 12 false positives, because "losing a buyer address degrades a FIELD while losing an event
+range moves the CURSOR — same expression, opposite correctness". Triage on: **does a swallowed error
+become a CLAIM?** `workers/` and `components/` are clean; `lib/`'s 21 are mostly concierge/ingest
+(off-limits) or benign (the `alerts.ts` ones are username lookups with an honest wallet-address
+fallback). Full triage tiers:
+`docs/overnight/inbox/2026-08-21T1945Z-259-route-reads-…`.
+
 ## The 2026-08-17/18 guard sweep — five guards, one shape (promoted from session log)
 
 Five separate guards were found defective in ~12 hours, and **every one failed the same way: the

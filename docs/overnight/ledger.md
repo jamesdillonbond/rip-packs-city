@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SHIPPED (Claude Code, interactive) — session wrap: the exclusion-premise rule promoted into CLAUDE.md by displacement, session log closed
+
+**Docs only — no code, DB or prod-state change.**
+
+✅ **PROMOTED to CLAUDE.md's "Guards, tests and instruments":** ⚠ *an exclusion justified by ANOTHER instrument is a claim about that instrument — check it can SEE the property.* Two honesty guards skip `app/api` as *"already in the primary gate"*; that gate is COVERAGE, which measures whether lines RUN, so **an unhandled `error` has no branch to be uncovered** and a happy-path route test covers it 100%. The sentence reading "covered elsewhere" meant "nothing checks this" — **7 live defects in one evening and 259 unlooked reads** (control 492). This is the third instance this session of the same shape (`degradedFromSource`'s "the clients already surface as an age" and `reconcile`'s `oldest_cache_h` were the others), which is what earned it a slot.
+
+⚠ **PAID FOR BY DISPLACEMENT, per this file's own rule.** The monitor-fed-by-another-monitor bullet was moved **verbatim** into `docs/reference/testing-and-ci.md` (it was mirrored NOWHERE, so deleting it would have lost it — I checked before cutting), and the `bash -e` bullet was compressed after **verifying its full case is mirrored at testing-and-ci.md:176–241**, including the `jq` exit-5 and the HTML-504 instance. Nothing was dropped without a verified home.
+
+⚠ **COUNTED WITH `node -e`, NOT `wc`, AND ITERATED RATHER THAN GUESSED.** First replacement landed at **40,367 — 367 OVER**, caught by an explicit in-script `if (len > 40000) throw`. Three measured trims later: **39,914, headroom 86** (from 80 before — the file leaves marginally better than it was found). For contrast `wc -c` reads **40,469** on the same file, 555 bytes over the true length: the multi-byte trap this file documents, live.
+
+**Also closed:** `docs/sessions/2026-08.md` extended with the second half of the session — the Fast Break four, the guard-exclusion root cause, the three further route fixes, the 8× detector error, the bounding measurement, and the three self-corrections.
+
+⚠ **STATED BECAUSE IT LIMITS THE WRAP-UP: the Supabase and Vercel MCP servers disconnected before this entry**, so nothing DB- or deploy-side was re-verified at close. Last confirmed state: **six consecutive green CI runs on `main`** (through `35e14290`), `tsc` 0, **1335 files / 14,446 tests**.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-21 · MEASURED (Claude Code, interactive) — the disk-IO budget RANKED (7,809 GB / 242h), and `collections.is_active` is NOT the public-visibility switch
 
 **Read-only, nothing shipped.** CLAUDE.md's standing guidance on the saturation is *"disk-IO-bound, NOT compute-bound — **fix expensive queries**, don't upgrade"* — a remedy with no list attached. Four open filings now converge on the same 20-hour band (deals ~80% refresh failure · cross-collection mats 5 days stale · `fmv-recalc` losing 19 h/day · a 60 s catalogue-query timeout I hit myself). This is the shared denominator, ranked, so the instruction is actionable.
