@@ -84,69 +84,7 @@ export const WARM_BOARDS: { key: BoardCacheKey; label: string }[] = [
   { key: "panini-squeeze", label: "Panini WC Squeeze" },
 ]
 
-/**
- * How many boards a single warm tick may run.
- *
- * WHY A CAP EXISTS AT ALL (measured 2026-08-22, pg_stat_statements over 10d18h with
- * dealloc=0, plus 516 warm ticks / 48h of pipeline_runs):
- *
- *   panini-squeeze failed 76.0% of warms, deals 74.8%, first-mint 56.8% — and
- *   `pipeline_runs.error` names ONE cause for every one of them,
- *   `canceling statement due to statement timeout`. That wall is service_role's
- *   `statement_timeout=30s` in `pg_roles.rolconfig`, which is why every board
- *   statement's `max_exec_time` is pinned at 29.4-29.9s.
- *
- * These boards are plain views (relkind='v'), recomputed per call at 52-95 MB and
- * 11.5-16.7s MEAN. Warming all five at once fires ~9 heavy view queries in parallel
- * (panini's fetch is PAGED, so it is several on its own) at an instance whose steady
- * state is already ~4.5 continuously-busy backends on 2 cores. Caught mid-measurement:
- * `pg_stat_activity` showed 7 backends ACTIVE, every one `wait_event_type='IO'`, all
- * on `cross_collection_deals_board`.
- *
- * ⚠ So the tick was manufacturing the contention that pushed its own queries past 30s,
- * and a KILLED query is the most expensive run of the tick — it performs the whole read
- * and stores nothing. 288 ticks/day of that is ~10% of the database's entire disk-read
- * volume, the majority of it discarded.
- *
- * 2 is chosen so the tick's peak concurrency is 2 rather than 5 while every board still
- * refreshes far inside BOARD_SNAPSHOT_STALE_CEILING_MS. ⚠ This does not trade freshness
- * for load: at a 57-76% failure rate the warm-everything loop was already delivering
- * `deals` and `panini-squeeze` at ~175-minute gaps, i.e. PAST the 120-minute ceiling.
- */
-export const WARM_BOARDS_PER_TICK = 2
-
-/**
- * Which boards this tick should warm: STALEST FIRST, capped at `perTick`.
- *
- * A never-warmed board (`ageMs === null`) sorts first — it is the one absence that is
- * definitely not fresh, and `stalestBoards` deliberately refuses to call it stale, so
- * nothing else would ever pick it up.
- *
- * ⚠ STARVATION IS THE POINT, NOT A BUG. A board that keeps timing out never refreshes,
- * so its age keeps growing and it holds a slot every tick — which is exactly the retry
- * budget a struggling board needs. The remaining slot rotates through the healthy
- * boards by age, so each of them still warms every ~20 minutes against a 120-minute
- * ceiling. Fairness by age beats round-robin here precisely because it is not fair.
- *
- * Pure and total: no I/O, and a comparator that can never return NaN (two unknown ages
- * compare equal rather than `Infinity - Infinity`).
- */
-export function selectBoardsToWarm(
-  ages: BoardSnapshotAge[],
-  perTick: number = WARM_BOARDS_PER_TICK
-): { warm: BoardCacheKey[]; skipped: BoardCacheKey[] } {
-  const rank = (a: BoardSnapshotAge) =>
-    a.ageMs == null ? Number.MAX_SAFE_INTEGER : a.ageMs
-  const order = [...ages].sort((x, y) => rank(y) - rank(x))
-  const n = Math.min(Math.max(perTick, 1), order.length)
-  return {
-    warm: order.slice(0, n).map((a) => a.key),
-    skipped: order.slice(n).map((a) => a.key),
-  }
-}
-
-/**
- * What a board's live-fetch closure returns. `ok` is true ONLY when every backing
+/** What a board's live-fetch closure returns. `ok` is true ONLY when every backing
  *  query succeeded — an errored/partial fetch must never be cached and must trigger
  *  the stale fallback. `rowCount` is stored for cron telemetry / observability. */
 export interface BoardLiveResult<T extends Record<string, unknown>> {

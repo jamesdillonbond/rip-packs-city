@@ -36,11 +36,8 @@ import {
   readBoardOrLive,
   warmBoard,
   withCacheMeta,
-  selectBoardsToWarm,
   BOARD_CACHE_FRESH_MS,
   BOARD_SNAPSHOT_TIMEOUT_MS,
-  WARM_BOARDS,
-  WARM_BOARDS_PER_TICK,
 } from "@/lib/insights/board-cache"
 
 const isoAgo = (ms: number) => new Date(Date.now() - ms).toISOString()
@@ -345,102 +342,5 @@ describe("readBoardOrLive — every leg of the ladder is time-bounded", () => {
     const res = await readBoardOrLive("deals", liveOk())
     expect(res.source).toBe("fresh-cache")
     expect(Date.now() - started).toBeLessThan(BOARD_SNAPSHOT_TIMEOUT_MS)
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// selectBoardsToWarm — the warm-tick rotation (2026-08-22)
-//
-// Pins the PROPERTIES, never the spelling: the cap, stalest-first, unknown-age
-// first, the partition being total, and the deliberate non-fairness. A test that
-// asserted a literal key order would redden on any WARM_BOARDS rename, which is
-// the failure mode this repo has already paid for three times.
-// ─────────────────────────────────────────────────────────────────────────────
-describe("selectBoardsToWarm", () => {
-  const age = (key: string, ageMs: number | null) =>
-    ({ key, ageMs, refreshedAt: null }) as any
-
-  it("caps the tick at perTick and returns the rest as skipped, losing nobody", () => {
-    const ages = [age("a", 1), age("b", 2), age("c", 3), age("d", 4), age("e", 5)]
-    const { warm, skipped } = selectBoardsToWarm(ages, 2)
-    expect(warm).toHaveLength(2)
-    // TOTAL partition. Without this a future "filter out boards we can't warm"
-    // could silently drop a board from BOTH lists and the cap assertion above
-    // would still pass — the board would just never warm again.
-    expect([...warm, ...skipped].sort()).toEqual(["a", "b", "c", "d", "e"])
-  })
-
-  it("warms the STALEST boards, not the first ones listed", () => {
-    const ages = [age("fresh", 1_000), age("stale", 9_000_000), age("mid", 60_000)]
-    expect(selectBoardsToWarm(ages, 1).warm).toEqual(["stale"])
-    expect(selectBoardsToWarm(ages, 2).warm).toEqual(["stale", "mid"])
-  })
-
-  it("puts a NEVER-WARMED board (unknown age) first", () => {
-    // stalestBoards() deliberately refuses to call a null age stale, so if this
-    // selector also skipped it, a board with no snapshot row would never be
-    // picked up by anything. Unknown is the one absence that is certainly not fresh.
-    const ages = [age("known", 9_000_000), age("never", null)]
-    expect(selectBoardsToWarm(ages, 1).warm).toEqual(["never"])
-  })
-
-  it("does not produce NaN when two ages are both unknown", () => {
-    // `(a.ageMs ?? Infinity) - (b.ageMs ?? Infinity)` is NaN for two nulls, and a
-    // comparator returning NaN is undefined behaviour — the array can come back in
-    // any order, including one that starves a board. Pinned as a real risk, not style.
-    const ages = [age("x", null), age("y", null), age("z", null)]
-    const { warm, skipped } = selectBoardsToWarm(ages, 2)
-    expect([...warm, ...skipped].sort()).toEqual(["x", "y", "z"])
-    expect(warm).toHaveLength(2)
-  })
-
-  it("keeps giving a permanently-failing board a slot, and rotates the other", () => {
-    // The starvation is intentional: a board that never refreshes stays stalest and
-    // keeps its retry budget. Asserting it explicitly so nobody "fixes" it into
-    // round-robin and quietly halves a struggling board's retries.
-    let broken = 100 * 60_000
-    let healthyA = 0
-    let healthyB = 0
-    const picks: string[] = []
-    for (let tick = 0; tick < 4; tick++) {
-      broken += 5 * 60_000
-      healthyA += 5 * 60_000
-      healthyB += 5 * 60_000
-      const { warm } = selectBoardsToWarm(
-        [age("broken", broken), age("healthyA", healthyA), age("healthyB", healthyB)],
-        2
-      )
-      picks.push(...warm)
-      for (const k of warm as string[]) {
-        if (k === "healthyA") healthyA = 0
-        if (k === "healthyB") healthyB = 0
-        // `broken` is never reset — that is the whole scenario.
-      }
-    }
-    expect(picks.filter((k) => (k as string) === "broken")).toHaveLength(4)
-    expect(picks).toContain("healthyA")
-    expect(picks).toContain("healthyB")
-  })
-
-  it("never returns an empty warm list for a non-empty watchlist", () => {
-    // A tick that warms nothing is indistinguishable from a tick that failed, and
-    // would let every snapshot age past the ceiling in silence.
-    for (const perTick of [-1, 0, 1]) {
-      expect(selectBoardsToWarm([age("a", 1), age("b", 2)], perTick).warm.length).toBe(1)
-    }
-  })
-
-  it("caps at the watchlist size when perTick exceeds it", () => {
-    const { warm, skipped } = selectBoardsToWarm([age("a", 1)], 99)
-    expect(warm).toEqual(["a"])
-    expect(skipped).toEqual([])
-  })
-
-  it("WARM_BOARDS_PER_TICK stays below the full watchlist, or the cap is a no-op", () => {
-    // A ban at population zero: if someone raises the constant to 5 the rotation
-    // silently reverts to the every-board-every-tick loop this replaced, and every
-    // test above still passes because they all pass perTick explicitly.
-    expect(WARM_BOARDS_PER_TICK).toBeGreaterThanOrEqual(1)
-    expect(WARM_BOARDS_PER_TICK).toBeLessThan(WARM_BOARDS.length)
   })
 })

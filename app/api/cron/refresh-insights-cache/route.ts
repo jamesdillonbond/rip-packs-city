@@ -18,8 +18,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   WARM_BOARDS,
-  WARM_BOARDS_PER_TICK,
-  selectBoardsToWarm,
   warmBoard,
   readBoardSnapshotAges,
   stalestBoards,
@@ -65,20 +63,11 @@ async function run(request: NextRequest) {
   const startedAt = new Date().toISOString()
   const startedMs = Date.now()
 
-  // ── ROTATION (2026-08-22) — this used to be Promise.all(WARM_BOARDS) ──────
-  // Every board, every tick, all in parallel. Measured, that tick was the largest
-  // avoidable load on the instance AND the reason its own queries died: see
-  // WARM_BOARDS_PER_TICK in lib/insights/board-cache.ts for the numbers. We now warm
-  // only the stalest WARM_BOARDS_PER_TICK boards, so peak concurrency is 2 instead
-  // of 5 and the boards that are actually behind get the retries.
-  //
-  // ⚠ This read happens BEFORE the warm and is deliberately a SECOND read of the
-  // ages — the post-warm read below is the honesty check and must observe what the
-  // warm actually achieved, so the two cannot be shared.
-  const agesBefore = await readBoardSnapshotAges()
-  const { warm, skipped } = selectBoardsToWarm(agesBefore)
-
-  const results = await Promise.all(warm.map((key) => warmBoard(key, BUILDERS[key])))
+  // Warm every board in parallel so one slow view can't serialize the others; each
+  // warmBoard is self-contained and never throws.
+  const results = await Promise.all(
+    WARM_BOARDS.map(({ key }) => warmBoard(key, BUILDERS[key]))
+  )
 
   const okCount = results.filter((r) => r.ok).length
   const rowsWritten = okCount
@@ -141,11 +130,6 @@ async function run(request: NextRequest) {
         warmed: okCount,
         total: results.length,
         boards: results.map((r) => ({ key: r.key, ok: r.ok, row_count: r.rowCount })),
-        // ⚠ `boards` covers only the boards this tick SELECTED. Recording the skipped
-        // set is not optional bookkeeping: without it a 2-of-5 tick is indistinguishable
-        // in the log from a 5-board tick where 3 boards vanished, and `warmed`/`total`
-        // would read as a coverage collapse to anyone diffing across the change.
-        rotation: { per_tick: WARM_BOARDS_PER_TICK, warmed_keys: warm, skipped_keys: skipped },
         // Cumulative view — queryable per board, so a streak is visible without
         // reconstructing it from per-tick rows (which prune at ~73h).
         stale_ceiling_min: Math.round(BOARD_SNAPSHOT_STALE_CEILING_MS / 60000),
@@ -171,7 +155,6 @@ async function run(request: NextRequest) {
     warmed: okCount,
     total: results.length,
     boards: results,
-    skipped: skipped,
     stale_boards: stale.map((a) => ({ key: a.key, age_min: Math.round((a.ageMs ?? 0) / 60000) })),
     never_warmed: neverWarmed.map((a) => a.key),
   })
