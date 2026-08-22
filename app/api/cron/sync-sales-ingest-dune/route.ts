@@ -28,6 +28,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import {
+  readDuneBudget,
+  recordDuneUsage,
+  columnCount,
+  type DuneBudget,
+} from "@/lib/dune/budget";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800; // Pro hard cap; the walk is bounded by HARD_BUDGET_MS.
@@ -149,6 +155,17 @@ async function run(req: NextRequest) {
     let windowsDone = 0;
     let drained = false;
     let lastWindow: string | null = null;
+    // ── Dune spend budget (2026-08-22) ──────────────────────────────────────
+    // ⚠ THIS IS THE LANE THAT BURNED THE 2026-07-24 CYCLE. It returned ~636,956
+    // rows across 37 windows before Dune refused, 90.2% of them discarded
+    // immediately as `skipped_unresolved` (docs/dune-budget-analysis-2026-07-26.md).
+    // Its Vercel schedule was retired on 07-28 and the route deliberately kept,
+    // so the guard belongs here NOW — the day someone re-adds the cron is the
+    // day it would otherwise repeat, and that is exactly when nobody is looking
+    // for a budget bug. Read lazily so a drained tick costs nothing.
+    let budget: DuneBudget | null = null;
+    let rowsAllowance = 0;
+    let budgetStopped = false;
 
     try {
       const { data: st, error: stErr } = await supabaseAdmin
@@ -167,6 +184,16 @@ async function run(req: NextRequest) {
           drained = true;
           break;
         }
+        if (budget === null) {
+          budget = await readDuneBudget();
+          rowsAllowance = budget.rowsAllowedNow;
+        }
+        // Stop at the WINDOW boundary: the cursor advances only on a completed
+        // window, so this is resumable and loses nothing.
+        if (rowsAllowance <= 0) {
+          budgetStopped = true;
+          break;
+        }
         const windowStart = new Date(
           Math.max(floor.getTime(), cursorEnd.getTime() - windowDays * 86_400_000)
         );
@@ -180,6 +207,13 @@ async function run(req: NextRequest) {
           headers: { Authorization: `Bearer ${proxySecret}`, "Content-Type": "application/json" },
           body: execBody,
           cache: "no-store",
+        });
+        await recordDuneUsage({
+          pipeline: PIPELINE_NAME,
+          endpoint: "execute",
+          queryId,
+          httpStatus: exRes.status,
+          note: lastWindow,
         });
         if (!exRes.ok) throw new Error(`execute HTTP ${exRes.status} (${lastWindow}): ${(await exRes.text()).slice(0, 200)}`);
         const execId = ((await exRes.json()) as { execution_id?: string }).execution_id;
@@ -234,6 +268,16 @@ async function run(req: NextRequest) {
           };
           const rows = j.result?.rows ?? [];
           found += rows.length;
+          rowsAllowance -= rows.length;
+          await recordDuneUsage({
+            pipeline: PIPELINE_NAME,
+            endpoint: "results",
+            queryId,
+            rows: rows.length,
+            columns: columnCount(rows),
+            httpStatus: res.status,
+            note: lastWindow,
+          });
 
           const mapped: IngestRow[] = [];
           for (const r of rows) {
@@ -275,6 +319,13 @@ async function run(req: NextRequest) {
       errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
     }
 
+    // Paced by a configured cap = did as told (ok). Stopped because the budget
+    // could not be READ = an unknown state, which must not report success.
+    if (budgetStopped && budget?.read === "failed") {
+      ok = false;
+      errMsg = errMsg ?? `dune budget unreadable: ${budget.reason ?? "unknown"}`;
+    }
+
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -296,6 +347,10 @@ async function run(req: NextRequest) {
           drained,
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
+          ...(budget
+            ? { budget_rows_allowed: budget.rowsAllowedNow, budget_rows_left: rowsAllowance }
+            : {}),
+          ...(budgetStopped ? { budget_stopped: true, budget_reason: budget?.reason } : {}),
         },
       });
     } catch (logErr) {

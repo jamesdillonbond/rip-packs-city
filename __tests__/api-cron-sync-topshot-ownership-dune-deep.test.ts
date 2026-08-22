@@ -13,7 +13,8 @@ import {
 //   - a configured ?norefresh=1 walk maps rows (deriving edition_external_id incl.
 //     the "::subId" parallel suffix) and upserts topshot_ownership by nft_id;
 //   - unmappable rows are skipped, not fatal;
-//   - an execute-HTTP failure falls through to the cached results (never empty);
+//   - an execute-HTTP failure does NOT re-buy the cached execution (2026-08-22),
+//     while still reporting ok=false + stale_cache;
 //   - a proxy results HTTP error flips ok=false;
 //   - an upsert error flips ok=false;
 //   - the auth guard.
@@ -38,9 +39,28 @@ const { GET } = await import("@/app/api/cron/sync-topshot-ownership-dune/route")
 
 const PROXY = "https://dune-proxy.example"
 
+// ── Dune spend budget (2026-08-22) ────────────────────────────────────────
+// Every lane now asks `dune_budget_status()` before it buys Dune rows, and the
+// guard FAILS CLOSED: an unreadable budget authorises nothing. So a suite that
+// omits this fixture does not test the walk at all — it tests the budget stop.
+// Overridable per test (spread first), which is how the stop paths are driven.
+const BUDGET_ALLOWS = {
+  "rpc:dune_budget_status": {
+    data: {
+      configured: true,
+      paused: false,
+      rows_allowed_now: 150000,
+      day_row_cap: 150000,
+      rows_today: 0,
+    },
+    error: null,
+  },
+} as const
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture({
+    ...BUDGET_ALLOWS,
     topshot_ownership: { data: null, error: null },
     "rpc:log_pipeline_run": { data: null, error: null },
     ...fixtures,
@@ -168,7 +188,14 @@ describe("sync-topshot-ownership-dune — inert + walk", () => {
 })
 
 describe("sync-topshot-ownership-dune — refresh fallthrough + failures", () => {
-  it("an execute HTTP failure still walks the cached results but reports ok=false + stale_cache", async () => {
+  // ⚠ INVERTED 2026-08-22, not deleted. This test used to pin "still walks the
+  // cached results", asserting p_rows_written = 1 on a failed refresh. That walk
+  // was the largest avoidable Dune purchase in the repo: /results necessarily
+  // returns the SAME execution the previous run already ingested, and live
+  // `rows_written` was byte-identical (114,083) across the 08-03 success and
+  // both 402 failures. The honesty half of the contract is unchanged and still
+  // asserted below; only the spend is gone.
+  it("an execute HTTP failure does NOT re-buy the cached results, and still reports ok=false + stale_cache", async () => {
     configure()
     const spy = install({})
     fetchMock = installFetchMock([
@@ -181,11 +208,14 @@ describe("sync-topshot-ownership-dune — refresh fallthrough + failures", () =>
 
     expect(fetchMock.calls.some((c) => c.url.includes("/execute"))).toBe(true)
     const log = terminalLog(spy.rpcCalls)
-    // The fallthrough is deliberate — the table is never emptied...
-    expect(log.p_rows_written).toBe(1) // cached results still landed
-    // ...but the run re-ingested last execution's rows and accomplished nothing,
-    // so it must not report success. This pipeline has no cadence-watchlist row,
-    // making ok=false its only alarm.
+    // Nothing was bought and nothing was written — assert the ABSENCE of the
+    // purchase, not merely the presence of a note about it.
+    expect(log.p_rows_written).toBe(0)
+    expect(log.p_rows_found).toBe(0)
+    expect(spy.writes.topshot_ownership ?? []).toHaveLength(0)
+    expect(String(log.p_extra.walk_skipped)).toContain("stale_cache")
+    // ...and the run still accomplished nothing, so it must not report success.
+    // This pipeline has no cadence-watchlist row, making ok=false its only alarm.
     expect(log.p_ok).toBe(false)
     expect(String(log.p_error)).toContain("stale cache")
     expect(String(log.p_extra.refresh_note)).toContain("execute HTTP 404")

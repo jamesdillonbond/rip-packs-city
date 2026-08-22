@@ -37,9 +37,27 @@ beforeAll(async () => {
   mod = await import("@/app/api/cron/sync-topshot-ownership-dune/route")
 })
 
+// ── Dune spend budget (2026-08-22) ────────────────────────────────────────
+// Every lane now asks `dune_budget_status()` before it buys Dune rows, and the
+// guard FAILS CLOSED: an unreadable budget authorises nothing. So a suite that
+// omits this fixture does not test the walk at all — it tests the budget stop.
+// Overridable per test (spread first), which is how the stop paths are driven.
+const BUDGET_ALLOWS = {
+  "rpc:dune_budget_status": {
+    data: {
+      configured: true,
+      paused: false,
+      rows_allowed_now: 150000,
+      day_row_cap: 150000,
+      rows_today: 0,
+    },
+    error: null,
+  },
+} as const
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures = {}) {
-  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  const spy = makeInstrumentedSupabaseFixture({ ...BUDGET_ALLOWS, ...fixtures })
   state.sb = spy.fixture
   return spy
 }
@@ -410,5 +428,211 @@ describe("POST /api/cron/sync-topshot-ownership-dune — configured walk (after 
     const row = logRow(spy)
     expect(row!.args!.p_ok).toBe(false)
     expect(String(row!.args!.p_error)).toContain("threw:")
+  })
+})
+
+// ── The Dune spend budget (2026-08-22) ──────────────────────────────────────
+// Context: this walk is ~114k rows x 6 columns per full pass, it ran weekly with
+// nothing counting it, and on 2026-07-24 a whole billing cycle's datapoints were
+// gone by 06:11. Two properties are pinned here — a lane with no allowance buys
+// NOTHING (not "less"), and a stale cache is never re-bought.
+describe("POST /api/cron/sync-topshot-ownership-dune — spend budget", () => {
+  const budget = (over: Record<string, unknown>) => ({
+    "rpc:dune_budget_status": {
+      data: { configured: true, paused: false, day_row_cap: 150000, ...over },
+      error: null,
+    },
+  })
+
+  it("no allowance: makes NO Dune request at all and logs an ok budget stop", async () => {
+    configureDune()
+    const spy = install(budget({ rows_allowed_now: 0, rows_today: 150000 }))
+    const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    // Assert the ABSENCE of the purchase. A stopped lane that still calls
+    // /execute has not saved anything — /execute is the call that 402s.
+    expect(fetchFn).not.toHaveBeenCalled()
+    const row = logRow(spy)
+    expect(row!.args!.p_ok).toBe(true) // paced as configured — not a failure
+    const extra = row!.args!.p_extra as any
+    expect(extra.budget_stopped).toBe(true)
+    expect(extra.budget_read).toBe("ok")
+  })
+
+  it("paused: the one-row kill switch stops the lane with no Dune request", async () => {
+    configureDune()
+    const spy = install(budget({ paused: true, rows_allowed_now: 0 }))
+    const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect((logRow(spy)!.args!.p_extra as any).budget_paused).toBe(true)
+  })
+
+  it("unreadable budget: buys nothing AND reports ok=false (an unknown state is not a success)", async () => {
+    configureDune()
+    const spy = install({
+      "rpc:dune_budget_status": { data: null, error: { message: "pool timeout" } },
+    })
+    const fetchFn = stubDune({ results: [{ json: { result: { rows: [okRow()] } } }] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    const row = logRow(spy)
+    expect(row!.args!.p_ok).toBe(false)
+    expect(String(row!.args!.p_error)).toContain("pool timeout")
+    expect((row!.args!.p_extra as any).budget_stopped).toBe(true)
+  })
+
+  it("mid-walk exhaustion stops at the page boundary and records where it stopped", async () => {
+    configureDune()
+    const spy = install(budget({ rows_allowed_now: 1000 }))
+    const fullPage = Array.from({ length: 1000 }, (_, i) => okRow({ nft_id: `n${i}` }))
+    stubDune({
+      results: [
+        { json: { result: { rows: fullPage }, next_offset: 1000 } },
+        { json: { result: { rows: [okRow({ nft_id: "tail" })] }, next_offset: null } },
+      ],
+    })
+
+    await mod.POST(
+      makeReq({ method: "POST", url: `${URL_BASE}?norefresh=1`, auth: "Bearer test-ingest-token" })
+    )
+    await runDeferred()
+
+    const row = logRow(spy)
+    const extra = row!.args!.p_extra as any
+    expect(row!.args!.p_rows_found).toBe(1000) // the second page was never bought
+    expect(extra.budget_stopped).toBe(true)
+    expect(extra.exhausted).toBe(false) // and it does NOT claim it finished
+    expect(extra.offset_reached).toBe(1000)
+  })
+
+  it("writes one ledger row per results page, with the exact rows and columns bought", async () => {
+    configureDune()
+    const spy = install(budget({ rows_allowed_now: 150000 }))
+    stubDune({ results: [{ json: { result: { rows: [okRow(), okRow({ nft_id: "n2" })] }, next_offset: null } }] })
+
+    await mod.POST(
+      makeReq({ method: "POST", url: `${URL_BASE}?norefresh=1`, auth: "Bearer test-ingest-token" })
+    )
+    await runDeferred()
+
+    const ledger = (spy.writes.dune_api_usage ?? []).flatMap((w) => w.rows)
+    expect(ledger).toHaveLength(1)
+    expect(ledger[0]).toMatchObject({
+      pipeline: "ownership-sync-dune",
+      endpoint: "results",
+      rows_returned: 2,
+      columns_returned: 5, // okRow(): nft_id, owner_address, set_id, play_id, serial_number
+      datapoints_est: 10,
+    })
+  })
+})
+
+describe("POST /api/cron/sync-topshot-ownership-dune — the stale-cache walk is not re-bought", () => {
+  // A failed refresh means /results returns the SAME execution the last run
+  // already ingested. Walking it cost a full ~114k-row purchase and wrote rows
+  // byte-identical to the previous run's (measured 08-10 and 08-17).
+  const stale402 = { execute: [{ status: 402 }] }
+  const probe = (total: number | null, rows = [okRow()]) => ({
+    json: { result: { rows, ...(total === null ? {} : { metadata: { total_row_count: total } }) } },
+  })
+
+  it("skips the walk when we already hold the whole cached execution", async () => {
+    configureDune()
+    const spy = install({ topshot_ownership: { data: null, error: null, count: 5 } })
+    const fetchFn = stubDune({ ...stale402, results: [probe(5)] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    const resultsCalls = fetchFn.mock.calls.filter((c) => String(c[0]).includes("/results"))
+    expect(resultsCalls).toHaveLength(1) // the limit=1 size probe, and nothing else
+    expect(String(resultsCalls[0][0])).toContain("limit=1")
+    expect(spy.writes.topshot_ownership ?? []).toHaveLength(0)
+    const row = logRow(spy)
+    expect((row!.args!.p_extra as any).walk_skipped).toBe("stale_cache_already_ingested")
+    expect(row!.args!.p_ok).toBe(false) // still honest: the run accomplished nothing
+  })
+
+  it("BOOTSTRAP CONTROL: an empty table still walks, so the skip cannot strand a first run", async () => {
+    configureDune()
+    const spy = install({ topshot_ownership: { data: null, error: null, count: 0 } })
+    stubDune({ ...stale402, results: [{ json: { result: { rows: [okRow()] }, next_offset: null } }] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect((spy.writes.topshot_ownership ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+    expect((logRow(spy)!.args!.p_extra as any).walk_skipped).toBeUndefined()
+  })
+
+  it("TRUNCATED-INGEST CONTROL: holding fewer rows than the execution resumes the walk", async () => {
+    configureDune()
+    const spy = install({ topshot_ownership: { data: null, error: null, count: 2 } })
+    stubDune({
+      ...stale402,
+      results: [probe(9), { json: { result: { rows: [okRow()] }, next_offset: null } }],
+    })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect((spy.writes.topshot_ownership ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+    const extra = logRow(spy)!.args!.p_extra as any
+    expect(extra.walk_skipped).toBeUndefined()
+    expect(extra.dune_rows_held).toBe(2)
+    expect(extra.cached_total_rows).toBe(9)
+  })
+
+  it("an unreadable row count skips rather than spends — `?? 0` there would buy the whole walk", async () => {
+    configureDune()
+    const spy = install({
+      topshot_ownership: { data: null, error: { message: "pool timeout" }, count: null },
+    })
+    const fetchFn = stubDune({ ...stale402, results: [probe(5)] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect(fetchFn.mock.calls.filter((c) => String(c[0]).includes("/results"))).toHaveLength(0)
+    expect((logRow(spy)!.args!.p_extra as any).walk_skipped).toBe("stale_cache_row_count_unreadable")
+  })
+
+  it("an unreadable cached size skips too (cannot prove the walk would add a row)", async () => {
+    configureDune()
+    const spy = install({ topshot_ownership: { data: null, error: null, count: 5 } })
+    stubDune({ ...stale402, results: [probe(null)] })
+
+    await mod.POST(makeReq({ method: "POST", url: URL_BASE, auth: "Bearer test-ingest-token" }))
+    await runDeferred()
+
+    expect(spy.writes.topshot_ownership ?? []).toHaveLength(0)
+    expect((logRow(spy)!.args!.p_extra as any).walk_skipped).toBe("stale_cache_size_unknown")
+  })
+
+  it("?forcewalk=1 is the operator override and walks anyway", async () => {
+    configureDune()
+    const spy = install({ topshot_ownership: { data: null, error: null, count: 5 } })
+    stubDune({
+      ...stale402,
+      results: [{ json: { result: { rows: [okRow()] }, next_offset: null } }],
+    })
+
+    await mod.POST(
+      makeReq({ method: "POST", url: `${URL_BASE}?forcewalk=1`, auth: "Bearer test-ingest-token" })
+    )
+    await runDeferred()
+
+    expect((spy.writes.topshot_ownership ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+    expect((logRow(spy)!.args!.p_extra as any).walk_skipped).toBeUndefined()
   })
 })

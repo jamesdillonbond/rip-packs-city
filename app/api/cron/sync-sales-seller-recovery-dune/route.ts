@@ -28,6 +28,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import {
+  readDuneBudget,
+  recordDuneUsage,
+  columnCount,
+  type DuneBudget,
+} from "@/lib/dune/budget";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800; // Pro hard cap; the walk is bounded by HARD_BUDGET_MS below.
@@ -133,6 +139,15 @@ async function run(req: NextRequest) {
     let windowsDone = 0;
     let drained = false;
     let lastWindow: string | null = null;
+    // ── Dune spend budget (2026-08-22) ──────────────────────────────────────
+    // This lane is hourly and each tick walks windows flat out for up to 12
+    // minutes, so on 2026-07-24 it and its sibling spent the whole billing
+    // cycle's datapoints between the 00:00 UTC reset and 06:11. Read LAZILY —
+    // only once there is a window to buy — so the ~24 drained no-op ticks a day
+    // (cursor_end == floor_date since 2026-07-26) cost nothing extra.
+    let budget: DuneBudget | null = null;
+    let rowsAllowance = 0;
+    let budgetStopped = false;
 
     try {
       // Load the backward-walking date-window cursor.
@@ -153,6 +168,17 @@ async function run(req: NextRequest) {
           drained = true;
           break;
         }
+        if (budget === null) {
+          budget = await readDuneBudget();
+          rowsAllowance = budget.rowsAllowedNow;
+        }
+        // A window costs a fresh execution plus its whole result set, so stop at
+        // the window boundary — the cursor only advances on a completed window,
+        // which is what makes stopping here resumable and lossless.
+        if (rowsAllowance <= 0) {
+          budgetStopped = true;
+          break;
+        }
         const windowStart = new Date(
           Math.max(floor.getTime(), cursorEnd.getTime() - windowDays * 86_400_000)
         );
@@ -167,6 +193,13 @@ async function run(req: NextRequest) {
           headers: { Authorization: `Bearer ${proxySecret}`, "Content-Type": "application/json" },
           body: execBody,
           cache: "no-store",
+        });
+        await recordDuneUsage({
+          pipeline: PIPELINE_NAME,
+          endpoint: "execute",
+          queryId,
+          httpStatus: exRes.status,
+          note: lastWindow,
         });
         // Surface Dune's OWN error text, not just the status. This threw with
         // `execute HTTP 400` alone and three consecutive hourly ticks burned
@@ -237,6 +270,16 @@ async function run(req: NextRequest) {
           };
           const rows = j.result?.rows ?? [];
           found += rows.length;
+          rowsAllowance -= rows.length;
+          await recordDuneUsage({
+            pipeline: PIPELINE_NAME,
+            endpoint: "results",
+            queryId,
+            rows: rows.length,
+            columns: columnCount(rows),
+            httpStatus: res.status,
+            note: lastWindow,
+          });
 
           const mapped: FillRow[] = [];
           for (const r of rows) {
@@ -275,6 +318,15 @@ async function run(req: NextRequest) {
       errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
     }
 
+    // A tick stopped by a CONFIGURED cap did what it was told, so it stays ok.
+    // A tick stopped because the budget could not be READ proved nothing — that
+    // is an unknown state, and a lane that silently stops while reporting
+    // success is the failure this repo keeps finding.
+    if (budgetStopped && budget?.read === "failed") {
+      ok = false;
+      errMsg = errMsg ?? `dune budget unreadable: ${budget.reason ?? "unknown"}`;
+    }
+
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -290,6 +342,12 @@ async function run(req: NextRequest) {
           drained,
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
+          // Present only when the budget was actually consulted — a drained tick
+          // never reads it, so its absence is meaningful rather than a default.
+          ...(budget
+            ? { budget_rows_allowed: budget.rowsAllowedNow, budget_rows_left: rowsAllowance }
+            : {}),
+          ...(budgetStopped ? { budget_stopped: true, budget_reason: budget?.reason } : {}),
         },
       });
     } catch (logErr) {

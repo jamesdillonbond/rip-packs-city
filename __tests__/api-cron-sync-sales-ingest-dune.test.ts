@@ -37,9 +37,28 @@ const { GET, POST } = await import("@/app/api/cron/sync-sales-ingest-dune/route"
 
 const PROXY = "https://dune-proxy.example"
 
+// ── Dune spend budget (2026-08-22) ────────────────────────────────────────
+// Every lane now asks `dune_budget_status()` before it buys Dune rows, and the
+// guard FAILS CLOSED: an unreadable budget authorises nothing. So a suite that
+// omits this fixture does not test the walk at all — it tests the budget stop.
+// Overridable per test (spread first), which is how the stop paths are driven.
+const BUDGET_ALLOWS = {
+  "rpc:dune_budget_status": {
+    data: {
+      configured: true,
+      paused: false,
+      rows_allowed_now: 150000,
+      day_row_cap: 150000,
+      rows_today: 0,
+    },
+    error: null,
+  },
+} as const
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture({
+    ...BUDGET_ALLOWS,
     sales_ingest_state: {
       data: { cursor_end: "2020-01-08", floor_date: "2020-01-01", window_days: 7 },
       error: null,
@@ -234,5 +253,49 @@ describe("sync-sales-ingest-dune — configured walk", () => {
     const log = terminalLog(spy.rpcCalls)
     expect(log.p_ok).toBe(false)
     expect(String(log.p_error)).toContain("apply: boom")
+  })
+})
+
+// ── The Dune spend budget (2026-08-22) ──────────────────────────────────────
+// ⚠ THIS IS THE LANE THAT BURNED THE 2026-07-24 CYCLE — ~636,956 rows across 37
+// windows before Dune refused, 90.2% of them discarded on arrival. Its Vercel
+// schedule was retired on 07-28 and the route deliberately KEPT, so the guard is
+// pinned here now: the day someone re-adds the cron is the day it would
+// otherwise repeat, and that is exactly when nobody is looking for a budget bug.
+describe("sync-sales-ingest-dune — spend budget", () => {
+  it("no allowance: buys nothing, does not advance the cursor, stays ok", async () => {
+    configure()
+    const spy = install({
+      "rpc:dune_budget_status": {
+        data: { configured: true, paused: false, rows_allowed_now: 0, day_row_cap: 150000 },
+        error: null,
+      },
+    })
+    fetchMock = installFetchMock([executeRoute(), statusRoute(), resultsRoute({})])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    expect(fetchMock.calls).toHaveLength(0)
+    expect(spy.writes.sales_ingest_state ?? []).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.budget_stopped).toBe(true)
+  })
+
+  it("unreadable budget: buys nothing and reports ok=false", async () => {
+    configure()
+    const spy = install({
+      "rpc:dune_budget_status": { data: null, error: { message: "pool timeout" } },
+    })
+    fetchMock = installFetchMock([executeRoute(), statusRoute(), resultsRoute({})])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    expect(fetchMock.calls).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("pool timeout")
   })
 })

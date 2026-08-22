@@ -42,9 +42,28 @@ const { GET, POST } = await import("@/app/api/cron/sync-sales-seller-recovery-du
 
 const PROXY = "https://dune-proxy.example"
 
+// ── Dune spend budget (2026-08-22) ────────────────────────────────────────
+// Every lane now asks `dune_budget_status()` before it buys Dune rows, and the
+// guard FAILS CLOSED: an unreadable budget authorises nothing. So a suite that
+// omits this fixture does not test the walk at all — it tests the budget stop.
+// Overridable per test (spread first), which is how the stop paths are driven.
+const BUDGET_ALLOWS = {
+  "rpc:dune_budget_status": {
+    data: {
+      configured: true,
+      paused: false,
+      rows_allowed_now: 150000,
+      day_row_cap: 150000,
+      rows_today: 0,
+    },
+    error: null,
+  },
+} as const
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture({
+    ...BUDGET_ALLOWS,
     // one 7-day window that reaches the floor -> loop drains after a single pass
     sales_seller_recovery_state: {
       data: { cursor_end: "2020-01-08", floor_date: "2020-01-01", window_days: 7 },
@@ -253,5 +272,101 @@ describe("sync-sales-seller-recovery-dune — configured walk", () => {
     const log = terminalLog(spy.rpcCalls)
     expect(log.p_ok).toBe(false)
     expect(String(log.p_error)).toContain("apply: boom")
+  })
+})
+
+// ── The Dune spend budget (2026-08-22) ──────────────────────────────────────
+// This lane is HOURLY and each tick walks windows flat out for up to 12 minutes.
+// On 2026-07-24 it and its sibling spent the whole billing cycle's datapoints
+// between the 00:00 UTC reset and 06:11.
+describe("sync-sales-seller-recovery-dune — spend budget", () => {
+  const budget = (over: Record<string, unknown>) => ({
+    "rpc:dune_budget_status": {
+      data: { configured: true, paused: false, day_row_cap: 150000, ...over },
+      error: null,
+    },
+  })
+
+  it("no allowance: buys nothing, leaves the cursor alone, and stays ok (paced, not failed)", async () => {
+    configure()
+    const spy = install(budget({ rows_allowed_now: 0, rows_today: 150000 }))
+    fetchMock = installFetchMock([executeRoute(), statusRoute(), resultsRoute({})])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    expect(fetchMock.calls).toHaveLength(0)
+    // The cursor must NOT advance — a paced tick has to be resumable, or the
+    // budget guard would silently skip windows of the backfill.
+    expect(spy.writes.sales_seller_recovery_state ?? []).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.budget_stopped).toBe(true)
+    expect(log.p_extra.drained).toBe(false)
+  })
+
+  it("unreadable budget: buys nothing and reports ok=false", async () => {
+    configure()
+    const spy = install({
+      "rpc:dune_budget_status": { data: null, error: { message: "pool timeout" } },
+    })
+    fetchMock = installFetchMock([executeRoute(), statusRoute(), resultsRoute({})])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    expect(fetchMock.calls).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("pool timeout")
+  })
+
+  it("DRAINED CONTROL: a drained tick never reads the budget at all", async () => {
+    // The live state since 2026-07-26: cursor_end == floor_date, ~24 no-op ticks
+    // a day. Reading the budget on those would add 24 pointless DB round-trips
+    // to an IOPS-constrained instance for a lane that buys nothing.
+    configure()
+    const spy = install({
+      sales_seller_recovery_state: {
+        data: { cursor_end: "2020-01-01", floor_date: "2020-01-01", window_days: 2 },
+        error: null,
+      },
+    })
+    fetchMock = installFetchMock([executeRoute(), statusRoute(), resultsRoute({})])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    expect(spy.rpcCalls.some((c) => c.name === "dune_budget_status")).toBe(false)
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_extra.drained).toBe(true)
+    expect(log.p_extra.budget_stopped).toBeUndefined()
+  })
+
+  it("records every Dune call in the ledger — the execute with NULL rows, the page with its exact count", async () => {
+    configure()
+    const spy = install({})
+    fetchMock = installFetchMock([
+      executeRoute(),
+      statusRoute(),
+      resultsRoute({
+        result: {
+          rows: [
+            { transaction_hash: "aa", nft_id: "1001", seller: "0xbd94cade097e50ac" },
+            { transaction_hash: "bb", nft_id: "1002", seller: "0xbd94cade097e50ac" },
+          ],
+        },
+        next_offset: null,
+      }),
+    ])
+
+    await POST(req("POST"))
+    await runDeferredFast()
+
+    const ledger = (spy.writes.dune_api_usage ?? []).flatMap((w) => w.rows)
+    const exec = ledger.find((r) => r.endpoint === "execute")
+    const page = ledger.find((r) => r.endpoint === "results")
+    expect(exec).toMatchObject({ rows_returned: null, datapoints_est: null, http_status: 200 })
+    expect(page).toMatchObject({ rows_returned: 2, columns_returned: 3, datapoints_est: 6 })
   })
 })

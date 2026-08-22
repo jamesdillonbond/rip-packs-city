@@ -17,12 +17,20 @@
 // when sub_edition_id > 0), matching editions.external_id.
 //
 // Freshness contract: /results returns the LAST cached execution, so the run
-// triggers a fresh Dune execution first. If that refresh fails it still walks the
-// cached rows (never empties the table) but reports ok=false with
-// extra.stale_cache=true — the run re-ingested data identical to last time and
-// accomplished nothing, and this pipeline has no cadence-watchlist row, so
-// ok=false is its only alarm. extra.refresh_http_status separates the causes
-// (402 = Dune credits exhausted, 404 = dune-proxy worker missing /execute).
+// triggers a fresh Dune execution first. If that refresh fails the run reports
+// ok=false with extra.stale_cache=true — it accomplished nothing, and this
+// pipeline has no cadence-watchlist row, so ok=false is its only alarm.
+// extra.refresh_http_status separates the causes (402 = Dune datapoints
+// exhausted, 404 = dune-proxy worker missing /execute).
+//
+// ⚠ CHANGED 2026-08-22: a failed refresh no longer WALKS the cached execution.
+// It used to, "so the table is never emptied" — but /results then returns rows
+// this pipeline already holds, and it re-bought all ~114k of them at Dune's
+// datapoint meter (rows_written was byte-identical, 114,083, on the 08-03
+// success and both the 08-10 and 08-17 402s). The walk now runs only when it can
+// be shown to add something: an empty table, or fewer rows held than the cached
+// execution carries. `?forcewalk=1` overrides. Spend is also capped per UTC day
+// by public.dune_budget_status() — see lib/dune/budget.ts.
 //
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 // Cron-job.org: daily, off the :00 rush, www domain.
@@ -30,6 +38,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import {
+  readDuneBudget,
+  recordDuneUsage,
+  logDuneBudgetStop,
+  columnCount,
+} from "@/lib/dune/budget";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800; // Pro hard cap; the walk is bounded by HARD_BUDGET_MS below.
@@ -169,6 +183,28 @@ async function run(req: NextRequest) {
     let refreshStatus: number | null = null;
     let executeBody: string | undefined;
     let batchSets: number[] = [];
+    let budgetStopped = false;
+    let walkSkip: string | null = null;
+    let duneRowsHeld: number | null = null;
+    let cachedTotalRows: number | null = null;
+
+    // ── Dune spend budget (2026-08-22) ──────────────────────────────────────
+    // ⚠ This walk is the largest single Dune purchase in the repo — 114,083 rows
+    // x 6 columns per full pass — and until now nothing counted it. Ask before
+    // buying: a tick with no allowance does NO Dune I/O at all, rather than
+    // walking until Dune answers 402. Caps live in `dune_budget_state`, so
+    // changing the pace is one UPDATE, not a deploy.
+    const budget = await readDuneBudget();
+    let rowsAllowance = budget.rowsAllowedNow;
+    if (rowsAllowance <= 0) {
+      await logDuneBudgetStop({
+        pipeline: PIPELINE_NAME,
+        startedAt,
+        budget,
+        extra: { query_id: queryId },
+      });
+      return;
+    }
 
     try {
       // Freshness phase: /results returns the query's LAST cached execution, so
@@ -210,6 +246,16 @@ async function run(req: NextRequest) {
             ...(executeBody ? { body: executeBody } : {}),
             cache: "no-store",
           });
+          // An /execute buys no rows, so `rows` stays NULL — but it is the call
+          // that fails with 402 when the cycle is spent, and the ledger is where
+          // that will be read back from.
+          await recordDuneUsage({
+            pipeline: PIPELINE_NAME,
+            endpoint: "execute",
+            queryId,
+            httpStatus: exRes.status,
+            note: executeBody ? "incremental refresh" : "full refresh",
+          });
           if (exRes.ok) {
             const execId = ((await exRes.json()) as { execution_id?: string }).execution_id;
             if (execId) {
@@ -243,9 +289,94 @@ async function run(req: NextRequest) {
         refreshNote = "skipped (norefresh=1)";
       }
 
+      // ── The stale-cache walk, which bought nothing (2026-08-22) ───────────
+      // ⚠ MEASURED WASTE, not a hypothesis. When the refresh does not complete,
+      // /results necessarily returns the SAME execution as last time — and this
+      // route walked all ~114k rows of it anyway. `rows_written` is byte
+      // identical (114,083) on the 2026-08-03 success AND on both the 08-10 and
+      // 08-17 `HTTP 402` failures: two of every three weekly runs in a cycle
+      // re-bought a table we already held, at the moment the cycle was already
+      // exhausted.
+      //
+      // The skip must not be able to strand a TRUNCATED ingest, so it is decided
+      // by evidence rather than assumption — one `limit=1` probe reads the cached
+      // execution's total row count and it is compared against the dune-sourced
+      // rows we hold:
+      //   hold 0                    -> walk (bootstrap; an empty table can never
+      //                                match, so the first run is structurally safe)
+      //   hold < cached total       -> walk (the last ingest was cut short)
+      //   anything else, incl. any  -> skip (cannot prove the walk would add a
+      //   unknown                      single row, so refuse to spend for it)
+      // `?forcewalk=1` is the operator override.
+      const stale = refreshAttempted && !refreshed;
+      const forceWalk = new URL(req.url).searchParams.get("forcewalk") === "1";
+      if (stale && !forceWalk) {
+        // ⚠ supabase-js RETURNS errors rather than throwing, so `count` is null
+        // on a failed read. `?? 0` here would read as "table empty" and
+        // authorise the entire walk — the fabricated-number shape, aimed at the
+        // budget.
+        const { count, error: cntErr } = await supabaseAdmin
+          .from("topshot_ownership")
+          .select("nft_id", { count: "exact", head: true })
+          .eq("source", "dune");
+        duneRowsHeld = cntErr || typeof count !== "number" ? null : count;
+
+        if (duneRowsHeld === null) {
+          walkSkip = "stale_cache_row_count_unreadable";
+        } else if (duneRowsHeld > 0) {
+          try {
+            const probeRes = await fetch(
+              `${proxyUrl}/results?query_id=${encodeURIComponent(queryId)}&limit=1&offset=0`,
+              { headers: { Authorization: `Bearer ${proxySecret}` }, cache: "no-store" }
+            );
+            if (probeRes.ok) {
+              const pj = (await probeRes.json()) as {
+                result?: {
+                  rows?: Array<Record<string, unknown>>;
+                  metadata?: Record<string, unknown>;
+                };
+              };
+              const probeRows = pj.result?.rows ?? [];
+              rowsAllowance -= probeRows.length;
+              await recordDuneUsage({
+                pipeline: PIPELINE_NAME,
+                endpoint: "results",
+                queryId,
+                rows: probeRows.length,
+                columns: columnCount(probeRows),
+                httpStatus: probeRes.status,
+                note: "stale-cache size probe",
+              });
+              // ⚠ `total_row_count` ONLY. Dune also returns `row_count`, which
+              // is the rows in THIS page — 1 on a limit=1 probe — so accepting
+              // it as a fallback would make "held >= total" true for any
+              // non-empty table and skip a genuinely truncated ingest. An
+              // absent total is an unknown, and an unknown skips (below).
+              const total = Number(pj.result?.metadata?.total_row_count);
+              cachedTotalRows = Number.isFinite(total) ? total : null;
+            }
+          } catch {
+            cachedTotalRows = null;
+          }
+          walkSkip =
+            cachedTotalRows === null
+              ? "stale_cache_size_unknown"
+              : duneRowsHeld >= cachedTotalRows
+                ? "stale_cache_already_ingested"
+                : null;
+        }
+      }
+
       // Walk the Dune result set page by page, upserting as we go.
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        if (walkSkip) break;
+        // Out of allowance mid-walk: stop cleanly with the offset recorded
+        // rather than paging on until Dune refuses.
+        if (rowsAllowance <= 0) {
+          budgetStopped = true;
+          break;
+        }
         if (Date.now() - startedMs > HARD_BUDGET_MS) break;
 
         const url = `${proxyUrl}/results?query_id=${encodeURIComponent(queryId)}&limit=${PAGE_LIMIT}&offset=${offset}`;
@@ -277,6 +408,18 @@ async function run(req: NextRequest) {
         };
         const rows = j.result?.rows ?? [];
         found += rows.length;
+        rowsAllowance -= rows.length;
+        // Per PAGE, not per run: a run killed at maxDuration has still spent
+        // every datapoint it bought, and a ledger written only at the end would
+        // under-count exactly the runs that overspent.
+        await recordDuneUsage({
+          pipeline: PIPELINE_NAME,
+          endpoint: "results",
+          queryId,
+          rows: rows.length,
+          columns: columnCount(rows),
+          httpStatus: res.status,
+        });
 
         const mapped: OwnershipRow[] = [];
         for (const r of rows) {
@@ -349,6 +492,16 @@ async function run(req: NextRequest) {
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
           incremental_sets: batchSets.length > 0 ? batchSets : null,
+          // Spend telemetry. `walk_skipped` names WHY a stale run bought
+          // nothing; `budget_stopped` marks a run cut short by the day/cycle
+          // cap. Both are absent (not 0/false-by-default) on a normal run, so
+          // `extra_key_counts` in pipeline_runs_daily counts them directly.
+          budget_rows_allowed: budget.rowsAllowedNow,
+          budget_rows_left: rowsAllowance,
+          ...(walkSkip ? { walk_skipped: walkSkip } : {}),
+          ...(budgetStopped ? { budget_stopped: true } : {}),
+          ...(duneRowsHeld !== null ? { dune_rows_held: duneRowsHeld } : {}),
+          ...(cachedTotalRows !== null ? { cached_total_rows: cachedTotalRows } : {}),
         },
       });
     } catch (logErr) {
