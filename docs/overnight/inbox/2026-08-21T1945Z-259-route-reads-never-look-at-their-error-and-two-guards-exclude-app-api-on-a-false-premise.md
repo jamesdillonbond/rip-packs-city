@@ -42,6 +42,33 @@ The **positive control matters as much as the count**: 492 reads in the same tre
 `error`, so the detector discriminates rather than matching every supabase call. Without it, "259 hits"
 is equally consistent with a regex that matches everything.
 
+## 2b. The blind spot is BOUNDED — the other trees were measured too
+
+Same detector, same positive control, over the trees the two guards also do not walk:
+
+| tree | files | reads **with** `error` (control) | **without** | files w/ ≥1 |
+|---|---:|---:|---:|---:|
+| `app/api/` | 453 | 492 | **259** (35%) | 106 |
+| `lib/` | 297 | 101 | **21** (17%) | 11 |
+| `workers/` | 17 | 11 | **0** | 0 |
+| `components/` | 161 | 0 | **0** | 0 |
+
+Three things this settles:
+
+- **`workers/` is clean** — 0 of 11. Nothing to do there.
+- **`components/` never touches supabase directly** (0 of either), which independently confirms the two
+  client-side guards are correctly scoped for what they DO cover. The gap is server-side only.
+- ⚠ **`lib/`'s 21 are mostly OFF-LIMITS or BENIGN, and I checked rather than assumed.** The clusters are
+  `lib/chains/flow/topshot-offer-fill.ts` (6) and `wallet-backfill-helpers.ts` (1) — ingest logic;
+  `lib/concierge/*` (6) — concierge logic; and `lib/alerts.ts` + `lib/alerts/soldpacks.ts` (3).
+  **The alerts ones looked like the worst sub-class and are not**: CLAUDE.md names an alert as especially
+  dangerous because "its output is silence, so the error is unfalsifiable", but all three are *username*
+  lookups in a fallback chain (`saved_wallets` → `profile_bio` → null) whose failure degrades a display
+  name to a wallet address. **An honest fallback, not a claim** — the same "same expression, opposite
+  correctness" split as §3's two cost-basis reads.
+
+**So the actionable remainder is almost entirely `app/api`, and within it the tiers in §4.**
+
 ## 3. What was SHIPPED — 4 instances, triaged individually
 
 Triage criterion that worked: **does a swallowed error become a CLAIM?**
