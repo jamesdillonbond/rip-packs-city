@@ -13,7 +13,7 @@
 
 SELECT cron.schedule(
   'rpc-refresh-cross-collection-deals',
-  '12,32,52 * * * *',
+  '12,42 * * * *',
   $$SET statement_timeout = '600s'; SELECT public.refresh_cross_collection_deals();$$
 );
 
@@ -24,8 +24,8 @@ SELECT cron.schedule(
 
 INSERT INTO public.pipeline_cadence_watchlist (pipeline, max_silent_minutes, severity, notes, is_active)
 VALUES (
-  'cross-collection-deals-mv', 70, 'medium',
-  'pg_cron rpc-refresh-cross-collection-deals, 12,32,52 = every 20 min. 70 min = ~3.5 missed ticks. THIS IS THE ONLY FRESHNESS INSTRUMENT FOR THAT BOARD: public_board_liveness_watchlist checks row count + latency, and a FROZEN MV passes both. Silence here is the alarm.',
+  'cross-collection-deals-mv', 100, 'medium',
+  'pg_cron rpc-refresh-cross-collection-deals, 12,42 = every 30 min. 100 min = ~3.3 missed ticks. THIS IS THE ONLY FRESHNESS INSTRUMENT FOR THAT BOARD: public_board_liveness_watchlist checks row count + latency, and a FROZEN MV passes both. Silence here is the alarm.',
   true
 )
 ON CONFLICT (pipeline) DO UPDATE SET max_silent_minutes = EXCLUDED.max_silent_minutes,
@@ -38,3 +38,12 @@ ON CONFLICT (pipeline) DO UPDATE SET max_silent_minutes = EXCLUDED.max_silent_mi
 --     <the pre-materialisation 3-arm UNION ALL body, recoverable from this commit's parent>;
 --   DROP MATERIALIZED VIEW public.mv_cross_collection_deals;
 --   DROP FUNCTION public.refresh_cross_collection_deals();
+
+-- ⚠ CADENCE CORRECTED THE SAME EVENING, AFTER MEASURING THE REFRESH RATHER THAN MODELLING IT.
+-- These shipped at 20 min on the assumption that a refresh costs what one board read costs. It does
+-- not: REFRESH ... CONCURRENTLY recomputes the whole query AND diffs it in, and a board's per-call
+-- read is often only a slice. Measured reads per refresh: panini 356 MB, first-mint 73 MB, deals
+-- 104 MB — against per-read costs of 71 / 52 / 78 MB. At 20 min the DEALS board was READ-NEGATIVE.
+-- At 30 min: 2,381 -> 1,066 MB/h across the three, a 55% reduction, max staleness 30 min against a
+-- 120-minute ceiling. The arithmetic is refresh_rate x refresh_reads vs read_rate x read_reads, and
+-- all four terms must come from pg_stat_statements.

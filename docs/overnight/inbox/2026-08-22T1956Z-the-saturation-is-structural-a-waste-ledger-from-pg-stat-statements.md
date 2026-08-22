@@ -256,7 +256,20 @@ and the tell is a cost stated with no number in it.
    at 372 GB. **Materialising wins whenever refresh_rate < read_rate, and the margin grows with read
    rate.** The right instinct is the plain one: cache the thing that is read most.
 
-   ⚠ **Still true, and the part that survives the correction: cadence must come from a MEASURED read
+   🚨 **AND THE FIX WAS WRONG TOO, corrected the same hour by MEASURING the refresh.** I then assumed a
+   refresh costs what one board read costs. It does not — `REFRESH ... CONCURRENTLY` recomputes the whole
+   query **and** diffs it in, and a per-call read is often only a SLICE (panini's 71 MB is one page of ~5).
+   Measured reads per refresh: **panini 356 MB, first-mint 73 MB, deals 104 MB** against per-read costs of
+   71 / 52 / 78 MB. ⚠ **At the 20-min cadence I first shipped, the DEALS board was READ-NEGATIVE.** All
+   three moved to **30 min**; combined **2,381 → 1,066 MB/h, a 55% reduction ≈ 31 GB/day**, max staleness
+   30 min against a 120-min ceiling.
+
+   ⚠ **The rule, after being wrong twice in one evening:** the arithmetic is
+   `refresh_rate × refresh_reads` vs `read_rate × read_reads`, and **all four terms must come from
+   `pg_stat_statements`** — not one of them modelled. Sample is 1–3 refreshes each and panini's two runs
+   were 9.9 s and 68.2 s, so **re-derive after a day** before quoting.
+
+   ⚠ **Still true, and the part that survives both corrections: cadence must come from a MEASURED read
    rate.** For `deals` at 3.84/h a 15-min refresh (4/h) would have been read-NEGATIVE — more full
    computations than the reads it replaces. That is the real trap, and it bites the LOW-traffic boards,
    not the high ones.

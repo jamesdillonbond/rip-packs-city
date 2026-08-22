@@ -24,6 +24,32 @@ warms now answer from 112 kB–1 MB snapshots.** ONE MV fixed BOTH first-mint vi
 `topshot_first_mint_trophy_stats` reads `topshot_first_mint_trophies` (pg_depend), so rebodying the
 latter made the former fast for free.
 
+🚨 **CORRECTED SAME HOUR, BY MEASURING THE REFRESH INSTEAD OF ASSUMING IT — the "saved" column above
+was computed from a wrong model and TWO of its three numbers were wrong, one of them the wrong SIGN.**
+I assumed a refresh costs the same as one board read. It does not: `REFRESH ... CONCURRENTLY`
+recomputes the whole underlying query **and** diffs it into the existing MV, and a board's per-call
+read was often only a SLICE (panini's 71 MB is one page of ~5). Measured from `pg_stat_statements`
+on the refresh functions themselves:
+
+| board | refresh reads/call | old reads/h | at 3/h (20 min) | **at 2/h (30 min)** |
+|---|---|---|---|---|
+| `panini_squeeze_board` | **356 MB** | 1,456 MB | 1,068 (27% saved, not 85%) | **712 → 51% saved** |
+| `topshot_first_mint_troph*` | **73 MB** | 625 MB | 219 (65%) | **146 → 77% saved** |
+| `cross_collection_deals_board` | **104 MB** | 300 MB | 312 — **a 4% NET LOSS** | **208 → 31% saved** |
+
+⚠ **At the 20-minute cadence I shipped, the deals board was READ-NEGATIVE — it cost more than the
+reads it replaced.** All three moved to **30 min** (`12,42` / `18,48` / `21,51`), cadence-watchlist
+thresholds raised 70 → 100 min. Combined: **2,381 → 1,066 MB/h, a 55% reduction ≈ 31 GB/day**, with
+max staleness 30 min against a 120-minute ceiling (and against the 175-minute gaps these boards were
+actually producing before).
+
+⚠ **The durable rule, twice-corrected in one evening: MEASURE THE REFRESH, do not model it from the
+read it replaces.** Two different wrong models in a row — first that a high read rate hurts (it
+helps), then that refresh cost equals read cost (it is 1.4–5× higher). The arithmetic is
+`refresh_rate × refresh_reads` vs `read_rate × read_reads`, and **every one of those four terms has to
+come from `pg_stat_statements`.** ⚠ Sample is small (1–3 refreshes each) and panini's two runs were
+9.9 s and 68.2 s — **re-derive after a day** before quoting these.
+
 🚨 **I FILED THE BREAK-EVEN BACKWARDS THIS AFTERNOON AND NEARLY SKIPPED THE BIGGEST WIN.** The inbox
 said panini's much higher read rate meant "a completely different break-even" and that copying the
 deals cadence "is very likely a loss". **Exactly wrong.** The refresh rate is FIXED (3/h); it is the
