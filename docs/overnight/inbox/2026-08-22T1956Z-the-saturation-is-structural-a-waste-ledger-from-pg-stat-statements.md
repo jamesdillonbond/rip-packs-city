@@ -224,11 +224,21 @@ none of the batch** — on a cursored indexer that is permanent loss.
 number that justifies it — this file's own rule is that a decision not to act is the one nobody re-checks,
 and the tell is a cost stated with no number in it.
 
-1. ✅ **SHIPPED (`83075d67`) — the warm tick now ROTATES.** `refresh-insights-cache` warmed all five boards
-   every tick via `Promise.all(WARM_BOARDS)`; it now warms only the stalest `WARM_BOARDS_PER_TICK = 2`.
-   Peak concurrency 5 → 2. Costs no freshness: at a 57–76% failure rate the old loop already delivered
-   `deals`/`panini-squeeze` at ~175-minute gaps, past the 120-minute ceiling.
-2. **Materialize the five hot board views — now the largest remaining lever.** They are `relkind = 'v'` and
+1. 🚨 **TRIED AND REVERTED — do not simply retry it.** `83075d67` made the tick warm only the stalest
+   `WARM_BOARDS_PER_TICK = 2`; reverted in `3836b31b` ~30 minutes later. It looked good for three ticks
+   (6/6 warms, durations 31s → 5.8s, ages laddering inside the ceiling) and then **504'd three consecutive
+   ticks at the 60s lambda limit, refreshing nothing.** `panini-squeeze` is the slowest board AND a PAGED
+   fetch (several statements, each able to run to the 30s wall), so it is permanently the stalest — which
+   made stalest-first select it every tick and blow `maxDuration`. A 504 writes no snapshot and no
+   `pipeline_runs` row, so it got staler and was selected again. ⚠ **Warming five in parallel was wasteful
+   but BOUNDED** — panini failing fast did not block the other four, capping the tick at ~31s. Rotation
+   removed the parallelism that was accidentally providing that cap. Full mechanism + the three
+   requirements for re-landing are in today's ledger entry.
+
+2. **Materialize the five hot board views — now unambiguously the FIRST thing to do.** ⚠ Item 1 failed
+   because it RATIONED attempts at a board that cannot finish instead of making it finishable, and
+   `panini_squeeze_board` cannot be made safe by scheduling while one warm needs several 30s-capable
+   statements. They are `relkind = 'v'` and
    cost 52–95 MB and 11.5–16.7s *per call*, so even at 2 boards/tick they will keep dying at the 30s wall
    whenever the instance is busy. An MV refreshed on the boards' real change cadence removes the failure
    mode outright rather than rationing it.

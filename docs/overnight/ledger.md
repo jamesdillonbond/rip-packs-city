@@ -313,7 +313,9 @@ PATHOLOGICAL board is selected — is one I never took, because I measured the A
 every leg of this ladder needs a bound ("it is UNBOUNDED, and `readBoardOrLive` calls it up to TWICE") and I
 added a third caller without applying it. ⚠ **Position, not cost, is what made it dangerous**: a stall in the
 pre-warm read spends the whole 60s having warmed nothing, where the post-warm one only loses the log row.
-The bounded version is written and stashed, not shipped.
+The bounded version was written and then DROPPED with the revert — ⚠ deliberately not preserved
+as a patch, because it is written against the rotation this entry reverts and applying it later would
+re-introduce the lock-up. Requirement 2 below is the spec; redo it against whatever lands.
 
 **RE-LANDING REQUIRES THREE THINGS THIS ATTEMPT LACKED** (none is optional):
 1. **An overall budget on the warm phase**, so the route always logs before the lambda is killed. ⚠ **A 504
