@@ -94,11 +94,19 @@ const ROOTS = ["app", "components"]
  * setFailed(true)`), which is the honest contract. They match the regex on
  * SHAPE, not on defect — the pattern cannot see the branch that follows.
  *
- * ⚠ ONE PRE-EXISTING SITE IS A REAL FAIL-OPEN AND IS DELIBERATELY NOT COUNTED AS
- * FIXED HERE: line 906 (`/api/ready`, thin-volume notice) swallows the failure
- * with `.catch(() => {})`, so an outage renders as "volume is fine" and a genuine
- * thin-volume market gets no warning. It was already inside the old budget, so it
- * is not what moved this number; it is filed rather than silently absorbed.
+ * ✅ ONE PRE-EXISTING FAIL-OPEN FOUND HERE WAS THEN FIXED (same day, separate
+ * change): the `/api/ready` thin-volume notice in CollectionAnalyticsClient.tsx
+ * ended `.catch(() => {})`, so an outage left the caveat unrendered and a
+ * genuinely thin-volume market got no warning. Worse than a wrong number,
+ * because that notice exists to TEMPER the analytics below it — suppressing it
+ * silently overstated confidence in every figure on the page, and its output was
+ * silence, so the failure was unfalsifiable. It now has a third state.
+ *
+ * ⚠ THE BUDGET DID NOT DROP FOR THAT FIX, AND THAT IS CORRECT, NOT AN OVERSIGHT.
+ * This ratchet counts the `.then((r) => (r.ok ? r.json() : null))` SHAPE, which
+ * the fixed site still has — what changed is the branch that follows it, which
+ * the regex cannot see. Lowering the budget here would be claiming a reduction
+ * the instrument did not measure.
  */
 const BUDGET = 43
 

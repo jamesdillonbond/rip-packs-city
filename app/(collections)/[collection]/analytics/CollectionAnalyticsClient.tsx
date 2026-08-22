@@ -898,18 +898,34 @@ function AnalyticsInner() {
   }, [router, searchParams])
 
   // Thin-volume notice from /api/ready.
+  //
+  // ⚠ THREE STATES, NOT TWO, AND THIS BRANCH USED TO HAVE TWO. The old version
+  // ended `.catch(() => {})`, leaving thinVolumeReady false on a failed read —
+  // so an outage rendered as "volume is fine" and a genuinely thin-volume market
+  // got NO caveat. That is a guard failing OPEN, and it is worse here than a
+  // wrong number would be: this notice exists to TEMPER the analytics below it,
+  // so suppressing it silently overstates confidence in every figure on the page.
+  // Its output was silence, which made the failure unfalsifiable.
   const [thinVolumeReady, setThinVolumeReady] = useState(false)
+  const [thinVolumeUnknown, setThinVolumeUnknown] = useState(false)
   useEffect(() => {
     if (!collection) return
     let cancelled = false
+    setThinVolumeReady(false)
+    setThinVolumeUnknown(false)
     fetch("/api/ready", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (cancelled || !j?.per_collection) return
+        if (cancelled) return
+        // Read failed (non-2xx -> null), or succeeded with a payload we cannot
+        // read. Both are "we do not know", never "volume is fine".
+        if (!j?.per_collection) { setThinVolumeUnknown(true); return }
         const row = (j.per_collection as Array<{ slug: string; sales_24h: number }>).find((r) => r.slug === collection)
-        setThinVolumeReady(row != null && (row.sales_24h ?? 0) < 10)
+        // A collection absent from the payload is also unknown, not adequate.
+        if (row == null) { setThinVolumeUnknown(true); return }
+        setThinVolumeReady((row.sales_24h ?? 0) < 10)
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setThinVolumeUnknown(true) })
     return () => { cancelled = true }
   }, [collection])
 
@@ -1091,6 +1107,18 @@ function AnalyticsInner() {
         <MarketplaceStatusBanner collectionSlug={collection} />
       </div>
 
+      {thinVolumeUnknown && (
+        <div
+          className="mb-3 rounded border px-4 py-2 text-[11px] uppercase tracking-widest"
+          style={{
+            border: "1px solid var(--rpc-border)",
+            color: "var(--rpc-text-secondary)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          Volume check unavailable — we could not confirm whether this market is thin.
+        </div>
+      )}
       {thinVolumeReady && (
         <div
           className="mb-3 rounded border px-4 py-2 text-[11px] uppercase tracking-widest"

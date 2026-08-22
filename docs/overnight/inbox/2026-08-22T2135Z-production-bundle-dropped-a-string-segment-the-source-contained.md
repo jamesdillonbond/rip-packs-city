@@ -56,3 +56,55 @@ A structural scan of `app`, `components`, `lib`, `workers` (excluding tests) fin
 3. If it does not reproduce, narrow the trigger before writing any rule; a ban justified by one unreproduced instance is the "cost stated with no number in it" shape.
 
 ⚠ **Whatever the outcome, the durable lesson stands on its own: a green `tsc`, a green unit suite and a READY deploy together do not establish that the string a user reads is the string in the repo.** Only rendering production does.
+
+---
+
+## RESOLVED 2026-08-22 ~23:1xZ — THE GENERALIZATION DOES NOT HOLD. Do not write the lint rule.
+
+**Answered by step 3, not step 1.** Production could not be rendered from this sandbox at all (the egress
+proxy 403s CONNECT to `www.rippackscity.com` as well as to `*.supabase.co`, so `curl` returns `000` for a
+healthy and a broken page alike — a null instrument). So the trigger was narrowed analytically instead, and
+that turned out to be **decisive rather than second-best**.
+
+### The precondition the at-risk list never applied
+
+The bundler dropped a quasi while **CONSTANT-FOLDING**. Folding a `+`-joined chain into a single literal
+requires **every** interpolation in the chain to be a compile-time constant. The D12b site qualified — both
+`TS_LISTINGS_RETIRED_ON` and `TS_LISTINGS_LAST_ROW_ON` are module-level **string-literal `const`s**, which
+is exactly why the served chunk showed the dates **inlined**. ⚠ **A template carrying a runtime
+interpolation cannot be folded at all**, so it cannot lose a quasi to this mechanism.
+
+### Measured across `app`, `components`, `lib`, `workers` (tests excluded)
+
+- **42** at-risk-*shaped* concatenations (a template with text after its final `${}`, `+`-joined to another).
+  This walk finds more than the original 28 — a looser regex over the same roots, **not a disagreement**.
+- **CONSTANT-FOLDABLE: 0.** Every one carries at least one runtime interpolation.
+- The 8 whose interpolations are *all* bare identifiers (the only shape that could fold via an imported
+  const) were then checked individually: each mixes in a runtime local — `inserted`, `id`, `startHeight`,
+  `staleMinutes`, `parTotal`, `processed`, `fromBlock`. **One runtime value blocks the fold.**
+
+### ⚠ The positive control, because a null result without one is worthless
+
+The same detector was run against the **pre-fix** source recovered from git (`e0f3186dc:lib/analytics/
+ts-listings-retired.ts`). It flags that site as **CONSTANT-FOLDABLE**, naming both interpolated constants.
+**So "0 foldable sites today" is a measurement, not a broken detector.**
+
+### What this means for the recommendations above
+
+- ⛔ **Do NOT ship the blanket lint rule (step 2).** It would be justified by exactly the shape this repo
+  warns about — a cost with no number in it — and it would ban 42 sites to prevent a defect that **none**
+  of them can exhibit.
+- ✅ **The named worries are specifically clear**, and this is the reassuring half: `alerts-send/route.ts:113`
+  (outbound alert copy), the wallet-page `description` and JSON-LD, `stale-fmv-monitor`, `data-integrity`,
+  `pinnacle-events-ingest` — all interpolate runtime values, so **no user-facing string among them can lose
+  its tail this way.** The INCONCLUSIVE wallet-page probe no longer needs re-running.
+- ⚠ **What is NOT established:** that turbopack's constant-fold is correct in general. **One real fold, one
+  dropped quasi** — the bug is real, and the only reason it is contained is that nothing else in the tree
+  currently meets its precondition. **A future constant-only `+`-joined template would hit it again**, which
+  is why the guard below is a ban at population zero rather than a cleanup.
+- ⚠ **Scope of the sweep:** `app`, `components`, `lib`, `workers`. `supabase/functions/**` and `scripts/**`
+  were **not** walked — unmeasured, not clean.
+
+**The durable lesson at the bottom of this filing stands unchanged and is the part worth keeping:** a green
+`tsc`, a green unit suite and a READY deploy do not establish that the string a user reads is the string in
+the repo.
