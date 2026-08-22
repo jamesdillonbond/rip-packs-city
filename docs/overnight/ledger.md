@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-21 · SELF-CORRECTION (Claude Code, interactive) — my FMV-starvation filing implied a cause it never measured, and the accuracy gate is liquidity-capped
+
+The 02:56Z accuracy-gate filing landed from a concurrent session while I was working. It bears directly on my own 23:15Z filing, so I re-derived its load-bearing half rather than accepting it, then qualified mine.
+
+⚠ **WHAT I GOT WRONG, and it is an implication rather than a number.** My 23:15Z §4 said the 19-hour FMV starvation costs *"the headline metric — the share of prices at HIGH/MEDIUM confidence"*. **The throughput measurement stands** (~92% of all FMV recalculation in a 5-hour window, three days running). **The causal implication does not**, and for two collections it is refuted outright: the gate tracks **market liquidity** monotonically with no inversions —
+
+    5.51 sales/edition/month -> 34.2%  (top shot)
+    1.69                     -> 22.7%  (all day)
+    0.17                     ->  0.0%  (golazos)
+    0.00                     ->  0.0%  (ufc)
+
+— and **an edition with 0.17 sales a month cannot reach a sales-based HIGH/MEDIUM however much compute it gets.** Anyone reading my §4 as *"raise FMV throughput → the gate moves"* would be acting on my implication, not my measurement. The honest split: the starvation is real and wasteful, and plausibly bears on Top Shot and All Day where liquidity is not obviously binding; it is **not** the explanation for the 31.3%.
+
+✅ **RE-DERIVED INDEPENDENTLY, not accepted:** `ufc_strike`'s last sale is **2026-05-13 17:06:58Z**, with **0 sales in BOTH the last 30 and 90 days** — exactly as that filing states, and the 0.0% follows mechanically from it rather than from any pricing defect. ⚠ I could NOT independently re-derive the 31.3% itself, and that failure is itself the second finding below; I am recording the gap rather than implying I checked it.
+
+⚠ **THE HEADLINE METRIC IS NOT MERELY UNMEASURED — IT IS EXPENSIVE TO MEASURE.** That filing notes there is no view, dashboard or recent measurement of it (`pg_views` matching `%accuracy%`/`%coverage%`: 0). Trying to compute it myself, **two different formulations both timed out at 60 s** — a `DISTINCT ON` over `fmv_snapshots`, then the `fmv_current` view — inside the very degraded band my 23:15Z filing characterises. **That is very likely WHY it goes unmeasured: the number gating the roadmap costs more to compute than anyone will spend casually, and costs most exactly when the estate is struggling.** A cheap materialised counter is a better lever on "we do not know our accuracy" than any of the levers I listed. ⚠ I did NOT build one: it is a new DB object in FMV territory, and `apply_migration` costs a user-facing 500s burst — inside the band, again.
+
+⚠ **And I stopped hammering it after two timeouts rather than retrying**, for the same reason the concurrent session declined a manual ccm catch-up: running an expensive query repeatedly where it is already failing adds load to the condition under investigation.
+
+**No code, DB or prod-state change — filing amendment + ledger only. Revert:** n/a.
+
 ### 2026-08-21 · MEASURED (Claude Code, interactive) — the accuracy GATE, for the first time: 31.3% at HIGH/MEDIUM, and it tracks LIQUIDITY rather than the pricing algorithm
 
 **Read-only, no action taken — the implications are product decisions.** The roadmap's thesis is that **accuracy is the gate**, with "the share of prices at HIGH/MEDIUM confidence" as the headline metric. ⚠ **There is no view, no dashboard and no recent measurement of it** (`pg_views` matching `%accuracy%`/`%coverage%`: **0**). Everything shipped today — and most of this week — was reactive health work on instruments; nobody had read the number the strategy says decides everything else.

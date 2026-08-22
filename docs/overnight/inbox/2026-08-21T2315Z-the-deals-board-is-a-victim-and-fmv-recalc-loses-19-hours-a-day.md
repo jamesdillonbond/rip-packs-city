@@ -67,6 +67,38 @@ share of prices at HIGH/MEDIUM confidence, and the pipeline that produces those 
 hours a day. This is consistent with the recorded "`fmv-recalc`: wasteful, NOT broken — 72.7% wall-kills"
 characterisation, and gives it a shape: the kills are not spread evenly, they are ~all of 01–19Z.
 
+## 4b. ⚠ QUALIFYING §4 — throughput is NOT established as what caps the headline metric
+
+**Added 2026-08-21 ~20:10 PT after the 02:56Z accuracy-gate filing landed.** §4 says the starvation costs
+"the headline metric (the share of prices at HIGH/MEDIUM confidence)". **The throughput measurement
+stands; that inference does not, and for two collections it is refuted.**
+
+That filing measured the gate at **31.3% HIGH/MEDIUM (9,224 / 29,514 priced editions)** and found it
+tracks **market liquidity** monotonically, no inversions:
+
+    5.51 sales/edition/month -> 34.2%  (top shot)
+    1.69                     -> 22.7%  (all day)
+    0.17                     ->  0.0%  (golazos)
+    0.00                     ->  0.0%  (ufc)
+
+**An edition with 0.17 sales a month cannot reach a sales-based HIGH/MEDIUM however much compute you give
+it.** I re-derived the load-bearing half independently: `ufc_strike`'s last sale is
+**2026-05-13 17:06Z, with 0 sales in BOTH the last 30 and 90 days** — exactly as filed.
+
+**So the honest split is:** the 19-hour starvation is real and wasteful, and it plausibly bears on Top
+Shot and All Day, where liquidity is not obviously the binding constraint. It is **not** the explanation
+for the 31.3%, and anyone reading §4 as "raise FMV throughput → the gate moves" would be acting on my
+implication rather than my measurement. ⚠ That filing is careful about its own limits too — 4 points and
+a consistent ordering is enough to redirect effort and not enough to quantify.
+
+⚠ **A second thing worth recording: the headline metric is not merely unmeasured, it is EXPENSIVE TO
+MEASURE.** Trying to re-derive the 31.3% myself, **two different formulations both timed out at 60 s**
+(a `DISTINCT ON` over `fmv_snapshots`, then the `fmv_current` view) — inside the degraded band this
+filing is about. That is very likely *why* no view, dashboard or recent measurement of it exists: the
+number that gates the roadmap costs more to compute than anyone is willing to spend casually, and costs
+most exactly when the estate is struggling. A cheap materialised counter would change that, and is a
+better lever on "we don't know our accuracy" than anything in §6.
+
 ## 5. The largest single consumer, named but NOT diagnosed as the cause
 
 `pg_stat_statements` (reset 2026-08-12 01:33Z), by `shared_blks_read`:
