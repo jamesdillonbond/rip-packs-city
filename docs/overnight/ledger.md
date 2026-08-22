@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · 🚨 P0 FILED, NOT FIXED (Claude Code, interactive) — the 2026-08-03 credential purge was DEFEATED by a stale branch of the PUBLIC repo, and the PII is still fetchable
+
+**Docs only. NOTHING was deleted and nothing can be from here — this is an OPERATOR hand-off.** Found while sweeping for unfinished tasks; it was not on any list.
+
+🚨 **`git filter-repo` rewrote `main` on 2026-08-03 to purge the leaked All Day credential file. It did NOT rewrite `origin/claude/todo-implementation-e4tib3`, which branches from the ROOT COMMIT and therefore still carries the entire pre-purge history — including the purged blob.** Blob `02a86fcb` of `scripts/fetch-allday-collection.mjs` is reachable from that branch and **NOT** from `origin/main`, and it was introduced by **`1c3e01a8f` (2026-04-13)** — the exact sha this ledger's own P0 names as the leak's origin.
+
+**Measured with a control, values-free** (every figure is a `grep -c` or a reachability boolean; ⛔ no credential was read, printed or decoded, and the PII characterisation is QUOTED from the existing P0 rather than re-derived by decoding the token): the branch-only blob carries **2 `eyJ` JWT header markers, 2 `ID_TOKEN` refs, `nfl_session`, 0 placeholders**; `main`'s sanitized control carries **0 JWT markers and 4 `process.env`**.
+
+⚠ **A wrong first hypothesis, recorded so nobody re-runs it.** I first suspected `scripts/local-cost-basis-backfill.mjs` (3 of 4 historical blobs lack the `PASTE_FRESH_COOKIES_HERE` placeholder). **Refuted** — all three are reachable from `main` too and carry zero cookie markers; they simply predate the constant. *Missing placeholder is not contains-a-secret*, and main-reachability is the test that separates them.
+
+🚨 **What is actually at risk, stated precisely rather than inflated.** The cookies date from 2026-04-13 and are almost certainly expired — **this does NOT claim a live session is exposed.** The durable harm is the **PII, which does not expire**: per the P0, the RS256 `ID_TOKEN` payload carries a real email, legal name and Flow account id, publicly fetchable since 2026-04-13 and still so after the purge was believed to have removed it. **Triage it as a privacy exposure first, a credential exposure second.**
+
+⚠ **Deleting the branch is neither sufficient nor free.** Not sufficient: unreachable objects stay fetchable **by sha** until GC, so this ledger's own precedent binds — *"permanently burned; rotation is the only remedy."* Not free: `e4tib3` is **not** a fossil — tested on a CONTENT property per CLAUDE.md's rule, its tip tree `d6269d5fa025` matches no tree in `main`, and **`ee94c8a2a` (2026-08-05, panini serials persistence draft) is genuine unique work** that deletion would discard. ⚠ **The "4,024 commits ahead" figure is a pre-purge re-hash ARTEFACT, not 4,024 lost changes — the honest number is ONE draft commit.**
+
+**Scope, measured:** `qi4350` **tested CLEAN** (merge-base `77636a51c`, 2026-08-04, post-purge). `claude/todo-items-issues-3jqqfx` remote ref no longer exists — stale tracking ref pruned and the merged local branch deleted this session. **No open PRs.**
+
+**⛔ OPERATOR ACTIONS (I can do none of them):** triage `ee94c8a2a` → delete `e4tib3` **via the GitHub UI** (CLAUDE.md: remote delete-ref **403s** from the sandbox; not attempted) → ask GitHub Support to GC the unreachable objects if the exposure is to be genuinely closed → **treat the credentials as burned and rotate**.
+
+⚠ **DURABLE LESSON:** *a `filter-repo` purge only rewrites the refs you push; every other ref keeps the original history, and the tell is that its **merge-base with `main` is the ROOT COMMIT**.* This repo already knew about the root re-hash — the 08-05 SessionStart self-heal fix is about exactly it — but it was filed as a **branch-alignment** gotcha, so nobody drew the **security** conclusion sitting beside it. After any purge the completion check is `for-each-ref` → merge-base vs `main` → **anything basing at the root is unpurged**, not "the force-push succeeded".
+
+**Filed:** [inbox/2026-08-22T1620Z-P0-the-08-03-credential-purge-was-defeated-by-a-stale-public-branch.md](inbox/2026-08-22T1620Z-P0-the-08-03-credential-purge-was-defeated-by-a-stale-public-branch.md).
+
+**Revert:** `git revert <sha>` (docs only). The local branch deletion is not revertable-by-git and needs none — it held 0 commits beyond `main`.
+
 ### 2026-08-22 · SECURITY · REQUIRED (Claude Code, interactive) — an edge-function gate key was exposed in a session transcript, so the rotation is no longer deferrable; least-privilege migration committed unapplied
 
 **No DB or prod-state change in this entry.** Deliberately terse: this repo is PUBLIC and the exposure is unremediated, so the analysis stays out of it. Detail is with Trevor.
