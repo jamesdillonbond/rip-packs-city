@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the "What's your collection worth?" wallet band is now ANON-ONLY
+
+**CODE.** Trevor, from a screenshot of `/nba-top-shot/collection` while signed in: the band asking a signed-in collector to paste a wallet address is noise — "we should already know their wallet address and have it warmed up when they land on this page."
+
+✅ **`components/WalletSearchBand.tsx` now returns `null` for a signed-in visitor**, on BOTH placements (the `(collections)` layout and the `/insights` layout — one component, two mounts, so this is one change, not two). Auth is read exactly the way `components/AnonSignInPill.tsx` reads it (`getSupabaseBrowser().auth.getUser()` + `onAuthStateChange`), so the two affordances cannot disagree about what "signed in" means.
+
+⚠ **The hide is AFFIRMATIVE-ONLY, and that is the honesty-relevant half.** Only a RESOLVED session sets `signedIn`. A rejected `getUser()`, a browser client that cannot be constructed (missing env), or a still-pending check all leave it `false` and the band rendered — the anon default. Hiding an entry point on a FAILED read would be the wallet-band version of "a failed read must not render as an answer": it publishes "we know who you are" out of an error, and the visible cost lands on the anon visitor who then has no lookup box at all.
+
+⚠ **The band stays in the SERVER pass** — the existing `hasWallet` check was already deliberately deferred a tick so the entry point ships in the delivered HTML and stays crawlable. The auth check runs in the same post-hydration window, so the SSR contract is unchanged and the pinned test for it still passes untouched.
+
+**Already-warm claim VERIFIED, not assumed:** `CollectionTabClient` auto-searches on mount from `rpc_last_wallet` || `rpc_owner_key` (`app/(collections)/[collection]/collection/CollectionTabClient.tsx`, the "Auto-search on mount" effect), `WalletHydrator` keeps the wallet session warm from the collection layout, and `WalletPreloader` pre-fetches the owned set. Nothing new was needed for the warming half of the ask.
+
+**Tests: 4 new cases in `__tests__/component-WalletSearchBand.test.tsx` (17 total).** ⚠ **Negative control run** — reverting just the `|| signedIn` guard reddens exactly 3 of them (signed-in on collection, signed-in on insights, re-appears on `SIGNED_OUT`); the 4th pins the failed-read direction and is green both ways BY DESIGN, which is the point of it. The signed-in assertion checks the ABSENCE of the whole `[data-rpc-wallet-band]` section and of the copy string, not merely of the `<input>` — the headline is the half Trevor asked to remove.
+
+**Verified with the gate CI actually runs, both of them** (the 08-22 lesson two entries down): `npm run test:coverage` → exit 0, **14,487** cases, 92.15% stmts / 79.74% branches; `npm run test:coverage:components` → exit 0, **3,002** cases, 91.01% stmts / 82.13% branches. `npx tsc --noEmit` → exit 0. `npx eslint` on both changed files → exit 0.
+
+**Revert:** `git revert <sha>` — or, without a deploy, set `NEXT_PUBLIC_WALLET_BAND=off` in Vercel to kill BOTH placements, which is the pre-existing switch and is unrelated to this change.
+
 ### 2026-08-22 · MEASURED (PLANS ONLY) + REGISTER (Claude Code, interactive) — the roadmap's #1 metric is unreadable ~20 h a day; the cause is structural, my candidate fix did NOT validate, and the operator-blocked set finally has stable item numbers
 
 **Docs only — no code, no DB, no migration.** Two things: the open items got a permanent home, and the accuracy meter got diagnosed.
