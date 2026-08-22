@@ -127,7 +127,7 @@
     },
     {
       "path": "/api/ingest/candy-editions",
-      "schedule": "40 8 * * *"
+      "schedule": "10 22 * * *"
     },
     {
       "path": "/api/candy-sales-indexer",
