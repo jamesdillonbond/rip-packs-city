@@ -235,34 +235,48 @@ and the tell is a cost stated with no number in it.
    removed the parallelism that was accidentally providing that cap. Full mechanism + the three
    requirements for re-landing are in today's ledger entry.
 
-2. ✅ **DONE FOR `deals` (2026-08-22, `faf4d7fa`) — and the per-board arithmetic matters, so do NOT
-   copy it blindly to the other four.** `mv_cross_collection_deals` + `refresh_cross_collection_deals()`
-   + pg_cron jobid 352 (`12,32,52`, every 20 min). The fetcher's exact query went **12,905 ms → 1.977 ms**
-   and **~10,000 read buffers → 12**; MV is 112 kB, refresh 5.1–8.9 s. Zero app-code change — the swap is
-   behind the existing view name. Scheduled cron verified firing (22:12:00, succeeded, telemetry row
-   written). Two things worth carrying to the remaining boards:
+2. ✅ **ALL THREE DONE (2026-08-22).** `deals` (`faf4d7fa`), then `panini_squeeze_board` and
+   `topshot_first_mint_trophies` — the latter also fixing `topshot_first_mint_trophy_stats` for free,
+   since it reads the former. Each: MV built from `pg_get_viewdef()`, content verified equal by `EXCEPT`
+   in both directions before the swap, unique index for `CONCURRENTLY`, service_role-only grants,
+   `security_invoker` restated, refresh function logging `pipeline_runs`, 20-min pg_cron, and a
+   `pipeline_cadence_watchlist` row.
 
-   ⚠ **Cadence must be derived from each board's OWN read rate.** `deals` was computed 984×/window
-   (3.81/h), so 20 min (3/h) is a ~21% reduction — but a 15-min refresh would have been **read-NEGATIVE**,
-   more full computations than the reads it replaces. **`panini_squeeze_board` is computed 5,276×/window**,
-   a completely different break-even; copying `12,32,52` onto it is very likely a loss. Do the arithmetic
-   per board. *"It's cached now"* is not the argument.
+   | board | before | after | reads/h | GB/window | saved |
+   |---|---|---|---|---|---|
+   | `panini_squeeze_board` | 4,494 ms / 71 MB | **5.4 ms, 0 disk reads** | 20.50 | 372 | **~85%** |
+   | `topshot_first_mint_troph*` | 13,050 ms / 52 MB ×2 | **sub-ms** | 6.08 / 5.95 | 158 | **~50%** |
+   | `cross_collection_deals_board` | 12,905 ms / 78 MB | **1.98 ms** | 3.84 | 76 | **~22%** |
 
-   ⚠ **Materialising a live-computed board CREATES a staleness failure it did not have, and the existing
-   guard cannot see it.** `public_board_liveness_watchlist` checks row count + latency; a frozen MV returns
-   its last rows in ~2 ms and passes for ever. Every remaining board needs its own freshness instrument —
-   for `deals` that is a `pipeline_runs` row plus a `pipeline_cadence_watchlist` entry at 70 min, so
-   **silence is the alarm** (cadence, not a self-reported error, because a thrown `REFRESH` rolls back the
-   log row with it). ⚠ **All 20 other MVs in this schema are bare `REFRESH` with no freshness instrument
-   at all** — that is a standing gap, not a precedent to copy.
+   🚨 **I FILED THE BREAK-EVEN BACKWARDS IN THIS VERY SECTION AND ACTED ON IT — the correction is the
+   durable lesson.** The earlier text said panini's much higher read rate meant "a completely different
+   break-even" and that copying the deals cadence to it "is very likely a loss". **That is exactly wrong.**
+   The refresh rate is FIXED (3/h); it is the *reads it replaces* that scale. So a HIGHER read rate means a
+   BIGGER win, and panini — the board I had flagged as the worst candidate — was the best one available,
+   at 372 GB. **Materialising wins whenever refresh_rate < read_rate, and the margin grows with read
+   rate.** The right instinct is the plain one: cache the thing that is read most.
 
-   ⚠ **And check the RLS semantics before materialising.** A materialized view is **not RLS-governed**.
-   The `deals` body read `editions`, whose policy restricts rows to active collections, so the replacement
-   view had to restate `is_active` explicitly or a collection deactivated tomorrow would keep serving out
-   of the MV. Any board whose arms read an RLS-filtered table has the same trap.
+   ⚠ **Still true, and the part that survives the correction: cadence must come from a MEASURED read
+   rate.** For `deals` at 3.84/h a 15-min refresh (4/h) would have been read-NEGATIVE — more full
+   computations than the reads it replaces. That is the real trap, and it bites the LOW-traffic boards,
+   not the high ones.
 
-   **Still to do:** `topshot_first_mint_troph*` (52 MB/call, 13.1 s, 56.8% warm failure) and
-   `panini_squeeze_board` (71 MB/call, PAGED, 76.0% failure) — same shape, same three checks each.
+   ⚠ **Two things every future materialisation of a live-computed board must do**, both learned here:
+   **(a)** it CREATES a staleness failure the board did not previously have, and
+   `public_board_liveness_watchlist` checks row count + latency, so a frozen MV passes for ever — each
+   needs its own cadence-watchlist row so silence is the alarm. **(b)** a materialized view is **not
+   RLS-governed**: `deals` and `first-mint` read `editions` (policy: active collections only) and are
+   anon-readable, so both needed the `is_active` predicate restated in the replacement view; `panini`
+   reads no RLS-filtered table and is anon-SELECT false, so it correctly needed none. **Check, don't
+   copy** — the three boards needed three different answers.
+
+   ⚠ **Filed while measuring, NOT fixed:** `topshot_first_mint_trophies` shows **68 rows that are the same
+   sale twice** — identical `(edition_id, transaction_hash)` and price, differing only in
+   `mint_one_sold_at` (697 rows, 629 distinct `(edition_id, tx)`, 541 distinct editions). A duplicate-sales
+   artifact rendering twice on a public board. Separately, its fetcher pages with
+   `.order("fmv_usd").range(...)` on a **non-unique** key — this repo's documented unstable-pagination
+   ban. Materialising makes the pages consistent (one frozen snapshot instead of five live computations)
+   but does not fix the tie-break.
 
 3. ⛔ **Do NOT re-tune the timing-out pack-EV crons yet — they are a SYMPTOM.** Measured: their
    **successes take 113–178s and their failures pin at the wall** (`rpc-refresh-allday-pack-realized`:

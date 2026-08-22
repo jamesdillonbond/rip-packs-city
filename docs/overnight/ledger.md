@@ -8,6 +8,79 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — panini + first-mint materialized too; all 3 failing boards now read MVs, and I had the break-even backwards
+
+**DB only, zero app-code change** (each swap sits behind its existing view name). Follows the deals
+board earlier tonight. Trevor: "keep going and get us stable."
+
+| board | before | after | reads/h | GB/window | saved at 3 refreshes/h |
+|---|---|---|---|---|---|
+| `panini_squeeze_board` | 4,494 ms / 71 MB | **5.4 ms, 220 buffers, ZERO disk reads** | **20.50** | **372** | **~85%** |
+| `topshot_first_mint_troph*` (×2) | 13,050 ms / 52 MB each | **sub-millisecond** | 6.08 / 5.95 | 158 | ~50% |
+| `cross_collection_deals_board` | 12,905 ms / 78 MB | 1.98 ms | 3.84 | 76 | ~22% |
+
+**≈530 GB/window of reads addressed, and the three boards that failed 76.0% / 74.8% / 56.8% of their
+warms now answer from 112 kB–1 MB snapshots.** ONE MV fixed BOTH first-mint views —
+`topshot_first_mint_trophy_stats` reads `topshot_first_mint_trophies` (pg_depend), so rebodying the
+latter made the former fast for free.
+
+🚨 **I FILED THE BREAK-EVEN BACKWARDS THIS AFTERNOON AND NEARLY SKIPPED THE BIGGEST WIN.** The inbox
+said panini's much higher read rate meant "a completely different break-even" and that copying the
+deals cadence "is very likely a loss". **Exactly wrong.** The refresh rate is FIXED (3/h); it is the
+*reads it replaces* that scale, so **a higher read rate is a BIGGER win**. Panini — flagged as the
+worst candidate — was the best one on the board at 372 GB. ⚠ **The surviving half of the rule is the
+opposite of what I wrote: the read-rate check protects the LOW-traffic boards.** At `deals`' 3.84/h a
+15-min refresh (4/h) really would have been read-NEGATIVE. Corrected in the filing.
+
+⚠ **THE THREE BOARDS NEEDED THREE DIFFERENT RLS ANSWERS — copying would have been a security bug.**
+A materialized view is **not RLS-governed**, so any board whose body reads an RLS-row-filtered table
+and is anon-readable must restate the predicate in the replacement view or the swap silently WIDENS it:
+- `deals` reads `editions` (policy: `collection_id IN (SELECT id FROM collections WHERE is_active)`),
+  anon-readable → **per-row guard** `collection_slug IN (SELECT slug FROM collections WHERE is_active)`.
+- `first-mint` reads `editions`, anon-readable, but is **single-collection** (verified twice: the body
+  hardcodes the TS UUID, and every row joins to exactly 1 distinct `collection_id`) → **all-or-nothing
+  EXISTS gate** on `nba_top_shot` being active.
+- `panini` reads only `panini_*` tables (none RLS-row-filtered) **and is anon-SELECT false** → correctly
+  needs **no guard at all**.
+
+⚠ **Each materialisation CREATES a staleness failure the board did not have, and the guard that watches
+these boards cannot see it.** All three sit in `public_board_liveness_watchlist`, which checks **row
+count and latency** — a frozen MV returns its last rows in milliseconds and passes for ever. So every
+refresh logs a `pipeline_runs` row and every pipeline has a `pipeline_cadence_watchlist` entry at 70 min:
+**silence is the alarm.** Cadence rather than a self-reported error, because a thrown `REFRESH` rolls
+back the transaction **and takes the log row with it**. ⚠ **21 other MVs in this schema still have no
+freshness instrument at all** — a standing gap, not a precedent to copy.
+
+**Objects:** `mv_panini_squeeze` (4,680 rows, key `(player_name,set_name,tier)`) ·
+`mv_topshot_first_mint_trophies` (697 rows, key `(edition_id,mint_one_sold_at,transaction_hash)`) ·
+`refresh_panini_squeeze()` · `refresh_topshot_first_mint_trophies()` · pg_cron **353** `18,38,58` and
+**354** `21,41,1` · 2 cadence rows. Files `supabase/migrations/2026082222{2210,2246,2254,2305,2535,2556,2607}_*`
+plus `20260822223000_*` for the non-DDL cron/watchlist state.
+
+⚠ **The first-mint unique key needed real work and the obvious choices were wrong.** `edition_id` alone
+is **not unique** (541 distinct over 697 rows); `(edition_id, transaction_hash)` is **also not** (629).
+The cause: **68 rows are the SAME sale rendered twice**, identical edition/tx/price, differing only in
+`mint_one_sold_at` — a duplicate-sales artifact showing on a public board. **Filed, not fixed.** The
+three-column key is the most specific available; if it ever collides the refresh fails loudly and the
+cadence watchlist turns the silence into an alarm, which is the right canary. ⚠ Its fetcher also pages
+`.order("fmv_usd").range(...)` on a **non-unique** key — the documented unstable-pagination ban.
+Materialising makes the five pages a single frozen snapshot instead of five live computations, which
+*improves* consistency but does **not** fix the tie-break.
+
+**Verification, all three, in the same order every time:** built from `pg_get_viewdef()` not
+transcription · `EXCEPT` **0 rows in BOTH directions** before the swap (172/172, 4,680/4,680, 697/697) ·
+columns identical (20/20, 24/24, 12/12 — zero name, zero type mismatches; `CREATE OR REPLACE VIEW` fails
+42P16 otherwise) · `security_invoker=on` confirmed still set on all three after · MV grants
+`has_table_privilege` anon **false** / authenticated **false** on all three · refresh functions
+anon-EXECUTE false · `check_secdef_anon_exec_drift` 0, `check_secdef_anon_execute_violations` 0,
+`check_public_security_invariants` 0 rows, `check_anon_write_surface` 0 rows · each refresh proved by a
+positive control (run it, then read `pipeline_runs` in a SEPARATE step): panini `refresh_ms` 9,854 /
+4,680 rows, first-mint ok / 697 rows, deals 5,075 / 172 rows.
+
+**REVERT:** per board — `cron.unschedule(<job>)`; `is_active=false` on its cadence row; restore the
+pre-materialisation view body with `WITH (security_invoker = on)`; `DROP MATERIALIZED VIEW`;
+`DROP FUNCTION`. Full commands in `20260822223000_*` and `20260822221500_*`.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — #23 canary: one edge function redeployed onto the import map, method proven before the other 24
 
 **What changed in prod.** `ufc-stub-thumbnail-resolver` redeployed via Supabase MCP `deploy_edge_function`,
