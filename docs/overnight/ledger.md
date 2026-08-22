@@ -8,6 +8,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — #23 canary: one edge function redeployed onto the import map, method proven before the other 24
+
+**What changed in prod.** `ufc-stub-thumbnail-resolver` redeployed via Supabase MCP `deploy_edge_function`,
+**v22 → v23**, at **22:21:45Z**. The only intended change is `import_map: false` → **`import_map: true`**
+(`import_map_path` now points at the deployed `source/deno.json`). `verify_jwt: false` preserved.
+**No repo file changed** — the deployed source is byte-for-byte what `main` already held.
+
+**Why a canary and not the 25.** #23's own guard message is the warning: redeploying with `deno.json` in
+`files` but WITHOUT `import_map_path` turns a **stale-but-working** function into a **hard-down** one. The
+25 include `compute-*-pack-ev` and `ingest-*`, which CLAUDE.md puts off-limits, so the blast radius of
+guessing the recipe is a dead pipeline. Prove the recipe on the cheapest target first.
+
+**Why THIS target.** UFC is the deadest market in the estate (0 sales/24h, ~2088h since the last one), the
+function is a thumbnail backfill with no user-facing read path, and its own header already says
+*"Deploy with `verify_jwt = false`"* — matching live, so there was nothing to infer.
+
+**THE RECIPE, now measured rather than assumed** (this is the reusable part):
+- `files` = the entrypoint **and** `deno.json` — both, by content.
+- `import_map_path` = `deno.json` — **passing the file in `files` is NOT enough**; the map is only wired
+  when the path is given, and that is exactly the omission that would hard-down a function.
+- `verify_jwt` — **read per function from `list_edge_functions` and pass it back.** It is NOT uniform:
+  8 of the deployed functions are `true`. The MCP tool's own default is `true`, so **omitting it on a
+  `false` function would silently put an auth wall in front of a cron-job.org caller.**
+
+⚠ **VERIFICATION IS INCOMPLETE AS OF THIS ENTRY AND THAT IS THE HONEST STATE.** What IS verified:
+`list_edge_functions` re-read after the deploy confirms v23 / `import_map: true` / `verify_jwt: false`
+persisted server-side. What is **NOT** yet verified: that it still **runs**. The last `pipeline_runs` tick
+is **22:12:07Z — nine minutes BEFORE the deploy**, so every green row in that table predates the change and
+**none of them is evidence about v23.** Its caller is external (cron-job.org, every 30 min at :12/:42 —
+there is no `cron.job` row and no in-repo caller), so the first legible tick is **22:42:07Z**.
+⚠ **A direct probe is not available from this sandbox** — the egress proxy 403s the CONNECT to
+`*.supabase.co/functions/v1`, so `curl` returns `000` for a healthy and a dead function alike. **Do not
+read that 000 as a failure signal; it is a null instrument.**
+
+**REVERT (if the 22:42Z tick is not ok):** redeploy v22's shape — same `files`, but **omit**
+`import_map_path`. That restores the pre-canary artifact exactly. No repo change to revert.
+
+**Do NOT mass-deploy the remaining 24 on this entry's strength.** The gate is the 22:42Z tick going `ok`,
+and ideally the next `edge-fn-drift` run (06:40Z) showing this slug dropped out of the drifted set.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sentinel now watches the watchers; #25 is one env var from active
 
 **What shipped.** A `Detector Health (GitHub Actions)` arm in `app/api/sentinel/route.ts` + **5 tests**.
