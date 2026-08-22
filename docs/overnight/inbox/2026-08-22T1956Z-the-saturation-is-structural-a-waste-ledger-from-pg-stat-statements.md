@@ -235,13 +235,35 @@ and the tell is a cost stated with no number in it.
    removed the parallelism that was accidentally providing that cap. Full mechanism + the three
    requirements for re-landing are in today's ledger entry.
 
-2. **Materialize the five hot board views — now unambiguously the FIRST thing to do.** ⚠ Item 1 failed
-   because it RATIONED attempts at a board that cannot finish instead of making it finishable, and
-   `panini_squeeze_board` cannot be made safe by scheduling while one warm needs several 30s-capable
-   statements. They are `relkind = 'v'` and
-   cost 52–95 MB and 11.5–16.7s *per call*, so even at 2 boards/tick they will keep dying at the 30s wall
-   whenever the instance is busy. An MV refreshed on the boards' real change cadence removes the failure
-   mode outright rather than rationing it.
+2. ✅ **DONE FOR `deals` (2026-08-22, `faf4d7fa`) — and the per-board arithmetic matters, so do NOT
+   copy it blindly to the other four.** `mv_cross_collection_deals` + `refresh_cross_collection_deals()`
+   + pg_cron jobid 352 (`12,32,52`, every 20 min). The fetcher's exact query went **12,905 ms → 1.977 ms**
+   and **~10,000 read buffers → 12**; MV is 112 kB, refresh 5.1–8.9 s. Zero app-code change — the swap is
+   behind the existing view name. Scheduled cron verified firing (22:12:00, succeeded, telemetry row
+   written). Two things worth carrying to the remaining boards:
+
+   ⚠ **Cadence must be derived from each board's OWN read rate.** `deals` was computed 984×/window
+   (3.81/h), so 20 min (3/h) is a ~21% reduction — but a 15-min refresh would have been **read-NEGATIVE**,
+   more full computations than the reads it replaces. **`panini_squeeze_board` is computed 5,276×/window**,
+   a completely different break-even; copying `12,32,52` onto it is very likely a loss. Do the arithmetic
+   per board. *"It's cached now"* is not the argument.
+
+   ⚠ **Materialising a live-computed board CREATES a staleness failure it did not have, and the existing
+   guard cannot see it.** `public_board_liveness_watchlist` checks row count + latency; a frozen MV returns
+   its last rows in ~2 ms and passes for ever. Every remaining board needs its own freshness instrument —
+   for `deals` that is a `pipeline_runs` row plus a `pipeline_cadence_watchlist` entry at 70 min, so
+   **silence is the alarm** (cadence, not a self-reported error, because a thrown `REFRESH` rolls back the
+   log row with it). ⚠ **All 20 other MVs in this schema are bare `REFRESH` with no freshness instrument
+   at all** — that is a standing gap, not a precedent to copy.
+
+   ⚠ **And check the RLS semantics before materialising.** A materialized view is **not RLS-governed**.
+   The `deals` body read `editions`, whose policy restricts rows to active collections, so the replacement
+   view had to restate `is_active` explicitly or a collection deactivated tomorrow would keep serving out
+   of the MV. Any board whose arms read an RLS-filtered table has the same trap.
+
+   **Still to do:** `topshot_first_mint_troph*` (52 MB/call, 13.1 s, 56.8% warm failure) and
+   `panini_squeeze_board` (71 MB/call, PAGED, 76.0% failure) — same shape, same three checks each.
+
 3. ⛔ **Do NOT re-tune the timing-out pack-EV crons yet — they are a SYMPTOM.** Measured: their
    **successes take 113–178s and their failures pin at the wall** (`rpc-refresh-allday-pack-realized`:
    20 failures at 600.0–602.7s vs 7 successes averaging 113s). Bimodal, so the batch sizes are not
