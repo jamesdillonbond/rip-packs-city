@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
     console.log(
       `[FMV-RECALC] Starting — offset=${offset} editionLimit=${limit} window=${WINDOW_DAYS}d since=${windowStart}`
     )
-    console.log(`[FMV-RECALC] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
+    console.log(`[FMV-RECALC] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`)
 
     // ── Step 1a: Page through distinct edition_ids by recency ────────────────
     // Ordered by MAX(sold_at) DESC so recently-traded editions price first

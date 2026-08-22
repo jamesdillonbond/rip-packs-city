@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { computeDualPrice, bestPrice, serialPremiumLabel } from "@/lib/pack-ev-pricing"
+import { computeDualPrice, bestPrice, serialPremiumLabel, priceIsCallerInfluenced } from "@/lib/pack-ev-pricing"
 import { apiErrorResponse } from "@/lib/api-error"
 
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
@@ -406,6 +406,38 @@ type PackDynamicResponse = {
   }
 }
 
+// deep-audit R24 — R2's sibling. The R2 fix gated /api/edition-floor's persist
+// path; the same shape was left open here.
+//
+// `proxy.ts` opens /api/pack-ev to ANONYMOUS POST (it sits in the "batch
+// read-compute, no writes" block, which is where R2 also lived). The handler is
+// not write-free: `computeDualPrice()` takes `requestedPrice` straight from the
+// body and, when the pack has primary supply and is for sale, that number
+// becomes `dual.packPrice` — which a SERVICE_ROLE client then inserts into
+// `pack_ev_history` as the persisted `pack_price`, driving `pack_ev`,
+// `value_ratio` and `is_positive_ev`.
+//
+// ⚠ `check_anon_write_surface()` is blind to this BY CONSTRUCTION — it tests the
+// anon DB ROLE, and this route holds the service-role key. Same guard-scope
+// class the R2 comment records.
+//
+// ⚠ `gross_ev` and `pack_ev` are clamped a few lines below; `pack_price` is NOT.
+//
+// Measured 2026-08-22 over 30d (n=111,736 rows / 3,852 packs): the
+// caller-influenced path had been exercised on 25 rows (0.022%), all at
+// pack_price = 10.00, and no pack carried more than one distinct primary price.
+// So this was LATENT, not abused — gated rather than deleted, because writing
+// history for a primary-priced pack is legitimate work for an authorised caller.
+function persistAuthorized(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization") ?? ""
+  const cronSecret = process.env.CRON_SECRET
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  return (
+    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
+    (!!ingest && auth === `Bearer ${ingest}`)
+  )
+}
+
 export async function POST(req: NextRequest) {
   let packListingId = ""
 
@@ -699,6 +731,20 @@ export async function POST(req: NextRequest) {
       try {
         const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
         const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+
+        // ⚠ Gate on PRICE PROVENANCE, not on the request being a POST.
+        // priceSource "primary"/"min" means dual.packPrice came from (or was
+        // tied to) the caller's requestedPrice; "secondary"/"none" means it was
+        // derived from data we hold. Only the former is caller-controlled, so
+        // only the former needs authorisation — a secondary-priced pack keeps
+        // recording history anonymously exactly as before.
+        const callerInfluencedPrice = priceIsCallerInfluenced(dual.priceSource)
+        if (callerInfluencedPrice && !persistAuthorized(req)) {
+          console.log(
+            `[pack-ev] history insert SKIPPED for ${packListingId}: priceSource=${dual.priceSource} is caller-influenced and the request is unauthorised (R24)`
+          )
+          return
+        }
 
         const { data: recent } = await supabaseAdmin
           .from("pack_ev_history")

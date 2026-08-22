@@ -615,7 +615,7 @@ export async function POST(req: NextRequest) {
     try {
 
     console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
-    console.log(`[INGEST] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}, length: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.length ?? 0}`)
+    console.log(`[INGEST] SUPABASE_SERVICE_ROLE_KEY set: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`)
 
     // The NBA Top Shot collection UUID is a published constant (see
     // CLAUDE.md). Treat the lookup as a fast-path — if PostgREST 504s or the

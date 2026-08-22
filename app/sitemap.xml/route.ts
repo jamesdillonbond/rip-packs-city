@@ -19,9 +19,27 @@ export const dynamic = "force-static"
 export const revalidate = 21600 // match app/sitemap.ts
 
 export async function GET(): Promise<NextResponse> {
-  const lastmod = new Date().toISOString()
+  // deep-audit R35 - <lastmod> REMOVED rather than corrected.
+  //
+  // It was `new Date().toISOString()`, so every child carried an identical
+  // timestamp equal to the moment the index was generated. That is not when the
+  // child's URL set last changed, and because this route is force-static with a
+  // 6h revalidate it moved every 6h whether anything changed or not. Google
+  // explicitly discounts a lastmod that always reads "now", so the tag was
+  // simultaneously false and useless.
+  //
+  // <lastmod> is OPTIONAL in the sitemap protocol. Omitting it asserts nothing;
+  // publishing a generation timestamp asserts something we cannot substantiate.
+  // Same rule as everywhere else here: do not publish a number you cannot stand
+  // behind just because the field exists.
+  //
+  // ⚠ Do NOT "fix" this by bucketing the timestamp to the revalidate window -
+  // that is still a claim that the content changed at time T, only coarser. A
+  // real lastmod needs a max(updated_at) across each segment's data sources,
+  // which this force-static route cannot afford; if that is ever wanted, it
+  // belongs in the child routes that actually know their own inputs.
   const entries = SEGMENT_IDS.map(
-    (id) => `  <sitemap>\n    <loc>${BASE_URL}/sitemap/${id}.xml</loc>\n    <lastmod>${lastmod}</lastmod>\n  </sitemap>`,
+    (id) => `  <sitemap>\n    <loc>${BASE_URL}/sitemap/${id}.xml</loc>\n  </sitemap>`,
   ).join("\n")
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</sitemapindex>\n`
   return new NextResponse(xml, {

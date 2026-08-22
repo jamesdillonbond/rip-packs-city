@@ -26,6 +26,27 @@ export type DualPrice = {
   priceSource: PriceSource
 }
 
+/**
+ * Did the CALLER's supplied price end up in the resulting packPrice?
+ *
+ * deep-audit R24. `/api/pack-ev` is open to anonymous POST and its handler
+ * persists `dual.packPrice` into `pack_ev_history` with a SERVICE_ROLE client.
+ * `requestedPrice` comes straight from the request body, so when the pack has
+ * primary supply and is for sale that number IS the persisted price — and it
+ * drives `pack_ev`, `value_ratio` and `is_positive_ev`.
+ *
+ * "primary" — packPrice IS requestedPrice.
+ * "min"     — the two anchors agreed within 1%, so requestedPrice still set it.
+ * "secondary" / "none" — derived from data we hold; the caller had no influence.
+ *
+ * ⚠ This is a SECURITY predicate, not a display one. Extracted so the rule is a
+ * tested unit rather than an inline expression in a route whose happy path is
+ * upstream-GQL-driven and therefore effectively untestable.
+ */
+export function priceIsCallerInfluenced(priceSource: PriceSource): boolean {
+  return priceSource === "primary" || priceSource === "min"
+}
+
 export function computeDualPrice(args: {
   requestedPrice: number
   totalUnopened: number

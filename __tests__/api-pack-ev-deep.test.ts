@@ -100,8 +100,12 @@ function editionsResp(nodes: unknown[], pageInfo: { endCursor: string | null; ha
 }
 
 let harness: InstalledFetchMock | null = null
-const post = (body: unknown) =>
-  new NextRequest("https://t/api/pack-ev", { method: "POST", body: JSON.stringify(body) })
+const post = (body: unknown, authToken?: string) =>
+  new NextRequest("https://t/api/pack-ev", {
+    method: "POST",
+    body: JSON.stringify(body),
+    ...(authToken ? { headers: { authorization: `Bearer ${authToken}` } } : {}),
+  })
 
 /** The standard TS stubs plus a caller-chosen /api/pack-listings response. */
 function stubs(packListings: unknown, opts: { editions?: unknown[] } = {}) {
@@ -244,10 +248,20 @@ describe("pack-ev — cache + history tail", () => {
     expect(second.evVerdict).toContain("+EV by $1.50")
   })
 
-  it("writes a clamped pack_ev_history row when no recent snapshot exists", async () => {
+  it("writes a clamped pack_ev_history row when no recent snapshot exists (AUTHORISED)", async () => {
+    // ⚠ UPDATED for deep-audit R24. This previously posted ANONYMOUSLY with a
+    // caller-supplied packPrice and asserted the row was written — i.e. it pinned
+    // the defect: /api/pack-ev is open to anonymous POST, and the body's
+    // packPrice became the persisted pack_price via a SERVICE_ROLE client,
+    // driving pack_ev / value_ratio / is_positive_ev.
+    //
+    // The write itself is legitimate work for an AUTHORISED caller, so the test
+    // keeps its assertions and gains a bearer token. The anonymous case is now
+    // covered separately below, in both directions.
+    vi.stubEnv("CRON_SECRET", "test-cron-secret")
     const spy = install({ pack_ev_history: { data: [], error: null } })
     harness = installFetchMock(stubs(jsonRoute("pack-listings", { listings: [] })))
-    await POST(post({ packListingId: "hist-1", packPrice: 5, collectionId: "nba-top-shot", distId: "d9", packName: "Hist Pack" }))
+    await POST(post({ packListingId: "hist-1", packPrice: 5, collectionId: "nba-top-shot", distId: "d9", packName: "Hist Pack" }, "test-cron-secret"))
     await new Promise((r) => setTimeout(r, 0))
 
     const row = (spy.writes.pack_ev_history ?? []).find((w) => w.method === "insert")?.rows[0]
@@ -260,6 +274,32 @@ describe("pack-ev — cache + history tail", () => {
     })
     expect(Number(row!.gross_ev)).toBeLessThanOrEqual(1_000_000)
     expect(Number(row!.pack_ev)).toBeGreaterThanOrEqual(-10_000)
+    vi.unstubAllEnvs()
+  })
+
+  it("R24: an ANONYMOUS caller cannot persist a price it supplied", async () => {
+    // The whole point of the gate. priceSource here is "primary", meaning
+    // dual.packPrice IS the body's packPrice.
+    vi.stubEnv("CRON_SECRET", "test-cron-secret")
+    const spy = install({ pack_ev_history: { data: [], error: null } })
+    harness = installFetchMock(stubs(jsonRoute("pack-listings", { listings: [] })))
+    await POST(post({ packListingId: "anon-1", packPrice: 5, collectionId: "nba-top-shot", distId: "d9", packName: "Anon Pack" }))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect((spy.writes.pack_ev_history ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
+    vi.unstubAllEnvs()
+  })
+
+  it("R24: the gate FAILS CLOSED when no secret is configured", async () => {
+    // An unset CRON_SECRET/INGEST_SECRET_TOKEN must not authorise everyone. A
+    // `auth === \`Bearer \${undefined}\`` style comparison would do exactly that.
+    vi.unstubAllEnvs()
+    const spy = install({ pack_ev_history: { data: [], error: null } })
+    harness = installFetchMock(stubs(jsonRoute("pack-listings", { listings: [] })))
+    await POST(post({ packListingId: "noenv-1", packPrice: 5, collectionId: "nba-top-shot" }, "anything"))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect((spy.writes.pack_ev_history ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
   })
 
   it("skips the history insert when one landed inside the 15-minute window", async () => {

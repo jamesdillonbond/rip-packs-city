@@ -31,6 +31,17 @@ import { useRouter } from "next/navigation"
 import { trackFunnelEvent } from "@/lib/track-funnel"
 
 const FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/
+// deep-audit R28. The default placeholder and aria-label BOTH promise "moment
+// ID", and HOME_STEPS repeats it, but the submit path had no branch for one: a
+// numeric id fell through to the username resolver, missed, and rendered
+// "Couldn't find that username." — while the hint directly under the input said
+// "Try a wallet address or username." The page contradicted itself in adjacent
+// elements and blamed the reader for typing what it asked for.
+//
+// Bounded deliberately: 1-18 digits, no leading zero (Top Shot moment ids are
+// positive integers well inside that). A looser \d+ would swallow pasted serial
+// numbers and jersey numbers and send them to a guaranteed 404.
+const MOMENT_ID = /^[1-9][0-9]{0,17}$/
 
 export type WalletSearchVariant = "hero" | "inline"
 export type WalletSearchDestination = "share" | "tc-report"
@@ -164,6 +175,13 @@ export default function WalletSearch({
       go(raw)
       return
     }
+    // R28: deliver on the "moment ID" promise instead of routing a valid moment
+    // id into the username resolver. Placed BEFORE the network call so it costs
+    // nothing and cannot be affected by an upstream outage.
+    if (MOMENT_ID.test(raw)) {
+      router.push(`/moment/${encodeURIComponent(raw)}`)
+      return
+    }
     setPending(true)
     try {
       const res = await fetch("/api/wallet-search", {
@@ -194,7 +212,7 @@ export default function WalletSearch({
     } finally {
       setPending(false)
     }
-  }, [value, pending, surface, onSubmitValue, go])
+  }, [value, pending, surface, onSubmitValue, go, router])
 
   return (
     <div

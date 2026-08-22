@@ -62,11 +62,27 @@ describe("/sitemap.xml — the sitemap index", () => {
     expect(advertised).toEqual([...SITEMAP_SEGMENT_IDS].sort())
   })
 
-  it("gives every child a lastmod", async () => {
+  it("publishes NO <lastmod> rather than a generation timestamp", async () => {
+    // ⚠ INVERTED from "gives every child a lastmod" (deep-audit R35).
+    //
+    // The old assertion pinned the DEFECT. The value was
+    // `new Date().toISOString()`, so all five children carried an IDENTICAL
+    // timestamp equal to the moment the index was generated - not when any
+    // child's URL set actually changed - and it moved every 6h on the revalidate
+    // whether anything changed or not. Google discounts a lastmod that always
+    // reads "now", so the tag was both false and useless, and this test was
+    // holding it in place.
+    //
+    // <lastmod> is optional in the sitemap protocol. Omitting it asserts
+    // nothing; a generation timestamp asserts something unsubstantiated.
     const { xml } = await get()
-    const mods = [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1])
-    expect(mods).toHaveLength(REAL_SEGMENT_IDS.length)
-    for (const m of mods) expect(Number.isNaN(Date.parse(m))).toBe(false)
+    expect(xml).not.toContain("<lastmod>")
+
+    // ...and the index must still be a valid, complete sitemapindex. Dropping
+    // the tag must not have cost us the children.
+    const advertised = [...xml.matchAll(/\/sitemap\/(\d+)\.xml/g)].map((m) => Number(m[1]))
+    expect(advertised).toHaveLength(REAL_SEGMENT_IDS.length)
+    expect(xml).toContain("<sitemapindex")
   })
 })
 

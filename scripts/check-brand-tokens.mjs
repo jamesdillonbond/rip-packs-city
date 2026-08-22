@@ -244,6 +244,28 @@ const WEB_SURFACE = /^components\/.*\.tsx$|(?:^|\/)(?:page|layout)\.tsx$|Client\
 // renders the same pixels. Narrowing this to page/layout/*Client was a real
 // gap, and the first version of the test PINNED it by asserting false.
 
+/**
+ * Blank out // line comments, preserving line numbers.
+ *
+ * ⚠ Deliberately does NOT strip block comments with a regex. On this repo a
+ * "//" comment mentioning a glob path opens a fake block that a naive
+ * block-comment regex closes hundreds of lines later, blanking real code —
+ * measured at 109k characters hidden across 55 files (register R42). Line
+ * comments are all this guard needs and cannot have that failure mode.
+ */
+function stripLineComments(src) {
+  return src
+    .split("\n")
+    .map((line) => {
+      const i = line.indexOf("//");
+      if (i < 0) return line;
+      if (i > 0 && line[i - 1] === ":") return line; // don't cut inside https://
+      return line.slice(0, i);
+    })
+    .join("\n");
+}
+
+
 /** Every rendered web file under app/ and components/ (email HTML lives in lib/ and app/api/). */
 function webSurfaceFiles(dir, out = []) {
   let entries;
@@ -266,24 +288,62 @@ function webSurfaceFiles(dir, out = []) {
 
 let violations = 0;
 
+// PROTECTED is still read, but ONLY as a rename detector — a curated list is a
+// fine tripwire for "did one of these files move?" and a terrible input set for
+// a ban.
 for (const file of PROTECTED) {
+  try {
+    readFileSync(file, "utf8");
+  } catch {
+    console.error(`  ! protected file missing (rename?): ${file}`);
+    violations++;
+  }
+}
+
+// ── LITERAL check: WALKS THE TREE (deep-audit R37) ──────────────────────────
+// This loop used to iterate PROTECTED — 54 curated paths — while the email-accent
+// check below it walked the tree and carried a comment explaining exactly why a
+// curated list is wrong. The guard argued against its own first half.
+//
+// A curated list is silent BY CONSTRUCTION about every file outside it, so a new
+// page hardcoding the brand red stayed invisible until someone remembered to add
+// it. Measured 2026-08-22: the walk covers 399 web surfaces against 54 listed,
+// and the real violation count OUTSIDE the list was 3 — small, which is exactly
+// why it could sit there indefinitely with nobody noticing the scope gap.
+//
+// ⚠ COMMENTS ARE STRIPPED FIRST. One of those 3 was ConsoleGreeting's own comment
+// DESCRIBING the sanctioned hardcode. At least six guards here have fired on the
+// comment documenting the thing they check, and a guard that reddens on its own
+// documentation teaches people to delete the documentation.
+const LITERAL_SURFACES = [...webSurfaceFiles("app"), ...webSurfaceFiles("components")];
+if (LITERAL_SURFACES.length === 0) {
+  console.error("  ! brand-literal guard found no web surfaces to scan (walk broken?)");
+  violations++;
+}
+for (const file of LITERAL_SURFACES) {
   let text;
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    console.error(`  ! protected file missing (rename?): ${file}`);
-    violations++;
     continue;
   }
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!LITERAL.test(line)) continue;
-    if (FALLBACK.test(line)) continue;
-    // brand-exception on this line or within the 3 preceding lines
-    const window = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
+  const scan = stripLineComments(text).split(/\r?\n/);
+  const raw = text.split(/\r?\n/);
+  for (let i = 0; i < scan.length; i++) {
+    if (!LITERAL.test(scan[i])) continue;
+    if (FALLBACK.test(scan[i])) continue;
+    // brand-exception on this line or within the 6 preceding lines — read from
+    // the RAW text, because the marker itself lives in a comment.
+    //
+    // ⚠ Widened 3 → 6 (R37). Three lines is too tight for a real annotation: a
+    // multi-argument console.log or a JSX prop block routinely puts the literal
+    // 4+ lines below the comment that justifies it, so the guard fired on a
+    // correctly-annotated exception and the only ways out were to contort the
+    // comment or delete it. A guard whose escape hatch is impractical gets
+    // worked around, not obeyed.
+    const window = raw.slice(Math.max(0, i - 6), i + 1).join("\n");
     if (/brand-exception/.test(window)) continue;
-    console.error(`  ✗ ${file}:${i + 1}  ${line.trim().slice(0, 100)}`);
+    console.error(`  \u2717 ${file}:${i + 1}  ${(raw[i] || "").trim().slice(0, 100)}`);
     violations++;
   }
 }
@@ -300,7 +360,11 @@ for (const file of webSurfaces) {
   } catch {
     continue;
   }
-  const lines = text.split(/\r?\n/);
+  // ⚠ Comments stripped here for the same reason as the LITERAL check above
+  // (R37): a comment EXPLAINING why the email accent differs from the web red
+  // is not a use of it. This guard fired on exactly such a comment while that
+  // comment was being written — the documented failure, reproduced live.
+  const lines = stripLineComments(text).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (!EMAIL_ACCENT.test(lines[i])) continue;
     console.error(
@@ -343,7 +407,8 @@ if (violations > 0) {
 }
 
 console.log(
-  `Brand-token guard: ${PROTECTED.length} brand-protected + ` +
+  `Brand-token guard: ${LITERAL_SURFACES.length} web surface(s) scanned for brand literals ` +
+    `(${PROTECTED.length} tracked for renames) + ` +
     `${NEUTRAL_PROTECTED.length} light-mode surface(s) clean.`
 );
 console.log(

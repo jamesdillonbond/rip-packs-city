@@ -293,7 +293,8 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
                   ]
                 }}
               />
-              <Line type="monotone" dataKey="value" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
+              {/* brand-exception: recharts SVG stroke can't resolve var(--rpc-red) */}
+          <Line type="monotone" dataKey="value" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

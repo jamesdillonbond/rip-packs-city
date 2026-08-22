@@ -261,7 +261,7 @@ export default function HomePageMarketing() {
         <WalletSearch
             surface="home"
             variant="hero"
-            hint="No signup required. Try a wallet address or username."
+            hint="No signup required. Try a wallet address, username, or moment ID."
           />
       </section>
 
@@ -672,7 +672,7 @@ export default function HomePageMarketing() {
           <WalletSearch
             surface="home"
             variant="hero"
-            hint="No signup required. Try a wallet address or username."
+            hint="No signup required. Try a wallet address, username, or moment ID."
           />
         </div>
       </section>
