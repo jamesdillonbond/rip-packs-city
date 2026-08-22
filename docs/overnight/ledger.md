@@ -8,6 +8,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sixth and last stale DB pin; known-issues #24 is CLOSED
+
+**What shipped.** `get_pack_detail_bundle` re-pinned: a snapshot migration
+(`20260822211000_…_partition_prune.sql`), the test's verbatim DDL, its PINS entry, and **two new
+assertions**. **Known-issues #24 goes 1 open → 0 and is RESOLVED.**
+
+**Three changes in this one.** `SECURITY DEFINER` → **`STABLE`** `SECURITY DEFINER` (accurate — it only
+reads). `SET statement_timeout TO '30s'` **removed** — a cleanup, not a behaviour change, because CLAUDE.md
+records a function-level `statement_timeout` as **INERT** (195 functions declare one and none binds); taking
+away an inert declaration removes nothing that was in force. And `and fs.computed_at <= now()` added to the
+per-edition FMV lookup, to hand the planner the partition key so it prunes the empty future partition.
+
+⚠ **That third one's comment calls it "a no-op on the RESULT" — which is a claim about the DATA, not about
+the code**, and the hero montage on a public pack page depends on it. Verified rather than accepted: **zero**
+`fmv_snapshots` rows carry `computed_at > now()`, with a **positive control** (14,192 snapshots written in
+the trailing 24 h, max `computed_at` 37 seconds old) so the zero means *"none are future-dated"* rather than
+*"the predicate matched nothing"*. What the predicate actually DOES is exclude a future row, so that is what
+the test pins: a future-dated snapshot carrying a 5000 FMV must not win the hero slot, and its edition keeps
+its latest non-future value of 50. Clock skew or a back-dated writer now shows up as a red test instead of a
+wrong hero image. Mutation-tested: deleting the predicate reds it.
+
+⚠ **VERIFY THE CLOSURE — the next `db-pin-staleness` run (daily 07:20Z) is the proof**, and it should report
+**187 clean, 0 needing attention**: its first green since 2026-08-03. If it names a pin instead, read WHICH
+before reopening.
+
+🔑 **The finding that held across all six, and the reason this took six separate diffs.** *Not one pin was
+what the register's own summary implied.* "6 stale pins" reads as uniform rot. They were: a misleading header
+over a one-feature drift; a **correct** pin the checker could not parse (a PROCEDURE — the mirror bug fixed
+earlier today); a deliberate feature addition; a sargability rewrite that looked like a live pricing defect
+until a positive control refuted it; its sibling, whose body got **57 chars shorter while gaining logic**;
+and a partition-pruning predicate whose "no-op" rested on an unstated data assumption. **A count of stale
+pins is a work-queue length, never a description of the work** — and two of the six would have been shipped
+wrong without a cheap control.
+
+**Verified:** body hashes **`ee22757b37c6899ac63b3db5db062d13`** across live `prosrc`, the test and the
+migration (transcription checked against the DB's own `md5(pg_get_functiondef)`, `89f96e0d…`) ·
+`npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.18%, 45318/49160) · 198 guard tests · **178**
+DB-invariant files on a local Postgres 16. Anon-exec via the **marker, not a REVOKE**;
+`has_function_privilege` confirms anon/authenticated false, service_role true.
+
+⚠ **Migration deliberately NOT applied** — byte-identical to live. **No DB or prod state changed by any of
+the six.**
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): re-pin get_pack_detail_bundle`
+(find by message, not by a recorded sha), then delete the new migration file.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — D12b: the public Top Shot analytics tab was publishing a 99-day-old single row as market depth, and the guard that should have caught it was blind to 19.6k chars of the file
 
 **P0 closed.** `/nba-top-shot/analytics` rendered **"ORDER BOOK DEPTH · 1 listings · MEDIAN ASK $5.0k · P90 ASK $5.0k"** to anonymous visitors. Re-derived today, not inherited: `ts_listings` holds **exactly 1 row**, `max(ingested_at) = 2026-05-15 14:43Z`, **99.3 days stale**; the sampler was retired 2026-05-26.
