@@ -40,6 +40,15 @@ jobs:
       # which are frozen history CLAUDE.md forbids rewriting — gating those
       # would make this permanently red and therefore unreadable.
       - run: node scripts/check-memory-doc-links.mjs
+      # Driver-message leak guard — fails if an UNGATED route handler returns a
+      # raw `err.message` to the client. lib/api-error.ts exists because
+      # /api/sets showed anonymous visitors Postgres's own "canceling statement
+      # due to statement timeout". Ban at population zero for ungated handlers;
+      # the ~53 operator-gated sites (admin/cron/ingest, reached with a secret)
+      # are diagnostic and deliberately ignored.
+      # ⚠ The exclusion is PER HANDLER, not per file: a gated POST does not vouch
+      # for the ungated GET beside it. That exact shape was 4 live handlers.
+      - run: node scripts/check-driver-message-leaks.mjs
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30

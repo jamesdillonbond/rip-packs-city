@@ -3,6 +3,7 @@ import { after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -313,7 +314,11 @@ export async function GET() {
   })
   if (error) {
     console.warn(`[allday-pack-listings] rpc error: ${error.message}`)
-    return NextResponse.json({ error: error.message, listings: [] }, { status: 500 })
+  // ⚠ UNGATED GET sitting in a file whose POST *is* token-gated, so a
+  // FILE-level auth grep vouches for this handler and should not. Raw
+  // `error.message` here is the /api/sets leak, reachable by anyone — and this one serves PRODUCT
+  // data, shipping `listings: []` packaged alongside the failure.
+    return apiErrorResponse(error, "api/allday-pack-listings GET")
   }
   const rows: any[] = Array.isArray(data) ? data : []
 

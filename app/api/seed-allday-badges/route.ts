@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { classifyAlldayBadges, ALLDAY_BADGE_RULES } from "@/lib/allday-badges"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,7 +31,10 @@ export async function GET() {
     .select("*", { count: "exact", head: true })
     .eq("collection_id", ALLDAY_COLLECTION_ID)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // ⚠ UNGATED GET sitting in a file whose POST *is* token-gated, so a
+  // FILE-level auth grep vouches for this handler and should not. Raw
+  // `error.message` here is the /api/sets leak, reachable by anyone.
+  if (error) return apiErrorResponse(error, "api/seed-allday-badges GET")
   return NextResponse.json({ collection_id: ALLDAY_COLLECTION_ID, count: count ?? 0 })
 }
 

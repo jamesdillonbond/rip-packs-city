@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // Server-side port of scripts/topshot-badge-sync.js.
 // POST: run the full sweep cycle (Rookie Year / TS Debut / ROTY / Champ Year
@@ -777,7 +778,10 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   const { data, error } = await (supabaseAdmin as any).rpc("badge_editions_counts")
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  // ⚠ UNGATED GET sitting in a file whose POST *is* token-gated, so a
+  // FILE-level auth grep vouches for this handler and should not. Raw
+  // `error.message` here is the /api/sets leak, reachable by anyone.
+    return apiErrorResponse(error, "api/badge-sync GET")
   }
   const counts: Record<string, number> = {}
   let total = 0
