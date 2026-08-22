@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a ratchet so the stripper sweep cannot quietly unwind, and a baseline I got wrong first
+
+**What shipped.** `__tests__/guards-use-the-shared-comment-stripper.test.ts` — a **down-only ratchet** on
+the number of files rolling their own comment stripper. **28 files now import the shared one; nothing
+stopped the 29th from rolling its own again**, and the failure mode is why that matters: **a blind stripper
+does not error.** The guard still runs, still reports a population, still passes — it is simply reading a
+blanked file. Only a before/after count separates that from real coverage.
+
+🚨 **THE BASELINE WAS WRONG ON THE FIRST DRAFT, AND THE MUTATION TEST IS THE ONLY REASON I KNOW.** I set it
+to **26**, carried over from a raw-text scan. **A mutation test at 25 FAILED TO KILL IT** — one unit of
+slack, which is precisely the defect I criticised in another ratchet earlier the same night ("a ratchet left
+slack silently permits the next N"). ⚠ **The true population is 25**, because this guard strips comments
+before matching and `retired-orderbook-source-not-rendered-ratchet` only **QUOTES** the defective pattern in
+prose — its real stripper is the state machine. **Do not carry a number over from a different instrument:
+measure by setting the ceiling to 0 and reading the report.** Re-mutation-tested both ways afterwards —
+passes at 25, fires at 24.
+
+**Three controls, and the third is the one that keeps it usable:** it detects a rolled-own stripper; it does
+not count a file importing the shared one; and **it does not count the pattern quoted inside a comment** —
+several files quote the defective shape to explain the fix, and **a guard that fires on its own
+documentation trains people to delete the documentation.**
+
+**It also records the migration hazard that already bit once:** if the local helper is itself named
+`stripComments`, replacing only its BODY makes it call itself and blow the stack. Remove the wrapper.
+
+**REVERT:** `git revert cdbf494e5` (a test file only; no production code, no DB change).
+
+⚠ **What the remaining 25 are, so the number is not mistaken for 25 defects:** narrow readers, walkers over
+`supabase/migrations` (outside the affected set), and tools with their own normalisation needs
+(`extract-cadence`, `check-edge-fn-drift`). **Each still deserves migrating** — the ratchet exists to keep
+them visible rather than forgotten, not to assert they are all currently blind.
+
 ### 2026-08-22 · CORRECTION + REGISTER (Claude Code, interactive) — my two P1 filings were both advanced by a concurrent session, and both CORRECTED me; the register said otherwise until now
 
 **No new findings. This entry exists because the register was carrying MY stale text for two items another session had already resolved — and a register row that contradicts the ledger is worse than no row, because the register is the document that exists to stop anyone re-deriving.**
