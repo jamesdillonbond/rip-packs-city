@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Every PRERENDERED `/insights` server page must bound its data read.
 //
@@ -61,10 +62,15 @@ const BOUNDED = [
  * This is the repo's recurring trap — any check that greps source for a token
  * must strip comments first, including the one you are extending.
  */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, "")
-  return src.replace(/\/\*[\s\S]*?\*\//g, blanks).replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1)
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 /** A direct DB call in the page itself. */
 const DIRECT_QUERY = /\.from\s*\(|\.rpc\s*(?:as any\))?\s*\(/

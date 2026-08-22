@@ -49,6 +49,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, statSync, readFileSync } from "fs"
 import path from "path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const ROOT = path.resolve(__dirname, "..")
 const APP_DIR = path.join(ROOT, "app")
@@ -82,12 +83,15 @@ function walk(dir: string, out: string[] = []): string[] {
  * deletes comment lines, the two line numberings drift apart, and the marker
  * lookup silently misses (caught here by the marker failing to suppress its own
  * read). Replacing each comment with its own newlines keeps the two in step. */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, "")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1)
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 interface Finding {
   file: string

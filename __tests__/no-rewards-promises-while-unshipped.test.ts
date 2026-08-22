@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // While the rewards programme is not shipped, no user-facing surface may
 // promise points, Status or Credits — Trevor, 2026-08-16: "we haven't fully
@@ -17,12 +18,15 @@ import path from "node:path"
 const ROOT = process.cwd()
 
 /** Comment-stripped, offset-preserving. */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/\S/g, " "))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + m.slice(p1.length).replace(/\S/g, " "))
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/\S/g, " "))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

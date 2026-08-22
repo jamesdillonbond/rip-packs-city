@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { execSync } from "node:child_process"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The block-scan cursor must never leapfrog a chunk that FAILED to scan.
 //
@@ -37,13 +38,15 @@ import { execSync } from "node:child_process"
 // branch percentage. A source property is what is available for all 8 at once;
 // it complements the execution tests rather than replacing them.
 
-function stripComments(s: string): string {
-  // Required, not tidiness: several of these routes explain the hold in a
-  // comment that quotes the very expression being asserted ("Stop before a
-  // later chunk leapfrogs the cursor past this failed one."). This repo has
-  // tripped that trap five times.
-  return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 /** Every route that tracks a first-failed chunk, discovered from source. */
 const routes = execSync(

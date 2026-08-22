@@ -4,6 +4,7 @@ import path from "node:path"
 
 import { boardRowMeta, boardRowMetaComplete, boardCountFloor } from "@/lib/insights/board-meta"
 import { fetchBoardCount, boardCountLabel } from "@/lib/og/board-count"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The headline count on an insights OG card must never be a PAGE LENGTH.
 //
@@ -32,12 +33,15 @@ import { fetchBoardCount, boardCountLabel } from "@/lib/og/board-count"
 const ROOT = process.cwd()
 const OG_INSIGHTS = path.join(ROOT, "app", "api", "og", "insights")
 
-function stripComments(src: string): string {
-  // Required, not tidiness: this guard's own fixes added comments quoting the
-  // very expressions it searches for (`meta.total_rows`, "3 sales this week").
-  // Fourth time this trap has been recorded in this repo.
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 function ogRoutes(): { name: string; src: string }[] {
   const out: { name: string; src: string }[] = []

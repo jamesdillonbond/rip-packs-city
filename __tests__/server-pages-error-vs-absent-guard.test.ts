@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Source guard for the "an error and an absence share a return value" defect, on
 // two SERVER pages outside /insights (which has its own directory-driven guard).
@@ -39,12 +40,15 @@ function read(...parts: string[]): string {
  * guard. Any check that greps source for a string must strip comments first —
  * including the one you are writing now.
  */
-function stripComments(src: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, blanks)
-    .replace(/(^|[^:])\/\/.*$/gm, (_m, p1) => p1 + " ".repeat(_m.length - p1.length))
-}
+/*
+ * ⚠ MIGRATED 2026-08-22 to the ONE shared stripper (scripts/lib/strip-comments.mjs).
+ * The local copy stripped BLOCK comments before LINE comments, so an ordinary
+ * line comment mentioning a glob path opened a block comment running to the next
+ * close-comment anywhere in the file, blanking real source this guard then
+ * reported as clean (103,590 chars across 49 product files). The shared version
+ * blanks rather than deletes, so offsets and line numbers survive.
+ * Do not re-inline a local copy.
+ */
 
 describe("server pages distinguish a failed read from an absent record", () => {
   it("pack/[id] does not collapse an RPC error into 'not found'", () => {
