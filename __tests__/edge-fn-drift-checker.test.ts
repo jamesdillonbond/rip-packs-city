@@ -7,6 +7,7 @@ import {
   requiresImportMap,
   classifyImportMapDrift,
   normaliseSource,
+  runContentCensus,
 } from "@/scripts/check-edge-fn-drift.mjs"
 
 // Guards the edge-function drift detector — the only check in this repo that can
@@ -139,3 +140,147 @@ describe("edge-fn drift detector — tier 2 normalisation", () => {
     expect(normaliseSource(src)).toContain("https://api.example.com/v1")
   })
 })
+
+// ── TIER 2: the census must never be confused with a census that did not run ──
+//
+// The loop used to swallow every body-read failure into a bare `catch {}` whose
+// comment claimed "tier 1 still covers it". It does not: this detector's own
+// header calls tier 1 a LOWER BOUND and tier 2 "the only census". So a run where
+// every body fetch failed reported the same DRIFT count as a run where the census
+// completed and found nothing new — indistinguishable in the output, on the one
+// instrument that can see a function which was merged and never deployed.
+//
+// These pin the counters, not the wording, and in particular pin `ran` as the
+// POSITIVE CONTROL: false means nothing was read and no result may be presented
+// as a census.
+describe("edge-fn drift detector — tier 2 content census", () => {
+  const repo = [
+    { slug: "a", src: "const x = 1" },
+    { slug: "b", src: "const y = 2" },
+  ]
+  const deployed = [
+    { slug: "a", version: 3, updated_at: "2026-08-01" },
+    { slug: "b", version: 4, updated_at: "2026-08-02" },
+  ]
+
+  it("flags a body that differs from repo source", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) => (slug === "a" ? "const x = 999" : "const y = 2"),
+    })
+    expect(r.contentDrift.map((c) => c.slug)).toEqual(["a"])
+    expect(r.bodiesRead).toBe(2)
+    expect(r.bodiesFailed).toBe(0)
+    expect(r.ran).toBe(true)
+  })
+
+  it("ignores comment and whitespace differences, so a reformat is not drift", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) => (slug === "a" ? "const  x = 1 // added later" : "/* hi */ const y = 2"),
+    })
+    expect(r.contentDrift).toEqual([])
+    expect(r.ran).toBe(true)
+  })
+
+  // The whole point: a total failure must be DISTINGUISHABLE from a clean census.
+  it("reports ran=false when every body read fails, instead of reading as clean", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async () => {
+        throw new Error("HTTP 403")
+      },
+    })
+    expect(r.ran).toBe(false)
+    expect(r.bodiesRead).toBe(0)
+    expect(r.bodiesFailed).toBe(2)
+    // An empty contentDrift here means "did not look", NOT "found nothing" — and
+    // the only thing separating those two is `ran`.
+    expect(r.contentDrift).toEqual([])
+    expect(r.bodyFailures.join(" ")).toContain("HTTP 403")
+  })
+
+  it("counts a partial failure and still censuses what it could read", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) => {
+        if (slug === "a") throw new Error("HTTP 500")
+        return "const y = 222"
+      },
+    })
+    expect(r.ran).toBe(true)
+    expect(r.bodiesRead).toBe(1)
+    expect(r.bodiesFailed).toBe(1)
+    expect(r.contentDrift.map((c) => c.slug)).toEqual(["b"])
+  })
+
+  // A 200 carrying no entrypoint is a failed read. Counting it as read is how an
+  // API shape change silently turns the census into a permanent all-clear.
+  it("treats a 200 with no index.ts as a FAILED read, not a clean one", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async () => ({ files: [{ name: "deno.json", content: "{}" }] }),
+    })
+    expect(r.bodiesRead).toBe(0)
+    expect(r.bodiesFailed).toBe(2)
+    expect(r.ran).toBe(false)
+    expect(r.bodyFailures.join(" ")).toContain("no index.ts")
+  })
+
+  it("reads the entrypoint out of a files[] response shape", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async () => ({ files: [{ name: "src/index.ts", content: "const x = 1" }] }),
+    })
+    expect(r.bodiesRead).toBe(2)
+    // repo "b" is `const y = 2`, so serving `const x = 1` for it IS drift.
+    expect(r.contentDrift.map((c) => c.slug)).toEqual(["b"])
+  })
+
+  it("skips the census when not attempted, and says so via ran=false", async () => {
+    let called = 0
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      attempted: false,
+      fetchBody: async () => {
+        called++
+        return "x"
+      },
+    })
+    expect(called).toBe(0)
+    expect(r.ran).toBe(false)
+    expect(r.bodiesRead).toBe(0)
+  })
+
+  it("does not census a repo function that is not deployed", async () => {
+    const r = await runContentCensus({
+      repo: [...repo, { slug: "ghost", src: "const z = 3" }],
+      deployed,
+      fetchBody: async () => "const x = 1",
+    })
+    expect(r.bodiesRead).toBe(2)
+    expect(r.bodyFailures).toEqual([])
+  })
+
+  // Failure messages go to a CI log and a deployed function can carry a gate key.
+  it("keeps only failure MESSAGES, never body content, and caps how many it keeps", async () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ slug: `f${i}`, src: "const x = 1" }))
+    const r = await runContentCensus({
+      repo: many,
+      deployed: many.map((m) => ({ slug: m.slug, version: 1, updated_at: "2026-08-01" })),
+      fetchBody: async () => {
+        throw new Error("HTTP 403")
+      },
+    })
+    expect(r.bodiesFailed).toBe(9)
+    expect(r.bodyFailures.length).toBe(5)
+  })
+})
+

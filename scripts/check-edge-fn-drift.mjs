@@ -124,6 +124,60 @@ function readRepoFunctions() {
     .map((f) => ({ ...f, src: readFileSync(f.path, "utf8") }))
 }
 
+/**
+ * TIER 2 — the content census, and the counters are the point.
+ *
+ * ⚠ WHY THIS IS NOT JUST A LOOP WITH A TRY/CATCH. It used to be, and every
+ * body-read failure went into a bare `catch {}` whose comment said "tier 1 still
+ * covers it". Tier 1 does NOT cover it: this file's own header calls tier 1 a
+ * LOWER BOUND and tier 2 "the only census". So a run in which EVERY body fetch
+ * failed printed the same DRIFT number as a run in which the census completed and
+ * found nothing new. The census not running and the census finding nothing were
+ * indistinguishable in the output — the failed-read-rendered-as-an-answer defect
+ * this repo tracks, committed by a detector against itself.
+ *
+ * `fetchBody` is injected so this is testable without the network.
+ * Returns { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran }.
+ * `ran` is the POSITIVE CONTROL: false means no body was read, so nothing this
+ * returns may be presented as a census.
+ */
+export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5 }) {
+  const contentDrift = []
+  const bodyFailures = []
+  let bodiesRead = 0
+  let bodiesFailed = 0
+
+  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: false }
+
+  const bySlug = new Map(deployed.map((d) => [d.slug, d]))
+  for (const { slug, src } of repo) {
+    if (!bySlug.has(slug)) continue
+    try {
+      const body = await fetchBody(slug)
+      const depSrc = typeof body === "string" ? body : (body?.files?.find((f) => /index\.ts$/.test(f.name))?.content ?? "")
+      if (!depSrc) {
+        // A 200 with no readable entrypoint is a FAILED READ, not a clean one.
+        // Counting it as read would let a shape change on the API silently turn
+        // the whole census into "no drift found".
+        bodiesFailed++
+        if (bodyFailures.length < maxFailuresKept) bodyFailures.push(`${slug}: no index.ts in body response`)
+        continue
+      }
+      bodiesRead++
+      if (normaliseSource(depSrc) !== normaliseSource(src)) {
+        contentDrift.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
+      }
+    } catch (e) {
+      bodiesFailed++
+      // Message only — NEVER the body. A deployed function can carry a gate key and
+      // this output goes to a CI log. api() puts the token in a header, not the URL.
+      if (bodyFailures.length < maxFailuresKept) bodyFailures.push(`${slug}: ${e.message}`)
+    }
+  }
+
+  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: bodiesRead > 0 }
+}
+
 class AuthError extends Error {}
 
 async function api(path, token) {
@@ -174,22 +228,31 @@ async function main() {
   }
 
   const t1 = classifyImportMapDrift(repo, deployed)
-  const contentDrift = []
 
-  if (!tier1Only) {
-    const bySlug = new Map(deployed.map((d) => [d.slug, d]))
-    for (const { slug, src } of repo) {
-      if (!bySlug.has(slug)) continue
-      try {
-        const body = await api(`/projects/${project}/functions/${slug}/body`, token)
-        const depSrc = typeof body === "string" ? body : (body?.files?.find((f) => /index\.ts$/.test(f.name))?.content ?? "")
-        if (depSrc && normaliseSource(depSrc) !== normaliseSource(src)) {
-          contentDrift.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
-        }
-      } catch {
-        // A body we cannot read is not evidence of drift; tier 1 still covers it.
-      }
-    }
+  // Tier 2, extracted so its reporting can be tested without the network. See
+  // runContentCensus for why the counters exist.
+  const tier2Attempted = !tier1Only
+  const census = await runContentCensus({
+    repo,
+    deployed,
+    attempted: tier2Attempted,
+    fetchBody: (slug) => api(`/projects/${project}/functions/${slug}/body`, token),
+  })
+  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: tier2Ran } = census
+
+  if (tier2Attempted && !tier2Ran) {
+    console.error(
+      `::error::edge-fn drift TIER 2 DID NOT RUN — ${bodiesFailed} body read(s) attempted, 0 succeeded. ` +
+        `The number below is tier 1's LOWER BOUND, not a census: a function whose imports happen to match ` +
+        `but whose body drifted is invisible to it.`
+    )
+    for (const f of bodyFailures) console.error(`  body read failed — ${f}`)
+  } else if (tier2Attempted && bodiesFailed > 0) {
+    console.error(
+      `::warning::edge-fn drift tier 2 read ${bodiesRead} bodies and FAILED on ${bodiesFailed}. ` +
+        `Those ${bodiesFailed} are covered only by tier 1's proof, so content drift in them is unmeasured.`
+    )
+    for (const f of bodyFailures) console.error(`  body read failed — ${f}`)
   }
 
   const drifted = [...new Set([...t1.proven, ...contentDrift.map((c) => c.slug)])].sort()
@@ -209,6 +272,17 @@ async function main() {
     proven_drifted: t1.proven.length,
     clean: t1.clean.length,
     unclassifiable: t1.inapplicable.length,
+    // ⚠ The persisted artifact is the SERIES, and it recorded tier 1 only. A
+    // function that tier 1 calls clean but whose BODY drifted was written down as
+    // "clean" — the artifact asserted the opposite of the finding. These fields
+    // make the census auditable: a reader can tell a real zero from a census that
+    // never ran.
+    tier2_attempted: tier2Attempted,
+    tier2_ran: tier2Ran,
+    bodies_read: bodiesRead,
+    bodies_failed: bodiesFailed,
+    content_drifted: contentDrift.length,
+    content_drifted_slugs: contentDrift.map((c) => c.slug).sort(),
     population: deployed
       .map((d) => ({
         slug: d.slug,
@@ -218,11 +292,16 @@ async function main() {
         in_repo: repo.some((r) => r.slug === d.slug),
         verdict: t1.proven.includes(d.slug)
           ? "proven_drifted"
-          : t1.clean.includes(d.slug)
-            ? "clean"
-            : t1.inapplicable.includes(d.slug)
-              ? "unclassifiable"
-              : "not_in_repo",
+          : contentDrift.some((c) => c.slug === d.slug)
+            ? "content_drifted"
+            : t1.clean.includes(d.slug)
+              ? // Only claim "clean" if the census actually looked at this one.
+                tier2Ran
+                ? "clean"
+                : "clean_tier1_only"
+              : t1.inapplicable.includes(d.slug)
+                ? "unclassifiable"
+                : "not_in_repo",
       }))
       .sort((a, b) => a.slug.localeCompare(b.slug)),
     in_repo_not_deployed: t1.notDeployed.sort(),
@@ -236,7 +315,17 @@ async function main() {
   if (json) {
     console.log(JSON.stringify({ tier1: t1, contentDrift, drifted }, null, 2))
   } else {
-    console.log(`edge-fn drift: ${repo.length} repo functions, ${deployed.length} deployed\n`)
+    console.log(`edge-fn drift: ${repo.length} repo functions, ${deployed.length} deployed`)
+    // State the census on its own line, every run. Without it a reader cannot tell
+    // "tier 2 found nothing new" from "tier 2 read nothing at all" — the two
+    // produce an identical DRIFT count.
+    console.log(
+      tier2Attempted
+        ? `content census: ${bodiesRead} body/bodies read, ${bodiesFailed} failed` +
+            (tier2Ran ? "" : "  ← CENSUS DID NOT RUN; the count below is a LOWER BOUND")
+        : `content census: SKIPPED (--tier1); the count below is a LOWER BOUND`
+    )
+    console.log()
     if (t1.proven.length) {
       console.log(`PROVEN drifted (repo needs an import map, deployed built without one) — ${t1.proven.length}:`)
       for (const s of t1.proven) console.log(`  ✗ ${s}`)
@@ -251,7 +340,12 @@ async function main() {
     console.log(
       drifted.length
         ? `DRIFT: ${drifted.length} function(s). Redeploy each with deno.json in \`files\` AND import_map_path — omitting the map turns a stale function into a hard-down one.`
-        : "clean: every deployed function matches repo source."
+        : tier2Ran
+          ? "clean: every deployed function matches repo source."
+          : // Never publish an all-clear the run did not earn. With no content
+            // census this says only that tier 1's PROOF found nothing — which is
+            // a much weaker claim than "matches repo source".
+            "no PROVEN drift — but the content census did not run, so this is NOT an all-clear."
     )
   }
   process.exitCode = drifted.length > 0 ? 1 : 0
