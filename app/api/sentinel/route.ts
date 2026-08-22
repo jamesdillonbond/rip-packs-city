@@ -23,7 +23,7 @@ export const maxDuration = 180;
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -79,11 +79,19 @@ async function sendTelegram(text: string): Promise<boolean> {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
-      }
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+        }),
+      },
     );
     if (!res.ok) {
-      console.error("Telegram send non-OK:", res.status, (await res.text().catch(() => "")).slice(0, 200));
+      console.error(
+        "Telegram send non-OK:",
+        res.status,
+        (await res.text().catch(() => "")).slice(0, 200),
+      );
       return false;
     }
     return true;
@@ -110,7 +118,11 @@ async function sendEmail(subject: string, html: string): Promise<boolean> {
       }),
     });
     if (!res.ok) {
-      console.error("Email send non-OK:", res.status, (await res.text().catch(() => "")).slice(0, 200));
+      console.error(
+        "Email send non-OK:",
+        res.status,
+        (await res.text().catch(() => "")).slice(0, 200),
+      );
       return false;
     }
     return true;
@@ -133,15 +145,24 @@ export async function POST(req: NextRequest) {
   // row falls back to the hardcoded default below (a config gap can never silently
   // disable a check); enabled=false neutralizes the check to ok after evaluation.
   // The route uses the service-role key, so it bypasses the table's RLS.
-  const cfgMap: Record<string, { warn_at: number | null; crit_at: number | null; enabled: boolean }> = {};
+  const cfgMap: Record<
+    string,
+    { warn_at: number | null; crit_at: number | null; enabled: boolean }
+  > = {};
   try {
     const { data: cfgRows } = await supabase
       .from("sentinel_threshold_config")
       .select("check_name, warn_at, crit_at, enabled");
     for (const r of cfgRows || []) {
       cfgMap[r.check_name] = {
-        warn_at: r.warn_at === null || r.warn_at === undefined ? null : Number(r.warn_at),
-        crit_at: r.crit_at === null || r.crit_at === undefined ? null : Number(r.crit_at),
+        warn_at:
+          r.warn_at === null || r.warn_at === undefined
+            ? null
+            : Number(r.warn_at),
+        crit_at:
+          r.crit_at === null || r.crit_at === undefined
+            ? null
+            : Number(r.crit_at),
         enabled: r.enabled !== false,
       };
     }
@@ -149,7 +170,11 @@ export async function POST(req: NextRequest) {
     /* config table unreadable -> every check uses its hardcoded fallback */
   }
   // Returns the configured threshold, or `fallback` when the row/value is absent.
-  const thr = (name: string, key: "warn_at" | "crit_at", fallback: number): number => {
+  const thr = (
+    name: string,
+    key: "warn_at" | "crit_at",
+    fallback: number,
+  ): number => {
     const v = cfgMap[name]?.[key];
     return v === null || v === undefined ? fallback : v;
   };
@@ -187,9 +212,15 @@ export async function POST(req: NextRequest) {
   // The 45-day offset on the year floor avoids a New Year cliff: for the first
   // weeks of January, sales sold in late December are still counted.
   try {
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+    const twoHoursAgo = new Date(
+      now.getTime() - 2 * 60 * 60 * 1000,
+    ).toISOString();
     const yearFloor = new Date(
-      Date.UTC(new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000).getUTCFullYear(), 0, 1)
+      Date.UTC(
+        new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000).getUTCFullYear(),
+        0,
+        1,
+      ),
     ).toISOString();
     const salesCrit = thr("Sales Ingest (2h)", "crit_at", 0);
 
@@ -201,7 +232,11 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       const sat = isSaturationError(error.message);
-      checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
+      checks.push({
+        name: "Sales Ingest (2h)",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}`,
+      });
     } else {
       const forwardCount = count || 0;
       if (forwardCount > salesCrit) {
@@ -241,12 +276,21 @@ export async function POST(req: NextRequest) {
             : historical && historical > 0
               ? `ZERO forward sales ingested in last 2 hours - forward indexers appear DOWN (${historical} historical backfill rows still landing, so the writer itself is alive)`
               : "ZERO sales ingested in last 2 hours - pipeline may be down";
-        checks.push({ name: "Sales Ingest (2h)", status: "critical", detail, value: 0 });
+        checks.push({
+          name: "Sales Ingest (2h)",
+          status: "critical",
+          detail,
+          value: 0,
+        });
       }
     }
   } catch (e: any) {
     const sat = isSaturationError(e?.message);
-    checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
+    checks.push({
+      name: "Sales Ingest (2h)",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+    });
   }
 
   // Per-collection + per-source sales-ingest health (2026-08-08). The aggregate
@@ -274,28 +318,49 @@ export async function POST(req: NextRequest) {
   try {
     if (ingestErr) {
       const sat = isSaturationError(ingestErr);
-      checks.push({ name: "Sales Ingest by Collection", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}` });
+      checks.push({
+        name: "Sales Ingest by Collection",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}`,
+      });
     } else {
       const rank: Record<string, number> = { critical: 0, warn: 1, off: 2 };
-      const byColl = new Map<string, { display: string; loud: string; ceil: number; hrs: number | null; s24: number }>();
+      const byColl = new Map<
+        string,
+        {
+          display: string;
+          loud: string;
+          ceil: number;
+          hrs: number | null;
+          s24: number;
+        }
+      >();
       for (const r of ingestRows || []) {
         const key = String(r.collection);
         const cur = byColl.get(key) || {
           display: String(r.display_name ?? key),
           loud: String(r.loudness),
           ceil: Number(r.silence_hours),
-          hrs: r.coll_hours_since_last == null ? null : Number(r.coll_hours_since_last),
+          hrs:
+            r.coll_hours_since_last == null
+              ? null
+              : Number(r.coll_hours_since_last),
           s24: 0,
         };
         cur.s24 += Number(r.sales_24h || 0);
         byColl.set(key, cur);
       }
       let worst: "ok" | "warn" | "critical" = "ok";
-      const bump = (s: "warn" | "critical") => { if (s === "critical" || worst === "ok") worst = s; };
-      const ordered = [...byColl.values()].sort((a, b) => (rank[a.loud] - rank[b.loud]) || (b.s24 - a.s24));
+      const bump = (s: "warn" | "critical") => {
+        if (s === "critical" || worst === "ok") worst = s;
+      };
+      const ordered = [...byColl.values()].sort(
+        (a, b) => rank[a.loud] - rank[b.loud] || b.s24 - a.s24,
+      );
       const segs = ordered.map((c) => {
         let st: "ok" | "warn" | "critical" = "ok";
-        if (c.loud !== "off" && c.hrs != null && c.hrs > c.ceil) st = c.loud === "critical" ? "critical" : "warn";
+        if (c.loud !== "off" && c.hrs != null && c.hrs > c.ceil)
+          st = c.loud === "critical" ? "critical" : "warn";
         if (st !== "ok") bump(st);
         const flag = st === "critical" ? "🚨" : st === "warn" ? "⚠️" : "";
         const closed = c.loud === "off" ? " (market closed)" : "";
@@ -303,10 +368,19 @@ export async function POST(req: NextRequest) {
         const breach = st !== "ok" ? ` >${c.ceil}h!` : "";
         return `${flag}${c.display} ${c.s24}/24h (last ${last}${breach})${closed}`;
       });
-      checks.push({ name: "Sales Ingest by Collection", status: worst, detail: segs.join(" · "), value: byColl.size });
+      checks.push({
+        name: "Sales Ingest by Collection",
+        status: worst,
+        detail: segs.join(" · "),
+        value: byColl.size,
+      });
     }
   } catch (e: any) {
-    checks.push({ name: "Sales Ingest by Collection", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "Sales Ingest by Collection",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   // Sales Ingest by Source — warn-only lane view. A lane dying while its
@@ -316,31 +390,48 @@ export async function POST(req: NextRequest) {
   try {
     if (ingestErr) {
       const sat = isSaturationError(ingestErr);
-      checks.push({ name: "Sales Ingest by Source", status: "warn", detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}` });
+      checks.push({
+        name: "Sales Ingest by Source",
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}`,
+      });
     } else {
       const collTotal = new Map<string, number>();
-      for (const r of ingestRows || []) collTotal.set(String(r.collection), (collTotal.get(String(r.collection)) || 0) + Number(r.sales_24h || 0));
+      for (const r of ingestRows || [])
+        collTotal.set(
+          String(r.collection),
+          (collTotal.get(String(r.collection)) || 0) + Number(r.sales_24h || 0),
+        );
       const dead: string[] = [];
       const mix: string[] = [];
       for (const r of ingestRows || []) {
         if (String(r.source) === "(none)") continue; // zero-sales collection handled by the rollup check
         const s24 = Number(r.sales_24h || 0);
         mix.push(`${r.display_name}/${r.source}: ${s24}`);
-        if (String(r.loudness) !== "off" && s24 === 0 && (collTotal.get(String(r.collection)) || 0) > 0) {
+        if (
+          String(r.loudness) !== "off" &&
+          s24 === 0 &&
+          (collTotal.get(String(r.collection)) || 0) > 0
+        ) {
           dead.push(`${r.display_name}/${r.source}`);
         }
       }
       checks.push({
         name: "Sales Ingest by Source",
         status: dead.length > 0 ? "warn" : "ok",
-        detail: dead.length > 0
-          ? `LANE SILENT (collection still active): ${dead.join(", ")} | mix(24h): ${mix.join(", ")}`
-          : `mix(24h): ${mix.join(", ")}`,
+        detail:
+          dead.length > 0
+            ? `LANE SILENT (collection still active): ${dead.join(", ")} | mix(24h): ${mix.join(", ")}`
+            : `mix(24h): ${mix.join(", ")}`,
         value: dead.length,
       });
     }
   } catch (e: any) {
-    checks.push({ name: "Sales Ingest by Source", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "Sales Ingest by Source",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   try {
@@ -351,9 +442,17 @@ export async function POST(req: NextRequest) {
       .limit(1);
     if (error) {
       const sat = isSaturationError(error.message);
-      checks.push({ name: "FMV Freshness", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
+      checks.push({
+        name: "FMV Freshness",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}`,
+      });
     } else if (!data || data.length === 0) {
-      checks.push({ name: "FMV Freshness", status: "critical", detail: "No FMV snapshots found at all" });
+      checks.push({
+        name: "FMV Freshness",
+        status: "critical",
+        detail: "No FMV snapshots found at all",
+      });
     } else {
       const latestFmv = new Date(data[0].computed_at);
       const ageHours = (now.getTime() - latestFmv.getTime()) / (1000 * 60 * 60);
@@ -361,14 +460,19 @@ export async function POST(req: NextRequest) {
       const fmvCrit = thr("FMV Freshness", "crit_at", 6);
       checks.push({
         name: "FMV Freshness",
-        status: ageHours < fmvWarn ? "ok" : ageHours < fmvCrit ? "warn" : "critical",
+        status:
+          ageHours < fmvWarn ? "ok" : ageHours < fmvCrit ? "warn" : "critical",
         detail: `Latest FMV snapshot: ${ageHours.toFixed(1)}h ago`,
         value: `${ageHours.toFixed(1)}h`,
       });
     }
   } catch (e: any) {
     const sat = isSaturationError(e?.message);
-    checks.push({ name: "FMV Freshness", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
+    checks.push({
+      name: "FMV Freshness",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+    });
   }
 
   // Ownership Index Freshness — an OUTCOME check on topshot_ownership (consumer:
@@ -433,7 +537,8 @@ export async function POST(req: NextRequest) {
           .limit(1);
         if (rollup && rollup.length > 0) {
           const days = Math.floor(
-            (now.getTime() - new Date(`${rollup[0].day}T00:00:00Z`).getTime()) / 86_400_000
+            (now.getTime() - new Date(`${rollup[0].day}T00:00:00Z`).getTime()) /
+              86_400_000,
           );
           ageDetail = `last write ${rollup[0].day} (~${days}d ago)`;
         }
@@ -446,10 +551,12 @@ export async function POST(req: NextRequest) {
         detail: `topshot_ownership has no fresh write: ${ageDetail}`,
       });
     } else {
-      const ageHours = (now.getTime() - new Date(ownRows[0].started_at).getTime()) / 3_600_000;
+      const ageHours =
+        (now.getTime() - new Date(ownRows[0].started_at).getTime()) / 3_600_000;
       checks.push({
         name: "Ownership Index Freshness",
-        status: ageHours < ownWarn ? "ok" : ageHours < ownCrit ? "warn" : "critical",
+        status:
+          ageHours < ownWarn ? "ok" : ageHours < ownCrit ? "warn" : "critical",
         detail: `Last ownership write: ${ageHours.toFixed(1)}h ago (${ownRows[0].pipeline})`,
         value: `${ageHours.toFixed(1)}h`,
       });
@@ -475,14 +582,24 @@ export async function POST(req: NextRequest) {
     // cataloguing proceeds — so a combined ratio FALLS as cataloguing SUCCEEDS and
     // can't be thresholded. Base baseline is ~25% HIGH+MED; a warn there means
     // base-edition FMV quality slipped, which is a real signal.
-    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_canonical_ts_split");
+    const { data, error } = await supabase.rpc(
+      "sentinel_fmv_confidence_canonical_ts_split",
+    );
     if (error) {
-      checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `RPC error (${error.message})` });
+      checks.push({
+        name: "FMV Confidence (canonical TS)",
+        status: "warn",
+        detail: `RPC error (${error.message})`,
+      });
     } else if (data) {
       const rows: any[] = data;
       const tally = (printing: string, confidences?: string[]) =>
         rows
-          .filter((r) => r.printing === printing && (!confidences || confidences.includes(r.confidence)))
+          .filter(
+            (r) =>
+              r.printing === printing &&
+              (!confidences || confidences.includes(r.confidence)),
+          )
           .reduce((s: number, r: any) => s + Number(r.count || 0), 0);
 
       const baseTotal = tally("base");
@@ -490,18 +607,37 @@ export async function POST(req: NextRequest) {
       const total = baseTotal + parTotal;
       const baseHighMed = tally("base", ["HIGH", "MEDIUM"]);
       const parHighMed = tally("parallel", ["HIGH", "MEDIUM"]);
-      const pct = (n: number, d: number) => (d > 0 ? ((n / d) * 100).toFixed(1) : "0");
+      const pct = (n: number, d: number) =>
+        d > 0 ? ((n / d) * 100).toFixed(1) : "0";
 
-      const basePct = Number(pct(baseHighMed, baseTotal));
-      checks.push({
-        name: "FMV Confidence (canonical TS)",
-        status: basePct >= thr("FMV Confidence (canonical TS)", "warn_at", 25) ? "ok" : "warn",
-        detail:
-          `BASE HIGH+MED: ${pct(baseHighMed, baseTotal)}% (HIGH ${tally("base", ["HIGH"])} of ${baseTotal}) | ` +
-          `PARALLEL HIGH+MED: ${pct(parHighMed, parTotal)}% (${parTotal} editions, ~${pct(parTotal, total)}% of canonical) | ` +
-          `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
-        value: `${basePct}% base high+med`,
-      });
+      // A population of ZERO is not a share of zero. If the tally came back with
+      // no canonical base editions, `pct` would render "0" and the arm would
+      // publish "BASE HIGH+MED: 0%" — a measured collapse in accuracy — when the
+      // truth is that there was nothing to measure. Those are different claims and
+      // only one of them is actionable. Withhold the number.
+      if (baseTotal === 0) {
+        checks.push({
+          name: "FMV Confidence (canonical TS)",
+          status: "warn",
+          detail:
+            `Tally returned no canonical base editions (parallel rows: ${parTotal}). ` +
+            `The HIGH+MED share is unmeasurable, not zero.`,
+        });
+      } else {
+        const basePct = Number(pct(baseHighMed, baseTotal));
+        checks.push({
+          name: "FMV Confidence (canonical TS)",
+          status:
+            basePct >= thr("FMV Confidence (canonical TS)", "warn_at", 25)
+              ? "ok"
+              : "warn",
+          detail:
+            `BASE HIGH+MED: ${pct(baseHighMed, baseTotal)}% (HIGH ${tally("base", ["HIGH"])} of ${baseTotal}) | ` +
+            `PARALLEL HIGH+MED: ${pct(parHighMed, parTotal)}% (${parTotal} editions, ~${pct(parTotal, total)}% of canonical) | ` +
+            `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
+          value: `${basePct}% base high+med`,
+        });
+      }
     } else {
       // THREE states, not two. `error` null with `data` null is a read that
       // returned no payload — it is NOT an error and it is NOT a zero tally.
@@ -512,11 +648,16 @@ export async function POST(req: NextRequest) {
       checks.push({
         name: "FMV Confidence (canonical TS)",
         status: "warn",
-        detail: "RPC returned no payload (no error, no rows) — confidence split is unreadable, not zero.",
+        detail:
+          "RPC returned no payload (no error, no rows) — confidence split is unreadable, not zero.",
       });
     }
   } catch (e: any) {
-    checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "FMV Confidence (canonical TS)",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   try {
@@ -526,24 +667,51 @@ export async function POST(req: NextRequest) {
     // legitimately carry an FMV, so it drifts every time the GQL writer leaks one).
     // sentinel_edition_coverage() scopes the denominator to live editions and
     // reports the inert bucket separately.
-    const { data: covRows, error: covErr } = await supabase.rpc("sentinel_edition_coverage");
+    const { data: covRows, error: covErr } = await supabase.rpc(
+      "sentinel_edition_coverage",
+    );
     const rows: any[] = covRows || [];
     const live = rows.find((r) => r.scope === "live");
     const inert = rows.find((r) => r.scope === "inert_ts_uuid");
     const liveEditions = Number(live?.editions || 0);
     const liveWithFmv = Number(live?.with_fmv || 0);
-    const coverage = liveEditions > 0 ? ((liveWithFmv / liveEditions) * 100).toFixed(1) : "0";
+    // Same rule as the confidence arm: a zero DENOMINATOR is not 0% coverage.
+    // `liveEditions` is 0 when the RPC came back without a "live" scope row, which
+    // is a read that did not deliver — publishing "0%" turns that into a reportable
+    // collapse. Emit no percentage at all in that case.
+    if (!covErr && liveEditions === 0) {
+      checks.push({
+        name: "Edition Coverage",
+        status: "warn",
+        detail:
+          "Coverage RPC returned no live-scope row, so the denominator is unknown. " +
+          "Coverage is unmeasurable, not zero.",
+      });
+    } else {
+      const coverage =
+        liveEditions > 0
+          ? ((liveWithFmv / liveEditions) * 100).toFixed(1)
+          : "0";
+      checks.push({
+        name: "Edition Coverage",
+        status: covErr
+          ? "warn"
+          : Number(coverage) >= thr("Edition Coverage", "warn_at", 90)
+            ? "ok"
+            : "warn",
+        detail: covErr
+          ? `Coverage RPC error: ${covErr.message}`
+          : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
+            ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows`,
+        value: `${coverage}%`,
+      });
+    }
+  } catch (e: any) {
     checks.push({
       name: "Edition Coverage",
-      status: covErr ? "warn" : Number(coverage) >= thr("Edition Coverage", "warn_at", 90) ? "ok" : "warn",
-      detail: covErr
-        ? `Coverage RPC error: ${covErr.message}`
-        : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
-          ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows`,
-      value: `${coverage}%`,
+      status: "warn",
+      detail: `Exception: ${e.message}`,
     });
-  } catch (e: any) {
-    checks.push({ name: "Edition Coverage", status: "warn", detail: `Exception: ${e.message}` });
   }
 
   // TS edition-writer leak tripwire — inert UUID-keyed Top Shot edition rows
@@ -554,7 +722,9 @@ export async function POST(req: NextRequest) {
   // ingest writer is hitting the UUID fallback (set.flowId/play.flowID arriving
   // null from searchMarketplaceTransactions). See handoff 2026-05-29 #2/#4.
   try {
-    const since48h = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+    const since48h = new Date(
+      now.getTime() - 48 * 60 * 60 * 1000,
+    ).toISOString();
     const { count: inertUuid } = await supabase
       .from("editions")
       .select("id", { count: "exact", head: true })
@@ -571,7 +741,11 @@ export async function POST(req: NextRequest) {
       value: n,
     });
   } catch (e: any) {
-    checks.push({ name: "TS Edition Writer Leak (48h)", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "TS Edition Writer Leak (48h)",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   // Pipeline SILENCE tripwire — absence-of-runs, not failures. The daytime
@@ -584,11 +758,16 @@ export async function POST(req: NextRequest) {
   try {
     const { data, error } = await supabase.rpc("detect_stalled_pipelines");
     if (error) {
-      checks.push({ name: "Pipeline Silence", status: "warn", detail: `RPC error: ${error.message}` });
+      checks.push({
+        name: "Pipeline Silence",
+        status: "warn",
+        detail: `RPC error: ${error.message}`,
+      });
     } else {
       const stalled: any[] = Array.isArray(data) ? data : [];
       const high = stalled.filter((s) => s.severity === "high");
-      const status = high.length > 0 ? "critical" : stalled.length > 0 ? "warn" : "ok";
+      const status =
+        high.length > 0 ? "critical" : stalled.length > 0 ? "warn" : "ok";
       const detail =
         stalled.length === 0
           ? "All watchlisted pipelines running within their max-silent window"
@@ -614,10 +793,19 @@ export async function POST(req: NextRequest) {
                 return `${s.pipeline} ${silence} (>${s.max_silent_minutes}m, ${s.severity})`;
               })
               .join("; ");
-      checks.push({ name: "Pipeline Silence", status, detail, value: stalled.length });
+      checks.push({
+        name: "Pipeline Silence",
+        status,
+        detail,
+        value: stalled.length,
+      });
     }
   } catch (e: any) {
-    checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "Pipeline Silence",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   // Pipeline Success Coverage — the COMPLEMENT of Pipeline Silence above, and the
@@ -719,7 +907,9 @@ export async function POST(req: NextRequest) {
       .select("pipeline")
       .eq("is_active", true);
     if (wlErr) throw new Error(`watchlist read: ${wlErr.message}`);
-    const watched: string[] = (wlRows ?? []).map((r: any) => r.pipeline).filter(Boolean);
+    const watched: string[] = (wlRows ?? [])
+      .map((r: any) => r.pipeline)
+      .filter(Boolean);
 
     if (watched.length === 0) {
       // An empty watchlist is not "everything is fine" — it is "we measured
@@ -728,7 +918,8 @@ export async function POST(req: NextRequest) {
       checks.push({
         name: "Pipeline Success Coverage",
         status: "warn",
-        detail: "INCONCLUSIVE — pipeline_cadence_watchlist returned no active rows, so success coverage was not evaluated",
+        detail:
+          "INCONCLUSIVE — pipeline_cadence_watchlist returned no active rows, so success coverage was not evaluated",
       });
     } else {
       const { data: supRows } = await supabase
@@ -737,14 +928,21 @@ export async function POST(req: NextRequest) {
       // expires_at NULL = permanent suppression; a past expiry is spent.
       const suppressed = new Set<string>(
         (supRows ?? [])
-          .filter((r: any) => !r.expires_at || new Date(r.expires_at).getTime() > now.getTime())
-          .map((r: any) => r.pipeline)
+          .filter(
+            (r: any) =>
+              !r.expires_at || new Date(r.expires_at).getTime() > now.getTime(),
+          )
+          .map((r: any) => r.pipeline),
       );
 
-      const fromDay = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+      const fromDay = new Date(now.getTime() - 86_400_000)
+        .toISOString()
+        .slice(0, 10);
       const { data: rollRows, error: rollErr } = await supabase
         .from("pipeline_runs_daily")
-        .select("pipeline, runs, ok_count, rows_written, last_error, refreshed_at")
+        .select(
+          "pipeline, runs, ok_count, rows_written, last_error, refreshed_at",
+        )
         .gte("day", fromDay)
         .in("pipeline", watched);
       if (rollErr) throw new Error(`rollup read: ${rollErr.message}`);
@@ -767,10 +965,18 @@ export async function POST(req: NextRequest) {
           detail: `INCONCLUSIVE — no pipeline_runs_daily rows since ${fromDay} for ${watched.length} watchlisted pipelines`,
         });
       } else {
-        const agg = new Map<string, { runs: number; oks: number; rw: number; err: string | null }>();
+        const agg = new Map<
+          string,
+          { runs: number; oks: number; rw: number; err: string | null }
+        >();
         let refreshedAt = 0;
         for (const r of rows) {
-          const cur = agg.get(r.pipeline) ?? { runs: 0, oks: 0, rw: 0, err: null };
+          const cur = agg.get(r.pipeline) ?? {
+            runs: 0,
+            oks: 0,
+            rw: 0,
+            err: null,
+          };
           cur.runs += Number(r.runs ?? 0);
           cur.oks += Number(r.ok_count ?? 0);
           cur.rw += Number(r.rows_written ?? 0);
@@ -788,24 +994,43 @@ export async function POST(req: NextRequest) {
         // too makes the scope a property of the arm rather than of the transport.
         const watchedSet = new Set(watched);
         const dead = [...agg.entries()]
-          .filter(([p, a]) => watchedSet.has(p) && a.runs > 0 && a.oks === 0 && a.rw === 0 && !suppressed.has(p))
+          .filter(
+            ([p, a]) =>
+              watchedSet.has(p) &&
+              a.runs > 0 &&
+              a.oks === 0 &&
+              a.rw === 0 &&
+              !suppressed.has(p),
+          )
           .sort((a, b) => b[1].runs - a[1].runs);
 
         // Stated on every reading, healthy or not — the rollup's recency is part
         // of the answer, not a footnote (a 6h-stale "all clear" is a weaker claim
         // than a fresh one, and the reader cannot tell without this).
-        const ageMin = refreshedAt ? Math.round((now.getTime() - refreshedAt) / 60_000) : null;
-        const ageNote = ageMin === null ? "rollup age unknown" : `rollup ${ageMin}m old`;
-        const suppNote = suppressed.size > 0 ? `, ${suppressed.size} suppressed` : "";
+        const ageMin = refreshedAt
+          ? Math.round((now.getTime() - refreshedAt) / 60_000)
+          : null;
+        const ageNote =
+          ageMin === null ? "rollup age unknown" : `rollup ${ageMin}m old`;
+        const suppNote =
+          suppressed.size > 0 ? `, ${suppressed.size} suppressed` : "";
 
         checks.push({
           name: "Pipeline Success Coverage",
-          status: dead.length >= scCrit ? "critical" : dead.length >= scWarn ? "warn" : "ok",
+          status:
+            dead.length >= scCrit
+              ? "critical"
+              : dead.length >= scWarn
+                ? "warn"
+                : "ok",
           detail:
             dead.length === 0
               ? `All ${agg.size} watchlisted pipelines that ran since ${fromDay} produced at least one success or wrote rows (${ageNote}${suppNote})`
               : `${dead
-                  .map(([p, a]) => `${p} 0/${a.runs} ok, 0 rows${a.err ? ` — ${String(a.err).slice(0, 60)}` : ""}`)
+                  .map(
+                    ([p, a]) =>
+                      `${p} 0/${a.runs} ok, 0 rows${a.err ? ` — ${String(a.err).slice(0, 60)}` : ""}`,
+                  )
                   .join("; ")} (since ${fromDay}, ${ageNote}${suppNote})`,
           value: dead.length,
         });
@@ -831,7 +1056,11 @@ export async function POST(req: NextRequest) {
       .select("metric, value, breach_at, status");
     if (trustErr) {
       const sat = isSaturationError(trustErr.message);
-      checks.push({ name: "Trust Health", status: "warn", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${trustErr.message}` });
+      checks.push({
+        name: "Trust Health",
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${trustErr.message}`,
+      });
     } else {
       const rows: any[] = trustRows ?? [];
       const breaches = rows.filter((r) => r.status !== "ok");
@@ -841,12 +1070,18 @@ export async function POST(req: NextRequest) {
         detail:
           breaches.length === 0
             ? `${rows.length}/${rows.length} trust metrics ok`
-            : breaches.map((b) => `${b.metric}=${b.value} (breach at ${b.breach_at})`).join("; "),
+            : breaches
+                .map((b) => `${b.metric}=${b.value} (breach at ${b.breach_at})`)
+                .join("; "),
         value: `${rows.length - breaches.length}/${rows.length}`,
       });
     }
   } catch (e: any) {
-    checks.push({ name: "Trust Health", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "Trust Health",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   try {
@@ -854,16 +1089,24 @@ export async function POST(req: NextRequest) {
     // count(*) walked 4.1M+ rows every 30-min tick and read "0 total sales"
     // whenever the count query itself degraded under saturation. An estimate
     // is instant and honest for a monotonic sanity gauge.
-    const { data: est, error: estErr } = await supabase.rpc("sentinel_total_sales_estimate");
+    const { data: est, error: estErr } = await supabase.rpc(
+      "sentinel_total_sales_estimate",
+    );
     const n = Number(est ?? 0);
     checks.push({
       name: "Total Sales",
       status: estErr || !n ? "warn" : "ok",
-      detail: estErr ? `estimate error: ${estErr.message}` : `~${n.toLocaleString()} total sales in database (planner estimate)`,
+      detail: estErr
+        ? `estimate error: ${estErr.message}`
+        : `~${n.toLocaleString()} total sales in database (planner estimate)`,
       value: n,
     });
   } catch (e: any) {
-    checks.push({ name: "Total Sales", status: "warn", detail: `Exception: ${e.message}` });
+    checks.push({
+      name: "Total Sales",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
   }
 
   try {
@@ -889,11 +1132,14 @@ export async function POST(req: NextRequest) {
       // d.source === "flowty" — a value the union cannot produce — so it
       // reported a hardcoded 0 forever. Derive the mix instead, so this stays
       // correct when a collection is added or retired.
-      const bySource = deals.reduce((acc: Record<string, number>, d: any) => {
-        const s = String(d?.source ?? "unknown");
-        acc[s] = (acc[s] ?? 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
+      const bySource = deals.reduce(
+        (acc: Record<string, number>, d: any) => {
+          const s = String(d?.source ?? "unknown");
+          acc[s] = (acc[s] ?? 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
       const mix = Object.entries(bySource)
         .sort((a, b) => b[1] - a[1])
         .map(([s, n]) => `${s}: ${n}`)
@@ -901,17 +1147,28 @@ export async function POST(req: NextRequest) {
       checks.push({
         name: "Sniper Feed",
         status: dealCount > thr("Sniper Feed", "warn_at", 0) ? "ok" : "warn",
-        detail: dealCount > 0 ? `${dealCount} deals (${mix})` : "0 deals returned by /api/sniper-feed",
+        detail:
+          dealCount > 0
+            ? `${dealCount} deals (${mix})`
+            : "0 deals returned by /api/sniper-feed",
         value: dealCount,
       });
     } else {
-      checks.push({ name: "Sniper Feed", status: "critical", detail: `HTTP ${res.status}` });
+      checks.push({
+        name: "Sniper Feed",
+        status: "critical",
+        detail: `HTTP ${res.status}`,
+      });
     }
   } catch (e: any) {
     // An 8s AbortError here under DB saturation (the sniper-feed route itself
     // running slow) is inconclusive, not a confirmed outage — don't page.
     const sat = isSaturationError(e?.message) || e?.name === "AbortError";
-    checks.push({ name: "Sniper Feed", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Timeout or error: ${e.message}` });
+    checks.push({
+      name: "Sniper Feed",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Timeout or error: ${e.message}`,
+    });
   }
 
   // A check explicitly disabled via config (enabled=false) is forced to ok so it
@@ -925,20 +1182,36 @@ export async function POST(req: NextRequest) {
 
   const hasCritical = checks.some((c) => c.status === "critical");
   const hasWarn = checks.some((c) => c.status === "warn");
-  const overallStatus = hasCritical ? "CRITICAL" : hasWarn ? "WARN" : "ALL CLEAR";
+  const overallStatus = hasCritical
+    ? "CRITICAL"
+    : hasWarn
+      ? "WARN"
+      : "ALL CLEAR";
 
-  const report = { timestamp: now.toISOString(), status: overallStatus, checks, notifications: [] as string[] };
+  const report = {
+    timestamp: now.toISOString(),
+    status: overallStatus,
+    checks,
+    notifications: [] as string[],
+  };
 
   const hour = now.getUTCHours();
   const isScheduledReport = hour % 6 === 0;
   const shouldNotify = hasCritical || hasWarn || isScheduledReport;
 
   if (shouldNotify) {
-    const emoji = (s: string) => s === "ok" ? "\u2705" : s === "warn" ? "\u26A0\uFE0F" : "\uD83D\uDEA8";
-    const statusEmoji = hasCritical ? "\uD83D\uDEA8" : hasWarn ? "\u26A0\uFE0F" : "\u2705";
+    const emoji = (s: string) =>
+      s === "ok" ? "\u2705" : s === "warn" ? "\u26A0\uFE0F" : "\uD83D\uDEA8";
+    const statusEmoji = hasCritical
+      ? "\uD83D\uDEA8"
+      : hasWarn
+        ? "\u26A0\uFE0F"
+        : "\u2705";
 
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-      const tgLines = checks.map((c) => `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`);
+      const tgLines = checks.map(
+        (c) => `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
+      );
       const tgMsg = `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}\n\n${tgLines.join("\n")}`;
       const tgOk = await sendTelegram(tgMsg);
       report.notifications.push(tgOk ? "telegram" : "telegram-FAILED");
@@ -946,9 +1219,12 @@ export async function POST(req: NextRequest) {
 
     if (RESEND_API_KEY && ALERT_EMAIL) {
       const emailSubject = `${statusEmoji} RPC Sentinel: ${overallStatus}`;
-      const rows = checks.map((c) =>
-        `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${emoji(c.status)}</td><td style="padding:6px 12px;border-bottom:1px solid #eee"><strong>${c.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #eee">${c.detail}</td></tr>`
-      ).join("");
+      const rows = checks
+        .map(
+          (c) =>
+            `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${emoji(c.status)}</td><td style="padding:6px 12px;border-bottom:1px solid #eee"><strong>${c.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #eee">${c.detail}</td></tr>`,
+        )
+        .join("");
       const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:${hasCritical ? "#E03A2F" : hasWarn ? "#F59E0B" : "#22C55E"}">${statusEmoji} Pipeline Sentinel - ${overallStatus}</h2><p style="color:#64748B">${now.toUTCString()}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><thead><tr style="background:#1E293B;color:white"><th style="padding:8px 12px;text-align:left"></th><th style="padding:8px 12px;text-align:left">Check</th><th style="padding:8px 12px;text-align:left">Detail</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#94A3B8;font-size:12px;margin-top:24px">Rip Packs City - Pipeline Sentinel - Automated Report</p></div>`;
       const emailOk = await sendEmail(emailSubject, emailHtml);
       report.notifications.push(emailOk ? "email" : "email-FAILED");

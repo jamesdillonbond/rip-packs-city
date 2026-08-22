@@ -198,6 +198,36 @@ describe("sentinel — confidence / coverage / leak arms", () => {
     const r = await run({ "rpc:sentinel_edition_coverage": { data: null, error: { message: "boom" } } as never })
     expect(chk(r, "Edition Coverage").status).toBe("warn")
   })
+  // A population of ZERO is not a share of zero. Both gate meters used to divide
+  // by an empty denominator and render "0%", which reads as a reportable collapse
+  // in accuracy when the truth is that there was nothing to measure. The assertion
+  // is the ABSENCE of a percentage — asserting the presence of some warning text
+  // would pass unchanged on the version that also published the fabricated 0%.
+  it("claims no percentage when the confidence tally has no base editions", async () => {
+    const r = await run({
+      "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+        data: [{ printing: "parallel", confidence: "LOW", count: 12 }],
+        error: null,
+      } as never,
+    })
+    const arm = chk(r, "FMV Confidence (canonical TS)")
+    expect(arm.status).toBe("warn")
+    // Strict: no percent sign at all. The copy deliberately says "not zero"
+    // rather than "not 0%" so this assertion needs no carve-out — a carve-out
+    // to tolerate the fix's own wording is how a test stops pinning anything.
+    expect(arm.detail).not.toContain("%")
+    expect(arm.value ?? "").not.toContain("%")
+  })
+  it("claims no percentage when edition coverage has no live-scope row", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [], error: null } as never })
+    const arm = chk(r, "Edition Coverage")
+    expect(arm.status).toBe("warn")
+    // Strict: no percent sign at all. The copy deliberately says "not zero"
+    // rather than "not 0%" so this assertion needs no carve-out — a carve-out
+    // to tolerate the fix's own wording is how a test stops pinning anything.
+    expect(arm.detail).not.toContain("%")
+    expect(arm.value ?? "").not.toContain("%")
+  })
   it("warns then pages on the TS writer-leak bands", async () => {
     const warnR = await run({ editions: { count: 300, error: null } as never })
     expect(chk(warnR, "TS Edition Writer Leak (48h)").status).toBe("warn")
