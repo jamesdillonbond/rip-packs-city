@@ -93,6 +93,7 @@ export default function WalletSearch({
   pendingLabel = "ANALYZING…",
   hint = null,
   style,
+  className,
   onSubmitValue,
 }: {
   /**
@@ -111,6 +112,15 @@ export default function WalletSearch({
   hint?: ReactNode
   /** Wrapper overrides (spacing only — the box itself is variant-owned). */
   style?: CSSProperties
+  /**
+   * Class on the WRAPPER div. Exists so a caller whose sizing must change at a
+   * breakpoint can express it in CSS instead of inline style: an inline `flex`
+   * cannot be overridden by a media query, which is how the collection/insights
+   * band shipped a 300px flex-BASIS that became a 300px HEIGHT the moment its
+   * container flipped to `flex-direction: column` on mobile. Sizing that is
+   * constant at every width still belongs in `style`.
+   */
+  className?: string
   /**
    * Side effect fired with the raw input just before navigation (e.g. the
    * collection overview stashes rpc_last_wallet so the in-app tabs hydrate).
@@ -187,7 +197,10 @@ export default function WalletSearch({
   }, [value, pending, surface, onSubmitValue, go])
 
   return (
-    <div style={{ width: "100%", maxWidth: v.maxWidth, marginInline: v.marginInline, ...style }}>
+    <div
+      className={className}
+      style={{ width: "100%", maxWidth: v.maxWidth, marginInline: v.marginInline, ...style }}
+    >
       <style>{SCOPED_CSS}</style>
       <form
         onSubmit={(e) => {

@@ -49,6 +49,21 @@ jobs:
       # ⚠ The exclusion is PER HANDLER, not per file: a gated POST does not vouch
       # for the ungated GET beside it. That exact shape was 4 live handlers.
       - run: node scripts/check-driver-message-leaks.mjs
+      # Responsive flex-basis guard — fails if an inline `flex: "1 1 300px"`
+      # sits in a file that also uses a class whose flex-direction CHANGES at a
+      # breakpoint. flex-basis sizes the MAIN axis, so a width-basis becomes a
+      # HEIGHT under the flip, and an inline style is the one declaration a
+      # media query cannot override. That shipped: WalletSearchBand measured
+      # 350px tall at 390x844 against the ~100px it specified, above the fold on
+      # every /[collection]/* and /insights/* page, while desktop stayed correct
+      # at 82px — which is why tsc, eslint and both coverage gates were green
+      # through it. Ban at population zero (0 when this landed). Pure node.
+      # ⚠ Joins by CLASS NAME, not by resolved DOM ancestry, so a hit is
+      # something to LOOK AT. It asserts its own reach (files, media blocks,
+      # responsively-directed classes) and fails loudly rather than passing
+      # vacuously if the CSS parser stops seeing anything — the first cut
+      # reported 3 in-scope files when the real number was 32.
+      - run: node scripts/check-responsive-flex-basis.mjs
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30

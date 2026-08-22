@@ -56,6 +56,28 @@ describe("WalletSearch bindings", () => {
     expect(pushMock).toHaveBeenCalledWith(`/share/${ADDR}`)
   })
 
+  it("puts a caller's className on the WRAPPER, so breakpoint-dependent sizing can live in CSS", () => {
+    // Why the wrapper and not the form: the wrapper is the flex ITEM of the
+    // caller's row, so it is the box whose main-axis size flips meaning when
+    // that row becomes a column. An inline `flex` there is unoverridable by a
+    // media query — that is how the collection/insights band shipped a 300px
+    // flex-BASIS that rendered as a 300px HEIGHT on mobile.
+    const { container } = render(<WalletSearch surface="t" className="rpc-test-wrapper" />)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.className).toContain("rpc-test-wrapper")
+    // It must not swallow the variant sizing it already owned.
+    expect(wrapper.style.width).toBe("100%")
+    expect(wrapper.style.maxWidth).toBe("640px")
+  })
+
+  it("stays unclassed when no caller asks for one", () => {
+    const { container } = render(<WalletSearch surface="t" />)
+    const wrapper = container.firstElementChild as HTMLElement
+    // Absence of the false thing: no stray "undefined" class in the markup.
+    expect(wrapper.className).toBe("")
+    expect(container.innerHTML).not.toContain("undefined")
+  })
+
   it("percent-encodes the input into the destination URL", () => {
     // A username path: a non-0x value must not be interpolated raw.
     const { container } = render(<WalletSearch surface="home" />)

@@ -210,6 +210,32 @@ describe("WalletSearchBand", () => {
     expect(parseInt(form.style.height, 10)).toBeGreaterThanOrEqual(44)
   })
 
+  it("keeps the input's flex in CSS, not inline — inline, a 300px BASIS becomes a 300px HEIGHT", () => {
+    // MEASURED 2026-08-22, Chromium at 390x844: the band rendered 350px tall
+    // because the input wrapper carried style={{flex:"1 1 300px"}}. flex-basis
+    // sizes the MAIN axis, the <=640px rule below flips that axis from width to
+    // height, and a media query cannot override an inline style. 102px after.
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    const wrapper = container.querySelector(".rpc-wsb-input") as HTMLElement
+    expect(wrapper).toBeTruthy()
+    // Assert the ABSENCE of the unoverridable declaration, in either spelling.
+    expect(wrapper.style.flex).toBe("")
+    expect(wrapper.style.flexBasis).toBe("")
+    // maxWidth is breakpoint-INDEPENDENT, so it legitimately stays inline.
+    expect(wrapper.style.maxWidth).toBe("420px")
+  })
+
+  it("ships the mobile override that the CSS move exists for", () => {
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    const css = (container.querySelector("style")?.textContent ?? "").replace(/\s+/g, "")
+    // Row layout keeps the grow/shrink/basis it always had…
+    expect(css).toContain(".rpc-wsb-input{flex:11300px;}")
+    // …and the column layout must neutralise the basis. Pinned INSIDE the
+    // media block, not anywhere in the sheet: outside it the rule is inert.
+    const mobile = css.slice(css.indexOf("@media(max-width:640px){"))
+    expect(mobile).toContain(".rpc-wsb-input{flex:00auto;}")
+  })
+
   it("uses no literal hex and no literal font-family strings (§0)", () => {
     const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
     const html = container.innerHTML

@@ -27,9 +27,21 @@
 // content block, not chrome: nothing here duplicates a chrome affordance.
 //
 // SCALE (§9 mobile): one line of copy + the 52px input row. At 390px the copy
-// and the input stack, giving ~112px total — one band, not a hero. The 32px
+// and the input stack, giving ~100px total — one band, not a hero. The 32px
 // decorative glyph and 32px padding of the old /overview hero are deliberately
 // NOT reproduced. Touch targets are the 52px input and 52px button (>=44px).
+//
+// ⚠ That paragraph described the INTENT and not the render for four weeks.
+// MEASURED 2026-08-22 in Chromium at 390x844: the band was **350px** tall — a
+// 3.5x overshoot, above the fold on every collection and insights page, for the
+// anonymous mobile visitor the band exists for. Cause: the input wrapper was
+// given `flex: "1 1 300px"` as an INLINE style. `flex-basis` sizes the MAIN
+// axis, and the media query below flips the main axis from width to HEIGHT, so
+// on mobile the 300px width-basis became a 300px HEIGHT — and an inline style
+// is exactly the one thing a media query cannot override. The shorthand now
+// lives in `.rpc-wsb-input` where the query can reach it. Remeasured after:
+// **100px**. The lesson generalises: a size that changes meaning at a
+// breakpoint must not be an inline style.
 //
 // It renders on the server pass (so the entry point is in the delivered HTML
 // and is crawlable/verifiable) and removes itself client-side once a wallet is
@@ -90,10 +102,19 @@ const CSS = `
   letter-spacing:0.04em;text-transform:uppercase;color:var(--rpc-text-primary);line-height:1.1;}
 .rpc-wsb-hint{font-family:var(--font-mono);font-size:var(--text-sm);
   letter-spacing:0.04em;color:var(--rpc-text-muted);}
+/* ⚠ The flex shorthand for the input MUST live here, not in an inline style.
+   flex-basis sizes the MAIN axis, and the main axis flips from width to HEIGHT
+   in the column layout below — as an inline style it is unoverridable by the
+   media query, and the band rendered 350px tall on a 390px viewport (measured
+   2026-08-22) instead of the ~100px it is specified as. NOTE: no backticks in
+   this comment — it lives inside a template literal. */
+.rpc-wsb-input{flex:1 1 300px;}
 @media (max-width:640px){
   .rpc-wsb{flex-direction:column;align-items:stretch;gap:10px;padding:12px 14px;margin-bottom:16px;}
   .rpc-wsb-title{font-size:var(--text-base);}
   .rpc-wsb-hint{display:none;}
+  /* Column layout: basis would be height. Let the 52px box size itself. */
+  .rpc-wsb-input{flex:0 0 auto;}
 }
 `
 
@@ -202,7 +223,10 @@ export default function WalletSearchBand({
         ariaLabel="Look up a Top Shot username or Flow wallet address"
         submitLabel="Go →"
         pendingLabel="…"
-        style={{ maxWidth: 420, flex: "1 1 300px" }}
+        className="rpc-wsb-input"
+        // maxWidth is constant at every breakpoint, so it stays inline; the
+        // flex shorthand is NOT — see .rpc-wsb-input in CSS above.
+        style={{ maxWidth: 420 }}
         onSubmitValue={(raw) => {
           // Keep the in-app tabs' existing hydration contract: they read the
           // active wallet from localStorage (WalletHydrator).
