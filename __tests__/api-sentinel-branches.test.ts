@@ -116,6 +116,109 @@ const chk = (r: { checks: Check[] }, name: string) => {
 // them was ever handled: every read ERRORING, and every read returning NO PAYLOAD
 // with no error. Verified against the pre-fix route: the null-payload run produced
 // 12 arms instead of 13 and named the missing one.
+// ── Detector Health: the arm that watches the watchers (known-issues #25) ──
+//
+// Three daily detectors are the only things that can see their rot classes, and on
+// 2026-08-22 two had been red for a fortnight while being CORRECT, with nothing
+// surfacing it. This arm keys on a consecutive-failure STREAK, because one red run
+// is a detector doing its job — the defect is a red that PERSISTS unread.
+//
+// ⚠ The property these cases pin hardest: the arm must never be SILENT. An
+// unconfigured or unreadable state has to show up as a check, because "said nothing"
+// is exactly the failure it exists to catch — it must not commit that bug itself.
+describe("sentinel — detector health arm", () => {
+  const GH = "api.github.com"
+  const runs = (concls: (string | null)[]) =>
+    jsonRoute(GH, {
+      workflow_runs: concls.map((c) => ({ status: "completed", conclusion: c })),
+    })
+
+  it("reports NOT CONFIGURED rather than vanishing when no token is set", async () => {
+    // Only the dedicated variable is read; GITHUB_TOKEN is deliberately NOT a
+    // fallback (it is set in this sandbox and in Actions for unrelated reasons).
+    const prevA = process.env.GITHUB_ACTIONS_READ_TOKEN
+    delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    try {
+      const arm = chk(await run(), "Detector Health (GitHub Actions)")
+      // ⚠ VISIBLE and annotated, but `ok` — a permanently-warn arm would drag the
+      // whole sentinel to WARN every hour until a token exists, and a permanently-red
+      // instrument is indistinguishable from a broken one. Same convention this route
+      // already uses for a config-disabled check. The property pinned here is that it
+      // is PRESENT and says why, not that it pages.
+      expect(arm.status).toBe("ok")
+      expect(arm.detail).toContain("NOT CONFIGURED")
+    } finally {
+      if (prevA !== undefined) process.env.GITHUB_ACTIONS_READ_TOKEN = prevA
+    }
+  })
+
+  it("is ok when every watched detector's latest completed run is green", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run({}, [sniperOk, telegramOk, resendOk, runs(["success", "failure"])])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.status).toBe("ok")
+      // A single historical failure BELOW the newest success must not count — the
+      // streak is counted from the newest completed run backwards.
+      expect(arm.value).toBe(0)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("warns on a sustained streak but NOT on a single red run", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const one = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(["failure", "success", "success"])]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(one.status).toBe("ok")
+      expect(one.value).toBe(1)
+
+      const many = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(["failure", "failure", "failure", "success"])]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(many.status).toBe("warn")
+      expect(many.value).toBe(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("pages critical on the fortnight-long streak this arm was built for", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      // edge-fn-drift was red 14 consecutive runs on 2026-08-22 and nobody read it.
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(Array(12).fill("failure"))]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("critical")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  // A workflow the arm could not READ must never be folded into "healthy" — silence
+  // about an instrument is not good news, which is the whole thesis of this arm.
+  it("reports an unreadable workflow instead of counting it green", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, jsonRoute(GH, {}, { status: 403, ok: false })]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("warn")
+      expect(arm.detail).toContain("403")
+      expect(arm.detail).not.toContain("All 3 watched detectors green")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+})
+
 describe("sentinel — no arm may disappear from its own report", () => {
   function allFixturesAs(shape: Record<string, unknown>): Fixtures {
     const out: Record<string, unknown> = {}

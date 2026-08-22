@@ -27,9 +27,16 @@
 -- This is a MEASUREMENT function: it reads FMV and produces a monitoring tally. It
 -- computes no price and no user-facing value changes.
 --
--- anon-exec: unchanged — already revoked in prod. Verified with has_function_privilege
+-- anon-exec: sentinel_fmv_confidence_canonical_ts_split unchanged — already revoked
+-- in prod. Verified with has_function_privilege
 -- (not acl text): anon false, authenticated false, service_role true. CREATE OR REPLACE
 -- does not reset a function's ACL, so no REVOKE is added here.
+--
+-- ⚠ The anon-exec line above was extended AFTER apply to name the function, which is
+-- what __tests__/migration-new-function-states-its-anon-exec-decision.test.ts keys on
+-- (per FUNCTION name, not per file). COMMENT-ONLY: the executed DDL is unchanged, so
+-- this file no longer md5-matches supabase_migrations.schema_migrations by that
+-- comment alone. Recorded rather than left for someone to trip over.
 --
 -- REVERT: re-apply the prior body, which is the same statement with
 --   FROM public.fmv_current fc JOIN public.editions e ON e.id = fc.edition_id

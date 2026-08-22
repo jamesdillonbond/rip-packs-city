@@ -1237,6 +1237,120 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // ── Detector health: is anyone READING the daily credentialed instruments? ──
+  //
+  // WHY THIS ARM EXISTS (known-issues #25). Three detectors run daily and are the only
+  // things in the estate that can see their rot classes: edge-fn-drift (06:40Z),
+  // db-pin-staleness (07:20Z), migration-parity (07:40Z). On 2026-08-22 two of them had
+  // been RED for a fortnight while being completely CORRECT — 25 edge functions not
+  // running `main`, and 6 of 187 DB pins no longer matching live — and nothing surfaced
+  // it. CLAUDE.md already recorded that happening to edge-fn-drift once before.
+  //
+  // ⚠ A WATCHDOG WORKFLOW WOULD BE THE SAME BUG ONE LEVEL UP — something else nobody
+  // reads. It belongs HERE, in the thing that actually pages.
+  //
+  // ⚠ IT KEYS ON A STREAK, NOT A SINGLE RED. A detector going red for one run is it
+  // doing its job; the defect is a red that PERSISTS unread. Consecutive failures are
+  // counted from the newest completed run backwards.
+  try {
+    // ⚠ A DEDICATED VARIABLE ONLY — deliberately NOT falling back to GITHUB_TOKEN.
+    // That name is set by GitHub Actions itself and exists in many environments for
+    // unrelated reasons (it is set in this repo's own sandbox), so a fallback would
+    // make this arm fire live GitHub calls wherever it happened to be defined, with
+    // whatever scopes that token carries. Opting in explicitly is the whole point.
+    const ghToken = process.env.GITHUB_ACTIONS_READ_TOKEN;
+    const WATCHED = ["edge-fn-drift.yml", "db-pin-staleness.yml", "migration-parity.yml"];
+
+    if (!ghToken) {
+      // ⚠ NOT a silent skip. An unconfigured arm that says nothing is indistinguishable
+      // from a healthy one — which is the exact defect this arm was built to catch, so
+      // it must never commit it itself.
+      //
+      // ⚠ BUT IT IS `ok`, NOT `warn`, AND THAT IS DELIBERATE. A permanently-warn arm
+      // drags the whole sentinel to WARN every hour until a token is added, and
+      // CLAUDE.md records that a permanently-red instrument is indistinguishable from a
+      // broken one at a glance — it would desensitise every OTHER arm in this report.
+      // This mirrors the convention already used below for a config-disabled check:
+      // forced to ok so it never pages, but VISIBLE and annotated rather than vanishing.
+      checks.push({
+        name: "Detector Health (GitHub Actions)",
+        status: "ok",
+        detail:
+          "[NOT CONFIGURED] set GITHUB_ACTIONS_READ_TOKEN (a token with actions:read) in Vercel env. " +
+          "Until then the three daily detectors (edge-fn-drift, db-pin-staleness, migration-parity) " +
+          "are unwatched: a correct one can stay red indefinitely with nobody reading it.",
+      });
+    } else {
+      const streaks: string[] = [];
+      const unreadable: string[] = [];
+      let worst = 0;
+
+      for (const wf of WATCHED) {
+        try {
+          const r = await fetch(
+            `https://api.github.com/repos/jamesdillonbond/rip-packs-city/actions/workflows/${wf}/runs?branch=main&per_page=12`,
+            {
+              headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" },
+              signal: AbortSignal.timeout(6000),
+            },
+          );
+          if (!r.ok) {
+            unreadable.push(`${wf} (HTTP ${r.status})`);
+            continue;
+          }
+          const body: any = await r.json();
+          const runs: any[] = Array.isArray(body?.workflow_runs) ? body.workflow_runs : [];
+          const completed = runs.filter((x) => x?.status === "completed");
+          if (completed.length === 0) {
+            // No completed run is NOT a clean bill of health — it is no evidence.
+            unreadable.push(`${wf} (no completed runs)`);
+            continue;
+          }
+          let streak = 0;
+          for (const run of completed) {
+            if (run?.conclusion === "failure") streak++;
+            else break;
+          }
+          if (streak > 0) streaks.push(`${wf.replace(".yml", "")} ${streak}x`);
+          if (streak > worst) worst = streak;
+        } catch (e: any) {
+          unreadable.push(`${wf} (${e?.name === "TimeoutError" ? "timeout" : e?.message})`);
+        }
+      }
+
+      const warnAt = thr("Detector Health (GitHub Actions)", "warn_at", 3);
+      const critAt = thr("Detector Health (GitHub Actions)", "crit_at", 7);
+
+      // ⚠ A workflow we could not READ is reported, never folded into "healthy". The
+      // whole point of this arm is that silence about an instrument is not good news.
+      const unreadNote = unreadable.length ? ` | UNREAD: ${unreadable.join(", ")}` : "";
+
+      if (unreadable.length === WATCHED.length) {
+        checks.push({
+          name: "Detector Health (GitHub Actions)",
+          status: "warn",
+          detail: `Could not read ANY watched workflow — this arm saw nothing, which is not the same as nothing being wrong.${unreadNote}`,
+        });
+      } else {
+        checks.push({
+          name: "Detector Health (GitHub Actions)",
+          status: worst >= critAt ? "critical" : worst >= warnAt ? "warn" : unreadable.length ? "warn" : "ok",
+          detail: streaks.length
+            ? `Consecutive-failure streaks: ${streaks.join(", ")} (warn at ${warnAt}, crit at ${critAt}). ` +
+              `A detector red for many days running is usually CORRECT and unread — read the LOG, not the badge.${unreadNote}`
+            : `All ${WATCHED.length - unreadable.length} watched detectors green on their latest completed run.${unreadNote}`,
+          value: worst,
+        });
+      }
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Detector Health (GitHub Actions)",
+      status: "warn",
+      detail: `Exception: ${e?.message}`,
+    });
+  }
+
   // A check explicitly disabled via config (enabled=false) is forced to ok so it
   // never pages, but stays in the report (visible, annotated) rather than vanishing.
   for (const c of checks) {

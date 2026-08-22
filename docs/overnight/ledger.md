@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the sentinel now watches the watchers; #25 is one env var from active
+
+**What shipped.** A `Detector Health (GitHub Actions)` arm in `app/api/sentinel/route.ts` + **5 tests**.
+Known-issues **#25** moves from *"blocked on a secrets decision"* to **"arm merged, set one variable to
+activate"**: `GITHUB_ACTIONS_READ_TOKEN` (a token with `actions:read`) in Vercel env.
+
+**What it does.** Reads the last 12 runs of `edge-fn-drift.yml`, `db-pin-staleness.yml` and
+`migration-parity.yml`, and keys on a **consecutive-failure STREAK** counted from the newest completed run
+backwards (warn ≥3, critical ≥7, both `thr()`-configurable). ⚠ **A streak, not a single red** — one red run
+is a detector doing its job; the defect is a red that PERSISTS unread, which is exactly what went unnoticed
+for a fortnight on two detectors.
+
+⚠ **THE UNCONFIGURED STATE REPORTS `ok`, NOT `warn`, AND THAT WAS A CORRECTION MID-BUILD.** I first shipped
+it as `warn`, which flipped the whole sentinel to WARN every hour until a token existed — **a
+permanently-warn arm is the very "permanently-red instrument" CLAUDE.md says is indistinguishable from a
+broken one**, and it would desensitise every OTHER arm in the report. It now follows the convention this
+route already had for a config-disabled check: forced `ok`, but **visible and annotated `[NOT CONFIGURED]`**
+rather than vanishing. The test pins that it is PRESENT and says why — not that it pages.
+
+🔑 **The bug the test suite caught, and it was a real design flaw, not a fixture problem.** The arm
+originally read `GITHUB_ACTIONS_READ_TOKEN || GITHUB_TOKEN`. **`GITHUB_TOKEN` is set in this repo's own
+sandbox** (and by Actions itself), so the fallback made the arm fire **live GitHub calls** from four
+unrelated sentinel tests. ⚠ **The fix was to narrow the source, not to stub the tests** — a fallback would
+make this arm act wherever that common variable happened to exist, with whatever scopes it carries. It now
+reads ONE dedicated variable, which is also what makes activation an explicit opt-in.
+
+**Mutation-tested, both on the properties that matter:** making the unconfigured branch silent reds it (that
+is the exact bug the arm exists to catch, so it must never commit it itself), and folding an unreadable
+workflow into "healthy" reds it. Also pinned: a single red stays `ok`, 3 warns, and **12 consecutive
+failures — the shape `edge-fn-drift` actually had — pages critical**.
+
+**Verified:** `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.17%, 45345/49193) · six repo guards exit
+0, including the new third-state guard against the arm's own branching.
+
+**Revert path:** `git revert` the commit whose message begins `feat(sentinel): watch the daily detectors`
+(find by message, not by a recorded sha). No DB or prod state changed by this entry; the arm is inert until
+the env var exists.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the deals board is MATERIALIZED: 12,905 ms → 1.98 ms, and the guard that watches it was blind to what that change introduced
 
 **DB only. Zero app-code change** — the swap is behind the existing view name, so nothing in
