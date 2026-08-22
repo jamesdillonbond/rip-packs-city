@@ -8,6 +8,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — one shared comment stripper, because the PROPOSED fix was blind too
+
+**What shipped.** `scripts/lib/strip-comments.mjs` (the single implementation, replacing 37 local copies)
++ `__tests__/strip-comments-shared-helper.test.ts` (11 tests). **No guard is migrated to it yet** — that is
+one guard per commit, per the filing, so each population change stays attributable.
+
+**Why, in one line:** a stripper that blanks too much is the worst class of guard bug, because every check
+built on it **still passes and still reports a population** while reading a blanked file.
+
+**DEFECT 1** (filed by another session, 20 copies): block comments stripped BEFORE line comments, so an
+ordinary `// … /api/* …` opens a block comment closed at the next `*/` anywhere in the file. It hid a live
+P0 — ~19.6k chars of `CollectionAnalyticsClient.tsx`, including the branch publishing a 99-day-old row as
+market depth.
+
+🚨 **DEFECT 2 — THE FILING'S OWN RECOMMENDED FIX WAS ALSO BLIND, AND LIFTING IT VERBATIM WAS THE
+INSTRUCTION.** The state machine it said to lift had **no regex-literal state**, so a regex ending in an
+escaped slash — `if (!/^https?:\/\//i.test(url))` — presents the raw characters `\` `/` `/`; the escaped
+slash and the regex's own closing slash are ADJACENT, read as `//`, and the rest of the line is blanked.
+**Measured: 80 occurrences in 66 files — including the guards' own `.replace(/\/\*[\s\S]*?\*\//g, …)`
+bodies, so the corrected stripper would have blanked the very code implementing it.** ⚠ The filing warned
+"the migration can silently swap one blind stripper for another" and prescribed a positive control for
+defect 1; **the control it specified would have passed while defect 2 shipped.** A positive control only
+covers the failure it was written for.
+
+**MEASURED, both directions, over 2,745 files** (this is the at-scale positive control):
+- vs the legacy regex stripper: recovers **145,542 chars across 151 files**
+- vs the regex-state-less machine: recovers **1,014 chars across 40 files** — real, and far smaller, which
+  is worth recording so nobody re-derives defect 2 as the big one.
+(The filing's 109,123 / 55 is the same phenomenon over fewer roots; this walk adds `scripts`, `__tests__`,
+`supabase`. **Do not treat the two numbers as a disagreement — they measure different corpora.**)
+
+⚠ **EVERY TEST IS A PAIR: the new stripper must keep the code AND the implementation it replaces must be
+shown to LOSE it.** Both predecessors are kept verbatim in the test file as negative controls. A test
+asserting only the new behaviour cannot distinguish "fixed" from "never broken", and would let a rewrite
+reintroduce either defect silently. The `${…}` template-interpolation boundary is **pinned** rather than
+left silent, with its failure direction stated: this stripper must fail by KEEPING too much, never by
+blanking too much.
+
+**REVERT:** `git revert b79e256e2`. Nothing consumes the helper yet, so the revert is inert — no guard
+changes behaviour either way.
+
+⚠ **NEXT, and it carries a trap the filing names:** migrating the 20 guards will turn some RED, because
+ratchets with frozen budgets have been counting against a blanked corpus. **Those reds are real findings,
+not regressions** — triage each, never raise a budget to green it, and re-measure every budget against the
+corrected stripper. Per-guard impact is still UNMEASURED: the 145k figure is a union across roots, not a
+per-guard number.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — #23: canary CONFIRMED live, then 4 more edge functions redeployed under a proof, not a guess
 
 **Canary verdict: PASS, and only one row was ever admissible evidence.** `ufc-stub-thumbnail-resolver`
