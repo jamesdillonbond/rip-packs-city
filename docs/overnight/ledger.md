@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — two rotted pointers in the memory docs, a stale cron count, and a guard so they cannot regrow
+
+**Docs + one new guard script + its test + a CI step. No DB, migration or prod-state change.** Continuation of the unfinished-task sweep.
+
+🚨 **THE ROT WAS IN THE FILES THE MEMORY ARCHITECTURE DEPENDS ON.** The 2026-08-17 restructure bet everything on POINTERS — CLAUDE.md cut to what a session needs before it knows its topic, the rest moved verbatim into `docs/reference/*.md` with a one-line link left behind. **Two of those links did not resolve:** `cron-and-schedulers.md` → `vercel.json` and `testing-and-ci.md` → `vitest.config.ts` both omitted the `../../` prefix, so each resolved to `docs/reference/<file>` and silently missed. ⚠ **This failure is invisible by shape** — a dead pointer reads as a detail that was *never written*, which is exactly what CLAUDE.md's own header tells a reader not to conclude. Both fixed.
+
+⚠ **AND A STALE NUMBER FOUND IN THE SAME LINE, which is the more instructive half.** `cron-and-schedulers.md` claimed **37** Vercel cron entries; `vercel.json` holds **36**. `focus.md` already said 36 on 08-18, so the two docs had been disagreeing for four days with nothing to notice. Corrected, and marked as a re-derived dated sample rather than a constant.
+
+✅ **NEW GUARD — `scripts/check-memory-doc-links.mjs`, wired into `ci.yml` as a blocking step.** Walks the tree (never a curated list, so a NEW `docs/reference/*.md` is inside the guard by construction) over CLAUDE.md + `docs/reference/**.md`. **Ban at population zero:** the gated set was brought to 0 in this commit, so any breakage is new. Live reading: **79 links across 23 files, all resolve.**
+
+⚠ **IT IS DELIBERATELY NOT TREE-WIDE, and the number is why.** Measured today: **558 of 919** relative links under `docs/` are broken — 324 in `docs/sessions`, 125 in `docs/overnight`, 59 in `docs/archive`. Those are the FROZEN HISTORY this file's own conventions forbid rewriting, so a tree-wide gate would be permanently red, and a permanently-red instrument is indistinguishable from a broken one at a glance. ⚠ **The exclusion rests on a stated project POLICY, not on a claim that some other instrument covers those files — nothing does**, and that is recorded in the script header so the next reader does not mistake it for coverage.
+
+⚠ **PROVEN ABLE TO GO RED BEFORE BEING RELIED ON — both directions.** (1) Re-introduced the exact original bug → exit 1 naming the file; restored → exit 0. (2) Ran it from a directory with no memory docs → **exit 1**, not a green "0 problems". That second control is the `check-tree-corruption.mjs` lesson pinned: that guard shipped as theatre because its default mode inspected NOTHING on a CI checkout and still exited 0. This one **asserts the count it inspected** and fails when the population is empty.
+
+**Test:** `__tests__/memory-doc-links-guard.test.ts`, **10 cases, all green** — detection (incl. the root-file/`../../` bug verbatim), must-not-red-on-correct-code (external URLs, `mailto:`, bare anchors, `#fragment` links), cannot-pass-by-inspecting-nothing, and **is-it-actually-wired-to-CI**. ⚠ Assertions pin the PROPERTY (exit code + the offending path), not the message text, so a better implementation does not red the suite. A `--root` flag was added purely so the guard can be driven against fixtures; live behaviour is unchanged and the richer population floors apply only to the live tree.
+
+**Verified:** `npx tsc --noEmit` clean; the 10 new cases green; `coverage-gates-are-wired-to-ci`, `migration-parity-workflow-is-enforcing`, `smoke-test-has-a-guaranteed-cadence`, `find-future-dated-ledger-headings` re-run green (37 cases) because the change edits `ci.yml`; `check-brand-tokens.mjs` still exit 0; `ci.yml` parses as YAML.
+
+**Revert:** `git revert <sha>` — removes the guard, its test, the CI step and the three doc corrections.
+
 ### 2026-08-22 · FIXED (Claude Code, interactive) — my rwfc migration turned CI red on `main`; the guard was right and the marker, not a REVOKE, was the correct fix
 
 **Docs/migration comment only — no DB or prod-state change.** `34ac51a03` (the rwfc temp-build migration) failed `migration-new-function-states-its-anon-exec-decision`, and **four subsequent commits inherited the red** — mine and two from a concurrent session. First red was mine.
