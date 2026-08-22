@@ -8,6 +8,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a population of zero is not a share of zero, on both roadmap gate meters
+
+**What shipped.** `app/api/sentinel/route.ts` — the `FMV Confidence (canonical TS)` and `Edition Coverage`
+arms both divided by a possibly-empty denominator and rendered **`0%`**. `pct = (n, d) => d > 0 ? … : "0"`
+looks like a safe divide-guard, and it does avoid `NaN`, but what it publishes is a **measurement**. On the
+metric the roadmap steers by, *"there is nothing to measure"* and *"the measured value is zero"* are
+different claims and only one is a reason to act. Both arms now withhold the number and warn that the share
+is **unmeasurable**.
+
+⚠ **The read did not have to FAIL for this.** `data = []` is truthy, so a **genuinely empty** tally took the
+success path — the "read ok + genuinely empty" state rendering as a measured zero, which is precisely the
+third state the canon separates. This is a different defect from the missing-`else` fixed earlier today in
+the same arm; that one made it vanish, this one made it lie.
+
+⚠ **A test-design correction worth keeping.** The first draft of the copy said *"not 0%"*, which forced the
+new tests to carve a negative lookahead out of their own assertion so the fix's wording would not trip them.
+**A carve-out added to tolerate the fix's own text is how a test stops pinning anything.** The copy was
+reworded to *"not zero"* so the assertion could be strict — `expect(detail).not.toContain("%")` — and it
+asserts the **absence of a percentage**, not the presence of a warning string. Negative control: both new
+cases red against the pre-fix route, 25 others green.
+
+**Deliberately NOT changed, filed instead** (`inbox/2026-08-22T1850Z-zero-denominator-percentages-…md`):
+three `lock_rate_pct` / `burn_rate_pct` write-sites in `backfill-badges-from-sets`, `allday-badge-ingest`
+and `badge-sync`. They are typed `number`, not `number | null`, and they are **write payloads, not display
+strings** — honesty there means widening the type and handling null in every consumer, a schema-shaped
+change on ingest-route logic that CLAUDE.md puts off-limits for autonomous shipping. ⚠ **The correct
+pattern already exists in-repo** at `app/api/cron/data-integrity/route.ts:122` (`… : null`), so the fix is
+known and only its blast radius is open. **No guard was written for this expression**: unlike the two-state
+branch banned the same day, its population is majority-correct, so a ban would red correct code and be
+switched off — the same split already recorded for the driver-message population.
+
+**Verified:** `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.15% statements, 45152/48997) · all five
+repo guards exit 0.
+
+**Revert path:** `git revert` the commit whose message begins `fix(sentinel): withhold the percentage`
+(find by message, not by a recorded sha). No DB or prod state touched.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the bottom nav's tap targets were 26x32px, and the layout instrument that found it is now a scheduled monitor
 
 **CODE + a filed decision.** Third round on the wallet-band thread. The band bug proved this repo has **no instrument that measures LAYOUT** — jsdom returns a zero box for every element and coverage sees whether a line RAN, not what it measured — so I built one (local `npm run dev` + Chromium at a phone viewport) and swept with it.
