@@ -5,6 +5,28 @@ SHIPPED (see the ledger entry of the same date); the REFRESH half needs a decisi
 
 ---
 
+## ⚠ 0. SUPERSEDED IN PART — §5's blocking trade was dissolved the same night, by another session
+
+**Read this before acting on §5.** A concurrent session re-derived §5's blocker and showed it is **not
+inherent to the work — it is where the `TRUNCATE` sits.** `cross_collection_cohort_mat` holds only
+**179 rows**; all the cost is the aggregate scan over `wallet_moments_cache` (~2.49M rows) and the write
+is trivial. Computing into a `TEMP TABLE … ON COMMIT DROP` and truncating immediately before the insert
+shrinks the ACCESS EXCLUSIVE window from **105–350 s to milliseconds**, with identical output and
+identical all-or-nothing semantics. Equivalence proven with `EXCEPT` in both directions, 5 of 5 mutants
+killed. Migration + test committed, deliberately unapplied.
+
+**So §5's "that trade is Trevor's, not mine" no longer holds** — my reading was fair on the evidence I
+had and is now superseded. ⚠ **What still stands from §5:** the queries are no faster, so the 04:10Z runs
+keep timing out; this removes the OBJECTION to the schedule move, it is not the move. The
+`cron.alter_job` step and **the next-day verification that it actually took** are unchanged and still
+required. Apply both in the 20:00–00:00Z window.
+
+**This is the "a filed decision NOT to act is a hypothesis" rule landing on my own filing, four hours
+old.** The tell was there in §5 and I did not follow it: I stated the lock duration as a property of the
+job ("for the whole transaction") without asking whether the job had to be shaped that way.
+
+---
+
 ## 1. What is broken
 
 `/insights/cross-collection` (public, crawlable, in the sitemap) is served from three materialised
