@@ -208,23 +208,69 @@ describe("CollectionAnalyticsClient — each card's failed branch precedes its e
     render(<CollectionAnalyticsClient />)
   }
 
-  it("order book: says it could not load, not 'No live listings.'", async () => {
-    await withFailure("/api/analytics/listings/summary")
-    await screen.findByText(/Couldn't load the order book/)
-    expect(screen.queryByText("No live listings.")).toBeNull()
+  it("order book: says it could not load, not 'No live listings.' (live-source collection)", async () => {
+    // ⚠ All Day, not Top Shot. Top Shot's orderbook source is RETIRED, so its
+    // card discloses that ahead of any fetch outcome (D12b) and cannot pin the
+    // failed-vs-empty distinction any more. All Day reads marketplace_listings,
+    // a live source, so it is the collection that still can.
+    PARAMS.collection = "nfl-all-day"
+    try {
+      routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nfl-all-day", sales_24h: 900 }] })
+      await withFailure("/api/analytics/listings/summary")
+      await screen.findByText(/Couldn't load the order book/)
+      expect(screen.queryByText("No live listings.")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
   })
 
-  it("order book: still says 'No live listings.' on a genuine zero", async () => {
-    routes["/api/analytics/listings/summary"] = () =>
-      json(200, { topshot_orderbook: { count: 0 }, marketplace_listings: [] })
+  it("order book: Top Shot discloses the retired sampler instead of publishing a count", async () => {
+    // ⚠ INVERTED from "renders the depth when there is any" (deep-audit D12b).
+    // That test asserted the card printed 12,400 listings for Top Shot. It was
+    // pinning the defect: the figure comes from `ts_listings`, retired
+    // 2026-05-26, holding ONE row from 2026-05-15. A SUCCESSFUL read of a dead
+    // table is still not a market fact.
+    //
+    // Asserts the ABSENCE of the false claim, not merely the presence of a
+    // string — a card that rendered both would pass a presence-only check.
     render(<CollectionAnalyticsClient />)
-    await screen.findByText("No live listings.")
+    await screen.findByText(/sampler was switched off on 2026-05-26/)
+    expect(document.body.textContent).not.toContain("12,400")
+    expect(screen.queryByText("No live listings.")).toBeNull()
     expect(screen.queryByText(/Couldn't load the order book/)).toBeNull()
   })
 
-  it("order book: renders the depth when there is any", async () => {
-    render(<CollectionAnalyticsClient />)
-    await waitFor(() => expect(document.body.textContent).toContain("12,400"))
+  it("order book: still says 'No live listings.' on a genuine zero (live-source collection)", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nfl-all-day", sales_24h: 900 }] })
+      routes["/api/analytics/listings/summary"] = () =>
+        json(200, { topshot_orderbook: { count: 0 }, marketplace_listings: [] })
+      render(<CollectionAnalyticsClient />)
+      await screen.findByText("No live listings.")
+      expect(screen.queryByText(/Couldn't load the order book/)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("order book: a live-source collection still renders its real depth", async () => {
+    // The retirement branch must be Top-Shot-only. If it leaked to every
+    // collection this guard would catch it: All Day's depth is a live number.
+    PARAMS.collection = "nfl-all-day"
+    try {
+      routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nfl-all-day", sales_24h: 900 }] })
+      routes["/api/analytics/listings/summary"] = () =>
+        json(200, {
+          topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19 },
+          marketplace_listings: [{ collection: "allday", count: 1_234, median_ask_usd: 3, p90_ask_usd: 8 }],
+        })
+      render(<CollectionAnalyticsClient />)
+      await waitFor(() => expect(document.body.textContent).toContain("1,234"))
+      expect(screen.queryByText(/sampler was switched off/)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
   })
 
   it("order book: reads the marketplace block for a non-Top-Shot collection", async () => {

@@ -28,6 +28,7 @@ import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
+import { hasRetiredOrderbookSource, TS_ORDERBOOK_RETIRED_LABEL, TS_ORDERBOOK_RETIRED_BODY } from "@/lib/analytics/ts-listings-retired"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -461,6 +462,9 @@ function OrderBookCard({ short }: { short: string }) {
     : undefined
   // For Top Shot prefer the orderbook block (locked-aware); for others read from marketplace_listings.
   const isTs = short === "topshot"
+  // Retired-source check is deliberately independent of the fetch outcome: a
+  // SUCCESSFUL read of a dead table still must not render as depth (D12b).
+  const retiredSource = hasRetiredOrderbookSource(short)
   const count = isTs ? (orderbook?.count ?? 0) : (fromMarket?.count ?? 0)
   const median = isTs ? (orderbook?.median_ask_usd ?? null) : (fromMarket?.median_ask_usd ?? null)
   const p90 = isTs ? (orderbook?.p90_ask_usd ?? null) : (fromMarket?.p90_ask_usd ?? null)
@@ -472,6 +476,17 @@ function OrderBookCard({ short }: { short: string }) {
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : retiredSource ? (
+        // ⚠ D12b. This branch comes BEFORE the failed/count tests on purpose.
+        // For Top Shot the orderbook block is computed from `ts_listings`, a
+        // sampler retired 2026-05-26 holding one row from 2026-05-15 — so the
+        // read SUCCEEDING is not good news and its count is not a market fact.
+        // Neither the failed copy (which would blame our own read) nor the zero
+        // copy (false — Top Shot carries thousands of live asks) is true here.
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">
+          <span className="font-semibold text-[color:var(--rpc-text-secondary)]">{TS_ORDERBOOK_RETIRED_LABEL}</span>{" "}
+          {TS_ORDERBOOK_RETIRED_BODY}
+        </div>
       ) : failed ? (
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load the order book.</div>
       ) : count === 0 ? (

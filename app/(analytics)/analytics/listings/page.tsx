@@ -14,7 +14,7 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City Listings Analytics",
   description:
-    "Historical Flowty loan offers (marketplace closed May 2026) and a periodically-sampled snapshot of the Top Shot marketplace orderbook plus Sniper-feed asks across other Flow collectibles.",
+    "Historical Flowty loan offers (marketplace closed May 2026) and Sniper-feed ask snapshots across Flow collectibles. The Top Shot orderbook sampler was retired 2026-05-26 and no depth is shown for it.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/listings`,
   distribution: [
