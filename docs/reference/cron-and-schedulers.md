@@ -145,6 +145,35 @@ arithmetic*, so `net._http_response` logged `timed_out` on one of the healthiest
 Do not credit it with a throughput win, and do not read the residual `timed_out` share as a before/after
 measurement without bucketing by the requested timeout.
 
+## ⚠ A cursored walker MUST write its `pipeline_runs` row BEFORE it writes its cursor
+
+**Measured 2026-08-21, re-derived and sharpened 2026-08-22.** `app/api/pinnacle/ingest-events`
+is the repo's one cursored walker that writes **no `pipeline_runs` row at all**. That makes it
+invisible to `detect_stalled_pipelines`, to the cadence watchlist and to every health board
+**by construction** — so it can run, fail, and advance its cursor with nobody able to see any
+of it. Its zero in a liveness sweep therefore proves nothing on its own; the only honest read
+is the OUTCOME store, and `backfill_state.id = 'pinnacle_flow_events'` does not exist (control:
+the table is live, 10 other ids, newest `last_run_at` the same day).
+
+**The rule: any new walker writes a `pipeline_runs` row before it writes a cursor.** A walker
+whose telemetry is added afterwards has already had a window in which loss was unobservable.
+This is the walker-shaped sibling of the `after()` heartbeat rule in CLAUDE.md — same defect,
+different surface: a run that ends without a terminal row is indistinguishable from a run that
+never started.
+
+⚠ **A DORMANT WALKER IS NOT AUTOMATICALLY A GAP — CHECK FOR A LIVE DUPLICATE FIRST, AND CHECK
+IT BY DESTINATION, NOT BY NAME.** Two of the four never-run walkers turned out to be superseded
+alternates of live pipelines (`topshot-listings-indexer`; and `app/api/pinnacle/ingest-events`,
+which scans the **same** `NFTStorefrontV2.ListingCompleted` event and writes the **same**
+`pinnacle_sales` table as the live `pinnacle-sales-indexer`, from an independent cursor). **So
+wiring it would not have closed a gap — it would have put two uncoordinated writers on one
+table.** ⚠ And the name is no guide: the live `pinnacle-events-ingest` route sits one hyphen
+away from the dormant `pinnacle/ingest-events` and does something else entirely (LISTINGS into
+`pinnacle_listing_events`). Compare **event type + destination table + cursor store**; reading
+the two route headers is what separated them. Full re-derivation:
+[inbox/2026-08-22T1500Z-one-of-the-four-never-run-walkers-duplicates-a-live-pipeline.md](../overnight/inbox/2026-08-22T1500Z-one-of-the-four-never-run-walkers-duplicates-a-live-pipeline.md).
+
+
 ## Reading a pipeline's health signals — four shapes learned 2026-08-17
 
 These are generalisations of specific incidents from one session. Each names the instance so it can be
