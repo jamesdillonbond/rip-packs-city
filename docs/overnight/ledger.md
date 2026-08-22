@@ -41,8 +41,16 @@ script only; the production change was the earlier `toLocaleString` commit).
 ⚠ **WHAT THIS DOES AND DOES NOT BUY.** It removes a whole class of silent blindness from 24 guards. It does
 **not** re-validate any past guard result: every population those guards reported before tonight was
 measured against a partly-blanked corpus, and only the two that went red have actually been re-derived.
-**`lib/seo.ts` remains the one to re-check by hand** — 141 of its lines were invisible, including
-`OG_INHERITED` and `TWITTER_INHERITED`, the surface behind the OG shallow-merge rule.
+⚠ **CORRECTION, same turn — I first wrote that `lib/seo.ts` "remains the one to re-check by hand", and
+that OVERSTATED it.** 141 of its lines were indeed invisible, including `OG_INHERITED` and
+`TWITTER_INHERITED` (the OG shallow-merge surface). But the concern is now discharged EMPIRICALLY rather
+than outstanding: exactly **two** migrated guards walk `lib/` — `no-fabricated-divisor-ratchet` (app, lib,
+components, workers) and `paginated-range-requires-order-ratchet` (app, lib, supabase/functions, workers)
+— and **both are green over the now-fully-visible file**, with the divisor one mutation-tested at
+`lib/seo.ts:196` specifically. ✅ **And the R10 guard that actually owns OG inheritance,
+`metadata-inline-blocks-inherit-root-fields`, uses NO comment stripper at all**, so it was never blind
+here; it passes. **Leaving a scary open item standing when it has been closed is its own defect** — a
+filed "still needs checking" reads as the conservative choice and nobody re-derives it.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the blind stripper's first real casualties: 32 hydration sites fixed, and a ratchet that had been calibrated against a blanked corpus
 
