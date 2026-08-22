@@ -384,7 +384,7 @@ const PINS = [
     // re-pointed 2026-08-09: the AllDay leg now reads the lean v_allday_pack_detail_ev
     // instead of v_allday_pack_info (identical output, without the 1.19M-cost
     // pack_ev_latest join that was 500ing every AllDay pack page under contention).
-    migration: "supabase/migrations/20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.sql",
+    migration: "supabase/migrations/20260822211000_audit_20260822_snapshot_get_pack_detail_bundle_partition_prune.sql",
   },
   {
     fn: "holdings_summary",

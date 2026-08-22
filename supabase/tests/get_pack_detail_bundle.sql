@@ -83,9 +83,8 @@ SELECT d.dist_id,
 CREATE OR REPLACE FUNCTION public.get_pack_detail_bundle(p_collection_id uuid, p_dist_id text, p_collection_slug text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
+ STABLE SECURITY DEFINER
  SET search_path TO 'public'
- SET statement_timeout TO '30s'
 AS $function$
 declare
   v_pack_row      jsonb;
@@ -133,8 +132,12 @@ begin
   -- lookup only for the final 5 rows.
   with scored as materialized (
     select pdp.edition_id, pdp.drop_weight,
+           -- `computed_at <= now()` is a no-op on the RESULT (no snapshot is
+           -- computed in the future) but it hands the planner the partition key,
+           -- which prunes the empty future partition at runtime. See header.
            (select fs.fmv_usd from public.fmv_snapshots fs
-              where fs.edition_id = pdp.edition_id order by fs.computed_at desc limit 1) as fmv_usd
+              where fs.edition_id = pdp.edition_id and fs.computed_at <= now()
+              order by fs.computed_at desc limit 1) as fmv_usd
     from public.pack_drop_pool pdp
     where pdp.collection_id = p_collection_id and pdp.dist_id = p_dist_id
       and pdp.drop_weight > 0
@@ -262,6 +265,38 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (public.get_pack_detail_bundle(:AD::uuid,'a1','nba-top-shot') -> 'corrected_ev')::text,
   'null', 'non-AllDay slug -> corrected_ev stays null even for an AllDay dist');
+
+-- ── A FUTURE-DATED SNAPSHOT MUST NOT WIN THE HERO SLOT ──────────────────────
+-- Added when this pin was re-pointed 2026-08-22. The live body gained
+-- `and fs.computed_at <= now()` inside the per-edition FMV lookup. Its comment
+-- calls that "a no-op on the RESULT", and the REASON given is that no snapshot is
+-- computed in the future — the predicate exists to hand the planner the partition
+-- key so it prunes the empty future partition at runtime.
+--
+-- ⚠ "No-op" is therefore a claim about the DATA, not about the code. Verified
+-- against prod 2026-08-22: zero rows in fmv_snapshots have computed_at > now(),
+-- with a positive control (14,192 snapshots written in the trailing 24h, max
+-- computed_at 37 seconds old) so the zero means "none are future-dated" rather
+-- than "the predicate matched nothing".
+--
+-- What the predicate actually DOES is exclude a future row, and that is what is
+-- pinned here — so if clock skew or a back-dated writer ever produces one, this
+-- test says which behaviour the hero montage has rather than leaving it to be
+-- rediscovered from a wrong picture on a public pack page.
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at)
+VALUES (:eB::uuid, 5000, now() + interval '1 day');
+
+SELECT _assert_eq(
+  (public.get_pack_detail_bundle(:TS::uuid,'d1','nba-top-shot') -> 'hero_editions' -> 0 ->> 'player_name'),
+  'Dame',
+  'a future-dated snapshot does NOT win the hero slot — Ant''s 5000 is dated tomorrow,
+   so Dame''s 100 still leads');
+SELECT _assert_eq(
+  (SELECT h ->> 'fmv_usd' FROM jsonb_array_elements(
+     public.get_pack_detail_bundle(:TS::uuid,'d1','nba-top-shot') -> 'hero_editions') h
+   WHERE h ->> 'player_name' = 'Ant'),
+  '50',
+  'and Ant keeps its LATEST NON-FUTURE fmv (50), not the future 5000');
 
 SELECT '✓ get_pack_detail_bundle: all assertions passed' AS result;
 
