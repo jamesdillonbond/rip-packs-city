@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEASURED (PLANS ONLY) + REGISTER (Claude Code, interactive) — the roadmap's #1 metric is unreadable ~20 h a day; the cause is structural, my candidate fix did NOT validate, and the operator-blocked set finally has stable item numbers
+
+**Docs only — no code, no DB, no migration.** Two things: the open items got a permanent home, and the accuracy meter got diagnosed.
+
+✅ **KNOWN-ISSUES 19–22 — the operator-blocked set was living in `focus.md` and session logs, both of which ROLL.** Now registered with stable numbers: **19** the `cron_heavy` ownership block (no session role can reschedule **42 of 93** jobs) carrying **jobid 70** as its live instance (sole refresher of `mv_topshot_misattrib_candidates`, 15 of 16 runs failed since 08-07, MV stale since 08-16, plus the near-miss warning not to "clean it up") · **20** atlas-proxy, which CLAUDE.md names but which had **no register slot**, which is why it keeps being re-derived · **21** the hydrator's cron declared in no repo file, where a `wrangler deploy` would DELETE it · **22** the P0 pre-purge credential blob on `e4tib3`. **New numbers, not the gaps at 2/5/6/13/16** — reusing a gap could collide with a historical citation.
+
+🚨 **THE MISSION ITEM: `FMV Confidence (canonical TS)` failed on BOTH sentinel runs today** (14:49Z, 15:47Z) with `canceling statement due to statement timeout`. It fires inside the 01:00–19:00Z band, so **the share-of-HIGH/MEDIUM figure the roadmap is steered by can be read roughly four hours a day.**
+
+**Cause, from the plan.** `sentinel_fmv_confidence_canonical_ts_split()` joins `fmv_current` to `editions`. `fmv_current` is `DISTINCT ON (edition_id) … ORDER BY edition_id, computed_at DESC` with no predicate of its own, so **the `editions` filter cannot push through it**: `Unique → Merge Append (rows=1,200,497)` runs before a Hash Join narrows to ~5,022. **~90 % of the estimated cost is walking the whole snapshot table.** Same behaviour this file already records for `compute_pack_ev_per_edition_weighted` (335 vs 1,046,192 buffers).
+
+⚠ **AND THE PART THAT KEEPS THIS HONEST: MY CANDIDATE FIX DID NOT VALIDATE.** A lateral rewrite (scope to the ~10.3k canonical editions, then per-edition index seek) plans at **24,010 vs 78,576** and never touches the 1.2M rows — **but its one `EXPLAIN (ANALYZE, BUFFERS)` run hit the 60 s MCP cap.** A planner cost is an estimate. **I do not claim the rewrite is faster, and no migration was written.** Conditions made even that uninterpretable: **16 of 27** non-idle sessions in IO wait, later **10 of 10**, with an autovacuum on `wallet_moments_cache` at 536 s.
+
+⚠ **I added load to the spell I was measuring, and say so.** The MCP cap abandons the RESULT, not the query — mine was still running at 92 s (pid 3966238, `mgmt-api`); I moved to cancel it, it had already ended, and I verified **0 `mgmt-api` sessions active** afterwards. **I did not retry the shape**, because retrying stacks copies onto the saturation.
+
+⚠ **A TIE CASE MUST BE CHECKED BEFORE ANYONE CLAIMS EQUIVALENCE.** `DISTINCT ON` and `ORDER BY … LIMIT 1` both break ties arbitrarily, so an edition with two snapshots at the **same `computed_at` and different `confidence`** could tally differently — and a confidence tally is this arm's entire output.
+
+⚠ **AND THE REWRITE MAY BE THE WRONG ANSWER ENTIRELY, stated rather than buried:** a nightly materialised tally would make the metric readable **all day** instead of merely cheaper in-band. **That alternative is uncosted.** A figure the roadmap steers by arguably should not be recomputed from 1.2M rows on every sentinel tick. Filed: [inbox/2026-08-22T1745Z-the-headline-accuracy-metric-is-unreadable-20h-a-day-and-the-cause-is-structural.md](inbox/2026-08-22T1745Z-the-headline-accuracy-metric-is-unreadable-20h-a-day-and-the-cause-is-structural.md).
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — today's lessons promoted out of this ledger into the files that are actually read before a session knows its topic
 
 **Docs only.** ⚠ **This file is a RECORD, not a steer** — a lesson that lives only here is read by someone already reconstructing history, which is the wrong moment. Three destinations, each chosen for who lands there:
