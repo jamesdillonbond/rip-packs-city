@@ -8,6 +8,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — closed 1 of the 6 stale DB pins the long way, and the diff refuted the probe that found it
+
+**What shipped.** `get_set_detail` re-pinned: a new snapshot migration
+(`20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql`), the test file's verbatim
+DDL block, its PINS entry, and a NEW assertion. Known-issues **#24** goes 6 open → **5**.
+
+⚠ **The instructive part is that my own probe pointed the wrong way.** A phrase probe showed the live body
+had **no `DISTINCT ON`** while the pin's header asserted *"DISTINCT-latest"* — which reads like a mechanism
+change on a public page's FMV totals. **The actual diff refuted it:** the `LEFT JOIN LATERAL … ORDER BY
+computed_at DESC LIMIT 1` was **already pinned**, and so was the Pinnacle render-level branch. The header had
+simply not described its own pinned DDL for some time — **a documentation bug, not drift**, now corrected in
+place. **The entire real drift was ONE feature:** the D20 `underlying_set_count` rollup — a DECLARE line, an
+8-line SELECT and a jsonb key. *A probe is a hypothesis; only the diff is the measurement.*
+
+**Verified at every step rather than asserted:**
+- Transcription checked against the **DB's own `md5(pg_get_functiondef)`** (`f0371ee9…`), not by eye.
+- The resulting body hashes **`c3e29774f15cc1068e89af80077c3777` identically across live `prosrc`, the test
+  file and the migration** — so `db-pin-staleness` will read this pin clean, verified rather than hoped.
+- The new `underlying_set_count` assertion is **mutation-tested BOTH ways**: dropping the `collection_id`
+  scope reds it, dropping the name scope reds it. It also covers a same-name row in another collection.
+- The pin's SQL test and **all 178 DB-invariant files** pass against a local Postgres 16, provisioned the way
+  CI does (`initdb` + `pg_ctl` on 5433; `su postgres` is required in this sandbox).
+- `npx tsc --noEmit` 0 · `npm run test:coverage` 0 (92.15%, 45155/48997) · six repo guards exit 0.
+
+⚠ **The full gate earned its keep:** `migration-new-function-states-its-anon-exec-decision` **red** on the
+first attempt and was right to. A snapshot migration must state the decision with the **MARKER, never a
+REVOKE** — `CREATE OR REPLACE FUNCTION` does not reset a function's ACL, so a REVOKE there would change
+production while presenting itself as a no-op. Verified with `has_function_privilege` (not acl text): anon
+and authenticated EXECUTE both already **false**, service_role **true**.
+
+⚠ **The migration is deliberately NOT applied.** It is byte-identical to live, so applying it buys nothing
+and costs a ~10–20 s user-facing `PGRST002` burst. `migration-parity` checks applied→file, so an unapplied
+file is invisible to it. **No DB or prod state was changed by this entry.**
+
+**Revert path:** `git revert` the commit whose message begins `fix(db-pin): re-pin get_set_detail` (find by
+message, not by a recorded sha), then delete the new migration file. Nothing to revert in the database.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the layout monitor's band check asserted PRESENCE after a run reported "4 skipped" and I could not tell which
 
 **CODE (test only).** Small, but it closes the exact hole I spent the day writing about.
