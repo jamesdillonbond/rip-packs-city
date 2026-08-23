@@ -42,7 +42,7 @@ them"*.
 **Also verified in this part:** the inbox index guard shipped an hour ago did its job — the new filing
 had to be listed for the suite to stay green, and it was caught in the same turn rather than a day later.
 
-**Revert path:** docs only, no DB half. Sha stamped in the follow-up commit, read after the push.
+**Revert path:** docs only, no DB half — `git revert 6ae54728` (filing + R21) and `git revert 9d039664` (this entry). **Shas read after the push.**
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a try/catch catches a THROW, and a hang throws nothing
 
