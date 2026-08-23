@@ -53,10 +53,28 @@ jobs:
               OVERALL=1
               break
             fi
-            DONE=$(jq -r '.done // false' /tmp/offer-fill.json 2>/dev/null)
-            CB=$(jq -r '.cursor_before // empty' /tmp/offer-fill.json 2>/dev/null)
-            CA=$(jq -r '.cursor_after // empty' /tmp/offer-fill.json 2>/dev/null)
-            OK=$(jq -r '.ok // false' /tmp/offer-fill.json 2>/dev/null)
+            # ⚠ EVERY `run:` BLOCK IS `bash -e`, so a FALLIBLE COMMAND IN AN ASSIGNMENT
+            # ABORTS THE STEP RIGHT HERE. `jq` exits 5 on a non-JSON body, and the
+            # `2>/dev/null` suppresses jq's MESSAGE, not its STATUS — so a 200 carrying
+            # an HTML error page (a streaming shell, a proxy page) killed the step
+            # BEFORE the `::warning::` below that exists to name the failure. The loop
+            # read as coverage and was dead code past this point. (deep-audit R32)
+            #
+            # `X=$(…) || X=""` then check explicitly — the pattern ops-monitor.yml and
+            # migration-parity.yml already use.
+            DONE=$(jq -r '.done // false' /tmp/offer-fill.json 2>/dev/null) || DONE=""
+            CB=$(jq -r '.cursor_before // empty' /tmp/offer-fill.json 2>/dev/null) || CB=""
+            CA=$(jq -r '.cursor_after // empty' /tmp/offer-fill.json 2>/dev/null) || CA=""
+            OK=$(jq -r '.ok // false' /tmp/offer-fill.json 2>/dev/null) || OK=""
+            # An unparseable body is its own outcome and must be NAMED, not inferred
+            # from a downstream `ok != true`: those are different faults and only one
+            # of them means the endpoint answered.
+            if [ -z "$DONE" ] && [ -z "$OK" ]; then
+              echo "::warning::Offer-fill backfill call $i returned HTTP $STATUS with a body jq could not parse — first 200 bytes follow"
+              head -c 200 /tmp/offer-fill.json || true; echo ""
+              OVERALL=1
+              break
+            fi
             if [ "$OK" != "true" ]; then
               echo "::warning::Offer-fill backfill call $i logged ok=$OK"
               OVERALL=1

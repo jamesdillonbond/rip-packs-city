@@ -26,7 +26,12 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
 
-          SKIPPED=$(echo "$BODY" | jq -r '.skipped_count' 2>/dev/null)
+          # ⚠ `bash -e` + a fallible command in an ASSIGNMENT aborts the step HERE.
+          # `jq` exits 5 on a non-JSON body and `2>/dev/null` hides the message, not
+          # the status — so a 502 carrying HTML killed this step BEFORE the
+          # `HTTP_CODE != 200` check below that exists to report it. The step failed
+          # with nothing naming why. (deep-audit R32, same shape as offer-fill.)
+          SKIPPED=$(echo "$BODY" | jq -r '.skipped_count' 2>/dev/null) || SKIPPED=""
 
           if [ "$SKIPPED" != "0" ] && [ "$SKIPPED" != "null" ] && [ -n "$SKIPPED" ]; then
             echo "::warning::$SKIPPED allow_list rows skipped during reconcile"
