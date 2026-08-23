@@ -79,8 +79,7 @@ neither prose figure was edited.
 bytes on this same file). Ledger integrity after this write: `find-swallowed-ledger-headings.awk` prints
 **3**, `find-future-dated-ledger-headings.mjs` prints **0**.
 
-**Revert path:** `git revert <sha>` — docs only, no DB half. Resolve the sha with
-`git log -1 --format=%H --grep='the memory files had drifted'`.
+**Revert path:** `git revert e46e7d12` — docs only, no DB half. ⚠ **Sha read AFTER the push, not predicted**; the commit SUBJECT is `docs(memory): the purge was defeated…`, which is not the phrase this heading uses, so a `--grep` on the heading would have found nothing.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the tx-shape census earned itself on its first non-zero reading, and unclassified is now self-diagnosing
 
