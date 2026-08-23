@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED — the /api/ready cache was a mitigation that DID NOT WORK, so the read now stops counting
+
+⚠ **I shipped a 60 s edge cache an hour ago and called it a mitigation. Re-measured against production, it did nothing: `/api/ready` returned 500 three times out of three.** The reason is obvious in hindsight and worth writing down — **caching the SUCCESS path only helps if a request ever succeeds. A 500 is never cached, so there was nothing to serve and every request paid the full cost.** A cache is not a fix for a read that always fails.
+
+**The measurement that forced the real fix**, taken with the instance **QUIET** (5 active backends, 6 IO waiters — not a saturation spell): `readiness_collection_stats()` took **4,863 ms as `postgres` and 24,523 ms as `anon`**, on ~8,000 buffers of which **~340 are DISK READS** this instance serves at 10–40 ms each. ⚠ The 24,523 ms run **beat a `SET LOCAL statement_timeout = '8s'`** — the recorded overshoot-under-IO-throttle, live. ⚠ And my original headline, **"10.9 ms warm"**, was the fully-cached case; quoting it as the cost is what let this ship.
+
+✅ **THE FIX IS TO STOP COUNTING.** The only consumer semantic is `sales_24h < 10`, and **a probe bounded to 11 rows answers that EXACTLY**: **24 buffers, 3 reads, 63 ms** — ~330× fewer buffers and ~100× fewer disk reads than the count it replaces.
+
+⚠ **`sales_24h` is now a BOUNDED PROBE, not a volume figure: exact when ≤ 10, NULL above.** Returning `least(n, 11)` would have been a fabricated count. `thin_volume` carries the answer, so nothing downstream infers it from a number whose meaning changed.
+
+🚨 **AND THE CLIENT CHANGE WAS NOT OPTIONAL — SHIPPING THE RPC ALONE WOULD HAVE CREATED A LOUD FALSE CLAIM.** The old client expression `(sales_24h ?? 0) < 10` coerces the new NULL to **0** and renders **"THIN-VOLUME ECOSYSTEM" on Top Shot** — a false statement about the busiest market on the platform, produced by a performance fix. Both clients now read `thin_volume === true`; ⚠ `=== true` is deliberate, because **null means UNKNOWN and unknown must not assert thin** — the boolean form of the `?? 0` defect. Regression controls in both component suites, **proven to redden against the old expression**.
+
+⚠ **Two guards caught this change and both were right.** `collection-analytics-failed-vs-empty-guard` pins that exactly one bare swallow survives and that it is the readiness probe — it checked a **fixed 10-line window**, and the comment I added explaining `thin_volume` pushed the `fetch(` out of view. **A proximity guard measured in LINES is really measuring how much you documented, and documenting more must not look like a regression.** Re-anchored on the nearest `fetch(` above, which is exact and still fails if a different fetch's swallow ever becomes the survivor.
+
+🚨 **AND FIVE TESTS BROKE ON THE /api/top-sales REWRITE — every one of them was pinning the defect R33 filed.** Inverted, never deleted:
+- **`"Pinnacle: a query error degrades to an empty list (200, not 500)"` — the test's own NAME was the defect.**
+- `"falls back to Unknown / '' / 0"` ×2 — pinned the fabricated name, serial and supply.
+- `"500s (with empty sales)"` ×2 — an empty **array** on failure is a claim ("there were no top sales"); `null` is the absence of one.
+
+Added the other direction as a **no-change control**: a genuine empty window must still be an empty array at 200, or the route loses the ability to say the true thing.
+
+⚠ `authed-api-no-driver-message-leak-guard` also flagged `return { ok: false, message: error.message }` on the internal result. It never reached a response — but the guard checks the SOURCE shape precisely because that value is one careless spread from publishing Postgres's own wording. Now `errorLogDetail()` into a `detail` field.
+
+**Revert:** restore the function body from `20260823021500` **and** `git revert` the client commit — they must move together, or the thin-volume caveat lies in one direction or the other.
+
 ### 2026-08-22 · SHIPPED — /api/ready's 500s are NOT just the band, and my "10.9 ms warm" was the cached case
 
 🚨 **I re-measured with the instance QUIET and the answer contradicts my own earlier claim.** At 06:45Z, **5 active backends and 6 IO waiters — not a saturation spell** — `readiness_collection_stats()` took **4,863 ms as `postgres` and 24,523 ms as `anon`**. Roughly 8,000 buffers, of which **~340 are DISK READS** that this instance serves at 10–40 ms each. The anon path is bound by `authenticator`'s 8 s, so an origin miss 500s often.
