@@ -80,6 +80,22 @@
   exactly the indexes that used to work. **Repair is an index rebuild (DDL on the FMV path) → Trevor's call,
   not a night-pass item.** Evidence:
   `docs/overnight/inbox/2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md`.
+- ✅ **A 24 h Vercel runtime-error sweep (21:56Z) found NO new honesty-canon instance — recorded so nobody
+  re-sweeps it tonight.** 50 error groups; every one resolves to **saturation collateral** (statement
+  timeouts, pool-acquire timeouts, `maxDuration` kills) or to **honest degradation working as designed**. The
+  `[pack-detail] …` and `[entity-section] … — degrading to empty` families in particular are the R19 pattern
+  firing, not a defect: `lib/pack-dist/fetchers.ts` returns `{ ok: false }` and the page consumes it through
+  `summarizeDegraded(boardStatus(…))` at every one of those sections. ⛔ Per PRIORITY 3, none of this is a new
+  investigation.
+- ⚠ **BUT COUNT-BASED TRIAGE OVER `[pack-detail]` READS DOUBLES, and the pairs are exact.** Every bound breach
+  logs **twice**: `bounded()` in `lib/pack-dist/fetchers.ts` catches the timeout and logs
+  `[pack-detail] <label> bound …`, then returns `{ error }` so the caller's own `if (error)` branch logs
+  `[pack-detail] <label> error …`. Measured, not inferred — six labels, identical counts in both groups:
+  `pack_lifecycle` **138/138**, `pack_realized_ev` **129/129**, `ev_contributors` **126/126**,
+  `pack_sales_history` **75/75**, `pack_table_rows` **59/59**, `pack_distributions` **50/50**. **Read one of
+  each pair, never their sum.** Both lines carry different information (the bound fired / the caller handled
+  it), so this is noise rather than a lie — **not touched**, because that file shipped hours ago and belongs
+  to the session still working it.
 - ⚠ **A retraction, so nobody re-derives it:** the 20:00Z `fmv-recalc` filing claimed `(saturation-class)` was
   a misattribution "because the database was measurably quiet". **Withdrawn** — that reading was taken at
   19:50Z and applied backwards to failures at 17:48–18:49Z, while the daytime monitor's positive control at
