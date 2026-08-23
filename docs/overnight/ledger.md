@@ -8,6 +8,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — main was RED on a migration guard, and the entity monitor could not see three collections' edition pages
+
+**Two items, both found by running the gates rather than assuming my own change was the only thing in flight.**
+
+**1. `main` was red, and not from my diff.** `npm run test:coverage` came back 14,738 passed / 1
+failed on `migration-new-function-states-its-anon-exec-decision`, naming
+`20260823014500_audit_20260823_ownership_targets_drop_rn1_escape.sql →
+public.get_ownership_backfill_targets` — a migration another session applied at ~01:35Z. **The
+author HAD stated the decision**, in prose in the header ("CREATE OR REPLACE preserved the ACL --
+re-verified postgres + service_role only, no anon/authenticated"). ⚠ **The guard reads a LINE, and
+needs `anon-exec:` and the function name TOGETHER on it** — so a correct, verified decision written
+across two lines reads to the guard as no decision at all. Reworded to the marker form; no
+semantics changed.
+
+⚠ **A REVOKE would have been the WRONG fix and does not look it.** The creating migration
+(`20260823001500_*.sql`, lines 124-126) already revoked PUBLIC + anon + authenticated, and
+`CREATE OR REPLACE FUNCTION` does not reset a function ACL — so a revoke in a snapshot migration
+is a live privilege statement wearing a no-op's clothes. **Re-measured independently before
+touching it:** `has_function_privilege` = false for both anon and authenticated, `prosecdef` =
+true. The guard's own failure message names the marker as the remedy for exactly this case.
+
+**2. The rendered-DOM entity monitor was blind to 3 of 5 collections' edition pages.**
+`e2e/entity-urls.ts` resolved its `edition` probe from sitemap **segment 1**, which
+`buildSitemapSegment` (read, not inferred from the comment) fills with **Top Shot only** — segment
+2 is AllDay/Golazos/UFC. So a non-TS edition page could 500 or serve a blank shell indefinitely
+with the monitor green. Added an `edition_golazos` arm on segment 2, named for its collection
+because that segment is dominated by AllDay's 6,190 editions and an unnamed pick would essentially
+never land elsewhere. Selfcheck fixture + assertion added; **mutation-checked** — widening the
+regex to a generic `/\/edition\//` makes it grab the AllDay URL and reddens the assertion.
+
+⚠ **The new arm asserts page HEALTH, not the CTA I shipped earlier today.** Adding
+`expectText: /View edition on Dapper/i` is one line and is written into the spec's header — but it
+was NOT added blind, because **a scheduled monitor that reds on its first run is indistinguishable
+from a broken one**. Confirm the CTA in a browser once, then pin it.
+
+✅ **Ran the e2e suite for real, which I had assumed impossible.** 16 of 20 selfcheck tests "failed"
+with the `npx playwright install` banner — ⚠ that is the SANDBOX, not the suite, and it reproduces
+on a clean tree. `PW_CHROMIUM_PATH=/opt/pw-browsers/chromium` makes it **20/20**. That override was
+already documented in [tooling-gotchas.md](../reference/tooling-gotchas.md) under "Driving Chromium
+from a Claude Code web sandbox" and I built a throwaway config before reading it — **the gotcha file
+had the answer already; no new entry needed, the lesson is to read it first.**
+
+**Coverage gates unaffected by today's page work:** the primary gate includes `lib/**` and
+`app/**/route.ts` but **not `page.tsx`**, so the edition-page CTA is outside it by construction —
+which is precisely why item 2 exists.
+
+**Revert path:** `git revert <sha of "test(e2e): probe a non-Top-Shot edition page">` and
+`git revert <sha of "fix(migration): state the anon-exec decision in the form the guard reads">`.
+No DB or prod-state change — a comment and a test.
+
+
 ### 2026-08-22 · SHIPPED — /api/ready's eight-day 500 had TWO causes, the filed fix was inverted, and the fix uncovered a false market claim on Disney Pinnacle
 
 **R44 is closed.** `/api/ready` had returned 500 since 2026-08-15 and the two thin-volume caveats it feeds (`/[collection]/market`, `/[collection]/analytics`) had silently stopped rendering.
