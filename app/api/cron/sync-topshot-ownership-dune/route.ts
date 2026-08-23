@@ -189,17 +189,25 @@ async function run(req: NextRequest) {
     let cachedTotalRows: number | null = null;
 
     // ── Dune spend budget (2026-08-22) ──────────────────────────────────────
-    // 🚨 ONE FULL WALK IS 68.4% OF THE MONTH. 114,083 rows x 6 columns =
-    // 684,498 datapoints against a 1,000,000-datapoint cycle. That is why the
+    // 🚨 ONE FULL WALK IS 87.7% OF THE MONTH. 146,100 rows x 6 columns =
+    // 876,600 datapoints against a 1,000,000-datapoint cycle. That is why the
     // weekly cadence 402'd on 08-10 and 08-17: the second walk of a cycle cannot
     // fit, and no amount of retrying changes the arithmetic.
+    //
+    // ⚠ SIZED BY THE TABLE, NOT BY THE LAST EXECUTION. This comment previously
+    // said 68.4% / 684,498, derived from the 08-03 run's 114,083 rows. That is
+    // the wrong bound: the reservation has to cover the LARGEST execution that
+    // might arrive, and a reservation the workload outgrows fails as a lane that
+    // silently stops starting. Re-derived live 2026-08-22 from
+    // `dune_budget_allocation`, whose own note records the same measurement.
     //
     // ⚠ `canStart`, NOT `allowance > 0`. This walk restarts at offset 0 every
     // run, so a partial walk spends datapoints AND leaves the table capped at
     // the offset reached (an abort at offset 20000 once did exactly that). The
-    // lane therefore DECLINES TO START unless it can finish — 600,000 datapoints
-    // (`dune_budget_allocation.min_start_datapoints`) — rather than buying 44% of
-    // a walk. Caps and reservations live in the DB: changing the pace is one
+    // lane therefore DECLINES TO START unless it can finish — 880,000 datapoints
+    // (`dune_budget_allocation.min_start_datapoints`, verified live 2026-08-22;
+    // the comment said 600,000, and a reader who trusts it sizes the wrong gate)
+    // — rather than buying a fraction of a walk. Caps and reservations live in the DB: changing the pace is one
     // UPDATE, not a deploy.
     const budget = await readDuneBudget(PIPELINE_NAME);
     let dpAllowance = budget.datapointsAllowedNow;
@@ -229,7 +237,16 @@ async function run(req: NextRequest) {
       if (process.env.DUNE_OWNERSHIP_INCREMENTAL) {
         const batchN = Math.max(1, Math.min(50, Number(process.env.DUNE_OWNERSHIP_BATCH_SETS ?? "10")));
         try {
-          const { data: targets } = await supabaseAdmin.rpc("get_ownership_backfill_targets", { p_limit: batchN });
+          // p_max_datapoints caps the CUMULATIVE estimate of the batch. Without it
+          // the walk eventually reaches a set larger than a whole cycle (Base Set S4
+          // alone is ~91,979,724 datapoints), truncates at the allowance, restarts at
+          // offset 0 next run, and burns the reservation every cycle without ever
+          // finishing that set. Verified live 2026-08-22: the function signature is
+          // (p_limit integer, p_max_datapoints bigint DEFAULT NULL).
+          const { data: targets } = await supabaseAdmin.rpc("get_ownership_backfill_targets", {
+            p_limit: batchN,
+            p_max_datapoints: dpAllowance,
+          });
           batchSets = Array.isArray(targets)
             ? (targets as Array<{ set_id_onchain: number }>).map((t) => Number(t.set_id_onchain)).filter((n) => Number.isFinite(n))
             : [];
@@ -238,6 +255,33 @@ async function run(req: NextRequest) {
         }
         if (batchSets.length > 0) {
           executeBody = JSON.stringify({ query_parameters: { set_ids: batchSets.join(",") } });
+        } else {
+          // 🚨 Incremental mode ON with nothing to fetch. Falling through here would
+          // send an /execute with NO query_parameters — which is the FULL walk,
+          // 876,600 datapoints, 87.7% of the cycle — i.e. the exact opposite of what
+          // "no targets" means. Two ways to land here and both are skips, not walks:
+          // the backfill is complete, or the targets RPC threw (see refreshNote, whose
+          // catch above swallows the error and falls straight through).
+          //
+          // ok:true is right — nothing was owed and nothing was spent. `skipped` is
+          // already a key this pipeline emits (`dune_not_configured`), so
+          // extra_key_counts in pipeline_runs_daily counts it with no other change.
+          await supabaseAdmin.rpc("log_pipeline_run", {
+            p_pipeline: PIPELINE_NAME,
+            p_started_at: startedAt,
+            p_rows_found: 0,
+            p_rows_written: 0,
+            p_rows_skipped: 0,
+            p_ok: true,
+            p_error: null,
+            p_extra: {
+              skipped: "no_incremental_targets",
+              query_id: queryId,
+              refresh_note: refreshNote,
+              budget_datapoints_allowed: budget.datapointsAllowedNow,
+            },
+          });
+          return;
         }
       }
 
