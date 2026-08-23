@@ -8,6 +8,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — two of surface QA's three findings, each re-derived first; the third is Trevor's and stays queued
+
+**From the 2026-08-23 surface-QA handoff (`a89e32ff`), which shipped nothing.** ⚠ **Both findings were
+RE-MEASURED against production before I touched anything** — a filed finding is a hypothesis, and this file
+records several that were refuted. Both reproduced exactly.
+
+## Finding C — Pack Sniper served an EMPTY table to crawlers while humans saw 84 rows
+
+The page's own header promises *"the ranked table AND the per-row drill-down links … in the raw server HTML
+so the unique content is crawlable."* Measured on the served body: **`/pack/dist/` links = 0** at 200/64 KB,
+with **no PARTIAL-DATA marker — the fetch SUCCEEDED and returned nothing.**
+
+Re-derived A/B against the live API, with a no-change control:
+
+| | matched | highVariance | returned |
+|---|---|---|---|
+| TS `include_high_variance=false` ← what the SERVER fetched | 84 | 84 | **0** |
+| TS `include_high_variance=true` ← what the CLIENT fetches | 84 | 84 | **84** |
+| AD `false` / `true` (control: the filter, not a broken API) | 95 | 65 | 30 / 95 |
+
+**Every matched Top Shot pack is currently high-variance**, so hiding them hid the whole board. The
+2026-07-09 client reconciliation had already defaulted the other way for exactly this stated reason; the
+server half was never updated.
+
+🚨 **THE CLIENT FIX MASKED THE SERVER BUG.** Because users saw a full board, nobody noticed the HTML was
+empty. **A divergence only a crawler can see has no human reporter** — which is why this ships as a static
+guard rather than a note to reviewers. ⚠ It is **NOT** an honesty-canon defect: the read succeeded and
+returned zero. It is a promise the page makes in its own header and does not keep.
+
+## Finding B — the home page was the only surface with no canonical
+
+Served-HTML head of `/`: **`canonical: none`, `og:url: none`**, while every other surface checked carries
+one. ⚠ **Scoped to `app/page.tsx`, NOT `rootMetadata`** — Next resolves metadata by INHERITANCE, so a
+root-level canonical would be inherited by every descendant without its own, **pointing a pile of pages at
+the homepage, which is strictly worse than the gap.** ⚠ And `alternates` ONLY: `openGraph`/`twitter` merge
+SHALLOWLY, so redefining either would drop `siteName`/`type`/`locale`/`creator` for one tag.
+
+## The guards, and the assertion that equality alone would have missed
+
+`ssr-seed-matches-client-default` asserts the server seed EQUALS the client default — **plus a third case
+that the seed is not the hide-everything setting.** 🚨 Mutation earned that one: **flipping BOTH to `false`
+satisfies equality while restoring the empty board.** `home-page-declares-its-canonical` carries a case for
+each footgun, including one that fails if `rootMetadata` ever takes an `alternates`.
+
+**6 mutations, all caught** (server reverted · both-flipped · client-flipped · metadata dropped · openGraph
+redefined · rootMetadata takes the canonical).
+
+## ⛔ Finding A NOT shipped, and this is a boundary rather than a backlog
+
+Every anonymous telemetry beacon 405s (`proxy.ts`'s `isPublicPath` 302s `POST /api/telemetry` to `/login`,
+which has no POST handler), so the `"anon"` branch of `usage_events` **has never executed** — 0 rows in a
+month against 306 authed, a positive control proving the pipeline is otherwise healthy. **The fix is one
+line in `proxy.ts` and I am not shipping it:** `proxy.ts` is auth/lockdown, explicitly off-limits, and
+opening the endpoint to anon is a real abuse trade-off (row-count spam) that wants a rate-limit decision.
+**That is Trevor's call, not a diagnosis gap.** ⚠ Whoever ships it: verify by confirming an `anon` row lands
+in `usage_events`, never by watching the console.
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — R47 verified in production: all five sitemap segments serve 200, and their URL counts equal the DATABASE exactly
 
 **No code.** A live SEO surface changed, so it is verified by rendered OUTPUT against a second instrument —
