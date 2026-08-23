@@ -8,6 +8,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the last entity page whose structural read had no catcher, and a guard for it whose first draft was vacuous
+
+**`/[collection]/series/[slug]` now routes its STRUCTURAL editions read into `SeriesUnavailable`**, which
+that file already defined and already used for a failed DETAIL read. It was the last of the four entity
+pages carrying a `structural: true` section (`set`, `team`, `player`, `series`) whose throw had no
+catcher. Closes the "4 more ISR entity pages" half of deep-audit **R19**.
+
+⚠ **AND THE CLAIM IS NARROWER THAN R19'S HEADLINE, which is the part worth writing down.** R19 is titled
+*"Large public entity pages return an UNBRANDED Next.js 500"* — **by the time I got to series that was no
+longer true.** `app/(collections)/[collection]/error.tsx` shipped the same day (`ca8dbde4`) and catches
+every throw under the segment IN BRAND. The remaining difference is what the READER KEEPS: the boundary
+replaces the whole page with a generic *"couldn't render this page"*, while `SeriesUnavailable` names the
+series and links to its sets. **A three-plus-one consistency gap, not an outage** — and inheriting the
+row's severity would be exactly what its own header warns against ("mechanisms may be inherited;
+severities must be re-derived").
+
+🚨 **THE GUARD'S FIRST DRAFT WAS VACUOUS, AND ONLY MUTATION FOUND IT — THE THIRD TIME TODAY.** It matched
+`catch … return <…Unavailable` **anywhere in the file**, and every one of these pages has a SECOND,
+unrelated catch around its DETAIL read that returns the same component. **Reverting the series fix still
+passed.** ⚠ Worse: the assertion carried a comment claiming *"asserting the component merely EXISTS would
+pass on `series` before this fix"* — **prose asserting the very property the code failed to test.** It now
+locates the structural fetcher by name and works forward from its CALL SITE with a tight window;
+mutation-proven on **two** pages (series and team), each failing with the right page named.
+
+⚠ **A second, quieter bug in the same guard: the declaration regex used `[^}]*` and matched NOTHING on all
+four pages** — the fetcher passes an ARGS OBJECT before its options object, so a `}` sits between the
+function brace and `structural: true`. It failed loudly rather than silently only because the surrounding
+`expect(...).not.toBeNull()` was there. **A population check is what turns "my regex is wrong" from a
+green build into a red one.**
+
+**Derived from the TREE, not a list** — every `[collection]/*/[slug]/page.tsx` containing a structural
+read — so a fifth entity page added tomorrow is inside it by construction, and it asserts the count it
+inspected (≥4 pages, ≥4 structural) so an empty walk cannot read as coverage.
+
+⚠ **STILL OPEN, and R19 keeps it:** per-section degradation beats whole-page. The sections below consume
+the structural rows unconditionally, so a failure still costs the reader the whole page — one rung better
+than the boundary, still not the right end state.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1,364 files / 14,851 tests, 0 failures** · eslint clean.
+
+**Revert path:** `git revert <sha of "fix(series): catch the structural editions read">`. Page + test code
+only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED — /api/top-sales cached a database failure as "no top sales" for five minutes, and R36 is verified but deliberately unfixed
 
 **R33 closed — four defects, and the fourth is the one that mattered most.** `/api/top-sales` (1) coalesced a failed name join to the literal string **"Unknown"**, (2) turned a NULL serial into **#0**, a serial that cannot exist, (3) **hardcoded `circulationCount: 0`** — never read from anything, on every Pinnacle row — and (4) 🚨 **returned `[]` when the Pinnacle read ERRORED**, so a database failure rendered as *"no top sales"* at **HTTP 200** and was then cached `s-maxage=300`. **Five minutes of a false claim per failure**, while the non-Pinnacle branch returned 500 for the identical error. One route, two answers to the same question.
