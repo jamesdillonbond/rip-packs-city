@@ -126,7 +126,13 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   if (detailFailed) return <SeriesUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
-  const isEmpty = (detail.edition_count ?? 0) === 0
+  // ⚠ `=== 0`, NOT `(x ?? 0) === 0`. Since 2026-08-23 `edition_count` comes from
+  // `series_detail_rollup` and is NULL when that series has never been rolled up
+  // — UNKNOWN, not zero. The `?? 0` form turned that unknown into "No editions
+  // in this series yet" on a series that may hold thousands, AND short-circuited
+  // the editions/rollups fetch so nothing downstream could contradict it. A
+  // genuine 0 (ufc_strike series 0, measured) still renders the empty state.
+  const isEmpty = detail.edition_count === 0
   const [editions, rollups] = isEmpty
     ? [[] as EditionTile[], null]
     : await Promise.all([fetchEditions(coll.id, slug, PAGE_SIZE, 0), fetchRollups(coll.id, slug)])
