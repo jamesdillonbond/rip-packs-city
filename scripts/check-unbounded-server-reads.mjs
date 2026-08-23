@@ -70,7 +70,14 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // already separated 500 (the DB answered with an error) from 404 (no such
 // username). The overrun answers a THIRD status, 503; see the module for why it
 // must never be 404 on a page collectors share.
-const MAX_UNBOUNDED = 13
+//
+// 13 → 12 (2026-08-22): `lib/fan-teams/fetchers.ts` bounded, clearing
+// `/my-teams`. ⚠ All three of its functions already distinguished a failed read
+// from an empty one and the page already rendered that distinction — the
+// honesty work was done and was UNREACHABLE from a hang, which is worth noting
+// because "the page has an ok:false branch" reads like coverage and, for a slow
+// read, was not.
+const MAX_UNBOUNDED = 12
 
 const strip = (s) => stripComments(s)
 

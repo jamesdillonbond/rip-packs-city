@@ -166,3 +166,76 @@ describe("fetchTeamCard", () => {
     expect(progress?.args).toMatchObject({ p_wallet: null, p_scope: "all_time" })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUNDS — a read that HANGS must reach the same honest branch as one that errors.
+//
+// ⚠ The three functions above already distinguished a failed read from an empty
+// one, and `/my-teams` already renders that distinction. What none of them could
+// reach was the failure this class actually produces: **a read that is merely
+// SLOW errors nowhere.** supabase-js resolves `{ data, error }` only when the
+// query finishes, so under DB saturation the page hangs on a streaming shell —
+// logged by Vercel as a 200, with no error anywhere to branch on.
+//
+// ⚠ So the honesty work was already done and was UNREACHABLE from the most
+// likely failure mode. That is worth stating plainly, because "the page has an
+// ok:false branch" reads like coverage and, for a hang, was not.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A client whose terminal call never settles. */
+function hangingRpcClient() {
+  return { rpc: () => new Promise<never>(() => {}) }
+}
+
+function hangingTableClient() {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "not", "order", "limit"]) b[m] = () => b
+  b.maybeSingle = () => new Promise(() => {})
+  return { from: () => b }
+}
+
+describe("bounds — a hung read is a failed read, not an empty account", () => {
+  it("fetchFanTeams reports ok:false rather than hanging", async () => {
+    const res = await fetchFanTeams(hangingRpcClient())
+
+    expect(res.ok, "an overrun read must report FAILURE").toBe(false)
+    // ⚠ Assert the ABSENCE of the false claim, not merely the presence of a
+    // flag: `{ teams: [], ok: true }` is what tells a collector who follows six
+    // teams to go follow their first one.
+    expect(res.teams.length === 0 && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchBoundWallet reports ok:false rather than hanging", async () => {
+    const res = await fetchBoundWallet(hangingTableClient(), "user-1")
+
+    expect(res.ok).toBe(false)
+    expect(res.wallet === null && res.ok === true, "must not read as 'no wallet pinned'").toBe(false)
+  }, 20_000)
+
+  it("fetchTeamCard degrades to omission rather than hanging", async () => {
+    // ⚠ The doc comment on `fetchTeamCard` says a failure here renders as an
+    // OMISSION and therefore needs no `ok` flag. The bound must land in that
+    // same shape — it exists to make an existing state reachable, not to add one.
+    const res = await fetchTeamCard(TEAM, "0xabc", hangingRpcClient())
+
+    expect(res).toEqual({ detail: null, progress: null })
+  }, 20_000)
+
+  it("CONTROL — a read inside the budget still resolves normally", async () => {
+    // Without this, a stub that always failed would satisfy all three above and
+    // this block would report coverage for functions that had stopped working.
+    const { db } = rpcClient({ get_my_fan_teams: { data: [TEAM] } })
+    const res = await fetchFanTeams(db)
+
+    expect(res.ok).toBe(true)
+    expect(res.teams).toHaveLength(1)
+  })
+
+  it("CONTROL — a genuinely empty follow list is still ok:true", async () => {
+    // The branch the bound must not swallow: we asked, and the answer is "none".
+    const { db } = rpcClient({ get_my_fan_teams: { data: [] } })
+    const res = await fetchFanTeams(db)
+
+    expect(res).toEqual({ teams: [], ok: true })
+  })
+})
