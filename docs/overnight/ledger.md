@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the Pinnacle trade lane is VERIFIED LIVE, plus a history backfill and the cadence arm I owed it
+
+**The forward lane works — three ticks, and the first written trade matches a number measured before it existed.**
+
+    01:00:19Z  162,153,000 → 162,155,000   0 trades   145,951 ms   (cold start)
+    01:10:40Z  162,155,000 → 162,157,000   1 trade / 6 Pins WRITTEN   22,330 ms
+    01:20:35Z  162,157,000 → 162,159,000   0 trades     3,785 ms
+
+⚠ **The 146 s first tick was a COLD START, and I did not say so until I had a second reading** — 146 s → 22.3 s → 3.8 s. Steady state is ~4 s per 2,000 blocks. A single timing is not a rate.
+
+**The written row is a real 5-for-1 UNEVEN swap** — tx `080189dfff…`, block 162,156,219, two wallets, 5 Pins one way and 1 back, `pins_in_trade` = 6 on all six rows, all `edition_id` NULL (honest — `pinnacle_nft_map` does not cover them yet). ⚠ **Uneven trades are real, so the rule must never require balanced sides.** It does not, and a 20-for-5 fixture pins that.
+
+**POSITIVE CONTROL, pinned in advance.** Window B (162,153,001–162,163,000) must yield EXACTLY these 5 txs / 23 Pins: `080189dfff…`@162156219 (6) · `1ed154b8f3…`@162161013 (10) · `ab09afd548…`@162162800 (2) · `3796468efe…`@162162947 (2) · `2ba76c3c7e…`@162162958 (3). The first is already written and matches on tx id AND pin count. ⚠ **Trades are BURSTY, not uniform** — four of the five sit inside 1,945 blocks, which is why the first 6,000 blocks held only one. Do not read a quiet tick as a broken lane.
+
+**NEW: history backfill (`?mode=backfill`).** Walks DOWN from 162,153,001 to the spork floor 137,390,146, on cursor `pinnacle_trades_backfill` — the only cursor in `event_cursor` that COUNTS DOWN. Seeded at forward-seed + 1 so the lanes **tile exactly**: forward owns (162,153,000, tip], backfill owns [137,390,146, 162,153,000]. An unknown `mode=` is a **400, never a silent fall back to forward** — a cron typo must not rewind the live cursor by 25M blocks. Vercel cron `5,15,25,35,45,55` (offset off forward's `*/10`).
+
+⚠ **Chunks now run in ordered WAVES of 5, and the wave is what preserves the no-leapfrog rule.** Concurrency inside a wave is safe because **every event of a transaction lives in ONE block**, so no chunk boundary — serial or concurrent — can split a trade across two reads. The cursor advances only for a wave in which EVERY chunk read; one failure re-reads the whole wave next tick (free: the write is an idempotent upsert on a deterministic id). ⚠ **This also corrected a comment that was FALSE**: the classifier claimed a withdraw-with-no-deposit was usually a chunk-boundary split. It cannot be. It means a burn or a decode failure.
+
+⚠ **A TEST FIXTURE FOUND A REAL DEFECT.** The mock returns identical blocks for every range, so a 2-chunk tick saw each event twice and reported `pinsTraded: 4` where 2 moved. Production ranges are disjoint so it could not happen there — but a re-read event would have **doubled `pins_in_trade` silently, a wrong published number with no error**. Now deduped on (tx, side, nftId): an NFT is a unique resource, so a second copy is always a re-read, never a second movement.
+
+**WHY A BACKFILL IS WORTH RUNNING — measured, six 2,500-block windows, ALL 60 reads HTTP 200 so every zero is a real zero:** 162.15M now 12 withdraw-tx / 2 trade-candidates / 13 Pins · 158.0M 0/0/0 · 154.0M 0/0/0 · 150.0M 6/0/0 · **145.0M 89/11/264** · 138.0M 0/0/0. Trading ~248 d ago ran **~20× today's rate**. ⚠ **THIS IS NOT A TIME SERIES** — six ~52-minute samples establish "history has content" and nothing more; do not quote it as a trend.
+
+🚨 **OPEN RISK, STATED NOT GLOSSED: the backfill's row count is uncertain by ~20×** — ~130k rows at today's rate, ~2.6M at the 145M rate, over 24.8M blocks. This is Small compute on a disk-IO burst budget where saturation is the dominant operational problem. **Re-measure the write rate and IO after a few hours rather than assuming.** To pause: delete the backfill line from `vercel.json` — one line, no DB change.
+
+**Also added: the cadence arm I owed the forward lane.** `pipeline_cadence_watchlist` row, 60 m / medium. ⚠ Sized from the **schedule**, not a measured gap distribution — two ticks are not a distribution; re-derive from `pipeline_runs_daily` in a few days. ⚠ **The BACKFILL lane is deliberately UNWATCHED**: it is a finite campaign that logs `backfill_floor_reached` and stops, so a silence arm would fire exactly when it SUCCEEDED — this file's own canon on permanently-red instruments.
+
+**REVERT.** Code: `git revert <sha>`. DB: `DELETE FROM pipeline_cadence_watchlist WHERE pipeline='pinnacle-trades-indexer'; DELETE FROM event_cursor WHERE id='pinnacle_trades_backfill';` (part-1 revert unchanged, in `20260822180000`).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — R32: two scheduled workflows died BEFORE the line that names the failure; and the filing's scope was wrong in both directions
 
 **Fixed** the `bash -e` fallible-assignment shape in the two places where it is actually a defect:
