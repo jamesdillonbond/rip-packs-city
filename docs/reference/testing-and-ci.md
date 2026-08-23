@@ -623,3 +623,77 @@ DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-t
 remains, so `psql` gives *"Connection refused"*. Re-`pg_ctl start` (re-`initdb` only if the data dir is
 gone). Being able to run all 178 files locally is what made re-pinning six DB functions verifiable rather
 than hopeful — and it caught nothing that CI later disagreed with.
+
+---
+
+## The blind normaliser — a guard class discovered 2026-08-22
+
+⚠ **DISPLACED VERBATIM FROM CLAUDE.md** (condensed there to make room for the grep-for-guards rule): the
+per-HANDLER exclusion example in full — *"a FILE-level secret grep defended a per-HANDLER exclusion, so a
+gated `POST` vouched for the ungated `GET` beside it (4 dishonest handlers)."*
+
+### The class
+
+🚨 **A guard's COMMENT STRIPPER is upstream of everything it checks, and when it blanks real source the
+guard does not error — it still runs, still reports a population, and still passes.** Nothing distinguishes
+that from real coverage except a before/after count. Two separate implementations were measured blind on
+the same day:
+
+1. **The 20-copy regex stripper** stripped BLOCK comments before LINE comments, so an ordinary line comment
+   mentioning a glob path (`// used by /api/* endpoints`) opened a block comment that closed at the next
+   `*/` **anywhere in the file**. Measured across 1,315 files: **103,590 characters blanked across 49
+   product files**. It concealed a live P0 — ~19.6k chars of `CollectionAnalyticsClient.tsx`, including the
+   branch publishing a 99-day-old row as market depth.
+2. ⚠ **THE PROPOSED FIX WAS ALSO BLIND, AND THE INSTRUCTION WAS TO LIFT IT VERBATIM.** The state machine
+   had no regex-literal state, so a regex ending in an escaped slash (`/^https?:\/\//`) presents the raw
+   characters `\` `/` `/` — read as `//`, blanking the rest of the line. **80 occurrences in 66 files,
+   including the guards' own `.replace(/\/\*[\s\S]*?\*\//g, …)` bodies**, so the "fix" would have blanked
+   the very code implementing it.
+
+⚠ **The original finding was also UNDERCOUNTED, and the mechanism says why: the swallow comes from the
+BLOCK regex ALONE.** The line strip is not part of the defect, so a further **30 files** running the block
+regex with no line strip were blind identically — **48,825 chars across 13 files**, same top offenders.
+
+### What this cost, and what it bought
+
+Migrating **28 guards** to `scripts/lib/strip-comments.mjs` produced **two real reds**, both in
+`CollectionAnalyticsClient.tsx`: 10 hidden bare `.toLocaleString()` calls (fixed — all 32 in the file now
+pass `"en-US"`, ceiling lowered 101 → **79**), and 4 hidden `.then((r) => (r.ok ? r.json() : null))` sites
+(triaged individually — **all four discriminate the null**, so they match on SHAPE, not defect).
+
+⚠ **`__tests__/guards-use-the-shared-comment-stripper.test.ts` ratchets the population at 25, down only** —
+and it caught its first regression **within the hour**, a newly-landed file carrying a fresh copy.
+
+⚠ **Migration hazard that bit once:** if the local helper is itself named `stripComments`, replacing only
+its BODY makes it call itself and blow the stack. **Remove the wrapper; do not delegate to it.**
+⚠ **And a red during a migration reads exactly like a discovery** — that one was my own bug, and it arrived
+after two genuine reds, which is precisely the context that makes a third feel confirmed. **Read the
+failure, not the count.**
+
+## Pin the property, not the spelling — the second instance (2026-08-22)
+
+The `#E03A2F` brand-exception guard asserted its justification comment on **one line**. A concurrent session
+**correctly** rewrote that comment (its old text claimed to be "the only sanctioned hardcode", which the
+deep audit found false — the recharts SVG strokes and the email accent are sanctioned too) and the re-wrap
+**red-ed CI while changing no meaning**.
+
+🚨 **The sharper half is the assertion that kept PASSING.** It matched `/only sanctioned hardcode/i`, and
+after the rewrite the only text satisfying it was the sentence **REFUTING** the claim. **It had gone vacuous
+while staying green and greppable.** It now matches the machine-readable `brand-exception:` marker against
+whitespace-normalised prose, mutation-tested three ways (marker removed → fails; reason removed → fails;
+re-wrapped → passes).
+
+## ⚠ A filed DECISION offering a tidy A-or-B choice is the least re-checked hypothesis
+
+CLAUDE.md already records that a filed FINDING is a hypothesis, and that **a filed decision NOT to act is
+the one nobody re-checks**. 2026-08-22 added a third shape, and it is the most seductive: **a filing that
+hands the reader a clean either/or.**
+
+`/api/ready` was filed with two candidate fixes framed as an operator choice (grant `anon` EXECUTE, or move
+to the service-role client). **Both are wrong**, because they share an unstated premise — that
+`health_check` is a viable synchronous call. Measured three hours later: it **does not return inside 60 s**.
+Candidate 1 dies on `authenticator`'s `statement_timeout=8s`; candidate 2 dies on Vercel's kill, which is
+already the second error cluster on that route.
+
+⚠ **The A-or-B framing is what suppressed the check** — it reads as though the analysis is finished and only
+a preference remains. **Before offering a choice, state the premise both options share and test THAT.**
