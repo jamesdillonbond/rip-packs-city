@@ -86,6 +86,8 @@ async function fetchNullVideoEditionIds() {
       .select("external_id")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .is("video_url", null)
+      // R26: deterministic page order. editions PK is `id`.
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`select editions failed: ${error.message}`);
     if (!data || data.length === 0) break;

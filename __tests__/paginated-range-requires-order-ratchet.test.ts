@@ -54,7 +54,29 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // constraint is (nft_id, wallet, transaction_hash)), so those sites order by the
 // PK `id` instead.
 
-const ROOTS = ["app", "lib", "supabase/functions", "workers"]
+// ⚠ TWO WIDENINGS, 2026-08-23 (deep-audit R26). Both were BLIND SPOTS OF THIS
+// FILE'S OWN DERIVATION, which is the shape this repo keeps paying for: a
+// guard's declared scope is itself a claim, and coverage is only real against
+// what the guard READS.
+//
+//   1. `scripts` was not a root. Ten unordered paging loops lived there, and
+//      the rule applies HARDER to a script than to a route: the sharpest one,
+//      `scripts/backfill-livetoken-fmv.mjs`, paged `fmv_snapshots` unordered to
+//      build the `existingIds` SKIP SET that `--force` exists to honour, and
+//      then ran `.delete()` + `.insert()` on `fmv_snapshots`. A row missed by
+//      pagination there is an FMV row overwritten without being asked for.
+//
+//   2. 🚨 The walk matched `/\.(ts|tsx)$/`, so it could not see `.mjs` or `.js`
+//      AT ALL — in ANY root, including the four it already declared. Six of
+//      those ten scripts are `.mjs`, so adding `scripts` alone would have
+//      "cleared" the debt while leaving most of it invisible. Widened to
+//      `/\.(ts|tsx|mjs|js)$/`.
+//
+// ⚠ Measured before widening, so the ban was not being loosened to fit: with
+// the widened extensions the four ORIGINAL roots still report **0** — the
+// existing ban was honest about the files it could see, it just could not see
+// `.mjs`. `scripts` reported 10, all now fixed, so the population is 0 again.
+const ROOTS = ["app", "lib", "supabase/functions", "workers", "scripts"]
 
 /**
  * ZERO. This is now a BAN, not a ratchet — the population was driven to 0 in the
@@ -84,7 +106,7 @@ function walk(dir: string, out: string[] = []): string[] {
     if (e === "node_modules" || e.startsWith(".")) continue
     const p = join(dir, e)
     if (statSync(p).isDirectory()) walk(p, out)
-    else if (/\.(ts|tsx)$/.test(e) && !p.includes("__tests__")) out.push(p)
+    else if (/.(ts|tsx|mjs|js)$/.test(e) && !p.includes("__tests__")) out.push(p)
   }
   return out
 }
@@ -147,6 +169,21 @@ describe("paginated .range() must carry a deterministic .order()", () => {
     // Satisfiable at a population of ZERO — a threshold on `sites` would punish
     // its own success, which is the failure the server-page ratchet hit.
     expect(walk("lib").length).toBeGreaterThan(50)
+  })
+
+  it("the walk actually reaches `scripts` AND sees .mjs — the two 2026-08-23 widenings", () => {
+    // ⚠ Pins the SCOPE, not the population. Both widenings are invisible in the
+    // headline assertion once the debt is cleared: a walk that silently stopped
+    // matching `.mjs`, or a ROOTS edit that dropped `scripts`, would keep
+    // reporting 0 and read as coverage. That is exactly how this guard was blind
+    // to six `.mjs` paging loops while passing every run.
+    const scriptFiles = walk("scripts")
+    expect(scriptFiles.length, "scripts must be walked").toBeGreaterThan(20)
+    expect(
+      scriptFiles.filter((f) => f.endsWith(".mjs")).length,
+      "the extension filter must still admit .mjs",
+    ).toBeGreaterThan(10)
+    expect(ROOTS).toContain("scripts")
   })
 
   it("the site that caused the 2026-08-16 incident is fixed and stays fixed", () => {

@@ -79,6 +79,8 @@ async function loadMissingTargets(): Promise<MissingTarget[]> {
       .from("pinnacle_editions")
       .select("edition_key")
       .not("edition_key", "is", null)
+      // R26: deterministic page order. pinnacle_editions PK is `id`.
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) throw new Error(`pinnacle_editions read: ${error.message}`)
     const rows = (data ?? []) as Array<{ edition_key: string | null }>
@@ -96,6 +98,8 @@ async function loadMissingTargets(): Promise<MissingTarget[]> {
       .select("moment_id, edition_key")
       .eq("collection_id", PINNACLE_COLLECTION_ID)
       .not("edition_key", "is", null)
+      // R26: deterministic page order. wallet_moments_cache PK is `id`.
+      .order("id", { ascending: true })
       .range(cursor, cursor + PAGE - 1)
     if (error) throw new Error(`wallet_moments_cache scan: ${error.message}`)
     const rows = (data ?? []) as Array<{ moment_id: string; edition_key: string }>

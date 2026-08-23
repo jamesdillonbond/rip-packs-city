@@ -81,6 +81,12 @@ async function fetchAddressUniverse(): Promise<string[]> {
     const { data, error } = await supabase
       .from("flowty_funded_loans")
       .select("lender_addr, borrower_addr")
+      // ⚠ R26: flowty_funded_loans has NO primary key and NO unique index, so
+      // there is no DECLARED unique column to order on. `funding_resource_id`
+      // is unique across all 3,388 rows as MEASURED 2026-08-23 (3,388 distinct
+      // of 3,388) — measured-unique, not constraint-enforced. If that ever
+      // stops holding, this pagination silently degrades again.
+      .order("funding_resource_id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) throw new Error(`flowty_funded_loans query failed: ${error.message}`)
     if (!data || data.length === 0) break

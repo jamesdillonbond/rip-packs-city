@@ -99,6 +99,10 @@ async function loadTargetNftIds(): Promise<string[]> {
       .select("nft_id")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .is("resolved_at", null)
+      // R26: PostgREST gives no stable row order without one, so an unordered
+      // .range() re-reads some rows and skips others — and the duplicates and
+      // omissions CANCEL, so every count-based check still passes. PK is `id`.
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`unmapped_sales: ${error.message}`);
     if (!data || data.length === 0) break;

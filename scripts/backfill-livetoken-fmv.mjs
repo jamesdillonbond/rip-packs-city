@@ -118,6 +118,13 @@ async function main() {
       const { data: rows } = await supabase
         .from("fmv_snapshots").select("edition_id")
         .eq("collection_id", COLLECTION_ID)
+        // ⚠ R26, and this is the SHARPEST instance in the repo: these pages
+        // build the `existingIds` SKIP SET that `--force` exists to honour, and
+        // the script then runs .delete() + .insert() on fmv_snapshots. A row
+        // missed by unordered pagination is an FMV row silently overwritten
+        // without being asked for. fmv_snapshots PK is (id, computed_at).
+        .order("id", { ascending: true })
+        .order("computed_at", { ascending: true })
         .range(offset, offset + 999);
       if (!rows?.length) break;
       for (const r of rows) existingIds.add(r.edition_id);

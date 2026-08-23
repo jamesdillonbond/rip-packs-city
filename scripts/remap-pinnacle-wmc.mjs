@@ -56,6 +56,8 @@ async function main() {
       .from("wallet_moments_cache")
       .select("moment_id")
       .eq("collection_id", PINNACLE_COLLECTION_ID)
+      // R26: deterministic page order. wallet_moments_cache PK is `id`.
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw new Error(`wmc page ${from}: ${error.message}`);
     if (!data || data.length === 0) break;

@@ -109,6 +109,8 @@ async function fetchEditions() {
       .select("id, external_id, set_id, set_id_onchain, play_id_onchain, player_name, set_name, tier, series")
       .eq("collection_id", TOPSHOT_COLLECTION_ID)
       .is("player_name", null)
+      // R26: deterministic page order. editions PK is `id`.
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
     if (error) throw new Error("editions select: " + error.message)
     if (!data || data.length === 0) break

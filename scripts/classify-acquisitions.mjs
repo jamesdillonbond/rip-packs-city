@@ -493,6 +493,8 @@ async function main() {
       .from("wallet_moments_cache")
       .select("moment_id")
       .eq("wallet_address", wallet)
+      // R26: deterministic page order. wallet_moments_cache PK is `id`.
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
 
     if (wmErr) {
@@ -513,6 +515,8 @@ async function main() {
       .from("moment_acquisitions")
       .select("nft_id")
       .eq("wallet", wallet)
+      // R26: deterministic page order. moment_acquisitions PK is `id`.
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
 
     if (aqErr) {
