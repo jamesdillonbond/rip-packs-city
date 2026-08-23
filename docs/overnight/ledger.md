@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEASURED, NOT SHIPPED — the one object R6, the series 500s and half of R50 all want, and what it would cost to keep
+
+**R52 + R53 filed with numbers, so the next person starts from a measurement instead of a hypothesis.**
+
+**R52 — the missing object is a precomputed latest-FMV-PER-EDITION, and I now have the number nobody had.** A full rebuild of what `fmv_current` computes — `DISTINCT ON (edition_id) … ORDER BY edition_id, computed_at DESC` — is **61,076 ms / 65,000 buffers, 27,075 rows out of 1,229,039**, comfortable under `cron_heavy`'s 600 s.
+
+⚠⚠ **THE CADENCE IS THE ENTIRE DECISION, AND THE OBVIOUS ONE IS A BAD TRADE.** At 15 minutes that is **97 min/day of full-tilt IO — MORE than the whole 8-job trust-leg family burns in a day (≈62 min)** — spent on the instance whose saturation R46 measured as *already structural*. Hourly is 24 min/day. **Adding recurring IO to fix an IO problem is Trevor's R46 capacity call, not something to migrate in unattended at 23:35 PT on a night when a concurrent agent is working the same files.**
+
+✅ **And there is a design that avoids the trade entirely, which is the actual recommendation: piggyback on a pass ALREADY PAID FOR.** `refresh_series_detail_rollup()` (jobid 357, hourly, ~99 s) already computes latest-FMV per edition for every edition of all five collections — that *is* where its 99 s goes. Extracting a ranked top-N per series from the same pass (26 series × ~120 ≈ 3,120 rows) is **near-free**, fixes `get_series_editions`, and touches no FMV logic. ⚠ Deep pagination still has to fall through to the live path.
+
+⚠ **`get_series_editions` re-measured, and the number in circulation is wrong.** A concurrent session recorded "36,134 ms → **219 ms**" after its projection fix. The fix is real — buffers fell — but 219 ms was one warm window. Measured twice tonight on Top Shot `series-7`: **7,708 ms then 24,311 ms, on IDENTICAL buffer counts (~24,700)**. Same plan, same cache, 3× the wall time. **It is IO, not plan, and it can never reliably fit the 8 s ceiling.** Quote buffers.
+
+**R53 — the trust-health legs cost far more than R25's "no `pipeline_runs` row" framing suggests.** 7 days of real durations from `cron.job_run_details`:
+
+| leg | p50 | max | failed | total/7d |
+|---|---:|---:|---:|---:|
+| `impossible-parallel` | **489 s** | 617 s | **9 / 26 (34.6%)** | **192 min** |
+| `fmv-coverage` | 233 s | 600 s | 3 / 26 | 125 min |
+| `serial-supply` | 80 s | 600 s | 6 / 27 | 66 min |
+| the other five | ≤51 s | 175 s | 6 total | 54 min |
+
+**437 minutes a week to refresh eight numbers.** ⚠ `impossible-parallel`'s **p50 is 489 s against a 600 s budget — 1.2× headroom**, so ordinary variance kills it, and each killed run burns up to 10 minutes and writes nothing: **≈90 min/week of IO for zero output.**
+
+🚨 **AND ITS 999 SENTINEL CANNOT BE WRITTEN WHEN THE FAILURE IS THE TIMEOUT** — the `EXCEPTION` handler's own `INSERT` is cancelled along with the statement, so the metric goes **STALE rather than reading 999**. Measured: `topshot_impossible_parallel_serials` **550 min old against a 360 min cadence**. **A sentinel that cannot fire on its most common failure is not a sentinel** — and it is the exact mirror of R39, where the sentinel *could* fire and was misread as a broken instrument.
+
+⚠ **The incident I watched, and the honest limit of it.** 03:48–03:58Z, `serial-supply` ran its full 600 s; the instance hit **30 IO waiters / 26 queued PostgREST calls**, `/api/ready` 504'd, and an 11 ms function took **54 s**. Active backends then fell **32 → 12 within two minutes of the leg being killed**. **That is ONE correlated observation and the direction is not settled** — a p50-80 s leg running 600 s is equally consistent with the spell causing the leg. ⚠ And in aggregate the family is only **~0.6% of total exec time**, so this is a **concentration** problem, not a volume one: do not quote it as a top-line load source.
+
+**Nothing shipped for either. Both are decisions with costs, and the cost is now written down.**
+
 ### 2026-08-22 · SHIPPED — retired the dead FCL wallet-auth objects, and the documented drop list would have silently stopped the weekly purge of ten tables
 
 **known-issues #0 deferred this on 2026-08-08 "until the deploy is READY"; that condition has been met for two weeks.** The bullet names three objects to drop — `fcl_auth_nonces`, `purge_old_fcl_auth_nonces`, `verify_wallet_via_fcl`.
