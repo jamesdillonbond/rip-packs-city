@@ -11,6 +11,21 @@ import { discoverEntityPath, ENTITY_SPEC, type EntityType } from "./entity-urls"
 // a currently-valid entity and never rots on a hardcoded slug. A type absent
 // from the sitemap is SKIPPED, not failed — a thin catalog must not red the
 // monitor. Runs in the scheduled e2e-smoke workflow, not the PR gate.
+//
+// `edition` and `edition_golazos` are two arms of the same page for a reason:
+// the first resolves from sitemap segment 1 (Top Shot only), so until the
+// second was added, the edition arm could not see the AllDay / Golazos / UFC
+// edition pages at all.
+//
+// ⚠ These arms assert page HEALTH, not page CONTENT. The Golazos edition page
+// gained an outbound "View edition on Dapper" CTA (dapperMarketEditionUrl,
+// 2026-08-22) whose rendering NO instrument currently verifies — the coverage
+// gates include `app/**/route.ts` but not `page.tsx`, and jsdom cannot render
+// it. Asserting it here is one line — add
+// `expectText: /View edition on Dapper/i` to the edition_golazos check — but
+// it was deliberately NOT added blind: a scheduled monitor that reds on its
+// first run is indistinguishable from a broken one. Confirm the CTA in a
+// browser once, THEN pin it here.
 
 const TYPES = Object.keys(ENTITY_SPEC) as EntityType[]
 

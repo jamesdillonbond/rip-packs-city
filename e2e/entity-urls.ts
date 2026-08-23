@@ -46,6 +46,15 @@ export function pickEntityPath(locs: string[], segment: RegExp): string | null {
 //   4 packs+Pinnacle pins
 export const ENTITY_SPEC: Record<string, { sitemap: number; segment: RegExp }> = {
   edition: { sitemap: 1, segment: /\/edition\// },
+  // ⚠ `edition` above resolves from segment 1, which is TOP SHOT ONLY (see
+  // buildSitemapSegment in lib/sitemap-data.ts — segment 1 is TS, segment 2 is
+  // AllDay/Golazos/UFC). So the edition probe was structurally blind to THREE
+  // collections' edition pages by construction, not by chance: a non-TS edition
+  // page could 500 or render a blank shell indefinitely and this monitor would
+  // stay green. Golazos is named explicitly rather than "first URL in segment
+  // 2" because that segment is dominated by AllDay's 6,190 editions, so an
+  // unnamed pick would almost never land on the other two.
+  edition_golazos: { sitemap: 2, segment: /\/laliga-golazos\/edition\// },
   moment: { sitemap: 3, segment: /^\/moment\// },
   set: { sitemap: 3, segment: /\/set\// },
   player: { sitemap: 3, segment: /\/player\// },

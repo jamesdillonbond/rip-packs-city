@@ -107,8 +107,9 @@ const AMBIENT_NOISE = `<!doctype html><html><body>
 </body></html>`
 
 // Sitemap fixtures for the entity-URL discovery self-check (entity-urls.ts).
-// Segment 1 = TopShot editions, 3 = entities (set/player/team) + top moments,
-// 4 = packs, 0 = series (served EMPTY here to exercise the no-URL -> skip path).
+// Segment 1 = TopShot editions, 2 = AllDay/Golazos/UFC editions, 3 = entities
+// (set/player/team) + top moments, 4 = packs, 0 = series (served EMPTY here to
+// exercise the no-URL -> skip path).
 function urlset(...paths: string[]): string {
   const locs = paths.map((p) => `  <url><loc>https://www.rippackscity.com${p}</loc></url>`).join("\n")
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${locs}\n</urlset>\n`
@@ -116,6 +117,14 @@ function urlset(...paths: string[]): string {
 const SITEMAP_BY_ID: Record<string, string> = {
   "0": urlset(), // series segment intentionally empty -> discovery returns null
   "1": urlset("/nba-top-shot/edition/3:45"),
+  // Segment 2 carries a MIX, AllDay first, which is the point: the Golazos
+  // probe must pick its own collection out of the middle of the list rather
+  // than taking whatever happens to be first.
+  "2": urlset(
+    "/nfl-all-day/edition/6181",
+    "/laliga-golazos/edition/541",
+    "/ufc/edition/JOE-PYFER-UFC-303-KO-TKO-700",
+  ),
   "3": urlset(
     "/moment/11111111-1111-1111-1111-111111111111",
     "/nba-top-shot/set/base-set",
@@ -301,6 +310,10 @@ test("discoverEntityPath resolves a live URL per type from the sitemap fixtures"
   const ctx = await apiRequest.newContext({ baseURL: base })
   try {
     expect(await discoverEntityPath(ctx, "edition")).toBe("/nba-top-shot/edition/3:45")
+    // Not just "resolves something from segment 2" — it must skip the AllDay
+    // URL that precedes it, or the probe silently degrades into a second AllDay
+    // check and Golazos goes back to being unwatched.
+    expect(await discoverEntityPath(ctx, "edition_golazos")).toBe("/laliga-golazos/edition/541")
     expect(await discoverEntityPath(ctx, "set")).toBe("/nba-top-shot/set/base-set")
     expect(await discoverEntityPath(ctx, "player")).toBe("/nba-top-shot/player/lebron-james")
     expect(await discoverEntityPath(ctx, "team")).toBe("/nba-top-shot/team/lakers")
