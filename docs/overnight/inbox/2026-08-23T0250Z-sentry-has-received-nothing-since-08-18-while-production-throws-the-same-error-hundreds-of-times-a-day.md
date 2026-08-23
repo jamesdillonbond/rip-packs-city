@@ -106,3 +106,34 @@ tracked elsewhere:
 3. Then ship the `beforeSend` sampling above, so the next spike does not re-spend the quota.
 
 ---
+
+## ADDENDUM 2026-08-22 23:35 PT (2026-08-23 06:35Z) — re-measured 3h45m later, and the one hypothesis that would have made this go away is dead
+
+**Re-measured rather than assumed, because a filing is a dated sample.**
+
+| | reading |
+|---|---|
+| Sentry, `errors` dataset, last **24h**, sorted `-timestamp` | **no results** |
+| Sentry, per-day counts, last **14d** | **no results** |
+| Newest Sentry error event, project-wide | still **2026-08-18T13:21:59Z** |
+| Vercel, `/[collection]/edition/[slug]`, last 24h | `[edition] market_bundle canceling statement due to statement timeout` — **172 events, 135 users, last 2026-08-23T06:35:02Z** |
+
+**Sentry has now been dark for ~4 days 17 hours**, and the control is not stale: production threw that
+error **in the same minute this reading was taken**. The same 24h window carries `get_edition_detail`
+timeouts at 250 events / 40 users, `get_edition_recent_sales` at 114 / 84, and a dozen more — on ONE
+route.
+
+⚠ **The "it may have already self-resolved" possibility is now DEAD, and it was the only reading under
+which this could be left alone.** Two independent observations 3h45m apart, both zero, against a
+control that moved. Nothing about the original diagnosis changes; what changes is that waiting is no
+longer a defensible option.
+
+⚠ **Still NOT established, and still needs the operator:** whether the cause is quota exhaustion. That
+remains the leading hypothesis on the intact-code + silent-ingest shape, and it is still only readable
+from the Sentry org's **Stats / Usage** page (accepted vs dropped), which the MCP does not expose.
+**Do not record the cause as settled from this addendum** — it extends the duration, not the
+attribution.
+
+⚠ **And the recovery test is unchanged:** prove a watcher can see a FAILURE. Emit one uniquely-tagged
+error and confirm it lands. "Events started arriving again" is a different claim from "this reporter
+can see a failure", and only the second one is worth relying on.
