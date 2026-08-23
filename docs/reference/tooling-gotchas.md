@@ -340,3 +340,11 @@ SELECT status_code, content FROM net._http_response WHERE id = <id>;
 
 ⚠ **Running the DB-invariant suite locally is documented in [testing-and-ci.md](testing-and-ci.md) → "Provisioning the DB-invariant suite locally" — do not duplicate the recipe here.** Two things that section's recipe assumes and that cost time on 2026-08-22: `initdb` refuses to run as **root**, and **piping its error to `/dev/null` makes the whole failure silent** (`pg_isready` is then the only tell). Also, a `/tmp/claude-*` scratch dir is **not readable by the `postgres` user** — use a `/var/tmp/...` path chowned to it.
 
+
+## Displaced from CLAUDE.md 2026-08-23 — the two long Vercel bullets, verbatim
+
+Condensed to their rule in CLAUDE.md to keep the memory file under its character limit while three
+drifted figures were refreshed. The rules stand; the detail is here.
+
+> - ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
+> - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Now a **ban at zero** (`insights-server-pages-bound-their-reads`); ⚠ twice the failing page was one the pushing commit never touched.

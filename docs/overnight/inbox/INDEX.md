@@ -1,6 +1,6 @@
-# Inbox index — 193 live filings
+# Inbox index — 196 live filings
 
-**Generated 2026-08-22 (PT) by Claude Code, deep-audit R27.**
+**Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Last reconciled 2026-08-22 21:2x PT — 196 files, 196 links, 0 missing, checked by diffing the directory against this file rather than by trusting the count in this heading.**
 
 ## Why this file exists
 
@@ -30,7 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 27 filings
+## 2026-08-22 — 30 filings
+
+- [`public_board_slow_count` / `public_board_empty_count` write their "could not measure" sentinel at 21 of their last 36 slots — the standing breach is partly an unmeasured arm, not 45 unhealthy boards](2026-08-23T0255Z-the-board-liveness-arms-read-their-999-cannot-measure-sentinel-at-21-of-36-slots.md)
+- [🚨 Sentry has ingested NOTHING since 2026-08-18 13:21:59Z — and Vercel logged the identical error string 447 times in the last 24 hours](2026-08-23T0250Z-sentry-has-received-nothing-since-08-18-while-production-throws-the-same-error-hundreds-of-times-a-day.md)
+- [Pinnacle bulk ONE-WAY transfers are a real, untracked ownership change](2026-08-22T2030Z-pinnacle-bulk-one-way-transfers-are-untracked.md)
 
 - [The `.range()` guard states the uniqueness rule in its own header and asserts something weaker — a repo-wide measurement of what it cannot see](2026-08-23T0236Z-the-paginated-range-guard-states-the-uniqueness-rule-in-a-comment-and-cannot-check-it.md)
 
