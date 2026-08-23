@@ -8,6 +8,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — R47 verified in production: all five sitemap segments serve 200, and their URL counts equal the DATABASE exactly
+
+**No code.** A live SEO surface changed, so it is verified by rendered OUTPUT against a second instrument —
+not by a status code, and not by the tests that already passed.
+
+Fetched from `dpl_8H886S…` (`9b862dc8`) via the Vercel MCP's server-side fetch (⚠ direct egress to the
+apex is blocked from this sandbox — the agent proxy answers 403 to CONNECT).
+
+| segment | sitemap `<loc>` | distinct | DB eligible | |
+|---|---|---|---|---|
+| 1 — Top Shot editions | **13,241** | 13,241 | **13,241** | ✅ exact |
+| 2 — AllDay/Golazos/UFC editions | **7,283** | 7,283 | **7,283** | ✅ exact |
+| 4 — packs + Pinnacle pins | 5,514 + 2,564 = **8,078** | — | **5,514 + 2,564** | ✅ exact |
+| 3 — set/player/team + moments | 4,607 (667 + 3,611 + 129 + 200) | — | derived | ✅ 200 |
+| 0 — static + insights + **22 series** + **20 profiles** | ~120 | — | — | ✅ 200 |
+
+All five well-formed (`<urlset>` closed). ⚠ **Segment 0 is the positive evidence for the two arms nobody
+would otherwise notice** — `collection_series` and `profile_bio` both went from `return []` to throwing, and
+both are populated, so the conversion did not turn a working read into a 503.
+
+## The check that actually tests the tie-paging fix
+
+⚠ **DISTINCT, not count.** The whole point of the non-unique order key is that duplicates and omissions
+CANCEL, so a total can be right while the SET is wrong — a count-based check passes on the defect. Both
+edition segments are **13,241/13,241 and 7,283/7,283 distinct: zero duplicate URLs.**
+
+## ⚠ A 22-row discrepancy that was MINE, not the code's
+
+Segment 1 first read as **22 short** against my SQL. The gap was my query, not the sitemap: `dropTsFossils`
+drops **any hyphenated** TS `external_id`, and I had modelled it as the narrower UUID-pair shape
+(`%-%-%-%-%:%-%-%-%-%`), leaving 22 hyphenated-but-not-UUID-pair rows in my expected count. Re-run with the
+predicate the code actually uses: **13,241 = 13,241.** Recorded because a control that disagrees is only
+useful if you check the control before the code — the first instinct was that the fix was still losing rows.
+
+⚠ **What this does NOT show:** the 503 path firing in production. The DB was calm and every read completed,
+so this is the COMPLETE-READ half only. The failure half is covered by the route tests (503, `Retry-After`,
+`no-store`, no `<urlset>` in the body) and is not claimed as verified live.
+
+**Revert path:** none — measurement only, no code and no DB.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — R47 / known-issues #28: the sitemap stops publishing a partial catalogue as a complete one, and the ratchet that was GREEN on it now sees the property it cites
 
 **`lib/sitemap-data.ts` · `app/sitemap/[id]/route.ts` · four backfills · `/api/badges` · the ratchet.**
