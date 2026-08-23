@@ -133,9 +133,31 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   // the editions/rollups fetch so nothing downstream could contradict it. A
   // genuine 0 (ufc_strike series 0, measured) still renders the empty state.
   const isEmpty = detail.edition_count === 0
-  const [editions, rollups] = isEmpty
-    ? [[] as EditionTile[], null]
-    : await Promise.all([fetchEditions(coll.id, slug, PAGE_SIZE, 0), fetchRollups(coll.id, slug)])
+  // ⚠ `fetchEditions` is STRUCTURAL — it THROWS after retries rather than render
+  // a real series with a convincingly empty catalogue (see lib/entity-section-rpc.ts).
+  // It was the only one of the four entity pages whose structural read had no
+  // catcher: `set`, `team` and `player` each route theirs into a branded
+  // `*Unavailable`, and this one fell through to the segment error boundary.
+  //
+  // ⚠ THAT IS NOT AN UNBRANDED 500 ANY MORE — `app/(collections)/[collection]/error.tsx`
+  // (added 2026-08-23, R19) catches it in brand. The remaining difference is what
+  // the reader keeps: the boundary replaces the WHOLE page with a generic
+  // "couldn't render this page", while `SeriesUnavailable` — which this file
+  // already defines and already uses for a failed DETAIL read — names the series
+  // and links to its sets. Same failure, one rung better, and it makes the four
+  // entity pages consistent instead of three-plus-one.
+  //
+  // ⚠ Per-SECTION degradation still beats this, and is still filed rather than
+  // done: the sections below consume `editions` unconditionally.
+  let editions: EditionTile[]
+  let rollups: SeriesRollups | null
+  try {
+    ;[editions, rollups] = isEmpty
+      ? [[] as EditionTile[], null]
+      : await Promise.all([fetchEditions(coll.id, slug, PAGE_SIZE, 0), fetchRollups(coll.id, slug)])
+  } catch {
+    return <SeriesUnavailable collection={collection} slug={slug} />
+  }
 
   // Top 25 = first 25 (RPC pre-sorts by FMV desc).
   const top25 = editions.slice(0, 25)
