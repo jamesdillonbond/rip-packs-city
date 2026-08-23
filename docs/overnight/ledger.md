@@ -37,8 +37,7 @@ the INDEX header, where a human archiving by hand will read it.
 security-clean 3/3 independently. **Two instruments, one conclusion.** Register **R51 → RESOLVED**,
 with its original severity left as filed (instrument, not exposure) rather than rewritten in hindsight.
 
-**Revert path:** docs + one test file, no DB half. Shas stamped in a follow-up commit **after reading
-`git log`** — a rule this ledger now carries twice in my hand.
+**Revert path:** docs + one test file, no DB half — `git revert 4863c732` (index prune + guard message + R51) and `git revert 6ed6b405` (this entry). **Both read from `git log` in a separate command before this stamp was written**, which is the rule the two mis-stamps earlier tonight produced.
 
 ### 2026-08-23 · SHIPPED — R14 re-added a `SET search_path` clause to two COMMIT-ing procedures; both were 2D000-ing, restored by RESET
 
