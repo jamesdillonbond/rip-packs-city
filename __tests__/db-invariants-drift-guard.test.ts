@@ -1179,6 +1179,30 @@ const PINS = [
       "supabase/migrations/20260822180000_pinnacle_trade_events_and_trade_acquisitions.sql",
   },
   {
+    // Added 2026-08-22. The resolver's candidate FEED — it decides which Pins
+    // ever get an edition, so a Pin outside its population is invisible forever
+    // while every pipeline reports healthy. That is exactly how traded Pins sat
+    // at 7.8% resolved against sales at 68.9%. ⚠ The property most likely to
+    // regress silently is leg ORDER: the outer LIMIT truncates from the bottom,
+    // so `sales → sales_owner → trades → wmc` is what keeps FMV ahead of trades.
+    fn: "pinnacle_get_unresolved_batch_v2",
+    test: "supabase/tests/pinnacle_get_unresolved_batch_v2.sql",
+    migration:
+      "supabase/migrations/20260822220000_pinnacle_resolver_ownership_hint_leg.sql",
+  },
+  {
+    // Added 2026-08-22. Promotes a resolved pinnacle_nft_map entry onto
+    // pinnacle_trade_events.edition_id — resolving a Pin and NAMING a trade are
+    // separate steps, and before this existed a trade stayed unnameable even
+    // after its Pin resolved. ⚠ Its dangling-edition guard is the load-bearing
+    // half: a key pointing at an edition we do not carry reads as NAMED while
+    // joining to nothing, which is strictly worse than an honest NULL.
+    fn: "backfill_pinnacle_trade_editions",
+    test: "supabase/tests/backfill_pinnacle_trade_editions.sql",
+    migration:
+      "supabase/migrations/20260822213000_pinnacle_trades_join_the_resolver_population.sql",
+  },
+  {
     // pg_cron `30 8 * * *`. An FMV HONESTY instrument: the set of Top Shot
     // editions whose published FMV is inflated relative to what the market
     // actually paid — THIN (<15 sales/90d) AND FMV >1.5x the 90-day median. Those

@@ -616,12 +616,12 @@ PGBIN=/usr/lib/postgresql/16/bin; PGDATA=/var/tmp/pgdata-rpc
 mkdir -p "$PGDATA" /var/tmp/pgrun && chown -R postgres:postgres "$PGDATA" /var/tmp/pgrun
 su postgres -c "$PGBIN/initdb -D $PGDATA -U postgres --auth=trust"
 su postgres -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /var/tmp/pgrun' -l /var/tmp/pg.log -w start"
-DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 179 files
+DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 181 files
 ```
 
 ⚠ **It does NOT survive a session resume** — the cluster is stopped even though `/var/tmp/pgdata-rpc`
 remains, so `psql` gives *"Connection refused"*. Re-`pg_ctl start` (re-`initdb` only if the data dir is
-gone). Being able to run all 179 files locally is what made re-pinning six DB functions verifiable rather
+gone). Being able to run all 181 files locally is what made re-pinning six DB functions verifiable rather
 than hopeful — and it caught nothing that CI later disagreed with.
 
 ---

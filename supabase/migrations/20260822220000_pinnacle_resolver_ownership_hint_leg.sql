@@ -26,6 +26,13 @@
 --
 --     sales (buyer hint)  →  sales (ownership hint)  →  trades  →  wmc
 --
+-- ⚠ ORDER IS THE PRIORITY. `UNION ALL` preserves it and the outer LIMIT truncates
+-- from the BOTTOM, so a resolved SALE (which feeds FMV) always outranks a
+-- resolved TRADE (which does not). A plain `UNION` would not preserve order.
+-- ⚠ This note lives in the HEADER, not in the function body: an in-body comment
+-- would make this file differ from `pg_get_functiondef` in prod and red the
+-- drift guard — which is exactly how it was caught.
+--
 -- ⚠ A STALE HINT IS ACCEPTABLE AND ALREADY THE NORM. `pinnacle_ownership_snapshots`
 -- holds the last Deposit-derived owner, so a Pin that moved since our last scan
 -- points at the wrong account and the Cadence read finds nothing. That costs one
@@ -105,9 +112,6 @@ AS $function$
       AND NOT EXISTS (SELECT 1 FROM trade_targets tt WHERE tt.nft_id = wmc.moment_id)
     LIMIT p_limit
   )
-  -- ⚠ ORDER IS THE PRIORITY. UNION ALL preserves it and the outer LIMIT truncates
-  -- from the bottom, so a resolved SALE (which feeds FMV, the roadmap's headline
-  -- metric) always outranks a resolved TRADE (which does not).
   SELECT nft_id, source, hint_address FROM sales_targets
   UNION ALL
   SELECT nft_id, source, hint_address FROM sales_owner_targets

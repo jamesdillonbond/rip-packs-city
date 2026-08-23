@@ -45,6 +45,10 @@
 --      its own pg_cron entry instead: it needs no edge-function deploy, and it
 --      keeps the trade lane's liveness independent of the resolver's.
 --
+-- ⚠ `skipped_missing_edition` is COUNTED, not silently dropped: a map entry whose
+-- edition we do not carry is a permanent catalogue hole, and a silent skip makes
+-- it indistinguishable from having nothing to do.
+--
 -- ⚠ Both guard on `EXISTS (... pinnacle_editions pe WHERE pe.id = m.edition_key)`
 -- like the sales version: a map entry pointing at an edition we do not carry must
 -- NOT be written, or the trade row would reference a dangling key.
@@ -143,7 +147,6 @@ BEGIN
 
   GET DIAGNOSTICS v_updated = ROW_COUNT;
 
-  -- Counted, not silently dropped: a map entry whose edition we do not carry.
   SELECT count(*) INTO v_skipped
   FROM pinnacle_trade_events t
   JOIN pinnacle_nft_map m ON m.nft_id = t.nft_id
