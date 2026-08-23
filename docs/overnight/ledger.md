@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEASURED (Claude Code, interactive — memory pass, part 5) — R21's counts reproduce to the unit, and that is exactly how its SET went unwatched
+
+**Read-only. Nothing deployed, nothing committed to `supabase/functions/`, no DB write.** The register
+requires every liveness claim to be re-derived each pass; this is R21's.
+
+✅ **Every figure reproduces:** deployed edge functions **67** (Supabase MCP `list_edge_functions`) ·
+committed dirs excluding `_shared` **38** (`git ls-tree -d origin/main`) · deployed with NO committed
+source **29** · committed-but-not-deployed **0** · of the 29, **21** are `verify_jwt: false`. Both
+halves counted by the same instrument, both directions taken.
+
+⚠ **AND THE RE-DERIVATION FOUND THE FAILURE THE COUNT WAS HIDING.** R21's named example —
+*"`b70d4582` (08-18) found `resolve-allday-rip-dist-api` — a member of that set"* — **is not in the set
+and has not been since 08-18: that same commit is what committed its source.** So between 08-18 and now
+the population read **29** twice while its MEMBERSHIP changed by at least one, and **nobody can say by
+how much, because no pass ever wrote the members down.** This is *"diff the SET, not the count"* in its
+least visible form — not a number that moved, but a number that **didn't**.
+
+✅ **Fixed by enumeration, which is the only thing that makes the next diff possible.** All 29 are now
+listed by name and split by `verify_jwt` in
+`inbox/2026-08-23T0555Z-r21-re-derived-the-count-held-and-the-set-did-not.md`, and R21 points at it as
+the baseline. ⚠ **Recorded WITH its limits:** the list is a name list, not a risk ranking —
+`verify_jwt: false` means the platform checks no JWT, while several carry their own `?key=` gate whose
+value cannot be read from the repo, which is the auditability gap R21 names rather than proof any one is
+open. ⛔ **And do not chase one by fetching its deployed source** — `get_edge_function` returns the full
+`index.ts` and has echoed a live gate key into a transcript before.
+
+⚠ **Why all 29 are invisible to the credential guards: BY CONSTRUCTION.** Both derive their file set
+from `supabase/functions/**`, so committing a function's source is the only thing that brings it into
+scope. That makes step 1 of closing R21 *"commit the 21 unauthenticated ones' source"*, not *"audit
+them"*.
+
+**Also verified in this part:** the inbox index guard shipped an hour ago did its job — the new filing
+had to be listed for the suite to stay green, and it was caught in the same turn rather than a day later.
+
+**Revert path:** docs only, no DB half. Sha stamped in the follow-up commit, read after the push.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — a try/catch catches a THROW, and a hang throws nothing
 
 **Extracted and bounded the single read behind `/[collection]/hot-floors` and
