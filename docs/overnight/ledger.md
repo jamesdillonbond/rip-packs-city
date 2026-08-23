@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — "No recent market activity" was a market claim built from OUR missing price, and the trades work is what exposed it
+
+**The defect.** `edition/[slug]/page.tsx` rendered **"No recent market activity"** whenever `!fmvAvailable` — and `fmvAvailable` is just `fmv && fmv.fmv_usd !== null`. **That is a claim about THE MARKET manufactured from a gap in OUR PRICING**, the platform's most productive defect class, on a public SEO page serving all five collections.
+
+⚠ **Reachable, not theoretical, and PRE-EXISTING** — the trades work only made me look. `sales_count_30d` sits on the same `fmv` object the branch tests, so the sentence fires on editions we KNOW sold: most Golazos editions are unpriced (0.9% at HIGH/MED) while still trading. **An edition with sales and no price was told the market was silent.** And on Disney Pinnacle a Pin also moves by peer-to-peer TRADE, which leaves no sale row at all, so "no activity" is wrong there even when the sale count is a true zero.
+
+**THREE states now, never two** — and the third is the one that was flatly false:
+
+    fmv row absent / count null   → "No price available for this edition"   (about US; no market claim)
+    count known and > 0           → "N recent sales — not enough to price"  (concedes it TRADED)
+    count known and a real 0      → "No sales in the last 30 days"          (about SALES, not "activity")
+
+⚠ **No `?? 0` on the count.** `sales_count_30d` is nullable independently of the `fmv` object, and defaulting it would publish a measured zero nobody measured.
+
+⚠ **`fmv == null` IS NOT A FAILED READ and must not be reported as one.** It means `get_edition_detail` returned no FMV row — a genuine absence; the detail read plainly succeeded or the page would not be rendering. Saying "couldn't be loaded — refresh" there would be the same defect pointed the other way, which the helper's own header warns about.
+
+🚨 **THE REPO'S OWN GUARD CAUGHT MY FIX, AND IT WAS RIGHT TO.** `entity-sections-do-not-conclude-from-a-failed-read` flagged my new "No sales in the last 30 days" because it was gated INLINE rather than routed through `sectionEmptyCopy(ok, noun, empty)`. My gating was correct — but the guard's policy is better than my instinct: **inline gating is exactly what a later edit loses**, while a helper forces every caller to supply an `ok`. Complied rather than argued: the signal is now a named `salesCountKnown` used by every arm.
+
+**New guard `__tests__/edition-page-fmv-gap-is-not-a-market-claim.test.ts`** — 4 assertions, mutation-proven both ways (restoring the old copy reds it; dropping the helper reds it; baseline green). ⚠ **It strips comments before matching**, because the fix's own comment QUOTES the banned sentence to explain why it was wrong, and at least six guards here have fired on the documentation rather than the code.
+
+🚨 **UNRELATED, NOT MINE, AND MAIN IS RED ON IT:** `migration-new-function-states-its-anon-exec-decision` fails on `20260823014500_audit_20260823_ownership_targets_drop_rn1_escape.sql` → `public.get_ownership_backfill_targets`, from **Trevor's own commit `d0137746`**. It needs either a `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` or the `-- anon-exec: intentional` marker. **I deliberately did NOT patch it**: the migration is already applied to prod, and the Supabase MCP token expired mid-session, so I could add the line to the file without being able to apply the matching revoke — leaving the file describing something prod does not do.
+
+**REVERT:** `git revert <sha>` — one page branch plus a new guard. No DB change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — main is GREEN again, and the new probe's first live run caught a memo leak that had been faking a passing self-check
 
 ✅ **`main` is green.** CI run 3638 on `bb945049` — **success**, ending the red that had stood
