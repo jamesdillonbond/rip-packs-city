@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — traded Pins could never have resolved to an edition, and looking for the cost of fixing that found 673 unresolvable SALES
+
+🚨 **A CLAIM I WROTE IN PART 1 WAS FALSE.** `20260822180000` said `pinnacle_trade_events.edition_id` would "backfill later exactly as `pinnacle_sales.edition_id` does". **It would not have.** Measured:
+
+    pinnacle_sales (on-chain, 3d)   1,258 rows   68.9% resolved
+    pinnacle_trade_events           6,317 rows    7.8% resolved
+
+⚠ **And the control says the JOIN is fine: ZERO trade rows are unresolved while their `nft_id` sits in `pinnacle_nft_map`.** The resolver simply never looks at them — `pinnacle_get_unresolved_batch_v2` derives candidates from `pinnacle_sales` and `wallet_moments_cache` ONLY, so a Pin that has only ever TRADED is outside its population **by construction**. 92% of trade rows would have stayed NULL forever. **Same shape as every coverage gap in this file: a population defined by where the work USED to come from.**
+
+**Fixed (`20260822213000`):** a `trade_targets` leg (hint = `to_wallet`, the current holder), a `backfill_pinnacle_trade_editions()` mirroring the sales promotion function, on its own pg_cron `41 * * * *` so the trade lane's liveness does not depend on the resolver edge fn, and — **not optional** — a partial index `(nft_id, traded_at DESC) WHERE edition_id IS NULL`. ⚠ **Part 1's index is the exact COMPLEMENT** (`WHERE edition_id IS NOT NULL`) and cannot serve these queries; unindexed, the `DISTINCT ON` would sort every unresolved row every 30 min on a disk-IO-bound instance. ⚠ **The index SHRINKS as the lane succeeds** — a resolved row leaves it.
+
+🚨 **THEN THE COST CHECK REFUTED MY OWN WARNING AND FOUND SOMETHING BIGGER.** Part 3's header cautioned "expect sales to drain slightly slower". **Wrong**: the sales leg requires `buyer_address IS NOT NULL` and that pool holds **5** rows against 4,215 unresolved trades — it was already offering 5 of its 50 slots, so trades displaced `wmc`, not sales. **The correction is left in the file rather than quietly deleted.**
+
+⚠ **What looking revealed: 680 unresolved sales carry a NULL `buyer_address`** (the indexer sets it from `commissionReceiver ?? null`, so any sale without one is invisible to the resolver **by construction**) — **and 673 of those 680, 99%, have a known current owner in `pinnacle_ownership_snapshots`. The hint existed the whole time in a table nothing joined to.**
+
+**Fixed (`20260822220000`):** a fourth `sales_owner` leg using that owner. ⚠ **Leg ORDER is the priority and is load-bearing** — `sales → sales_owner → trades → wmc`, because a resolved SALE feeds FMV (the roadmap's headline metric) and a resolved TRADE does not. Verified live: the batch is now **5 sales + 45 sales_owner, 0 null hints, 2,639 buffers / 12.0 ms**. ⚠ **Trades therefore get ZERO slots until the 673-row sales backlog drains (~14 resolver runs, ~7 h). That is the intended trade-off, not a stall** — do not read a flat trade-resolution rate tonight as the fix having failed.
+
+⚠ **A stale hint is acceptable and already the norm**: a Pin that moved since our last scan points at the wrong account, the Cadence read finds nothing, the row stays queued. Exactly the risk `buyer_address` already carries. A miss resolves nothing rather than resolving something wrong.
+
+✅ **Safe against the edge fn without a deploy:** `pinnacle-nft-resolver` treats `source` as an opaque string (counts it into `source_counts`, no branching), so the new `sales_owner` value needs no code change and will show up in `pipeline_runs.extra`.
+
+⚠ **STATED GAP: neither new function is pinned by a `supabase/tests/*.sql` invariant.** The leg ORDER is the property most likely to regress silently. Verified live, not guarded — a candidate for the next pass.
+
+**REVERT:** `SELECT cron.unschedule('rpc-backfill-pinnacle-trade-editions'); DROP FUNCTION public.backfill_pinnacle_trade_editions(); DROP INDEX public.pinnacle_trade_events_unresolved_idx;` and restore the two-leg body of `pinnacle_get_unresolved_batch_v2` from whichever migration preceded `20260822213000`.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — docs/memory only) — the memory files had drifted from the platform in four measurable places, and the two newest filings had no register row
 
 **Ask:** *"update CLAUDE.md along with the roadmap or anything else holding memories or session history."*
