@@ -65,7 +65,7 @@ opening the endpoint to anon is a real abuse trade-off (row-count spam) that wan
 **That is Trevor's call, not a diagnosis gap.** ⚠ Whoever ships it: verify by confirming an `anon` row lands
 in `usage_events`, never by watching the console.
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert 482e68f0` — code + tests only, no DB half. Ledger half: `3a4b1f53`.
 
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — R47 verified in production: all five sitemap segments serve 200, and their URL counts equal the DATABASE exactly
 
