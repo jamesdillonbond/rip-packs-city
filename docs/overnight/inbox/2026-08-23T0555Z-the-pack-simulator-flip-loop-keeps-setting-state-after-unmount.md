@@ -1,3 +1,23 @@
+> # ✅ FIXED 2026-08-23 — cancelled, extracted and pinned. Do not re-open.
+>
+> The loop moved to **`lib/packs/animate-flips.ts`** and takes an `isAlive()` it checks **after each
+> await, before the tick** — the gap between scheduling a flip and it firing is the entire window in
+> which an unmount happens, so a check at the top of the iteration would pass and tick into a dead tree
+> anyway. `PackSimulatorClient` supplies it from a ref cleared on unmount, and the trailing
+> `setRipping(false)` is guarded too, since it is the one write that runs *after* the animation.
+>
+> ⚠ **Extracted to `lib/` rather than fixed in place, deliberately.** This filing's own §"Recommended
+> fix" asked for a test that unmounts mid-animation — and `app/**/*.tsx` is measured by NEITHER coverage
+> gate, so it could not have had one there. **A cancellation check is invisible when it works**: the next
+> cleanup deletes it and nothing goes red.
+>
+> ⚠ **The filing's step 3 warned that a single green run cannot verify this**, and that stands — the
+> evidence is the MECHANISM, not an absence. Six assertions, **three mutations all killing**: dropping the
+> check, moving it before the delay, and skipping the wait each red a different, named assertion.
+>
+> ⚠ **§"What is NOT established" is still not established.** No scan for sibling loops of the same shape
+> has been run.
+
 # The pack simulator's flip animation keeps calling `setState` after unmount — an intermittent unhandled rejection that fails `npm test` while every test passes
 
 **Filed 2026-08-22 22:55 PT (2026-08-23 05:55Z), Claude Code interactive.** Found as collateral while

@@ -8,7 +8,8 @@
 // aggregate stats. The disclaimer footer explains how this differs from the
 // canonical trimmed-mean pack_ev shown on the listing page.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { animateFlips } from "@/lib/packs/animate-flips"
 import { tierColor, fmtUsd, fmtPct, buildCdf, sampleEdition, stddev } from "@/lib/pack-simulator-math"
 import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
@@ -139,6 +140,18 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
   const [result, setResult] = useState<RipResult | null>(null)
   const [flipIndex, setFlipIndex] = useState(0)
 
+  // ⚠ The flip animation below runs for up to `slots × 10 × 70 ms` and used to
+  // have NO cancellation, so navigating away mid-rip left it setting state on an
+  // unmounted tree. See lib/packs/animate-flips.ts for why that is invisible in
+  // a browser and fatal under jsdom.
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -247,14 +260,18 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
       })
       // Animate flips for single-rip (most dramatic) and short-pack 10x runs.
       if (n <= 10) {
-        for (let i = 0; i < rips.length * slots; i++) {
-          await new Promise((r) => setTimeout(r, 70))
-          setFlipIndex((p) => p + 1)
-        }
+        await animateFlips({
+          count: rips.length * slots,
+          delayMs: 70,
+          onTick: () => setFlipIndex((p) => p + 1),
+          isAlive: () => alive.current,
+        })
       } else {
         setFlipIndex(rips.length * slots)
       }
-      setRipping(false)
+      // ⚠ Guarded too: this is the one state write that runs AFTER the animation,
+      // so it is the one most likely to land past an unmount.
+      if (alive.current) setRipping(false)
     },
     [payload, sampler, slots, retail],
   )
