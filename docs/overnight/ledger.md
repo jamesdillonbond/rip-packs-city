@@ -8,6 +8,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — 16 guards were reading blanked source, and the ratchet that watched them could never reach zero
+
+**The burn-down.** `guards-use-the-shared-comment-stripper` stood at **25**. It is now **2**, and the
+two numbers are **not comparable** — 16 files were genuinely migrated to
+`scripts/lib/strip-comments.mjs`; the rest of the drop is a **needle change**, recorded in the guard
+so nobody reads it as 23 migrations.
+
+**What each migrated file was doing.** The copy-pasted shape stripped **block comments before line
+comments**, so an ordinary `// … /api/* …` comment opened a block that closed at the next `*/`
+anywhere in the file. Migrated: `api-fmv-demo-docs-match-implementation`, `fossil-drain-schedule-is-retired`,
+`edge-pack-ev-row-source-drift`, `discord-alert-dm-tells-users-how-to-reply`,
+`collection-layout-unknown-slug-noindex`, `insights-deals-surface-contract`,
+`pipeline-start-marker-duration-is-not-a-measurement`, `serials-fun-patterns`,
+`api-admin-backfill-topshot-catalog`, `component-PlayHub`, `component-FmvDisclaimer`,
+`profile-default-avatar`, `concierge-rich-text`, `component-DashboardClient`,
+`check-migration-parity-logic`, `client-pages-failed-vs-empty-guard`, plus the scripts
+`check-responsive-flex-basis` and `check-edge-fn-drift`.
+
+⚠ **Per-guard before/after, because "it still passes" is not evidence a guard could see anything.**
+Diffed each guard's own normalisation against the shared stripper on the files it actually reads:
+`topshot-pack-ev-row.ts` **33** chars hidden, `SupportChat.tsx` **138**, `DashboardClient.tsx` **186**,
+everything else **0**. ⚠ **The filing's headline 109k does NOT land on these guards** — the worst
+single file, `app/api/support-chat/route.ts` (**17,626** chars hidden), is read by 21 test files and
+**none of them used the defective stripper**. The blast radius on the migrated set is small; the
+filing's number was a union across the walked roots, not a per-guard impact, exactly as it warned.
+
+🚨 **THE RATCHET COULD NEVER HAVE REACHED ZERO, and that is the more durable finding.** Its needle was
+the bare non-greedy body `[\s\S]*?` — which is an ordinary regex, not a comment stripper. After the
+migrations it still reported **7**, and **5 of those 7 were files that normalise no comments at all**:
+stripping import statements (`og-brand-fonts-and-cache`, `server-page-data-access-ratchet`), parsing a
+Set literal (`public-wallet-surface-contract`), parsing the PINS list (`check-db-pin-staleness`),
+extracting a Cadence literal (`extract-cadence`). Each was inspected individually. **A ratchet with a
+permanent floor made of non-offenders punishes its own success** — CLAUDE.md's own rule — so the needle
+was narrowed to the block-comment-**strip** shape. Population 7 → 2, both measured before the change.
+
+⚠ **The remaining 2 must NOT be migrated, and this is the trap in the obvious next step.**
+`migration-new-function-states-its-anon-exec-decision` and `migration-view-security-invoker-guard` strip
+**SQL**, over `supabase/migrations/*.sql`. The shared stripper is a **JavaScript state machine**: no
+`--` state, no dollar-quote (`$$ … $$`) state. Migrating them would leave every `--` comment standing
+and could mis-parse a function body — a defect dressed as a cleanup. They move when a SQL stripper
+exists, not before.
+
+⚠ **`client-pages-failed-vs-empty-guard` was the one migration that is NOT mechanical.** Its local
+helper removed `//` LINES only and was **already in the correct order**, so it was never blind — but 6
+of its 14 call sites bolted a block strip on top. Those 6 now use the shared stripper; the other 8 keep
+the line-only helper, renamed `stripLineComments` so the two can never be confused at a call site. The
+rename is load-bearing: the `/alerts` site asserts `not.toMatch(/catch \{\s*\/\* ignore \*\/\s*\}/)`, which
+needs the block comment **present** to mean anything. Running the shared stripper there would have left
+that assertion passing for the wrong reason — vacuous, and silently so.
+
+**Controls, all four mutation-proven.** Ceiling 2 has **no slack** (set to 1 → fails, naming exactly the
+two SQL files). The new `[^]*?` spelling control fails when that alternative is dropped from the needle.
+A new negative control pins the narrowing itself: an incidental non-greedy regex must **not** count, so a
+future widening reds and says why. ⚠ The needle is a **spelling** check and the guard now says so — the
+defect is a property of source text, so a stripper written some third way would still evade it.
+
+**Verified:** `npx tsc --noEmit` clean · `npm test` **1353 files / 14,750 tests, 0 failures** ·
+`check-responsive-flex-basis` byte-identical output before and after · `edge-fn-drift-checker` 16/16
+before and after.
+
+**Revert path:** `git revert <sha of "test(guards): migrate 16 guards to the shared comment stripper">`.
+Test and script code only — no product source, no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED — one line stripped the brand from ~70 deep URLs and double-printed it on ~30 others, and the guard written to catch it was blind three ways
 
 **R31 is closed, and it turned out to be HALF of the defect.** `collectionLayoutMetadata()` and `app/insights/layout.tsx` set `title` as a plain STRING. In Next a string title is formatted by the **nearest ancestor** template and contributes **no template of its own**, so it does two opposite things at once: its own title gets the root `%s | Rip Packs City` appended, and every descendant loses the suffix entirely.
