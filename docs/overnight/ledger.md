@@ -8,6 +8,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 2) — the inbox INDEX rotted the same day it was written, three of my own hours-old figures were already stale, and "/api/ready is fixed" meant fixed in a calm band
+
+**Continuation of the memory pass earlier this evening.** One guard, three figure refreshes, one
+index reconciliation, one severity downgrade. No DB write, no migration, no cron change.
+
+🚨 **`docs/overnight/inbox/INDEX.md` was missing THREE filings — including the Sentry-blackout P0.**
+Measured by diffing the directory against the file rather than trusting its own heading: **196 on
+disk, 193 listed.** The index exists so a session can honour the audit protocol's *"grep ALL of
+inbox/\* before measuring anything"* without opening ~200 documents — **so a silent omission is worse
+than no index at all: a session that scans it believes it has read the backlog.** Its own header
+predicted this (*"Regenerate this file when you add filings, or it becomes another rotted map — the
+exact failure it documents"*) and it rotted **the same day it was written**. Reconciled to
+**196 / 196 / 0 missing**, with per-day section counts checked too (all 14 sections agreed).
+
+✅ **And nothing watched it, so now something does.** New guard
+`__tests__/inbox-index-lists-every-filing.test.ts` — a **ban at population zero**, not a ratchet,
+because listing a filing costs nothing and no omission is legitimate. Four arms plus a vacuity guard:
+every filing listed · **no dangling link** (an entry pointing at an archived file is the same defect
+pointed the other way — the index asserts a filing is in the queue when it is not) · the heading count
+equals the file count · every per-day heading equals its section's entries. ⚠ **Proven against known
+offenders in all three shapes before being believed** — drop one entry → 2 arms red; rename a link to
+a non-existent file → 2 arms red; wrong heading count → 1 arm red; baseline restored **5/5 green**.
+⚠ The per-day regex is `filings?` because the oldest section reads **"1 filing"**, singular — the shape
+that would have made that arm silently skip a section.
+
+⚠ **THREE OF MY OWN FIGURES FROM ~90 MINUTES EARLIER WERE ALREADY STALE, which is this file's
+"every figure is a DATED SAMPLE" rule demonstrating itself on the same evening.** A concurrent session
+migrated 16 more guards, so `strip-comments.mjs` importers went **34 → 49** and
+`MAX_LOCAL_STRIPPERS` went **25 → 2**. Also re-derived live: `detect_stalled_pipelines`'s blind spot
+is **76 of 164**, not 76 of 158 — ⚠ **the numerator held while the population grew, so the SET moved
+even though the count did not; diff it before quoting it** — and functions declaring an inert
+`statement_timeout` are **196**, not 195.
+
+⚠ **`/api/ready` is NOT as closed as I recorded it.** My earlier known-issues #26 said RESOLVED on a
+privilege check (`readiness_collection_stats` INVOKER + anon EXECUTE true; `health_check` revoked —
+both still true). A concurrent session then measured the route **flapping with the saturation band**:
+**200 at 04:03Z, 500 at 04:05Z and 04:07Z**, honest retryable body. **"Verified live" meant verified
+calm.** #26 downgraded to **PARTLY RESOLVED**: the privilege defect is fixed, the readiness probe still
+fails inside the degraded band, and that is a different open problem. The register's R44 carries the
+same caveat, so the two agree.
+
+**Paid for in CLAUDE.md's budget:** the two long Vercel bullets (`get_deployment.state` LAGS; a
+saturation spell can fail the whole production build) were condensed to their rules with the full text
+displaced **verbatim** to `tooling-gotchas.md`. **File ends at 39,778 chars** against the 40,000 limit —
+222 of headroom, deliberately more than the 13 it had mid-pass.
+
+**Revert path:** `git revert <the two shas of this entry's commits>` — docs plus one test file; no DB
+half. The guard is additive and the INDEX reconciliation is data, so reverting either is safe.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — 🚨 BOTH Pinnacle trade cron jobs had NEVER run: I revoked the grant the scheduler was relying on
 
 🚨 **P1, self-inflicted, and invisible for hours.** `cron.job_run_details` shows every run of BOTH jobs failing since creation:
