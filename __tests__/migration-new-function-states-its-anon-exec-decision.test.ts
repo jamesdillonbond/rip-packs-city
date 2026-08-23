@@ -96,8 +96,27 @@ export function createdPublicFunctions(code: string): string[] {
  * comment-stripped code for the REVOKE (so a commented-out revoke cannot count).
  */
 export function statesDecision(raw: string, code: string, fn: string): boolean {
+  // ⚠ `EXECUTE` **or** `ALL`. EXECUTE is the ONLY privilege a function has, so
+  // `REVOKE ALL ON FUNCTION f(...)` and `REVOKE EXECUTE ON FUNCTION f(...)` are
+  // the same statement in different words — and `ALL` is the form a careful
+  // author reaches for, since it also covers any privilege Postgres might add.
+  //
+  // 🚨 THIS COST A RED `main`. Two migrations on 2026-08-23
+  // (`series_detail_rollup`, `get_series_detail_reads_the_rollup`) revoked
+  // correctly with `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated`,
+  // and this guard reported them as having stated no decision at all. Verified
+  // against the live database before changing anything: `has_function_privilege`
+  // for both functions reads anon=false, authenticated=false, service_role=true.
+  // **Production was right and the guard was wrong** — it was reading a SPELLING,
+  // which is the second time in one day this exact file has failed a correct,
+  // verified decision over its wording.
+  //
+  // ⚠ This widens the accepted spelling and NOTHING else. `\bpublic\.${fn}\s*\(`
+  // still demands a function signature, so `REVOKE ALL ON TABLE public.<fn>`
+  // cannot vouch for a function of the same name, and the trailing `\banon\b` still
+  // rejects a PUBLIC-only revoke. Both are pinned as controls below.
   const revoke = new RegExp(
-    `REVOKE[\\s\\S]{0,200}?EXECUTE[\\s\\S]{0,200}?\\bpublic\\.${fn}\\s*\\([\\s\\S]{0,300}?\\banon\\b`,
+    `REVOKE[\\s\\S]{0,200}?(?:EXECUTE|ALL)[\\s\\S]{0,200}?\\bpublic\\.${fn}\\s*\\([\\s\\S]{0,300}?\\banon\\b`,
     "i",
   )
   if (revoke.test(code)) return true
@@ -167,6 +186,23 @@ describe("a new migration must state its anon-execute decision for every public 
     // ⚠ A PUBLIC-ONLY revoke must NOT pass — the exact drift this repo shipped.
     const publicOnly = create + "REVOKE EXECUTE ON FUNCTION public.zz_probe(uuid) FROM PUBLIC;\n"
     expect(statesDecision(publicOnly, stripComments(publicOnly), "zz_probe")).toBe(false)
+
+    // ⚠ `REVOKE ALL ON FUNCTION` passes — the same statement in different words,
+    // and the spelling that reddened main on 2026-08-23 while production was
+    // correct.
+    const revokedAll = create + "REVOKE ALL ON FUNCTION public.zz_probe(uuid) FROM PUBLIC, anon, authenticated;\n"
+    expect(statesDecision(revokedAll, stripComments(revokedAll), "zz_probe")).toBe(true)
+
+    // ⚠ …but ONLY as a function revoke. A TABLE of the same name must not vouch
+    // for the function — without this, widening to `ALL` could be satisfied by an
+    // unrelated `REVOKE ALL ON TABLE`, which grants nothing about EXECUTE.
+    const tableOnly = create + "REVOKE ALL ON TABLE public.zz_probe FROM PUBLIC, anon, authenticated;\n"
+    expect(statesDecision(tableOnly, stripComments(tableOnly), "zz_probe")).toBe(false)
+
+    // ⚠ And a PUBLIC-only `REVOKE ALL` must still fail, exactly as the EXECUTE
+    // form does — widening the verb must not weaken the role requirement.
+    const allPublicOnly = create + "REVOKE ALL ON FUNCTION public.zz_probe(uuid) FROM PUBLIC;\n"
+    expect(statesDecision(allPublicOnly, stripComments(allPublicOnly), "zz_probe")).toBe(false)
 
     // A marker naming the function passes.
     const marked = "-- anon-exec: intentional — public board calls zz_probe via a view\n" + create
