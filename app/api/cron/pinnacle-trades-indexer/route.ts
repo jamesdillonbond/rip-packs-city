@@ -45,7 +45,17 @@ const CHUNK_SIZE = 250
 const MAX_SCAN_RANGE = 2_000
 // Backfill walks a wider window per tick than forward does, because it has
 // ~24.8M blocks to cover and forward only has to keep up with ~2,880 blocks/h.
-const MAX_BACKFILL_RANGE = 10_000
+//
+// Raised 10,000 -> 50,000 after two measured ticks: 10,000 blocks took 4,146 ms
+// and 4,501 ms, i.e. ~44x headroom under the 200s soft deadline. At 10,000 the
+// full fill was ~17 days; at 50,000 it is ~3.5.
+//
+// ⚠ THE SOFT DEADLINE IS WHAT MAKES THIS SAFE, and it is why the raise waited
+// until after that shipped. Without it an over-large range is a maxDuration
+// kill that leaves NO pipeline_runs row; with it the worst case is a tick that
+// covers less ground than planned and a next tick that resumes from the
+// committed frontier. The range is now a throughput target, not a risk.
+const MAX_BACKFILL_RANGE = 50_000
 // Chunks are fetched in ordered WAVES of this size. Measured 2026-08-22: Flow
 // REST served 60 concurrent /v1/events reads comfortably, and the first
 // (serial) production tick spent 146s on 8 chunks while the second spent 22s —
