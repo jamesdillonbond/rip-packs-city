@@ -47,7 +47,7 @@ defeated purge branch (`claude/todo-implementation-e4tib3`, #22) · the Sentry t
 (Stats/Usage **and** Settings → Client Keys) · the Golazos phantom-series rows deleted with no ledger
 record · `/api/ready` flapping with the saturation band (the privilege defect is fixed; the flap is not).
 
-**Revert path:** docs only, no DB half. Shas stamped in a follow-up commit, read in a separate command.
+**Revert path:** `git revert 9777108f` — docs only, no DB half. **Sha read in its own command, then written here**, which is the rule this entry adds.
 
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the simulator's uncancelled timer chain, and a prose-only rule that lasted six days
 
