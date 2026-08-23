@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **Still inert.** The incremental branch runs only under `DUNE_OWNERSHIP_INCREMENTAL`, which is unset. Committing these files changes no behaviour today; it changes what a rebuild produces.
 
-**Revert.** Code/comment: `git revert <this commit>`. The migration files are repo records of DB state that already exists — reverting the commit does NOT undo the DB. To undo the escape drop in the DB, re-apply `supabase/migrations/20260823001500_*.sql` verbatim (it restores `OR o.rn = 1`); ⚠ do that only if the route's `no_incremental_targets` skip is also reverted, or the two together re-open the full-walk hole.
+**Revert.** Code/comment: `git revert d0137746` (ledger entry itself: `e60a337b`). The migration files are repo records of DB state that already exists — reverting the commit does NOT undo the DB. To undo the escape drop in the DB, re-apply `supabase/migrations/20260823001500_*.sql` verbatim (it restores `OR o.rn = 1`); ⚠ do that only if the route's `no_incremental_targets` skip is also reverted, or the two together re-open the full-walk hole.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the Pinnacle trade lane is VERIFIED LIVE, plus a history backfill and the cadence arm I owed it
 
