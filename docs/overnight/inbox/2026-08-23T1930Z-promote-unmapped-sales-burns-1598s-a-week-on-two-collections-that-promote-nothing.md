@@ -72,3 +72,67 @@ worker time a month, a ~5% duty cycle from one job**. Unlike the above it is doi
 ⚠ Its `pipeline_runs` logging only begins **2026-08-20 18:52Z** — that is the retention edge, not
 a logging gap. I briefly mis-read 274-of-2,879 as a 9.5% logging rate by comparing a 3-day table
 against a 30-day cron count; **the cron history and pipeline_runs do not share a window.**
+
+---
+
+## FOLLOW-UP: the naive fix does not work, and the reason is the interesting part
+
+⛔ **"Gate the leg on `eligible > 0`" — my own recommendation above — is wrong**, and reading the
+function says why in one line. `promote_unmapped_sales(p_collection_id, p_limit)` computes
+eligibility *as* its `candidates` CTE: for every unresolved, priced row it evaluates a four-branch
+`OR` of `EXISTS` — `nft_edition_map`, two `editions` hint paths, and `wallet_moments_cache`
+(1.58M rows) keyed by `moment_id`. **When nothing is eligible, every branch must fail for every
+row before the `LIMIT` can conclude.** So for UFC the whole 9.3 s *is* the eligibility check.
+Gating on `eligible > 0` computed that way saves nothing — it is the cost.
+
+👉 **A guard is only a guard if it is cheaper than the thing it guards.** I nearly shipped one
+that was the same price.
+
+## The skip mechanism already exists — and structurally cannot reach this class
+
+The function has exactly the right machinery: `mark_blocked` stamps
+`resolution_hint->promote_recheck_after`, and the `candidates` WHERE skips anything inside its
+horizon. That is an indexed jsonb test — genuinely cheap.
+
+⚠ **But `mark_blocked` only fires for rows in `resolved_with_edition` whose outcome is
+`insert_vanished`** — rows that DID resolve to an edition and then failed to insert. A row that
+fails all four EXISTS never becomes a candidate, so it is never classified, so it is never marked.
+**The horizon covers "resolved but the insert vanished" and has no arm at all for "never
+resolves"** — which is precisely the class costing 1,598 s a week. Two correct mechanisms
+composing into a gap, the same shape as
+[[allday-backfilled-sales-can-never-be-probed]].
+
+Evidence: **0 of UFC's 1,069 rows and 0 of Golazos's 9 carry a horizon.** 36 of NFL's 105,107 do.
+
+## What makes UFC safe to act on — measured
+
+| collection | unresolved | priced | with horizon | newest unresolved SALE | resolved 7 d | resolved 30 d |
+|---|---|---|---|---|---|---|
+| `ufc_strike` | 1,069 | 1,069 | **0** | **2026-04-18** | **0** | **0** |
+| `laliga_golazos` | 9 | 9 | **0** | 2026-08-06 | **0** | **0** |
+| `nfl_all_day` | 105,107 | 37,163 | 36 | 2026-08-22 | 2,070 | 2,070 |
+
+⭐ **UFC's set is frozen and dead.** The newest unresolved UFC sale is **four months old**, nothing
+new arrives, and nothing has resolved in 30 days — consistent with the collection's Aptos
+migration. So a recheck horizon there costs **nothing in accuracy**: there is no legitimate
+promotion to delay. Golazos is the same shape at 9 rows.
+
+ⓘ Worth a separate look, not chased here: NFL's `resolved_30d` **equals** its `resolved_7d`
+(2,070). Either promotion restarted about a week ago or nothing resolved in the preceding 23 days.
+
+## Three options, and why I am not choosing
+
+1. **Add a `mark_unresolvable` arm** — stamp a horizon on candidates examined and not resolved.
+   Correct and general, and the cheapest per-week. ⚠ It is a behaviour change on the path that
+   writes `public.sales`, i.e. the FMV input. For NFL a horizon genuinely could delay a real
+   promotion, so the horizon length is an accuracy decision, not a tuning one.
+2. **Stop scheduling the UFC and Golazos legs.** Zero code, zero accuracy risk given the table
+   above, recovers ~1,598 s/week immediately. Reversible in one line.
+3. **Archive UFC's 1,069 rows.** Removes them from the backlog count as well as the scan — but
+   `open_backlog` is a number someone may be watching, and a frozen backlog is arguably honest
+   signal about a wound-down collection.
+
+⛔ **Not shipped.** This is the pricing path, the accuracy gate applies, and (2) versus (3) is a
+product judgement about a collection that is migrating away. **(2) is the one I would take** —
+it is the only one with no accuracy cost and no code — but the UFC-backlog question was already
+flagged for Trevor and this is the same question wearing a different hat.
