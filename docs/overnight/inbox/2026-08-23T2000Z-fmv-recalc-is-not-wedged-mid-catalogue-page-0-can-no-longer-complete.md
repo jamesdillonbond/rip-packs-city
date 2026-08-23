@@ -2,6 +2,10 @@
 
 **Filed:** 2026-08-23 ~13:00 PT (20:00Z) · **By:** Claude Code, interactive · **Status:** MEASURED. Nothing shipped — FMV route logic + a migration, and R52's decision context applies.
 
+🚨 **THE TITLE IS FALSIFIED — READ THE RE-TEST AT THE BOTTOM FIRST.** Page 0 completed at 20:28:06Z and
+the arm self-cleared (its FIFTH). Severity is DOWN; the mechanism is unchanged. A second claim in this file,
+the quiet-database control, is retracted mid-document.
+
 ## The live state
 
 | trust-board metric | value | breach_at |
@@ -106,3 +110,51 @@ which is why this is not a "bad page".
 ⚠ **Re-measure before acting** — all timings above are a dated sample taken in a window whose load I did
 NOT positively control at the time (see the retraction above; prefer **buffers**, which load cannot move), and the
 cold/warm spread (25.4 s → 10.4 s) shows how much the buffer cache moves them.
+
+---
+
+## 🚨 THE HEADLINE IS FALSIFIED — re-tested 2026-08-23 ~15:00 PT (22:00Z). Page 0 completed at 20:28:06Z, and the arm self-cleared.
+
+**This filing's title says page 0 "can no longer COMPLETE". That is now measurably false**, and the test was
+the one this repo insists on: *re-TEST a stated exit condition, never re-read it.*
+
+`fmv_sweep_wedge_hours` is **no longer in the breach set** (the board now reads four:
+`fmv_sweep_stall_pct_24h` 58.3, the two `999` board-liveness sentinels, and
+`unmapped_resolution_backlog_max` 346). The cursor tells the same story directly:
+
+| started_at (Z) | cursor_before → after | rows_written |
+|---|---|---:|
+| 19:42:20 | 0 → 0 | 0 (`sales_refetch_failed … (saturation-class)`) |
+| **20:28:06** | **0 → 500** | **1,532** ← the unwedge |
+| 20:35 / 20:48 | 500 → 1000 → 1500 | 500 / 498 |
+| 20:59 & 21:08 | 1500 → 1500 | 0 (`fmv_recalc_edition_page timed out after ~27,300 ms`) |
+| 21:28 → 21:55 | 1500 → 2000 → 2500 → 3000 → 3500 → **4000** | ~497 each |
+
+**Page 0 completed roughly 38 minutes after this filing was written.** What I measured was real — it did not
+complete inside my window — but *"cannot"* was the wrong tense, and stating it in the title is the part that
+would have misled the next reader.
+
+⚠ **AND IT IS THE FIFTH RECORDED SELF-CLEAR OF THIS EXACT ARM.**
+[trust-board-and-safety.md](../../reference/trust-board-and-safety.md) already says
+`fmv_sweep_wedge_hours` has cleared unaided four times and that it must be judged by **the gap distribution
+and 24 h `rows_written`, never by hours-since-advance at one instant**. **This filing did precisely the thing
+that doc warns against**, and the doc was right. On its prescribed instrument the pipeline is inside its
+documented band: **60 runs / 21 ok / 11,493 rows in 24 h**, against CLAUDE.md's recorded characterization of
+72.7% wall-kills and ~13,835 editions/day. **Wasteful, not broken — exactly the 2026-08-17
+re-characterization, which I should have re-derived before filing.**
+
+## What SURVIVES, and it is now better evidenced than when I filed it
+
+The structural claim never depended on the wedge, and a **second, independent instrument** has since
+corroborated it: the two failures at cursor 1500 are the route's own
+`rpc fmv_recalc_edition_page timed out after 27,256 ms / 27,308 ms` — measured by the caller, not by my
+`EXPLAIN`, and landing in the same range as the 25.4 s cold / 17.4 s reachable figures. **The page read is the
+cost, and it is the cost whether or not the sweep is moving.** The reachability repair
+([2130Z](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md))
+addresses exactly that, and its case is unaffected by this retraction — it was always about buffers per page,
+never about a wedge.
+
+**Net: severity DOWN, mechanism UNCHANGED.** Treat this filing as *"page 0 is expensive enough to fail often"*,
+not *"the sweep is stuck"*. ⚠ **Two of this filing's three headline claims have now been retracted in under
+two hours** (the quiet-database control, and this). The measurements were fine; the tense and the severity
+were not. **A one-instant reading justifies a MEASUREMENT, never a CHARACTERIZATION.**

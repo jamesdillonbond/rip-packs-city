@@ -8,6 +8,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — my own `fmv-recalc` filing's TITLE is falsified: page 0 completed at 20:28:06Z and the arm self-cleared for the FIFTH time
+
+**Docs only. No code, no DB.** Also fixed a live CI red on `main` on the way: the 2026-08-23 inbox day
+heading said **12** with **13** entries under it, so `inbox-index-lists-every-filing` was failing. One line.
+
+**The re-test, run rather than re-read.** `fmv_sweep_wedge_hours` is no longer in the breach set, and the
+cursor says why: `0 → 500` at **20:28:06Z** with **1,532 rows**, then 500 → 1000 → 1500 → (two ~27.3 s
+`fmv_recalc_edition_page` timeouts) → 2000 → 2500 → 3000 → 3500 → **4000** by 21:55Z. **Page 0 completed
+about 38 minutes after I filed that it could not.** What I measured was real; *"cannot"* was the wrong tense,
+and it was in the title.
+
+⚠ **This is the FIFTH recorded self-clear of that arm, and `trust-board-and-safety.md` already says to judge
+it by the gap distribution and 24 h `rows_written`, never by hours-since-advance at one instant.** I did the
+thing the doc warns against. On its prescribed instrument the pipeline is inside its documented band —
+**60 runs / 21 ok / 11,493 rows in 24 h** against CLAUDE.md's recorded 72.7% wall-kills and ~13,835/day.
+**Wasteful, not broken**, exactly the 2026-08-17 re-characterization.
+
+**What survives is now better evidenced:** the two failures at cursor 1500 are the route's own
+`rpc fmv_recalc_edition_page timed out after 27,256 / 27,308 ms` — a SECOND instrument, independent of my
+`EXPLAIN`, landing in the same range. The page read is the cost whether or not the sweep is moving, so the
+PG 17 reachability repair's case is untouched: it was always about buffers per page, never about a wedge.
+
+🚨 **Two of that filing's three headline claims are now retracted inside two hours** (the quiet-database
+control, and the title). The measurements were fine; the tense and the severity were not. **A one-instant
+reading justifies a MEASUREMENT, never a CHARACTERIZATION.** Marked at the top of the filing and beside its
+`INDEX.md` entry, not only at the bottom, so a reader who scans cannot pick up the false claim.
+
+**Also recorded:** a 24 h Vercel runtime-error sweep found **no new honesty-canon instance** — all 50 groups
+are saturation collateral or honest degradation working — and a caveat that `[pack-detail]` bound breaches
+log TWICE (six labels, identical counts: 138/138, 129/129, 126/126, 75/75, 59/59, 50/50), so count-based
+triage there doubles. And the Sentry blackout is re-checked at day six: still zero, the DSN is confirmed
+present by `find_dsns`, and the MCP catalogue exposes no outcomes/stats tool — so "needs the operator's
+Stats page" is now verified rather than assumed.
+
+**Revert path:** `git revert` the docs commit (find by message `docs: retract the fmv-recalc filing's title`).
+No DB or production state was changed.
+
 ### 2026-08-23 · SHIPPED (Claude Code, Trevor's Windows box) — the sixteen migration files reached `origin/main`, and the four "unaccounted for" repo-only migrations are resolved (one is genuinely unapplied)
 
 **Push only + docs. No DB, no apply, no prod state changed by this session.**
