@@ -39,6 +39,12 @@ scratchpad `entry.md` left over from an earlier entry **that same session**, and
 (a unique string from it), not on a count that any valid entry satisfies**, and never reuse a generic
 scratch filename across entries.
 
+⚠ **Same turn, a RETRACTION in the 20:00Z filing:** it claimed `(saturation-class)` was a misattribution
+because the failing runs "landed while the database was measurably quiet" — the quiet reading was taken at
+19:50Z and applied backwards to failures at 17:48–18:49Z, while the daytime monitor's positive control at
+18:10Z reads `io_wait=12 / active=11 / total=46`. **A control must be contemporaneous with what it controls.**
+The structural half is untouched and is stated in **buffers**, which load cannot move.
+
 **Not shipped, deliberately:** the repair is an index rebuild — DDL on the FMV path (off-limits to autonomous
 shipping), `CREATE INDEX CONCURRENTLY` is reachable here only via a one-statement pg_cron job, and every
 `apply_migration` costs a ~10–20 s user-facing `PGRST002` burst. Trevor's call; R52's context applies.

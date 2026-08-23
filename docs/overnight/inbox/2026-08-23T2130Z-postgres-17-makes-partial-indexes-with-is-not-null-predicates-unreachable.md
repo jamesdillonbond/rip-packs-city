@@ -135,6 +135,18 @@ It is a one-query check (`pg_index.indpred` × `pg_attribute.attnotnull`), it ha
 of 6 so it can be ratcheted, and unlike the unused-index advisor it fires on `top_sales_board` too. ⚠ It must
 be satisfiable at a population of zero, and it must be a **ban at zero** rather than an allowlist of the six.
 
-⚠ **Re-measure before acting** — every number here is a dated sample from a database that was measured quiet
-(4 active connections, 1 IO waiter) but is subject to disk-IO-budget saturation spells that confound timings
-in both directions. Compare **buffers**, warm against warm.
+## ⚠ The load condition at measurement time, stated rather than assumed
+
+Positive control taken at **2026-08-23 20:01:56Z**, minutes after the A/B: `active=6 · io_wait=4 · total=34 ·
+longest active query 297 s`. That is **milder than the spell the daytime monitor controlled at ~18:10Z**
+(`io_wait=12 / active=11 / total=46`) but it is **not a quiet instance**, and I am not claiming it was.
+
+Two things keep the conclusion standing anyway, and they should be the reason it is believed:
+
+1. **The two arms ran back to back, minutes apart, in the same session** — whatever the load was, both paid it.
+2. **The decisive figure is BUFFERS, not milliseconds.** 97,669 → 48,494 on identical output rows is a
+   property of the plan; disk-IO saturation cannot move it in either direction. The wall-clock ratio (2.9×)
+   is the softer number and should be re-taken in a controlled quiet window before it is quoted.
+
+⚠ **Re-measure before acting** — every number here is a dated sample. Compare **buffers**, warm against warm,
+and take a `pg_stat_activity` positive control in the same minute as the measurement, not an hour later.

@@ -36,6 +36,24 @@ page carries **5k–12k in-window sales**, i.e. **5–12 such pages** before tha
 (17:48, 18:28, 18:44, 18:49Z) landed while the database was measurably quiet. The label is inherited from the
 code path, not measured — and it makes the failure read as weather when it is cost.
 
+> 🚨 **RETRACTED ~14:45 PT, same day — this paragraph's evidence does not hold.** The quiet reading
+> (`4 active · 1 IO waiter`) was taken at **~19:50Z**, and I applied it backwards to failures at
+> **17:48–18:49Z**. The daytime monitor's positive control at **~18:10Z** reads
+> `io_wait=12 / active=11 / total=46` with `rpc_ops_snapshot()` timing out — a **saturation spell was ACTIVE
+> across exactly that window** ([1812Z filing](2026-08-23T1812Z-daytime-monitor-saturation-spell-symptoms.md)).
+> So `(saturation-class)` on those four runs may well be accurate, and **"the DB was quiet when they failed"
+> is withdrawn.** ⚠ This is the repo's own rule biting: *a snapshot is not a distribution*, and a control must
+> be contemporaneous with the thing it controls.
+>
+> **What the retraction does NOT touch — and it is the load-bearing half.** The structural claim is from
+> `EXPLAIN`, not from timings: `ORDER BY MAX(s.sold_at)` forces the whole 90-day aggregate before `LIMIT`
+> applies, so page 0's cost does not fall with offset. Since re-measured in **buffers**, which load cannot
+> move: one 30-day page of `fmv_recalc_edition_page` reads **97,669 buffers**, and the same page reads
+> **48,494** when the index it was built for is made reachable
+> ([2130Z](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md)).
+> **Page 0 is expensive because of its plan; saturation is what turns expensive into failed.** Both are true,
+> and only the second is weather.
+
 ⚠ **And it is not the 2026-08-16 incident recurring.** That one was 14 of 17 runs over **12.4 h**, fixed by
 adding retries (`queryWithRetry`, 3 attempts). The retries are still there and are still running; they cannot
 help, because **nothing here is transient**.
@@ -85,5 +103,6 @@ which is why this is not a "bad page".
 ⛔ **Not shipped:** this is FMV route logic (explicitly off-limits to autonomous shipping) plus a migration
 (**~10–20 s of user-facing `PGRST002` 500s**), and R52 has already parked the family of fixes with Trevor.
 
-⚠ **Re-measure before acting** — all timings above are a dated sample from one quiet window, and the
+⚠ **Re-measure before acting** — all timings above are a dated sample taken in a window whose load I did
+NOT positively control at the time (see the retraction above; prefer **buffers**, which load cannot move), and the
 cold/warm spread (25.4 s → 10.4 s) shows how much the buffer cache moves them.
