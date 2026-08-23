@@ -8,6 +8,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the simulator's uncancelled timer chain, and a prose-only rule that lasted six days
+
+**Two items, both found by running the gates rather than by looking for them.**
+
+## 1. The pack simulator set state on an unmounted tree — fixed, extracted, pinned
+
+`PackSimulatorClient`'s flip animation ran up to `rips × slots` iterations at 70 ms with **no
+cancellation**, so a collector who starts a 10× rip and navigates away leaves a timer chain running for
+up to `slots × 10 × 70 ms`. Now `lib/packs/animate-flips.ts`, taking an `isAlive()` from a ref cleared
+on unmount.
+
+⚠ **The check goes AFTER the await, before the tick, and that ordering is the property.** The gap
+between scheduling a flip and it firing is the entire window in which an unmount happens; a check at
+the top of the iteration would pass and then tick into a dead tree anyway. It has its own assertion,
+and moving the check reds exactly that one.
+
+⚠ **In a browser this NEVER THROWS, which is why it survived.** React drops an update to an unmounted
+component, so the only cost is invisible wasted work. Under vitest it landed after jsdom tore `window`
+down and surfaced as an UNHANDLED REJECTION that **failed `npm test` while every test passed and no
+test name appeared** — the failure named no file, and vitest's own note only said it had "originated
+in" an unrelated spec.
+
+⚠ **Extracted to `lib/` rather than fixed in place**, because the filing asked for a test that unmounts
+mid-animation and `app/**/*.tsx` is measured by NEITHER coverage gate. **A cancellation check is
+invisible when it works** — the next cleanup deletes it and nothing goes red. Six assertions, three
+mutations all killing (drop the check · move it before the delay · skip the wait), each reding a
+different named assertion.
+
+⚠ **NOT established, and the filing keeps it:** no scan for sibling loops of the same shape has been run.
+
+## 2. `main` was red because the overnight pass archived two inbox filings
+
+🚨 **`docs/overnight/focus.md` has said `inbox/` is APPEND-ONLY since 2026-08-17**, with its reasoning
+and its evidence: filings are permanent citation targets, referenced by exact path from CLAUDE.md, the
+ledger, handoffs, the roadmap, **four committed migrations** and **live product source**. The rule ends
+*"the citations win"*. **The 08-23 overnight pass archived two anyway** — and both were cited by path
+from the ledger, so the move rotted those citations.
+
+⚠ **This was not carelessness, and that matters for the fix.** The `inbox/` convention still SAYS files
+are archived after draining; the pass had drained them; the only thing saying otherwise was a paragraph
+in a file it had no reason to re-read. **A rule that lives only in prose holds until someone follows the
+older convention.** Both `git mv`'d back; ledger citations and `check-memory-doc-links` resolve again.
+
+🚨 **AND IT WAS CAUGHT BY ACCIDENT.** `inbox-index-lists-every-filing` reddened on DANGLING LINKS in
+`INDEX.md` — but only because those two filings had already been indexed. **A filing archived before it
+reached INDEX.md would have moved silently**, and every ledger citation to it would have rotted with
+nothing going red.
+
+**So the rule now has a guard**: `__tests__/inbox-is-append-only-since-the-rule.test.ts` — a **BAN**, not
+a ratchet, on any filing dated on/after the rule sitting in `archive/`. ⚠ **The cutoff is a DATE, not a
+blanket ban**, because 275 pre-rule files are history and the rule was not retroactive: a blanket ban
+would red on its own past and could never reach zero, which is the "punishes its own success" shape.
+Measured: **0 post-cutoff files in archive/**, which is what makes a ban possible. Mutation-proven —
+re-archiving one file reds and names it.
+
+⚠ **My own control in that guard was a GUESS and reddened on correct code.** I asserted `> 100`
+pre-rule dated files from intuition; the measured number is **77 of 273**. Corrected to a floor under
+the measurement, with the slip recorded on the assertion — it is the same "a number stated with no
+measurement behind it" shape this repo keeps recording, committed by the person writing the guard
+against it.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1,367 files / 14,876 tests, 0 failures** ·
+`check-memory-doc-links` 90/90 resolve · eslint unchanged on the touched component (3 pre-existing
+`no-img-element` warnings, measured on the untouched file first).
+
+**Revert path:** `git revert <sha of "fix(simulator): cancel the flip animation on unmount">`. Component
++ library + test code and two `git mv`s — no DB, no prod-state change.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive — memory pass, part 10) — the Sentry blackout has a THIRD candidate cause nobody listed, and it is one page from the one the filing names
 
 **Read-only. Nothing changed in Sentry, nothing shipped to prod, no DB write.** Sentry has now been
