@@ -119,3 +119,70 @@ describe("fetchActiveChallenges", () => {
     expect(res.ok).toBe(false)
   })
 })
+
+// ── /analytics/wallets ──────────────────────────────────────────────────────
+//
+// Same extraction, same mechanism, and the same defect at the end of it. The
+// page's `ok` contract already existed — it used to return a bare `[]`, which
+// rendered "No wallet activity to display.", a positive claim about the loan
+// book manufactured from a database error — and it was equally unreachable from
+// a hang, for the reason at the top of this file.
+
+import { loadWalletDirectory } from "@/lib/analytics/wallet-directory"
+
+describe("loadWalletDirectory", () => {
+  it("a hung read reports ok:false — not an empty loan book", async () => {
+    const res = await loadWalletDirectory(hangDb(), 500)
+
+    expect(res.ok).toBe(false)
+    expect(res.rows.length === 0 && res.ok === true).toBe(false)
+  })
+
+  it("a driver error reports ok:false", async () => {
+    const res = await loadWalletDirectory(errDb("boom"), 500)
+
+    expect(res).toEqual({ rows: [], ok: false })
+  })
+
+  it("CONTROL — a genuinely empty directory is still ok:true", async () => {
+    const res = await loadWalletDirectory(okDb([]), 500)
+
+    expect(res).toEqual({ rows: [], ok: true })
+  })
+
+  it("CONTROL — a successful read coerces its principals and keeps ok:true", async () => {
+    // ⚠ Also pins the `|| 0` coercion as a PARSE fallback on a row the read
+    // returned, which is a different thing from defaulting a missing measurement.
+    const res = await loadWalletDirectory(
+      okDb([{ wallet: "0x1", borrower_principal_usd: "12.5", lender_principal_usd: null }]),
+      500,
+    )
+
+    expect(res.ok).toBe(true)
+    expect(res.rows[0].borrower_principal_usd).toBe(12.5)
+    expect(res.rows[0].lender_principal_usd).toBe(0)
+  })
+
+  it("a non-array payload is caught by the SHAPE GUARD, not by `.map` throwing", async () => {
+    // ⚠ THIS ASSERTION IS ON THE LOG LINE, AND THAT IS DELIBERATE. An earlier
+    // draft asserted only `ok === false` — and mutating the shape guard away
+    // still PASSED it, because the very next statement is `.map()`, which throws
+    // on a non-array and lands in the same catch. The outcome was identical, so
+    // the test proved nothing about the guard.
+    //
+    // ⚠ Unlike hot-floors and challenges, where the payload is RETURNED rather
+    // than mapped and a missing guard silently yields "empty", here the guard is
+    // defence-in-depth: it makes the failure explicit and stops depending on an
+    // incidental `.map` for correctness. Pinning the message is the only way to
+    // tell the two paths apart, so a future refactor that drops the guard reds.
+    const logs: string[] = []
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
+      logs.push(a.map(String).join(" "))
+    })
+
+    const res = await loadWalletDirectory(okDb({ oops: true }), 500)
+
+    expect(res.ok).toBe(false)
+    expect(logs.join("\n")).toContain("unexpected payload shape")
+  })
+})

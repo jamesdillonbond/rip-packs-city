@@ -80,14 +80,26 @@ describe("server pages distinguish a failed read from an absent record", () => {
     )
   })
 
+  // ⚠ THE READ MOVED, SO THIS CHECK MOVED WITH IT (2026-08-22). `loadDirectory`
+  // was extracted from the page into `lib/analytics/wallet-directory.ts` and
+  // renamed `loadWalletDirectory`, so it could be BOUNDED (a read that merely
+  // hangs throws nothing, so the page's own try/catch could not reach the
+  // `ok: false` branch) and TESTED (`app/**/page.tsx` is measured by neither
+  // coverage gate).
+  //
+  // ⚠ The property is unchanged and is now pinned in BOTH places on purpose: the
+  // producer's contract in the module, and the CONSUMER's gating in the page.
+  // Checking only the module would let a page that stopped consulting `ok` pass,
+  // which is the half of this defect that actually reaches a reader.
   it("analytics/wallets does not report a failed read as 'no activity'", () => {
+    const lib = read("lib", "analytics", "wallet-directory.ts")
     const src = read("app", "(analytics)", "analytics", "wallets", "page.tsx")
 
-    expect(src, "loadDirectory must report ok:false on failure").toContain(
+    expect(lib, "loadWalletDirectory must report ok:false on failure").toContain(
       "return { rows: [], ok: false }"
     )
     expect(src, "page must destructure ok").toMatch(
-      /const \{\s*rows\s*,\s*ok\s*\}\s*=\s*await loadDirectory\(\)/
+      /const \{\s*rows\s*,\s*ok\s*\}\s*=\s*await loadWalletDirectory\(\)/
     )
     // The "no activity" copy must be gated on a SUCCESSFUL read.
     expect(src, "the empty-state copy must be gated on ok").toMatch(

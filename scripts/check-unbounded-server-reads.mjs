@@ -110,7 +110,12 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // neither was reachable, because **a try/catch catches a THROW and a hang throws
 // nothing**. That is the sharpest statement of this whole class: the error
 // handling looked complete and could not fire.
-const MAX_UNBOUNDED = 4
+//
+// 4 → 3 (2026-08-22): `/analytics/wallets` — same extract-then-bound as the two
+// above, and the same already-existing-but-unreachable honest branch (a bare
+// `[]` used to render "No wallet activity to display.", a claim about the loan
+// book made from a database error).
+const MAX_UNBOUNDED = 3
 
 const strip = (s) => stripComments(s)
 

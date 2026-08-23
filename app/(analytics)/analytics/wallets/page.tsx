@@ -11,13 +11,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowRight, Wallet } from "lucide-react"
-import { supabaseAdmin } from "@/lib/supabase"
+import { loadWalletDirectory } from "@/lib/analytics/wallet-directory"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import WalletIdenticon from "@/components/analytics/WalletIdenticon"
 import WalletsHubOverview from "@/components/analytics/WalletsHubOverview"
 import NetMarketplaceLeaderboard from "@/components/analytics/NetMarketplaceLeaderboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
-import type { WalletDirectoryRow } from "@/lib/analytics-types"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 600
@@ -60,34 +59,12 @@ function truncateAddress(addr: string): string {
   return a.slice(0, 6) + "…" + a.slice(-4)
 }
 
-// `ok:false` means the directory READ failed. It used to return a bare [], which
-// the page rendered as "No wallet activity to display." — a positive claim about
-// the loan book, manufactured from a database error.
-async function loadDirectory(): Promise<{ rows: WalletDirectoryRow[]; ok: boolean }> {
-  try {
-    const { data, error } = await (supabaseAdmin.rpc as any)(
-      "flowty_analytics_wallet_directory"
-    )
-    if (error) {
-      console.log("[wallets/index] rpc_error", error.message)
-      return { rows: [], ok: false }
-    }
-    return {
-      rows: ((data ?? []) as WalletDirectoryRow[]).map((r) => ({
-        ...r,
-        borrower_principal_usd: Number(r.borrower_principal_usd) || 0,
-        lender_principal_usd: Number(r.lender_principal_usd) || 0,
-      })),
-      ok: true,
-    }
-  } catch (e: any) {
-    console.log("[wallets/index] error", e?.message || e)
-    return { rows: [], ok: false }
-  }
-}
 
 export default async function WalletsIndexPage() {
-  const { rows, ok } = await loadDirectory()
+  // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
+  // header. The `ok` distinction below is unchanged; what changed is that a read
+  // which merely HANGS can now reach it.
+  const { rows, ok } = await loadWalletDirectory()
 
   const enriched = rows
     .map((r) => ({
