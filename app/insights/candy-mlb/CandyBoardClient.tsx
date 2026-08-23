@@ -371,7 +371,7 @@ export default function CandyBoardClient({
   parallel?: Dict[];
   /** Non-null only when a backing query FAILED — see lib/insights/board-status.ts. */
   degraded?: DegradedSummary | null;
-  fetchedAt: string;
+  fetchedAt: string | null;
 }) {
   const [tab, setTab] = useState("market");
 

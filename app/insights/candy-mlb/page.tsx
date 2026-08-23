@@ -39,7 +39,7 @@ export default async function CandyMlbPage() {
       players={(payload.players as any[]) ?? []}
       parallel={(payload.parallel as any[]) ?? []}
       degraded={(payload.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Candy MLB board")}
-      fetchedAt={(payload.fetchedAt as string) ?? new Date().toISOString()}
+      fetchedAt={(payload.fetchedAt as string | null) ?? null}
     />
   );
 }

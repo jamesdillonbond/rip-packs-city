@@ -33,6 +33,19 @@ vi.mock("@/lib/supabase", () => {
 
 import { readMvAsOf, MV_PIPELINE } from "@/lib/insights/mv-freshness"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
+import { readdirSync } from "node:fs"
+import { join } from "node:path"
+
+/** Every server page under app/insights — derived from the tree, never listed. */
+function walkInsightsPages(root = "app/insights"): string[] {
+  const out: string[] = []
+  for (const ent of readdirSync(root, { withFileTypes: true })) {
+    const full = join(root, ent.name)
+    if (ent.isDirectory()) out.push(...walkInsightsPages(full))
+    else if (ent.name === "page.tsx") out.push(full)
+  }
+  return out
+}
 
 beforeEach(() => { state.row = null; state.error = null; state.throws = false })
 
@@ -90,10 +103,14 @@ describe("readMvAsOf", () => {
 describe("no materialized board page fabricates a freshness stamp", () => {
   // Ban at population zero: this passes when the offending pattern is absent, so it does
   // not punish its own success, and it fails the moment someone re-adds the coalesce.
-  const PAGES = [
-    "app/insights/deals/page.tsx",
-    "app/insights/panini-squeeze/page.tsx",
-  ]
+  // ⚠ DERIVED BY TREE WALK, NOT CURATED. This started as a two-entry list of the
+  // pages I had just fixed, and `app/insights/candy-mlb/page.tsx` carried the same
+  // fabrication the whole time, outside the guard BY CONSTRUCTION. A curated list
+  // of instances measures the fixer's memory; a walk measures the tree.
+  const PAGES = walkInsightsPages()
+  it("the walk finds pages at all, so a zero population cannot pass vacuously", () => {
+    expect(PAGES.length).toBeGreaterThan(3)
+  })
   for (const p of PAGES) {
     it(`${p} does not coalesce a missing timestamp to new Date()`, () => {
       // Strip comments first — this repo has fired at least six guards on the
