@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · DECISION, NOT A SHIP — I was going to build the FMV rollup and stopped. The binding constraint is the DISK, and the case now belongs to Trevor
+
+**Asked to decide what is best for RPC, I decided NOT to ship the one remaining build.** Recording it as a decision with its evidence, because a decision not to act is the one nobody re-checks.
+
+**What I was about to build (R52):** a precomputed latest-FMV-per-edition, piggybacked on `refresh_series_detail_rollup()` so it would add **near-zero recurring IO** — that hourly pass already computes exactly this. It would cut `get_series_editions` from ~24,700 buffers to a few hundred.
+
+🚨 **THE MEASUREMENT THAT CHANGED MY MIND.** `get_series_editions(allday, series-9, 100, 0)` — 1,889 editions — **97,443 ms on 14,212 buffers with 1,320 reads. That is ~74 ms PER DISK READ.** The Top Shot `series-7` call **timed out entirely, as `postgres`**.
+
+⚠ **And I am NOT claiming a regression from it.** That reading was taken inside a full spell — **31 active backends, 30 IO waiters** — so the wall time is confounded and it is not like-for-like against tonight's earlier 7,708 ms on the same query class. **The comparable number is BUFFERS, and the buffer count went DOWN while the time went up.** That is the whole point: **the cost is the disk, not the plan.** A rollup cuts buffers ~10× and does nothing about 74 ms/read.
+
+**So the fix I had designed would not have fixed the symptom I was aiming at**, and — worse — **a benchmark taken inside a spell cannot verify a performance change**, so "ship it and confirm" was not available to me tonight.
+
+**Four supporting reasons, stated plainly so this can be re-litigated on its merits rather than on my caution:**
+1. **The pages are not down.** They serve 200 through ISR. The harm is latency and staleness on 26 SEO pages — real, but not an outage.
+2. **Three agents were editing these same files concurrently.** Several of my pushes hit rebase conflicts and one commit had to be recovered from the reflog.
+3. 🚨 **My own record tonight argues for stopping.** Four things I called done needed correcting afterwards — the `/api/ready` "10.9 ms warm" (it was the cached case), the 60 s cache "mitigation" (it did nothing), the "all six series URLs fixed" claim, and **R14, which was a production regression in this exact class**, caught by another agent six hours later rather than by me.
+4. **Adding one rollup + cron per symptom, while other sessions do the same, is how an IO-bound instance acquires a dozen refresh jobs.** Each is locally justified; the sum is the problem.
+
+➡ **THE ACTUAL LEVER IS R46, AND IT IS A CAPACITY DECISION, NOT A CODE ONE.** The instance is a Small compute (2 GB / 2 cores) on a disk-IO burst-credit model, measured at **765 GB/day against a 22 MB/s throttled floor** with **≈4.5 backends busy at all times**. Tonight it served ~74 ms per read at 30 IO waiters. **Every open performance row on the register — R6, R50's eleven boards, the series reads, R53's trust legs — is downstream of that one fact.** ⚠ CLAUDE.md's standing note says "fix expensive queries, don't upgrade, Medium is the same 2 cores for 4×" — that is about CPU, and **this is not CPU-bound**. The IOPS/throughput question deserves its own answer.
+
+**Build R52 AFTER that decision, and measure it in a 20:00–00:00Z window** where a before/after can actually be trusted.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass, part 9) — the index guard's OTHER half fired: archiving two drained filings left the index calling them open
 
 **Docs plus one guard-message change. No DB, no migration, no prod-state change.**
