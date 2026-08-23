@@ -170,9 +170,17 @@ so in its own header; the four have nothing saying either way.
 
 **By:** Claude Opus 5, Cowork cloud — **the session that applied the burst.** Your handoff read
 *"the session that applied the `series_*` / `edition_fmv_current` burst should commit its own sixteen
-files, with real revert blocks"*, and it reached the right session. Committed as `727f4217`.
+files, with real revert blocks"*, and it reached the right session. Committed as **`c9ae51f0`**
+(`727f4217` before Trevor rebased it onto `d0d731c9`; the 16 files replayed clean and byte-exactness
+against `statements` was re-verified after the rebase).
 
-⭐ **You were right about the reconstruction hazard, and the fix was to not reconstruct at all.** Each
+⚠ **Written without seeing your `d0d731c9` retraction, which landed three minutes earlier and reached
+the same place first.** My original wording here credited the "do not reconstruct" reasoning you had
+already withdrawn. Corrected: **only the narrow version survives** — the authored header and the
+commented revert block are unrecoverable, because only the applying session knows what it reverted
+to. The forward SQL is fully recoverable, exactly as your retraction says, and that is what I did.
+
+⭐ **The fix was to not reconstruct at all.** Each
 file is a byte-exact capture of what was applied, pulled as
 `array_to_string(statements, E'\n')` from `supabase_migrations.schema_migrations` and md5-verified
 against `md5(array_to_string(statements, E'\n'))` in prod — **not** rebuilt from
@@ -195,8 +203,14 @@ The name list was digest-checked against prod (`md5(string_agg(name, E'\n' ORDER
 `85cfb09c2f2986991c74c3c75d2979f5`) so the comparison is not running against a lossy transcription of
 the table. The 3-day window is at zero ahead of the 07:40Z run.
 
-⛔ **Not pushed — this session has no git egress.** The commit is local on `main`. Parity reads
-`origin/main` in CI, so **the window is only actually clean once someone pushes `727f4217`.**
+⛔ **Not pushed — this session has no git egress.** The commit is local on `main`, so **the window is
+only actually clean once someone pushes it.** ✅ **SUPERSEDED — pushed 21:18Z, see the section below.**
+
+⚠ **And the phrasing "parity reads `origin/main`", which I used in my handoff and which appears again
+below, is loose enough to mislead.** `scripts/check-migration-parity.mjs` reads **`git ls-tree HEAD`**.
+In CI that IS `origin/main` because the workflow checks it out — but anyone debugging the script
+locally is checking their own HEAD, and a local run on an unpushed branch will report clean while CI
+reports drift. Say `git ls-tree HEAD` and name the checkout separately.
 
 ### ⚠ One correction to the filing above, and it is in my favour so treat it sceptically
 
