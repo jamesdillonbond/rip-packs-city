@@ -616,12 +616,12 @@ PGBIN=/usr/lib/postgresql/16/bin; PGDATA=/var/tmp/pgdata-rpc
 mkdir -p "$PGDATA" /var/tmp/pgrun && chown -R postgres:postgres "$PGDATA" /var/tmp/pgrun
 su postgres -c "$PGBIN/initdb -D $PGDATA -U postgres --auth=trust"
 su postgres -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /var/tmp/pgrun' -l /var/tmp/pg.log -w start"
-DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 178 files
+DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 179 files
 ```
 
 ⚠ **It does NOT survive a session resume** — the cluster is stopped even though `/var/tmp/pgdata-rpc`
 remains, so `psql` gives *"Connection refused"*. Re-`pg_ctl start` (re-`initdb` only if the data dir is
-gone). Being able to run all 178 files locally is what made re-pinning six DB functions verifiable rather
+gone). Being able to run all 179 files locally is what made re-pinning six DB functions verifiable rather
 than hopeful — and it caught nothing that CI later disagreed with.
 
 ---
@@ -669,6 +669,18 @@ its BODY makes it call itself and blow the stack. **Remove the wrapper; do not d
 ⚠ **And a red during a migration reads exactly like a discovery** — that one was my own bug, and it arrived
 after two genuine reds, which is precisely the context that makes a third feel confirmed. **Read the
 failure, not the count.**
+
+## A fixture that BATCHES what production STAGGERS can silently disarm the assertion (2026-08-22)
+
+⚠ **Found by mutation testing, invisible to review.** `supabase/tests/backfill_pinnacle_trade_acquisitions.sql` exists to catch exactly one regression: copying the sibling `backfill_pinnacle_mint_acquisitions`'s `nft_id`-scoped `NOT EXISTS` gate onto the trade path. The mint needs that gate (a mint is a Pin's FIRST acquisition); the trade path must not have it (a Pin trades many times), and the two functions sit side by side and are near-identical, so "make them consistent" is the tempting wrong edit. **Applying that exact mutation left the test GREEN.**
+
+⚠ **The mechanism generalises far past this function. Within ONE call, every candidate is selected by the CTE before any row is inserted — so a `NOT EXISTS` against the TARGET table reads an EMPTY table and never fires.** It fires only on a LATER call. The fixture inserted both of a Pin's trades in a single batch and called the function once, so it asserted the property while being **structurally incapable of observing its violation**. It looked thorough in every grep and review: named for the regression, with the reasoning written out above it.
+
+**The rule: when the thing under test accumulates state across invocations, the fixture must INVOKE IT MORE THAN ONCE.** A single-call fixture cannot see any cross-call guard. Here the fix was to have the second trade arrive BETWEEN two calls — which is also how it really arrives, one cron tick per new trade. **Ask what production staggers that the fixture batches**; that difference is where a guard quietly stops guarding.
+
+Now mutation-proven in four directions, each reddening the assertion named for it: the mint gate copied across · `buy_price` defaulted to 0 · a case-sensitive wallet join · the counterparty dropped.
+
+---
 
 ## Pin the property, not the spelling — the second instance (2026-08-22)
 

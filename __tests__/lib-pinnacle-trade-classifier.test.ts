@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   classifyPinnacleTradeTxs,
+  UNCLASSIFIED_SAMPLE_CAP,
   type PinnacleMoveEvent,
 } from "@/lib/pinnacle/trade-classifier"
 
@@ -156,7 +157,42 @@ describe("classifyPinnacleTradeTxs — input hygiene and the census", () => {
     expect(classifyPinnacleTradeTxs([])).toEqual({
       trades: [],
       shapeCounts: { trade: 0, sale_or_one_way: 0, mint_or_deposit_only: 0, unclassified: 0 },
+      unclassifiedSample: [],
     })
+  })
+
+  it("describes each unclassified tx, so a count is diagnosable without a re-scan", () => {
+    // ⚠ A bare count says "9 transactions did not match a known shape" and
+    // nothing else — answering "are we dropping real trades?" then costs a full
+    // re-scan of the range against Flow REST. The geometry travels with the id.
+    const { shapeCounts, unclassifiedSample } = classifyPinnacleTradeTxs([
+      // three wallets in a circle — not a two-party swap
+      mv("withdraw", "t-circle", "n1", A), mv("deposit", "t-circle", "n1", B),
+      mv("withdraw", "t-circle", "n2", B), mv("deposit", "t-circle", "n2", C),
+      // a bulk ONE-WAY transfer of two Pins
+      mv("withdraw", "t-bulk", "n3", A), mv("deposit", "t-bulk", "n3", B),
+      mv("withdraw", "t-bulk", "n4", A), mv("deposit", "t-bulk", "n4", B),
+    ])
+    expect(shapeCounts.unclassified).toBe(2)
+    expect(unclassifiedSample).toHaveLength(2)
+    const bulk = unclassifiedSample.find((u) => u.transactionId === "t-bulk")!
+    expect(bulk).toMatchObject({ withdraws: 2, deposits: 2, senders: 1, receivers: 1 })
+    const circle = unclassifiedSample.find((u) => u.transactionId === "t-circle")!
+    expect(circle.senders).toBe(2)
+    expect(circle.receivers).toBe(2)
+  })
+
+  it("caps the sample so a bad range cannot bloat pipeline_runs.extra", () => {
+    const many: PinnacleMoveEvent[] = []
+    for (let i = 0; i < UNCLASSIFIED_SAMPLE_CAP + 7; i++) {
+      // withdraw with no deposit — unclassified by construction
+      many.push(mv("withdraw", `t-odd-${i}`, `n${i}`, A))
+    }
+    const { shapeCounts, unclassifiedSample } = classifyPinnacleTradeTxs(many)
+    // ⚠ The COUNT stays complete even though the sample is capped — truncating
+    // the count would under-report the very thing the census exists to surface.
+    expect(shapeCounts.unclassified).toBe(UNCLASSIFIED_SAMPLE_CAP + 7)
+    expect(unclassifiedSample).toHaveLength(UNCLASSIFIED_SAMPLE_CAP)
   })
 
   it("drops events missing a tx id, nft id or address instead of pairing them", () => {

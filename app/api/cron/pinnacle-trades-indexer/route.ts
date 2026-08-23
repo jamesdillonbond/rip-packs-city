@@ -436,6 +436,12 @@ async function runIndexer(req: NextRequest) {
     const shapeExtra = {
       mode: modeParam,
       tx_shapes: classified.shapeCounts,
+      // ⚠ Only present when something was unclassified, so an ordinary tick's
+      // `extra` stays small. Its absence is the healthy case; its presence is
+      // the whole diagnosis, with no re-scan of Flow REST required.
+      ...(classified.unclassifiedSample.length > 0
+        ? { unclassified_sample: classified.unclassifiedSample }
+        : {}),
       trade_tx: classified.shapeCounts.trade,
       pins_traded: trades.length,
       decode_failures: decodeFailures,

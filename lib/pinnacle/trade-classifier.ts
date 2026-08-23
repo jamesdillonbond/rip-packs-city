@@ -74,7 +74,30 @@ export type PinnacleTxShape =
 export interface PinnacleTradeClassification {
   trades: PinnacleTradeLeg[]
   shapeCounts: Record<PinnacleTxShape, number>
+  /**
+   * A bounded sample of transactions that fell in `unclassified`, with the
+   * geometry that put them there.
+   *
+   * ⚠ WITHOUT THIS AN UNCLASSIFIED COUNT IS UNDIAGNOSABLE. The census can say
+   * "9 transactions did not match a known shape" but not WHICH, so answering
+   * "are we dropping real trades?" costs a full re-scan of the tick's range
+   * against Flow REST. Carrying a handful of ids and their shape turns that
+   * into reading one `pipeline_runs` row.
+   *
+   * Capped, because this lands in `extra` on every tick and an unbounded list
+   * on a bad range would bloat the log table this repo already prunes.
+   */
+  unclassifiedSample: Array<{
+    transactionId: string
+    withdraws: number
+    deposits: number
+    senders: number
+    receivers: number
+  }>
 }
+
+/** How many unclassified transactions to describe per call. */
+export const UNCLASSIFIED_SAMPLE_CAP = 10
 
 /**
  * Group decoded Withdraw/Deposit events by transaction and classify each one.
@@ -110,6 +133,21 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
     unclassified: 0,
   }
   const trades: PinnacleTradeLeg[] = []
+  const unclassifiedSample: PinnacleTradeClassification["unclassifiedSample"] = []
+
+  /** Count an unclassified tx and, while under the cap, describe it. */
+  const noteUnclassified = (
+    transactionId: string,
+    withdraws: number,
+    deposits: number,
+    senders: number,
+    receivers: number,
+  ) => {
+    shapeCounts.unclassified++
+    if (unclassifiedSample.length < UNCLASSIFIED_SAMPLE_CAP) {
+      unclassifiedSample.push({ transactionId, withdraws, deposits, senders, receivers })
+    }
+  }
 
   for (const [transactionId, txEvents] of byTx) {
     const withdrawals = txEvents.filter((e) => e.side === "withdraw")
@@ -120,6 +158,7 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
       continue
     }
     if (deposits.length === 0) {
+      // (withdraw-only: senders known, receivers necessarily 0)
       // A Withdraw with no Deposit for the same transaction. ⚠ This is NOT a
       // chunk-boundary artifact — every event of a transaction lives in the one
       // block containing it, and both streams are fetched over identical block
@@ -127,7 +166,13 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
       // across two reads. It therefore means a genuine burn, or a Deposit whose
       // payload failed to decode. Either way it is not a trade and must not be
       // guessed at.
-      shapeCounts.unclassified++
+      noteUnclassified(
+        transactionId,
+        withdrawals.length,
+        0,
+        new Set(withdrawals.map((e) => e.address)).size,
+        0,
+      )
       continue
     }
 
@@ -144,7 +189,7 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
       if (senders.size === 1 && receivers.size === 1 && withdrawals.length === 1 && deposits.length === 1) {
         shapeCounts.sale_or_one_way++
       } else {
-        shapeCounts.unclassified++
+        noteUnclassified(transactionId, withdrawals.length, deposits.length, senders.size, receivers.size)
       }
       continue
     }
@@ -173,7 +218,7 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
     }
 
     if (legs.length === 0) {
-      shapeCounts.unclassified++
+      noteUnclassified(transactionId, withdrawals.length, deposits.length, senders.size, receivers.size)
       continue
     }
 
@@ -184,5 +229,5 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
     shapeCounts.trade++
   }
 
-  return { trades, shapeCounts }
+  return { trades, shapeCounts, unclassifiedSample }
 }
