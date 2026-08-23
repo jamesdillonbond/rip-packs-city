@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — R26 closed, and the guard's real blind spot was bigger than the one filed
+
+**All 10 unordered `.range()` paging loops in `scripts/` now carry a deterministic `.order()` on a UNIQUE key, and `scripts` is in the ban's ROOTS.**
+
+🚨 **THE FILED FINDING WAS "scripts/ is outside the ban". THE BIGGER PROBLEM WAS THAT THE GUARD COULD NOT SEE `.mjs` IN ANY ROOT.** Its walk matched `/\.(ts|tsx)$/`. **Six of the ten sites are `.mjs`** — so adding `scripts` to ROOTS and stopping there would have "cleared" the debt while leaving most of it invisible, with the ban reporting a confident zero. Widened to `/\.(ts|tsx|mjs|js)$/`.
+
+⚠ **Measured BEFORE widening, so the ban was not being loosened to fit the fix:** with `.mjs`/`.js` admitted, the four ORIGINAL roots still report **0**. The existing ban was honest about the files it could see; it just could not see half the file types.
+
+⚠⚠ **AND I NEARLY FILED A FALSE CORRECTION AGAINST THE REGISTER.** R26 records *"positive control: 0 on its declared ROOTS, so the guard is honest about its scope."* My hand-written re-implementation reported **2 in `app/`** — plus one hit on **its own `console.log`**, because I had not blanked string literals. Running the guard's OWN exported `findUnorderedRangeSites()` returned `[]`. **The register was right.** The real guard blanks comments *and* string/template literals and defines the chain as "back to the nearest `.from(`"; my statement-window heuristic did neither. **Reuse the guard's detector; do not re-implement it** — cheap-check 10 says to re-implement it as a control, and the lesson is that the re-implementation is the thing that needs the control.
+
+**The sharpest site, and why this rule matters more in `scripts/` than in a route:** `scripts/backfill-livetoken-fmv.mjs` paged `fmv_snapshots` unordered to build the `existingIds` **skip set that `--force` exists to honour**, then ran `.delete()` + `.insert()` on `fmv_snapshots`. A row missed by unordered pagination there is **an FMV row overwritten without anyone asking for it** — and the duplicates and omissions CANCEL, so every count-based check passes.
+
+**Order keys taken from UNIQUE keys, not merely selected ones:** `editions` / `wallet_moments_cache` / `unmapped_sales` / `moment_acquisitions` / `pinnacle_editions` → PK `id`; `fmv_snapshots` → `(id, computed_at)`. ⚠ **`flowty_funded_loans` has NO primary key and NO unique index at all**, so `funding_resource_id` is used as **MEASURED-unique — 3,388 distinct of 3,388 rows, not constraint-enforced** — and that caveat is written at the call site, because if it ever stops holding the pagination silently degrades again.
+
+**New scope test pins BOTH widenings, and is proven against two mutations:**
+- reverting the extension filter → **only the scope test reddens; the BAN STAYS GREEN.** That is the failure mode, demonstrated: a guard silently blind to `.mjs` keeps reporting zero.
+- reverting one fixed site → the ban reddens.
+
+⚠ The scope test asserts SCOPE, not population — `walk("scripts")` finds files, at least 10 of them `.mjs`, and `ROOTS` contains `scripts`. All three are invisible in the headline assertion once the debt is cleared, which is precisely why they need their own test.
+
+**Revert:** `git revert <sha>` — no DB half.
+
 ### 2026-08-22 · MEASURED, NOT SHIPPED — the one object R6, the series 500s and half of R50 all want, and what it would cost to keep
 
 **R52 + R53 filed with numbers, so the next person starts from a measurement instead of a hypothesis.**
