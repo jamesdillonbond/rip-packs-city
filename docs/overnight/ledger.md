@@ -8,6 +8,68 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the TENTH saturation breaker, missed because the ban that fixed nine walked one DIRECTORY; and the instrument that was under-counting its own subject 3×
+
+**Found by grepping the EXPRESSION rather than the file**, which is the rule this repo wrote after the same
+class spread by copy-paste three times.
+
+## 1. 🚨 The tenth copy failed OPEN, and it was outside the ban BY CONSTRUCTION
+
+Nine cron routes carry a saturation self-throttle: count other pipelines' recent failures, skip this tick if
+the platform looks saturated. A prior session found that `(count ?? 0) > THRESHOLD` **fails OPEN** —
+supabase-js RETURNS `{count: null, error}` rather than throwing, so `?? 0` reads as "no recent failures" —
+fixed all nine, and froze it with `__tests__/saturation-throttle-reads-its-error.test.ts`.
+
+**`lib/studio-sales-history.ts` is the tenth, and it still failed open.** That guard walks
+**`app/api/cron` ONLY**, and its own header argues *"a guard that walks the tree cannot miss the tenth"* —
+but it walked one DIRECTORY, and the tenth copy was one directory over, in the **shared implementation that
+`golazos-studio-` and `allday-studio-sales-history-backfill` delegate to ENTIRELY**. Those two carry no
+inline throttle, so they never entered the guard's population and **their breaker was the broken one.**
+
+⚠ **A guard's declared scope is itself a CLAIM, and coverage is only real against what the guard READS.**
+The guard now walks `lib/` too — with an assertion that **the second root must CONTRIBUTE**, so a widening
+that matches nothing fails loudly instead of silently narrowing back.
+
+**Both pipelines are live**: 25–26 ticks / 73 h, **72–77 % of them already skipping on saturation**.
+
+## 2. The instrument was under-counting its own subject by 3×
+
+The nine routes record a throttle failure as `extra: { skipped: "throttle_error" }` — the key any query
+keys on. **8 of the 10 actually logged `extra: {}`.** So the obvious query saw **1** event; the query on
+`error LIKE 'throttle_read:%'`, which is shape-independent, sees **3, on three different pipelines**:
+
+| pipeline | failures / 73 h | visible to the `extra` query |
+|---|---|---|
+| `ufc-sales-history-backfill` | 1 (08-20 12:50Z) | **0** |
+| `allday-sales-history-backfill` | 1 (08-22 15:09Z) | **0** |
+| `topshot-sales-history-backfill` | 1 (08-22 21:08Z) | 1 |
+
+✅ **This is also the POSITIVE CONTROL that the failure shape is real, not theoretical** — the count read
+genuinely fails in production, ~3 events / 73 h fleet-wide. All ten now log the discoverable shape.
+
+⚠ **Fixing a guard without fixing its RECORD leaves the incidence unmeasurable** — the same defect one layer
+down. I nearly shipped exactly that: the fail-open fix alone would have left the two lib-backed pipelines'
+failures invisible to the query anyone would write.
+
+## 🚨 The assertion that was vacuous, caught by mutating
+
+My first version of the log-shape check windowed 260 chars from `throttle_read:` — and **passed with the
+`extra` emptied back to `{}`**, because the very next statement is
+`return NextResponse.json({ ok: false, skipped: "throttle_error" })`, which contains the same string. **The
+HTTP body is not the record; `pipeline_runs` is.** The window now stops at the `return`.
+
+⚠ **And tightening it immediately failed on CORRECT code — which was a real finding, not a false positive:**
+it surfaced the other seven empty-`extra` routes, including one of the nine the earlier sweep had "fixed".
+
+**6 mutations, all caught** (error guard dropped · destructure dropped · guard moved after the comparison ·
+roots narrowed back · bare PostgREST object thrown · empty `extra` restored).
+
+⚠ **NOT claimed:** that either lib-backed pipeline demonstrably proceeded into a saturated platform. By
+construction that was unrecorded — which is the defect, not a gap in the write-up. Recorded now, going
+forward.
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — R6's owed in-band re-measure: 1 of 5, not 4 of 5 — and the band was NOT saturated, so the exit condition itself is wrong
 
 **No code, no DB change.** R6 has carried *"a degraded-band re-measure is still owed before closing"* since
