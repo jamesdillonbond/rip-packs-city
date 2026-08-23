@@ -1,6 +1,9 @@
 -- audit_20260822_funnel_events_bot_flag
 --
--- ⚠ READY TO APPLY — NOT YET APPLIED. Apply it in the healthy window
+-- ✅ APPLIED 2026-08-23 ~02:00Z (2026-08-22 19:00 PT). The paragraph below is
+-- kept verbatim as the reasoning of the moment; it is no longer the state.
+--
+-- ⚠ (superseded) READY TO APPLY — NOT YET APPLIED. Apply it in the healthy window
 -- (20:00–00:00Z), not in the 01:00–19:00Z degraded band, because
 -- `apply_migration` costs a ~10–20 s burst of user-facing PGRST002 500s from
 -- schema-cache re-introspection. Written at 01:07Z, i.e. one hour into the
