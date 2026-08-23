@@ -94,7 +94,15 @@ import { stripComments } from "./lib/strip-comments.mjs"
 //     before the ceiling moved.
 //   * `lib/pack-dist/fetchers.ts` bounded (13 reads) → 9 → 8. A real fix, on the
 //     page carrying production's top user-impacting errors.
-const MAX_UNBOUNDED = 8
+//
+// 8 → 6 (2026-08-22): `lib/set-detail/tier-mix.ts` and
+// `lib/pinnacle/moment-detail.ts` bounded, clearing `/[collection]/set/[slug]`
+// and `/pinnacle/moment/[id]`. ⚠ Both needed a SHARED deadline rather than a
+// per-read one — tier-mix pages up to 60 times, and pinnacle's `load()` is a
+// chain of up to six sequential steps. A per-read budget on either would have
+// multiplied the worst case it was added to cap. Both are mutation-proven
+// against that specific mistake, not just against "no bound at all".
+const MAX_UNBOUNDED = 6
 
 const strip = (s) => stripComments(s)
 

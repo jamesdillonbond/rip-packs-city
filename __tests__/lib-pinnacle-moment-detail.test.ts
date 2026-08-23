@@ -298,3 +298,71 @@ describe("load — the six tail reads", () => {
     expect(src).toContain("holders: holdersRes.error ? null :")
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUND — one deadline for the whole `load()`, and a hang is never a 404.
+//
+// ⚠ `load()` is a CHAIN, not a fan-out: catalog read → (numeric resolve, up to
+// two more reads) → catalog re-read → a six-way `Promise.all` → a usernames
+// read. Per-read budgets would let a saturated DB spend the budget six times
+// over, so the bound would MULTIPLY the worst case it exists to cap. These
+// assertions pin the shared deadline, not merely that some timeout exists.
+//
+// 🚨 The property that matters most is which failure a hang becomes. This module
+// already separates `{ data: null, ok: true }` — an ANSWER, "no such pin", which
+// the page is entitled to 404 on — from `{ data: null, ok: false }`. A read we
+// could not finish must never become the first one, on a URL collectors share.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Every table read never settles. */
+function hangingDb() {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "not", "in", "order", "limit"]) b[m] = () => b
+  b.maybeSingle = () => new Promise(() => {})
+  b.then = () => new Promise(() => {})
+  return { from: () => b, rpc: () => b }
+}
+
+/** Resolves each read after `perReadMs`, so a chain actually SPENDS the budget. */
+function slowDb(perReadMs: number, script: TableScript = { data: null, error: null }) {
+  const settle = () => new Promise((r) => setTimeout(() => r({ ...script }), perReadMs))
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "not", "in", "order", "limit"]) b[m] = () => b
+  b.maybeSingle = () => settle()
+  b.then = (onF?: (v: unknown) => unknown) => settle().then(onF)
+  return { from: () => b, rpc: () => b }
+}
+
+describe("load — bounded as a whole, and a hang is not a missing pin", () => {
+  it("a hung catalog read reports ok:false, never a 404", async () => {
+    const res = await load(RENDER, hangingDb())
+
+    expect(res.ok, "an overrun read must report FAILURE").toBe(false)
+    expect(res.data).toBeNull()
+    // ⚠ The absence of the false claim. `{ data: null, ok: true }` is the state
+    // the page renders as "this pin does not exist".
+    expect(res.data === null && res.ok === true).toBe(false)
+  }, 25_000)
+
+  it("a chain whose reads SPEND the budget still fails — the deadline is shared", async () => {
+    // ⚠ MUTATION-CHECKED. `RENDER` is not numeric, so this is catalog-read →
+    // (no resolve) → six-way bundle. At 5s a read against an 8s shared budget the
+    // bundle is cut; give each read its own 8s and the whole thing completes and
+    // this assertion reds — which is the property, not merely "a timeout exists".
+    const res = await load(RENDER, slowDb(5_000, { data: { render_id: RENDER }, error: null }))
+
+    expect(res.ok).toBe(false)
+    expect(res.data).toBeNull()
+  }, 30_000)
+
+  it("CONTROL — a read inside the budget still resolves, and an absent pin is still ok:true", async () => {
+    // Without this, a bound that failed unconditionally would satisfy both
+    // assertions above while `load` had stopped working entirely — and it also
+    // pins the branch the bound must NOT swallow: we asked, and there is no
+    // such pin.
+    const { db } = makeDb({ pinnacle_catalog: { data: null, error: null } })
+    const res = await load(RENDER, db)
+
+    expect(res).toEqual({ data: null, ok: true })
+  })
+})

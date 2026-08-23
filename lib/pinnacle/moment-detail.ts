@@ -26,6 +26,45 @@ import {
   type PinnacleMultiplierRow,
 } from "@/lib/pinnacle/serial-fmv"
 import type { PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+/**
+ * Wall-clock budget for the WHOLE of `load()`, shared across every read in it.
+ *
+ * ⚠ Shared, not per-read, because `load()` is a CHAIN: catalog read → (numeric
+ * resolve, up to two more reads) → catalog re-read → a six-way `Promise.all` →
+ * a usernames read. Six per-read budgets would let a saturated DB spend the
+ * budget six times over, and the bound would multiply the worst case it exists
+ * to cap.
+ *
+ * ⚠ And a read that is merely SLOW errors nowhere — supabase-js resolves
+ * `{ data, error }` only when the query finishes — so without this the page
+ * hangs on a streaming shell that Vercel logs as a 200.
+ */
+const PIN_LOAD_TIMEOUT_MS = 8_000
+
+/**
+ * A PostgREST row as this module has always handled it — loosely, because the
+ * shape guarantee lives in the `RenderData` / `LegacyData` types the function
+ * returns rather than at each query. Declared once so the bounded reads below do
+ * not each need their own escape hatch.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any
+
+/** The `{ data, error }` envelope every bounded read here resolves with. */
+type Envelope = { data: Row; error: { message: string } | null }
+
+/** Bound one read against a deadline shared by the whole `load()` call. */
+function bounded<T>(p: PromiseLike<T>, label: string, deadline: number): Promise<T> {
+  return withBoardBudget(
+    Promise.resolve(p),
+    label,
+    Math.max(1, deadline - Date.now()),
+    "pinnacle/moment/",
+  )
+}
+
 
 export const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 
@@ -149,34 +188,57 @@ const RESOLVE_FAILED = Symbol("resolve_failed")
 
 async function resolveNumericToRenderId(
   supa: any,
-  id: string
+  id: string,
+  // ⚠ Takes the CALLER's deadline rather than starting its own. This helper runs
+  // two more reads inside a chain that has already spent budget; giving it a
+  // fresh allowance is how a "bound" quietly becomes three.
+  deadline: number,
 ): Promise<string | null | typeof RESOLVE_FAILED> {
   if (!/^\d+$/.test(id)) return null
   // edition_id is the smaller (3-digit) space; check it first.
-  const { data: byEdition, error: edErr } = await supa
-    .from("pinnacle_catalog")
-    .select("render_id")
-    .eq("edition_id", id)
-    .maybeSingle()
-  if (edErr) {
-    console.log("[pinnacle/moment] resolve_by_edition_error", edErr.message)
+  let byEdition: Row
+  try {
+    const r = await bounded<Envelope>(
+      supa.from("pinnacle_catalog").select("render_id").eq("edition_id", id).maybeSingle(),
+      "resolve-by-edition",
+      deadline,
+    )
+    if (r.error) {
+      console.log("[pinnacle/moment] resolve_by_edition_error", r.error.message)
+      return RESOLVE_FAILED
+    }
+    byEdition = r.data
+  } catch (e) {
+    // ⚠ RESOLVE_FAILED, not null. `null` here means "asked, and no such pin",
+    // which the caller is entitled to render as a 404 — see PinLoad. A read we
+    // could not finish must not become that answer.
+    console.log("[pinnacle/moment] resolve_by_edition_bound", e instanceof Error ? e.message : e)
     return RESOLVE_FAILED
   }
   if (byEdition?.render_id) return byEdition.render_id as string
   // Otherwise treat it as an on-chain moment NFT id.
-  const { data: byMoment, error: mErr } = await supa
-    .from("wallet_moments_cache")
-    .select("render_id")
-    .eq("collection_id", PINNACLE_COLLECTION_ID)
-    .eq("moment_id", id)
-    .not("render_id", "is", null)
-    .limit(1)
-    .maybeSingle()
-  if (mErr) {
-    console.log("[pinnacle/moment] resolve_by_moment_error", mErr.message)
+  try {
+    const r = await bounded<Envelope>(
+      supa
+        .from("wallet_moments_cache")
+        .select("render_id")
+        .eq("collection_id", PINNACLE_COLLECTION_ID)
+        .eq("moment_id", id)
+        .not("render_id", "is", null)
+        .limit(1)
+        .maybeSingle(),
+      "resolve-by-moment",
+      deadline,
+    )
+    if (r.error) {
+      console.log("[pinnacle/moment] resolve_by_moment_error", r.error.message)
+      return RESOLVE_FAILED
+    }
+    return (r.data?.render_id as string) ?? null
+  } catch (e) {
+    console.log("[pinnacle/moment] resolve_by_moment_bound", e instanceof Error ? e.message : e)
     return RESOLVE_FAILED
   }
-  return (byMoment?.render_id as string) ?? null
 }
 
 /**
@@ -200,13 +262,27 @@ export async function load(
 ): Promise<PinLoad> {
   const supa = db
   const id = decodeId(rawId)
+  const deadline = Date.now() + PIN_LOAD_TIMEOUT_MS
 
   if (isLegacyKey(id)) {
-    const { data, error } = await supa
-      .from("pinnacle_catalog")
-      .select("render_id, character_name, set_name, variant, total_minted, fmv_usd, thumbnail_url")
-      .eq("legacy_edition_key", id)
-      .order("fmv_usd", { ascending: false, nullsFirst: false })
+    let data: unknown
+    let error: { message: string } | null = null
+    try {
+      ;({ data, error } = await bounded<{ data: unknown; error: { message: string } | null }>(
+        supa
+          .from("pinnacle_catalog")
+          .select(
+            "render_id, character_name, set_name, variant, total_minted, fmv_usd, thumbnail_url",
+          )
+          .eq("legacy_edition_key", id)
+          .order("fmv_usd", { ascending: false, nullsFirst: false }),
+        "legacy-read",
+        deadline,
+      ))
+    } catch (e) {
+      console.log("[pinnacle/moment] legacy_read_bound", e instanceof Error ? e.message : e)
+      return { data: null, ok: false }
+    }
     if (error) {
       console.log("[pinnacle/moment] legacy_read_error", error.message)
       return { data: null, ok: false }
@@ -216,26 +292,38 @@ export async function load(
     return { data: { kind: "legacy", key: id, renders }, ok: true }
   }
 
-  let { data: ed, error: edError } = await supa
-    .from("pinnacle_catalog")
-    .select(CATALOG_COLS)
-    .eq("render_id", id)
-    .maybeSingle()
+  let ed: Row
+  let edError: { message: string } | null = null
+  try {
+    ;({ data: ed, error: edError } = await bounded<Envelope>(
+      supa.from("pinnacle_catalog").select(CATALOG_COLS).eq("render_id", id).maybeSingle(),
+      "catalog-read",
+      deadline,
+    ))
+  } catch (e) {
+    console.log("[pinnacle/moment] catalog_read_bound", e instanceof Error ? e.message : e)
+    return { data: null, ok: false }
+  }
   if (edError) {
     console.log("[pinnacle/moment] catalog_read_error", edError.message)
     return { data: null, ok: false }
   }
   // Numeric id (edition_id or moment NFT id) → redirect onto its render_id.
   if (!ed) {
-    const resolved = await resolveNumericToRenderId(supa, id)
+    const resolved = await resolveNumericToRenderId(supa, id, deadline)
     // A FAILED resolve is not an absent pin — see PinLoad.
     if (resolved === RESOLVE_FAILED) return { data: null, ok: false }
     if (resolved) {
-      ;({ data: ed, error: edError } = await supa
-        .from("pinnacle_catalog")
-        .select(CATALOG_COLS)
-        .eq("render_id", resolved)
-        .maybeSingle())
+      try {
+        ;({ data: ed, error: edError } = await bounded<Envelope>(
+          supa.from("pinnacle_catalog").select(CATALOG_COLS).eq("render_id", resolved).maybeSingle(),
+          "catalog-reread",
+          deadline,
+        ))
+      } catch (e) {
+        console.log("[pinnacle/moment] catalog_reread_bound", e instanceof Error ? e.message : e)
+        return { data: null, ok: false }
+      }
       if (edError) {
         console.log("[pinnacle/moment] catalog_reread_error", edError.message)
         return { data: null, ok: false }
@@ -251,7 +339,14 @@ export async function load(
   // scarcity board already computes the per-variant average, so reuse it
   // rather than re-aggregating the catalog (and tripping the 1000-row cap on
   // big variant families).
-  const [salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes] = await Promise.all([
+  // ⚠ Bounded AS A GROUP, on the same shared deadline. Six separate budgets here
+  // would each be measured from the moment this line runs, which is already
+  // several reads deep — the chain above must count against them.
+  let salesRes: Row, holdersRes: Row, boardRes: Row, siblingsRes: Row
+  let fmvHistRes: Row, serialMultRes: Row
+  try {
+    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes] = await bounded<Row[]>(
+      Promise.all([
     supa
       .from("pinnacle_sales")
       .select("sale_price_usd, sold_at, serial_number, buyer_address, seller_address")
@@ -278,8 +373,18 @@ export async function load(
       .order("computed_at", { ascending: true })
       .limit(400),
     // P4: global Pinnacle serial-premium bands (first/low5/low20/normal → multiplier).
-    supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
-  ])
+      supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
+      ]),
+      "detail-bundle",
+      deadline,
+    )
+  } catch (e) {
+    // ⚠ `ok: false`, NOT a 404. Every panel below is derived from this group, and
+    // returning `{ data: null, ok: true }` would tell a visitor the pin does not
+    // exist because our database was busy.
+    console.log("[pinnacle/moment] detail_bundle_bound", e instanceof Error ? e.message : e)
+    return { data: null, ok: false }
+  }
 
   const siblings = Array.isArray(siblingsRes.data) ? (siblingsRes.data as SiblingRow[]) : []
   const sales = (salesRes.data ?? []) as SaleRow[]
@@ -300,12 +405,22 @@ export async function load(
     // lookup leaves nameByAddr empty and the buyer/seller columns render raw
     // addresses, which understates (the safe direction) rather than asserting
     // anything false. It must not participate in the ok/notFound decision.
-    const { data: unames } = await supa
-      .from("wallet_usernames")
-      .select("wallet_addr, username")
-      .in("wallet_addr", addrs)
-    for (const u of (unames as { wallet_addr: string; username: string | null }[] | null) ?? []) {
-      if (u.username) nameByAddr[u.wallet_addr.toLowerCase()] = u.username
+    try {
+      const { data: unames } = await bounded<{ data: unknown }>(
+        supa.from("wallet_usernames").select("wallet_addr, username").in("wallet_addr", addrs),
+        "usernames",
+        deadline,
+      )
+      for (const u of (unames as { wallet_addr: string; username: string | null }[] | null) ?? []) {
+        if (u.username) nameByAddr[u.wallet_addr.toLowerCase()] = u.username
+      }
+    } catch (e) {
+      // ⚠ Swallowed on purpose, matching the note above: this is DECORATION, and
+      // its failure leaves raw addresses, which understates rather than asserting
+      // anything false. It must NOT flip ok/notFound. Logged rather than silent,
+      // because a bound nobody can see is indistinguishable from one that never
+      // fires.
+      console.log("[pinnacle/moment] usernames_bound", e instanceof Error ? e.message : e)
     }
   }
 

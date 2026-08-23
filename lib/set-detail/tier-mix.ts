@@ -20,6 +20,23 @@
 // structural, so this was the one read on the page that could fail quietly.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+/**
+ * Wall-clock budget for the WHOLE paged sweep, not per page.
+ *
+ * ⚠ Per-page would be the wrong shape here and the arithmetic says why: the loop
+ * runs up to `MAX_ROWS / PAGE` = 60 iterations, so a 5s per-page budget would
+ * bound this read at five MINUTES — a ceiling far above the ~30s a document has,
+ * i.e. no bound at all in practice. One deadline shared across the loop is what
+ * the caller actually needs.
+ *
+ * ⚠ And a read that is merely SLOW errors nowhere: supabase-js resolves
+ * `{ data, error }` only when the query finishes, so without this the set page
+ * hangs on a streaming shell that Vercel logs as a 200.
+ */
+const TIER_MIX_TIMEOUT_MS = 6_000
+
 
 /** PostgREST caps a read at 1,000 rows, so the mix is paged. */
 export const PAGE = 1000
@@ -66,17 +83,40 @@ export async function fetchFullTierMix(
   if (names.length === 0) return { rows: [], ok: true }
 
   const counts = new Map<string, number>()
+  const deadline = Date.now() + TIER_MIX_TIMEOUT_MS
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
-    const { data, error } = await db
-      .from("editions")
-      .select("tier")
-      .eq("collection_id", collectionId)
-      .in("set_name", names)
-      .not("thumbnail_url", "is", null)
-      // ⚠ ORDERED: paging an unordered read can repeat or skip rows between
-      // pages, so the counts would be over a set that never existed.
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1)
+    let data: unknown
+    let error: { message: string } | null = null
+    try {
+      ;({ data, error } = await withBoardBudget<{
+        data: unknown
+        error: { message: string } | null
+      }>(
+        Promise.resolve(
+          db
+            .from("editions")
+            .select("tier")
+            .eq("collection_id", collectionId)
+            .in("set_name", names)
+            .not("thumbnail_url", "is", null)
+            // ⚠ ORDERED: paging an unordered read can repeat or skip rows between
+            // pages, so the counts would be over a set that never existed.
+            .order("id", { ascending: true })
+            .range(from, from + PAGE - 1),
+        ),
+        "tier-mix",
+        Math.max(1, deadline - Date.now()),
+        "set/",
+      ))
+    } catch (e) {
+      // ⚠ Falls into the SAME discard-the-partials branch as an error, and for
+      // the same reason spelled out below: a truncated mix is not a smaller
+      // answer, it is a WRONG one. Running out of budget mid-sweep is exactly
+      // the case where the temptation to keep what we have is strongest and the
+      // percentages would still sum to 100.
+      console.error("[set] tier mix bound", e instanceof Error ? e.message : e)
+      return { rows: [], ok: false }
+    }
     if (error) {
       console.error("[set] tier mix error", error.message)
       // ⚠ Discard the partial counts. A truncated mix is not a smaller answer,

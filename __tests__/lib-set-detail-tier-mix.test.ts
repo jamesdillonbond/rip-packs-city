@@ -193,3 +193,97 @@ describe("buildTierMixRows", () => {
     expect(buildTierMixRows([], [])).toEqual([])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUND — the sweep gets ONE deadline, not one per page.
+//
+// ⚠ The arithmetic is the whole point. The loop runs up to `MAX_ROWS / PAGE` =
+// 60 iterations, so a per-page budget of even 5s would bound this read at five
+// MINUTES — a ceiling far above the ~30s a document has, which is no bound at
+// all. A shared deadline is what the caller actually needs, and these assertions
+// pin it: a sweep whose FIRST page is slow must fail, and so must one whose
+// LATER page is slow after earlier pages already spent the budget.
+//
+// ⚠ Both land in the existing discard-the-partials branch, for the reason the
+// module already states: a truncated mix is not a smaller answer, it is a WRONG
+// one — the percentages would still sum to 100 and read as complete. Running out
+// of budget mid-sweep is exactly where the temptation to keep the partial counts
+// is strongest.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A db whose `.range()` resolves normally for the first `fastPages` calls and
+ * then never settles.
+ */
+function dbHangingAfter(fastPages: number) {
+  let i = 0
+  const builder: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "in", "not", "order"]) builder[m] = () => builder
+  builder.range = () => {
+    const n = i++
+    if (n < fastPages) return Promise.resolve({ data: pageOf(PAGE, "COMMON"), error: null })
+    return new Promise(() => {})
+  }
+  return { from: () => builder }
+}
+
+/**
+ * A db whose every page takes `perPageMs`, returning FULL pages so the loop
+ * keeps going, and a short page at `endAfter` so a sweep that survives can end.
+ *
+ * ⚠ THE DELAY IS THE POINT. An earlier draft of the shared-deadline test used
+ * INSTANT pages and a hang on the third — and a mutation to a per-page budget
+ * PASSED it, because instant pages spend none of the budget and the third page
+ * times out either way. That is the vacuous-assertion shape this repo keeps
+ * recording: the comment stated "the deadline is shared" while the assertion
+ * tested something weaker. Only pages that actually CONSUME the budget can tell
+ * the two designs apart.
+ */
+function dbSlowPages(perPageMs: number, endAfter: number) {
+  let i = 0
+  const builder: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "in", "not", "order"]) builder[m] = () => builder
+  builder.range = () => {
+    const n = i++
+    return new Promise((resolve) =>
+      setTimeout(
+        () => resolve({ data: pageOf(n >= endAfter ? 1 : PAGE, "COMMON"), error: null }),
+        perPageMs,
+      ),
+    )
+  }
+  return { from: () => builder }
+}
+
+describe("fetchFullTierMix — the sweep is bounded as a whole", () => {
+  it("a first page that hangs reports ok:false, not a partial mix", async () => {
+    const res = await fetchFullTierMix("c1", ["Set A"], dbHangingAfter(0))
+
+    expect(res.ok, "an overrun sweep must report FAILURE").toBe(false)
+    expect(res.rows).toEqual([])
+    // ⚠ The absence of the false claim: rows with ok:true is a COMPLETE mix.
+    expect(res.rows.length > 0 && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("pages that SPEND the budget exhaust it — the deadline is shared, not per page", async () => {
+    // ⚠ MUTATION-CHECKED IN BOTH DIRECTIONS. With the 6s budget shared, pages of
+    // 2.5s each mean page 3 gets ~1s and is cut, so the sweep fails and the
+    // counts already gathered are discarded. Swap the shared deadline for a
+    // per-page `TIER_MIX_TIMEOUT_MS` and every page gets a fresh 6s, the sweep
+    // finishes in ~10s, and this assertion reds — which is the whole property.
+    const res = await fetchFullTierMix("c1", ["Set A"], dbSlowPages(2_500, 3))
+
+    expect(res.ok, "a sweep that ran past its shared deadline must FAIL").toBe(false)
+    expect(res.rows, "partial counts must be discarded, not published as the mix").toEqual([])
+  }, 30_000)
+
+  it("CONTROL — a sweep inside the budget still returns its counts", async () => {
+    // Without this, a bound that failed unconditionally would satisfy both
+    // assertions above while the function had stopped working.
+    const { db } = dbReturning([{ data: pageOf(3, "RARE") }])
+    const res = await fetchFullTierMix("c1", ["Set A"], db)
+
+    expect(res.ok).toBe(true)
+    expect(res.rows).toEqual([{ tier: "RARE", n: 3 }])
+  })
+})
