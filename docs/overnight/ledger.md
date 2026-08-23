@@ -8,6 +8,71 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — R47 / known-issues #28: the sitemap stops publishing a partial catalogue as a complete one, and the ratchet that was GREEN on it now sees the property it cites
+
+**`lib/sitemap-data.ts` · `app/sitemap/[id]/route.ts` · four backfills · `/api/badges` · the ratchet.**
+CLAUDE.md has carried this as **OPEN: #28** since it was filed.
+
+## 1. A partial sitemap under a 200 tells Google the missing pages are GONE
+
+`fetchAllByCollection` logged and **`break`d** on a page error and returned what it had. From a production
+runtime log: `editions page 24000 error: canceling statement due to statement timeout`, **served under a
+200** — segment 3 built its whole set/player/team universe from **24,000 of 27,121** editions.
+⚠ **No caller could tell a truncated list from a complete one; the only difference was a log line.** There
+is no copy to grep for this class — **the tell is the control-flow keyword.**
+
+Now: a typed `SitemapReadIncomplete`, and the route serves **503 with `Retry-After` and `no-store`**.
+⚠ **Not 404 and not an empty `<urlset>`** — both are affirmative statements; a 5xx is the one answer that
+makes a crawler retry and **keep the sitemap it already has**.
+
+⚠ **`break` was only half of it — the swallow one level up was the other half.** Every enumerator ended
+`catch { return [] }`, and `!url || !key` returned `[]` too, so a throw would have been converted straight
+back into the same empty list. **A missing key is not an empty catalogue.** All six read arms rethrow now
+(editions · packs · pinnacle · profiles · series · the maxRows exhaustion, which was a third silent
+truncation: "we stopped counting" is not "that is all of them").
+
+## 2. 🚨 EIGHT TESTS PINNED THE DEFECT, TWO WITH IT IN THEIR NAME
+
+`"...is caught → segment returns []"` and `"...short-circuits edition enumeration to []"`. A whole block
+header stated it as a design goal: *"returns [] on a throw, so a malformed payload from one table costs
+Googlebot that table's URLs — not the whole sitemap segment."* **Costing Googlebot "that table's URLs" IS
+telling it those pages are gone.** All eight **inverted, not deleted**, each paired with a no-change control
+that a genuinely empty table still resolves.
+
+## 3. The ratchet was GREEN on this, and its own header says why
+
+`paginated-range-requires-order-ratchet` asserts `.order()` **PRESENCE**; the rule its header states is that
+the key must be **UNIQUE**. ⚠ **A guard whose assertion is weaker than the rule it cites reads as coverage
+for that rule.** Re-measured live: `editions.updated_at` is **8,927 distinct values over 27,121 rows —
+68.4% of rows tied, largest group 1,084**. ⚠ **That is WIDER THAN THE 1,000-ROW PAGE**, the case where loss
+is not merely possible but forced. *(R47 quoted 27,246 / 72% on 08-22 — both moved; dated samples.)*
+
+**New ban at zero, population measured BEFORE the assertion was written: 6 sites, all fixed here** — the
+sitemap, four backfills, and **`/api/badges`, which is USER-FACING**: it sorts by a column from the query
+string, every allowed value non-unique (`badge_score` heavily so), so a collector paging that board sees
+rows repeat on one page and vanish from another, with the totals still correct.
+
+## 🚨 The two mutations that mattered
+
+**The guard I wrote for R47 could not see the site R47 found.** `fetchAllByCollection` takes its order
+column as a **parameter**, so a literal-only detector reported ZERO on it — and on `/api/badges`. Widened:
+a **sole non-literal** order key counts, because an unknown key cannot be shown to be deterministic.
+
+**And a static check can never see the tiebreaker's VALUE.** Swapping `getEditionRows`'s `'id'` back to
+`'updated_at'` left the widened ban green while restoring the defect in full. So the value check lives where
+the value exists — `assertUsableTiebreak()` — and **it caught a live one the moment it was written:
+`getPackRows` passed `'dist_id'` as BOTH keys**, which reads as a tiebreaker and provides nothing.
+**A shape check and a value check are different guards.**
+
+## ⛔ One detector deliberately NOT shipped, stated rather than dropped
+
+A `if (error) … break`-inside-a-paging-loop detector finds **one** site: `app/api/market/route.ts`, which is
+**already correct** — it carries a `complete` flag and only caches when complete. A guard whose only hit is
+correct code reddens correct code, and this repo records that such guards get worked around. The good
+pattern is worth naming instead: **carry `complete:false`, or throw.**
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — the per-section degradation VERIFIED END-TO-END in production, both directions, and R19's long-standing "not established" is now established
 
 **No code. A verification, and it is the one R19 explicitly said it did not have.** That row has carried
