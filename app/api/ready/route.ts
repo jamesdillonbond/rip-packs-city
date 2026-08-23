@@ -101,9 +101,15 @@ export async function GET() {
       slug: DB_TO_FRONTEND[c?.slug] ?? c?.slug ?? null,
       db_slug: c?.slug ?? null,
       name: c?.name ?? null,
-      // Never coerce a missing count to 0 — a fabricated zero here renders as
-      // "THIN-VOLUME ECOSYSTEM" on a collection that may be trading heavily.
+      // ⚠ `sales_24h` is a BOUNDED PROBE: exact when <= 10, NULL above. It is
+      // NOT a volume figure any more and must not be compared to a threshold —
+      // `thin_volume` is the answer. Counting the real 24 h volume cost ~8,000
+      // buffers / ~340 disk reads and 4.9-24.5 s against an 8 s anon ceiling,
+      // which is why this route 500'd on essentially every request.
       sales_24h: typeof c?.sales_24h === "number" ? c.sales_24h : null,
+      // ⚠ null, not false, when absent. `false` would assert "not thin" out of
+      // a missing field — the fabricated-boolean version of `?? 0`.
+      thin_volume: typeof c?.thin_volume === "boolean" ? c.thin_volume : null,
       last_sale_at: c?.last_sale_at ?? null,
     }));
 

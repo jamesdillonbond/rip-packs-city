@@ -154,10 +154,26 @@ describe("collection analytics — a failed section read is not an empty market"
       swallows.length,
       `bare .catch(() => {}) sites:\n${swallows.map(([l, i]) => `  ${i + 1}: ${l.trim()}`).join("\n")}`,
     ).toBe(1)
-    // ...and it really is the readiness probe: the fetch is within a few lines above.
+    // ...and it really is the readiness probe.
+    //
+    // ⚠ ANCHOR ON THE NEAREST `fetch(` ABOVE, not on a fixed 10-line window.
+    // The window version broke on 2026-08-23 for a reason that had nothing to
+    // do with what it guards: a COMMENT was added above the swallow explaining
+    // the thin_volume change, which pushed the `fetch(` out of view and the
+    // guard reported that the surviving swallow was no longer the readiness
+    // probe. It still was. A proximity guard measured in LINES is really
+    // measuring how much you documented, and documenting more must not look
+    // like a regression. Walking back to the nearest fetch is exact, and it
+    // still fails if a DIFFERENT fetch's swallow ever becomes the survivor.
     const [, lineIdx] = swallows[0]
-    const context = lines.slice(Math.max(0, lineIdx - 10), lineIdx).join("\n")
-    expect(context, "the surviving swallow must be the /api/ready probe").toContain('fetch("/api/ready"')
+    let fetchIdx = -1
+    for (let i = lineIdx; i >= 0; i--) {
+      if (/\bfetch\s*\(/.test(lines[i])) { fetchIdx = i; break }
+    }
+    expect(fetchIdx, "no fetch( found above the surviving swallow").toBeGreaterThanOrEqual(0)
+    expect(lines[fetchIdx], "the surviving swallow must belong to the /api/ready probe").toContain(
+      'fetch("/api/ready"',
+    )
   })
 
   // ── The BLOCK-form swallow, which the census above could not see ───────────

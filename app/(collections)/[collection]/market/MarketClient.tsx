@@ -80,7 +80,10 @@ type MarketResponse = {
 type HealthPerCollection = {
   slug: string
   name: string
+  /** ⚠ Bounded probe: exact when <= 10, NULL above. Not a volume figure. */
   sales_24h: number | null
+  /** The thin-volume answer itself. null = unknown, and unknown is not thin. */
+  thin_volume: boolean | null
   last_sale_at: string | null
 }
 
@@ -331,7 +334,13 @@ function MarketInner() {
     return () => { cancelled = true }
   }, [collectionId])
 
-  const thinVolume = healthRow != null && (healthRow.sales_24h ?? 0) < 10
+  // ⚠ READS `thin_volume`, NOT `sales_24h`. Since 2026-08-23 `sales_24h` is a
+  // BOUNDED PROBE — exact when <= 10, NULL above — so the old
+  // `(sales_24h ?? 0) < 10` would coerce "busy" to 0 and render
+  // "THIN-VOLUME ECOSYSTEM" on Top Shot. The server does the comparison now
+  // because only the server knows the probe's bound.
+  // `=== true` is deliberate: null means UNKNOWN and must not claim thin.
+  const thinVolume = healthRow?.thin_volume === true
 
   // ── Filter dropdown options (derived from current results) ───────────
   const availableTiers = COLLECTION_TIERS[collectionId] ?? []

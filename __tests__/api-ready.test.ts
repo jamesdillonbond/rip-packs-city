@@ -103,6 +103,29 @@ describe("GET /api/ready", () => {
     expect(body.per_collection[1].sales_24h).toBeNull()
   })
 
+  it("passes thin_volume through, and an ABSENT flag is null — never false", async () => {
+    // ⚠ `sales_24h` is a BOUNDED PROBE now (exact <= 10, NULL above), so it is
+    // no longer comparable to a threshold and the clients read `thin_volume`.
+    // An absent flag must be null, not false: `false` would assert "not thin"
+    // out of a missing field — the fabricated-boolean version of `?? 0`.
+    state.data = [
+      { slug: "nba_top_shot", name: "NBA Top Shot", sales_24h: null, thin_volume: false, last_sale_at: null },
+      { slug: "laliga_golazos", name: "LaLiga Golazos", sales_24h: 2, thin_volume: true, last_sale_at: null },
+      { slug: "ufc_strike", name: "UFC Strike", sales_24h: 0, thin_volume: true, last_sale_at: null },
+      { slug: "nfl_all_day", name: "NFL All Day", last_sale_at: null },
+    ]
+    const body = await (await GET()).json()
+    expect(body.per_collection[0].thin_volume).toBe(false)
+    expect(body.per_collection[0].sales_24h).toBeNull()
+    expect(body.per_collection[1].thin_volume).toBe(true)
+    expect(body.per_collection[1].sales_24h).toBe(2)
+    // no-change control: a genuine zero is still a zero AND still thin.
+    expect(body.per_collection[2].sales_24h).toBe(0)
+    expect(body.per_collection[2].thin_volume).toBe(true)
+    // absent flag -> null, not false
+    expect(body.per_collection[3].thin_volume).toBeNull()
+  })
+
   it("the SUCCESS path is edge-cached and the FAILURE path is NOT", async () => {
     // ⚠ The asymmetry IS the design and is easy to lose in a refactor. Success
     // carries s-maxage so an anon-hittable route stops paying ~340 disk reads

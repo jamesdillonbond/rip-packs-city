@@ -416,9 +416,23 @@ describe("CollectionAnalyticsClient — the thin-volume notice", () => {
   })
 
   it("says so when the health read genuinely reports thin volume", async () => {
-    routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nba-top-shot", sales_24h: 3 }] })
+    // ⚠ Reads `thin_volume`, not `sales_24h`. Since 2026-08-23 `sales_24h` is a
+    // BOUNDED PROBE (exact <= 10, NULL above) and is not comparable to a
+    // threshold — the server does the comparison, because only it knows the bound.
+    routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nba-top-shot", sales_24h: 3, thin_volume: true }] })
     render(<CollectionAnalyticsClient />)
     await waitFor(() => expect(document.body.textContent).toMatch(/thin.volume/i))
+  })
+
+  it("a BUSY collection reports sales_24h: null and must NOT read as thin", async () => {
+    // 🚨 The regression this exists to catch: the pre-2026-08-23 expression
+    // `(sales_24h ?? 0) < 10` coerces the bounded probe's NULL to 0 and renders
+    // the thin-volume caveat on Top Shot — a false claim about the market
+    // produced by a performance fix.
+    routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nba-top-shot", sales_24h: null, thin_volume: false }] })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toBeTruthy())
+    expect(document.body.textContent).not.toMatch(/thin.volume ecosystem . analytics directional only/i)
   })
 })
 

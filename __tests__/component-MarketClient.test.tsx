@@ -190,10 +190,37 @@ describe("MarketClient — the thin-volume notice", () => {
   })
 
   it("says so when the health read genuinely reports thin volume", async () => {
-    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 2, fmv_coverage_pct: 40 }] })
+    // ⚠ Reads `thin_volume`, not `sales_24h`. Since 2026-08-23 `sales_24h` is a
+    // BOUNDED PROBE (exact when <= 10, NULL above) and is no longer comparable
+    // to a threshold — the server does the comparison, because only the server
+    // knows the bound.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 2, thin_volume: true }] })
     marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
     render(<MarketClient />)
     await screen.findByText(/Thin-volume ecosystem/)
+  })
+
+  it("a BUSY collection reports sales_24h: null and must NOT read as thin", async () => {
+    // 🚨 THE REGRESSION THIS PAIR EXISTS TO CATCH. The bounded probe returns
+    // NULL above 10, so the pre-2026-08-23 client expression
+    // `(sales_24h ?? 0) < 10` coerces "busy" to 0 and renders
+    // "THIN-VOLUME ECOSYSTEM" on Top Shot — the loudest possible false claim
+    // about the market, produced by a performance fix.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: null, thin_volume: false }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
+  })
+
+  it("an UNKNOWN flag is not a thin claim", async () => {
+    // null/absent means we do not know. `=== true` is what keeps that from
+    // becoming an assertion — the boolean version of the `?? 0` defect.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: null, thin_volume: null }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
   })
 
   it("survives a health payload with no per_collection array", async () => {

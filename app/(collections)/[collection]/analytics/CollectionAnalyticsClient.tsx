@@ -916,8 +916,13 @@ function AnalyticsInner() {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled || !j?.per_collection) return
-        const row = (j.per_collection as Array<{ slug: string; sales_24h: number }>).find((r) => r.slug === collection)
-        setThinVolumeReady(row != null && (row.sales_24h ?? 0) < 10)
+        // ⚠ READS `thin_volume`, NOT `sales_24h`. Since 2026-08-23 `sales_24h`
+        // is a BOUNDED PROBE (exact when <= 10, NULL above), so the old
+        // `(sales_24h ?? 0) < 10` would coerce "busy" to 0 and render the
+        // thin-volume caveat on Top Shot. `=== true` because null is UNKNOWN,
+        // and unknown must not assert thin.
+        const row = (j.per_collection as Array<{ slug: string; thin_volume: boolean | null }>).find((r) => r.slug === collection)
+        setThinVolumeReady(row?.thin_volume === true)
       })
       .catch(() => {})
     return () => { cancelled = true }
