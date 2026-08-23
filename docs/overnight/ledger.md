@@ -8,6 +8,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — the per-section degradation VERIFIED END-TO-END in production, both directions, and R19's long-standing "not established" is now established
+
+**No code. A verification, and it is the one R19 explicitly said it did not have.** That row has carried
+⚠ *"NOT established: that a user has seen the branded page"* since the four-page fix, because the only probe
+run came back **CONFOUNDED** (500 on the old deploy, 200 on the new — deploy and load both changed).
+
+**This one is not confounded: one deploy, one load, both directions read on the same build**
+(`dpl_6RsSY…`, sha `b601f6f4`), fetched as **rendered DOM, not an HTTP code** — these are streaming shells
+and always return 200.
+
+⚠ **Direct egress to `www.rippackscity.com` is BLOCKED from this sandbox** (the agent proxy answers
+`connect_rejected` / 403 to CONNECT; `recentRelayFailures` names the host). The deployment URL is reachable
+through the **Vercel MCP's server-side fetch** instead. Worth knowing before anyone else concludes the site
+is down from a `curl` here.
+
+## Positive control — `/nba-top-shot/series/series-7`, the page R49 says fails
+
+Its section reads **did fail during this render**, and the page still served:
+
+- ✅ **Hero survives**: `Series 7`, season `2025-26`.
+- ✅ **All five stat cells survive**: Editions · Sets · Players · FMV Total · Floor Total.
+- ✅ **The editions grid says so**: *"Couldn't load the editions in this series … it does **not** mean there
+  are none."*
+- ✅ **So do the cards** — `cardsUnavailable` fired too: *"Couldn't load this series' sets and players."*
+  Without it the section would simply not have rendered, which on a page whose stat strip prints a set count
+  is the two-state collapse in its quietest form.
+- ✅ **The ItemList JSON-LD is WITHHELD.** Only two `application/ld+json` blocks remain, and neither is the
+  page's own: the site `WebApplication` and the **segment layout's** `CollectionPage`, whose `@id` is
+  `/nba-top-shot` — the collection hub, not the series URL. `numberOfItems` appears **zero** times.
+
+**Before this ship the same URL rendered "Couldn't load series-7" and nothing else.**
+
+## No-change control — `/nfl-all-day/series/series-4`, whose reads succeed
+
+**75** `/edition/` links · **18** `/set/` links · all three sections rendered · `ItemList` + `numberOfItems`
+present · **zero** occurrences of the unavailable copy. The gating did not leak onto a working page.
+
+## ⚠ What this does NOT claim
+
+**I did not make the query work.** `get_series_editions` is still 6,615 ms / 32,484 buffers at 4,895
+editions and still loses to the 8 s ceiling; its fix is still the missing precomputed latest-FMV-per-edition
+object (R6 / R49 / R50). **What changed is what the reader is told when it loses** — a 200 carrying the
+series' real name and totals plus an honest note, instead of a page-shaped apology. Recording the
+distinction because "series-7 is fixed" is exactly the over-claim this file keeps catching.
+
+**Revert path:** none — measurement only, no code and no DB.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the FIFTH page, and the half a component already knew but was never told
 
 **`edition/[slug]` — the product's highest-traffic public page — plus `FmvHistoryChart`.** Named as open in
