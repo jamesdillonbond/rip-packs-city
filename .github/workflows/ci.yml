@@ -367,9 +367,30 @@ jobs:
           # sails through. That is not hypothetical — commit 2966c0a did exactly that on
           # 2026-07-19 (356 -> 356) while destroying an entry holding revert paths for two
           # live prod views. Set comparison catches the swap; counts never could.
-          git show HEAD~1:"$LEDGER" 2>/dev/null | grep '^### ' | sort -u > /tmp/led_before || true
-          grep '^### ' "$LEDGER" | sort -u > /tmp/led_after || true
-          GONE=$(comm -23 /tmp/led_before /tmp/led_after || true)
+          # ⚠ THE LOST SET IS COMPUTED BY A DETECTOR, NOT BY `comm`, AND THAT IS A FIX.
+          # A bare set difference reported the ONE repair the future-date arm above
+          # DEMANDS: correcting a heading's date removes one heading string and adds
+          # another, so the count holds and the set moves. Measured 2026-08-22/23 —
+          # 0fa5388b failed the future-date arm, and 2d082db1, the correction it
+          # demanded, failed THIS arm. The guard punished compliance, and the only
+          # escapes were mislabelling the commit [ledger-roll] or leaving main red.
+          # scripts/find-clobbered-ledger-headings.mjs exempts a heading whose BODY
+          # (the text after the date) reappears in the after-file, and nothing else:
+          # a delete, a remove-one/add-one swap and a re-WORDED heading are all still
+          # reported. Its header carries the full reasoning.
+          git show HEAD~1:"$LEDGER" > /tmp/led_before_full 2>/dev/null || : > /tmp/led_before_full
+          cp "$LEDGER" /tmp/led_after_full
+          grep '^### ' /tmp/led_before_full | sort -u > /tmp/led_before || true
+          grep '^### ' /tmp/led_after_full | sort -u > /tmp/led_after || true
+          CLOB=$(node scripts/find-clobbered-ledger-headings.mjs /tmp/led_before_full /tmp/led_after_full) || CLOB=""
+          if [ -z "$CLOB" ]; then
+            echo "::error::the ledger clobber detector produced no output, so it did not run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+            exit 1
+          fi
+          GONE=""
+          if [ "$CLOB" -gt 0 ]; then
+            GONE=$(node scripts/find-clobbered-ledger-headings.mjs --show /tmp/led_before_full /tmp/led_after_full) || GONE="(detector failed to list them)"
+          fi
           BEFORE=$(wc -l < /tmp/led_before | tr -d ' ')
           AFTER=$(wc -l < /tmp/led_after | tr -d ' ')
           echo "ledger entries: $BEFORE -> $AFTER"
