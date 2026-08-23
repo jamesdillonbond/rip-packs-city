@@ -49,9 +49,8 @@ Filed as `inbox/2026-08-23T0510Z-the-rls-invariant-check-is-red-on-a-table-that-
 and register **R51**; the index entry was added in the same turn, and the new index guard would have
 red-ed the build if I had forgotten it.
 
-**Revert path:** docs only. `git revert <sha>` — resolve with
-`git log -1 --format=%H --grep='the file that wins on any disagreement'`; no DB half, and nothing in
-this entry changed prod state.
+**Revert path:** docs only — `git revert 9126a351` (schema-truth + filing + R51) and `git revert 16a74f0b`
+(this entry). **Shas read after the push.** No DB half; nothing in this entry changed prod state.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 2) — the inbox INDEX rotted the same day it was written, three of my own hours-old figures were already stale, and "/api/ready is fixed" meant fixed in a calm band
 
