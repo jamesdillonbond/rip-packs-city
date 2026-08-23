@@ -8,6 +8,84 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — R19's last open half: a failed structural read now costs the reader ONE SECTION, not the page
+
+**Four public entity pages (`set` / `team` / `player` / `series`), plus the helper and the guard.** R19's row
+had carried "STILL OPEN: per-section degradation beats whole-page" since the four-page fix landed this
+morning. This closes it, and the case for it is bigger than the row implied.
+
+## What was actually being thrown away
+
+`lib/entity-section-rpc.ts` marks some section reads `structural: true`, and those THROW rather than render
+a real entity with a convincingly empty catalogue. That policy is right and is unchanged. What was wrong was
+**where each page caught it**: at the very top of the render, returning the page's own whole-page
+`*Unavailable`.
+
+⚠ **The reads have different costs, so the failure was never the whole page's.** On
+`/nba-top-shot/series/series-7`, `get_series_detail` answers in **~18 ms** off `series_detail_rollup` while
+`get_series_editions` costs **6,615 ms / 32,484 buffers** against an 8 s ceiling (R49) — so the editions read
+is the only one that fails, and the reader was shown "couldn't load series-7" on a page whose name, season,
+edition count, set count, player count, FMV total and floor total were **already read and already true**.
+
+🚨 **The TEAM page was the sharpest case, and it is not the one R19 described.** The roster shares a
+**six-way `Promise.all`**, and a rejected `Promise.all` **discards its SETTLED siblings**. One roster timeout
+was costing the activity feed, the sets, the squeeze list, the next game and the top editions — five sections
+that had come back fine.
+
+## What shipped
+
+- **`structuralSection(tag, read)`** in `lib/entity-section-rpc.ts` — absorbs the throw into `{rows, ok}` so
+  each leg reports for itself. ⚠ `ok: false` is NOT `rows: []`: a caller that renders the empty array is back
+  to publishing "none" for "we could not look", which is the collapse that file's header spends forty lines on.
+- **`SectionUnavailable`** in `components/entity/_shared.tsx` — the in-section honest panel. Says it is our
+  failure and explicitly **not** a claim that there are none.
+- **All four pages** converted. The detail read keeps its whole-page `*Unavailable` — there is no page left to
+  degrade when the detail is what failed.
+- ⚠ **A machine-readable half had to ship with it.** `collectionEntityJsonLd` publishes
+  `numberOfItems: items.length`, so `set` and `series` were handing a crawler a structured-data claim that a
+  4,895-edition series holds none — the fabricated-number shape, **in the one place no human proof-reads it**.
+  The `<script>` is now WITHHELD on a failed read: no claim beats a false one.
+- **Derived state inherits the read's state.** The player page's set cards come from `buildPlayerSetCards(editions)`
+  and the set page's tier bar falls back to sampling the fetched page — both would have rendered off `[]`.
+
+## Two guards fired, and only one of them was right
+
+⚠ **`server-pages-error-vs-absent-guard` went RED ON CORRECT CODE.** It required the literal
+`tierMix.ok ? buildTierMixRows(tierMix.rows, editions)`, and my change **strengthened** that gate to
+`tierMix.ok && editionsOk ? …` (the sample leg reads the editions page, and that read can now fail on its
+own). **It pinned the spelling, not the property.** Fixed by parsing the condition instead of matching it —
+exactly one call, on the true branch of a gate naming `tierMix.ok`, no `||` widening, `[]` on the false
+branch. Mutation-proven with a **no-change control**: reordering the operands must still pass, and does.
+
+✅ **`entity-pages-bound-their-detail-read` was RIGHT, and I did not weaken it.** It bans an unguarded
+`await Promise.all` in an entity page body, and my first version of this change removed the outer try. The
+tempting fix was to teach the guard that `structuralSection` counts as a catch. **The honest fix was to keep
+the try** — a decorative fetcher cannot throw *by policy*, but an unexpected throw still rejects the whole
+`Promise.all`, and **on an ISR route `error.tsx` does not run**. So the outer try stays as a LAST RESORT
+whose catch marks every section failed and lets the page render. It must never return a whole-page view, and
+a mutation that makes it do so is caught.
+
+## 🚨 The guard missed a real mutation, and the reason generalises
+
+The rewritten guard passed on correct code and caught four of five mutations. The one it MISSED: swapping
+`{editionsOk ? (<grid/>) : (<SectionUnavailable/>)` for `{true ? …`. Both the identifier (used elsewhere on
+the page) and the literal `<SectionUnavailable` (now an **unreachable branch**) are still in the source, so
+every presence check still passed while the page rendered an empty grid out of a failed read.
+
+⚠ **Presence of a component is not evidence it is reached.** Fixed with a same-branch assertion
+(`{okVar ? … <SectionUnavailable` within one window). **7 page mutations + 4 helper mutations + 4 tier-bar mutations (one a no-change control), all correct**,
+each restore verified by content hash rather than by a command exiting 0.
+
+The old guard was **rewritten, not deleted**, and its rung-2 assertion is kept **inverted** inside the new one
+— so a page that reinstates the whole-page catch fails a file still named "degrade in brand".
+
+**Left open, deliberately:** `app/(collections)/[collection]/edition/[slug]/page.tsx` has the identical rung-2
+shape (five fetches in one `Promise.all`, one page-level catch) on the product's highest-traffic public page.
+It carries no `structural: true` read, so this guard's tree-derived population does not include it, and its
+five fetchers are heterogeneous enough to deserve their own pass. **Named here rather than quietly skipped.**
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass, part 11 / close-out) — the night's rules promoted into the reference docs, and CLAUDE.md paid for the two that belong in it
 
 **Docs only. No DB, no migration, no prod-state change.** Closing the thread, so everything durable is
