@@ -23,7 +23,7 @@ All under `docs/reference/`:
 - **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, Cadence gotchas.
 - **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`session-and-archive-conventions.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
 - **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing.**
-- **`schema-truth.md`** — read from the live DB; **wins on any disagreement with prose — but only as fresh as its stamp** (it has no generator script and once sat 25 days stale while outranking a correct doc).
+- **`schema-truth.md`** — read from the live DB; **wins on any disagreement with prose — but only as fresh as its stamp** (no generator script; it once sat 25 days stale outranking a correct doc).
 
 ---
 
@@ -211,12 +211,12 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 
 ### Two collection-string conventions (CRITICAL footgun)
 
-Two vocabularies, not interchangeable — mixing them fails INSERTs against CHECK constraints.
+Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes.
 
 - **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
 - **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
 
-Writing `'ufc_strike'` to a `flowty_*` table fails at INSERT. The bridge is the `analytics_sales` view (long → short via CASE).
+⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22; the other two carry no `collection` CHECK), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches. Bridge: the `analytics_sales` view (long → short via CASE).
 
 ### Collection UUIDs
 
@@ -230,13 +230,13 @@ TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1a
 
 ### Series map (on-chain UInt32 → display name)
 
-`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These names are the REPO's; the live `collection_series.display_label` says `Series 5/6/7` for 6/7/8 and drives the Collection tab's filter via `/api/collection-series`** — check which convention your surface parses before emitting a label. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
+`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (verified 08-22) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
 
 ⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a real 2026-08-05 incident silently dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
 
 ### Cadence
 
-**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, use the Cadence MCP to fetch the deployed mainnet contract source and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. The MCP is development-time verification ONLY; production reads keep routing through the proxy layer (Flow public + TS/Flowty APIs block Vercel egress). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. MCP is development-time verification ONLY; production reads keep routing through the proxy layer (egress is blocked). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
 
 ---
 
@@ -255,7 +255,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
 - `useSearchParams` requires a Suspense wrapper.
-- Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ Any `after()` route needs an **invocation heartbeat written BEFORE the work**, under a separate `<pipeline>-heartbeat` name, or a killed tick is indistinguishable from a cron that never fired. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill** — it takes the terminal `pipeline_runs` insert with it while the 202 already told the caller it succeeded (21 silent kills over 2 months). Read kills by CORRELATION (heartbeat with no terminal row), never a `finally`; a marker row's `rows_*` must be **NULL, not 0**.
+- Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ Any `after()` route needs an **invocation heartbeat written BEFORE the work** (separate `<pipeline>-heartbeat` name), because **`try/catch` CANNOT catch a `maxDuration` kill** — without it a killed tick is indistinguishable from a cron that never fired. Read kills by CORRELATION (heartbeat, no terminal row), never a `finally`; a marker row's `rows_*` must be **NULL, not 0**.
 - Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
 
 ---
