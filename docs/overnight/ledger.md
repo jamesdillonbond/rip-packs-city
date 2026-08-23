@@ -8,6 +8,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — the Supabase advisors, run for the first time: zero ERRORs, every WARN correctly declined, and one 98 MB index built for `fmv-recalc` that has never been used
+
+**No code, no DB change.** A lens nobody in the register had used. **215 security lints + 346 performance
+lints, and NOT ONE is ERROR or WARN-actionable** — which is itself worth recording, because the raw counts
+look alarming and the correct response to all of them is "no".
+
+## Security — 215 lints, all INFO or correctly declined
+
+- **204 × `rls_enabled_no_policy` (INFO)** — RLS on with no policy is DENY-ALL, i.e. the intended posture.
+- **7 × SECDEF-executable (WARN)** — the project's own `check_secdef_anon_exec_drift()` returns **0** (read as
+  the ARRAY LENGTH, per the mixed-return-shape rule). Accepted exemptions.
+- ⚠ **4 × `function_search_path_mutable` (WARN) — DECLINED, and R14 is why.** Measured:
+
+| | kind | SECDEF | body COMMITs | anon EXEC | auth EXEC |
+|---|---|---|---|---|---|
+| `reconcile_all_saved_wallet_stats` | **PROCEDURE** | false | **true** | ✗ | ✗ |
+| `rpc_trust_health_precompute_refresh_p` | **PROCEDURE** | false | **true** | ✗ | ✗ |
+| `dune_budget_status` · `dune_spend_report` | function | false | false | ✗ | ✗ |
+
+  All four are **SECURITY INVOKER with no anon/authenticated EXECUTE**, so a mutable `search_path` buys **zero**
+  exposure reduction — and the two PROCEDURES **COMMIT**, which is exactly the change that raised `2D000` and
+  took the hourly reconcile job down for six hours (R14, closed WONTFIX). 🚨 **The advisor will keep raising
+  these. The answer is no, and the reason is measured, not remembered.**
+
+## Performance — the one real finding, and it is sharper than "unused index"
+
+| index on `sales_2026` | scans (72 d) | tuples read | size |
+|---|---:|---:|---:|
+| `sales_2026_collection_id_sold_at_idx` — **what the planner picks** | **31,189** | 606,443,958 | **60 MB** |
+| `idx_sales_2026_fmv_recalc_window` — **named for the job** | **0** | 0 | **98 MB** |
+
+**It is 63% LARGER than the index that beats it, and has never been scanned.** Not inferred — `EXPLAIN` on the
+real `fmv_recalc_90d_catchup_editions` body puts both predicates as an **Index Cond** on the
+`(collection_id, sold_at)` index. The dead one leads on `sold_at DESC` and only **INCLUDEs** `collection_id`,
+so `collection_id` can never be a search key: **dead by construction, not by chance** — on the platform's most
+wasteful job (72.7% wall-kills).
+
+⚠ **The stats are decisive:** uptime **72 days**, stat-reset time NULL, **1,368,447,413** index scans recorded
+(busiest single index 179,630,089). `idx_scan = 0` means never, not "not lately".
+
+## ⚠ The number I am NOT letting stand next to R46
+
+**709 of 1,212 indexes have never been scanned; 286 are droppable (325 MB, 2.4% of the 13 GB database).**
+⚠ **That is NOT a lever on R46's measured problem.** R46 is **765 GB/day of READS re-reading a 6.5 GB hot
+set**, and an index with `idx_scan = 0` contributes ~0 reads *by definition*. Putting "294 unused indexes!"
+beside a read-volume problem is the tidy-hypothesis trap this file keeps recording.
+
+**Their real cost is WRITE amplification, and it is CONCENTRATED in two, not 286:**
+`topshot_pack_sales_history` took **11,596,123** writes in 72 days and `allday_pack_sales_history` **8,019,165**
+— **19.6 M writes each maintaining an unused ~30 MB index.** Space lever and write lever are different
+arguments and must not be merged into one number. (`sales_2022`: 3 indexes / 15 MB on a partition with **0 rows
+and 0 writes**.)
+
+⛔ **Nothing dropped.** `DROP INDEX` is destructive DDL and every `apply_migration` costs a **~10–20 s burst of
+user-facing `PGRST002` 500s**; three separate judgements are owed and they are Trevor's. ⚠ **Batch them into
+ONE migration in a low-traffic window**, and check the sibling `sales_*` partitions first in case the dead
+index was created per-partition. [Filing](docs/overnight/inbox/2026-08-23T1910Z-the-index-built-for-fmv-recalc-has-never-been-used-and-is-bigger-than-the-one-that-beats-it.md)
+
+**Revert path:** none — measurement only, no code and no DB.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass) — the day's durable rules promoted, paid for by displacement, and a session log so today compounds
 
 **Docs only. No code, no DB, no prod-state change.** CLAUDE.md's own rule is that a fact left in a session
