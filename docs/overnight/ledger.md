@@ -1508,6 +1508,104 @@ before and after.
 **Revert path:** `git revert <sha of "test(guards): migrate 16 guards to the shared comment stripper">`.
 Test and script code only — no product source, no DB, no prod-state change.
 
+### 2026-08-22 · SHIPPED (Cowork, cloud) — the series route was 500ing on every collection because a rollup that ALREADY EXISTED had no reader, and the same defect on the set route was 40× the traffic
+
+**Two things came out of one browser check.** The Golazos Series 2/3 question is closed from the
+contract itself, and the R19 leg behind it turned out to be a query-shape defect on four
+functions, not an SEO nit.
+
+**Golazos Series 2 and 3 never existed.** Flow mainnet `/v1/scripts` against
+`0x87ca73a41bb50ad5`: `nextSeriesID = 2` (one series ever created), `nextEditionID = 576` (575
+editions ever), `totalSupply = 1,919,761` — matching `get_series_detail(...).total_circulation`
+exactly. Corroborated off-pipeline by `laligagolazos.com` (500s from `/editions/576` up, facets
+stop at season 2022-2023) and `dapper.market` (edition 600 not found, 541 renders). ⚠ The
+08-22 filing's "second contract" hypothesis is **refuted**, not merely unsupported — a second
+contract would still surface on the vendor's own front-end. Two dead `collection_series` rows
+deleted.
+
+⛔⛔ **THE DEFECT WAS A ROLLUP WITH NO READER, AND I BUILT A SECOND ONE BEFORE CHECKING.** Every
+`/[collection]/series/[slug]` page was returning **500 / 57014**. I measured the cause
+(`get_series_detail` doing one `fmv_snapshots` lateral **per edition**: 10 ms at 54 editions,
+1.6 s at 575, **21 s at 3,600**), designed a rollup, built it, verified it, populated it — **then
+listed `cron.job` and found jobid 357 `rpc-series-detail-rollup` already refreshing a complete,
+fresh, correct `series_detail_rollup` hourly.** `get_series_detail` simply never read it. My
+duplicate was dropped. 👉 **`cron.job`, `information_schema` and `pg_proc` are part of "grep
+first" — a precomputed table nobody queries is invisible from outside, so the next person builds
+it again.**
+
+⛔ **And the `statement_timeout` half-rule bit again.** I first wrote "the 8 s ceiling never fires,
+it's decorative" off a 21–44 s completion taken through the MCP. That is the psql/pg_cron case;
+production is a **PostgREST `rpc/` entry point**, where `proconfig` **binds and fires** — which is
+exactly what the 57014 in the Vercel logs said. Corrected in `function-proconfig-statement-timeout-is-inert`.
+
+⛔ **RETRACTED mid-session: the "permanent SCANNING THE MARKETPLACE… spinner".** I filed, twice,
+that these pages render server-side then strand the payload in `<div hidden id="S:0">` forever.
+My control — `/laliga-golazos/edition/541`, which had relocated normally earlier — **stranded too
+when I re-ran it at the end**, and the served HTML (fetched outside the browser) contains the full
+content **and** the `$RC("B:0","S:0")` swap script. The variable is this browser (logged in as
+Trevor, preloading 15,108 moments per page load), not the route. 👉 **A control that passes once
+is not a control.**
+
+**The same defect, and its biggest instance, was on the SET route.** `pg_stat_statements` put
+`get_set_editions` at **6,237 calls, 1,820 ms mean** — the worst mean of any entity RPC, ~15×
+`get_edition_detail`. Its `ORDER BY` is `tier_rank, circulation_count, player_name`, all from
+`editions` and **nothing from FMV**, so the `LIMIT` was always satisfiable without touching
+`fmv_snapshots` — yet it ran the FMV lateral and `entity_rep_nft_id()` for every edition in the
+set first. `/nba-top-shot/set/base-set` = 3,609 editions of work to show 100.
+
+| function / page | before | after |
+|---|---|---|
+| `get_series_detail`, TS series-7 (4,895 eds) | 21,229 ms · 23k buffers | **37 ms · 523 buffers** |
+| `get_series_editions`, TS series-7 | 36,134 ms · 32,461 buf · 4,026 reads | **219 ms · 18,198 buf · 125 reads** |
+| `get_set_editions`, TS base-set (3,609 eds) | 10,676 ms · 29,473 buf · 3,501 reads | **31 ms · 2,665 buf · 20 reads** |
+
+⭐ **The "45,000 ms class, unexplained since 2026-08-15" is NOT query time.**
+`get_edition_detail` measures **88 ms** on the largest Top Shot edition (239,882 circulation) and
+**428 ms** on Golazos 541 — and across **65,144** PostgREST calls its `max_exec_time` is
+**7,783.9 ms**, pinned under its own 8 s ceiling. Every sibling clusters the same way
+(6,919–7,990 ms). **45,000 ms is `DEFAULT_RPC_TIMEOUT_MS`, and the database cannot produce it** —
+so that class is a connection-acquire / transport stall, exactly as `rpc-with-retry.ts` predicted
+in its own 2026-08-13 comment. The open question is what saturates the pool, not what the query
+costs. **Testable prediction:** removing ~11,350 s of DB time from `get_set_editions` should move
+the 15,388 / 2,963-user baseline over the next 7 days. If it does not, the saturation source is
+elsewhere.
+
+**Also fixed, both pre-existing and neither introduced today:** `series_detail_rollup` had **RLS
+off** (`check_public_security_invariants()` flagged it; ACL was already postgres + service_role
+only, and the selfheal cron covers only `audit_`-prefixed tables), and its `duration_ms` column
+had been **NULL on every row since creation** because the stamping `UPDATE` compared
+`computed_at >= clock_timestamp()` against a `now()` value that is always earlier — an instrument
+that could never fire.
+
+**Verification.** Equivalence was checked BEFORE each swap, not after: `get_series_detail` on all
+six aggregates across **all 26 series**; `get_series_editions` position-by-position for series-7
+(**100 rows, 0 mismatches** on `route_slug`, `fmv_usd`, `rep_nft_id`); `get_set_editions` by
+**md5 of the full jsonb output** captured pre-swap for three sets, all byte-identical after. End
+to end: **26/26 series URLs return 200** (0.33–4.27 s) plus three set pages, the heaviest edition
+page and the heaviest player page, all fetched with a Googlebot UA from outside the browser. Both
+security invariant checks return `[]`. Every touched function: one overload, SECDEF intact,
+`postgres | service_role` only.
+
+**Still open, deliberately:** `get_series_editions` phase 1 is still ~3.5 ms per edition because
+ordering the grid by FMV needs a latest-FMV read per edition — it fits inside 8 s at 4,895
+editions and will not at ~2×. The durable fix is a **per-edition latest-FMV rollup**, the thing
+the `fmv_current` VIEW pretends to be. Not built: shared architecture, and I had already built one
+redundant rollup tonight without checking. `get_series_detail` now **depends on cron jobid 357** —
+a missing row falls back correctly, a STALE row does not announce itself; worth a trust-board
+staleness arm. And the page comment calling this *"transient RPC failure (statement timeout under
+contention)"* is still wrong and still in the source (route/.tsx, needs Claude Code).
+
+**Revert:** each migration carries its own revert in its comment —
+`audit_20260823_drop_phantom_golazos_series_2_3` (INSERT the two rows back),
+`audit_20260823_get_series_detail_reads_existing_series_detail_rollup`,
+`audit_20260823_get_series_editions_project_after_limit`,
+`audit_20260823_get_set_editions_project_after_limit`,
+`audit_20260823_series_detail_rollup_enable_rls`,
+`audit_20260823_series_detail_rollup_duration_ms_never_recorded`. No git half — everything above
+is database-side. **Files:**
+`docs/overnight/inbox/2026-08-23T0210Z-golazos-series-2-and-3-never-existed-and-the-whole-series-route-is-dead.md`,
+`docs/overnight/inbox/INDEX.md` (191 → 192, reconciled against `ls | wc -l`).
+
 ### 2026-08-22 · SHIPPED — one line stripped the brand from ~70 deep URLs and double-printed it on ~30 others, and the guard written to catch it was blind three ways
 
 **R31 is closed, and it turned out to be HALF of the defect.** `collectionLayoutMetadata()` and `app/insights/layout.tsx` set `title` as a plain STRING. In Next a string title is formatted by the **nearest ancestor** template and contributes **no template of its own**, so it does two opposite things at once: its own title gets the root `%s | Rip Packs City` appended, and every descendant loses the suffix entirely.
