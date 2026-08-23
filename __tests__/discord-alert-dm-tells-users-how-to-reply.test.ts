@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ⚠ THE ASYMMETRY THIS GUARDS, because it is invisible from the code alone.
 //
@@ -32,9 +33,6 @@ function readSource(rel: string): string {
 // pass on a route that had dropped the user-visible line entirely. (The
 // recurring trap in this repo: a guard that greps source for user copy MUST
 // strip comments first.)
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
-}
 
 const ALERTS_SEND = "app/api/cron/alerts-send/route.ts"
 const DISCORD_BOT = "app/api/bots/discord/route.ts"

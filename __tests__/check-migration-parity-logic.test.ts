@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ── Guard for the guard: scripts/check-migration-parity.mjs ─────────────────
 //
@@ -127,7 +128,7 @@ describe("check-migration-parity: the two regressions its header records", () =>
     expect(src).toMatch(/process\.exitCode\s*=/)
     // Strip comments first — the script DOCUMENTS the footgun in prose, and
     // matching that text would assert the opposite of what we mean.
-    const code = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
+    const code = stripComments(src)
     expect(/\bprocess\.exit\(/.test(code)).toBe(false)
   })
 })

@@ -25,6 +25,7 @@
 
 import { describe, expect, it } from "vitest"
 import { fmvSerialMultiplier } from "@/lib/fmv/serial-multiplier"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const routeSrc = () =>
   require("fs").readFileSync(
@@ -33,9 +34,6 @@ const routeSrc = () =>
   ) as string
 
 /** Comments legitimately quote the OLD formula to explain the fix. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
-}
 
 describe("/api/fmv/demo documents the multiplier it actually uses", () => {
   it("does not re-declare a local serial multiplier", () => {

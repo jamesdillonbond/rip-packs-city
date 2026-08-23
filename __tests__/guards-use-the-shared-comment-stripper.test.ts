@@ -46,20 +46,55 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
-// ⚠ RATCHET BASELINE, MEASURED 2026-08-22 — down only.
+// ⚠ RATCHET BASELINE — down only. 25 (2026-08-22) → 2 (2026-08-22, later same day).
 //
-// ⚠ 25, NOT 26. A raw text scan counts 26; this guard strips comments first, and
-// retired-orderbook-source-not-rendered-ratchet only QUOTES the defective pattern
-// in prose (its real stripper is the state machine). The first draft of this file
-// was set to 26 and a mutation test at 25 FAILED TO KILL IT — a ratchet with one
-// unit of slack, which is the very thing this file criticises elsewhere. Measure
-// the population by setting this to 0 and reading the report; never carry a
-// number over from a different instrument.
-const MAX_LOCAL_STRIPPERS = 25
+// ⚠ THE NEEDLE CHANGED WITH THIS NUMBER, so the two are not comparable and the
+// old 25 must not be read as "23 files were migrated". Both were measured:
+//
+//   needle = the bare non-greedy body `[\s\S]*?`        → 25, then 7 after migration
+//   needle = the block-comment-STRIP shape (below)      → 2
+//
+// 16 files were genuinely migrated to the shared stripper. The remaining drop
+// from 7 to 2 is the needle narrowing, and it removed only FALSE POSITIVES:
+// five files that use `[\s\S]*?` for something that is not a comment stripper at
+// all — stripping import statements (og-brand-fonts-and-cache,
+// server-page-data-access-ratchet), parsing a Set literal
+// (public-wallet-surface-contract), parsing the PINS list (check-db-pin-staleness),
+// extracting a Cadence template literal (extract-cadence). Each was inspected
+// individually; none normalises comments.
+//
+// ⚠ WHY NARROWING WAS THE RIGHT MOVE AND NOT A LOOSENING: the broad needle could
+// never reach zero, because legitimate non-greedy regexes exist and always will.
+// A ratchet with a permanent floor made of non-offenders punishes its own success
+// and trains readers to ignore its report. The narrow needle is satisfiable at a
+// population of zero.
+//
+// ⚠ THE REMAINING 2 ARE SQL STRIPPERS, NOT JS ONES, and migrating them would be a
+// DEFECT rather than a fix: both walk `supabase/migrations/*.sql`, where comments
+// are `--` and `/* */` and bodies are dollar-quoted (`$$ … $$`). The shared
+// stripper is a JavaScript state machine — it has no `--` state and no
+// dollar-quote state, so it would leave every `--` comment standing and could
+// mis-parse a `$$` body. They come off this list when a SQL stripper exists to
+// move them to, not before.
+//
+// Measure the population by setting this to 0 and reading the report; never carry
+// a number over from a different instrument — including an earlier version of
+// THIS one.
+const MAX_LOCAL_STRIPPERS = 2
 
 const SHARED = "scripts/lib/strip-comments"
-/** The block-comment regex body every local stripper is built from. */
-const BLOCK_REGEX_BODY = "[" + "\\s\\S" + "]*?"
+
+/**
+ * The block-comment-STRIP shape — a regex whose body is `/*` … non-greedy … `*\/`.
+ *
+ * ⚠ This is a SPELLING check, and that boundary is worth stating: a local stripper
+ * written with `[^]*?`, or without the `?`, is matched by the alternatives below,
+ * but one written some third way would not be. The needle cannot be derived from
+ * behaviour — the defect is a property of source text, not of a running function.
+ */
+const BLOCK_STRIP_RE = new RegExp(
+  "\\\\/\\\\\\*\\[(?:\\\\s\\\\S|\\^)\\]\\*\\??\\\\\\*\\\\/"
+)
 
 const SELF = "guards-use-the-shared-comment-stripper"
 const HELPER = "strip-comments.mjs"
@@ -83,7 +118,7 @@ export function rollsItsOwnStripper(src: string): boolean {
   // Strip comments first — several files QUOTE the defective pattern in prose to
   // explain the fix, and a guard that fires on its own documentation trains
   // people to delete the documentation.
-  return stripComments(src).includes(BLOCK_REGEX_BODY)
+  return BLOCK_STRIP_RE.test(stripComments(src))
 }
 
 describe("guards use the shared comment stripper", () => {
@@ -117,6 +152,26 @@ describe("guards use the shared comment stripper", () => {
       "const x = 1",
     ].join("\n")
     expect(rollsItsOwnStripper(documented)).toBe(false)
+  })
+
+  it("NEGATIVE CONTROL — an incidental non-greedy regex is not a comment stripper", () => {
+    // ⚠ This control exists because the needle was NARROWED on 2026-08-22, and a
+    // narrowing is the change most likely to be a silent loosening. Five files
+    // left the report that day; every one of them looks like this — a non-greedy
+    // body used to parse something, with no comment normalisation anywhere near
+    // it. If a future edit widens the needle back, this control reds first and
+    // says why.
+    const parsesImports = [
+      'const body = src.replace(/^import[' + "\\s\\S" + ']*?from\\s+["' + "'" + ']/gm, "")',
+    ].join("\n")
+    expect(rollsItsOwnStripper(parsesImports)).toBe(false)
+  })
+
+  it("POSITIVE CONTROL — the `[^]*?` spelling is caught too", () => {
+    // The needle is a spelling check (see BLOCK_STRIP_RE), so each spelling it
+    // claims to cover needs its own control or the claim is untested.
+    const rolled = 'src.replace(/' + "\\/\\*[^]*?\\*\\/" + '/g, " ")'
+    expect(rollsItsOwnStripper(rolled)).toBe(true)
   })
 
   it("RATCHET: the local-stripper population does not grow", () => {

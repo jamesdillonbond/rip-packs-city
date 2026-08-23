@@ -4,6 +4,7 @@ import { render, screen, cleanup } from "@testing-library/react"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // `components/legal/` matched no glob in the component gate's curated `include`,
 // so this component was unmeasured and untested. It is the platform's standing
@@ -101,7 +102,7 @@ describe("FmvDisclaimer — brand tokens", () => {
     // `#E03A2F` and `Barlow Condensed` come from `app/rpc-tokens.css`. A
     // hardcoded dark hex also renders a black slab in light mode, because
     // `--rpc-black` / `--rpc-text-primary` are theme-aware.
-    const code = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
+    const code = stripComments(SRC)
     expect(code).not.toMatch(/#E03A2F/i)
     expect(code).not.toMatch(/Barlow Condensed/)
   })

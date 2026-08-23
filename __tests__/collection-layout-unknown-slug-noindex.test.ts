@@ -26,14 +26,12 @@ import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
 import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const DIR = path.join(process.cwd(), "app", "(collections)", "[collection]")
 
 /** Strip comments first — this repo has shipped four guards that tripped on
  *  their own explanatory comment quoting the very string they ban. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
-}
 
 function layoutsWithUnknownSlugFallback(): string[] {
   const out: string[] = []

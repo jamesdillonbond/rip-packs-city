@@ -7,6 +7,7 @@ import {
   resolveAvatarUrl,
   isDefaultAvatar,
 } from "@/lib/profile/default-avatar"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The RPC logo is the avatar a collector gets before they set one. It is a
 // RENDER-time default, so `profile_bio.avatar_url` keeps NULL meaning "not
@@ -114,9 +115,7 @@ describe("every avatar render site goes through the shared default", () => {
     // `src={bio.avatar_url}` in the comment explaining the change, and this
     // repo has repeatedly had guards trip on their own documentation.
     for (const rel of SITES) {
-      const src = readSite(rel)
-        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/\S/g, " "))
-        .replace(/\/\/[^\n]*/g, (m) => m.replace(/\S/g, " "))
+      const src = stripComments(readSite(rel))
       expect(src, `${rel} passes a raw avatar_url to an img src`).not.toMatch(
         /src=\{\s*bio[!?]?\.avatar_url/,
       )

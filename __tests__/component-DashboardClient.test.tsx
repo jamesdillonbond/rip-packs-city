@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import DashboardClient from "@/app/dashboard/DashboardClient"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // `/dashboard` converted to a `*Client.tsx` so the component gate measures it — 2,545 lines,
 // the largest client page in the repo, and the one carrying the most accumulated honesty
@@ -2019,18 +2020,16 @@ describe("DashboardClient — slot is read from the slab, never from array posit
    */
   it("resolves the replacing trophy through occupantOfSlot, not by index", async () => {
     const { readFileSync } = await import("node:fs")
-    const src = readFileSync("app/dashboard/DashboardClient.tsx", "utf8")
-      // Strip comments first — this file's own prose describes the index form
-      // it forbids, so a raw grep matches the warning rather than the code.
-      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    // Strip comments first — this file's own prose describes the index form
+    // it forbids, so a raw grep matches the warning rather than the code.
+    const src = stripComments(readFileSync("app/dashboard/DashboardClient.tsx", "utf8"))
     expect(src).toContain("occupantOfSlot(slabs, pinSlot)")
     expect(src).not.toMatch(/slabs\[\s*pinSlot\s*-\s*1\s*\]/)
   })
 
   it("syncs a saved caption by the slab's own slot, not by index", async () => {
     const { readFileSync } = await import("node:fs")
-    const src = readFileSync("app/dashboard/DashboardClient.tsx", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    const src = stripComments(readFileSync("app/dashboard/DashboardClient.tsx", "utf8"))
     expect(src).toMatch(/s\.slot === slot/)
   })
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // `topshot-wmc-fossil-drain` (the `?wmc=1` leg of
 // /api/admin/drain-topshot-misattribution) was UNSCHEDULED on 2026-08-17.
@@ -44,9 +45,6 @@ const routeSrc = () =>
  * read CODE. Same rule this repo already applies to every source guard that greps
  * for a string its own header quotes.
  */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
-}
 
 describe("topshot-wmc-fossil-drain schedule is retired", () => {
   it("is not vacuous — vercel.json parses and carries a real cron list", () => {

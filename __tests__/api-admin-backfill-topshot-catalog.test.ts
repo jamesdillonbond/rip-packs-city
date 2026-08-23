@@ -8,6 +8,7 @@ import { adminReq } from "./helpers/admin-req"
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }) } }))
 
 import { GET, POST } from "@/app/api/admin/backfill-topshot-catalog/route"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 beforeEach(() => {
   delete process.env.RPC_ADMIN_TOKEN
@@ -86,9 +87,9 @@ describe("backfill-topshot-catalog — GraphQL field placement", () => {
 
   it("normalizes bio sentinels to NULL rather than storing 0 / N/A", () => {
     const { readFileSync } = require("node:fs") as typeof import("node:fs")
-    const src = readFileSync("app/api/admin/backfill-topshot-catalog/route.ts", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "")
+    const src = stripComments(
+      readFileSync("app/api/admin/backfill-topshot-catalog/route.ts", "utf8")
+    )
     // Top Shot answers 0 / "N/A" / "" for unknown bio. Without isSentinel every
     // undrafted player would store draft_year 0, and a "serial matches draft
     // year" check would start firing on garbage.

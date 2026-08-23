@@ -4,6 +4,7 @@ import { render, screen, cleanup } from "@testing-library/react"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import PlayHub from "@/components/play/PlayHub"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // `components/play/` matched NO glob in `vitest.components.config.ts`'s curated
 // 18-subtree `include`, so this 171-line component was invisible to the gate BY
@@ -46,7 +47,7 @@ function layoutRedirects(slug: string): boolean {
   } catch {
     return false
   }
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
+  const code = stripComments(src)
   // Unconditional only: a redirect inside an `if` is a real page with a guard,
   // not a parked feature, and must not read as parked here.
   return /^\s*redirect\(/m.test(code)

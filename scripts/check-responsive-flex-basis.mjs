@@ -51,6 +51,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "./lib/strip-comments.mjs"
 
 const ROOTS = ["components", "app", "lib"]
 const EXT = /\.(tsx|ts|css)$/
@@ -98,12 +99,6 @@ function mediaBlocks(src) {
     i = end + 1
   }
   return out
-}
-
-function stripComments(src) {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")      // block comments, incl. CSS ones
-    .replace(/^[ \t]*\/\/.*$/gm, "")        // whole-line // comments
 }
 
 function walk(dir, out) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { classifySerial, hasQuirk, type SerialQuirk } from "@/lib/serials/fun-patterns"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Quirky-serial classification: palindromes, repdigits, meme numbers, and
 // matches against the player's jersey / birthday / draft year.
@@ -154,9 +155,7 @@ describe("source guard — quirks must not leak into the FMV premium path", () =
 
   it("the quirk module claims no premium of its own", async () => {
     const { readFileSync } = await import("node:fs")
-    const src = readFileSync("lib/serials/fun-patterns.ts", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "")
+    const src = stripComments(readFileSync("lib/serials/fun-patterns.ts", "utf8"))
     // Comments stripped first: this file EXPLAINS the multipliers it must not
     // apply, and an unstripped search reads its own rationale as a violation.
     expect(src).not.toMatch(/multiplier|premium|\*=\s*1\./)

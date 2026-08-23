@@ -24,6 +24,7 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "fs"
 import { execSync } from "child_process"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 /** Every route that writes a `phase: "started"` marker row. */
 function markerWriters(): string[] {
@@ -76,7 +77,7 @@ describe("a start marker must not publish its own insert latency as duration_ms"
       "app/api/admin/drain-conflated-subeditions/route.ts",
       "utf8"
     )
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    const code = stripComments(src)
 
     // mark() must be async and write to pipeline_runs, not just mutate a local.
     expect(code).toMatch(/const\s+mark\s*=\s*async\s*\(/)
@@ -123,7 +124,7 @@ describe("a start marker must not publish its own insert latency as duration_ms"
       "app/api/admin/drain-conflated-subeditions/route.ts",
       "utf8"
     )
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+    const code = stripComments(src)
 
     const order = [...code.matchAll(/await\s+step\(\s*"([a-z_]+)"/g)].map((m) => m[1])
     expect(order.length, "no step() call sites found — did the route change shape?")

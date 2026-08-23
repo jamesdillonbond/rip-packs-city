@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "fs"
 import path from "path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // SURFACE CONTRACT — /insights/deals must describe the board it actually serves,
 // and must not publish internal FMV scoring vocabulary while doing it.
@@ -42,9 +43,6 @@ const read = (p: string) => readFileSync(p, "utf8")
  * Strip comments so the "do not reintroduce" notes — which must name the
  * removed labels to be useful — don't trip the vocabulary scan.
  */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "")
-}
 
 describe("/insights/deals names every collection it serves", () => {
   it("the client exposes an All Day filter chip alongside Top Shot and Pinnacle", () => {

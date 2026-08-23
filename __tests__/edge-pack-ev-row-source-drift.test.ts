@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Holds `compute-topshot-pack-ev/index.ts` in sync with the tested mirror in
 // `supabase/functions/_shared/topshot-pack-ev-row.ts`.
@@ -32,9 +33,6 @@ const MIRROR = "supabase/functions/_shared/topshot-pack-ev-row.ts"
  *  containment — but stripping is REQUIRED: both files' headers discuss these expressions
  *  in prose, and the mirror's doc comments name the rules verbatim. Without this the guard
  *  would happily match its own documentation and assert nothing. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
-}
 
 const collapse = (s: string) => s.replace(/\s+/g, " ")
 

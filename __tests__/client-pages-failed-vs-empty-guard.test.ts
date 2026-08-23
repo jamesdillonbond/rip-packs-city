@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pageSource } from "./helpers/page-source"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // Source guard for the failed-vs-empty split on two more `"use client"` pages.
 //
@@ -41,8 +42,20 @@ function read(...parts: string[]): string {
   return readFileSync(join(process.cwd(), ...parts), "utf8")
 }
 
-/** `//`-comment lines removed — a guard must not read its own prose as evidence. */
-function stripComments(src: string): string {
+/**
+ * `//`-comment LINES removed, block comments deliberately LEFT IN PLACE.
+ *
+ * ⚠ Not a weaker `stripComments` — a DIFFERENT normalisation, and the difference
+ * is load-bearing. The /alerts site asserts
+ * `not.toMatch(/catch \{\s*\/\* ignore \*\/\s*\}/)`, which needs the block comment
+ * PRESENT to mean anything; running the shared stripper there would leave that
+ * assertion passing for the wrong reason — vacuous, and silently so.
+ *
+ * Sites that want BOTH kinds gone import the shared stripper instead. Renamed
+ * from `stripComments` on 2026-08-22 so the two can never be confused at a call
+ * site, which is exactly how a guard ends up reading a blanked file.
+ */
+function stripLineComments(src: string): string {
   return src
     .split("\n")
     .filter((l) => !l.trimStart().startsWith("//"))
@@ -51,7 +64,7 @@ function stripComments(src: string): string {
 
 describe("client pages — a failed read is not an empty result", () => {
   it("dashboard hero-picker distinguishes a failed moments read from owning nothing", () => {
-    const src = stripComments(read("app", "dashboard", "page.tsx"))
+    const src = stripLineComments(read("app", "dashboard", "page.tsx"))
 
     expect(src, "must track the failure").toContain("const [loadFailed, setLoadFailed] = useState(false)")
     // Reset per run, or a recovered picker stays stuck on the failure copy.
@@ -72,7 +85,7 @@ describe("client pages — a failed read is not an empty result", () => {
   })
 
   it("sniper relative-deals does not blame the benchmark data for a failed read", () => {
-    const src = stripComments(read("app", "(collections)", "[collection]", "sniper", "page.tsx"))
+    const src = stripLineComments(read("app", "(collections)", "[collection]", "sniper", "page.tsx"))
 
     expect(src, "must track the failure").toContain(
       "const [relativeFailed, setRelativeFailed] = useState(false)",
@@ -113,7 +126,7 @@ describe("client pages — a failed read is not an empty result", () => {
   // independently, and a single flag would blank all three sections whenever any
   // one of them broke.
   describe("/alerts — three independent legs, three independent failures", () => {
-    const src = stripComments(read("app", "alerts", "page.tsx"))
+    const src = stripLineComments(read("app", "alerts", "page.tsx"))
 
     it("tracks failure per leg and clears it on re-fetch", () => {
       expect(src).toContain(
@@ -210,7 +223,7 @@ describe("client pages — a failed read is not an empty result", () => {
     // `not.toMatch(/catch \{\s*\/\* ignore \*\/\s*\}/)`, which needs the block
     // comment PRESENT to be meaningful. Stripping it globally would leave that
     // assertion passing for the wrong reason — vacuous, and silently so.
-    const src = stripComments(read(...path)).replace(/\/\*[\s\S]*?\*\//g, "")
+    const src = stripComments(read(...path))
 
     it("the liveness dot knows about the error state", () => {
       // A green pulsing dot asserts "this feed is live". During an outage it is
@@ -292,7 +305,7 @@ describe("client pages — a failed read is not an empty result", () => {
     const path = ["app", "(collections)", "[collection]", "profile", "[username]", "page.tsx"] as const
     // Block comments stripped locally, same reason as site 4: this page explains
     // each fix by quoting the copy it guards.
-    const src = stripComments(read(...path)).replace(/\/\*[\s\S]*?\*\//g, "")
+    const src = stripComments(read(...path))
 
     it("tracks failure per leg and clears it on re-fetch", () => {
       expect(src).toContain("const [failed, setFailed] = useState({ trophies: false, sniper: false })")
@@ -408,7 +421,7 @@ describe("client pages — a failed read is not an empty result", () => {
     // of INACTION — it tells them not to re-list. Three failure paths used to
     // produce it: a non-2xx snapshot read, a thrown fetch, and the deals feed
     // not having loaded.
-    const src = stripComments(
+    const src = stripLineComments(
       read("app", "(collections)", "[collection]", "sniper", "page.tsx"),
     )
 
@@ -449,7 +462,7 @@ describe("client pages — a failed read is not an empty result", () => {
   describe("/[collection]/sniper depth panel — both legs report failure", () => {
     const src = stripComments(
       read("app", "(collections)", "[collection]", "sniper", "page.tsx"),
-    ).replace(/\/\*[\s\S]*?\*\//g, "")
+    )
 
     it("tracks the listings leg's failure and clears it per expand", () => {
       expect(src).toContain(
@@ -505,7 +518,7 @@ describe("client pages — a failed read is not an empty result", () => {
   //    "we checked and found nothing" — a collector who believes the second
   //    re-lists at a different price, or gives up.
   describe("/dashboard — the account panels", () => {
-    const src = stripComments(read("app", "dashboard", "page.tsx")).replace(/\/\*[\s\S]*?\*\//g, "")
+    const src = stripComments(read("app", "dashboard", "page.tsx"))
 
     it("distinguishes a failed /api/profile/me from an absent session", () => {
       expect(src).toContain("const [meFailed, setMeFailed] = useState(false)")
@@ -591,10 +604,7 @@ describe("client pages — a failed read is not an empty result", () => {
   // Both are gated on `!err` rather than on the array, because the array cannot
   // distinguish the two outcomes and `err` can.
   describe("/dashboard/alerts — a failed read is not an empty account", () => {
-    const src = stripComments(read("app", "dashboard", "alerts", "page.tsx")).replace(
-      /\/\*[\s\S]*?\*\//g,
-      "",
-    )
+    const src = stripComments(read("app", "dashboard", "alerts", "page.tsx"))
 
     it("the welcome card is gated on the read having SUCCEEDED", () => {
       expect(
@@ -659,10 +669,7 @@ describe("client pages — a failed read is not an empty result", () => {
   // fire-and-forget — a failed last_active_at stamp must not block a sign-in.
   // Do not re-derive this list from a grep for `setError(`.
   describe("/admin/rewards — a failed load is not an empty ship queue", () => {
-    const src = stripComments(read("app", "admin", "rewards", "page.tsx")).replace(
-      /\/\*[\s\S]*?\*\//g,
-      "",
-    )
+    const src = stripComments(read("app", "admin", "rewards", "page.tsx"))
 
     it("checks res.ok, not just 401", () => {
       expect(

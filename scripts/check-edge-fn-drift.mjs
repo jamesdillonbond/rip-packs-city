@@ -57,6 +57,7 @@
 
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "./lib/strip-comments.mjs"
 
 const FUNCTIONS_DIR = "supabase/functions"
 const API = "https://api.supabase.com/v1"
@@ -106,9 +107,13 @@ export function classifyImportMapDrift(repo, deployed) {
 
 /** Comment/whitespace-insensitive comparison for tier 2. */
 export function normaliseSource(src) {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, "$1 ")
+  // The comment strip is the SHARED one. This function used to roll its own,
+  // block-regex-first, which meant a `//` comment mentioning a glob path opened
+  // a block comment that closed at the next `*/` anywhere in the file — so an
+  // arbitrary span of BOTH sources was blanked and any drift inside it was
+  // invisible. Both sides are normalised identically either way, so
+  // comment-only differences still do not read as drift.
+  return stripComments(src)
     .replace(/\s+/g, " ")
     .trim()
 }

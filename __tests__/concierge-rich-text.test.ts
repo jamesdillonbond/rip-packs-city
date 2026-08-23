@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { parseRichText, safeHref, isExternalHref, type RichToken } from "@/lib/concierge/rich-text"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The concierge bubble used to render its message as a raw string, so every
 // link the bot handed out was inert text. This tokenizer makes them clickable.
@@ -221,9 +222,7 @@ describe("isExternalHref", () => {
 describe("source guard — no ES2018-only regex syntax", () => {
   it("uses no lookbehind in the tokenizer", async () => {
     const { readFileSync } = await import("node:fs")
-    const src = readFileSync("lib/concierge/rich-text.ts", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "")
+    const src = stripComments(readFileSync("lib/concierge/rich-text.ts", "utf8"))
     expect(src).not.toMatch(/\(\?<[=!]/)
   })
 })
@@ -236,8 +235,6 @@ describe("source guard — the chat path never renders HTML", () => {
     // unstripped search reads its own rationale as a violation. This repo has
     // now hit that trap three times (pack-dist-contents-not-streamed,
     // collection-analytics-failed-vs-empty-guard, and here).
-    const stripComments = (src: string) =>
-      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "")
     for (const f of ["components/SupportChat.tsx", "lib/concierge/rich-text.ts"]) {
       const src = stripComments(readFileSync(f, "utf8"))
       expect(src, `${f} must not render raw HTML`).not.toContain("dangerouslySetInnerHTML")
