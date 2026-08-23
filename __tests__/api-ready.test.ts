@@ -103,6 +103,26 @@ describe("GET /api/ready", () => {
     expect(body.per_collection[1].sales_24h).toBeNull()
   })
 
+  it("the SUCCESS path is edge-cached and the FAILURE path is NOT", async () => {
+    // ⚠ The asymmetry IS the design and is easy to lose in a refactor. Success
+    // carries s-maxage so an anon-hittable route stops paying ~340 disk reads
+    // per request (measured 4,863 ms as postgres / 24,523 ms as anon on a QUIET
+    // instance). Failure must NEVER be cached, or one transient DB blip becomes
+    // a full minute of "the database is under heavy load" — the same shape as
+    // /api/top-sales serving "no top sales" for five minutes (R33).
+    state.data = [{ slug: "nba_top_shot", name: "NBA Top Shot", sales_24h: 1, last_sale_at: null }]
+    const okRes = await GET()
+    expect(okRes.status).toBe(200)
+    expect(okRes.headers.get("cache-control")).toMatch(/s-maxage=\d+/)
+
+    state.data = null
+    state.error = { message: "db down" }
+    const errRes = await GET()
+    expect(errRes.status).toBe(500)
+    expect(errRes.headers.get("cache-control")).toMatch(/no-store/)
+    expect(errRes.headers.get("cache-control")).not.toMatch(/s-maxage/)
+  })
+
   it("an empty collection list is a 200, not an error", async () => {
     state.data = []
     const res = await GET()

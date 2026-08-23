@@ -69,7 +69,12 @@ function failed(err: unknown, where: string) {
     // /api/ready is anon-reachable via PUBLIC_READ_APIS, so `error.message` put
     // Postgres's own wording in front of anyone who asked. Detail goes to the log.
     { status: "error", ...safeApiError(err, "Readiness check failed.") },
-    { status: 500 }
+    // ⚠ EXPLICIT `no-store`, and it is load-bearing now that the SUCCESS path
+    // carries `s-maxage=60`. A cached failure would serve a transient DB blip
+    // as the answer for a full minute — the same shape as /api/top-sales
+    // caching "no top sales" for five (deep-audit R33). The asymmetry between
+    // the two paths is the whole design: cache what is true, never what failed.
+    { status: 500, headers: { "Cache-Control": "no-store, max-age=0" } }
   );
 }
 
@@ -108,7 +113,39 @@ export async function GET() {
         generated_at: new Date().toISOString(),
         per_collection: perCollection,
       },
-      { status: 200, headers: { "Cache-Control": "no-store, max-age=0" } }
+      {
+        status: 200,
+        headers: {
+          // ⚠ WAS `no-store`. Measured 2026-08-23 06:45Z with the instance QUIET
+          // (5 active backends, 6 IO waiters — not a saturation spell):
+          // `readiness_collection_stats()` took **4,863 ms as postgres** and
+          // **24,523 ms as `anon`**, on ~8,000 buffers of which ~340 are DISK
+          // READS that this instance serves at 10–40 ms each. The anon path is
+          // bound by `authenticator`'s 8 s, so an origin miss 500s often — and
+          // ⚠ the 24,523 ms run BEAT a `SET LOCAL statement_timeout = '8s'`,
+          // which is the recorded "statement_timeout overshoots under IO
+          // throttle: best-effort, not a cap".
+          //
+          // My earlier "10.9 ms warm" was the fully-cached case and should never
+          // have been quoted as the cost.
+          //
+          // 60 s of edge cache cuts origin DB hits by ~60× for the same
+          // behaviour: the only real consumers are two thin-volume caveats
+          // (`sales_24h < 10`), for which minute-old data is indistinguishable
+          // from live, and an uptime probe reads the STATUS CODE.
+          // ⚠ The failure path deliberately keeps NO cache (see `failed()`), so
+          // a transient error is never served for a minute — that asymmetry is
+          // the point.
+          //
+          // ⚠ This is a mitigation, not the fix. The durable fix is to stop
+          // counting: the consumers only need `sales_24h < 10`, which a probe
+          // bounded to 10 rows answers EXACTLY while reading ~10 index rows
+          // instead of 3,844. That changes the payload contract (an unknown
+          // count must not read as 0 in the clients' `?? 0`), so it is filed
+          // rather than rushed. See deep-audit R44.
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120",
+        },
+      }
     );
   } catch (err: any) {
     return failed(err, "exception");
