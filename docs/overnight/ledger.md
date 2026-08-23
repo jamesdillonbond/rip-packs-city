@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — R34: the badge tooltip published "Circ: 0" as a supply, on two lines, and the guard took three tries
+
+**CONFIRMED, and wider than filed.** `CollectionMomentTable`'s badge tooltip rendered `Circ: {n}` and `Effective supply: {n}` on a `!= null` test, so a row whose supply was never populated published **a measured-looking zero**. Measured live: **all 218 LaLiga Golazos `badge_editions` rows carry `circulation_count = 0` AND `effective_supply = 0`, with ZERO nulls**, and **all 218 are keyable** by `(player_name, series_number)` — which is exactly the condition R34 named as its own refutation, so the finding stands. R34 named one line; **the neighbour on the very next line had the identical shape**, so it was two fabricated figures per Golazos row.
+
+⚠ **The correct guard already existed 350 lines up in the SAME FILE** — the row-level "N minted" line tests `!= null && > 0`. One branch guarded, its immediate neighbour not. That is the per-PANEL-not-per-page rule, inside a single component.
+
+⚠ **R34's prescribed check does not work.** It says "one DOM read of `/laliga-golazos/collection` settles it". It does not: the tooltip is behind a wallet-loaded row *and* a hover, and the no-wallet page is a **1,931-character shell**. Settled from source + DB instead.
+
+🚨 **THE GUARD TOOK THREE ATTEMPTS AND EACH FAILURE IS WORTH MORE THAN THE FIX.**
+
+1. **Line-scoped** → flagged the already-CORRECT `{…} minted` span, whose `> 0` test sits in the enclosing JSX condition two lines above. A false positive I would have "fixed" by editing correct code.
+2. **Window-scoped, raw text** → **my own explanatory comment above the fixed line contains the characters "`> 0`", so the COMMENT satisfied the guard.** The mutation stopped reddening and the test passed while proving nothing. ⚠ This repo records the mirror of that — *"at least six guards have fired on the comment documenting the fix"* — and **this direction is the more dangerous one, because it fails OPEN.**
+3. **Comments blanked** (JSX `{/* */}`, block, and line) → correct.
+
+⚠⚠ **AND THE SECOND MUTATION APPEARED TO PASS UNTIL I CHECKED THAT IT HAD APPLIED — IT HAD NOT.** Shell escaping ate the `\r?\n` in my replace target, so I was reading a "result" off an unchanged baseline: exactly the recorded trap. Re-run with the occurrence count asserted first, the control reddens.
+
+**6 tests, both control directions pinned:** the detector must fire on the bare `!= null` form, must NOT fire when the guard is in the enclosing condition, must NOT be satisfied by a `> 0` that exists only in a comment — plus a no-change control that `circulation_count === 1` still reaches the 1/1 Ultimate branch, so `> 0` cannot swallow a genuine one-of-one.
+
+⚠ **An edition with a genuine zero circulation now renders nothing there**, which is the honest output: we have no supply figure, and saying nothing beats saying zero.
+
+**Revert:** `git revert <sha>` — no DB half.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the dist probe had the SAME defect as the read one function above it, and had been left behind
 
 **Extracted and bounded the last two reachable pages:** `/admin/flowty-errors` →
