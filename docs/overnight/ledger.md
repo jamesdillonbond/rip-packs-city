@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · CONFIRMED (Claude Code, interactive) — the cron_heavy grant fix is proven on the SCHEDULER, not just by hand
+
+Closing the loop the previous entry deliberately left open: it claimed only a manual `SET LOCAL ROLE cron_heavy` run, because **a manual run is what fooled me the first time.**
+
+    rpc-backfill-pinnacle-trade-editions  03:41 failed · 04:41 failed · 05:41 SUCCEEDED
+
+**`cron.job_run_details` is the witness, and it is the only one** — neither function writes `pipeline_runs`, so this is the sole place a permission failure was ever visible. ⚠ `rpc-backfill-pinnacle-trade-acquisitions` (`23 */3`) has NOT yet fired since the grant — next 06:23. Its privilege is verified (`has_function_privilege('cron_heavy', …)` TRUE) and it shares the identical grant, but **its scheduled run is unproven and is stated as such rather than assumed from its sibling.**
+
+**Lane health at hand-off:** 50 ticks, **1 failed** (the PGRST002 burst from a concurrent session's migrations — logged `ok:false`, wrote nothing, held the cursor, next tick resumed). **30,223 rows / 10,845 trades / 21 MB.** Named editions **7.8% → 18.1%**. Trade acquisitions **414**. ✅ **The 50k→25k range cut is measurable: max tick 46.5 s → 22.8 s over the last 30 min.**
+
+**REVERT:** unchanged from `20260823050000` — no new change here, this entry is a verification record.
+
 ### 2026-08-22 · MEASURED (Claude Code, interactive — memory pass, part 5) — R21's counts reproduce to the unit, and that is exactly how its SET went unwatched
 
 **Read-only. Nothing deployed, nothing committed to `supabase/functions/`, no DB write.** The register
