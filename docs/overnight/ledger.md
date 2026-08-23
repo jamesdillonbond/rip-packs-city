@@ -8,6 +8,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — Sentry's blackout has a MINUTE, a burst, and a falsifiable prediction; spike protection is ruled out and the burst is 86% the defect fixed today
+
+**No code, no DB.** The standing filing had this as *"dark, cause unknown, needs the operator's Stats page"*
+with three candidates and no way to choose. This chooses between them on evidence.
+
+## The stop time is a MINUTE
+
+| window | error events |
+|---|---:|
+| last 24 h | **0** |
+| last 14 d | **5,221** |
+| **last event Sentry ever received** | **`2026-08-18T13:21:59Z`** |
+
+⚠ **Five days of continuous zero KILLS SPIKE PROTECTION** on its own — that mechanism suppresses for the
+remainder of a period and recovers; it does not hold a project down for five days.
+
+## There WAS a burst, and it is the discriminator
+
+| 2026-08-18 | events | rate |
+|---|---:|---|
+| 09:21–12:21 (3 h before) | 471 | **~157 / h** |
+| **12:21–13:21 (final hour)** | **902** | **~902 / h** |
+
+The final hour carried **17% of everything Sentry received in 14 days**. ⚠ **A deactivated key or a configured
+per-DSN rate limit is a CONFIG CHANGE — it has no reason to coincide with a 5.7× spike.** An abrupt permanent
+stop *at the peak of a burst* is what **quota exhaustion** looks like. Quota now leads on evidence, not
+preference.
+
+## 🚨 The burst is the defect that was fixed TODAY — 86% of it
+
+`edition detail unavailable` **470** · `team detail unavailable (statement timeout)` **117** ·
+`set editions unavailable` **73** · `player detail unavailable` **57** · `team detail unavailable (45s rpc)`
+**56** = **773 of 902**. **Every one is R19's unbounded entity detail/section throw, and all five are now
+bounded** (`f2076b31`, `b601f6f4`). The largest contributor — the edition page's `generateMetadata` throw —
+last occurred **00:48Z today** and has not recurred in ~18 h.
+
+## The prediction, so this is falsifiable
+
+⚠ **If the cause is quota, ingest resumes ON ITS OWN at the billing reset with no code change — and the volume
+that returns should be far below 157/h, because the five titles that were 86% of the burst are fixed. If it
+does NOT resume at the reset, quota is REFUTED and the key/rate-limit branch is what remains.**
+
+**Still owed, operator-only, one visit two readings:** **Stats/Usage** (accepted vs dropped, and the DROP
+REASON) and **Settings → Client Keys** (is the single key still enabled?). The Sentry MCP has no
+stats/usage/quota tool — verified again. ⛔ **Do NOT fire `update_dsn` blind**; it mutates the production
+reporter on an unconfirmed diagnosis and destroys the attribution.
+
+⚠ **NOT established:** that the quota was exhausted — accepted-vs-dropped is not readable from here. What IS
+established: the stop minute, the burst, its composition, and that spike protection is ruled out by duration.
+[Filing](docs/overnight/inbox/2026-08-23T1930Z-sentry-went-dark-at-a-precise-minute-and-the-burst-before-it-is-the-defect-fixed-today.md)
+
+**Revert path:** none — measurement only.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — the Supabase advisors, run for the first time: zero ERRORs, every WARN correctly declined, and one 98 MB index built for `fmv-recalc` that has never been used
 
 **No code, no DB change.** A lens nobody in the register had used. **215 security lints + 346 performance
