@@ -493,6 +493,12 @@ export default async function EditionPage(
 
   const fmv = detail.fmv
   const fmvAvailable = fmv && fmv.fmv_usd !== null
+  // Did we actually LEARN the 30d sale count? `fmv == null` means
+  // get_edition_detail returned no FMV row for this edition — a genuine absence
+  // (the detail read itself plainly succeeded, or this page would not be
+  // rendering), not a failure. But it does mean we learned nothing about sales,
+  // so the copy below must not characterise the market in that case.
+  const salesCountKnown = fmv != null && fmv.sales_count_30d != null
   // Market-closure honesty (2026-08-04). A closed market (UFC) carries the last
   // value forward with a fresh computed_at, so a "Current FMV $X / worth ~$X"
   // claim reads as live on a market frozen 400+ days ago. Suppress the hero
@@ -779,9 +785,32 @@ export default async function EditionPage(
         />
       </section>
 
+      {/* ⚠ THIS USED TO READ "No recent market activity" AND THAT IS A CLAIM ABOUT
+          THE MARKET MANUFACTURED FROM A GAP IN OUR PRICING (2026-08-22). The
+          branch fires on `!fmvAvailable`, i.e. we have no FMV — which says
+          nothing about whether the edition traded. Three states, never two:
+
+            • no fmv object, or a null sales count → we know nothing about
+              activity, so we must not characterise it at all;
+            • priced-less but sales_count_30d > 0 → it DEFINITELY traded and the
+              old copy was flatly false. This is reachable, not theoretical: most
+              Golazos editions are unpriced (0.9% at HIGH/MED) while still
+              selling;
+            • priced-less and a real 0 → "no sales" is supportable, but as a
+              claim about SALES, not about "activity". Disney Pinnacle Pins also
+              move by peer-to-peer TRADE, which leaves no sale row at all (see
+              lib/pinnacle/trade-classifier.ts), so on that collection "no
+              activity" would be wrong even with a true zero sale count.
+
+          ⚠ No `?? 0` on the count — a null sales_count_30d is UNKNOWN, and
+          defaulting it to 0 would publish a measured zero we never measured. */}
       {!fmvAvailable && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
-          No recent market activity
+          {!salesCountKnown
+            ? "No price available for this edition"
+            : fmv!.sales_count_30d! > 0
+              ? `${fmtCount(fmv!.sales_count_30d)} recent sales — not enough to price this edition`
+              : sectionEmptyCopy(salesCountKnown, "Recent sales", "No sales in the last 30 days")}
         </div>
       )}
 
