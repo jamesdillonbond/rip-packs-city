@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 6) — nothing in this repo measured the one limit that can silently delete the whole memory file
+
+**One test file. No DB, no migration, no prod-state change.**
+
+🚨 **The 40,000-character memory-file limit was enforced ONLY by the harness at load time.** Push
+CLAUDE.md over it and CI stays green while the file is flagged and stops being trustworthy context —
+**a total, silent loss of the project's memory, reported nowhere in the repo.** Grepping `__tests__`,
+`scripts/` and `.github/workflows/` for the limit returned nothing but unrelated fixture numbers.
+
+**Why now:** two sessions were editing CLAUDE.md concurrently tonight, both within ~100 characters of
+the ceiling, and I personally left it at **13 characters of headroom** mid-pass before displacing more
+text. The gap stopped being theoretical.
+
+✅ **`__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`** — three arms:
+the ceiling at 40,000 measured with **Node `String.length`** (the binding instrument; `wc -c` counts
+BYTES and once read 40,086 on a file whose true length was 39,610, and `wc -m` is platform-dependent);
+a **non-vacuity floor at 20,000**, because a truncated or moved file would otherwise satisfy the
+ceiling trivially and the guard would reward the failure it exists to catch; and an arm asserting
+**bytes > characters on this file**, which is the evidence for saying `wc -c` is the wrong instrument
+rather than a preference.
+
+⚠ **The failure message names the REMEDY, because the tempting fix is the wrong one:** it says do not
+delete a rule — move the text VERBATIM into the matching `docs/reference/*.md` and leave a one-line
+pointer, which is what CLAUDE.md's own header prescribes for itself.
+
+⚠ **Mutation-proven both ways before being believed:** +200 chars → the ceiling arm reds with the
+character count in the message; truncating the file to one line → the floor and bytes arms red (the
+ceiling arm passes, which is exactly the vacuous pass the floor exists to catch). Restored: **3/3
+green, and `git diff --stat CLAUDE.md` clean**, so the probe left no residue. CLAUDE.md now reads
+39,909 characters — **91 of headroom** — and its header says CI guards it.
+
+**Revert path:** `git revert <sha>` — one new test file plus a one-clause edit to CLAUDE.md's header.
+No DB half. Sha stamped in the follow-up commit, read after the push.
+
 ### 2026-08-22 · CONFIRMED (Claude Code, interactive) — the cron_heavy grant fix is proven on the SCHEDULER, not just by hand
 
 Closing the loop the previous entry deliberately left open: it claimed only a manual `SET LOCAL ROLE cron_heavy` run, because **a manual run is what fooled me the first time.**
