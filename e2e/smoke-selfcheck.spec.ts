@@ -7,6 +7,7 @@ import {
   toPath,
   pickEntityPath,
   discoverEntityPath,
+  __resetSitemapCache,
 } from "./entity-urls"
 
 // Self-check for the shared assertHealthyPage helper. The live smoke suite
@@ -136,6 +137,18 @@ const SITEMAP_BY_ID: Record<string, string> = {
 
 let server: http.Server
 let base: string
+
+// ⚠ The sitemap memo in entity-urls.ts is MODULE-level and Playwright reuses a
+// worker PROCESS across spec files, so a live entity-smoke run in this same
+// worker can leave PRODUCTION locs in it — and every discovery assertion below
+// would then be reading production instead of the fixture server started here.
+// That is not hypothetical: it made this file flaky-green in the 2026-08-23
+// dispatch (fixture edition 541 vs production edition 471). Drop the memo
+// before EACH test rather than once, so ordering inside this file cannot
+// reintroduce it.
+test.beforeEach(() => {
+  __resetSitemapCache()
+})
 
 test.beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -323,6 +336,32 @@ test("discoverEntityPath resolves a live URL per type from the sitemap fixtures"
     // spec SKIPS rather than fails.
     expect(await discoverEntityPath(ctx, "series")).toBeNull()
   } finally {
+    await ctx.dispose()
+  }
+})
+
+// ⚠ POSITIVE CONTROL for the beforeEach above, in BOTH directions. The reset is
+// invisible when it works, so without this test a future cleanup deletes it and
+// nothing goes red — the file just quietly starts reading production again.
+// Step 2 reproduces the exact 2026-08-23 flake mechanism in-process.
+test("the sitemap memo is real, and __resetSitemapCache is what makes this file read its OWN fixtures", async () => {
+  const ctx = await apiRequest.newContext({ baseURL: base })
+  const original = SITEMAP_BY_ID["2"]
+  try {
+    // 1. Prime the memo from the fixture as it currently stands.
+    expect(await discoverEntityPath(ctx, "edition_golazos")).toBe("/laliga-golazos/edition/541")
+
+    // 2. Change what the server serves. The memo still answers with the STALE
+    //    list — which is precisely how a live entity-smoke run sharing this
+    //    worker feeds production URLs to a fixture-based assertion.
+    SITEMAP_BY_ID["2"] = urlset("/laliga-golazos/edition/999")
+    expect(await discoverEntityPath(ctx, "edition_golazos")).toBe("/laliga-golazos/edition/541")
+
+    // 3. And the reset is what breaks that hold.
+    __resetSitemapCache()
+    expect(await discoverEntityPath(ctx, "edition_golazos")).toBe("/laliga-golazos/edition/999")
+  } finally {
+    SITEMAP_BY_ID["2"] = original
     await ctx.dispose()
   }
 })

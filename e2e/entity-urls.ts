@@ -82,6 +82,33 @@ export async function fetchSitemapLocs(request: APIRequestContext, id: number): 
   return locs
 }
 
+/**
+ * TEST-ONLY: drop the memo above.
+ *
+ * ⚠ WHY THIS IS NOT TIDINESS. `cache` is MODULE-level and Playwright reuses a
+ * worker PROCESS across spec FILES. entity-smoke.spec.ts runs against the LIVE
+ * site and fills this cache with production locs; smoke-selfcheck.spec.ts then
+ * runs its fixture HTTP server in that same worker and `fetchSitemapLocs`
+ * returns the cached PRODUCTION list instead — so the self-check silently
+ * verifies the discovery logic against production rather than against its own
+ * fixtures, which is the failure it exists to rule out.
+ *
+ * Measured 2026-08-23 in the dispatched e2e run on bb945049: the selfcheck
+ * expected the fixture's `/laliga-golazos/edition/541` and received
+ * production's `/laliga-golazos/edition/471`, failing on attempt 1 and passing
+ * on the retry (a FRESH worker, so a clean module cache) — i.e. it reported as
+ * "flaky" and the job stayed green.
+ *
+ * ⚠ The leak is OLDER than the arm that exposed it. Every pre-existing
+ * assertion happened to expect a value production also returns first, so
+ * pollution was indistinguishable from a pass. A second worker is what decided
+ * which segments were dirty, which is why it never reproduced twice the same
+ * way.
+ */
+export function __resetSitemapCache(): void {
+  cache.clear()
+}
+
 /** Discover a live, baseURL-relative URL for one entity type, or null. */
 export async function discoverEntityPath(
   request: APIRequestContext,
