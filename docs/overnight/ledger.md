@@ -8,6 +8,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the public profile page could answer 404 out of a timeout, and now cannot
+
+**Bounded `lib/profile/public-profile.ts`**, clearing `/profile/[username]` and
+`/profile/[username]/trophy-case`. Ratchet **15 → 13**, no slack (12 reds).
+
+🚨 **THE REASON IT NEEDED A THIRD STATUS, NOT JUST A BOUND.** The module already separated the two
+answers that look identical downstream — `idErr` → **500** (the database answered with an error) and
+`!idRow` → **404** (there is no such username). It had no way to express the third: **the database
+did not answer at all.** Bounding it into either existing branch would have been wrong, and one of
+them would have been actively harmful: **404 is the single status that asserts a profile does not
+exist**, on a page collectors SHARE. Publishing it out of a saturation spell tells a visitor that a
+named collector is not on the platform — a false claim about someone else's account, manufactured
+from our outage. The overrun answers **503**, added to the result union with that reasoning written
+next to it.
+
+⚠ **ONE budget across BOTH steps**, same reasoning as `resolveUsernames` earlier today: step 2 only
+runs if step 1 resolved, so per-step budgets would let a saturated DB spend the budget twice.
+
+⚠ **Bounding this page was safe for a reason specific to it, and the reason is worth stating because
+it does NOT generalise to the 13 that remain.** `ProfileClient` re-fetches every field on mount, so
+the SSR payload is a first-paint/SEO optimisation rather than the page's only source — a bounded
+null degrades to "the client fills it in", not to a blank page. The guard's own header warns that
+bounding a page with no degraded branch turns a slow page into a thrown error boundary; that warning
+still stands for the rest.
+
+**New `__tests__/public-profile-slow-read-is-not-a-missing-profile.test.ts`** — 4 assertions,
+mutation-proven **twice**: raising the budget to 120s reds it, and returning 404 instead of 503 reds
+it. ⚠ The assertions are on the **STATUS**, not on the message — a test checking only "some error
+came back" would pass on a 404, which is the exact defect. Three controls keep the bound from having
+swallowed the branches it must not touch: an unknown username is still 404, a driver error is still
+500, an empty username is still 400.
+
+⚠ **FOUND WHILE READING, NOT FIXED, AND DELIBERATELY NOT HALF-FIXED:** `ProfileClient`'s
+`/api/public/profile` fetch does `r.ok ? r.json() : null` then `.catch(function(){})`, so **if the
+client re-fetch ALSO fails the page renders an empty profile as fact** — the same class this entry is
+about, one layer out, and the layer that actually paints. The trophy leg next to it already models
+the fix (`slabsError` carries the distinction into the render). Not attempted here because it is a
+render-layer change on a shared public page and deserves its own pass rather than being appended to
+a bounding commit.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1356 files / 14,771 tests, 0 failures** ·
+`check-unbounded-server-reads` 13/13, reds at 12 · eslint adds **zero** new errors (the file's 4
+`no-explicit-any` errors are pre-existing and were measured on the untouched file first).
+
+**Revert path:** `git revert <sha of "fix(profile): a read that did not answer is not a missing
+profile">`. Library + guard + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · NO CODE SHIPPED — R20 re-derives as REFUTED: the backfill family is FINISHED, not throttled, and one raw payload said so
 
 **R20 was filed as P1** — "the 9-pipeline `*-sales-history-backfill` family is throttled off by its own saturation breaker and is invisible to every failure instrument". Re-measured before acting. **Three of its four claims do not survive, and the first was refuted by the condition R20 itself wrote down.**
