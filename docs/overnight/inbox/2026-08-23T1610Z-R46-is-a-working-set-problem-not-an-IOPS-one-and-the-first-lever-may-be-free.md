@@ -99,3 +99,76 @@ Two standing rules point opposite ways and R46 is where they meet:
 ---
 
 **Sources:** [Supabase compute add-on sizes and pricing](https://supabase.com/pricing) · [Manage Disk Throughput usage](https://supabase.com/docs/guides/platform/manage-your-usage/disk-throughput) · [Compute and Disk](https://supabase.com/docs/guides/platform/compute-and-disk)
+
+---
+
+## FOLLOW-UP 2026-08-23 20:35Z (13:35 PT) — ⛔ OPTION A DOES NOT EXIST, and the reason strengthens option C
+
+Settled by **measurement** — `GET /v1/projects/{ref}/billing/addons` on the Supabase Management API — not by the dashboard look the brief recommended.
+
+### The 22 MB/s is not a disk signature. It is `ci_small`'s own budget.
+
+The API reports, for the selected compute instance:
+
+```
+ci_small: { memory_gb: 2, cpu_cores: 2, cpu_dedicated: false,
+            baseline_disk_io_mbs: 174, max_disk_io_mbs: 2085 }
+```
+
+⚠ **The API field is MEGABITS and reads like megabytes.** 174 / 8 = **21.75 MB/s**; 2085 / 8 =
+**260.6 MB/s**. The published Compute-and-Disk table lists Small as **22 MB/s baseline / 261 MB/s
+max** — both sides agree, and 21.75 is exactly the "22 MB/s baseline, burst-credit model" CLAUDE.md
+records.
+
+So that number is **tied to the COMPUTE TIER, not to the disk.** It is not a gp2 signature. gp3 is
+Supabase's default disk type and ships 125 MB/s (raisable to 1,000), but that is a **second,
+stacked** constraint, and the docs are explicit: *"effective IOPS and throughput will be limited by
+the compute instance size."*
+
+👉 **The brief compared two different axes and read the gap as an opportunity.** A gp2→gp3 migration
+— if the disk were even gp2 — could not lift this instance above 22 MB/s baseline, because
+`ci_small`'s own budget binds first. **Strike row A. There is no $0 lever.**
+
+⚠ **I could not read the provisioned disk type, and it no longer matters.** No Management API
+endpoint exposes it (`/disk`, `/disk-attributes`, `/infra` all 404). The dashboard look would answer
+a question whose answer changes nothing.
+
+ⓘ Corroboration in passing: the brief's measured **8.9 MB/s sustained** against a **22 MB/s**
+ceiling is the ~40% it reported. **The ceiling number was right; only its cause was wrong.**
+
+### Option C buys three things, not one
+
+| | Small (now) | Medium | Large |
+|---|---|---|---|
+| RAM | 2 GB | 4 GB | **8 GB** |
+| cores | 2 | 2 | 2 |
+| dedicated CPU | ❌ burstable | ❌ burstable | ✅ **dedicated** |
+| baseline disk IO | 22 MB/s | 43 MB/s | **79 MB/s** |
+| burst ceiling | 261 MB/s | 261 MB/s | **594 MB/s** |
+| price | $15 | $60 | **$111** ($0.1517/hr) |
+
+The brief argued C on RAM alone. Baseline disk IO also **3.6×**es, the burst ceiling **2.3×**es, and
+`cpu_dedicated` flips **false → true** at Large. Every one of those sits on a constraint this box has
+actually been measured against.
+
+### ⚠ CLAUDE.md's rule is wrong in a second way, not just mis-scoped
+
+*"fix expensive queries, don't upgrade (Medium is the same 2 cores for 4×)"*
+
+- **Accurate about Medium's cores** — 2 burstable, same as Small. But Medium also doubles RAM *and*
+  doubles baseline disk IO, neither of which the rule mentions.
+- **Wrong at Large**, which is where the RAM measurement points: Large is 2 **dedicated** cores.
+  Not "the same 2 cores".
+
+The brief called the rule "factually right and on the wrong axis." Half holds: it is on the wrong
+axis, and it is **not** factually right about the tier that matters.
+
+### What this does NOT change
+
+The RAM measurement, the refusal to credit any option with "ending the band" absent a before/after,
+and the warning about the 97.96% hit ratio all stand untouched. This **narrows** the option set; it
+does not decide it. **C at $111/mo remains Trevor's call**, now against A being void rather than free.
+
+**Method note:** the value was only trustworthy once it reproduced the docs' published MB/s figure.
+A units check, not a lookup — `baseline_disk_io_mbs` names megabits and would have read as a 8×
+overstatement of headroom taken at face value.
