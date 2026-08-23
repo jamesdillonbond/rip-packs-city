@@ -1,4 +1,4 @@
-# Inbox index — 197 live filings
+# Inbox index — 198 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Last reconciled 2026-08-22 21:2x PT — 196 files, 196 links, 0 missing, checked by diffing the directory against this file rather than by trusting the count in this heading.**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 31 filings
+## 2026-08-22 — 32 filings
+
+- [R21 re-derived: 67 / 38 / 29 reproduces exactly — but its named example LEFT the set, and nobody had enumerated it](2026-08-23T0555Z-r21-re-derived-the-count-held-and-the-set-did-not.md)
 
 - [`check_public_security_invariants()` is RED for the first time since it was written — on a table whose grants are correct](2026-08-23T0510Z-the-rls-invariant-check-is-red-on-a-table-that-is-correctly-locked.md)
 
