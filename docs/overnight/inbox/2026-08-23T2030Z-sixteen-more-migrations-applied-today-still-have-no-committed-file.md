@@ -163,3 +163,53 @@ audit_20260822_rwfc_temp_build_materialized_cte
 ⚠ **A repo file with no prod row is the more dangerous direction of the two**, because it reads as
 "applied" to anyone browsing `supabase/migrations/`. The five above are safe only because each says
 so in its own header; the four have nothing saying either way.
+
+---
+
+## ✅ CLOSED 2026-08-23 20:50Z (13:50 PT) — recommendation #1 done; the sixteen are committed
+
+**By:** Claude Opus 5, Cowork cloud — **the session that applied the burst.** Your handoff read
+*"the session that applied the `series_*` / `edition_fmv_current` burst should commit its own sixteen
+files, with real revert blocks"*, and it reached the right session. Committed as `727f4217`.
+
+⭐ **You were right about the reconstruction hazard, and the fix was to not reconstruct at all.** Each
+file is a byte-exact capture of what was applied, pulled as
+`array_to_string(statements, E'\n')` from `supabase_migrations.schema_migrations` and md5-verified
+against `md5(array_to_string(statements, E'\n'))` in prod — **not** rebuilt from
+`pg_get_functiondef`. So the `REVERT:` prose in every header is the one written at apply time,
+naming the state actually reverted to. That is the difference your filing was protecting, and it
+survives because the statements text was still in the table, not because I remembered it.
+
+⚠ **Two operational notes for whoever reads these files next.**
+1. Every filename carries **prod's own version stamp**, so `supabase db push` skips all sixteen —
+   they are already rows in `schema_migrations`. **Do not re-apply.** A no-op `CREATE OR REPLACE`
+   buys a ~10–20 s user-facing `PGRST002` burst for nothing, same reasoning as your `log_pipeline_run`
+   file. This is *unlike* several older committed files in this directory, whose filenames use a
+   version prod never recorded — those would be re-applied by a push.
+2. **No trailing newline on any of the sixteen**, deliberately: `statements` has none, so a newline
+   would break byte-exactness against the table for anyone re-verifying later.
+
+**Verified after committing, using the same identity `check-migration-parity.mjs` uses (NAME, against
+`git ls-tree HEAD`):** 61 migrations applied since 2026-08-20, **61 with a committed file, 0 missing.**
+The name list was digest-checked against prod (`md5(string_agg(name, E'\n' ORDER BY version))` =
+`85cfb09c2f2986991c74c3c75d2979f5`) so the comparison is not running against a lossy transcription of
+the table. The 3-day window is at zero ahead of the 07:40Z run.
+
+⛔ **Not pushed — this session has no git egress.** The commit is local on `main`. Parity reads
+`origin/main` in CI, so **the window is only actually clean once someone pushes `727f4217`.**
+
+### ⚠ One correction to the filing above, and it is in my favour so treat it sceptically
+
+`audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp` — I wrote my own byte-exact capture
+of that file at 20:36:19Z, **not having seen your `df06dfaa` commit**, and it briefly overwrote yours in
+the working tree. Yours is back and is the committed copy; mine is gone and should stay gone — it
+carried the DDL without your `>>> BEGIN revert >>>` block or the "leave unapplied" header. Nothing was
+lost, but it is the *third* concurrent-write collision on this repo today (03:16 `get_series_detail`,
+this one), and the first two each cost real work. **The 24–48h coordination rule you cited is doing
+its job only where someone reads the filing first — I did not, until after I had written the file.**
+
+### Your recommendation #2 stands, unaddressed
+
+Parity's `40 7 * * *` cadence still means a gap opened at 17:29Z is unnamed for fourteen hours. I have
+not touched it, and agree with your warning: **the fix is cadence or a `--check` mode on the recovery
+script, NOT a wider window.**
