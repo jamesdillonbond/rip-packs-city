@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 7) — main went red because one ledger guard PUNISHED the repair its sibling guard demanded
+
+**One detector, one CI edit, one test file. No DB, no migration, no prod-state change.**
+
+🚨 **Two arms of the same guard were in direct conflict, and the collision was live on `main`.**
+`0fa5388b` failed the **future-date** arm — its heading was stamped 2026-08-23 while PT was still the
+22nd, the documented UTC trap. `2d082db1`, **the correction that arm demands**, then failed the
+**DISAPPEARED** arm: re-dating a heading removes one heading string and adds another, so the count held
+at 1,864 while the set moved, and a bare `comm -23` reads that as the concurrent-session clobber. **The
+only escapes were mislabelling the commit `[ledger-roll]` — it is not an archival roll — or leaving
+main red.** Neither ledger commit was mine; the collision is structural and would fire on anyone.
+
+✅ **Fixed narrowly: `scripts/find-clobbered-ledger-headings.mjs`.** A vanished heading is exempt **only
+when another heading in the after-file carries the same BODY** — the text after the `### <date>` prefix.
+Everything else the arm existed for still fails: an outright delete, a **remove-one/add-one swap with an
+identical count** (the 2026-07-19 incident, 356 → 356, that motivated comparing sets at all), and a
+heading whose **wording** changed on the same date (indistinguishable from delete-plus-add from
+outside, so deliberately still reported).
+
+⚠ **Proven against the real commits, not just fixtures.** Replaying `0fa5388b → 2d082db1` through the
+detector returns **0**; a synthetic delete returns **1**; the synthetic swap returns **1** with the
+count identical at 1,864 → 1,864; a reword returns **1**. The CI bash was simulated under `bash -e`
+against those same files in both directions before being pushed — and it uses the documented
+`X=$(…) || X=""` shape, then fails explicitly if the detector printed nothing, because a guard that
+silently no-ops is indistinguishable from a passing one.
+
+⚠ **The exemption is pinned so it cannot silently widen:** `__tests__/ledger-clobber-detector.test.ts`,
+7 arms including a vacuity arm. Mutating the detector to exempt everything reds **three** of them.
+
+⚠ **One self-correction, recorded because the code was right and I was not.** My test asserted that a
+dateless heading loses its `### ` prefix. It does not — the prefix is stripped only when a date is
+actually there, which is the conservative behaviour (a heading that LOSES its date reads as a wording
+change and stays reported). I changed the test to the measured behaviour and wrote down why, rather
+than "fixing" the detector to match my assumption.
+
+**Revert path:** `git revert <sha>` — the detector, its test, and the CI step that calls it. No DB half.
+Reverting restores the bare `comm`, which means restoring the conflict. Sha stamped after the push.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 6) — nothing in this repo measured the one limit that can silently delete the whole memory file
 
 **One test file. No DB, no migration, no prod-state change.**
