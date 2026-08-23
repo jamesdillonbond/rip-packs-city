@@ -106,3 +106,49 @@ seconds old at capture):
 whether UFC belongs in the metric — is a product/priority decision, and two of them redefine the gate the
 roadmap is measured against. **That is Trevor's call, and it should be made on this table rather than on an
 impression.** ⚠ Every figure is a dated sample from 22:05Z on 2026-08-23; `fmv_current` moves continuously.
+
+---
+
+## 5. FOLLOW-UP 22:15Z — I named the wrong target in §4, and the measurement says so
+
+§4 called **Golazos the clearest single target**. Measured, that is wrong, and the correction matters because
+acting on it would have produced *fabricated confidence* rather than accuracy.
+
+**Golazos is alive but THIN, and thin is not fixable by us.** 62 sales in 30 days across **46 editions** —
+so only **8% of its 575 priced editions traded at all** — and of those 46:
+
+| confidence | editions | sales in 30 d (min–max, avg) |
+|---|---:|---|
+| `LOW` | 39 | 1–3, **avg 1.4** |
+| `ASK_ONLY` | 7 | 1–3, avg 1.3 |
+
+**Not one Golazos edition that sold has more than THREE sales in a month.** No honest confidence rule
+promotes a 1.4-sales-per-month edition to MEDIUM. ⛔ **So the lever here is not a threshold — dropping one to
+turn these into MEDIUM would publish a confident price built on a single trade**, which is the exact
+fabricated-number class this repo bans elsewhere. Golazos' 0.0% is the market, not the model.
+
+## 6. The model is VALIDATED, and the real bounded question is 167 editions
+
+All Day, every edition with a sale in the last 30 days, grouped by the confidence it was assigned:
+
+| confidence | editions | avg sales / 30 d | ≥5 sales | ≥10 sales |
+|---|---:|---:|---:|---:|
+| `HIGH` | 184 | **11.8** | **184 (100%)** | 113 |
+| `MEDIUM` | 752 | **5.5** | 469 (62%) | 79 |
+| `LOW` | 1,545 | **2.6** | 167 (11%) | 25 |
+| `ASK_ONLY` | 8 | 2.5 | 1 | 0 |
+
+**Confidence tracks trade volume monotonically, and cleanly.** Every HIGH edition has ≥5 sales; LOW averages
+2.6. ⭐ **That is the finding that should change how the 30.1% is read: the accuracy gate is mostly a
+LIQUIDITY CEILING, not an engineering defect.** Most editions on these platforms do not trade often enough
+to support a confident price, and no amount of pipeline work changes that.
+
+🎯 **The one genuinely bounded question left, and it is small enough to answer:** **167 LOW editions have ≥5
+sales in 30 days and 25 have ≥10** — the same volume band where 469 MEDIUM and 184 HIGH editions sit. Volume
+alone therefore does *not* decide confidence; something else demotes them (price dispersion, recency inside
+the window, ask-vs-sale divergence). **Either those 167 are correctly LOW for a reason worth stating on the
+surface, or they are the only editions on this platform where better modelling raises confidence without
+inventing it.** That is a well-posed question against a 167-row population — unlike "improve accuracy".
+
+⚠ **Still no recommendation.** §5 and §6 narrow *where* to look; they do not say what to do, and the answer
+to §6 could legitimately be "they are correctly LOW". ⚠ Dated sample, 2026-08-23 22:15Z.

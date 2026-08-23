@@ -32,7 +32,7 @@ failure it documents.
 
 ## 2026-08-23 — 14 filings
 
-- [⭐ PRIORITY 1 CAPTURED, first time since 2026-07-26: signed-in WAU is 0, and the accuracy gate stands at 30.1% HIGH/MEDIUM — with three denominator caveats](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md)
+- [⭐ PRIORITY 1 CAPTURED, first time since 2026-07-26: signed-in WAU is 0, and the accuracy gate stands at 30.1% HIGH/MEDIUM — with three denominator caveats](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md) — ⚠ **§5 RETRACTS its own "Golazos is the target"** (follow-up in-file): Golazos is market thinness (max 3 sales/edition/month), the confidence model is VALIDATED against volume, and the one bounded question is **167 LOW editions with ≥5 sales/30d**
 - [⭐ The series-rollup fix WAS load-tested — its best run happened in the day’s worst hour, and I spent all evening saying it was unverified](2026-08-23T2055Z-the-series-rollup-fix-was-already-load-tested-i-just-never-read-the-neighbours.md)
 - [SIXTEEN more migrations applied today still have no committed file — a SECOND batch, after this morning's recovery](2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md)
 - [Postgres 17 makes a partial index UNREACHABLE when its predicate says `col IS NOT NULL` and the column is declared NOT NULL — including the 98 MB index `fmv-recalc` needs](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md)

@@ -47,6 +47,22 @@ triple-keyed path. **"30.1% of prices" covers four of the five published collect
 market belongs in the gate are product decisions, and two of them redefine the metric the roadmap is judged
 on. **Trevor's call, and it should be made on the table rather than on an impression.**
 
+⚠ **FOLLOW-UP 22:15Z, and it RETRACTS the target that entry named.** I called Golazos *"the clearest single
+target"*. Measured, that is wrong: 62 sales in 30 d across **46 editions** (8% of its 575 priced), and **not
+one that sold has more than THREE sales in a month** (avg 1.4; 39 LOW, 7 ASK_ONLY). ⛔ **A threshold change
+there would manufacture confidence off a single trade** — the fabricated-number class this repo bans. Golazos'
+0.0% is the market, not the model.
+
+⭐ **And the model is VALIDATED, which changes how 30.1% should be read.** All Day, every edition with a sale
+in 30 d: **HIGH avg 11.8 sales and 100% have ≥5**; MEDIUM 5.5; LOW 2.6. Confidence tracks volume
+monotonically. **The accuracy gate is mostly a LIQUIDITY CEILING, not an engineering defect** — most editions
+do not trade often enough to price confidently, and no pipeline work changes that.
+
+🎯 **One bounded question survives, and it is small: 167 LOW editions have ≥5 sales in 30 d and 25 have ≥10**,
+in the same volume band as 469 MEDIUM and 184 HIGH. So volume alone does not decide confidence. Either the
+reason they are demoted belongs on the surface, or they are the only editions where better modelling raises
+confidence without inventing it. Marked beside the `INDEX.md` entry and carried into `focus.md`.
+
 **Revert path:** `git revert` the docs commit (find by message `docs(traction): capture priority 1`). No DB
 or production state was changed.
 
