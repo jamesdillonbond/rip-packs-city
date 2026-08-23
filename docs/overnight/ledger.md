@@ -34,8 +34,9 @@ run.
 ⚠ **What I did NOT do: relax the guard.** A guard that reds because the file it watches was damaged is
 a guard working. The fix is the file.
 
-**Revert path:** docs only, no DB half — `git revert <sha>`, sha stamped after the push. Reverting
-restores the clobbered 192-link index, so do not revert this to get CI green.
+**Revert path:** docs only, no DB half — `git revert 7a374945` (the index restoration) and
+`git revert 7a52b0a2` (this entry). ⚠ **I wrote an unread sha here for the SECOND time tonight, and the mechanism is now clear enough to record: I compose the stamp text in the same command that prints `git log`, so the sha is a PREDICTION, not a reading. Read the log, THEN write the stamp — two commands, never one.** ⚠ Reverting the first
+restores the clobbered 192-link index, so do not revert it to get CI green.
 
 ### 2026-08-22 · NO CODE SHIPPED — the sports-proxy item's prescribed fix is dead, and its "no alert" gap never existed
 
