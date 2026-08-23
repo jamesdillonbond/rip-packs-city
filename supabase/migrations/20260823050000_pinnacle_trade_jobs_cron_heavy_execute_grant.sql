@@ -1,0 +1,55 @@
+-- 🚨 P1: BOTH Pinnacle TRADE cron jobs have NEVER successfully run.
+--
+--     rpc-backfill-pinnacle-trade-acquisitions  (23 */3)  status=failed
+--     rpc-backfill-pinnacle-trade-editions      (41 * * *) status=failed
+--     ERROR: permission denied for function ...
+--
+-- CAUSE, and it is self-inflicted. Both jobs were scheduled under `cron_heavy`
+-- (`SET LOCAL ROLE cron_heavy` before `cron.schedule`), and **EXECUTE is checked
+-- against the CALLER even on a SECURITY DEFINER function**. Their creating
+-- migrations did:
+--
+--     REVOKE EXECUTE ON FUNCTION … FROM PUBLIC, anon, authenticated;
+--     GRANT  EXECUTE ON FUNCTION … TO postgres, service_role;
+--
+-- ⚠ A NEW FUNCTION GETS `EXECUTE TO PUBLIC` BY DEFAULT, AND `cron_heavy` WAS
+-- RELYING ON IT. Revoking PUBLIC — correct and required, for anon safety —
+-- removed the very grant the scheduler needed, and the explicit GRANT list did
+-- not name `cron_heavy`. The sibling `backfill_pinnacle_mint_acquisitions`,
+-- scheduled the same way, works precisely because it still carries that grant:
+-- measured, `has_function_privilege('cron_heavy', …)` is TRUE for the mint
+-- function and FALSE for both trade functions.
+--
+-- ⚠ WHY IT LOOKED FINE FOR HOURS — THE PART WORTH REMEMBERING. Neither function
+-- writes `pipeline_runs`, so a permission failure happens BEFORE anything is
+-- logged: it presents as SILENCE, not as failure. And I had "verified" both by
+-- calling them over the Supabase MCP, which connects as `postgres` — a role that
+-- HAS execute. **A positive control that does not use the production caller is
+-- not a positive control.** The only place the failure was visible was
+-- `cron.job_run_details`, which nothing was watching.
+--
+-- ⚠ A concurrent session hit the IDENTICAL trap on the same night
+-- (20260823032000_audit_20260823_series_rollup_cron_heavy_execute_grant.sql).
+-- Two independent instances in one night makes this a house rule, not a
+-- one-off: **after scheduling any pg_cron job under a non-postgres role, assert
+-- `has_function_privilege('<role>', '<fn>', 'EXECUTE')` before calling it done.**
+--
+-- IMPACT WHILE BROKEN (bounded, and no data was lost):
+--   • no `moment_acquisitions` row was written for any trade — a traded Pin
+--     showed no acquisition at all rather than a wrong one;
+--   • already-written trade rows were never promoted to an `edition_id` as the
+--     nft_map grew. New rows were unaffected — the indexer route resolves
+--     edition_id inline at insert, which is why coverage still climbed from
+--     7.8% to 10.1% and masked this.
+-- Both functions are idempotent, so the first successful run catches everything
+-- up; nothing needs replaying by hand.
+--
+-- Revert:
+--   REVOKE EXECUTE ON FUNCTION public.backfill_pinnacle_trade_acquisitions(integer) FROM cron_heavy;
+--   REVOKE EXECUTE ON FUNCTION public.backfill_pinnacle_trade_editions() FROM cron_heavy;
+-- anon-exec: unchanged -- this migration only ADDS a cron_heavy grant; the PUBLIC/anon/authenticated
+-- revokes from the creating migrations stand for backfill_pinnacle_trade_acquisitions and
+-- backfill_pinnacle_trade_editions, and neither becomes anon-callable here.
+
+GRANT EXECUTE ON FUNCTION public.backfill_pinnacle_trade_acquisitions(integer) TO cron_heavy;
+GRANT EXECUTE ON FUNCTION public.backfill_pinnacle_trade_editions() TO cron_heavy;
