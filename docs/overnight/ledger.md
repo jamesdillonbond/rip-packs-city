@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the pre-registered control PASSED EXACTLY, and I had to retract my own "cold start" call
+
+🚨 **I TOLD TREVOR THE 146 s FIRST TICK WAS A COLD START. THE FOURTH TICK WAS 195 s AND REFUTED IT.** Same route, same 2,000-block range, four readings: **145,951 · 22,330 · 3,785 · 195,388 ms**. Two readings looked like a cold start settling; they were the first two points of a high-variance series. ⚠ **Two points is not a distribution either — that is the same error as a one-point rate, one sample later.** The spread is NOT in the fetches (`AbortSignal.timeout` bounds each at 15 s, so 8 chunks cannot exceed ~120 s); the remainder is DB round-trip time on an instance where disk-IO saturation is the dominant problem.
+
+**Why it mattered rather than being a cosmetic mis-call:** 195 s against `maxDuration` 300 s is 1.5× headroom, and I had just shipped a backfill lane walking **5× the range**. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill and this route is SYNCHRONOUS, so a kill takes the terminal `log_pipeline_run` with it and the tick leaves NO row at all — indistinguishable from "the cron never fired".** Statistically-unlikely was not good enough.
+
+**Shipped: a 200 s SOFT DEADLINE.** No new wave starts past it; the completed waves' frontier is already committed, so the deferred tail simply resumes next tick. ⚠ **`soft_deadline` is a SEPARATE flag from `partial_scan`, deliberately.** They are different diagnoses — `partial_scan` means a chunk ERRORED and its range needs investigating; `soft_deadline` means every chunk attempted read fine and the clock ran out. **Sharing a flag would send someone hunting a Flow REST fault that never happened.** Reported on every tick that hits it, including successful ones, so the frequency is visible before it becomes a wall-clock kill.
+
+⚠ **The test for it was VACUOUS on the first draft and I caught it by its own title.** "…is NOT reported as a failed read" is a negative claim, and my assertion was `expect(a && b).toBeFalsy()` guarded by `if (extra.soft_deadline)` — green while proving nothing, because the deadline never tripped. **Two separate reasons it did not trip, both worth recording:** the test window was 300 blocks = ONE wave, and the deadline is only re-checked BETWEEN waves; and under bare `useFakeTimers` the inter-wave `setTimeout` never resolves, so the route hung. Fixed with a window of 2,000 blocks (8 chunks = 2 waves), `shouldAdvanceTime: true`, and a fetch stub that burns 60 s of fake clock per call. **Mutation-checked both ways: disabling the deadline reds it, restoring greens it.**
+
+✅ **THE PRE-REGISTERED POSITIVE CONTROL PASSED EXACTLY.** Window B (162,153,001–162,163,000) was hand-measured BEFORE the lane existed and predicted 5 trades / 23 Pins. The lane, having cleared it, holds **23 rows / 5 transactions**, and every tx matches on id AND Pin count:
+
+    162,156,219  080189dfff4666b7…   6 Pins
+    162,161,013  1ed154b8f3599475…  10 Pins
+    162,162,800  ab09afd548d3699b…   2 Pins
+    162,162,947  3796468efe002761…   2 Pins
+    162,162,958  2ba76c3c7e08492e…   3 Pins
+
+`pins_in_trade` equals the actual written row count in all five, and **every trade has `directions = 2`** — bidirectionality confirmed on live data, not only on fixtures. ⚠ **Trades are BURSTY**: four of the five sit inside 1,945 blocks, so a zero-trade tick is the common case and must not be read as a broken lane.
+
+**REVERT:** `git revert <sha>` (code only; no DB change in this entry).
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two Cowork migrations existed only in the DB; the repo record is now on `main`, and dropping the `rn = 1` escape created a third skip cause the route's comment denied
 
 **The drift, and why it was the silent-green kind.** `audit_20260822_ownership_backfill_targets_cost_ordering` was live in prod (`schema_migrations` version `20260822233700`) with **no file in `supabase/migrations/`** — Cowork applied it via the Supabase MCP, and `apply_migration` writes nothing to the repo. Meanwhile `19280e25` shipped a route calling its **new two-argument signature**. A rebuild from `supabase/migrations` alone yields the **one-arg** function; the `rpc()` call fails to resolve; the incremental branch's `catch` swallows it into `refreshNote`; `batchSets` stays empty — and the skip guard that same commit added then reports **`ok=true`, nothing spent, lane never advances**. Green everywhere, doing nothing. Both files are now tracked: `20260823001500_…cost_ordering.sql` and `20260823014500_…drop_rn1_escape.sql`.
