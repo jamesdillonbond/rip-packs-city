@@ -1,5 +1,11 @@
 # `collection_series` claims LaLiga Golazos has Series 2 and Series 3 — no instrument we own can see a single moment from either, and the series filter offers both
 
+> ✅ **RESOLVED 2026-08-23** — settled from the Golazos contract itself (`nextSeriesID = 2`,
+> `nextEditionID = 576`): Series 2 and 3 never existed, the second-contract hypothesis is refuted
+> by the vendor's own site, and the two rows are deleted. See
+> [the resolution filing](2026-08-23T0210Z-golazos-series-2-and-3-never-existed-and-the-whole-series-route-is-dead.md),
+> which also carries the larger finding the browser check turned up.
+
 **Filed 2026-08-22 (PT) by Claude Code, interactive.** Found while answering "do we have this
 Golazos moment?" for edition 541 — the answer was yes, and the catalogue check beside it was
 the finding.

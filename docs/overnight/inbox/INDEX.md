@@ -1,6 +1,6 @@
-# Inbox index — 198 live filings
+# Inbox index — 192 live filings
 
-**Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Last reconciled 2026-08-22 21:2x PT — 196 files, 196 links, 0 missing, checked by diffing the directory against this file rather than by trusting the count in this heading.**
+**Generated 2026-08-22 (PT) by Claude Code, deep-audit R27.**
 
 ## Why this file exists
 
@@ -30,19 +30,10 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 32 filings
+## 2026-08-22 — 26 filings
 
-- [R21 re-derived: 67 / 38 / 29 reproduces exactly — but its named example LEFT the set, and nobody had enumerated it](2026-08-23T0555Z-r21-re-derived-the-count-held-and-the-set-did-not.md)
+- [RESOLVED, SHIPPED, and carrying three of my own corrections: Golazos Series 2/3 never existed on chain (nextSeriesID=2) and the rows are deleted; the series route was 500ing on every collection because a rollup that ALREADY EXISTED had no reader — now 26/26 URLs return 200](2026-08-23T0210Z-golazos-series-2-and-3-never-existed-and-the-whole-series-route-is-dead.md)
 
-- [`check_public_security_invariants()` is RED for the first time since it was written — on a table whose grants are correct](2026-08-23T0510Z-the-rls-invariant-check-is-red-on-a-table-that-is-correctly-locked.md)
-
-- [`public_board_slow_count` / `public_board_empty_count` write their "could not measure" sentinel at 21 of their last 36 slots — the standing breach is partly an unmeasured arm, not 45 unhealthy boards](2026-08-23T0255Z-the-board-liveness-arms-read-their-999-cannot-measure-sentinel-at-21-of-36-slots.md)
-- [🚨 Sentry has ingested NOTHING since 2026-08-18 13:21:59Z — and Vercel logged the identical error string 447 times in the last 24 hours](2026-08-23T0250Z-sentry-has-received-nothing-since-08-18-while-production-throws-the-same-error-hundreds-of-times-a-day.md)
-- [Pinnacle bulk ONE-WAY transfers are a real, untracked ownership change](2026-08-22T2030Z-pinnacle-bulk-one-way-transfers-are-untracked.md)
-
-- [The `.range()` guard states the uniqueness rule in its own header and asserts something weaker — a repo-wide measurement of what it cannot see](2026-08-23T0236Z-the-paginated-range-guard-states-the-uniqueness-rule-in-a-comment-and-cannot-check-it.md)
-
-- [`/sitemap/3.xml` truncates on a statement timeout and returns the partial set as if it were complete — and it pages on a key where 72% of rows are ties](2026-08-23T0228Z-the-sitemap-truncates-on-a-statement-timeout-and-pages-on-a-key-that-is-72pct-ties.md)
 - [/api/ready has been 500ing for eight days, and it settles a disagreement](2026-08-23T0025Z-api-ready-has-been-500ing-for-eight-days-and-it-settles-a-disagreement.md)
 
 - [pg_cron reports 141/144 successes while allday-pack-opens-backfill has written nothing for 12.6h](2026-08-23T0200Z-allday-pack-opens-backfill-silent-while-pg-cron-reports-141-successes.md)

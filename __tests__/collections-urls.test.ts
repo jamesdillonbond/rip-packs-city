@@ -81,14 +81,24 @@ describe("dapperMarketEditionUrl (dapper.market edition grain)", () => {
     )
   })
 
+  it("builds the NFL All Day edition link from the on-chain editionID", () => {
+    // Verified against live pages 2026-08-23, with a negative control:
+    // /nfl/edition/1472 is "Dalvin Cook Rush - COMMON" (Base, #/10000) and
+    // /nfl/edition/973 is "JuJu Smith-Schuster Rush - COMMON" (#/10000), while
+    // /nfl/edition/99999999 renders "Edition not found" — so the two hits are
+    // real lookups, not a catch-all route that accepts any id.
+    expect(dapperMarketEditionUrl("nfl-all-day", "1472")).toBe(
+      "https://dapper.market/nfl/edition/1472"
+    )
+  })
+
   it("returns null for collections with no VERIFIED edition-URL shape", () => {
-    // Not "collections that are absent from dapper.market" — nba/nfl moments DO
-    // resolve there. These are null because no edition URL has been confirmed
-    // (nfl-all-day) or is derivable from external_id at all (nba-top-shot).
+    // Not "collections that are absent from dapper.market" — nba moments DO
+    // resolve there. nba-top-shot is null because no numeric editionID is
+    // derivable from its composite external_id at all.
     // If someone adds a seg entry, they must delete the matching line here, and
     // that deletion is the prompt to verify a real page first.
     expect(dapperMarketEditionUrl("nba-top-shot", "541")).toBeNull()
-    expect(dapperMarketEditionUrl("nfl-all-day", "541")).toBeNull()
     expect(dapperMarketEditionUrl("disney-pinnacle", "541")).toBeNull()
     expect(dapperMarketEditionUrl("ufc", "541")).toBeNull()
   })

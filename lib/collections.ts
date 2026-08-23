@@ -417,14 +417,18 @@ export function dapperMarketMomentUrl(collectionId: string, momentId: string | n
 //     COMPOSITE of set+play ("<setUUID>:<playUUID>", or "258:9004::16" for a
 //     subedition), so no /nba/edition/<id> URL is derivable from anything we
 //     store. This one can never be added from external_id alone.
-//   - "nfl-all-day" DOES store a numeric on-chain editionID, so the URL shape is
-//     plausible — but it is UNVERIFIED. An unverified outbound CTA sends a
-//     collector to a 404, which is the exact failure the native-template null
-//     cases above exist to prevent. Add `"nfl-all-day": "nfl"` here (plus its
-//     case in __tests__/collections-urls.test.ts) once one real
-//     /nfl/edition/<id> page has been opened and confirmed.
+//   - "nfl-all-day" was UNVERIFIED until 2026-08-23 and is now confirmed by
+//     rendered DOM, with a discriminating negative control so "it renders" is
+//     not the whole test:
+//       /nfl/edition/1472 -> "Dalvin Cook Rush - COMMON | Dapper", Base, #/10000
+//       /nfl/edition/973  -> "JuJu Smith-Schuster Rush - COMMON | Dapper", #/10000
+//       /nfl/edition/99999999 -> "Edition not found"
+//     Both ids came from editions.external_id, so the value we paste is the
+//     value dapper.market keys on. The not-found case is what rules out a
+//     catch-all page that would have made any id look valid.
 const DAPPER_MARKET_EDITION_SEG: Record<string, string> = {
   "laliga-golazos": "laliga",
+  "nfl-all-day": "nfl",
 }
 
 // Two gates, not one. The seg map decides WHICH collections have an edition
