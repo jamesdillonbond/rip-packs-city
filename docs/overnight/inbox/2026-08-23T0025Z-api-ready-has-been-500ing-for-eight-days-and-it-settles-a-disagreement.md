@@ -82,3 +82,49 @@ my change, and does the opposite:
 days, while the actual defect — a one-line privilege regression — stayed invisible.** The honest surface
 would have made the outage *look handled*. **Fix the endpoint; do not decorate its failure.** The guard's
 instinct to leave the caveat alone was better than mine, for a reason neither of us had stated.
+
+---
+
+## UPDATE ~00:50Z — MEASURED, AND **BOTH** FIXES ABOVE ARE WRONG. Do not ship either.
+
+I proposed two candidates and framed it as an operator choice between them. **Measurement says neither
+works**, because the premise both share — that `health_check` is a viable synchronous call — is false.
+
+### `health_check` does not complete in 60 s
+
+Run as `postgres` (which holds EXECUTE), in the **quiet window** at ~00:45Z, it did not return inside the
+MCP's 60 s cap. ⚠ Per CLAUDE.md that cap abandons the **result, not the query**, so I did not retry — I
+looked it up in `pg_stat_activity` instead: still `active` at **76 s**, `wait_event = DataFileRead`. **I
+cancelled it** (`pg_cancel_backend`, confirmed 0 remaining) rather than leave ~80 s of disk-IO burn on the
+budget this instance is actually constrained by. **I added that load; recording it rather than omitting it.**
+
+### Why that kills candidate 1 (`GRANT EXECUTE … TO anon`)
+
+`authenticator` carries **`statement_timeout=8s`**, and that is the binding ceiling on the PostgREST path —
+`anon`'s declared `3s` never applies, because `rolconfig` is a LOGIN-time setting and PostgREST logs in as
+`authenticator` then `SET LOCAL ROLE`s. `health_check` declares only a `search_path` (no timeout, and a
+function-level one would be inert regardless).
+
+⚠ **So granting anon EXECUTE would swap a `42501` permission error for an `8 s` statement timeout. The
+endpoint still returns 500.** It would look like a fix, ship green, and change nothing a user sees — while
+consuming 8 s of the IO budget on every page load that probes it, which is strictly worse than failing fast.
+
+### Why it also kills candidate 2 (service-role client)
+
+No Postgres timeout bounds a `supabaseAdmin` RPC, so the call would run until **Vercel** kills it — which is
+exactly the second error cluster already on this route (`Task timed out after 10 seconds`, 13 occurrences
+since 06-16). Same 500, more IO burned.
+
+### ✅ Corroboration that this is long-standing, not a fluke
+
+`pg_stat_statements` has **4,777 rows since 2026-08-12** (positive control: the table is populated and the
+window spans the outage) and **ZERO for `health_check`**. It has not successfully executed in 11 days —
+consistent with the anon path dying at the permission check and nothing else calling it.
+
+### The actual fix has to change the SHAPE, not the privilege
+
+`/api/ready` needs an answer in single-digit seconds on an anon-reachable route. A >60 s aggregate cannot be
+served synchronously under any role. Options worth costing (**none measured — do not treat as a
+recommendation**): precompute the health snapshot on a schedule and have the route read the row; or split
+`health_check` so the probe returns only the cheap legs. ⚠ **Whatever is chosen, re-measure — the 60 s figure
+is a floor, not the runtime**, since it was cancelled rather than allowed to finish.
