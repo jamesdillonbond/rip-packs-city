@@ -1163,6 +1163,22 @@ const PINS = [
       "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
   },
   {
+    // Added 2026-08-22 with the Pinnacle TRADE lane — the third Pinnacle
+    // transaction type. Pinned for the same reason as its two siblings (it
+    // writes the COST BASIS table) and for one more: it sits BESIDE
+    // backfill_pinnacle_mint_acquisitions and is DELIBERATELY asymmetric with
+    // it. The mint path gates on an nft_id-scoped NOT EXISTS because a mint is a
+    // Pin's FIRST acquisition; this path must NOT, because a Pin trades many
+    // times and each trade is a real acquisition. Making the two "consistent"
+    // would silently record only a Pin's first trade — the regression the SQL
+    // test exists to catch. Like the mint path it writes NO buy_price: a trade
+    // costs Pins, not dollars, and a 0 renders 100% profit forever.
+    fn: "backfill_pinnacle_trade_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_trade_acquisitions.sql",
+    migration:
+      "supabase/migrations/20260822180000_pinnacle_trade_events_and_trade_acquisitions.sql",
+  },
+  {
     // pg_cron `30 8 * * *`. An FMV HONESTY instrument: the set of Top Shot
     // editions whose published FMV is inflated relative to what the market
     // actually paid — THIN (<15 sales/90d) AND FMV >1.5x the 90-day median. Those
