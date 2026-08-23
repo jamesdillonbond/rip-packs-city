@@ -8,6 +8,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — a try/catch catches a THROW, and a hang throws nothing
+
+**Extracted and bounded the single read behind `/[collection]/hot-floors` and
+`/[collection]/challenges`** into `lib/hot-floors/fetchers.ts` and
+`lib/challenges/hub-fetchers.ts`. Unbounded-reads ceiling **6 → 4**; the server-page
+**data-access** ratchet **8 → 6** in the same commit.
+
+🚨 **THE SHARPEST STATEMENT OF THIS WHOLE CLASS, and it is why these two were worth doing.** Both
+pages already wrapped their read in a `try/catch`, and both already had the RIGHT honest branch:
+*"Couldn't load hot floors right now"* rendered separately from *"No sweeps detected in the last 3
+days"* — one claim about US, one about THE MARKET. **Neither branch was reachable.** A `try/catch`
+catches a **THROW**, and a read that merely hangs throws nothing: supabase-js resolves
+`{ data, error }` only when the query finishes. So the error handling looked complete, reviewed as
+complete, and could not fire on the failure DB saturation actually produces — the document just never
+finished and Vercel logged a 200.
+
+⚠ **The extraction is what makes it testable, not just tidier.** `app/**/page.tsx` is measured by
+NEITHER coverage gate, so both honest branches existed on the strength of review alone. That is also
+why the data-access ratchet fell in the same commit: taking the `@/lib/supabase` import out of a page
+is what removes it from that list.
+
+⚠ **The data-access BUDGET was lowered because that file's own no-slack assertion DEMANDED it**
+(`BUDGET is 8 but only 6 pages qualify — lower BUDGET to 6`), not from a number carried over by hand.
+Worth recording as the check working exactly as designed: an extraction elsewhere tightened a
+ratchet nobody was thinking about.
+
+**A defect found while writing the fetchers, not present in the ask.** The old line was
+`data?.editions ?? []`. ⚠ **That publishes "no sweeps" from a payload we did not understand** — same
+family as `?? 0` on a count: a default that manufactures a measurement nobody made. Both modules now
+distinguish three payloads: **absent key → empty ANSWER (`ok: true`)**, **non-array → SHAPE CHANGE
+(`ok: false`)**, rows → rows. ⚠ The absent-vs-malformed line matters in both directions: treating an
+absent key as an outage would put a false error banner on a genuinely quiet day, which is the
+cry-wolf outcome `lib/insights/board-status.ts` warns about.
+
+⚠ **`ChallengeRow` is camelCase, and I nearly retyped it as snake_case.** The RPC returns a JSON
+payload the page consumes verbatim, so those field names are the RPC's, not a table's — a "tidied"
+interface would have compiled and rendered blanks. Copied from the page and noted on the type.
+
+**New `__tests__/lib-hub-page-fetchers.test.ts`** — 11 assertions, mutation-proven in two directions:
+removing the shape guard reds two, and ignoring the `timeoutMs` parameter reds the hang test. Controls
+pin both states the bound must not swallow: three quiet days is still `ok: true`, and Top Shot
+genuinely running no challenges is still `ok: true`.
+
+⚠ **A restore trap worth recording: `git checkout --` DOES NOTHING to an untracked file.** After
+mutating both new modules I "restored" them that way and the mutation silently stayed applied —
+`git status` showed `??`, not `M`. Caught by re-grepping for the guard rather than trusting the
+restore. **Verify a revert by reading the file, not by the command having exited 0.**
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1,359 files / 14,816 tests, 0 failures** ·
+`check-unbounded-server-reads` 4/4, reds at 3 · eslint clean on all four touched files.
+
+**Revert path:** `git revert <sha of "refactor(hub): extract and bound the hot-floors and challenges reads">`.
+Page + library + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two paged/chained reads bounded, and my own first test for the property was VACUOUS
 
 **Bounded `lib/set-detail/tier-mix.ts` and `lib/pinnacle/moment-detail.ts`**, clearing
