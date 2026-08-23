@@ -1,4 +1,4 @@
-# Inbox index — 213 live filings
+# Inbox index — 214 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,6 +32,7 @@ failure it documents.
 
 ## 2026-08-23 — 12 filings
 
+- [⭐ The series-rollup fix WAS load-tested — its best run happened in the day’s worst hour, and I spent all evening saying it was unverified](2026-08-23T2055Z-the-series-rollup-fix-was-already-load-tested-i-just-never-read-the-neighbours.md)
 - [SIXTEEN more migrations applied today still have no committed file — a SECOND batch, after this morning's recovery](2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md)
 - [Postgres 17 makes a partial index UNREACHABLE when its predicate says `col IS NOT NULL` and the column is declared NOT NULL — including the 98 MB index `fmv-recalc` needs](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md)
 - [`fmv-recalc` is NOT wedged mid-catalogue — page 0 can no longer COMPLETE, and the trust board has been breaching for 20 h unread](2026-08-23T2000Z-fmv-recalc-is-not-wedged-mid-catalogue-page-0-can-no-longer-complete.md)
