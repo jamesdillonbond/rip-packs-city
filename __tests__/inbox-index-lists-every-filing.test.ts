@@ -22,6 +22,13 @@ import path from "node:path"
 // entry — a link to a file that has been archived or renamed — is the same
 // defect pointed the other way: the index asserts a filing is in the queue when
 // it is not.
+//
+// ⚠ BOTH halves have now fired in production, hours apart. 2026-08-22 22:59: a
+// concurrent session wrote back a stale copy and dropped NINE filings, one of them
+// titled HIGH-PRIORITY. 2026-08-23 ~08:00: the overnight pass archived two drained
+// filings into inbox/archive/ and left their entries here, so the index listed two
+// items as open that were closed. Neither was noticed by a reader; both were caught
+// here on the next CI run.
 
 const INBOX = path.join(process.cwd(), "docs/overnight/inbox")
 const INDEX = path.join(INBOX, "INDEX.md")
@@ -60,7 +67,16 @@ describe("docs/overnight/inbox/INDEX.md is a complete map of the inbox", () => {
 
   it("links no filing that does not exist", () => {
     const dangling = [...new Set(linked)].filter((f) => !existsSync(path.join(INBOX, f)))
-    expect(dangling, `INDEX.md links files that are not in the inbox:\n${dangling.join("\n")}`).toEqual([])
+    const archived = dangling.filter((f) => existsSync(path.join(INBOX, "archive", f)))
+    const archiveNote = archived.length
+      ? `\n\n${archived.length} of them are in inbox/archive/. ARCHIVING A FILING MEANS REMOVING ITS ENTRY HERE TOO: ` +
+        `this index maps the LIVE queue ("N live filings"), so an entry for an archived filing tells the next ` +
+        `session an item is still open when it is closed. Delete the entry; the counts re-derive from the entries.`
+      : ""
+    expect(
+      dangling,
+      `INDEX.md links files that are not in the inbox:\n${dangling.join("\n")}${archiveNote}`,
+    ).toEqual([])
   })
 
   it("states a heading count equal to the number of filings", () => {
