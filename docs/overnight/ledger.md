@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 8) — the index guard caught a live concurrent CLOBBER within three hours of shipping, and the clobber had buried a HIGH-PRIORITY filing
+
+**Docs only. No DB, no migration, no prod-state change.**
+
+🚨 **`main` was red, the failing check was MY OWN guard, and it was right.** `a2bc6e9a` (22:59, not my
+commit) wrote back a copy of `inbox/INDEX.md` read before the 22:00 reconciliation, taking the file
+**198 links → 192** and silently dropping **nine** filings — among them
+`2026-08-23T0311Z-reconcile-saved-wallet-stats-broken-by-set-clause-on-committing-procedure.md`, whose
+own title says **HIGH-PRIORITY**, and the Sentry-blackout filing. **This is the concurrent-session
+clobber the ledger has a whole guard for, happening to the OTHER map nobody was watching.**
+
+⚠ **The detection story is the point.** The index rotted at 22:00 from ordinary drift (193 listed /
+196 on disk) and was reconciled. Three hours later it was clobbered outright — a different mechanism,
+same damage — and **the guard shipped in between caught it on the next CI run.** Nobody read the file
+and noticed; a test did. ⚠ **It also cost four red CI runs to notice**, because the guard runs in the
+unit-test job and I had verified my own commits with `npx vitest run <file>` rather than the full
+suite. **Running one file proves the file; it does not prove the tree.**
+
+✅ **Reconciled: 201 files / 201 links / 0 missing**, per-day section counts recomputed from the
+entries themselves rather than hand-adjusted, header count re-derived from the directory. The header
+now records both incidents and warns that the counts are asserted against the directory on every CI
+run.
+
+⚠ **What I did NOT do: relax the guard.** A guard that reds because the file it watches was damaged is
+a guard working. The fix is the file.
+
+**Revert path:** docs only, no DB half — `git revert <sha>`, sha stamped after the push. Reverting
+restores the clobbered 192-link index, so do not revert this to get CI green.
+
 ### 2026-08-22 · NO CODE SHIPPED — the sports-proxy item's prescribed fix is dead, and its "no alert" gap never existed
 
 **known-issues #8 is CLAUDE.md's "highest-value open item". Three of its claims are now false, and I re-measured rather than re-read to find out.**
