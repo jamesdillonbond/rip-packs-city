@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED — R14 re-added a `SET search_path` clause to two COMMIT-ing procedures; both were 2D000-ing, restored by RESET
+
+**Nightly autonomous pass (cloud, NO-PUSH — pushurl empty; DB migrations still apply live, code deploys queue for Trevor). Genuine overnight ~01:10 PT.** This is a same-day-class regression-revert of R14 (migration `20260823021500`, shipped 2026-08-22).
+
+🚨 **The defect:** R14 ran `ALTER PROCEDURE … SET search_path = public` on `reconcile_all_saved_wallet_stats(int,int,int)` and `rpc_trust_health_precompute_refresh_p()`. Both are PROCEDURES (`prokind='p'`) that do per-wallet `COMMIT`. PostgreSQL forbids `COMMIT`/`ROLLBACK` inside a routine carrying an attached `SET` clause, so both raise **`2D000 invalid transaction termination`** at their first COMMIT. `reconcile-saved-wallet-stats` (pg_cron jobid 259, hourly :44) failed **every tick** from ~02:15Z 2026-08-23 (verified: 04:44/05:44/06:44/07:44 all `invalid transaction termination … line 30 at COMMIT`), freezing saved-wallet dashboard/profile/share cards. `rpc_trust_health_precompute_refresh_p` carried the identical latent defect.
+
+⚠ **This was already a KNOWN, RECORDED constraint.** The 2026-08-10 rebuild entry (this ledger) established that a transaction-control procedure "can be NEITHER `SECURITY DEFINER` NOR carry a `SET` clause — both fail `2D000`" and made these procedures INVOKER-rights, no SET clause, schema-qualifying every reference. R14's 2026-08-15 "verified harmless" pre-flight checked `prosecdef`/ACL/extension-refs but **missed the COMMIT-vs-SET-clause interaction** — a latent mistake that broke on application.
+
+✅ **Fix (migration `20260823081000_audit_20260823_reset_searchpath_on_commit_procedures`):** guarded `ALTER PROCEDURE … RESET search_path` on both. Config-only ALTER (NOT `CREATE OR REPLACE`) — bodies and `prosecdef=false` preserved; bodies already `public.`-qualify so no real hardening is lost. Restores the proven-working pre-R14 state.
+
+**Verified:** both procs `proconfig=NULL`, `prosecdef=false`, `prokind='p'` after; live `CALL reconcile_all_saved_wallet_stats(5,2,360)` succeeded and wrote `pipeline_runs` `upserted=4, wallets_done=1, rows_zeroed=0, error=soft_deadline_reached_partial_sweep_committed` (the DESIGNED soft-deadline signal — `ok=false` here is health, SILENCE is the failure mode; the point is it **committed**, impossible under 2D000). Security post-flight clean: `check_secdef_anon_exec_drift` `[]`, `check_public_security_invariants` 0 rows. Independent fresh-subagent verification: PASS on all three checks.
+
+**Target metric:** `reconcile-saved-wallet-stats` ticks resume `soft_deadline_reached_partial_sweep_committed` (committing) instead of `invalid transaction termination`; `oldest_cache_h` (was 339h, a deep pre-existing backlog from the ~week of statement-timeout truncation) begins falling. Re-check the :44 pg_cron ticks next pass.
+
+**Revert:** `ALTER PROCEDURE public.reconcile_all_saved_wallet_stats(integer,integer,integer) SET search_path = public;` and `ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p() SET search_path = public;` (re-applies R14's clause — but do NOT, it re-breaks COMMIT). Migration file mirrored to mount at `supabase/migrations/20260823081000_*.sql`, UNCOMMITTED (NO-PUSH cloud session — Trevor's box + Claude Code push normally; commit it as usual).
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — I duplicated another session's fix in real time, and the only part worth keeping is the one they did not do
 
 **What I set out to do:** `main` was red at `4f2370f0` and I fixed both failures — four tests across two
