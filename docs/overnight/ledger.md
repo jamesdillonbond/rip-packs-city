@@ -8,6 +8,61 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — R6's owed in-band re-measure: 1 of 5, not 4 of 5 — and the band was NOT saturated, so the exit condition itself is wrong
+
+**No code, no DB change.** R6 has carried *"a degraded-band re-measure is still owed before closing"* since
+08-22. This is that reading, and the most useful thing in it is that **taking it invalidated the exit
+condition.**
+
+## ⚠ The "degraded band" is a CLOCK window, not a saturation guarantee
+
+Taken **17:55–17:58Z, inside the 16:20–18:05Z band the register names** — with the database **NOT
+saturated**: `4 active · 1 IO waiter · longest active query 1.9 s`, against the audit's degraded reading of
+*31 active / 30 IO waiters*.
+
+🚨 **So this does NOT discharge the owed measurement.** "Re-measure in-band" and "re-measure during
+saturation" are different asks, and only the second tests what R6 is about. The band is a time-of-day
+CORRELATION; today it did not hold. **Whoever closes R6 must re-word the exit condition to name saturation,
+not the clock** — otherwise it gets discharged by a reading exactly like this one and a P1 closes on a quiet
+database.
+
+## The result: 1 of 5, and it is the biggest collection
+
+Production caller, same three minutes: **`nba-top-shot` 503 `{"code":"timeout","retryable":true}`** with
+`Retry-After: 30` and `no-store`; **`nfl-all-day`, `disney-pinnacle`, `laliga-golazos`, `ufc` all 200 with
+full payloads.** R6's "4 of 5" does not reproduce at this sample.
+
+✅ **The 503 is the HONEST degraded shape** — typed, retryable, uncached; not a hang and not a fabricated
+zero. With the render half already refuted (the KPI band renders 10 skeletons), the user impact is
+**"Top Shot's landing KPIs never fill"**, not a lie.
+
+## The structural finding — no timing, so no confound
+
+**The same per-edition lateral is computed TWICE per request**, concurrently in one `Promise.all`: inside
+`get_collection_stats` (for `fmv_pct` — confirmed from a live error CONTEXT naming
+`PL/pgSQL function get_collection_stats(text) line 63`) and again in
+`route.ts::computeHighMediumPct` (for `fmv_high_medium_pct`). Identical shape over identical rows, differing
+only in the FILTER (`<> 'NO_DATA'` vs `IN ('HIGH','MEDIUM')`).
+
+Scale: **`fmv_snapshots` = 1,230,231 rows**; editions **TS 19,838 · AD 6,190 · Golazos 575 · UFC 518** — the
+cost tracks edition count, which is exactly why Top Shot is the one that fails. **TS's leg exceeded 25 s as
+`postgres` on the quiet database above**, against `authenticator`'s **8 s** ceiling.
+
+⛔ **The one-pass merge is NOT shipped.** Both numbers come from the same scan, so one pass could produce
+both and halve the work on R46's critical path — but it needs a migration (≈10–20 s of user-facing
+`PGRST002` 500s) **and it would not fix Top Shot**, since one pass is already over the ceiling. **R52 already
+decided the real fix is Trevor's; this belongs inside that decision, not ahead of it.**
+
+## ⚠ A number I measured and am DISCARDING
+
+A direct timing of the AllDay lateral read **40,229 ms**. That cannot be its cost: the AllDay HTTP call had
+returned **200 with real data two minutes earlier**. My SQL ran cold, the request ran warm — and **a DB A/B
+must be WARM-vs-WARM**; at ~74 ms per disk read a cold run measures the buffer cache, not the query.
+**Recorded precisely so nobody re-derives 40 s and believes it.** The sound numbers here are the HTTP
+outcomes (production caller, one window) and the duplication (code, no timing).
+
+**Revert path:** none — measurement only. Filing: `docs/overnight/inbox/2026-08-23T1805Z-r6-re-measured-…`.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — two of surface QA's three findings, each re-derived first; the third is Trevor's and stays queued
 
 **From the 2026-08-23 surface-QA handoff (`a89e32ff`), which shipped nothing.** ⚠ **Both findings were

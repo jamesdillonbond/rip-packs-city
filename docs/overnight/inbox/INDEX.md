@@ -1,4 +1,4 @@
-# Inbox index — 203 live filings
+# Inbox index — 204 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 2 filings
+## 2026-08-23 — 3 filings
 
+- [R6 re-measured in-band: 1 of 5 not 4 of 5, and the expensive lateral runs TWICE per request](2026-08-23T1805Z-r6-re-measured-in-band-one-of-five-not-four-and-the-lateral-runs-twice.md)
 - [The allday-pack-opens-backfill mechanism is REFUTED and the proposed fix would lose data](2026-08-23T1609Z-the-pack-opens-backfill-mechanism-is-refuted-and-the-proposed-fix-would-lose-data.md)
 - [R46 is a working-set problem not an IOPS one and the first lever may be free](2026-08-23T1610Z-R46-is-a-working-set-problem-not-an-IOPS-one-and-the-first-lever-may-be-free.md)
 ## 2026-08-22 — 35 filings
