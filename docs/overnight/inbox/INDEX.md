@@ -43,7 +43,7 @@ failure it documents.
 - [Daytime monitor — saturation spell ACTIVE at ~18:10Z; everything measured in that window is a SYMPTOM, re-measure quiet](2026-08-23T1812Z-daytime-monitor-saturation-spell-symptoms.md)
 - [R6 re-measured in-band: 1 of 5 not 4 of 5, and the expensive lateral runs TWICE per request](2026-08-23T1805Z-r6-re-measured-in-band-one-of-five-not-four-and-the-lateral-runs-twice.md)
 - [The allday-pack-opens-backfill mechanism is REFUTED and the proposed fix would lose data](2026-08-23T1609Z-the-pack-opens-backfill-mechanism-is-refuted-and-the-proposed-fix-would-lose-data.md)
-- [R46 is a working-set problem not an IOPS one and the first lever may be free](2026-08-23T1610Z-R46-is-a-working-set-problem-not-an-IOPS-one-and-the-first-lever-may-be-free.md)
+- [R46 is a working-set problem not an IOPS one and the first lever may be free](2026-08-23T1610Z-R46-is-a-working-set-problem-not-an-IOPS-one-and-the-first-lever-may-be-free.md) — ⚠ **the free lever is REFUTED** (follow-up in-file): 22 MB/s is `ci_small`'s own budget, not a gp2 disk; option A is void, and C buys RAM **+ 3.6× disk IO + dedicated CPU**
 ## 2026-08-22 — 35 filings
 
 - [The pack simulator's flip animation keeps calling `setState` after unmount — an intermittent unhandled rejection that fails `npm test` while every test passes](2026-08-23T0555Z-the-pack-simulator-flip-loop-keeps-setting-state-after-unmount.md)
