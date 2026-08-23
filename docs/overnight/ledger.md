@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — one line stripped the brand from ~70 deep URLs and double-printed it on ~30 others, and the guard written to catch it was blind three ways
+
+**R31 is closed, and it turned out to be HALF of the defect.** `collectionLayoutMetadata()` and `app/insights/layout.tsx` set `title` as a plain STRING. In Next a string title is formatted by the **nearest ancestor** template and contributes **no template of its own**, so it does two opposite things at once: its own title gets the root `%s | Rip Packs City` appended, and every descendant loses the suffix entirely.
+
+**Measured live before the fix, and both halves were real:**
+
+| URL | live title |
+|---|---|
+| `/insights/first-mint` | `Top Shot First-Mint Trophy Tracker` — **no brand** |
+| `/nba-top-shot/collection` | `Wallet Analytics — Track Your NBA Top Shot Collection Value` — **no brand** |
+| `/about` | `About — Rip Packs City \| Rip Packs City` — **doubled** |
+| `/blog`, `/privacy`, `/legal/fmv-methodology`, every blog post | **doubled** |
+| `/disney-pinnacle/collection`, `/nba-top-shot/pack-sniper`, `/nba-top-shot/challenges` | **doubled** |
+| `/` and `/insights` | correct — **the two controls** |
+
+⚠ **Why it survived: the pages a human spot-checks are the two the bug cannot reach.** `/` and `/insights` are one level down and are formatted by the ROOT template, so they look perfect. Everything deeper is wrong, in one direction or the other.
+
+🚨 **`__tests__/metadata-no-double-brand-suffix.test.ts` was written for exactly this class (D24) and was blind THREE ways** — the R42 lesson in a new file. It matched only the **pipe** spelling (every live offender used an **em dash**), only **double-quoted** literals (`lib/seo.ts` uses single quotes, the entity builders use backticks), and it walked **`app/` only** while the collection-wide title lives in **`lib/seo.ts`**. Coverage is only real against what the guard READS.
+
+**The fix, and why BOTH halves are load-bearing on the same line:** `title: { absolute: meta.title, template: BRAND_TITLE_TEMPLATE }`. `absolute` stops the layout's own already-branded title being fed to the root template; `template` puts the suffix back for the whole subtree. Dropping either one ships half the bug, which is why the guard now asserts both.
+
+⚠ **Restoring the template is DANGEROUS on its own and that is the part worth remembering.** The entity corpus (~33k sitemap URLs) bakes `| Rip Packs City` into its titles precisely BECAUSE no template reached it — so turning the template back on would have double-suffixed every edition, set, player, team and series page in one deploy. `buildMeta()` now returns `{ absolute }`, as do the 5 entity fallbacks and both pack pages. **20 static-page titles** were stripped instead (`About — Rip Packs City` → `About`), so the template appends the brand exactly once. ⚠ The strip is **suffix-only**: `/analytics/api`'s "Programmatic Access to Rip Packs City Analytics" names the brand mid-sentence and is not this defect — banning it would be a rule with no failure behind it.
+
+✅ **VERIFIED BY RENDERING, NOT BY REASONING.** 14 URLs read out of a real dev server after the change: the six broken ones now read `X | Rip Packs City` exactly once, `/insights/candy-mlb` keeps its sanctioned `absolute`, and **both controls (`/` and `/insights`) are byte-identical to production**. A metadata-resolution claim is not something to infer from the docs.
+
+**Guard, proven against three separate mutations** (each reddens only its own test, and all three green on restore): re-baking the em-dash brand in `app/about`; dropping `template` from `collectionLayoutMetadata`; reverting `buildMeta` to a bare string. It now walks all three quote styles plus the single-line `return { title: … }` form, skips `openGraph`/`twitter` by nesting rather than by name-matching, keeps `absolute` as the sanctioned opt-out, and carries a **two-level positive control** (files found AND title literals found inside them) so a broken walker and a broken matcher fail differently.
+
+⚠ **18 assertions in `seo.test.ts` and `honesty-disclosure-2026-08-02.test.ts` were UPDATED, not deleted.** They pinned `typeof meta.title === "string"` and exact title text; the TEXT is unchanged and still asserted — only the wrapper moved. The prototype-pollution cases now assert the object form too, because a leaked prototype member would arrive as a string.
+
+**Revert:** `git revert <sha>` — no DB half.
+
+⚠ `__tests__/metadata-catch-branch-is-not-a-404.test.ts` fails **locally only** and was already failing before this change: it `execSync`s `grep`, which Windows resolves to cmd.exe. Environment, not main.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — traded Pins could never have resolved to an edition, and looking for the cost of fixing that found 673 unresolvable SALES
 
 🚨 **A CLAIM I WROTE IN PART 1 WAS FALSE.** `20260822180000` said `pinnacle_trade_events.edition_id` would "backfill later exactly as `pinnacle_sales.edition_id` does". **It would not have.** Measured:
