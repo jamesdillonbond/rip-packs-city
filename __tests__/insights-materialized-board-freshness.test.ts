@@ -32,6 +32,7 @@ vi.mock("@/lib/supabase", () => {
 })
 
 import { readMvAsOf, MV_PIPELINE } from "@/lib/insights/mv-freshness"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 beforeEach(() => { state.row = null; state.error = null; state.throws = false })
 
@@ -95,11 +96,15 @@ describe("no materialized board page fabricates a freshness stamp", () => {
   ]
   for (const p of PAGES) {
     it(`${p} does not coalesce a missing timestamp to new Date()`, () => {
-      const src = readFileSync(p, "utf8")
-        // Strip comments first — this repo has fired at least six guards on the comment
-        // that documents the fix rather than on live code.
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^\s*\/\/.*$/gm, "")
+      // Strip comments first — this repo has fired at least six guards on the
+      // comment that documents the fix rather than on live code.
+      //
+      // ⚠ Uses the ONE shared stripper. A local copy of this exact shape was
+      // measured BLIND on 2026-08-22: the block regex runs first, so an ordinary
+      // line comment mentioning a glob path opens a block comment that closes at
+      // the next `*/` ANYWHERE in the file — 103,590 chars hidden across 49
+      // product files, and it concealed a live P0.
+      const src = stripComments(readFileSync(p, "utf8"))
       expect(src).not.toMatch(/\?\?\s*new Date\(\)/)
     })
   }
