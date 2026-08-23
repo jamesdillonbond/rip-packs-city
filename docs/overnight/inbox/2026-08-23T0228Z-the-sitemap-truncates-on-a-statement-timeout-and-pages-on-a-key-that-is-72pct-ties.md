@@ -90,3 +90,35 @@ fix in a diff and cannot be told from a regression in production.
 - **How many entity URLs are actually missing** from the served sitemap. The truncation is
   measured; its exact SEO cost is not. The top-200 moment slice is taken from the HEAD of the
   ordering and is unaffected by a tail truncation.
+
+---
+
+## ⚠ SECOND OBSERVATION, 8 MINUTES LATER — THE SYMPTOM IS INTERMITTENT, AND HALF THIS FILING'S FRAMING IS RETRACTED
+
+A re-dispatch on `6fce088b` (run 32612867443, 02:27:30Z) came back **100 passed, 0 flaky, ZERO
+skipped**. All four segment-3 arms — `moment`, `set`, `player`, `team` — resolved and their pages
+rendered.
+
+**So `/sitemap/3.xml` is NOT persistently broken.** The heading above says "truncates", and on the
+02:19Z sample it did; eight minutes later the same URL served enough for every arm to find a live
+URL. ⚠ **A single observation of a failure is not a standing state, and I filed it eight minutes
+before the evidence that says otherwise.**
+
+**What SURVIVES the second observation** — all of it structural, none of it dependent on that one
+sample:
+
+- `fetchAllByCollection` **breaks on error and returns a partial list**, and no caller can tell a
+  truncated read from a complete one. That is true on every run; the 02:19Z log is proof it fires.
+- The paging key is **72% ties with a largest group of 1,084 against a page of 1,000**. True on
+  every run.
+- The guard asserts **`.order()` presence, not key uniqueness**. True on every run.
+
+**What is RETRACTED:** "four arms are skipping" as a standing condition, and any reading of this as
+a permanently broken sitemap segment. The honest statement is that a **deep-offset page
+intermittently exceeds the Postgres statement timeout, and when it does the failure is swallowed
+into a 200** — which is worse than a hard failure precisely because it is intermittent and silent.
+
+⚠ **This changes the priority, not the diagnosis.** An intermittent silent truncation on an
+SEO-critical path is still worth fixing, and is now known to be load-dependent — which points at
+the same disk-IO saturation the rest of the register tracks, and means it will be WORST exactly
+when the catalogue is largest.

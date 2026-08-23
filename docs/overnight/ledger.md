@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · CORRECTION (Claude Code, interactive) — the memo fix holds, and my own "four arms are skipping" finding was retracted by the next run
+
+✅ **The e2e memo-leak fix holds under the conditions that produced the flake.** Re-dispatch on
+`6fce088b`: **100 passed, 0 flaky, 0 skipped** — against `1 flaky` on the previous run. The
+selfcheck now reads its own fixtures with a live entity-smoke run sharing the worker.
+
+⚠ **And the same run retracted half of the filing I had made EIGHT MINUTES EARLIER.** That filing
+reported four entity arms (`moment`, `set`, `player`, `team`, all sitemap segment 3) skipping. The
+re-dispatch resolved **all four**. **A single observation of a failure is not a standing state** —
+and I wrote the filing before the evidence that says otherwise existed, which is the ordering that
+makes this worth recording rather than quietly editing.
+
+**What survives, because it is structural rather than sampled:** `fetchAllByCollection` **breaks on
+error and returns a partial list** no caller can distinguish from a complete one (the 02:19Z
+production log — `[sitemap] editions page 24000 error: canceling statement due to statement
+timeout` under a **200** — is proof it fires); the paging key `editions.updated_at` is **72% ties,
+largest group 1,084 against a page of 1,000**; and `paginated-range-requires-order-ratchet` is green
+because it asserts `.order()` **presence, not key uniqueness** — the spelling, not the property.
+
+**What changed is the PRIORITY, not the diagnosis:** an intermittent, load-dependent, SILENT
+truncation on an SEO path, which is worse than a hard failure for exactly the reason it was hard to
+catch. Filing updated in place with both observations rather than rewritten.
+
+⚠ **Also worth keeping: the monitor's fail-soft means a SKIP is a GREEN job.** Neither run's
+conclusion would have told anyone that four page types went unchecked — only the log lines did.
+
+No code shipped in this entry beyond the filing update. **Revert path:** none needed — docs only.
+
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — "No recent market activity" was a market claim built from OUR missing price, and the trades work is what exposed it
 
 **The defect.** `edition/[slug]/page.tsx` rendered **"No recent market activity"** whenever `!fmvAvailable` — and `fmvAvailable` is just `fmv && fmv.fmv_usd !== null`. **That is a claim about THE MARKET manufactured from a gap in OUR PRICING**, the platform's most productive defect class, on a public SEO page serving all five collections.
