@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // deep-audit R34. `CollectionMomentTable`'s badge tooltip rendered
 // `Circ: {n}` and `Effective supply: {n}` on a `!= null` test, so a row whose
@@ -48,17 +49,16 @@ const GUARD_WINDOW = 4
  * records the mirror of that ("at least six guards have fired on the comment
  * documenting the fix"); this is the same defect pointed the other way, and it
  * is the more dangerous direction because it fails OPEN.
+ *
+ * ⚠ Uses THE shared stripper, never a local copy. My first version grew its own
+ * three-regex `blankComments`, and `guards-use-the-shared-comment-stripper`
+ * caught it on the next full run — correctly. 37 files had grown their own,
+ * two of those implementations were measurably BLIND, and one hid a live P0.
+ * A JSX comment is blanked here because its inner block comment is.
  */
-function blankComments(s: string): string {
-  return s
-    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, (m) => m.replace(/[^\n]/g, " ")) // JSX {/* … */}
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")) // /* … */
-    .replace(/^\s*\/\/.*$/gm, (m) => " ".repeat(m.length)) // // …
-}
-
 function unguardedSupplyRenders(s: string): string[] {
   const raw = s.split(/\r?\n/)
-  const code = blankComments(s).split(/\r?\n/)
+  const code = stripComments(s).split(/\r?\n/)
   const out: string[] = []
   for (let i = 0; i < code.length; i++) {
     if (!FIELD.test(code[i])) continue
