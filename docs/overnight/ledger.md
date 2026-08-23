@@ -8,6 +8,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — main was RED because a guard failed a CORRECT revoke over its wording, for the second time today
+
+**`main` was red on `migration-new-function-states-its-anon-exec-decision`**, naming two migrations
+from another session's series-detail work:
+
+    20260823030000_audit_20260823_series_detail_rollup.sql       -> public.refresh_series_detail_rollup
+    20260823031000_audit_20260823_get_series_detail_reads_rollup -> public.get_series_detail
+
+🚨 **BOTH MIGRATIONS WERE CORRECT. THE GUARD WAS WRONG.** Each carries
+`REVOKE ALL ON FUNCTION public.<fn>(<args>) FROM PUBLIC, anon, authenticated;`. The guard's matcher
+required the literal word **`EXECUTE`** between `REVOKE` and the function name — and **EXECUTE is the
+only privilege a function has**, so `REVOKE ALL ON FUNCTION` is the identical statement in different
+words, and the form a careful author reaches for.
+
+⚠ **VERIFIED AGAINST THE LIVE DATABASE BEFORE CHANGING ANYTHING, rather than reasoning from the SQL
+text** — the whole failure mode here is trusting a description of state over the state:
+
+    get_series_detail(uuid,text)          anon=false  authenticated=false  service_role=true
+    refresh_series_detail_rollup(integer) anon=false  authenticated=false  service_role=true
+
+Production is exactly what the guard demands. Fixed the **guard**, not the migrations — editing an
+applied migration to satisfy a checker would have changed a correct file to match a broken reader.
+
+⚠ **SECOND TIME IN ONE DAY FOR THIS ONE FILE.** This morning it failed a decision written correctly
+in prose across two lines because it needs `anon-exec:` and the function name **on the same line**.
+Now it has failed a correct revoke because of the verb. **The common cause is not the regex, it is
+that the guard reads a SPELLING while claiming to read a DECISION** — and its error message tells the
+author to write the exact string it already failed to recognise. Recorded on the matcher itself so
+the third instance is diagnosed in seconds rather than re-derived.
+
+**The widening is exactly one alternation, `(?:EXECUTE|ALL)`, and three controls pin that nothing
+else moved:**
+- ⚠ `REVOKE ALL ON **TABLE** public.<fn> FROM PUBLIC, anon` must **NOT** vouch for a FUNCTION of the
+  same name — a table revoke says nothing about EXECUTE, and this is the loosening the widening could
+  most plausibly have introduced. The signature paren (`public\.<fn>\s*\(`) is what prevents it;
+  mutation-proven by deleting it.
+- ⚠ A PUBLIC-only `REVOKE ALL` must still FAIL, exactly as the EXECUTE form does — this database
+  carries explicit `anon`/`authenticated` grants via `ALTER DEFAULT PRIVILEGES`, so a PUBLIC-only
+  revoke leaves them standing. Widening the verb must not weaken the role requirement.
+- The `REVOKE ALL ON FUNCTION … anon, authenticated` form now passes.
+
+Mutation-proven both directions: reverting the alternation reds two tests, deleting the paren
+requirement reds the table control.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1357 files / 14,775 tests, 0 failures**.
+
+⚠ **Not mine, and left alone deliberately:** the failure predates my commits — `main` was already red
+at `2bca41b4`/`b4ec8dd9`, and my two pushes before this inherited it. No migration file was touched.
+
+**Revert path:** `git revert <sha of "fix(guard): a REVOKE ALL on a function is a revoke">`. Test
+code only — no migration, no DB, no prod-state change.
+
 ### 2026-08-22 · FILED, NOT FIXED — R39's two "cannot measure" arms started answering, and the answer is that 11 public boards run persistently over budget
 
 **R39 self-resolved and that is how this was found.** It recorded `public_board_empty_count` and `public_board_slow_count` both stuck at **999**, the failure sentinel — "a metric that cannot reach its clean value is not a metric". Re-read 2026-08-23 03:34Z: the arm is answering, `budget_exhausted: false`, **45 of 45 active boards probed**, `empty_or_error: 0`, **`slow: 12`**. The instrument is fine. What it now says is the problem.
