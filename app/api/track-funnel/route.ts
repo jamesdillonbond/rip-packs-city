@@ -36,6 +36,33 @@ type TrackFunnelBody = {
   sessionId?: string | null;
 };
 
+// ── Bot classification (deep-audit R23) ─────────────────────────────────────
+// MEASURED 7 days to 2026-08-22: 15,803 events across 15,689 distinct sessions.
+// Only 53 sessions (0.34%) fired more than one event, and 99.82% carried a null
+// referrer. `getSessionId()` persists `rpc_sess` in sessionStorage, so a real
+// multi-page visit SHARES one id — 1.007 events/session is a crawler with fresh
+// storage per fetch, not browsing. `collection_view` rose 82 -> 7,738/day
+// between 08-16 and 08-18 with ZERO change in wallet_paste, signups or sign-ins.
+//
+// The table had no way to express any of that, so any future read of "views" as
+// traction is wrong by roughly three orders of magnitude. Same shape as the
+// `is_smoke_test` lesson — except here the flag did not exist yet.
+//
+// ⚠ THIS IS A HEURISTIC AND THE COLUMN NAME SAYS SO. `bot_ua` records what the
+// USER-AGENT claims, nothing more: a crawler that lies is not caught, and a real
+// browser is never flagged by it. It is a cheap FIRST cut whose job is to make
+// the honest slice possible at all — the stronger signals (one-event sessions,
+// null referrer) stay in the analysis, not in this column.
+//
+// ⚠ Slice by this BEFORE slicing by time. That is the whole lesson.
+const BOT_UA = /bot|crawl|spider|slurp|bingpreview|headless|phantomjs|puppeteer|playwright|curl|wget|python-requests|httpx|axios|go-http-client|java\/|scrapy|facebookexternalhit|embedly|whatsapp|telegrambot|discordbot|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|perplexity|amazonbot|applebot|yandex|baiduspider|duckduckbot/i
+
+/** True when the User-Agent SELF-IDENTIFIES as automated. Never a certainty. */
+export function isBotUserAgent(ua: string | null | undefined): boolean {
+  if (!ua) return false
+  return BOT_UA.test(ua)
+}
+
 function clampStr(v: unknown, max: number): string | null {
   if (v == null) return null;
   const s = String(v);
@@ -58,20 +85,47 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const row = {
+    // ⚠ Read the UA SERVER-SIDE. A client-supplied flag is worthless here —
+    // the population we are trying to label is the one that would not send it.
+    // ⚠ Optional-chained. A beacon caller is not guaranteed to carry headers —
+    // and a route that throws while LOGGING an arrival turns a analytics gap into
+    // a 500 for the visitor. A missing UA is UNKNOWN, which correctly classifies
+    // as not-a-bot rather than guessing.
+    const userAgent = clampStr(req.headers?.get("user-agent"), 512);
+
+    const baseRow = {
       event_type: eventType,
       wallet_address: clampStr(body.walletAddress, 64),
       session_id: clampStr(body.sessionId, 64),
       surface: clampStr(body.surface, 80),
       referrer: clampStr(body.referrer, 512),
     };
+    const row = { ...baseRow, user_agent: userAgent, bot_ua: isBotUserAgent(userAgent) };
 
     // Await the insert — on Vercel the lambda is frozen as soon as the response
     // returns, so a non-awaited (.then) insert never flushes and the row is
     // silently dropped (this is why outbound_clicks went dead after 2026-04-25).
     // The client fires this via sendBeacon/keepalive and never waits on the
     // response, so awaiting a single fast insert costs the user nothing.
-    const { error: insertError } = await supabase.from("funnel_events").insert(row);
+    let { error: insertError } = await supabase.from("funnel_events").insert(row);
+
+    // ⚠ SELF-HEALING ORDERING, deliberately. The migration adding `user_agent`
+    // and `bot_ua` is committed but NOT applied (it needs the 20:00-00:00Z
+    // healthy window — `apply_migration` costs a ~10-20 s burst of user-facing
+    // PGRST002 500s). Shipping this route first would otherwise break the sink
+    // entirely: an unknown column fails the insert and EVERY funnel row is lost.
+    //
+    // So: try the full row, and on an unknown-column error retry the old shape.
+    // Before the migration this is a silent no-op; the moment it lands the flag
+    // starts recording with no second deploy. Removes the ordering constraint
+    // rather than documenting it and hoping.
+    if (insertError && /column|schema cache|PGRST204/i.test(insertError.message)) {
+      const retry = await supabase.from("funnel_events").insert(baseRow);
+      insertError = retry.error;
+      if (!insertError) {
+        console.log("[track-funnel] bot_ua columns absent — migration not applied yet; logged without them");
+      }
+    }
     if (insertError) console.error("[track-funnel] Supabase insert failed:", insertError.message);
 
     return NextResponse.json({ ok: true });
