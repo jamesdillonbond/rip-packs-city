@@ -185,3 +185,58 @@ change on ingest logic. **The correct pattern already exists in-repo** at
 `app/api/cron/data-integrity/route.ts:122` (`… : null`). No guard was written for this expression — unlike
 the two-state branch, its population is **majority-correct**, so a ban would red correct code and be
 switched off.
+
+---
+
+## A new member of the class (2026-08-22): a TRUE freshness stamp that materialisation silently made false
+
+This one is worth its own section because **nothing in the code changed at the site of the lie.** The
+defect was introduced somewhere else entirely, and the field kept describing exactly what its code did.
+
+**The identity that broke.** `fetched_at: new Date().toISOString()` is the house convention across ~20
+`/api/public/insights/**` routes, and behind a LIVE view it is honest: the fetch computes the rows, so
+fetch time *is* data time. The snapshot layer inherited that honesty for free — a 175-minute-old
+`public_board_snapshots` row carries the 175-minute-old stamp taken when it was built, so a stale board
+correctly *looks* stale.
+
+**What broke it.** Materialising `cross_collection_deals_board`, `panini_squeeze_board` and
+`topshot_first_mint_trophies` (same day; see the ledger) put an MV between the fetch and the data. The
+fetch still happens now; the rows are now up to a full refresh interval old. `DealsBoardClient` renders
+that value as **`Updated <FreshnessStamp iso={fetchedAt} />`**, so `/insights/deals` told collectors the
+board was current while measurably **21.3 minutes** behind — on a board whose entire subject is listings
+that disappear.
+
+⚠ **The direction is what makes it dangerous: it UNDERSTATES staleness, and understates it MOST at the
+moment the refresh pipeline is broken.** Overstating costs a reader nothing; understating sends them
+after a deal that is gone.
+
+**The general rule, which is not specific to boards:**
+
+> ⚠ **Any cached/precomputed layer inserted UNDER an existing freshness stamp silently converts that
+> stamp from a fact into a claim.** The stamp keeps compiling, keeps rendering, and keeps passing every
+> test — because the code at the stamp did not change. **When you add an MV, a snapshot, a CDN rung or a
+> memo cache beneath a surface, go and re-read what that surface says about how fresh it is.**
+
+**The fix, and the two shapes worth copying:**
+- `lib/insights/mv-freshness.ts` → `readMvAsOf(board)` reads when the MV last refreshed *successfully*
+  from the `pipeline_runs` rows the refresh functions already write. **4 shared buffers** on
+  `pipeline_runs_pipeline_started_idx` — no new table.
+- ⚠ **It returns `null`, NEVER `now()`, on every failure path** (error, throw, no row, non-string,
+  unparseable). A `now()` fallback restates the exact lie the module exists to remove, and does it
+  precisely when the board is most stale. `FreshnessStamp` already renders `null` as `—`.
+- `fetched_at` was **kept, not renamed** — it still means "when we answered" and remains correct for the
+  ~17 insights routes that are still live-computed. Only the three materialised boards read `data_as_of`.
+
+⚠ **The guard for this already existed and stayed GREEN through the whole regression.**
+`__tests__/component-cached-boards-render-snapshot-age.test.tsx` pins *"stamps the SNAPSHOT's instant,
+not the render clock"* — but its `BOARDS` list held `rookies` and `first-mint`, and `deals` and
+`panini-squeeze` were never in it (their clients take bespoke props, so they could not join the
+parametrised loop). **A hand-listed population drifts away from the thing it is meant to cover, and the
+drift is invisible because the guard keeps passing.** Both were added explicitly, and the first-mint
+fixture was INVERTED to supply a *later* `fetched_at` than `data_as_of` — turning "renders some
+timestamp" into "prefers the age of the DATA over the age of the REQUEST".
+
+⚠ **Still open, filed not swept:** `app/insights/candy-mlb/page.tsx` retains
+`?? new Date().toISOString()`. Candy is not materialised, so its `fetchedAt` is genuinely the data time
+and the coalesce is latent rather than live — but it is the same shape, one materialisation away from
+being the same bug.
