@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — R19 is not an SEO item: 15,388 throws across 2,963 users on ONE page, and the four remaining entity pages are now bounded
+
+**Reading Vercel's runtime errors for the four pages I had FILED rather than fixed turned R19 from a branding nit into the largest user-facing defect in the register.** 7 days to 2026-08-23:
+
+| route | error | count | **distinct users** |
+|---|---|---|---|
+| `edition/[slug]` | `rpc get_edition_detail timed out after 45000ms` | **15,388** | **2,963** |
+| `player/[slug]` | `rpc get_player_detail timed out after 45000ms` | 2,062 | 528 |
+| `pack/dist/[distId]` | `rpc get_pack_detail_bundle timed out after 45000ms` | 581 | 515 |
+| `series/[slug]` | `series detail unavailable: statement timeout` | 259 | 38 |
+| `team/[slug]` | `team detail unavailable: statement timeout` | 34 | 8 |
+
+⚠ **The register carried this as "large public entity pages intermittently return an unbranded 500". It is roughly 3,000 people in a week on the edition page alone.** I under-rated it twice — once inheriting the audit's framing, once after my own re-derivation failed to reproduce it in a healthy window.
+
+⚠ **A large share of the edition stacks are `at async Module.V [as generateMetadata]` — the worst possible place.** No error boundary wraps metadata generation, so the throw takes the whole response to Next's unbranded default before the page renders at all. The edition page had **no `try` in generateMetadata AND none in its body**.
+
+⚠ **The 45,000 ms class all begins 2026-08-15.** The `canceling statement due to statement timeout` variants go back to June/July. **That looks like a regression date, not a chronic condition, and nobody has explained it — filed, not diagnosed.**
+
+**Shipped — all four remaining pages bounded**, each keeping `!detail → notFound()` (the RPC answered; the entity really is absent) and adding a separate failure branch (we could not ask; 404-ing there de-indexes a real page):
+- **edition** — `generateMetadata` (returns a generic non-404 title, never `NOT_FOUND_METADATA`), the body detail read, and its first `Promise.all`, which runs **5 fetches with ZERO per-member `.catch()`**.
+- **player** — detail read + the STRUCTURAL `get_player_editions` throw.
+- **series** — `generateMetadata` + body.
+- **pack/dist** — ⚠ **this one deliberately `throw`ew "so the error boundary shows a retryable state". That intent does not hold**: on an ISR route the throw happens during generation, `error.tsx` never runs, and 515 users got Next's default instead. It now renders the retryable state directly. The sibling `error.tsx` stays — it still covers client-side render errors.
+
+⚠ **THREE OF MY OWN MISTAKES, all caught by checks rather than review, all recorded because the pattern is the point:**
+1. **A closure bug in my patch script silently discarded every substitution but the last** — `sub` closed over the outer `s` while the caller reassigned its own. The player detail guard and the series metadata guard were **reported patched and were not**. Caught by reading the files back; the helper now verifies each replacement is present after writing.
+2. **My guard false-positived on correct code.** It flagged the edition page's streamed `Promise.all` — which catches **all 7** of its members. A guard that reddens on correct code gets worked around, so it now exempts a statement whose `.catch()` count meets its fetch count, and that exemption carries a two-direction control.
+3. **Escaping was eaten by a heredoc for the FIFTH time tonight**, twice inside this one fix. Both regexes are now built from `String.fromCharCode(92)` and **proved against known safe/unsafe inputs before being trusted**.
+
+**Verified:** `tsc` exit 0 · 18/18 in the bounded-read guard, **proved to fail** when the edition detail guard is removed · 29/29 across the three entity suites.
+
+⚠ **Root cause is UNCHANGED and this does not fix it.** `get_edition_detail` and friends still exceed 45 s under load. Bounding stops an unbranded 500 and stops de-indexing; **the page still does not work.** The 08-15 onset is the thread worth pulling.
+
+**Revert:** `git revert <this commit>`. No DB change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — Trevor-directed) — Pinnacle TRADING is now a tracked transaction type, and it was ~half the market we were not counting
 
 **The gap.** Disney Pinnacle had exactly TWO tracked transaction types: the storefront SALE
