@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · NO CODE SHIPPED — the sports-proxy item's prescribed fix is dead, and its "no alert" gap never existed
+
+**known-issues #8 is CLAUDE.md's "highest-value open item". Three of its claims are now false, and I re-measured rather than re-read to find out.**
+
+**1. ⛔ "ROUTE ESPN THROUGH A CLOUDFLARE WORKER" IS MEASURED DEAD.** The whole lane split rests on one 2026-08-17 measurement — *ESPN returns 200 residentially while 403ing from Supabase edge ⇒ egress-network blocking ⇒ proxy it*. Re-run **from the same box five days later**: `site.api.espn.com` returns **403 with an Akamai "Access Denied" body** under **Playwright Chromium** (real TLS, real header set, no UA override) **and** under PowerShell/.NET with a current Chrome 141 UA. **A Cloudflare Worker is just another datacenter egress**; the asymmetry that justified proxying is gone.
+
+⚠ **CONTROLS BOTH GREEN, because a bare 403 proves nothing:** `api.github.com/zen` **200** and `rippackscity.com/api/health` **200**, same box, same session, same clients. The box, the network, the TLS stack and the probe all work — the 403 is ESPN's answer, not our plumbing.
+
+⚠ **AND I AM NOT CLAIMING "THE PROVIDERS TIGHTENED".** The competing reading is **this IP having been listed** after a week of automated probing from it, and the two point at different fixes. **The discriminator is one fetch of that URL from a DIFFERENT residential network — a phone on cellular is enough — and it has not been run.** Until then neither reading is established.
+
+⚠ New datum, not over-read: Chromium gets **`ERR_HTTP2_PROTOCOL_ERROR`** on `cdn.nba.com` where .NET gets a **403** on the identical URL from the identical box. Akamai refuses at different layers per client. It still does not separate JA3 from a retired path.
+
+**2. ❌ "18 dark days produced no alert BY CONSTRUCTION" IS FALSE — the alert exists and was deliberately muted.** The item reasons from `pipeline_cadence_watchlist` (0 of 102) and `detect_stalled_pipelines()` (nothing). Both true, both the **wrong instrument**: this pipeline is not silent, it fires on schedule and *fails*. `get_pipeline_alerts_core()` has had a **failure-rate arm since 2026-08-01** whose own comment reads *"a pipeline can fire on schedule and fail every single time. Cadence checks read that as healthy; this does not."* Live: `v_pipeline_failure_rates` has it at **14/14 failed, 100%**. No alert fires because `pipeline_alert_suppression` mutes it to **2026-10-14**.
+
+✅ **That suppression is exemplary and I left it alone — after re-checking its own predicate, which is what it tells you to do.** Its `reason` field states the predicate that justifies it (*"the run must be failing with error = all_upstreams_failed … NOT a code fault"*), names its accepted residual (it also masks any OTHER failure mode meanwhile), and expires just after the season opens. Measured: `last_error = all_upstreams_failed` on 14/14. **The predicate holds.**
+
+**3. ❌ "CHEAPEST REAL FIX IS AN ARM, NOT A REPAIR" — acting on it would have shipped a no-op.** I was about to. Adding a cadence row attaches a **silence** detector to a pipeline that is never silent: it would fire never while reading as coverage in every grep and review. **There is no cheap monitoring fix here — the monitoring is correct and is telling the truth.**
+
+**Net:** this is not "one Worker away". Every code lever is now measured exhausted (UA refresh ⛔, 403-retry ⛔, ESPN proxy ⛔ as of today), the monitoring is right and deliberately muted with a dated re-look, and impact stays deferred to ~preseason. The one cheap unrun experiment is the different-network fetch; the one unbuilt lever is still the slate-independent 30-team sweep, which only pays once a lane is reachable.
+
+**Shipped:** the correction into `known-issues.md` #8 and the CLAUDE.md bullet. ⚠ **CLAUDE.md was at 39,909 and my first draft pushed it to 40,384 — over the 40,000 hard limit.** Trimmed to **39,903 (Node `.length`), 6 chars UNDER the baseline**, with the measurement detail pushed to known-issues where it belongs. ⚠ `wc -c` reads **40,474** on that same file — over the limit — which is exactly the multi-byte trap the file documents; the Node number is the binding one.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — /analytics/wallets extracted and bounded, and a guard that pinned the property in the PAGE had to move with it
 
 **Extracted `loadDirectory` into `lib/analytics/wallet-directory.ts`** (renamed `loadWalletDirectory`),
