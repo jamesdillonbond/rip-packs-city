@@ -366,7 +366,24 @@ export async function generateMetadata(
   // set-level keys). Funnel all Pinnacle edition URLs there. (Item 2, 2026-06-26.)
   if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) return NOT_FOUND_METADATA
-  const detail = await fetchDetail(coll.id, slug)
+  // ⚠ BOUNDED (deep-audit R19). Measured over 7 days to 2026-08-23:
+  // "edition detail unavailable: rpc get_edition_detail timed out after 45000ms"
+  // threw 15,388 times across 2,963 DISTINCT USERS, and a large share of the
+  // stacks are `at async Module.V [as generateMetadata]` — i.e. here.
+  //
+  // ⚠ A THROW IN generateMetadata IS THE WORST PLACE FOR ONE: no error boundary
+  // wraps metadata generation, so it takes the whole response down to Next's
+  // unbranded default 500 before the page ever renders.
+  //
+  // A transient failure must NOT return NOT_FOUND_METADATA — that tells a
+  // crawler a real, indexed edition is gone. Generic non-404 title instead,
+  // mirroring the set page.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    return { title: `${slug} | ${coll.displayName} | Rip Packs City` }
+  }
   if (!detail) return NOT_FOUND_METADATA
   return editionPageMetadata(detail as unknown as Record<string, unknown>, collection)
 }
@@ -386,7 +403,17 @@ export default async function EditionPage(
   if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) notFound()
 
-  const detail = await fetchDetail(coll.id, slug)
+  // ⚠ BOUNDED (R19). Same read, same timeout. `!detail` means the RPC answered
+  // and this edition does not exist (404 true); a THROW means we could not ask,
+  // and 404-ing there de-indexes a real page.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <EditionUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
   const isPinnacle = isPinnacleUrlSlug(collection)
@@ -397,7 +424,21 @@ export default async function EditionPage(
   // headline FMV paints after ~1 RPC instead of waiting on the full fan-out. The
   // route loading.tsx ("SCANNING THE MARKETPLACE…") now only covers this shell.
   // (2026-06-23 — decouple FMV display from the slower market fetches.)
-  const [history, bundleRes, insightRes, badgeArt, repSales] = await Promise.all([
+  // ⚠ BOUNDED (R19). Measured: this block runs 5 fetches with ZERO per-member
+  // .catch(), unlike the streamed block further down which catches all 7. Any
+  // one of them throwing takes the page to Next's unbranded 500 — and on an ISR
+  // route error.tsx does not run, so nothing else can catch it.
+  //
+  // Whole-page degradation here rather than per-section because the render below
+  // consumes these unconditionally; per-section is the better end state and is
+  // filed, not done.
+  let history: Awaited<ReturnType<typeof fetchHistory>>
+  let bundleRes: Awaited<ReturnType<typeof fetchMarketBundle>>
+  let insightRes: Awaited<ReturnType<typeof fetchInsightLinks>>
+  let badgeArt: Awaited<ReturnType<typeof fetchBadgeArt>>
+  let repSales: Awaited<ReturnType<typeof fetchSales>>
+  try {
+    ;[history, bundleRes, insightRes, badgeArt, repSales] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -414,8 +455,11 @@ export default async function EditionPage(
     // One representative sale → the resilient hero-media nft id (the
     // media/<nftId>/image form that survives the legacy-CDN 404s). The full
     // sales page is fetched in the streamed bottom block.
-    fetchSales(coll.id, slug, 1, 0),
-  ])
+      fetchSales(coll.id, slug, 1, 0),
+    ])
+  } catch {
+    return <EditionUnavailable collection={collection} slug={slug} />
+  }
   // `.data` only — see lib/entity/edition-market-fetchers.ts on why `ok` is not
   // consumed here: every render site below gates on `!= null` / `length >= 2`,
   // so a failed read degrades to an em-dash or a hidden section rather than a
@@ -1163,3 +1207,28 @@ async function EditionBottomSections({
   )
 }
 
+// Rendered when get_edition_detail could not be READ — distinct from an edition
+// that does not exist (that still 404s). Reports our failure and makes no claim
+// about the edition's market.
+function EditionUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Moment unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(26px, 5vw, 42px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load this moment
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the moment is gone or unpriced. Reloading often works.
+      </p>
+      <a
+        href={`/${collection}/collection`}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+      >
+        Browse collection
+      </a>
+    </main>
+  )
+}

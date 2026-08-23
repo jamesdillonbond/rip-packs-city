@@ -93,7 +93,16 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return NOT_FOUND_METADATA
-  const detail = await fetchDetail(coll.id, slug)
+  // BOUNDED (R19). A throw in generateMetadata takes the whole response to
+  // Next's unbranded 500 — no error boundary wraps metadata generation. A
+  // transient failure must not return NOT_FOUND_METADATA, which would tell a
+  // crawler a real series is gone.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    return { title: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` }
+  }
   if (!detail) return NOT_FOUND_METADATA
   return seriesPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
 }
@@ -106,7 +115,15 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  const detail = await fetchDetail(coll.id, slug)
+  // ⚠ BOUNDED (R19). 259 "series detail unavailable" across 38 users in 7 days.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <SeriesUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
   const isEmpty = (detail.edition_count ?? 0) === 0
@@ -254,5 +271,28 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         </>
       )}
     </div>
+  )
+}
+// Rendered when the detail RPC could not be READ — distinct from a series that
+// does not exist (that still 404s). Reports our failure, claims nothing about
+// the data.
+function SeriesUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  const label = slug.replace(/-/g, " ")
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Series unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(26px, 5vw, 42px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load {label}
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the series is empty. Reloading often works.
+      </p>
+      <a href={`/${collection}/sets`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
+        All sets
+      </a>
+    </main>
   )
 }

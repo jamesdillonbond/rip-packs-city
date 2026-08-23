@@ -253,9 +253,17 @@ export default async function PackDetailPage(
   if (!row && !fallback) {
     // Distinguish "this dist does not exist" from "the bundle RPC failed"
     // (statement timeout under contention). The latter was rendering real
-    // packs as 404s intermittently — throw instead so the error boundary
-    // shows a retryable state and crawlers never see not-found for a real dist.
-    if (bundleErr) throw new Error(`pack detail bundle unavailable: ${bundleErr.message}`)
+    // packs as 404s intermittently, so the failure must not be a 404.
+    //
+    // ⚠ THIS USED TO `throw` "so the error boundary shows a retryable state".
+    // MEASURED 2026-08-23: that intent does not hold. This route is ISR, so the
+    // throw happens during page GENERATION, not while a mounted tree renders —
+    // `error.tsx` never runs and Next serves its own UNBRANDED default 500.
+    // 581 occurrences across 515 distinct users in 7 days did exactly that.
+    // The sibling error.tsx is kept: it still covers client-side render errors.
+    //
+    // Rendering the retryable state directly achieves what the throw intended.
+    if (bundleErr) return <PackUnavailable collection={collection} />
     notFound()
   }
 
@@ -2347,5 +2355,28 @@ async function PackStreamedBottom({
         </div>
       </section>
     </>
+  )
+}
+
+// Rendered when get_pack_detail_bundle could not be READ — distinct from a dist
+// that does not exist (that still 404s). Replaces a deliberate `throw` whose
+// error boundary never ran on this ISR route.
+function PackUnavailable({ collection }: { collection: string }) {
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Pack unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(26px, 5vw, 42px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load this pack
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The pack data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the pack is gone or sold out. Reloading often works.
+      </p>
+      <a href={`/${collection}/packs`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
+        All packs
+      </a>
+    </main>
   )
 }

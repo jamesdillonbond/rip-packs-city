@@ -238,12 +238,28 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  const detail = await fetchDetail(coll.id, slug)
+  // BOUNDED (R19). 2,062 "player detail unavailable: rpc get_player_detail timed
+  // out after 45000ms" across 528 distinct users in 7 days. A THROW is not a 404:
+  // 404-ing here de-indexes a real player page.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <PlayerUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
   const labels = getEntityLabels(collection)
   const isCharacter = detail.is_character === true
-  const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+  // get_player_editions is STRUCTURAL and throws (203 occurrences / 199 users).
+  let editions: Awaited<ReturnType<typeof fetchEditions>>
+  try {
+    editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+  } catch {
+    return <PlayerUnavailable collection={collection} slug={slug} />
+  }
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
@@ -371,4 +387,26 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
     </div>
   )
 }
-
+// Rendered when the detail RPC could not be READ — distinct from a player that
+// does not exist (that still 404s). Reports our failure, claims nothing about
+// the data.
+function PlayerUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  const label = slug.replace(/-/g, " ")
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Player unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(26px, 5vw, 42px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load {label}
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean this player has no moments. Reloading often works.
+      </p>
+      <a href={`/${collection}/overview`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
+        Back to overview
+      </a>
+    </main>
+  )
+}

@@ -3,6 +3,11 @@ import { readFileSync, readdirSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
+// Backtick as a constant: this file has had its escaping eaten by a scripted
+// edit more than once tonight (register R42/R19 write-ups). Plain substrings
+// and char codes cannot lose a backslash in transit.
+const BT = String.fromCharCode(96)
+
 // deep-audit R19 — the half an error boundary CANNOT do.
 //
 // ── WHY A BOUNDARY IS NOT ENOUGH, MEASURED ─────────────────────────────────
@@ -21,9 +26,20 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // is true. A THROW means we could not ask → 404 there tells a crawler a real
 // page is gone, and de-indexes it. Collapsing the two is the honesty class.
 
+// Measured from Vercel runtime errors, 7 days to 2026-08-23 — the reason each
+// page is here, and why this stopped being an SEO item:
+//   edition   15,388 throws / 2,963 users   (many from generateMetadata)
+//   player     2,062 throws /   528 users
+//   pack/dist    581 throws /   515 users
+//   series       259 throws /    38 users
+//   team          34 throws /     8 users
+//   set           24 throws /     1 user
 const GUARDED = [
   "app/(collections)/[collection]/set/[slug]/page.tsx",
   "app/(collections)/[collection]/team/[slug]/page.tsx",
+  "app/(collections)/[collection]/edition/[slug]/page.tsx",
+  "app/(collections)/[collection]/player/[slug]/page.tsx",
+  "app/(collections)/[collection]/series/[slug]/page.tsx",
 ]
 
 function pageBody(src: string): string {
@@ -64,7 +80,21 @@ describe("R19 — entity detail reads are bounded, and a failure is not a 404", 
       // which matches nothing and passes always. Verified by reverting the fix
       // and watching it still pass. Any guard written by scripted file-edit
       // needs its escaping checked by running it against a KNOWN offender.
-      const offenders = [...body.matchAll(unguardedAwaitAssign)].map((m) => m[0].trim())
+      // ⚠ A Promise.all whose EVERY member carries its own .catch() is already
+      // safe and must not be flagged — the edition page's streamed block does
+      // exactly that (7 fetches, 7 catches) and my first version of this check
+      // false-positived on it. A guard that reddens on correct code gets worked
+      // around, so the exemption is measured, not assumed: members are counted
+      // against catches on the same statement.
+      const offenders = [...body.matchAll(unguardedAwaitAssign)]
+        .filter((m) => {
+          const rest = body.slice(m.index)
+          const end = rest.indexOf("])")
+          const stmt = end < 0 ? rest.slice(0, 600) : rest.slice(0, end)
+          const fetches = (stmt.match(/fetch[A-Z]\w*\(/g) || []).length
+          const catches = (stmt.match(/\.catch\(/g) || []).length
+          return !(fetches > 0 && catches >= fetches)
+        })
       expect(offenders).toEqual([])
     })
 
@@ -91,6 +121,20 @@ describe("R19 — entity detail reads are bounded, and a failure is not a 404", 
       // that OUR failure is named; do not police the words.
       expect(cmp).toMatch(/problem on our side|could not|didn&rsquo;t come back/i)
     }
+  })
+
+  it("pack/dist RENDERS the retryable state instead of throwing for the boundary", () => {
+    // ⚠ This page deliberately threw "so the error boundary shows a retryable
+    // state". MEASURED: that intent does not hold on an ISR route — the throw
+    // happens during generation, error.tsx never runs, and Next serves its own
+    // unbranded 500. 581 occurrences / 515 users did exactly that.
+    const src = readFileSync("app/(collections)/[collection]/pack/dist/[distId]/page.tsx", "utf8")
+    const body = pageBody(src)
+    expect(body).toContain("return <PackUnavailable")
+    // The throw must be GONE, not merely accompanied by a render.
+    expect(body).not.toContain("throw new Error(" + BT + "pack detail bundle unavailable")
+    // ...and a genuinely missing dist must still 404.
+    expect(body).toContain("notFound()")
   })
 
   it("records the ISR entity pages still carrying an UNGUARDED detail read", () => {
