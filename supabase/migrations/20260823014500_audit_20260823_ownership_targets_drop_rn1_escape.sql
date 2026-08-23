@@ -38,8 +38,23 @@
 -- No behaviour change at any batch size the route uses (default 10, max 50):
 -- with p_max_datapoints = 900,000 the 88 cheapest sets already fit. The only call
 -- whose result changes is one whose bound is below the cheapest single set.
--- CREATE OR REPLACE preserved the ACL -- re-verified postgres + service_role only,
--- no anon/authenticated.
+-- anon-exec: none -- CREATE OR REPLACE preserved the ACL on get_ownership_backfill_targets:
+-- postgres + service_role only, no anon/authenticated. The decision was already stated in
+-- this header; it is reworded to the marker form that
+-- __tests__/migration-new-function-states-its-anon-exec-decision.test.ts reads, which is a
+-- LINE-level regex needing "anon-exec:" and the function name TOGETHER. Prose two lines
+-- apart did not satisfy it, and the guard was red on main.
+--
+-- ⚠ A REVOKE here would NOT be the no-op it looks like. The creating migration
+-- (20260823001500_*.sql, lines 124-126) already revoked PUBLIC + anon + authenticated, and
+-- CREATE OR REPLACE FUNCTION does not reset a function ACL -- so adding one would be a live
+-- privilege statement wearing a snapshot's clothes. The marker is the correct remedy here,
+-- which is what the guard's own failure message says for this case.
+--
+-- Re-measured INDEPENDENTLY of the line above, 2026-08-22 (PT), against the deployed
+-- function: has_function_privilege('anon', ..., 'EXECUTE') = false,
+-- has_function_privilege('authenticated', ..., 'EXECUTE') = false, prosecdef = true.
+-- ⚠ That is a dated sample, not a constant -- re-measure rather than quoting it.
 --
 -- REVERT: re-apply supabase/migrations/20260823001500_*.sql verbatim, which
 -- restores the escape.
