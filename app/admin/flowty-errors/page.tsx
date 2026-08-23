@@ -10,7 +10,7 @@
 // without initial data and let it show its sign-in screen.
 
 import { cookies } from "next/headers";
-import { supabaseAdmin } from "@/lib/supabase";
+import { loadErrorTriage } from "@/lib/admin/error-triage";
 import ErrorTriageClient, {
   type DashboardPayload,
   type SummaryRow,
@@ -36,33 +36,19 @@ export default async function FlowtyErrorsPage({
   const presented = queryToken || cookieToken;
   const authed = !!expected && presented === expected;
 
+  // ⚠ The reads live in lib/ so they are BOUNDED and TESTABLE — see that
+  // module's header. The `loadError` distinction is unchanged; what changed is
+  // that reads which merely HANG can now reach it, with their own sentence
+  // rather than a fabricated driver message.
   let dashboard: DashboardPayload | null = null;
   let summary: SummaryRow[] = [];
   let loadError: string | null = null;
 
   if (authed) {
-    const [dashRes, sumRes] = await Promise.all([
-      supabaseAdmin.rpc("get_error_triage_dashboard"),
-      supabaseAdmin.rpc("get_error_triage_summary", { p_status_filter: null }),
-    ]);
-    if (dashRes.error) {
-      console.log(`[flowty-errors] dashboard rpc error: ${dashRes.error.message}`);
-      loadError = dashRes.error.message;
-    } else {
-      const d = dashRes.data;
-      // The RPC may return a scalar JSON object or a single-row array.
-      if (Array.isArray(d)) {
-        dashboard = (d[0] ?? null) as DashboardPayload | null;
-      } else if (d && typeof d === "object") {
-        dashboard = d as DashboardPayload;
-      }
-    }
-    if (sumRes.error) {
-      console.log(`[flowty-errors] summary rpc error: ${sumRes.error.message}`);
-      if (!loadError) loadError = sumRes.error.message;
-    } else if (Array.isArray(sumRes.data)) {
-      summary = sumRes.data as SummaryRow[];
-    }
+    ({ dashboard, summary, error: loadError } = await loadErrorTriage<
+      DashboardPayload,
+      SummaryRow
+    >());
   }
 
   return (

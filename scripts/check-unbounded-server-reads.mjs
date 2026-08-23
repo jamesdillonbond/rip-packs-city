@@ -115,7 +115,14 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // above, and the same already-existing-but-unreachable honest branch (a bare
 // `[]` used to render "No wallet activity to display.", a claim about the loan
 // book made from a database error).
-const MAX_UNBOUNDED = 3
+//
+// 3 → 1 (2026-08-22): `/admin/flowty-errors` and `/[collection]/pack/[id]`
+// extracted and bounded. ⚠ The ONE that remains is `lib/packs/pack-deals.ts`
+// behind `/[collection]/pack-sniper`, which the roadmap lists as untouchable —
+// so 1 is the FLOOR under the current rules, not a residue nobody got to. Stated
+// here because a ratchet at 1 with no explanation invites someone to "finish the
+// job" on a surface that is deliberately off-limits.
+const MAX_UNBOUNDED = 1
 
 const strip = (s) => stripComments(s)
 

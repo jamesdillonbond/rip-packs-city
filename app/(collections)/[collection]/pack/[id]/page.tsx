@@ -31,7 +31,7 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchLifecycle, isKnownDistId } from "@/lib/pack-detail/lifecycle"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { metaField } from "@/lib/format"
 import {
@@ -54,8 +54,6 @@ interface PageProps {
   params: Promise<{ collection: string; id: string }>
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const sb: any = supabaseAdmin
 
 function num(v: number | string | null | undefined): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -90,40 +88,6 @@ function fmtPriceWithUsd(n: number | null, currency: string | null | undefined):
   return fmtPrice(n, currency)
 }
 
-/**
- * `ok:false` means the RPC FAILED; `ok:true` with a null lifecycle means the pack
- * genuinely is not in the index.
- *
- * These used to collapse into a bare `null`, so a statement timeout rendered the
- * NotFoundCard — telling a visitor a pack that exists does not, and (because the
- * card is served at 200) offering that page to crawlers as a soft-404. The same
- * defect class the deep audit found on the edition/series routes: an error and an
- * absence are not the same answer and must not share a return value.
- */
-async function fetchLifecycle(
-  packNftId: string
-): Promise<{ lifecycle: PackLifecycle | null; ok: boolean }> {
-  const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
-  if (error) {
-    console.log(`[pack-lifecycle] rpc error for ${packNftId}: ${error.message}`)
-    return { lifecycle: null, ok: false }
-  }
-  if (!data || typeof data !== "object") return { lifecycle: null, ok: true }
-  return { lifecycle: data as PackLifecycle, ok: true }
-}
-
-/** Probe pack_distributions for a known dist_id match — backs the 308 fallback. */
-async function isKnownDistId(collectionUuid: string, candidate: string): Promise<boolean> {
-  const { data, error } = await sb
-    .from("pack_distributions")
-    .select("dist_id")
-    .eq("collection_id", collectionUuid)
-    .eq("dist_id", candidate)
-    .limit(1)
-    .maybeSingle()
-  if (error) return false
-  return Boolean(data)
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // generateMetadata
@@ -240,9 +204,20 @@ export default async function PackLifecyclePage(props: PageProps) {
   // matches a known pack_distributions row, send the user to the template
   // page at /pack/dist/[distId].
   if (!lifecycle || lifecycle.status === "unknown" || lifecycle.error) {
-    const isDist = await isKnownDistId(coll.id, id)
+    const { known: isDist, ok: probeOk } = await isKnownDistId(coll.id, id)
     if (isDist) {
       redirect(`/${routeSlug}/pack/dist/${encodeURIComponent(id)}`)
+    }
+    // ⚠ A FAILED PROBE IS NOT "not a distribution". The probe used to return a
+    // bare `false` on error, and this branch reads `false` as "no such dist" and
+    // renders the NotFoundCard — so a statement timeout told a visitor a real
+    // distribution does not exist, at HTTP 200, which is a soft-404 to crawlers
+    // as well. That is the exact conflation `fetchLifecycle` was fixed for, one
+    // line above it and left behind. UnavailableCard already exists for this.
+    if (!probeOk) {
+      return (
+        <UnavailableCard collectionSlug={routeSlug} id={id} collectionName={coll.displayName} />
+      )
     }
     return <NotFoundCard collectionSlug={routeSlug} id={id} collectionName={coll.displayName} />
   }

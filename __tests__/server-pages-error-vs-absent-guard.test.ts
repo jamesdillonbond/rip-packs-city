@@ -51,16 +51,35 @@ function read(...parts: string[]): string {
  */
 
 describe("server pages distinguish a failed read from an absent record", () => {
+  // ⚠ THE READS MOVED, SO THIS CHECK MOVED WITH THEM (2026-08-22). `fetchLifecycle`
+  // and `isKnownDistId` were extracted into `lib/pack-detail/lifecycle.ts` so they
+  // could be BOUNDED and TESTED. Split deliberately, same as the wallets case
+  // below: the PRODUCERS' contracts are checked in the module, the CONSUMER's
+  // branching in the page — checking only the module would let a page that
+  // stopped consulting `ok` pass, and that is the half a reader sees.
   it("pack/[id] does not collapse an RPC error into 'not found'", () => {
+    const lib = read("lib", "pack-detail", "lifecycle.ts")
     const src = read("app", "(collections)", "[collection]", "pack", "[id]", "page.tsx")
 
     // The fetch must carry the failure out rather than returning a bare null.
-    expect(src, "fetchLifecycle must report ok:false on RPC error").toContain(
+    expect(lib, "fetchLifecycle must report ok:false on RPC error").toContain(
       "return { lifecycle: null, ok: false }"
     )
     // ...and an absent record must be a DIFFERENT return value.
-    expect(src, "an absent record must be ok:true with a null lifecycle").toContain(
+    expect(lib, "an absent record must be ok:true with a null lifecycle").toContain(
       "return { lifecycle: null, ok: true }"
+    )
+    // ⚠ NEW 2026-08-22: the dist probe had the SAME defect one line below the
+    // lifecycle read and was left behind — it returned a bare `false` on error,
+    // which the page reads as "not a distribution" and answers with NotFoundCard.
+    expect(lib, "the dist probe must report ok:false on error").toContain(
+      "return { known: false, ok: false }"
+    )
+    expect(src, "the page must render UnavailableCard on a failed probe").toMatch(
+      /const \{\s*known: isDist\s*,\s*ok: probeOk\s*\}\s*=\s*await isKnownDistId\(/
+    )
+    expect(src, "a failed probe must not fall through to NotFoundCard").toMatch(
+      /if \(!probeOk\) \{/
     )
     // The page must branch on it BEFORE the not-found / dist-redirect path.
     expect(src, "page must destructure ok from fetchLifecycle").toMatch(
