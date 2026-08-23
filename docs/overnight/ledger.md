@@ -44,7 +44,10 @@ change and stays reported). I changed the test to the measured behaviour and wro
 than "fixing" the detector to match my assumption.
 
 **Revert path:** `git revert <sha>` — the detector, its test, and the CI step that calls it. No DB half.
-Reverting restores the bare `comm`, which means restoring the conflict. Sha stamped after the push.
+Reverting restores the bare `comm`, which means restoring the conflict. **Shas read after the push:**
+`git revert 8826f517` (detector + CI + test) and `git revert ecf5e8ba` (this entry). ⚠ **I first wrote a
+sha I had not read** — the rebase had moved it — which is this file's own "read the sha after the push"
+rule failing on the person who has been quoting it all night. Corrected from `git log` in the same turn.
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 6) — nothing in this repo measured the one limit that can silently delete the whole memory file
 
