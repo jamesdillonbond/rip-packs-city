@@ -56,7 +56,7 @@ CLAUDE.md was at **39,924 / 40,000 — 76 characters of headroom**, so every add
   while a test run was reporting two failures, because I chained `git push` after `npm test` without gating
   on the exit code.
 
-**Revert path:** `git revert <sha>` — docs only, no DB half.
+**Revert path:** `git revert d298c968` — docs only, no DB half.
 
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the FIFTH concluding section, live at 202 degradations / 157 users a day, and the guard that missed it was a SPELLING LIST
 
