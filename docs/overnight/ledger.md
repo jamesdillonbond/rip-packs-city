@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · VERIFIED (Claude Code, interactive) — R19's throwers are NAMED from runtime logs: both are catchable, they are DIFFERENT on the two pages, and team's has hit 8 real users
+
+**The end-to-end probe came back CONFOUNDED, so I stopped trying to reproduce and read the instrument instead.** Polling production after the fix returned 500 on the old deployment and 200 on the new one — two things changed at once (deploy AND load), and a 200 does not exercise the failure path. **That observation proves nothing about the fix, and is recorded as proving nothing.**
+
+**Vercel runtime errors settle it without needing another 500.** Both failures are real thrown `Error` objects with stacks and digests — **NOT wall-clock kills** — so a `try/catch` does catch them, which was the open question:
+
+- **`/[collection]/set/[slug]`** → `Error: set editions unavailable: canceling statement due to statement timeout`, thrown by **`get_set_editions`** — i.e. `fetchEditions`, **inside the `Promise.all`**. 24 occurrences since 2026-08-02, last `2026-08-23T00:27:23Z` on `dpl_ybqmMVUwQMbBAhpTTvnWMe5StVTV` (the detail-guard-only build). A variant throws `rpc get_set_editions timed out after 45000ms with no response`.
+- **`/[collection]/team/[slug]`** → `Error: team detail unavailable: canceling statement due to statement timeout`, thrown by the **DETAIL read**, not the `Promise.all`. **34 occurrences across 8 DISTINCT USERS since 2026-07-14**, spanning lakers, liberty, spurs, nuggets, sparks and timberwolves.
+
+⚠ **CORRECTION TO MY OWN LAST ENTRY.** I wrote that the throw was in the heavy `Promise.all` and implied that for both pages. **That is true of `set` and FALSE of `team`** — team fails at the detail read, which my *first* fix already covered. I generalised from one page's stack to the other's without reading it. Both call sites are now guarded on both pages, so the outcome is right, but the reasoning I published was half wrong.
+
+⚠ **This is not crawler noise.** 8 distinct users hit the team failure. The register carried R19 as an SEO/branding concern; it is also a real reader-facing outage on the pages the public overview catalog links to.
+
+✅ **The section helper already distinguishes the two cases and the logs show it working** — `[entity-section] team activity … — degrading to empty` sits next to `[entity-section] set editions … — STRUCTURAL — throwing`. Sections that can be omitted degrade; structural ones throw. **The throw was correct; what was missing was a caller that caught it.** That is now both pages.
+
+⚠ **STILL NOT ESTABLISHED and deliberately not claimed:** that a user has since seen the branded page. The failure has not recurred on the new build, and I did not force it. **Mechanism verified; end-to-end pending the next occurrence.** ⚠ Root cause is unchanged — `get_set_editions` and `get_team_detail` exceed the statement timeout under load. Bounding the read stops the unbranded 500; **it does not make the page work.**
+
+**Revert:** nothing new shipped here — this entry is verification and a correction.
+
 ### 2026-08-22 · CORRECTION + SHIPPED (Claude Code, interactive) — my R19 fix was INCOMPLETE and my test PASSED ON IT; both are fixed, and the test was vacuous for a second reason on top
 
 **Three failures of mine in one item, each caught only by the next check. Recording all three because the pattern is the point.**
