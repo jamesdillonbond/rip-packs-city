@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 4) — a CHECK constraint this file says protects three tables protects ONE, and the Golazos phantom series vanished with nobody recording it
+
+**Docs only, no DB write.** Verification sweep over the Quick-reference constants a session trusts
+without checking. Two came back wrong; three came back clean, and saying which is the point.
+
+🚨 **THE FOOTGUN THIS FILE NAMES IS HALF AS PROTECTED AS IT CLAIMS.** CLAUDE.md's two-vocabulary block
+said *"Writing `'ufc_strike'` to a `flowty_*` table fails at INSERT."* Measured live from
+`pg_constraint`: **only `flowty_transactions` carries a `collection` CHECK.** `flowty_loans` and
+`flowty_loan_events` both HAVE a `collection text` column and **neither has any CHECK on it** (their
+constraints are on `status`, `event_type`, `data_completeness`). ⚠ **So the same mistake is LOUD on one
+table and SILENT on the other two** — the value persists and simply never matches a `'ufc'` filter
+afterwards, which is the worse direction and the one the old wording ruled out. Corrected in place.
+
+⚠ **`collection_series`: the Golazos phantom rows are GONE, and nothing records their removal.**
+R45 (filed hours earlier) measured **3** Golazos rows with Series 2 and 3 holding zero editions, which
+is why the Collection tab offered two filters that could only return nothing. Live now: **1 row,
+`1 = Series 1`.** No migration and no ledger entry mentions a delete. **I can attribute it to nobody,
+so the register row says exactly that** rather than claiming a fix — a user-visible dropdown source
+changed by an untracked DML is the shape the ledger exists to prevent. If you removed them, ledger it.
+
+✅ **Verified CLEAN, so nobody re-derives them:** all **7** collection UUIDs match live byte-for-byte,
+including `chain` (Candy `solana`, Panini `ethereum`) and both unpublished flags · the `tier_type`
+enum's full nine values match `database.md` exactly · Top Shot's `collection_series.display_label`
+really does read **`Series 5/6/7` for on-chain 6/7/8**, so this file's warning about the two competing
+conventions is live and correct · UFC really does carry BOTH series 0 and 1 · Pinnacle labels are
+years (`2023`–`2026`).
+
+**Paid for in the budget:** the Cadence paragraph and the `after()`-heartbeat bullet were condensed to
+their rules (case histories already verbatim in `apis-and-cadence.md` and `cron-and-schedulers.md`).
+**CLAUDE.md: 39,856 chars**, 144 of headroom.
+
+**Revert path:** docs only, no DB half. Shas stamped in the follow-up commit, read after the push.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the pack-detail page had ONE bounded read and THIRTEEN bare ones, and that asymmetry is why a tempting guard shortcut is wrong
 
 **Bounded all 13 bare reads in `lib/pack-dist/fetchers.ts`** and taught the ratchet a fourth budget
