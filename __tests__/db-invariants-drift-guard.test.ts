@@ -92,11 +92,6 @@ const PINS = [
     migration: "supabase/migrations/20260626001900_fmv_backfill_candidates_antijoin_rpc.sql",
   },
   {
-    fn: "purge_old_fcl_auth_nonces",
-    test: "supabase/tests/purge_old_fcl_auth_nonces.sql",
-    migration: "supabase/migrations/20260517140000_backfill_pack_pull_source_rip_id_and_nonces_cleanup.sql",
-  },
-  {
     fn: "topshot_serial_board_candidates",
     test: "supabase/tests/topshot_serial_board_candidates.sql",
     migration: "supabase/migrations/20260726012000_audit_20260726_serial_board_candidates_pooled_edition_id.sql",
