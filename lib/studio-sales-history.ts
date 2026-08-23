@@ -400,18 +400,43 @@ export async function runStudioHistoryDrain(req: NextRequest, cfg: StudioHistory
   // ── Self-throttle ────────────────────────────────────────────────────────────
   try {
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-    const { count } = await supabaseAdmin
+    const { count, error: throttleErr } = await supabaseAdmin
       .from("pipeline_runs")
       .select("id", { count: "exact", head: true })
       .eq("ok", false)
       .neq("pipeline", cfg.pipelineName)
       .gte("finished_at", since)
+    // ⚠ AN UNREADABLE SATURATION SIGNAL IS NOT AN ALL-CLEAR. The catch below
+    // already abandons the tick when this read THROWS — but supabase-js RETURNS
+    // `{ count: null, error }` for a statement timeout instead of throwing, and
+    // `count ?? 0` then reads as "no recent failures" and lets the tick proceed.
+    // So the guard failed OPEN on the one shape production actually produces, and
+    // it is a `count: exact` over `pipeline_runs` — the table every pipeline is
+    // writing to — so it is likeliest to fail during the very saturation it
+    // exists to detect. Routed into the existing catch so both failure shapes
+    // share one path; a plain `throw throttleErr` would log "[object Object]",
+    // because a PostgREST error is not an Error instance.
+    //
+    // 🚨 THIS IS THE TENTH COPY, AND IT WAS MISSED BY THE SWEEP THAT FIXED NINE.
+    // `__tests__/saturation-throttle-reads-its-error.test.ts` walks
+    // `app/api/cron` ONLY, so this file — the SHARED implementation that
+    // `golazos-studio-` and `allday-studio-sales-history-backfill` delegate to
+    // entirely — was outside the ban BY CONSTRUCTION. Those two routes carry no
+    // inline throttle of their own, so their breaker was the broken one. The
+    // guard now walks `lib/` too.
+    if (throttleErr) throw new Error(throttleErr.message || "throttle count read failed")
     if ((count ?? 0) > SATURATION_FAIL_THRESHOLD) {
       await logRun(cfg, startedAt, startedMs, true, 0, 0, 0, null, { skipped: "saturation", recent_fails: count })
       return NextResponse.json({ ok: true, skipped: "saturation", recent_fails: count, pipeline: cfg.pipelineName }, { status: 200 })
     }
   } catch (e) {
-    await logRun(cfg, startedAt, startedMs, false, 0, 0, 0, `throttle_read: ${e instanceof Error ? e.message : String(e)}`, {})
+    // ⚠ `{ skipped: "throttle_error" }`, NOT `{}` — this used to log an EMPTY
+    // `extra`, so a lib-path throttle failure was invisible to the obvious query
+    // (`extra->>'skipped' = 'throttle_error'`), which is how the nine routes
+    // record it and how anyone looking for this WILL look. Fixing the fail-open
+    // without this would have left the incidence unmeasurable by construction —
+    // the same defect one layer down.
+    await logRun(cfg, startedAt, startedMs, false, 0, 0, 0, `throttle_read: ${e instanceof Error ? e.message : String(e)}`, { skipped: "throttle_error" })
     return NextResponse.json({ ok: false, skipped: "throttle_error", pipeline: cfg.pipelineName }, { status: 200 })
   }
 

@@ -334,7 +334,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ ok: true, skipped: "saturation", recent_fails: count, pipeline: PIPELINE }, { status: 200 })
     }
   } catch (e) {
-    await logRun(startedAt, startedMs, false, 0, 0, 0, `throttle_read: ${e instanceof Error ? e.message : String(e)}`, {})
+    await logRun(startedAt, startedMs, false, 0, 0, 0, `throttle_read: ${e instanceof Error ? e.message : String(e)}`, { skipped: "throttle_error" })
     return NextResponse.json({ ok: false, skipped: "throttle_error", pipeline: PIPELINE }, { status: 200 })
   }
 

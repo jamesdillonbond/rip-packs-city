@@ -40,6 +40,26 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // argument for this guard being a directory walk rather than a list.
 
 const CRON_DIR = join(process.cwd(), "app", "api", "cron")
+const LIB_DIR = join(process.cwd(), "lib")
+
+// 🚨 WIDENED 2026-08-23, AND THE WIDENING FOUND A LIVE TENTH COPY.
+//
+// This guard walked `app/api/cron` ONLY. Its own header above argues that "a
+// guard that walks the tree cannot miss the tenth" — but it walked one
+// DIRECTORY, not the tree, and the tenth copy was one directory over in
+// `lib/studio-sales-history.ts`, which `golazos-studio-` and
+// `allday-studio-sales-history-backfill` delegate to ENTIRELY. Those two routes
+// carry no inline throttle, so they never appeared in this file's population and
+// their breaker was the broken one — outside the ban BY CONSTRUCTION.
+//
+// ⚠ That is this repo's most-repeated guard defect: a guard's declared scope is
+// itself a CLAIM, and coverage is only real against what the guard READS. The
+// sibling case is the anon driver-message guard, which derived its file set from
+// `isPublicPath` and so could not see anything behind sign-in.
+//
+// ⚠ The fix is not "add lib/studio-sales-history.ts" — a named file is the
+// curated list this file already argues against. It is to walk a SECOND ROOT and
+// let membership stay derived from carrying `SATURATION_FAIL_THRESHOLD`.
 
 function routeFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -61,8 +81,19 @@ function routeFiles(dir: string, out: string[] = []): string[] {
  * Do not re-inline a local copy.
  */
 
+/** Every `.ts` under a root — the cron walk is route-files-only, lib is not. */
+function libFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry.startsWith(".")) continue
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) libFiles(full, out)
+    else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) out.push(full)
+  }
+  return out
+}
+
 function throttledRoutes(): { file: string; src: string }[] {
-  return routeFiles(CRON_DIR)
+  return [...routeFiles(CRON_DIR), ...libFiles(LIB_DIR)]
     .map((f) => ({ file: relative(process.cwd(), f).split(sep).join("/"), src: stripComments(readFileSync(f, "utf8")) }))
     .filter((r) => r.src.includes("SATURATION_FAIL_THRESHOLD"))
     .sort((a, b) => a.file.localeCompare(b.file))
@@ -75,7 +106,16 @@ describe("saturation self-throttle reads its own error", () => {
     // retired, punishing exactly the cleanup this repo keeps doing (the
     // `topshot-flowty-unmapped-drain` schedule was retired mid-sweep).
     expect(routeFiles(CRON_DIR).length, "must find cron route files at all").toBeGreaterThan(20)
+    expect(libFiles(LIB_DIR).length, "must find lib modules at all — the second root").toBeGreaterThan(50)
     expect(throttledRoutes().length, "must find routes carrying the throttle").toBeGreaterThan(0)
+    // ⚠ THE SECOND ROOT MUST CONTRIBUTE. Adding a root that matches nothing is a
+    // widening in name only, and it is what this guard just spent a live defect
+    // learning. If the shared implementation moves again, this fails LOUDLY
+    // rather than silently narrowing back to one directory.
+    expect(
+      throttledRoutes().filter((r) => r.file.startsWith("lib/")).length,
+      "no lib/ module carries the throttle — the second root is contributing nothing; has the shared implementation moved?",
+    ).toBeGreaterThan(0)
   })
 
   it("every throttled route destructures the count error", () => {
@@ -110,6 +150,30 @@ describe("saturation self-throttle reads its own error", () => {
     for (const { file, src } of throttledRoutes()) {
       expect(src, `${file}: wrap the throttle error in an Error so its message survives`)
         .toMatch(/throw new Error\(\s*\w*throttleErr\w*\.message/)
+    }
+  })
+
+  it("the failure is logged where an observer will actually look for it", () => {
+    // ⚠ The nine routes record a throttle failure as `extra: { skipped:
+    // "throttle_error" }`, and that is the key any query keys on. The shared lib
+    // logged an EMPTY `extra`, so its two pipelines' failures would have been
+    // invisible to the obvious query even after the fail-open was fixed — the
+    // same "the instrument cannot see it" defect one layer down. Fixing a guard
+    // without fixing its record leaves the incidence unmeasurable.
+    for (const { file, src } of throttledRoutes()) {
+      const at = src.indexOf("throttle_read:")
+      expect(at, `${file}: no throttle_read log line`).toBeGreaterThan(-1)
+      // 🚨 THE WINDOW STOPS AT THE `return`, AND MUTATION IS WHY. The very next
+      // statement is `return NextResponse.json({ ok: false, skipped:
+      // "throttle_error", … })`, which contains the same string — so a window
+      // that ran past it passed even with the log's `extra` emptied back to `{}`.
+      // The HTTP body is not the record; `pipeline_runs` is.
+      const ret = src.indexOf("return", at)
+      const logCall = src.slice(at, ret > at ? ret : at + 260)
+      expect(
+        logCall,
+        `${file}: the throttle-failure LOG CALL must carry skipped: "throttle_error" in its extra, or the failure is invisible to the query everyone writes (the HTTP response body does not count — it is not persisted)`,
+      ).toMatch(/skipped:\s*["']throttle_error["']/)
     }
   })
 })
