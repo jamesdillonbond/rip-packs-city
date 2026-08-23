@@ -8,6 +8,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the dist probe had the SAME defect as the read one function above it, and had been left behind
+
+**Extracted and bounded the last two reachable pages:** `/admin/flowty-errors` →
+`lib/admin/error-triage.ts`, `/[collection]/pack/[id]` → `lib/pack-detail/lifecycle.ts`.
+Unbounded ceiling **3 → 1**; server-page data-access ratchet **5 → 3**.
+
+🚨 **THE FINDING IS A SECOND INSTANCE ONE FUNCTION BELOW A FIXED ONE.** `fetchLifecycle` on the pack
+page had already been hardened — its comment records that it *"used to collapse into a bare null, so a
+statement timeout rendered the NotFoundCard, telling a visitor a pack that exists does not, at 200,
+which is a soft-404 to crawlers"*. **`isKnownDistId`, defined immediately after it, still returned a
+bare `false` on error** — and the caller reads `false` as *"not a distribution"* and answers with the
+same NotFoundCard. **The fix landed on one of two adjacent reads and the other kept publishing the
+identical false claim.** That is the documented "fix per PANEL, not per page" failure at its smallest
+granularity yet: two functions, one file, twenty lines apart. It now returns `{ known, ok }` and the
+page renders the `UnavailableCard` it already had.
+
+⚠ **`known: false, ok: true` is still the COMMON path and must stay cheap** — most pack ids are not
+dist ids. Turning a real not-found into an Unavailable card would be the same defect pointed the other
+way, so that case has its own control.
+
+⚠ **`/admin/flowty-errors` was worth the same treatment as a public page, for a reason specific to
+it.** It is `force-dynamic`, so every visit performs both RPCs inline with no Suspense and no ISR entry
+to hide behind — and **the reader is the person debugging the outage**. A triage console that hangs
+during saturation is unavailable exactly when it is needed.
+
+⚠ **Its raw driver message is KEPT ON PURPOSE, and the timeout's is NOT.** `/admin/*` is gated on
+`RPC_ADMIN_TOKEN` and `check-driver-message-leaks` exempts gated operator sites — the Postgres message
+is the point of that screen. But the bound reports **its own sentence** ("the database did not
+answer"), because *"Postgres answered with an error"* and *"Postgres never answered"* send an operator
+down different paths and only one of them is a query bug. Asserted as `not.toContain("statement
+timeout")`, so a fabricated driver string would red.
+
+**`server-pages-error-vs-absent-guard` moved with the reads and gained an arm.** Producers' contracts
+now checked in the modules, the CONSUMER's branching still in the pages — checking only the module
+would let a page that stopped consulting `ok` pass, and that is the half a reader sees. The new arm
+pins the dist-probe fix in both halves.
+
+**Two new suites, 14 assertions, five mutations all killing:** ignore the timeout (both modules),
+probe returns `ok: true` on error (the defect it shipped with), first-error-wins becomes last-wins,
+and dropping the dashboard RPC's single-row-array unwrap — that last one pinned because the unwrap
+MOVED during extraction and a wrong shape renders an empty console against a healthy database.
+
+⚠ **THE RATCHET'S FLOOR IS 1, NOT 0, AND THE FILE NOW SAYS WHY.** The remaining entry is
+`lib/packs/pack-deals.ts` behind `/[collection]/pack-sniper`, which the roadmap lists as untouchable.
+A ratchet sitting at 1 with no explanation invites someone to "finish the job" on a surface that is
+deliberately off-limits.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1,363 files / 14,845 tests, 0 failures** ·
+`check-unbounded-server-reads` 1/1, reds at 0 · data-access ratchet 3/3 · eslint clean.
+
+⚠ **A stale-tree scare worth recording:** the full suite first failed on
+`inbox-index-lists-every-filing` with nine filings "missing" from `INDEX.md` — a guard another session
+had just added. **My checkout was simply behind origin**, where the index was already complete;
+rebasing cleared it. ⚠ I nearly "fixed" a red that did not exist by hand-adding nine entries.
+**Pull before diagnosing a guard you have never seen fail.**
+
+**Revert path:** `git revert <sha of "refactor(pack): extract and bound the lifecycle read and its dist probe">`.
+Page + library + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED — R26 closed, and the guard's real blind spot was bigger than the one filed
 
 **All 10 unordered `.range()` paging loops in `scripts/` now carry a deterministic `.order()` on a UNIQUE key, and `scripts` is in the ban's ROOTS.**
