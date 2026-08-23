@@ -1,10 +1,11 @@
 -- DB invariant: public.refresh_cross_collection_cohort_step2 — pg_cron
--- `rpc-ccm-step2` @ `25 4 * * *`.
+-- `rpc-ccm-step2` @ `25 23 * * *` (moved from `25 4 * * *` on 2026-08-22 with the
+-- lock-window rewrite below; step1 moved with it, to `10 23`).
 --
 -- WHAT IT DOES. Rebuilds `cross_collection_ts_set_overlap_mat`: for each Top
 -- Shot SET, how many of the cross-collection cohort hold it and how many of
 -- their moments it accounts for. It is the DOWNSTREAM half of an ordered pair —
--- step1 rebuilds the cohort at `10 4`, this reads it 15 minutes later.
+-- step1 rebuilds the cohort at `10 23`, this reads it 15 minutes later.
 --
 -- ⚠ THE COUPLING IS THE THING TO KNOW. This function reads
 -- `cross_collection_cohort_mat` and has NO check that step1 ran, succeeded, or
@@ -30,14 +31,27 @@
 --      no set identity is excluded rather than grouped into a nameless bucket.
 --   5. `MAX(e.set_name)` is a GROUP BY artefact, not a choice: rows are grouped
 --      by `set_id` and the name is functionally dependent on it.
---   6. TRUNCATE-then-INSERT in one transaction, same as step1: atomic replace,
---      and a mid-run failure leaves the previous table intact.
+--   6. Atomic replace in one transaction, same as step1: a mid-run failure
+--      leaves the previous table intact. ⚠ Since 2026-08-22 the TRUNCATE no
+--      longer happens FIRST — the aggregate builds into a temp table and the
+--      truncate lands immediately before the insert, so the ACCESS EXCLUSIVE
+--      lock a reader can see is milliseconds rather than the whole run. The
+--      replace semantics are unchanged; only the lock window moved.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 285f3041a7d5b20a766df594290b76a5).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- ⚠ ONE BEHAVIOUR CHANGED WITH THE REWRITE and is asserted below: the body is NOT
+-- RE-ENTRANT WITHIN ONE TRANSACTION. `CREATE TEMP TABLE _ccm_step2_next ON COMMIT
+-- DROP` survives until COMMIT, so a second call in the same transaction raises
+-- 42P07. Harmless in production — pg_cron gives each run its own transaction — but
+-- it is a real difference from the pre-08-22 body, which could be called
+-- repeatedly. Output equivalence between the two bodies is pinned separately, by
+-- set comparison in both directions, in
+-- supabase/tests/refresh_cross_collection_cohort_lock_window.sql.
+--
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql),
+-- pulled from live prod via pg_get_functiondef on 2026-08-23
+-- (md5 596b1a465985f82ffbfb9e9713388ee7, verified against the DB's own md5 rather
+-- than by eye). __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -80,15 +94,12 @@ DECLARE
   v_set_count int := 0;
   v_started timestamptz := NOW();
 BEGIN
-  TRUNCATE TABLE public.cross_collection_ts_set_overlap_mat;
-
-  INSERT INTO public.cross_collection_ts_set_overlap_mat (set_id, set_name, cohort_holders, moments_in_cohort, computed_at)
+  CREATE TEMP TABLE _ccm_step2_next ON COMMIT DROP AS
   SELECT
     e.set_id,
-    MAX(e.set_name),
-    COUNT(DISTINCT w.wallet_address),
-    COUNT(*),
-    v_started
+    MAX(e.set_name) AS set_name,
+    COUNT(DISTINCT w.wallet_address) AS cohort_holders,
+    COUNT(*) AS moments_in_cohort
   FROM public.cross_collection_cohort_mat c
   JOIN wallet_moments_cache w
     ON w.wallet_address = c.wallet_address
@@ -99,6 +110,12 @@ BEGIN
   WHERE e.set_id IS NOT NULL
     AND e.set_name IS NOT NULL
   GROUP BY e.set_id;
+
+  TRUNCATE TABLE public.cross_collection_ts_set_overlap_mat;
+
+  INSERT INTO public.cross_collection_ts_set_overlap_mat (set_id, set_name, cohort_holders, moments_in_cohort, computed_at)
+  SELECT set_id, set_name, cohort_holders, moments_in_cohort, v_started
+  FROM _ccm_step2_next;
 
   GET DIAGNOSTICS v_set_count = ROW_COUNT;
   RETURN jsonb_build_object('set_overlap_rows', v_set_count, 'computed_at', v_started);
@@ -207,15 +224,39 @@ SELECT _assert_eq(
 -- previous cohort standing.
 DELETE FROM public.cross_collection_cohort_mat;
 
+-- ── NOT RE-ENTRANT INSIDE ONE TRANSACTION (new with the lock-window rewrite) ──
+-- The temp table from the call above is ON COMMIT DROP, so it is still here and a
+-- second call in the same transaction must fail with duplicate_table (42P07).
+-- Pinned as a REAL behaviour change, not endorsed.
+DO $reentrancy$
+BEGIN
+  PERFORM public.refresh_cross_collection_cohort_step2();
+  RAISE EXCEPTION 'a second call in the same transaction SUCCEEDED — the temp table is no longer ON COMMIT DROP, or the body stopped creating it';
+EXCEPTION
+  WHEN duplicate_table THEN NULL;  -- expected
+END
+$reentrancy$;
+
+-- ⚠ TEST SCAFFOLDING, not a property of the function: everything here runs in one
+-- rolled-back transaction, so the temp table must be cleared before the coupling
+-- assertions below can call step2 again.
+DROP TABLE IF EXISTS _ccm_step2_next;
+
 SELECT _assert_eq(
   (public.refresh_cross_collection_cohort_step2() ->> 'set_overlap_rows'), '0',
   'an EMPTY cohort yields an EMPTY overlap table — there is no guard that step1 ran'
 );
 
+-- ⚠ The REASON here changed on 2026-08-22 and the old wording ("because the
+-- TRUNCATE happens first") now describes a body that no longer exists. The
+-- previous contents are gone because the rebuild is still a full REPLACE — an
+-- empty cohort produces an empty temp table, the TRUNCATE lands immediately
+-- before the insert, and the insert adds nothing. Same outcome, different reason,
+-- and the reason is the part a reader would have carried forward as fact.
 SELECT _assert_eq(
   (SELECT count(*)::text FROM public.cross_collection_ts_set_overlap_mat),
   '0',
-  '...and the previous contents are gone, because the TRUNCATE happens first'
+  '...and the previous contents are gone: the rebuild is a full replace, not a merge'
 );
 
 ROLLBACK;

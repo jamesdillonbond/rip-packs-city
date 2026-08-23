@@ -1,5 +1,6 @@
 -- DB invariant: public.refresh_cross_collection_cohort_step1 — pg_cron
--- `rpc-ccm-step1` @ `10 4 * * *`.
+-- `rpc-ccm-step1` @ `10 23 * * *` (moved from `10 4 * * *` on 2026-08-22 with the
+-- lock-window rewrite below; the healthy window is the Pacific afternoon).
 --
 -- WHAT IT DOES. Rebuilds `cross_collection_cohort_mat`: one row per wallet that
 -- holds moments in THREE OR MORE published collections, with a per-collection
@@ -39,11 +40,27 @@
 --     carries the SAME timestamp — that is what makes the table's freshness
 --     answerable with one value rather than a range.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 c7b10e7813129ceaf4bd56b00497779c).
--- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- ⚠ THE LOCK WINDOW IS THE 2026-08-22 REWRITE, and it is why the body no longer
+-- opens with TRUNCATE. The old body truncated first and then ran a 105–350 s
+-- aggregate, holding the ACCESS EXCLUSIVE lock for the whole run against a public,
+-- crawlable board. The live body computes into a TEMP TABLE first and truncates
+-- immediately before a tiny insert, so the reader-visible lock is milliseconds.
+-- Output equivalence between the two bodies is pinned separately and directly, by
+-- set comparison in both directions, in
+-- supabase/tests/refresh_cross_collection_cohort_lock_window.sql.
+--
+-- ⚠ ONE BEHAVIOUR DID CHANGE, and it is asserted below: the new body is NOT
+-- RE-ENTRANT WITHIN ONE TRANSACTION. `CREATE TEMP TABLE _ccm_step1_next ON COMMIT
+-- DROP` survives until COMMIT, so a second call in the same transaction raises
+-- 42P07. Harmless in production — pg_cron gives each run its own transaction — but
+-- it is a real difference from the old body, which could be called repeatedly, and
+-- an unpinned behaviour change is how the next caller finds out the hard way.
+--
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql),
+-- pulled from live prod via pg_get_functiondef on 2026-08-23
+-- (md5 d7712cf95a85a210e494c822e8cdd324, verified against the DB's own md5 rather
+-- than by eye). __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -80,6 +97,23 @@ DECLARE
   v_cohort_count int := 0;
   v_started timestamptz := NOW();
 BEGIN
+  -- Expensive scan FIRST, holding no lock on the reader-facing table.
+  CREATE TEMP TABLE _ccm_step1_next ON COMMIT DROP AS
+  SELECT
+    w.wallet_address,
+    COUNT(DISTINCT w.collection_id) AS n_collections,
+    COUNT(*) AS total_moments,
+    COUNT(*) FILTER (WHERE w.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd') AS ts_moments,
+    COUNT(*) FILTER (WHERE w.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070') AS allday_moments,
+    COUNT(*) FILTER (WHERE w.collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75') AS golazos_moments,
+    COUNT(*) FILTER (WHERE w.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714') AS pinnacle_moments,
+    COUNT(*) FILTER (WHERE w.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023') AS ufc_moments,
+    ROUND(SUM(COALESCE(w.fmv_usd, 0))::numeric, 2) AS approx_fmv_usd
+  FROM wallet_moments_cache w
+  GROUP BY w.wallet_address
+  HAVING COUNT(DISTINCT w.collection_id) >= 3;
+
+  -- Lock window starts here and ends at COMMIT, a few rows later.
   TRUNCATE TABLE public.cross_collection_cohort_mat;
 
   INSERT INTO public.cross_collection_cohort_mat (
@@ -88,19 +122,10 @@ BEGIN
     approx_fmv_usd, computed_at
   )
   SELECT
-    w.wallet_address,
-    COUNT(DISTINCT w.collection_id),
-    COUNT(*),
-    COUNT(*) FILTER (WHERE w.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'),
-    COUNT(*) FILTER (WHERE w.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'),
-    COUNT(*) FILTER (WHERE w.collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75'),
-    COUNT(*) FILTER (WHERE w.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'),
-    COUNT(*) FILTER (WHERE w.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023'),
-    ROUND(SUM(COALESCE(w.fmv_usd, 0))::numeric, 2),
-    v_started
-  FROM wallet_moments_cache w
-  GROUP BY w.wallet_address
-  HAVING COUNT(DISTINCT w.collection_id) >= 3;
+    wallet_address, n_collections, total_moments,
+    ts_moments, allday_moments, golazos_moments, pinnacle_moments, ufc_moments,
+    approx_fmv_usd, v_started
+  FROM _ccm_step1_next;
 
   GET DIAGNOSTICS v_cohort_count = ROW_COUNT;
   RETURN jsonb_build_object('cohort_size', v_cohort_count, 'computed_at', v_started);
@@ -213,6 +238,27 @@ SELECT _assert_eq(
   '1',
   'every row of a rebuild shares ONE computed_at, so freshness is a single value'
 );
+
+-- ── NOT RE-ENTRANT INSIDE ONE TRANSACTION (new with the lock-window rewrite) ──
+-- The temp table is ON COMMIT DROP, so it is still there. A second call in the
+-- same transaction must therefore fail with duplicate_table (42P07). Pinned as a
+-- REAL behaviour change, not endorsed: production is unaffected because pg_cron
+-- runs each tick in its own transaction, but anything that calls step1 twice in
+-- one transaction — a retry wrapper, a DO block, a test — now errors where the
+-- pre-08-22 body succeeded.
+DO $reentrancy$
+BEGIN
+  PERFORM public.refresh_cross_collection_cohort_step1();
+  RAISE EXCEPTION 'a second call in the same transaction SUCCEEDED — the temp table is no longer ON COMMIT DROP, or the body stopped creating it';
+EXCEPTION
+  WHEN duplicate_table THEN NULL;  -- expected
+END
+$reentrancy$;
+
+-- Clear it so the replace/atomicity assertions below can call the function again.
+-- ⚠ This DROP is TEST SCAFFOLDING, not a property of the function. It exists only
+-- because everything here runs in one rolled-back transaction.
+DROP TABLE IF EXISTS _ccm_step1_next;
 
 -- ── The rebuild is a full replace, and it is atomic ────────────────────────
 DELETE FROM public.wallet_moments_cache WHERE wallet_address = 'W3';

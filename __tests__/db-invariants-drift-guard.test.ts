@@ -1403,11 +1403,18 @@ const PINS = [
     // not endorsed; it is the `?? 0` shape in a DB function.
     fn: "refresh_cross_collection_cohort_step1",
     test: "supabase/tests/refresh_cross_collection_cohort_step1.sql",
+    // Re-pinned 2026-08-23: the 2026-08-22 ~20:35Z lock-window rewrite (temp-table
+    // build, then TRUNCATE immediately before a tiny insert) shipped its own new
+    // pin file but did NOT repoint this entry, so the live `db:pins:check` sweep
+    // went red the next morning while the in-CI drift guard stayed green — the
+    // exact repo-vs-live split the staleness checker exists to catch. Six other
+    // pins had been closed hours earlier the same day; this pair is not part of
+    // that batch.
     migration:
-      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+      "supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql",
   },
   {
-    // pg_cron `25 4 * * *`. The DOWNSTREAM half of the pair — per Top Shot set,
+    // pg_cron `25 23 * * *` (was `25 4`). The DOWNSTREAM half of the pair — per Top Shot set,
     // how much of the cohort holds it.
     //
     // ⚠ It has NO check that step1 ran. Pinned so the failure mode is a known
@@ -1419,8 +1426,15 @@ const PINS = [
     // external_id to be observable at all, which is a real state.
     fn: "refresh_cross_collection_cohort_step2",
     test: "supabase/tests/refresh_cross_collection_cohort_step2.sql",
+    // Re-pinned 2026-08-23: the 2026-08-22 ~20:35Z lock-window rewrite (temp-table
+    // build, then TRUNCATE immediately before a tiny insert) shipped its own new
+    // pin file but did NOT repoint this entry, so the live `db:pins:check` sweep
+    // went red the next morning while the in-CI drift guard stayed green — the
+    // exact repo-vs-live split the staleness checker exists to catch. Six other
+    // pins had been closed hours earlier the same day; this pair is not part of
+    // that batch.
     migration:
-      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+      "supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql",
   },
   {
     // pg_cron `45 9 * * *`. Refreshes the five "new collectors" MVs.
