@@ -5,8 +5,9 @@ Run of the weekly `rpc-surface-qa` task, extended interactively to close every c
 artifact refs, no dead sitemap URLs, no broken OG cards. Two stale items in the task file itself
 were found and fixed (see bottom).
 
-> Note: this file was written to the working tree by the Cowork QA run; it is **not committed**.
-> Commit/push at your discretion (docs-only; won't trigger a Vercel rebuild).
+> Note (corrected 2026-08-23): this file was written to the working tree by the Cowork QA run and
+> was **committed** shortly afterward in `a2bc6e9a` — the original "not committed, commit at your
+> discretion" note is stale and has been replaced. Docs-only, so it did not trigger a Vercel rebuild.
 
 ## Part 1 — Artifacts (all 11 live artifacts, not just the task list)
 Read every live artifact and **DB-verified every embedded object reference** (63 relations +
