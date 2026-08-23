@@ -93,3 +93,34 @@ own recovery:
   that silently picked a neighbouring commit would be the dangerous version.
 - ⚠ Quote the subject **distinctively enough to be unique** — `--grep` takes the most recent match,
   and this repo has many commits sharing a prefix like `docs(ledger):`.
+
+## Two rules the 2026-08-22/23 overnight added, both learned the hard way
+
+⚠ **READ THE SHA IN A SEPARATE COMMAND FROM THE ONE THAT WRITES THE STAMP.** The ledger already says
+to stamp the real revert sha *after* the push. That is necessary and not sufficient: twice in one night
+a session composed the stamp text inside the same command that printed `git log`, which makes the sha a
+**prediction**, not a reading — and a rebase had moved it both times. The commit succeeds, the entry
+looks right, and the revert path points at nothing. **Two commands: read, then write.**
+
+⚠ **A CORRECTED DATE IS NOT A CLOBBER, and the guard used to say it was.**
+`find-future-dated-ledger-headings.mjs` fails a heading stamped in a day that has not happened in PT.
+The repair it demands — correcting the date in the heading — removes one heading string and adds
+another, so the count holds and the set moves, and the no-clobber arm's bare `comm -23` read that as
+the concurrent-session clobber. **The guard punished the repair its sibling demanded**, and the only
+escapes were mislabelling the commit `[ledger-roll]` or leaving `main` red (measured live: `0fa5388b`
+failed the first arm, `2d082db1` — its correction — failed the second).
+`scripts/find-clobbered-ledger-headings.mjs` now exempts a vanished heading **only** when another
+heading carries the same body. A delete, a remove-one/add-one swap at identical count, and a *reworded*
+heading are all still reported; `__tests__/ledger-clobber-detector.test.ts` pins that, and mutating the
+detector to exempt everything reds three of its arms.
+
+## The inbox INDEX has the same failure mode as the ledger, and now the same kind of watcher
+
+`docs/overnight/inbox/INDEX.md` is a map of the live queue, and it lies in both directions.
+**2026-08-22 22:59** — a concurrent session wrote back a stale copy and dropped **nine** filings, one
+titled HIGH-PRIORITY, exactly the clobber this file's ledger rules exist to prevent, on the other map.
+**2026-08-23 ~08:00** — the overnight pass archived two drained filings and left their entries, so the
+index called two closed items open. Both were caught by
+`__tests__/inbox-index-lists-every-filing.test.ts` (ban at zero, both directions) on the next CI run,
+neither by a reader. ⚠ **Archiving a filing means deleting its entry in the same commit** — and if the
+archive decision is later reversed, the entry has to come back with it.

@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass, part 11 / close-out) — the night's rules promoted into the reference docs, and CLAUDE.md paid for the two that belong in it
+
+**Docs only. No DB, no migration, no prod-state change.** Closing the thread, so everything durable is
+written where a session will actually read it rather than left in a transcript.
+
+✅ **Promoted to `ledger-discipline.md`:** (1) **read the revert sha in a SEPARATE command from the one
+that writes the stamp** — the existing "stamp it after the push" rule is necessary and not sufficient,
+because composing the stamp inside the command that prints `git log` makes the sha a **prediction**;
+that happened twice tonight and a rebase had moved it both times. (2) The **corrected-date-is-not-a-
+clobber** case with its live shas, so the conflict cannot be re-introduced by someone "simplifying" the
+detector back to a `comm`. (3) The inbox INDEX's two live failures, because it is the ledger's failure
+mode on a different map.
+
+✅ **Promoted to `testing-and-ci.md`:** **running one FILE proves the file, not the tree** (four red CI
+runs accumulated behind `npx vitest run <path>`; the full suite is ~5 min and 1,365 files) · **a red run
+is not automatically yours** — two of those four had a different cause, so read the failing JOB before
+assuming either way · and **what each new memory guard is BLIND to**, which is the part that stops them
+being read as more coverage than they are: the index guard cannot see whether an entry's TITLE still
+matches its filing, and the size guard bounds CLAUDE.md only — nothing bounds `docs/reference/*.md`, and
+nothing checks that displaced text actually landed there.
+
+✅ **CLAUDE.md took the two that belong before a session knows its topic** — the one-file-is-not-the-tree
+rule, and that `inbox/INDEX.md` is CI-guarded with archiving implying deletion of the entry. **Paid for
+by displacement, not deletion:** the vacuous-assertion TITLE examples and the shelf-life examples moved
+**verbatim** to `testing-and-ci.md` and `claude-md-condensed-originals.md`. **39,924 / 40,000.**
+
+⚠ **One self-correction inside this entry's own work, and it is the trap this file documents.** Writing
+the session addendum through a double-quoted shell string executed its **backticks as command
+substitution** and silently deleted `update_dsn` and `npx vitest run <file>` from the prose — the exact
+failure CLAUDE.md records for `git commit -m`, which I had just quoted while writing about it.
+Rewritten through a quoted heredoc. **The rule is not "be careful with backticks", it is "use the
+heredoc".**
+
+**State at hand-off:** full suite **1,365 files / 14,867 tests green**; the four memory guards green;
+`main` green through `8f938f1f` with later docs commits building. **Open and NOT mine to close:** the
+defeated purge branch (`claude/todo-implementation-e4tib3`, #22) · the Sentry two-page operator check
+(Stats/Usage **and** Settings → Client Keys) · the Golazos phantom-series rows deleted with no ledger
+record · `/api/ready` flapping with the saturation band (the privilege defect is fixed; the flap is not).
+
+**Revert path:** docs only, no DB half. Shas stamped in a follow-up commit, read in a separate command.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the simulator's uncancelled timer chain, and a prose-only rule that lasted six days
 
 **Two items, both found by running the gates rather than by looking for them.**

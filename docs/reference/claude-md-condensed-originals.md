@@ -246,3 +246,16 @@ Watch wallets at `priority=3` in `seeded_wallets`:
 - rybaguy — `0xbe9c633840e40df3`
 
 ---
+
+## Displaced 2026-08-23 — the "a recorded correction has a shelf life" examples (verbatim)
+
+CLAUDE.md's header keeps the rule and points here for the two shapes that taught it:
+
+> a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed
+> but UNAPPLIED" note goes stale the moment someone applies it
+
+## Displaced 2026-08-23 — the "a recorded correction has a shelf life" examples (verbatim)
+
+CLAUDE.md keeps the rule and points here for the two shapes that taught it:
+
+> a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it

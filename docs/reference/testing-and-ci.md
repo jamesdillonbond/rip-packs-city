@@ -760,3 +760,40 @@ second moved here to make room for the built-bundle instrument gap. The rule is 
 
 > `check_secdef_anon_exec_drift()` reads `prosecdef = true`, so 84 anon-executable INVOKER functions were
 > outside it.
+
+## Running one FILE proves the file, not the tree (2026-08-23)
+
+⚠ **Verifying a commit with `npx vitest run <path>` is not verifying the commit.** On 2026-08-22 I
+shipped four commits that way; each targeted file passed, and CI went red on a guard in a *different*
+file that the change had made reachable. Four red runs accumulated on `main` before anyone looked,
+and the diagnosis then cost more than the full run would have (~5 min locally: **1,365 files / 14,867
+tests**).
+
+**The rule: a targeted run is for the edit loop; the full suite is for the push.** `npm test` before
+pushing, or accept that CI is the first instrument that sees your change whole — on a repo where a
+guard's roots deliberately span the tree, that is a coin flip, not a verification.
+
+⚠ **And a red CI run is not automatically yours.** The same night, four consecutive red runs had two
+different causes — one inherited from a concurrent session's commit, one my own guard correctly
+reporting a live defect. **Read the failing JOB and STEP before assuming either way**: "my push is
+red" and "my change broke it" are different claims, and the second needs the job log.
+
+## Two memory-file guards added 2026-08-22/23, and what each is blind to
+
+- **`inbox-index-lists-every-filing`** — every filing on disk is listed, no entry links a file that is
+  not there, the heading count equals the file count, and each per-day count equals its section. Ban at
+  population zero, with a >50-file vacuity floor. ⚠ **Blind to CONTENT**: an entry whose title no longer
+  matches its filing passes, because nothing compares them.
+- **`claude-md-stays-under-the-memory-file-limit`** — the 40,000-character ceiling measured with Node
+  `String.length`, plus a 20,000 floor so a truncated file cannot satisfy the ceiling trivially, plus an
+  arm asserting bytes > characters (the evidence that `wc -c` is the wrong unit). ⚠ **Blind to the
+  reference docs**: nothing bounds `docs/reference/*.md`, and nothing checks that displaced text
+  actually landed there — the "displace it verbatim" rule is still enforced only by the author.
+
+### Displaced from CLAUDE.md 2026-08-23 — the vacuous-assertion TITLE examples (verbatim)
+
+Condensed in CLAUDE.md to make room for the "one file is not the tree" rule. The tell is unchanged;
+these are the names that gave it away.
+
+> The tell is the TITLE: a name carrying a negative claim ("without claiming none are saved") or a
+> transformation ("is not an error", "at or below FMV") is a promise the assertion usually fails to keep.
