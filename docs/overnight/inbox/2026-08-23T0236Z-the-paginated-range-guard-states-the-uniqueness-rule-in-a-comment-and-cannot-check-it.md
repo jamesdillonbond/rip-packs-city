@@ -35,8 +35,8 @@ when some unique index has every column either equality-filtered or in the order
 |---|---|
 | `.range()` sites in `app`/`lib`/`supabase/functions`/`workers` | **46** |
 | provably deterministic (order ∪ equality-filter covers a unique index) | **28** |
-| **not proven by that test** | **9** |
-| on a VIEW or a dynamic table/column, where uniqueness is undefined | **9** |
+| **not proven by that test** | **9** → **7 after the correction below** |
+| on a VIEW or a dynamic table/column, where uniqueness is undefined | **9** → **11** |
 
 **The 9 not proven** — ⚠ **this is an UPPER BOUND on the defect, not a bug list. Open each one:**
 
@@ -59,12 +59,24 @@ collections sharing a `moment_id` inside one wallet is not a real state. **Deter
 practice, unproven on paper.** A guard built on this test must therefore have an escape hatch, or
 it will train people to silence it.
 
-**Two that deserve opening first, on consequence rather than certainty:**
-- **`sales` × 2 in `fmv-recalc`.** `sales_pkey` is `(id, sold_at)` — the table is PARTITIONED, so
-  ordering by `id` **alone is not a unique order**. ⚠ CLAUDE.md already flags `fmv-recalc` as
-  wasteful-not-broken on a separate axis; this is a different axis and unexamined.
-- **`topshot_market_index_daily` × 2.** The table carries **no unique index at all**, so no ordering
-  over it can be made deterministic without one.
+🚨 **CORRECTED 20 MINUTES AFTER FILING — I had promoted two of these to "open first" and BOTH
+claims were overstated in the same direction.** Recorded rather than silently edited, because the
+direction is the lesson: a conservative classifier's output reads like a defect list, and I wrote
+consequence language around two rows before checking what they actually are.
+
+- **`sales` × 2 in `fmv-recalc` — downgraded.** `sales_pkey` is `(id, sold_at)` because the table
+  is PARTITIONED (`relkind = 'p'`) and a partitioned table must carry its partition key in the PK.
+  That does NOT mean `id` repeats: `sales.id` defaults to **`uuid_generate_v4()`**, so ordering by
+  `id` alone is deterministic **in practice**. It belongs in the same "unproven on paper, fine in
+  practice" bucket as `wallet-cache`, not ahead of it. ⚠ What would actually settle it is a
+  `count(*)` vs `count(distinct id)`, which is a full scan of the largest table here and was NOT
+  run; the residual risk is an explicit-id insert from a backfill, not the uuid default.
+- **`topshot_market_index_daily` × 2 — misfiled.** It is a **VIEW** (`relkind = 'v'`), not a table.
+  "Carries no unique index" is true of every view and says nothing. Both rows belong in the
+  views/dynamic bucket, which makes the honest split **7 not proven + 11 undefined**, not 9 + 9.
+
+⚠ **So the not-proven bucket has NO member yet shown to be a real defect** — the one measured
+defect in this class remains `lib/sitemap-data.ts`, in the OTHER bucket, in the sibling filing.
 
 ## Recommended guard design (NOT built here)
 
