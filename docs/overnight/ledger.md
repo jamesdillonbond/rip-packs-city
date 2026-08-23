@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · CORRECTION (Claude Code, interactive) — two of D12b's three "public" surfaces are auth-gated and were never indexable; the copy fixes stand, the severity did not
+
+**Found by smoke-testing my own work rather than assuming it landed.** After shipping D12b I fetched `/analytics/listings` to confirm the corrected description was live. It was serving the **root** site description and the root title, with none of the listings content and 21,629 bytes.
+
+**The cause is the documented anon-audit trap, and it applies to the AUDIT's claims, not just to my probe.** `/analytics/**` sits behind the funnel in `proxy.ts`; an anonymous request 307s to `/login`, and `Invoke-WebRequest` follows the redirect, so the login shell's metadata comes back looking like the page's own. Measured with redirects disabled:
+
+- `/analytics/listings` → **307** `/login?next=%2Fanalytics%2Flistings`
+- `/analytics/methodology` → **307** `/login?next=%2Fanalytics%2Fmethodology`
+- `/analytics` → **307** `/login`
+- `/nba-top-shot/analytics` → **200**
+
+**What that corrects.** The run-3 handoff's §1 named three surfaces carrying the retired-sampler claim and called two of them public: *"`lib/analytics/methodology.ts` — **public** methodology page, present tense"* and *"`app/(analytics)/analytics/listings/page.tsx` metadata `description` — in the **indexed** SEO description."* ⚠ **Neither is reachable by an anonymous visitor or a crawler.** `proxy.ts` allows `/<collection>/analytics` explicitly (GET/HEAD) but leaves the whole `(analytics)` route group gated — the comment there says so in as many words: *"the in-app feature pages (/collection, /sniper, /sets, /market, /packs, /analytics) stay behind the funnel."*
+
+✅ **D12b's core finding is UNAFFECTED and was correctly a P0.** `/nba-top-shot/analytics` returns **200** to an anonymous request, which is why the 99-day-old single row really was being published as market depth — and that is the one I verified in a real browser before and after the fix.
+
+**The copy fixes stay.** A false sentence behind a login is still false, and both were stale in the present tense about a sampler dead three months. But they were **stale internal copy, not an indexed public claim**, and the register should not carry them as the latter.
+
+⚠ **The durable lesson is that the trap caught the audit and then caught me the same way in the same file.** `docs/reference/*` already records "auth-gated routes defeat anonymous audits — fetch follows the 302 → /login", and the run-3 pass still filed two gated pages as public. **A 200 with plausible content is not evidence a page is public; only a redirect-disabled request is.** Cheap and decisive: `AllowAutoRedirect = false`, then read the status and `Location`.
+
+**Revert:** nothing to revert — this entry is a correction to a severity claim. No code, no DB.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the Dune incremental lane's "no targets" state bought the most expensive run the account can make; that is closed, and a second stranded cloud handoff is on `main`
 
 **A Cowork cloud session wrote `docs/handoff-2026-08-22-dune-ownership-incremental.md` and could not push it, so it sat untracked in the working tree — the same stranded-work pattern as this morning's run-3 audit. It is committed here, and its three items are implemented.**
