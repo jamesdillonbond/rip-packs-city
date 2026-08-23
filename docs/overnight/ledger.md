@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED + CORRECTION (Claude Code, interactive) — R23: the funnel can finally say "this was a crawler", and R19's "2026-08-15 regression" is NOT a regression, it is the day the error got its name
+
+⚠ **CORRECTION FIRST, because I filed the wrong conclusion two hours ago.** My R19 entry said the 45,000 ms timeout class *"all begins 2026-08-15 … That looks like a regression date, not a chronic condition, and nobody has explained it."* **It is not a regression date. It is the date the INSTRUMENT was created.**
+
+`b0cebf90` (2026-08-15, *"fix(rpc): one timeout event, one error shape"*) normalised how an imposed RPC deadline surfaces. Before it, the abort path resolved *"TimeoutError: The operation was aborted due to timeout"* — a bare DOMException string with **no SQLSTATE and no `RPC_TIMEOUT` code** — and the commit message names that string as the Sentry title of **NEXTJS-1Z, -26, -23, -22 and -20**, i.e. five issues that already existed. After it, the same failure reports `rpc … timed out after 45000ms with no response`.
+
+**So the failures did not start on 08-15; the countable NAME did.** Anyone hunting an 08-15 code regression would have found nothing and concluded the data was wrong. ⚠ This is the "compare against the series' own history before calling something a regression" rule, and I broke it by reading a first-seen date as an onset. ⚠ **Boundary: I could not confirm the pre-08-15 string directly — the Vercel log aggregate query timed out.** The commit message is the evidence, not a log count.
+
+**R23 SHIPPED — `funnel_events` gains `user_agent` + `bot_ua`.**
+
+The measured problem, unchanged: 7 days to 2026-08-22, **15,803 events across 15,689 distinct sessions**, only **53 (0.34%)** firing more than once, **99.82%** null referrer. `getSessionId()` persists `rpc_sess` in `sessionStorage`, so a real multi-page visit SHARES one id — **1.007 events/session is a crawler with fresh storage per fetch.** `collection_view` rose **82 → 7,738/day** with zero change in `wallet_paste`, signups or sign-ins. The table had no way to express any of it.
+
+⚠ **The column is named `bot_ua`, not `is_bot`, and that is deliberate.** It records what the User-Agent CLAIMS — a crawler that lies is not caught, a real browser is never flagged. It is the cheap first cut that makes an honest slice possible; the stronger signals (one-event sessions, null referrer) stay in the analysis rather than being frozen into a column. Renaming it to `is_bot` would assert more than it knows.
+
+⚠ **The migration is COMMITTED AND NOT APPLIED.** It was written at **01:07Z — one hour into the 01:00–19:00Z degraded band** — and `apply_migration` costs a ~10–20 s burst of user-facing `PGRST002` 500s. Same call I made on the cross-collection migration this morning, and the same reason.
+
+✅ **But the ordering constraint was REMOVED rather than documented and hoped for.** The route inserts the full row and, on an unknown-column error, retries the old shape. Before the migration the new fields are a silent no-op; the moment it lands they start recording **with no second deploy**. Shipping the route first without that fallback would have failed every insert and lost the entire funnel feed — a fix that deletes the thing it measures.
+
+⚠ **Pre-migration rows are NOT backfilled and `false` there means UNKNOWN, not HUMAN.** Any query spanning the boundary must filter on `created_at` or say it cannot separate the two. Recorded in the column comment, where the next reader will actually meet it.
+
+**Two controls on the classifier, both directions:** 6/6 known bot agents flagged, **0/3 real browsers flagged** — over-flagging would delete the real traffic from every future reading, which is the same defect in the opposite direction and much harder to notice because the number merely looks small. Plus: a missing UA is UNKNOWN, and the route still answers 200 when the request carries no headers at all — a route that throws while LOGGING an arrival turns an analytics gap into a 500 for the visitor.
+
+⚠ **Sixth backslash-eaten-by-heredoc incident of the session**, in the UA regex; rebuilt from `String.fromCharCode(92)` and proved against known inputs before being trusted.
+
+**Verified:** `tsc` exit 0 · 7/7 track-funnel tests · both migration guards green.
+
+**Revert:** `git revert <this commit>`; if the migration has been applied, `ALTER TABLE public.funnel_events DROP COLUMN bot_ua, DROP COLUMN user_agent;`.
+
 ### 2026-08-22 · SHIPPED + ONE OPERATOR ACTION (Claude Code, interactive) — the MV refreshes measured six hours on: a spell not a runaway, a null instrument I nearly filed as a defect, and a 600s cap of mine that is too generous
 
 **Shipped (repo only, no DB state changed by this entry):**
