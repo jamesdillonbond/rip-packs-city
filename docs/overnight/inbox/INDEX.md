@@ -1,4 +1,4 @@
-# Inbox index — 188 live filings
+# Inbox index — 189 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27.**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 22 filings
+## 2026-08-22 — 23 filings
 
+- [`collection_series` claims LaLiga Golazos has Series 2 and Series 3 — no instrument we own can see a single moment from either, and the series filter offers both](2026-08-23T0020Z-golazos-collection-series-claims-two-seasons-that-no-instrument-can-see.md)
 - [The production bundle rendered a user-facing sentence that the committed source does not contain — a `+`-joined template literal lost the tail of its first chunk](2026-08-22T2135Z-production-bundle-dropped-a-string-segment-the-source-contained.md)
 - [20 guards share a copy-pasted `stripComments` that hides 109,123 characters of real source — a `//` comment containing `/*` swallows every line until the next `*/`](2026-08-22T2105Z-stripcomments-hides-109k-chars-of-real-source-from-20-guards.md)
 - [The cross-collection board hardcodes "143 wallets" in its SEO description and in the text users share — the true count is 221](2026-08-22T2050Z-cross-collection-board-hardcodes-143-wallets-in-seo-and-share-text.md)
