@@ -144,10 +144,25 @@ describe("ConsoleGreeting", () => {
     // explains it and becoming citable precedent.
     const src = read("components", "visual", "ConsoleGreeting.tsx")
     expect(src).toContain("#E03A2F")
-    expect(src, "the exemption must keep saying why it is an exemption").toMatch(
-      /only sanctioned hardcode/i,
+
+    // ⚠ MATCH THE PROSE, NOT ITS LINE WRAPPING. This assertion red-ed CI on
+    // 2026-08-22 because the comment was RE-WRAPPED — a legitimate edit that
+    // changed no meaning. Pin the property, not the spelling: strip the `//`
+    // markers and collapse whitespace before matching.
+    const prose = src.replace(/^[ \t]*\/\/ ?/gm, " ").replace(/\s+/g, " ")
+
+    // ⚠ The old assertion here was /only sanctioned hardcode/i, and it had gone
+    // VACUOUS: the deep audit found that claim to be false (the recharts SVG
+    // strokes and the email accent are sanctioned too), so the comment was
+    // rewritten to REFUTE it — and the regex went on matching, now against the
+    // refutation rather than the claim. Assert the machine-readable marker.
+    expect(prose, "the exemption must carry its brand-exception marker").toMatch(
+      /brand-exception:/,
     )
-    expect(src).toMatch(/var\(--rpc-red\)\) are not readable inside DevTools/)
+    expect(
+      prose,
+      "the exemption must keep stating the REASON — a var() cannot be read by DevTools %c styling",
+    ).toMatch(/var\(--rpc-red\)\) are not readable inside DevTools/)
   })
 
   it("never throws out of a greeting when console is unavailable", () => {
