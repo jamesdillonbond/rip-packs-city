@@ -8,6 +8,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, Trevor's Windows box) — the sixteen migration files reached `origin/main`, and the four "unaccounted for" repo-only migrations are resolved (one is genuinely unapplied)
+
+**Push only + docs. No DB, no apply, no prod state changed by this session.**
+
+**What was actually blocking.** `c9ae51f0` — the Cowork commit carrying the sixteen byte-exact
+`series_detail_rollup` / `edition_fmv_current` migration files — was **local-only**. That session had no git
+egress and said so: *"the window is only actually clean once someone pushes."* It was still unpushed at
+21:15Z, ~90 minutes later, so `migration-parity` (which reads `origin/main` in CI) would have gone red again
+at 07:40Z on a gap that was already fixed on disk. Pushed `d0d731c9..4fe7a6ae` (4 commits).
+
+**Verified the way CI verifies, not asserted:** 61 prod names from
+`supabase_migrations.schema_migrations WHERE version >= '20260822000000'`, diffed against
+`git ls-tree -r origin/main supabase/migrations` with the 14-digit stamp stripped (666 names) — **0 applied
+with no committed file.**
+
+⚠ **The working doc's headline recommendation was already built, and this ledger contains the refutation.**
+It asked for *"a `--check` mode wired into CI"* so drift *"reddens"* — that is
+`scripts/check-migration-parity.mjs` + `.github/workflows/migration-parity.yml`, **ENFORCING since
+2026-08-20**, the same job that went red at 07:58Z this morning. **The residual is cadence alone** (`40 7 * * *`
+= a fourteen-hour blind window), not a missing guard. Do not widen the window.
+
+🚨 **`audit_20260822_rwfc_temp_build_materialized_cte` is a committed migration file that is NOT applied and
+says nothing about it.** Of the four repo-only migrations the filing could not account for, three self-document
+in their own headers (two are `cron.job` DML applied via `execute_sql` — verified live, all three
+`rpc-refresh-*` crons present at the cadences the files specify; one reads *"COMMITTED UNAPPLIED. Trevor's
+call"* — verified, `has_table_privilege('public','cron.job','SELECT')` still `true`). The fourth has no
+marker and reads as shipped: `refresh_wmc_fmv_changed` in prod still opens with a bare
+`CREATE TEMP TABLE _rwfc_recent ON COMMIT DROP AS SELECT DISTINCT ON …`, no MATERIALIZED CTE. **Decide it:
+apply, or add a `COMMITTED UNAPPLIED` header.**
+
+⚠ **DURABLE LESSON — a substring probe cannot discriminate a change that ADDS an instance of a keyword the
+target already contains.** My first read was `position('MATERIALIZED' in prosrc) > 0` → `true`, and I nearly
+recorded that migration as applied. `audit_20260605_refresh_wmc_fmv_changed_materialized` had put a
+MATERIALIZED in the LOOP body back in June. `count(regexp_matches(prosrc,'MATERIALIZED','g'))` = **1**, plus
+reading the actual `_rwfc_recent` build text, is what answered it. **Grep for the statement you changed, not
+the keyword you added.**
+
+**Also open, unfiled:** `execute_sql`-applied **DDL** writes no `schema_migrations` row, so parity has nothing
+to compare and a missing file for it would never redden. The four above kept their repo files by authorship
+discipline, not because the guard caused it. Needs its own measurement of how much DDL takes that path.
+
+**Revert path:** nothing to revert in the database. The push is history — `git revert` the docs commit (find
+by message `docs(inbox): resolve the four unaccounted repo-only migrations`) if the addendum is wrong; the
+four pushed commits are other sessions' work and were already ledgered above.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — `log_pipeline_run`'s missing git half committed and re-pinned, and the assertion that was supposed to catch its defect could not see it in either direction
 
 **Code only. No DB, no apply, no prod state.** The migration file is a byte-identical capture of what

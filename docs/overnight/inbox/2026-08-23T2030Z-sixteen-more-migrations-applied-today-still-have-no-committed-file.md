@@ -213,3 +213,73 @@ its job only where someone reads the filing first — I did not, until after I h
 Parity's `40 7 * * *` cadence still means a gap opened at 17:29Z is unnamed for fourteen hours. I have
 not touched it, and agree with your warning: **the fix is cadence or a `--check` mode on the recovery
 script, NOT a wider window.**
+
+---
+
+## ✅ PUSHED + the four are no longer unaccounted for — 2026-08-23 14:18 PT (21:18Z)
+
+**By:** Claude Code, Trevor's Windows box (has git egress).
+
+### The blocker in the CLOSED note is cleared
+
+`c9ae51f0` (this repo's rebased sha for `727f4217`) was **local-only** — the Cowork session that wrote
+the sixteen files had no git egress, and its own note said *"the window is only actually clean once
+someone pushes."* It was still unpushed at 21:15Z. Pushed as part of `d0d731c9..4fe7a6ae`.
+
+**Verified the way CI verifies, not by assertion:** prod names from
+`supabase_migrations.schema_migrations WHERE version >= '20260822000000'` (61) diffed against
+`git ls-tree -r origin/main supabase/migrations` with the timestamp stripped (666) — **0 applied with
+no committed file.** The check reads `origin/main`, so this is the first moment the window is
+actually at zero rather than locally at zero.
+
+### ⚠ Correction to the folded-in working doc: the `--check` mode it asks for already exists
+
+The FOLLOW-UP section above says *"nothing fails when prod gains a migration the repo lacks — a
+`--check` mode wired into CI converts this from a thing someone has to remember into a thing that
+reddens."* **That is wrong, and this filing contains its own refutation two sections earlier.**
+`scripts/check-migration-parity.mjs` (`npm run db:migrations:check`) is that mode, and
+`.github/workflows/migration-parity.yml` has been **ENFORCING since 2026-08-20** — it captures the
+exit code with `|| RC=$?` precisely so the drift annotations stay reachable, then exits non-zero. It
+is what went red at 07:58Z this morning and what was dispatched on demand at 20:43Z to name the
+sixteen. **The residual is cadence alone** — `40 7 * * *`, so a gap opened at 17:29Z goes unnamed for
+fourteen hours. Recommendation #2 stands exactly as written; the recovery script needs nothing added.
+
+### All four "unaccounted for" resolved — three self-document, one does not
+
+The FOLLOW-UP says *"the four have nothing saying either way."* Three of them do, in their own file
+headers, which nobody had opened. Live state re-derived rather than inferred:
+
+| file | prod state | why no `schema_migrations` row |
+|---|---|---|
+| `..._board_mv_crons_and_cadence_panini_firstmint` | **APPLIED** — `rpc-refresh-panini-squeeze @ 18,48` and `rpc-refresh-topshot-first-mint @ 21,51` both live, cadences match the file | DML against `cron.job` via `execute_sql`, not DDL. **Header says so.** |
+| `..._cross_collection_deals_mv_cron_and_cadence` | **APPLIED** — `rpc-refresh-cross-collection-deals @ 12,42` live | same, and **header says so** |
+| `..._least_privilege_cron_and_net_tables` | **UNAPPLIED, deliberately** — `has_table_privilege('public','cron.job','SELECT')` still `true` | header: *"COMMITTED UNAPPLIED. Trevor's call when to run it."* |
+| `..._rwfc_temp_build_materialized_cte` | 🚨 **UNAPPLIED, and silent about it** | see below |
+
+🚨 **`audit_20260822_rwfc_temp_build_materialized_cte` is the one real instance of the danger this
+filing named.** It is a committed migration file, 9.2 KB, with no `COMMITTED UNAPPLIED` marker and no
+"applied via execute_sql" note — it reads as shipped to anyone browsing `supabase/migrations/`. It is
+not. `refresh_wmc_fmv_changed` in prod still opens with a bare
+`CREATE TEMP TABLE _rwfc_recent ON COMMIT DROP AS SELECT DISTINCT ON …` — no MATERIALIZED CTE around
+the filter. The ~13%-of-reads win it describes has **not** been taken.
+
+⚠ **And I got this wrong on the first pass, which is the reusable part.** My first probe was
+`position('MATERIALIZED' in prosrc) > 0` → `true`, and I nearly filed it as applied. There is a
+MATERIALIZED in that function already — `audit_20260605_refresh_wmc_fmv_changed_materialized` put one
+in the LOOP body in June. **A substring probe for a keyword that the target already contains cannot
+discriminate a change that adds another one.** `count(regexp_matches(...,'MATERIALIZED','g'))` = 1,
+and reading the actual `_rwfc_recent` build text, is what answered it. Grep for the *statement you
+changed*, not the keyword you added.
+
+### What is actually open after this
+
+1. **Parity cadence** (recommendation #2, untouched) — daily is a fourteen-hour blind window on a day
+   with two batches. Not a wider window.
+2. 🚨 **`execute_sql`-applied DDL is invisible to parity in the prod-ahead direction.** Two of the
+   four above are DML and legitimately have no row, but nothing structurally stops DDL from going in
+   the same way — and then there is no `schema_migrations` row for parity to compare against, so a
+   missing file would never redden. The repo file existing for those four is authorship discipline,
+   not something the guard caused. **Not filed as a defect here** — it needs its own measurement of
+   how much DDL actually takes that path.
+3. **Decide `rwfc_temp_build_materialized_cte`**: apply it, or add a `COMMITTED UNAPPLIED` header so
+   it stops reading as shipped. Doing neither leaves the exact ambiguity this filing warned about.
