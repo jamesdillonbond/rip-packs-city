@@ -881,8 +881,21 @@ export default function CollectionMomentTable(props: {
                                       <div className="text-purple-400">1/1 Ultimate</div>
                                     ) : (
                                       <>
-                                        {row.badgeInfo.circulation_count != null && <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>}
-                                        {row.badgeInfo.effective_supply != null && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
+                                        {/* ⚠ `> 0`, NOT `!= null` (deep-audit R34). A 0 here is NOT a supply
+                                            of zero — it is a row whose supply was never populated, and
+                                            "Circ: 0" reads as a measured fact about the market. Measured
+                                            2026-08-23: ALL 218 LaLiga Golazos badge rows carry
+                                            circulation_count = 0 AND effective_supply = 0 (zero nulls), and
+                                            all 218 are keyable by (player_name, series_number), so both
+                                            lines rendered a fabricated supply on every Golazos row.
+                                            ⚠ The correct guard already existed 350 lines up in THIS FILE —
+                                            the "N minted" line at the row level tests
+                                            `!= null && > 0`. One branch was guarded and its neighbour was
+                                            not, which is why a per-PANEL fix is the rule and a per-page one
+                                            is not. An edition that genuinely has zero circulation renders
+                                            nothing here, which is the honest output: we have no supply. */}
+                                        {row.badgeInfo.circulation_count != null && row.badgeInfo.circulation_count > 0 && <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>}
+                                        {row.badgeInfo.effective_supply != null && row.badgeInfo.effective_supply > 0 && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
                                         {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString()}</div>}
                                         {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString()}</div>}
                                         {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString()}</div>}
