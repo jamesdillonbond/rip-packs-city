@@ -8,6 +8,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — I duplicated another session's fix in real time, and the only part worth keeping is the one they did not do
+
+**What I set out to do:** `main` was red at `4f2370f0` and I fixed both failures — four tests across two
+files that pinned the route's OLD contract, and a driver-message guard false-positive.
+
+⚠ **WHILE I WAS DOING IT, ANOTHER SESSION SHIPPED THE SAME FIX** (`7e2c33a7`, *"invert the five tests
+that pinned the old defect, and stop carrying a driver message"*). My rebase conflicted on all three
+files. **I took THEIRS and dropped mine** — they inverted five cases where I found four, and they
+removed the driver message from the route entirely rather than renaming it, which is the better call.
+**Recorded rather than quietly dropped, because the duplicated effort is the finding**: two sessions
+spent the same work on the same red in the same half-hour, and neither could see the other until git
+refused the push.
+
+**What actually shipped from me, and it is the part their fix did not cover:**
+
+🚨 **`leakSites` now STRIPS COMMENTS**, in the shared `__tests__/helpers/driver-message-leak.ts` so both
+leak guards gain it at once. I hit the trap directly: after renaming an internal envelope field to
+satisfy the guard, **the guard reddened on the COMMENT explaining the rename**, which quoted the banned
+shape. At least six guards in this repo have fired on the prose documenting their own fix, and the
+standing rule is that any check greping source for a string strips comments first — this one did not.
+
+⚠ **Stripping can only make a detector fire LESS, so it ships with a PAIR of controls rather than one:**
+a leak that exists only in a comment must NOT be reported, **and** a real leak on the very next line
+MUST still be, with its line number intact (the shared stripper blanks rather than deletes). Plus a
+third for a real leak sharing a line with a trailing comment. **Mutation-proven in both directions:**
+removing the strip reds the comment case; a stripper that blanks everything reds both real-leak cases —
+which is the mutation that catches "I made it stop firing" masquerading as "I made it correct".
+
+⚠ **The instance that motivated it is GONE** — their fix removed the message rather than renaming it, so
+no current offender remains. Stated plainly because a guard change whose motivating case has vanished
+is exactly the kind that reads as speculative later. The trap is not speculative; it has cost six
+guards, and this helper's own header says a fix here widens every caller at once.
+
+**Verified:** `tsc --noEmit` clean · the five affected suites green on the merged tree (34 assertions) ·
+`npm test` **1,365 files / 14,861 tests, 0 failures** on the pre-merge tree.
+
+**Revert path:** `git revert <sha of "test(guards): strip comments before detecting a driver-message leak">`.
+Test-helper code only — no route, no DB, no prod-state change.
+
 ### 2026-08-23 · SHIPPED — the /api/ready cache was a mitigation that DID NOT WORK, so the read now stops counting
 
 ⚠ **I shipped a 60 s edge cache an hour ago and called it a mitigation. Re-measured against production, it did nothing: `/api/ready` returned 500 three times out of three.** The reason is obvious in hindsight and worth writing down — **caching the SUCCESS path only helps if a request ever succeeds. A 500 is never cached, so there was nothing to serve and every request paid the full cost.** A cache is not a fix for a read that always fails.
