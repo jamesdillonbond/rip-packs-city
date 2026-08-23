@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — `log_pipeline_run`'s missing git half committed and re-pinned, and the assertion that was supposed to catch its defect could not see it in either direction
+
+**Code only. No DB, no apply, no prod state.** The migration file is a byte-identical capture of what
+production already runs (`md5(pg_get_functiondef(...))` = `6dd327eea2dfb888e0340816dddc9fe8`, verified against
+the database, not by eye) and is **deliberately left UNAPPLIED** — re-applying a no-op costs a ~10–20 s
+user-facing `PGRST002` burst for nothing, and `migration-parity` matches applied→file by NAME, so the file
+alone closes the gap.
+
+**Two instruments were red on one change.** `audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp`
+was applied via MCP at 19:06:48Z with no committed file, so `migration-parity` had a gap AND the `DB pin
+staleness` sweep went red on `log_pipeline_run`. Fixed together: the file is committed as
+`20260823190648_...` (the real applied version, not an invented prefix) and the PINS entry now names it.
+
+⚠ **The assertion review is the finding, not the re-pin.** The pinned test asserted
+`finished_at > started_at` — and **that holds under BOTH bodies**, because the fixture calls the function with
+`now() - interval '5 seconds'`. The production defect is the opposite case: callers pass `clock_timestamp()`
+captured *during* the transaction, which is LATER than `now()` (transaction start), so `finished_at` landed
+BEFORE `started_at`, the `GREATEST` clamp fired, and `duration_ms` was a structural hard **0 for ten
+pipelines** — two of them taking **37.8 s** and **78.4 s** while reporting zero to every duration-ranked board.
+**A fixture that back-dates its input tests the happy direction of a defect that only appears in the other
+one.** The new pin calls it the way production does (`pg_sleep`, then `clock_timestamp()`), asserts both
+`finished_at >= started_at` and `finished_at > now()`, and is **mutation-proven**: restoring `now()` in the
+body reds it, while the old assertion still passes — the negative control that shows what it was blind to.
+
+**Also filed, not fixed:** **16 more migrations applied today have no committed file** — a SECOND batch, after
+this morning's recovery, fifteen of them applied 17:29–19:28Z as one still-moving `series_detail_rollup` /
+`edition_fmv_current` piece. **Not touched on purpose:** a migration file's header carries the REVERT PATH, and
+only the session that applied it knows what it reverted to; a file reconstructed from `pg_get_functiondef`
+records the current state with an invented revert path, which is worse than an absent file because it looks
+authoritative. Handoff filed at `docs/overnight/inbox/2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md`.
+⚠ Parity runs `40 7 * * *`, so nothing names those sixteen for another eleven hours.
+
+**Verified:** 180/180 DB-invariant SQL files pass against a throwaway PG 16 (exit 0); drift guard + anon-exec
+guard 197 tests pass; `npx tsc --noEmit` clean; full vitest 1369 files / 14,925 tests green.
+
+**Revert path:** `git revert` the code commit (find by message `test(db-pins): commit log_pipeline_run`).
+Nothing to undo in the database — the function was already live.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the two `cross_collection_cohort` pins re-pinned onto the lock-window rewrite, and the behaviour change it introduced is now pinned rather than merely absent
 
 **Code only. No DB, no migration, no prod state** — the migration this repoints to

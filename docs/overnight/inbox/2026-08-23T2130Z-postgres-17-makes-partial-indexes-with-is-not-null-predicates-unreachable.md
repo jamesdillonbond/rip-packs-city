@@ -121,7 +121,12 @@ Six partial indexes in `public` carry an `IS NOT NULL` conjunct on a column decl
 | `unmapped_sales_sold_at_unresolved_idx` | 4512 kB | 1 | yes — same |
 | `pack_drop_pool_edition_idx` | 2496 kB | 358,330 | yes **when** the query supplies `edition_id = $1` |
 | `idx_sales_2026_top_sales_board` | 384 kB | 502 | **NO** — measured above; the 502 are historical |
-| `idx_pinnacle_editions_set_name` | 48 kB | **0** | predicted NO (predicate is *only* `set_name IS NOT NULL`) — not measured |
+| `idx_pinnacle_editions_set_name` | 48 kB | **0** | **NO** — measured; the prediction held |
+
+The sixth was predicted unreachable from the rule and then measured, which is the only reason it counts:
+`SELECT set_name FROM pinnacle_editions WHERE set_name IS NOT NULL ORDER BY set_name LIMIT 5` — the exact
+query the index was built for — plans as a **Seq Scan + Sort** (cost 59.74). Tiny index, no practical cost,
+but **3 of 6 is the population, not 2 of 6**, and the rule made a falsifiable prediction before the check.
 
 ⚠ **`idx_sales_2026_top_sales_board` is the quiet one.** It has 502 recorded scans, so every "unused index"
 sweep passes it by — and it is unreachable *now*. **A non-zero `idx_scan` is a claim about the past, not
