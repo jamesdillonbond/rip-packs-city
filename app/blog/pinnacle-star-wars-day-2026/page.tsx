@@ -13,7 +13,7 @@ export const dynamic = "force-static"
 export const revalidate = 86400
 
 export const metadata = {
-  title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving — Rip Packs City",
+  title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
   description:
     "53 Star Wars editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
   openGraph: {

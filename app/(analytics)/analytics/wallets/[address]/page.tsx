@@ -38,19 +38,19 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   const addr = (address || "").toLowerCase()
   if (!FLOW_ADDR_RE.test(addr)) {
     // Username path — let the page handler resolve / 404 below.
-    return { title: "Wallet — Rip Packs City" }
+    return { title: "Wallet" }
   }
   const { data, ok } = await loadWallet(addr)
   // ⚠ A FAILED read must not publish "not found", and must not let a transient
   // blip de-index a real wallet. `noindex, follow` mirrors /moment/[id].
   if (!ok) {
     return {
-      title: "Wallet — Rip Packs City",
+      title: "Wallet",
       robots: { index: false, follow: true },
     }
   }
   if (!data) {
-    return { title: "Wallet not found — Rip Packs City" }
+    return { title: "Wallet not found" }
   }
 
   const names = await resolveUsernames([addr])

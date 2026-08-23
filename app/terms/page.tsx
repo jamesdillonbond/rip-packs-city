@@ -6,7 +6,7 @@ import { OG_INHERITED } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
-    title: "Terms of Service — Rip Packs City",
+    title: "Terms of Service",
     description:
       "Terms of service for Rip Packs City — service description, acceptable use, disclaimers, limitation of liability, and governing law.",
     openGraph: {

@@ -101,7 +101,7 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   try {
     detail = await fetchDetail(coll.id, slug)
   } catch {
-    return { title: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` }
+    return { title: { absolute: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` } }
   }
   if (!detail) return NOT_FOUND_METADATA
   return seriesPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)

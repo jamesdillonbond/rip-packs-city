@@ -6,7 +6,7 @@ import { OG_INHERITED } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
-    title: "Privacy Policy — Rip Packs City",
+    title: "Privacy Policy",
     description:
       "How Rip Packs City collects, stores, and uses data — in plain English. Vendors, choices, cookies, and contact for deletion requests.",
     openGraph: {

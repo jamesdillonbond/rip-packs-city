@@ -1,13 +1,17 @@
 import type { Metadata } from "next"
 import { getCollection } from "@/lib/collections"
-import { collectionPageJsonLd } from "@/lib/seo"
+import { collectionPageJsonLd, BRAND_TITLE_TEMPLATE } from "@/lib/seo"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 import ActiveCollectionSync from "../[collection]/ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
 import WalletSearchBand from "@/components/WalletSearchBand"
 
 export const metadata: Metadata = {
-  title: "Disney Pinnacle Analytics — Rip Packs City",
+  // Same two defects as collectionLayoutMetadata, in a static segment that does
+  // not use it: the baked brand was being fed to the root template, so
+  // /disney-pinnacle/collection rendered
+  // "Disney Pinnacle Analytics — Rip Packs City | Rip Packs City" live.
+  title: { absolute: "Disney Pinnacle Analytics — Rip Packs City", template: BRAND_TITLE_TEMPLATE },
   description:
     "Marketplace sniper and analytics for Disney Pinnacle pin collectors on the Flow blockchain.",
 }

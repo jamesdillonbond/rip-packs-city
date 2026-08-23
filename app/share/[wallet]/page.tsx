@@ -140,7 +140,7 @@ export async function generateMetadata(
   // signals — this page is shared by hand, so both spellings really do occur.
   const canonical = `${siteUrl()}/share/${encodeURIComponent(params.wallet.toLowerCase())}`
   return {
-    title: `Collection Card — ${params.wallet} — Rip Packs City`,
+    title: `Collection Card — ${params.wallet}`,
     alternates: { canonical },
     description: `View the NBA Top Shot collection for wallet ${params.wallet} on Rip Packs City.`,
     openGraph: {

@@ -308,11 +308,11 @@ export async function generateMetadata(
     // one says so instead — the title is what a crawler and a shared link read.
     return detailOk
       ? {
-          title: "Moment Not Found — Rip Packs City",
+          title: "Moment Not Found",
           description: "This moment isn't in our index yet.",
         }
       : {
-          title: "Moment Unavailable — Rip Packs City",
+          title: "Moment Unavailable",
           description: "We couldn't load this moment right now. Try again in a moment.",
           robots: { index: false, follow: true },
         }

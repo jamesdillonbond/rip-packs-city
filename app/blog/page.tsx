@@ -10,7 +10,7 @@ export const dynamic = "force-static"
 export const revalidate = 86400
 
 export const metadata = {
-  title: "Blog — Rip Packs City",
+  title: "Blog",
   description:
     "Data-driven analysis of Flow blockchain collectibles: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike.",
 }

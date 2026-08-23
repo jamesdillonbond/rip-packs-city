@@ -45,11 +45,11 @@ export async function generateMetadata({
   // ⚠ A failed read must not let a transient blip de-index a real pin.
   if (!ok) {
     return {
-      title: "Pinnacle edition — Rip Packs City",
+      title: "Pinnacle edition",
       robots: { index: false, follow: true },
     }
   }
-  if (!data) return { title: "Pinnacle edition — Rip Packs City" }
+  if (!data) return { title: "Pinnacle edition" }
 
   if (data.kind === "legacy") {
     const title = `${data.renders.length} editions on ${data.key}`

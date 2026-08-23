@@ -21,6 +21,20 @@ import {
   NOT_FOUND_METADATA,
 } from "@/lib/seo"
 
+// `Metadata.title` is `string | { absolute } | { default, template }`.
+// collectionLayoutMetadata and the four entity builders returned bare strings
+// until 2026-08-23 and now return the `absolute` form — deliberately, because
+// restoring the collection subtree's `%s | Rip Packs City` template (R31) would
+// otherwise have double-suffixed every one of them. These assertions pin the
+// TITLE TEXT, which is unchanged; only its wrapper moved, so they are updated
+// rather than deleted. `titleText` accepts both, so the helpers that still
+// return a plain string (pageMetadata) are asserted by the same expression.
+const titleText = (t: unknown): string =>
+  t !== null && typeof t === "object" && "absolute" in (t as Record<string, unknown>)
+    ? String((t as { absolute: unknown }).absolute)
+    : String(t)
+
+
 // SEO URL + display-name builders feed canonical <link>s, JSON-LD, and OG tags
 // that crawlers index. A regression here poisons the search index or points
 // canonicals at the wrong host, so pin the exact output shape.
@@ -74,14 +88,14 @@ describe("collectionDisplayName", () => {
     expect(collectionDisplayName("ufc-strike")).toBe("UFC Strike")
     // and it propagates through the entity-metadata + layout builders
     const em = editionPageMetadata({ route_slug: "x", player_name: "Fighter", set_name: "Set" }, "ufc-strike")
-    expect(String(em.title)).toContain("UFC Strike")
+    expect(titleText(em.title)).toContain("UFC Strike")
     // Assert the BRAND SEGMENT specifically, not the bare substring "Flow".
     // The title legitimately names Flow as the closed VENUE ("... (Flow market
     // closed) | UFC Strike | ..."), because UFC Strike's Flow marketplace shut
     // on 2026-05-13 — see lib/market-closed.ts. What this test guards is the
     // alias falling through to the generic "Flow" BRAND label, which shows up
     // as the "| Flow |" segment.
-    expect(String(em.title)).not.toContain("| Flow |")
+    expect(titleText(em.title)).not.toContain("| Flow |")
     const lm = collectionLayoutMetadata("ufc-strike")
     expect(lm.keywords).toContain("UFC Strike")
   })
@@ -90,7 +104,7 @@ describe("collectionDisplayName", () => {
 describe("pageMetadata", () => {
   it("substitutes {label} in title+description and builds the per-page canonical", () => {
     const m = pageMetadata("overview", "NBA Top Shot", "nba-top-shot")
-    expect(m.title).toBe("NBA Top Shot Value — FMV, Floor Prices & Market Pulse")
+    expect(titleText(m.title)).toBe("NBA Top Shot Value — FMV, Floor Prices & Market Pulse")
     expect(m.description).toContain("What NBA Top Shot moments are worth")
     expect((m.alternates as any).canonical).toBe(
       "https://www.rippackscity.com/nba-top-shot/overview"
@@ -103,7 +117,7 @@ describe("pageMetadata", () => {
       "https://www.rippackscity.com/nba-top-shot/overview"
     )
     expect((m.twitter as any).card).toBe("summary_large_image")
-    expect((m.twitter as any).title).toBe(m.title)
+    expect((m.twitter as any).title).toBe(titleText(m.title))
   })
 
   it("returns an EMPTY object for an unknown page key (no meta template)", () => {
@@ -122,7 +136,7 @@ describe("pageMetadata", () => {
 describe("collectionLayoutMetadata", () => {
   it("uses the per-collection override + builds the OG collection image", () => {
     const m = collectionLayoutMetadata("nba-top-shot")
-    expect(m.title).toBe("NBA Top Shot Analytics — Rip Packs City")
+    expect(titleText(m.title)).toBe("NBA Top Shot Analytics — Rip Packs City")
     expect((m.alternates as any).canonical).toBe(
       "https://www.rippackscity.com/nba-top-shot"
     )
@@ -144,7 +158,7 @@ describe("collectionLayoutMetadata", () => {
 
   it("falls back to the generic title + 'Flow' keyword for unknown collections", () => {
     const m = collectionLayoutMetadata("zzz")
-    expect(m.title).toBe("Rip Packs City — Collector Intelligence")
+    expect(titleText(m.title)).toBe("Rip Packs City — Collector Intelligence")
     expect((m.keywords as string[])[0]).toBe("Flow")
     expect((m.openGraph as any).images[0].alt).toBe("Flow")
     // The OG image id still echoes the raw (unknown) slug.
@@ -180,7 +194,7 @@ describe("collectionPageJsonLd", () => {
 describe("collectionPageMetadata", () => {
   it("defaults the collection to nba-top-shot and resolves its label", () => {
     const m = collectionPageMetadata("sniper")
-    expect(m.title).toBe("Sniper — NBA Top Shot Deals Below FMV")
+    expect(titleText(m.title)).toBe("Sniper — NBA Top Shot Deals Below FMV")
     expect((m.alternates as any).canonical).toBe(
       "https://www.rippackscity.com/nba-top-shot/sniper"
     )
@@ -188,7 +202,7 @@ describe("collectionPageMetadata", () => {
 
   it("falls back to the 'Flow' label for an unknown collection id", () => {
     const m = collectionPageMetadata("overview", "zzz")
-    expect(m.title).toBe("Flow Value — FMV, Floor Prices & Market Pulse")
+    expect(titleText(m.title)).toBe("Flow Value — FMV, Floor Prices & Market Pulse")
     expect((m.alternates as any).canonical).toBe(
       "https://www.rippackscity.com/zzz/overview"
     )
@@ -209,7 +223,7 @@ describe("editionPageMetadata", () => {
       },
       "nba-top-shot"
     )
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Damian Lillard — Base Set · Value $251 | NBA Top Shot | Rip Packs City"
     )
     expect(m.description).toBe(
@@ -229,7 +243,7 @@ describe("editionPageMetadata", () => {
       { route_slug: "a", fmv: { fmv_usd: 5.5 } },
       "nba-top-shot"
     )
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Edition — Edition · Value $5.50 | NBA Top Shot | Rip Packs City"
     )
   })
@@ -239,14 +253,14 @@ describe("editionPageMetadata", () => {
       { team_name: "Lakers", set_name: "Team Set" },
       "nba-top-shot"
     )
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Lakers — Team Set · Value, Floor & Sales | NBA Top Shot | Rip Packs City"
     )
   })
 
   it("empty payload + unknown collection → 'Edition'/'Flow' fallbacks + default OG", () => {
     const m = editionPageMetadata({}, "zzz")
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Edition — Edition · Value, Floor & Sales | Flow | Rip Packs City"
     )
     // No route_slug → OG image falls back to /api/og/default (via buildMeta).
@@ -266,7 +280,7 @@ describe("setPageMetadata", () => {
       "nba-top-shot",
       "metallic gold le"
     )
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Metallic Gold LE — Set Value & Editions | NBA Top Shot | Rip Packs City"
     )
     expect(m.description).toBe(
@@ -280,7 +294,7 @@ describe("setPageMetadata", () => {
 
   it("empty payload drops the optional parts + uses default OG image", () => {
     const m = setPageMetadata({}, "zzz", "")
-    expect(m.title).toBe("Set — Set Value & Editions | Flow | Rip Packs City")
+    expect(titleText(m.title)).toBe("Set — Set Value & Editions | Flow | Rip Packs City")
     expect(m.description).toBe(
       "Set on Flow. Tier mix, edition grid, and player breakdown."
     )
@@ -350,7 +364,7 @@ describe("seriesPageMetadata", () => {
       "nba-top-shot",
       "series-3"
     )
-    expect(m.title).toBe(
+    expect(titleText(m.title)).toBe(
       "Series 3 (Season 2024) — NBA Top Shot Editions & Values | Rip Packs City"
     )
     expect(m.description).toBe(
@@ -360,7 +374,7 @@ describe("seriesPageMetadata", () => {
 
   it("no season → title omits the parenthetical + uses default OG image", () => {
     const m = seriesPageMetadata({}, "zzz", "")
-    expect(m.title).toBe("Series — Flow Editions & Values | Rip Packs City")
+    expect(titleText(m.title)).toBe("Series — Flow Editions & Values | Rip Packs City")
     expect((m.openGraph as any).images[0].url).toBe("/api/og/default")
   })
 })
@@ -546,8 +560,11 @@ describe("prototype-key collection slugs never surface a prototype member", () =
 
     it(`collectionLayoutMetadata("${key}") returns the generic fallback, not a prototype member`, () => {
       const meta = collectionLayoutMetadata(key)
-      expect(typeof meta.title).toBe("string")
-      expect(meta.title).toBe("Rip Packs City — Collector Intelligence")
+      // The shape matters as much as the text: a prototype member surfacing
+      // here would arrive as a string, so the deliberate object form is
+      // asserted alongside the value.
+      expect(typeof meta.title).toBe("object")
+      expect(titleText(meta.title)).toBe("Rip Packs City — Collector Intelligence")
     })
 
     it(`collectionPageJsonLd("${key}") yields a string name/description (no thrown/fn)`, () => {

@@ -23,7 +23,7 @@ export async function generateMetadata({
   const entry = ownLookup(METHODOLOGY, topic)
   if (!entry) {
     return analyticsMetadata({
-      title: "Methodology — Rip Packs City",
+      title: "Methodology",
       description: "Methodology for Rip Packs City analytics.",
       path: `/analytics/methodology/${topic}`,
     })

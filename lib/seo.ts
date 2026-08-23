@@ -15,11 +15,19 @@ const ROOT_TITLE =
 const ROOT_DESCRIPTION =
   'Real-time FMV, deal sniping, wallet analytics, badge tracking, pack tools, and set intelligence for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike collectors on Flow blockchain.'
 
+// The one place the brand suffix is spelled. Any segment that sets a plain
+// string `title` is formatted by the NEAREST ANCESTOR template and provides no
+// template of its own, so an intermediate layout with a string title silently
+// strips the suffix from everything below it. That is deep-audit R31: ~70
+// indexable deep URLs rendered with no brand at all while /insights and / — both
+// one level down — rendered correctly, which is why it read as fine.
+export const BRAND_TITLE_TEMPLATE = '%s | Rip Packs City'
+
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
     default: ROOT_TITLE,
-    template: '%s | Rip Packs City',
+    template: BRAND_TITLE_TEMPLATE,
   },
   description: ROOT_DESCRIPTION,
   keywords: [
@@ -357,7 +365,20 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
   // color, and chain pill. Returns the generic fallback for unknown ids.
   const ogImage = `${BASE_URL}/api/og/collection?id=${collectionId}`
   return {
-    title: meta.title,
+    // ⚠ BOTH HALVES ARE LOAD-BEARING and they fix two OPPOSITE live defects.
+    //
+    // `absolute` — these entries already end in " — Rip Packs City" (they are
+    // reused verbatim for OG/Twitter below), and a plain string here is fed to
+    // the ROOT template, so /nba-top-shot rendered
+    // "NBA Top Shot Analytics — Rip Packs City | Rip Packs City" live. That is
+    // the D24 double-suffix class the app/-only guard could not see: it walks
+    // app/, this file is lib/, and it matched only the pipe form.
+    //
+    // `template` — a string title here would ALSO leave every descendant with
+    // no template at all, which is why /nba-top-shot/collection rendered
+    // "Wallet Analytics — Track Your NBA Top Shot Collection Value" with no
+    // brand (R31). Re-declaring it puts the suffix back for the whole subtree.
+    title: { absolute: meta.title, template: BRAND_TITLE_TEMPLATE },
     description: meta.description,
     alternates: { canonical },
     keywords: [label, 'FMV', 'moment value', 'collector tools', 'sniper deals', 'Flow blockchain'],
@@ -498,7 +519,10 @@ function buildMeta(opts: {
 }): Metadata {
   const image = opts.image ?? "/api/og/default"
   return {
-    title: opts.title,
+    // Entity titles are fully formed and already carry "| Rip Packs City" (see
+    // the four builders below). `absolute` so restoring the subtree template in
+    // collectionLayoutMetadata does not double-suffix the ~33k-URL entity corpus.
+    title: { absolute: opts.title },
     description: opts.description,
     alternates: { canonical: opts.canonical },
     openGraph: {

@@ -6,7 +6,7 @@ import { OG_INHERITED } from "@/lib/seo"
 
 export function generateMetadata(): Metadata {
   return {
-    title: "About — Rip Packs City",
+    title: "About",
     description:
       "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland, Oregon by an active community member.",
     openGraph: {

@@ -382,7 +382,7 @@ export async function generateMetadata(
   try {
     detail = await fetchDetail(coll.id, slug)
   } catch {
-    return { title: `${slug} | ${coll.displayName} | Rip Packs City` }
+    return { title: { absolute: `${slug} | ${coll.displayName} | Rip Packs City` } }
   }
   if (!detail) return NOT_FOUND_METADATA
   return editionPageMetadata(detail as unknown as Record<string, unknown>, collection)

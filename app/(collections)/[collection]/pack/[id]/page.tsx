@@ -143,7 +143,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const readOk = lifecycleRes ? lifecycleRes.ok : true
   if (coll && !lifecycle && !readOk) {
     return {
-      title: `Pack #${id} — Unavailable | Rip Packs City`,
+      title: { absolute: `Pack #${id} — Unavailable | Rip Packs City` },
       description: "We couldn't load this pack right now. Try again in a moment.",
       robots: { index: false, follow: true },
     }
@@ -186,7 +186,9 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   // to always advertise. See app/api/og/pack/lifecycle/route.tsx.
   const ogImage = `${BASE_URL}/api/og/pack/lifecycle?id=${encodeURIComponent(id)}&collection=${encodeURIComponent(routeSlug)}`
   return {
-    title: metaTitle,
+    // `absolute`: this title already carries the brand, and the collection
+    // subtree now re-declares the `%s | Rip Packs City` template (R31).
+    title: { absolute: metaTitle },
     description,
     alternates: { canonical },
     openGraph: {

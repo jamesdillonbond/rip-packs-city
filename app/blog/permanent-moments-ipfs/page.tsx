@@ -13,7 +13,7 @@ export const dynamic = "force-static"
 export const revalidate = 86400
 
 export const metadata = {
-  title: "Your Moments Just Became Permanent. Here's What That Actually Means. — Rip Packs City",
+  title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
   description:
     "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
   openGraph: {

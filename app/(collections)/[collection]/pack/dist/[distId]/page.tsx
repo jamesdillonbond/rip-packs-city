@@ -161,7 +161,7 @@ export async function generateMetadata(
     return readOk
       ? {}
       : {
-          title: "Pack Unavailable — Rip Packs City",
+          title: { absolute: "Pack Unavailable — Rip Packs City" },
           description: "We couldn't load this pack right now. Try again in a moment.",
           robots: { index: false, follow: true },
         }
@@ -207,7 +207,9 @@ export async function generateMetadata(
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
   const ogImage = `${BASE_URL}/api/og/pack?distId=${encodeURIComponent(distId)}&collection=${encodeURIComponent(collection)}`
   return {
-    title: metaTitle,
+    // `absolute`: this title already carries the brand, and the collection
+    // subtree now re-declares the `%s | Rip Packs City` template (R31).
+    title: { absolute: metaTitle },
     description: descParts.join(" "),
     alternates: { canonical },
     openGraph: {

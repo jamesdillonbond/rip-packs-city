@@ -28,7 +28,7 @@ import TeamLogo from "@/components/entity/TeamLogo"
 export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
-  title: "My Teams — Rip Packs City",
+  title: "My Teams",
   description: "Your followed teams across NBA Top Shot, WNBA, NFL All Day, and LaLiga Golazos — checklist completion, cost-to-complete, and market activity in one hub.",
   robots: { index: false, follow: false },
 }

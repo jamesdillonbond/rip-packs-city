@@ -17,6 +17,20 @@ import {
 } from "@/lib/pinnacle/serialisation"
 import { editionJsonLd, editionPageMetadata } from "@/lib/seo"
 
+// `Metadata.title` is `string | { absolute } | { default, template }`.
+// collectionLayoutMetadata and the four entity builders returned bare strings
+// until 2026-08-23 and now return the `absolute` form — deliberately, because
+// restoring the collection subtree's `%s | Rip Packs City` template (R31) would
+// otherwise have double-suffixed every one of them. These assertions pin the
+// TITLE TEXT, which is unchanged; only its wrapper moved, so they are updated
+// rather than deleted. `titleText` accepts both, so the helpers that still
+// return a plain string (pageMetadata) are asserted by the same expression.
+const titleText = (t: unknown): string =>
+  t !== null && typeof t === "object" && "absolute" in (t as Record<string, unknown>)
+    ? String((t as { absolute: unknown }).absolute)
+    : String(t)
+
+
 // ---------------------------------------------------------------------------
 // lib/market-closed — UFC Strike's Flow market closed 2026-05-13 (measured live:
 // ZERO sales in 30 days by collection_id, by collection text, and in
@@ -132,14 +146,14 @@ describe("seo: closed markets do not title a dead price as a current value", () 
 
   it("live market keeps the plain 'Value $X' title", () => {
     const m = editionPageMetadata(payload, "nba-top-shot")
-    expect(String(m.title)).toContain("Value $200")
-    expect(String(m.title)).not.toContain("market closed")
+    expect(titleText(m.title)).toContain("Value $200")
+    expect(titleText(m.title)).not.toContain("market closed")
   })
 
   it("closed market says LAST value and names the closure", () => {
     const m = editionPageMetadata(payload, "ufc")
-    expect(String(m.title)).toContain("Last Value")
-    expect(String(m.title)).toContain("market closed")
+    expect(titleText(m.title)).toContain("Last Value")
+    expect(titleText(m.title)).toContain("market closed")
     expect(String(m.description)).toContain("13 May 2026")
     // The description must not assert a present-tense worth.
     expect(String(m.description)).not.toContain("is worth")

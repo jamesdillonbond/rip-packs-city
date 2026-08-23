@@ -63,7 +63,7 @@ export { setDetailStaticParams as generateStaticParams } from "@/lib/analytics/s
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const { set_id } = await params
   if (!UUID_RE.test(set_id)) {
-    return { title: "Set not found — Rip Packs City" }
+    return { title: "Set not found" }
   }
   const { data, ok } = await loadSet(set_id)
   // Only an ANSWERED read may claim the set does not exist.

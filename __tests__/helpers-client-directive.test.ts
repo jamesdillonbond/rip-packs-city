@@ -34,7 +34,15 @@ function tsxFiles(dir: string, out: string[] = []): string[] {
  */
 function isClientByLineScan(src: string): boolean {
   let inBlock = false
-  for (const raw of src.split("\n")) {
+  // ⚠ SPLIT ON /\r?\n/, NOT ON "\n". JavaScript's `.` does not match \r, so on a
+  // CRLF checkout `/\/\/.*$/` fails to match a line comment — the `.*` stops
+  // before the \r and `$` cannot match — and the strip silently no-ops. The scan
+  // then returns its verdict off the HEADER COMMENT and reads every commented
+  // file as a server module. Measured here 2026-08-23: the control disagreed
+  // with the detector on app/global-error.tsx for exactly this reason, on a file
+  // byte-identical to the LF copy apart from its line endings. A double-entry
+  // control that a line ending can flip is not a second opinion.
+  for (const raw of src.split(/\r?\n/)) {
     let line = raw
     if (inBlock) {
       const end = line.indexOf("*/")

@@ -10,7 +10,7 @@ export const dynamic = "force-static"
 export const revalidate = 86400
 
 export const metadata = {
-  title: "FMV Methodology — Rip Packs City",
+  title: "FMV Methodology",
   description:
     "How Rip Packs City calculates Fair Market Value: signals, confidence levels, and the explicit limits of what FMV does and doesn't account for.",
 }

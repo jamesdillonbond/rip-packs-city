@@ -125,7 +125,7 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   } catch {
     // Transient detail failure: emit a generic (non-404) title so crawlers
     // never cache a not-found signal for a real team.
-    return { title: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` }
+    return { title: { absolute: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` } }
   }
   if (!detail) return NOT_FOUND_METADATA
   return teamPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)

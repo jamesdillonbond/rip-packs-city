@@ -207,16 +207,29 @@ describe("server pages distinguish a failed read from an absent record", () => {
     const src = read("app", "moment", "[id]", "page.tsx")
 
     // generateMetadata must branch on the same transport flag...
-    expect(src).toContain('title: "Moment Unavailable — Rip Packs City"')
+    //
+    // ⚠ MATCHED BY PREFIX, NOT BY THE WHOLE STRING. This assertion used to pin
+    // 'title: "Moment Unavailable — Rip Packs City"' verbatim and went red on
+    // 2026-08-23 when the brand suffix was stripped from every metadata title so
+    // the root '%s | Rip Packs City' template could append it exactly once
+    // (deep-audit R31). Nothing it guards changed. That is the documented trap:
+    // pin the PROPERTY — a distinct unavailable branch, marked noindex — not the
+    // spelling, which is owned by a different rule entirely.
+    const UNAVAILABLE = 'title: "Moment Unavailable'
+    const NOT_FOUND = 'title: "Moment Not Found'
+    expect(src).toContain(UNAVAILABLE)
     // ...and mark that branch noindex,follow. Without it a crawler that hits the
     // page mid-outage can drop a real, linked moment from the index on the
     // strength of a five-minute saturation spell.
-    const unavailableMeta = src.indexOf('title: "Moment Unavailable — Rip Packs City"')
+    const unavailableMeta = src.indexOf(UNAVAILABLE)
     expect(src.slice(unavailableMeta, unavailableMeta + 300)).toContain(
       "robots: { index: false, follow: true }"
     )
-    // The not-found copy must remain reachable for a genuine miss.
-    expect(src).toContain('title: "Moment Not Found — Rip Packs City"')
+    // The not-found copy must remain reachable for a genuine miss, and must be a
+    // DIFFERENT branch — one string doing both jobs is the defect this file exists
+    // for, and a prefix match would otherwise let them collapse into each other.
+    expect(src).toContain(NOT_FOUND)
+    expect(src.indexOf(NOT_FOUND)).not.toBe(src.indexOf(UNAVAILABLE))
   })
 
   // 5. /[collection]/set/[slug] — the FIFTH instance, and a variant worth naming

@@ -79,7 +79,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   const cfg = ownLookup(COLLECTIONS, collection)
   if (!cfg) {
     return {
-      title: "Sales analytics — Rip Packs City",
+      title: "Sales analytics",
     }
   }
   return analyticsMetadata({
