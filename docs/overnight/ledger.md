@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — PRIORITY 1 CAPTURED — signed-in WAU is 0, the accuracy gate is 30.1%, and the instrument nearest to hand would have said 16,463
+
+**Docs only. No code, no DB.** `focus.md` has said since 08-17 that demand *"is the only gate that matters
+and it is not being measured"*, with the last confirmed reading **20 users / 0 WAU on 2026-07-26**. Four
+weeks and several passes later, nobody had re-captured it. Captured.
+
+**Traction, from `auth.users` rather than a view count:** **21 accounts** (+1 in four weeks), **0 signups in
+7 d** (newest 2026-08-08), **signed-in WAU = 0**, MAU = 2. Roadmap gate is 50+ WAU.
+
+⛔ **The trap this closes is the bigger half.** A pass told to *"capture the user/WAU count"* would reach for
+`funnel_events` and report **~16,463 weekly sessions** — wrong by three orders of magnitude. **99.67% of them
+fire exactly ONE event and never return** (16,409 of 16,463); 54 sessions reached 2 events, 7 reached 5. The
+intent column is the honest one: **4 `wallet_paste` sessions in 7 d, 0 `signin_click`, 0 `account_created`**,
+and in the clean 20 h since UA capture began, **zero of all three**. ⓘ This independently reproduces the
+analysis already in `app/api/track-funnel/route.ts`'s header — the code was right, and said so where nobody
+querying the table would read it. ⚠ **Vercel Web Analytics is NOT enabled**, so that table has no independent
+corroborator at all.
+
+⚠ **A dated caveat and a near-miss.** `bot_ua` / `user_agent` landed 2026-08-23 ~02:00Z; every hour since
+carries a UA on **100%** of rows, and every hour before carries one on **zero**. So on the earlier history
+`bot_ua = false` means *"we never saw a UA"*, not *"human"* — **slice it only from 02:00Z forward.**
+🚨 I nearly filed that the flag was *structurally blind on its own population*. **One control — bucket by hour
+across the migration boundary — refuted it.** The instrument is correct and complete from the moment it
+existed; the 96.7% was pre-migration absence. One query separated a real caveat from a false accusation
+against working code.
+
+**The accuracy gate, the roadmap's headline metric, measured for the first time:** **30.1% HIGH/MEDIUM**
+(8,140 / 27,075 in `fmv_current`, freshest row seconds old). Top Shot **34.3%**, All Day **21.4%** (only 184
+of 6,190 are HIGH), Candy 61.6%, **Golazos 0.0%**, **UFC 0.0%**. Three caveats that change what it means:
+UFC's zero is **CORRECT** (381 STALE + 137 NO_DATA — market closed since May 2026, so it can never improve
+and permanently drags the headline; excluding it, **30.7%**); **Golazos' zero is a REAL gap** on a live
+collection and is the single clearest target; and **Disney Pinnacle is not in the metric at all** — measured,
+**0 rows** in `fmv_current` against 2,564 in `pinnacle_catalog`, because it prices through the separate
+triple-keyed path. **"30.1% of prices" covers four of the five published collections.**
+
+⛔ **No recommendation, deliberately.** Golazos coverage, the Pinnacle denominator, and whether a closed
+market belongs in the gate are product decisions, and two of them redefine the metric the roadmap is judged
+on. **Trevor's call, and it should be made on the table rather than on an impression.**
+
+**Revert path:** `git revert` the docs commit (find by message `docs(traction): capture priority 1`). No DB
+or production state was changed.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — my own `fmv-recalc` filing's TITLE is falsified: page 0 completed at 20:28:06Z and the arm self-cleared for the FIFTH time
 
 **Docs only. No code, no DB.** Also fixed a live CI red on `main` on the way: the 2026-08-23 inbox day
