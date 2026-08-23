@@ -43,6 +43,12 @@ authoritative. Handoff filed at `docs/overnight/inbox/2026-08-23T2030Z-sixteen-m
 **Verified:** 180/180 DB-invariant SQL files pass against a throwaway PG 16 (exit 0); drift guard + anon-exec
 guard 197 tests pass; `npx tsc --noEmit` clean; full vitest 1369 files / 14,925 tests green.
 
+⚠ **VERIFIED AGAINST THE LIVE DATABASE, not locally:** a `workflow_dispatch` of `db-pin-staleness` at
+20:31Z reports **`checked 189 pins — 189 clean, 0 needing attention`** — the sweep's first green since
+2026-08-09. `docs/overnight/focus.md` carries the 2026-08-23 steer, including the durable lesson that
+#24-style closure is a MOMENT, not a state: any migration redefining a pinned function re-opens it the
+same day, so re-pointing the pin is part of shipping the change.
+
 **Revert path:** `git revert` the code commit (find by message `test(db-pins): commit log_pipeline_run`).
 Nothing to undo in the database — the function was already live.
 

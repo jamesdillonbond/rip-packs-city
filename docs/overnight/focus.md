@@ -43,6 +43,45 @@
   `docs/reference/**` pointers) and `check-driver-message-leaks.mjs` (ungated handlers returning
   `err.message`). Both are ban-at-population-zero and both carry their own inspected-count assertions.
 
+## STEER — added 2026-08-23 (interactive; verifies one standing instruction and re-opens one it closed)
+
+- ✅ **The `db-pin-staleness` verification this file ASKED FOR was run, and the answer was NOT the predicted
+  "187 clean, 0".** The 08-23 07:51Z run reported **189 pins — 187 clean, 2 needing attention**, naming
+  `refresh_cross_collection_cohort_step1` / `_step2` — a **DIFFERENT pair** from the six closed the evening
+  before. The 08-22 ~20:35Z lock-window rewrite shipped its own new pin file and left those two pointing at
+  the superseded 08-16 snapshot, so the instrument re-opened hours after #24 was closed. Both are now
+  re-pinned, and a third (`log_pipeline_run`, from the same-day `clock_timestamp()` fix) with them.
+  **VERIFIED GREEN by workflow_dispatch at 20:31Z: `checked 189 pins — 189 clean, 0 needing attention`** —
+  the sweep's first green since 2026-08-09. ⚠ **The durable lesson is that #24-style closure is not a state,
+  it is a moment: any migration that redefines a pinned function re-opens it the same day.** Re-pointing a
+  pin is part of shipping the change, not a follow-up chore.
+- 🚨 **`migration-parity` went RED on 08-23 07:58Z — its FIRST failure after 14 consecutive greens** — and
+  the gap **re-opened behind this morning's recovery**. Measured 20:30Z: 61 migrations applied since 08-21,
+  **17 with no committed file**; I committed the one I needed, so **16 remain**, fifteen of them applied
+  17:29–19:28Z as one still-moving `series_detail_rollup` / `edition_fmv_current` piece. ⛔ **Do NOT
+  reconstruct those files from `pg_get_functiondef`** — a migration header carries the REVERT PATH, and only
+  the session that applied it knows what it reverted to; a reconstructed file records the current state with
+  an invented revert path, which is worse than an absent file because it looks authoritative. **That session
+  commits its own sixteen.** Filing:
+  `docs/overnight/inbox/2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md`.
+- ⚠ **NEW DB TRAP, and it is general: on PostgreSQL 17 a partial index whose predicate says
+  `col IS NOT NULL` on a column declared `NOT NULL` is UNREACHABLE.** PG 17 removes the redundant qual before
+  partial-index predicate proving, so the planner drops the index from the candidate set entirely — not
+  out-costed, invisible. A strict clause on that column (`col = $1`, `col <> $1`) restores it. Three of the
+  six such indexes here are dead, including the **98 MB `idx_sales_2026_fmv_recalc_window`** that
+  `fmv_recalc_edition_page` needs: made reachable it runs the same 30-day window **2.9× faster on 2.0× fewer
+  buffers**, and at the real 90-day window it completes in ~16 s where the as-written form does not complete
+  in 60 s. ⚠ **`idx_scan > 0` is NOT evidence of reachability** — `idx_sales_2026_top_sales_board` has 502
+  recorded scans and is unreachable today, so the unused-index advisor is structurally blind to this class on
+  exactly the indexes that used to work. **Repair is an index rebuild (DDL on the FMV path) → Trevor's call,
+  not a night-pass item.** Evidence:
+  `docs/overnight/inbox/2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md`.
+- ⚠ **A retraction, so nobody re-derives it:** the 20:00Z `fmv-recalc` filing claimed `(saturation-class)` was
+  a misattribution "because the database was measurably quiet". **Withdrawn** — that reading was taken at
+  19:50Z and applied backwards to failures at 17:48–18:49Z, while the daytime monitor's positive control at
+  18:10Z reads `io_wait=12 / active=11 / total=46`. **A control must be contemporaneous with what it
+  controls.** The structural half stands and is now stated in **buffers**, which load cannot move.
+
 ## STEER — do NOT re-flag these (current)
 
 - **The three standing trust breaches are all known-class.** `panini_sale_price_capture_dry_days` (an arm that is **crying wolf** — it counts dry days on a field deliberately abandoned and replaced on 08-08, while the replacement works at ~22%; the fix is to RE-POINT the arm, not to chase the capture), `unmapped_resolution_backlog_max` (AllDay permanent floor — its own text says do NOT raise `breach_at`), `public_board_slow_count` (saturation collateral; **do not characterize its direction from fewer than several days** — it has been called both "climbing" and "oscillating down" on ~1-day windows and both were fair).
@@ -128,7 +167,9 @@ The warning that stood here (repointing without reviewing the assertions convert
 silent green) was honoured: every pin got its own diff, and five gained mutation-tested assertions for the
 behaviour that had drifted. ⚠ **VERIFY, do not assume:** the 07:20Z `db-pin-staleness` run should now report
 **187 clean, 0 needing attention** — its first green since 2026-08-03. If it names a pin instead, read WHICH
-before reopening. Recipe + what the six taught: [database.md](../reference/database.md).
+before reopening. 🚨 **IT DID NAME PINS — this prediction was FALSIFIED on 08-23 and the reason is durable;
+see the 2026-08-23 STEER above.** Closure is a moment, not a state: a same-day rewrite of a pinned function
+re-opens the instrument within hours. Recipe + what the six taught: [database.md](../reference/database.md).
 
 ⚠ **#23 and #25 remain OPEN and are operator-blocked.** 25 edge functions are still not running `main`
 (redeploy needs both `deno.json` in `files` AND `import_map_path`, or a stale-but-working function goes
