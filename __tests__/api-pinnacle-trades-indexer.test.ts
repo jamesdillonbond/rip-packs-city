@@ -232,6 +232,98 @@ describe("pinnacle-trades-indexer — what it writes", () => {
   })
 })
 
+describe("pinnacle-trades-indexer — backfill mode", () => {
+  const BF_CURSOR = 162_153_001
+  const SPORK_FLOOR = 137_390_146
+
+  it("rejects an unknown mode rather than silently falling back to forward", async () => {
+    // A typo in a cron URL must not quietly point the history lane at the live
+    // one — that would rewind the forward cursor by 25M blocks.
+    const spy = install({ event_cursor: cursorFixture })
+    const res = await POST(req("?mode=forwards"))
+    expect(res.status).toBe(400)
+    expect(Object.keys(spy.writes)).toHaveLength(0)
+  })
+
+  it("reads the BACKFILL cursor, not the forward one", async () => {
+    fetchMock = installFetchMock(flowStubs({}))
+    const spy = install({ event_cursor: { data: { last_processed_block: BF_CURSOR }, error: null } })
+    await POST(req("?mode=backfill&range=500"))
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect((logged[0].args as any)!.p_extra.mode).toBe("backfill")
+  })
+
+  it("walks DOWN — the cursor decreases and never crosses into forward's range", async () => {
+    fetchMock = installFetchMock(flowStubs({}))
+    const spy = install({ event_cursor: { data: { last_processed_block: BF_CURSOR }, error: null } })
+    const body = await (await POST(req("?mode=backfill&range=500"))).json()
+    expect(body.ok).toBe(true)
+    expect(body.cursor).toBeLessThan(BF_CURSOR)
+    expect(body.cursor).toBe(BF_CURSOR - 500)
+    const writes = (spy.writes.event_cursor ?? []).flatMap((w: any) =>
+      Array.isArray(w.rows) ? w.rows : [w.rows],
+    )
+    // Every cursor write moves DOWN. An ascending write here would mean the
+    // history lane had started consuming blocks the forward lane owns.
+    expect(writes.every((r: any) => r.last_processed_block < BF_CURSOR)).toBe(true)
+  })
+
+  it("stops at the spork floor and says so — a finished backfill is not a stalled one", async () => {
+    // Below SPORK_FLOOR public Flow REST 404s, so the lane is DONE, permanently.
+    // The phase has to distinguish that from forward's transient "up_to_date"
+    // or an operator reads a completed history fill as a dead pipeline.
+    fetchMock = installFetchMock(flowStubs({}))
+    const spy = install({ event_cursor: { data: { last_processed_block: SPORK_FLOOR }, error: null } })
+    const res = await POST(req("?mode=backfill"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).message).toMatch(/spork floor/i)
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    const extra = (logged[0].args as any)!.p_extra
+    expect(extra.phase).toBe("backfill_floor_reached")
+    expect(extra.phase).not.toBe("up_to_date")
+    expect((logged[0].args as any)!.p_ok).toBe(true)
+    expect(spy.writes.pinnacle_trade_events ?? []).toHaveLength(0)
+  })
+
+  it("never scans below the spork floor even when the range would reach past it", async () => {
+    fetchMock = installFetchMock(flowStubs({}))
+    install({ event_cursor: { data: { last_processed_block: SPORK_FLOOR + 300 }, error: null } })
+    const body = await (await POST(req("?mode=backfill&range=10000"))).json()
+    expect(body.cursor).toBe(SPORK_FLOOR)
+    expect(body.cursor).toBeGreaterThanOrEqual(SPORK_FLOOR)
+  })
+
+  it("classifies a trade the same way walking down as walking up", async () => {
+    // The direction changes which blocks are read, never what a trade IS.
+    fetchMock = installFetchMock(flowStubs(tradeBlocks()))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: BF_CURSOR }, error: null },
+      pinnacle_nft_map: { data: [], error: null },
+    })
+    const body = await (await POST(req("?mode=backfill&range=500"))).json()
+    expect(body).toMatchObject({ ok: true, tradeTxs: 1, pinsTraded: 2 })
+    const written = (spy.writes.pinnacle_trade_events ?? []).flatMap((w: any) =>
+      Array.isArray(w.rows) ? w.rows : [w.rows],
+    )
+    expect(written).toHaveLength(2)
+  })
+
+  it("holds the cursor at a failed wave instead of leapfrogging it", async () => {
+    // ⚠ The whole point of waves. With concurrency, a later chunk finishing
+    // first must not advance the cursor past an earlier failed one.
+    fetchMock = installFetchMock(flowStubs({ withdrawStatus: 503 }))
+    const spy = install({ event_cursor: { data: { last_processed_block: BF_CURSOR }, error: null } })
+    const res = await POST(req("?mode=backfill&range=2000"))
+    expect(res.status).toBe(200)
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    const extra = (logged[0].args as any)!.p_extra
+    expect(extra.partial_scan).toBe(true)
+    expect(extra.blocks_scanned).toBe(0)
+    // Nothing was read, so the cursor must not have moved at all.
+    expect((spy.writes.event_cursor ?? [])).toHaveLength(0)
+  })
+})
+
 describe("pinnacle-trades-indexer — observability and control paths", () => {
   it("ships the tx-shape census on an EMPTY tick, so a shape change cannot read as a quiet week", async () => {
     fetchMock = installFetchMock(flowStubs({}))

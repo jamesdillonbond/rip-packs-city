@@ -43,10 +43,28 @@ const DEPOSIT_EVENT = "A.edf9df96c92f4595.Pinnacle.Deposit"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const MAX_SCAN_RANGE = 2_000
+// Backfill walks a wider window per tick than forward does, because it has
+// ~24.8M blocks to cover and forward only has to keep up with ~2,880 blocks/h.
+const MAX_BACKFILL_RANGE = 10_000
+// Chunks are fetched in ordered WAVES of this size. Measured 2026-08-22: Flow
+// REST served 60 concurrent /v1/events reads comfortably, and the first
+// (serial) production tick spent 146s on 8 chunks while the second spent 22s —
+// so the per-chunk latency is round-trip serialization, not server time.
+// ⚠ Waves, not a free-for-all: the no-leapfrog rule needs chunks to retire in
+// order, so the cursor only advances to the end of a wave in which EVERY chunk
+// read. A failure anywhere in a wave stops the tick at that wave's frontier.
+const CHUNK_CONCURRENCY = 5
+// Public Flow REST 404s below the current spork floor — pre-spork history needs
+// the spork proxy worker, which is a separate workstream.
+const SPORK_FLOOR = 137_390_146
 const INTER_CHUNK_DELAY_MS = 75
 const PIPELINE_NAME = "pinnacle-trades-indexer"
 const COLLECTION_SLUG = "disney_pinnacle"
 const CURSOR_ID = "pinnacle_trades"
+// The backfill cursor means the LOWEST block scanned so far, not the highest.
+// Seeded at the forward cursor's seed + 1 so the two lanes tile exactly: forward
+// owns (162,153,000, tip], backfill owns [SPORK_FLOOR, 162,153,000].
+const CURSOR_ID_BACKFILL = "pinnacle_trades_backfill"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 
 function unauthorized() {
@@ -160,14 +178,26 @@ async function runIndexer(req: NextRequest) {
   // branch can match an empty configured token.
   if (!accepted) return unauthorized()
 
-  const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? MAX_SCAN_RANGE)
-  const maxRange = Math.min(Math.max(rangeParam || MAX_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)
+  // forward  — walk UP from the forward cursor toward the sealed tip (new trades)
+  // backfill — walk DOWN from the backfill cursor toward SPORK_FLOOR (history)
+  // Anything else is rejected rather than silently treated as forward: a typo in
+  // a cron URL must not quietly point the history lane at the live one.
+  const modeParam = req.nextUrl.searchParams.get("mode") ?? "forward"
+  if (modeParam !== "forward" && modeParam !== "backfill") {
+    return NextResponse.json({ error: `unknown mode: ${modeParam}` }, { status: 400 })
+  }
+  const backfill = modeParam === "backfill"
+  const cursorId = backfill ? CURSOR_ID_BACKFILL : CURSOR_ID
+  const rangeCap = backfill ? MAX_BACKFILL_RANGE : MAX_SCAN_RANGE
+
+  const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? rangeCap)
+  const maxRange = Math.min(Math.max(rangeParam || rangeCap, CHUNK_SIZE), rangeCap)
 
   try {
     const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
       .from("event_cursor")
       .select("last_processed_block")
-      .eq("id", CURSOR_ID)
+      .eq("id", cursorId)
       .single()
     if (cursorErr) {
       console.log(`[${PIPELINE_NAME}] cursor read error:`, cursorErr.message)
@@ -175,48 +205,121 @@ async function runIndexer(req: NextRequest) {
         startedAtIso,
         ok: false,
         errorMsg: `cursor read: ${cursorErr.message}`,
-        extra: { phase: "cursor_read_failed" },
+        extra: { phase: "cursor_read_failed", mode: modeParam },
       })
       return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
     }
 
     const lastBlock = Number(cursorRow?.last_processed_block ?? 0)
     const currentHeight = await getLatestSealedHeight()
-    if (lastBlock >= currentHeight) {
-      // ok:true — "nothing new on chain" is a healthy tick, and the cadence
+    const done = backfill ? lastBlock <= SPORK_FLOOR : lastBlock >= currentHeight
+    if (done) {
+      // ok:true — "nothing left to scan" is a healthy tick, and the cadence
       // watchlist keys on SILENCE, so a no-op tick must still be recorded or a
-      // quiet chain looks identical to a dead pipeline.
+      // finished lane looks identical to a dead one.
+      //
+      // ⚠ For backfill this state is PERMANENT, not transient: the lane has
+      // reached the spork floor and every later tick will land here. That is
+      // the signal to unschedule it, and `phase` says which of the two it is
+      // so nobody reads a finished backfill as a stalled one.
       await logPipelineRun({
         startedAtIso,
         ok: true,
         cursorBefore: lastBlock,
         cursorAfter: lastBlock,
-        extra: { phase: "up_to_date", blocks_scanned: 0, chain_height: currentHeight },
+        extra: {
+          phase: backfill ? "backfill_floor_reached" : "up_to_date",
+          mode: modeParam,
+          blocks_scanned: 0,
+          chain_height: currentHeight,
+          ...(backfill ? { spork_floor: SPORK_FLOOR } : {}),
+        },
       })
-      return NextResponse.json({ ok: true, message: "already up to date", cursor: lastBlock, elapsed: Date.now() - started })
+      return NextResponse.json({
+        ok: true,
+        message: backfill ? "backfill complete — spork floor reached" : "already up to date",
+        cursor: lastBlock,
+        elapsed: Date.now() - started,
+      })
     }
 
-    const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
-    console.log(`[${PIPELINE_NAME}] scanning ${lastBlock + 1} → ${targetHeight} (${targetHeight - lastBlock} blocks)`)
+    // Chunk plan for this tick, in PROCESSING ORDER.
+    //   forward:  ascending  over (lastBlock, targetHeight]
+    //   backfill: descending over [targetLow, lastBlock - 1]
+    // The backfill cursor is the LOWEST block scanned, so it counts DOWN.
+    const targetHeight = backfill ? lastBlock : Math.min(lastBlock + maxRange, currentHeight)
+    const targetLow = backfill ? Math.max(SPORK_FLOOR, lastBlock - maxRange) : lastBlock + 1
+
+    const chunks: Array<{ s: number; e: number }> = []
+    if (backfill) {
+      for (let e = lastBlock - 1; e >= targetLow; e -= CHUNK_SIZE) {
+        chunks.push({ s: Math.max(e - CHUNK_SIZE + 1, targetLow), e })
+      }
+    } else {
+      for (let c = lastBlock + 1; c <= targetHeight; c += CHUNK_SIZE) {
+        chunks.push({ s: c, e: Math.min(c + CHUNK_SIZE - 1, targetHeight) })
+      }
+    }
+    console.log(
+      `[${PIPELINE_NAME}] mode=${modeParam} scanning ${chunks.length} chunks ` +
+        `${backfill ? `${targetLow} ← ${lastBlock - 1}` : `${lastBlock + 1} → ${targetHeight}`}`
+    )
 
     const moves: PinnacleMoveEvent[] = []
-    let lastChunkEnd = lastBlock
-    // Block of the first chunk that failed to fetch, or null when every chunk
-    // read. Once set the per-chunk cursor write stops, so a later successful
-    // chunk can never leapfrog a failed one.
+    // The scan frontier: for forward the highest block fully read, for backfill
+    // the lowest. Initialised to the cursor so a tick that reads nothing leaves
+    // it exactly where it was.
+    let frontier = lastBlock
+    // Start block of the first chunk that failed to read, or null when every
+    // chunk read. Once set the frontier stops moving, so a later successful
+    // chunk can never leapfrog a failed range — nothing revisits a block the
+    // cursor has already passed.
     let firstFailedChunkStart: number | null = null
     let decodeFailures = 0
+    let blocksRead = 0
 
-    for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
-      const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
-      try {
-        // Both streams for the SAME range. If either throws, the whole chunk is
-        // abandoned — a chunk with only half its events would classify a real
-        // trade as a one-way transfer, which is worse than not reading it.
-        const [wBlocks, dBlocks] = await Promise.all([
-          fetchEventRange(WITHDRAW_EVENT, s, e),
-          fetchEventRange(DEPOSIT_EVENT, s, e),
-        ])
+    // ⚠ WAVES, and the cursor only moves for a wave in which EVERY chunk read.
+    // Concurrency inside a wave is safe because a transaction's events all live
+    // in ONE block, so no chunk boundary can split a trade across two fetches;
+    // ordering between waves is what preserves the no-leapfrog invariant.
+    for (let w = 0; w < chunks.length; w += CHUNK_CONCURRENCY) {
+      const wave = chunks.slice(w, w + CHUNK_CONCURRENCY)
+      const results = await Promise.all(
+        wave.map(async (c) => {
+          try {
+            // Both streams for the SAME range. If either throws, the whole
+            // chunk is abandoned — a chunk with only half its events would
+            // classify a real trade as a one-way transfer, which is worse than
+            // not reading it at all.
+            const [wBlocks, dBlocks] = await Promise.all([
+              fetchEventRange(WITHDRAW_EVENT, c.s, c.e),
+              fetchEventRange(DEPOSIT_EVENT, c.s, c.e),
+            ])
+            return { c, wBlocks, dBlocks, err: null as string | null }
+          } catch (err) {
+            return {
+              c,
+              wBlocks: [] as FlowEventBlock[],
+              dBlocks: [] as FlowEventBlock[],
+              err: err instanceof Error ? err.message : String(err),
+            }
+          }
+        })
+      )
+
+      const failed = results.filter((r) => r.err !== null)
+      if (failed.length > 0) {
+        for (const f of failed) console.log(`[${PIPELINE_NAME}] chunk ${f.c.s}-${f.c.e} error:`, f.err)
+        // The frontier stays at the previous wave's edge. Everything in THIS
+        // wave is re-read next tick, including the chunks that succeeded —
+        // re-reading is free (the write is an idempotent upsert on a
+        // deterministic id) and it is the only way to keep the invariant.
+        const lowestFailedChunkStart = Math.min(...failed.map((f) => f.c.s))
+        firstFailedChunkStart = lowestFailedChunkStart
+        break
+      }
+
+      for (const { wBlocks, dBlocks } of results) {
         for (const [blocks, side] of [[wBlocks, "withdraw"], [dBlocks, "deposit"]] as const) {
           for (const blk of blocks) {
             const bh = Number(blk.block_height)
@@ -243,24 +346,18 @@ async function runIndexer(req: NextRequest) {
             }
           }
         }
-        lastChunkEnd = e
-        if (firstFailedChunkStart === null) {
-          await (supabaseAdmin as any)
-            .from("event_cursor")
-            .update({ last_processed_block: lastChunkEnd, updated_at: new Date().toISOString() })
-            .eq("id", CURSOR_ID)
-        }
-      } catch (err) {
-        console.log(`[${PIPELINE_NAME}] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
-        // ⚠ STOP. The cursor is written per chunk, so without the break a later
-        // chunk succeeding writes a cursor ABOVE the failed one, leaving the
-        // failed range permanently below the cursor where nothing returns.
-        // lastChunkEnd already holds the previous chunk's end (s - 1), because
-        // it is only ever assigned after a chunk reads cleanly.
-        firstFailedChunkStart = s
-        break
       }
-      if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
+
+      const last = wave[wave.length - 1]
+      frontier = backfill ? last.s : last.e
+      blocksRead += wave.reduce((n, c) => n + (c.e - c.s + 1), 0)
+
+      await (supabaseAdmin as any)
+        .from("event_cursor")
+        .update({ last_processed_block: frontier, updated_at: new Date().toISOString() })
+        .eq("id", cursorId)
+
+      if (w + CHUNK_CONCURRENCY < chunks.length) await delay(INTER_CHUNK_DELAY_MS)
     }
 
     const classified = classifyPinnacleTradeTxs(moves)
@@ -287,6 +384,7 @@ async function runIndexer(req: NextRequest) {
     // read as "a quiet week". A rising `unclassified` count against a falling
     // `trade` count is the signal that the geometry moved.
     const shapeExtra = {
+      mode: modeParam,
       tx_shapes: classified.shapeCounts,
       trade_tx: classified.shapeCounts.trade,
       pins_traded: trades.length,
@@ -298,10 +396,10 @@ async function runIndexer(req: NextRequest) {
         startedAtIso,
         ok: true,
         cursorBefore: lastBlock,
-        cursorAfter: lastChunkEnd,
+        cursorAfter: frontier,
         extra: {
           phase: "no_trades",
-          blocks_scanned: Math.max(lastChunkEnd - lastBlock, 0),
+          blocks_scanned: blocksRead,
           chain_height: currentHeight,
           elapsed_ms: Date.now() - started,
           ...shapeExtra,
@@ -310,14 +408,14 @@ async function runIndexer(req: NextRequest) {
       })
       return NextResponse.json({
         ok: true,
-        blocksScanned: Math.max(lastChunkEnd - lastBlock, 0),
+        blocksScanned: blocksRead,
         tradeTxs: 0,
         pinsTraded: 0,
         // The census ships on the EMPTY path too. An operator curling this route
         // on a zero-trade tick needs to see whether the range held no Pinnacle
         // movement at all or held movement this lane could not classify.
         txShapes: classified.shapeCounts,
-        cursor: lastChunkEnd,
+        cursor: frontier,
         elapsed: Date.now() - started,
       })
     }
@@ -401,10 +499,10 @@ async function runIndexer(req: NextRequest) {
       rowsWritten: inserted,
       rowsSkipped: duped,
       cursorBefore: lastBlock,
-      cursorAfter: lastChunkEnd,
+      cursorAfter: frontier,
       extra: {
         phase: "complete",
-        blocks_scanned: Math.max(lastChunkEnd - lastBlock, 0),
+        blocks_scanned: blocksRead,
         chain_height: currentHeight,
         ...shapeExtra,
         ...partialScanExtra,
@@ -417,14 +515,14 @@ async function runIndexer(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      blocksScanned: Math.max(lastChunkEnd - lastBlock, 0),
+      blocksScanned: blocksRead,
       tradeTxs: classified.shapeCounts.trade,
       pinsTraded: trades.length,
       pinsInserted: inserted,
       pinsDuped: duped,
       pinsUnresolved: unresolved,
       txShapes: classified.shapeCounts,
-      cursor: lastChunkEnd,
+      cursor: frontier,
       elapsed: Date.now() - started,
     })
   } catch (err) {

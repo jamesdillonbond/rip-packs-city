@@ -124,9 +124,11 @@ describe("classifyPinnacleTradeTxs — the shapes that are NOT trades", () => {
   })
 
   it("drops a withdraw whose matching deposit was not read, rather than inferring the recipient", () => {
-    // A chunk boundary can split a transaction. The counterparty is CONFIRMED
-    // from the deposit, never derived by elimination from the two-party set —
-    // so the unmatched Pin is dropped and pinsInTrade counts only what shipped.
+    // The counterparty is CONFIRMED from the deposit, never derived by
+    // elimination from the two-party set — so an unmatched Pin is dropped and
+    // pinsInTrade counts only what shipped. (Chunking cannot cause this: a
+    // transaction's events all live in one block. A missing deposit means a
+    // burn or a decode failure, which is exactly when guessing is worst.)
     const { trades, shapeCounts } = classifyPinnacleTradeTxs([
       mv("withdraw", "tx4", "n1", A),
       mv("deposit", "tx4", "n1", B),
@@ -166,6 +168,24 @@ describe("classifyPinnacleTradeTxs — input hygiene and the census", () => {
     const { trades, shapeCounts } = classifyPinnacleTradeTxs(bad)
     expect(trades).toHaveLength(0)
     expect(shapeCounts.trade).toBe(0)
+  })
+
+  it("dedupes a re-read event so pinsInTrade cannot silently double", () => {
+    // An NFT can be withdrawn at most once per transaction, so a second copy of
+    // the same (tx, side, nftId) is always a re-read. If it were counted, the
+    // trade would report 4 Pins where 2 moved — a wrong published number with
+    // no error anywhere.
+    const dup = [
+      mv("withdraw", "tx1", "n1", A), mv("deposit", "tx1", "n1", B),
+      mv("withdraw", "tx1", "n2", B), mv("deposit", "tx1", "n2", A),
+      mv("withdraw", "tx1", "n1", A), mv("deposit", "tx1", "n1", B),
+      mv("withdraw", "tx1", "n2", B), mv("deposit", "tx1", "n2", A),
+    ]
+    const { trades, shapeCounts } = classifyPinnacleTradeTxs(dup)
+    expect(shapeCounts.trade).toBe(1)
+    expect(trades).toHaveLength(2)
+    expect(trades.every((t) => t.pinsInTrade === 2)).toBe(true)
+    expect(trades.map((t) => t.nftId).sort()).toEqual(["n1", "n2"])
   })
 
   it("reports every transaction it saw in exactly one shape bucket", () => {

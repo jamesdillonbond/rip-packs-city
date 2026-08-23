@@ -86,8 +86,18 @@ export interface PinnacleTradeClassification {
  */
 export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleTradeClassification {
   const byTx = new Map<string, PinnacleMoveEvent[]>()
+  // ⚠ Deduped on (tx, side, nftId). An NFT is a unique resource, so it can be
+  // withdrawn at most once and deposited at most once per transaction — a
+  // second copy is always a re-read, never a second movement. Without this a
+  // duplicated event would emit a duplicate leg and DOUBLE `pinsInTrade`, which
+  // is a wrong number published silently rather than an error. Cheap to make
+  // structurally impossible, so it is.
+  const seen = new Set<string>()
   for (const e of events) {
     if (!e || !e.transactionId || !e.nftId || !e.address) continue
+    const key = `${e.transactionId}\u0000${e.side}\u0000${e.nftId}`
+    if (seen.has(key)) continue
+    seen.add(key)
     const slot = byTx.get(e.transactionId)
     if (slot) slot.push(e)
     else byTx.set(e.transactionId, [e])
@@ -110,9 +120,13 @@ export function classifyPinnacleTradeTxs(events: PinnacleMoveEvent[]): PinnacleT
       continue
     }
     if (deposits.length === 0) {
-      // A Withdraw with no Deposit inside the same scanned range. Real on chain
-      // only for a burn; far more often it means the chunk boundary split the
-      // transaction. Either way it is not a trade and must not be guessed at.
+      // A Withdraw with no Deposit for the same transaction. ⚠ This is NOT a
+      // chunk-boundary artifact — every event of a transaction lives in the one
+      // block containing it, and both streams are fetched over identical block
+      // ranges, so no chunking (serial or concurrent) can split a transaction
+      // across two reads. It therefore means a genuine burn, or a Deposit whose
+      // payload failed to decode. Either way it is not a trade and must not be
+      // guessed at.
       shapeCounts.unclassified++
       continue
     }
