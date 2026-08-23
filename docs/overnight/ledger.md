@@ -8,6 +8,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — two pages left the ratchet a SECOND time, and that is the guard working rather than a regression
+
+**Bounded `lib/fast-break/page-data.ts` and `lib/moment-detail/fetchers.ts`** (11 reads between
+them), clearing `/[collection]/fast-break` and `/moment/[id]`. Ratchet **12 → 10**, no slack (9 reds).
+
+⚠ **BOTH PAGES HAD ALREADY BEEN CLEARED ONCE TODAY and came back.** `/fast-break` left when
+`pinned-wallet` was bounded; `/moment/[id]` left when `flowty-username` was bounded. They returned
+because the path-sensitivity fix shipped in the same session made their **other** reads visible.
+**That is the corrected guard doing its job** — a page now leaves only when *every* read it can reach
+is accounted for, instead of the moment any one module on its graph mentions a budget. Recorded here
+because a number that goes down, then up, then down again reads like churn unless the reason is
+written next to it.
+
+**`fast-break`, and why its false state is the worse one.** `fetchActiveRun`'s failure renders
+*"No active Fast Break run — we'll surface the next run here as soon as Top Shot opens it"*. That is
+a claim about **Top Shot's schedule**, shown during a live run, in copy that explicitly promises we
+would say otherwise. Budgets 3s + 3s, and the page awaits them **sequentially**, so its ceiling is
+the SUM: **6s**, stated in the file.
+
+**`moment-detail`, and the one risk in bounding nine reads at once.** Every fetcher there already
+sits inside a `try/catch` that returns the honest `ok: false`, so all nine route through a single
+`bounded()` helper that **rejects** into the branch each already has. ⚠ That is the whole design
+point: it makes it impossible to introduce a second, divergent failure policy across nine sites.
+Page ceiling **4 + 4 = 8s, not 9 × 4** — `page.tsx` awaits `fetchMomentDetail` first and the other
+eight in ONE `Promise.all`. Written into the file with a note that a second sequential await means
+redoing that arithmetic.
+
+⚠ **`bounded()` returns the `{ data, error }` envelope rather than a generic `T`**, because `Db` is
+`any` in that module — a generic infers `unknown` and every call site stops compiling. Stated on the
+helper so the next person does not "tidy" it into a generic.
+
+**Tests appended to both existing suites** (not new files) — 9 assertions, **all four bounds
+mutation-proven** by raising every budget to 120s. ⚠ **Two of the nine moment fetchers are asserted,
+not all nine, and the file says why:** they share one helper, so nine near-identical assertions would
+test the helper nine times while READING as nine units of coverage. What is not shared — that each
+call site's catch returns the right SHAPE (`{ data: null }` vs `{ rows: [] }`) — is why one of each
+is asserted. Every assertion states the **absence of the false claim** rather than the presence of a
+flag, plus controls that a read inside the budget still resolves and a genuinely empty answer is
+still `ok: true`.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **14,788 tests, 0 failures** ·
+`check-unbounded-server-reads` 10/10, reds at 9 · eslint adds no new errors.
+
+**Revert path:** `git revert <sha of "perf(server): bound the fast-break and moment-detail reads">`.
+Library + guard + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — /my-teams had the honest branch and could not reach it from a hang
 
 **Bounded all three reads in `lib/fan-teams/fetchers.ts`**, clearing `/my-teams`. Ratchet **13 → 12**,
