@@ -84,8 +84,11 @@ async function fetchPlayers(collectionId: string, slug: string, limit: number, o
   return sectionRows<PlayerTile>("team roster", "get_team_players", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
-async function fetchTopEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
-  return sectionRows<EditionTile>("team top editions", "get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
+// ⚠ THREE-STATE. This feeds `EditionsGridPaginated`, whose empty state CONCLUDES
+// ("No editions yet."). As a DECORATIVE read it degrades to `[]` after retries,
+// so a timeout rendered that sentence for a franchise with plenty of editions.
+async function fetchTopEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<{ rows: EditionTile[]; ok: boolean }> {
+  return sectionRowsResult<EditionTile>("team top editions", "get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
 }
 
 // Three-state, because TeamActivity's empty copy CONCLUDES ("No recent sales.").
@@ -188,7 +191,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   // ISR route error.tsx does not run. So the catch marks EVERY section failed and
   // lets the page render; it must never return a whole-page view.
   let rosterRes: { rows: PlayerTile[]; ok: boolean } = { rows: [], ok: false }
-  let topEditions: Awaited<ReturnType<typeof fetchTopEditions>> = []
+  let topEditions: Awaited<ReturnType<typeof fetchTopEditions>> = { rows: [], ok: false }
   let activityRes: Awaited<ReturnType<typeof fetchActivity>> = { rows: [], ok: false }
   let teamSets: Awaited<ReturnType<typeof fetchSets>> = []
   let squeeze: Awaited<ReturnType<typeof fetchSqueeze>> = []
@@ -242,9 +245,10 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
           Variants merged: {detail.team_name_variants.join(" · ")}
         </div>
       )}
-      {topEditions.length > 0 && (
+      {topEditions.rows.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <HeroMontage items={topEditions} collectionUrlSlug={collection} />
+          {/* Decorative imagery — omitting it on a failed read asserts nothing. */}
+          <HeroMontage items={topEditions.rows} collectionUrlSlug={collection} />
         </div>
       )}
 
@@ -265,16 +269,25 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
       </Section>
 
       {/* ── Top Editions ─────────────────────────────────────────────────── */}
-      {topEditions.length > 0 && (
+      {/* ⚠ `|| !ok` — the section used to be gated on non-empty ALONE, so a failed
+          read made the whole block VANISH. That is the quietest form of the same
+          collapse: on a franchise that plainly has editions, an absent section
+          reads as "there are none". Now it renders and says which it is. */}
+      {(topEditions.rows.length > 0 || !topEditions.ok) && (
         <Section title="Top Editions">
+          {!topEditions.ok ? (
+            <SectionUnavailable noun={`${detail.team_name}\u2019s top editions`} />
+          ) : (
           <EditionsGridPaginated
             collectionUrlSlug={collection}
             fetchUrl={`/api/entity/team-editions?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
-            initial={topEditions}
+            initial={topEditions.rows}
+            initialFailed={!topEditions.ok}
             pageSize={TOP_EDITIONS_PAGE_SIZE}
             showSetLink
             showSort
           />
+          )}
         </Section>
       )}
 

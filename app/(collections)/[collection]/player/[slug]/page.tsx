@@ -11,7 +11,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows, structuralSection } from "@/lib/entity-section-rpc"
+import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -103,8 +104,18 @@ interface PlayerTopSale {
   transaction_hash: string | null
 }
 
-async function fetchTopSales(collectionId: string, slug: string, limit: number): Promise<PlayerTopSale[]> {
-  return sectionRows<PlayerTopSale>("player top sales", "get_player_top_sales", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit })
+// ⚠ THREE-STATE, because this section's empty copy CONCLUDES ("No recorded sales
+// yet"). `sectionRows` degrades a decorative failure to `[]`, and `[]` reached the
+// render with no way to tell "we looked and there are none" from "we could not
+// look" — so a failed read published a factual claim about the player's market.
+//
+// 🚨 THIS WAS IN THE MEASURED POPULATION AND WAS MISSED. `lib/entity/section-empty-copy.ts`
+// names `get_player_top_sales 254` in its own 2026-08-21 header, but the fix
+// landed on the EDITION page's sections and not here. Still live 2026-08-23:
+// 202 degradations across 157 distinct users in 24 h, last seen minutes before
+// this change. **Fix per PANEL, not per page.**
+async function fetchTopSales(collectionId: string, slug: string, limit: number): Promise<{ rows: PlayerTopSale[]; ok: boolean }> {
+  return sectionRowsResult<PlayerTopSale>("player top sales", "get_player_top_sales", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit })
 }
 
 function TopSalesSkeleton() {
@@ -121,12 +132,15 @@ function TopSalesSkeleton() {
 // or fails the whole player page — it fills in (or shows the empty state) after the
 // rest of the page has painted.
 async function TopSalesRows({ collection, collectionId, slug }: { collection: string; collectionId: string; slug: string }) {
-  const topSales = await fetchTopSales(collectionId, slug, 5)
+  const { rows: topSales, ok } = await fetchTopSales(collectionId, slug, 5)
   return (
     <>
         {topSales.length === 0 ? (
           <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-            No recorded sales yet
+            {/* ⚠ The empty wording is UNCHANGED on purpose — only the DEGRADED
+                case is new. Rewriting the honest empty string would smuggle a
+                second change in behind a correctness fix. */}
+            {sectionEmptyCopy(ok, "Top sales", "No recorded sales yet")}
           </div>
         ) : (
           <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -175,16 +189,32 @@ interface RookieCollector {
   rnk: number
 }
 
-async function fetchTopCollectors(playerName: string, limit: number): Promise<RookieCollector[]> {
-  return sectionRows<RookieCollector>("player top collectors", "get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
+// Three-state for the same reason, in its QUIETEST form: this section renders
+// NOTHING when empty, so a failed read made the whole block vanish. An absence is
+// not a claim, which is why it is the sub-class that goes unnoticed — but on a
+// player who has collectors it still tells the reader there are none, silently.
+async function fetchTopCollectors(playerName: string, limit: number): Promise<{ rows: RookieCollector[]; ok: boolean }> {
+  return sectionRowsResult<RookieCollector>("player top collectors", "get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
 }
 
 // Streamed independently (Suspense) off the rookie ownership index. The index is
 // rookie-scoped, so a non-rookie player returns zero rows and the whole section —
 // header included — renders nothing. Never blocks or fails the rest of the page.
 async function TopCollectorsSection({ playerName }: { playerName: string }) {
-  const collectors = await fetchTopCollectors(playerName, 10)
-  if (collectors.length === 0) return null
+  const { rows: collectors, ok } = await fetchTopCollectors(playerName, 10)
+  // ⚠ Rendering nothing is CORRECT for a genuine zero — the index is
+  // rookie-scoped, so most players legitimately have none and an empty block
+  // would be noise. It is only wrong when we could not look.
+  if (collectors.length === 0) {
+    if (ok) return null
+    return (
+      <Section title="Top Collectors">
+        <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
+          {sectionEmptyCopy(false, "Top collectors", "")}
+        </div>
+      </Section>
+    )
+  }
   return (
     <Section title="Top Collectors">
       <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>

@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import {
   type EditionSortKey,
@@ -68,6 +69,17 @@ interface Props {
   /** Endpoint to call for offset-based pagination. Endpoint must echo back an array of EditionTile. */
   fetchUrl: string
   initial: EditionTile[]
+  /**
+   * Whether the SERVER read that produced `initial` failed.
+   *
+   * ⚠ Without it an empty `initial` is ambiguous, and this component's empty
+   * state CONCLUDES ("No editions yet."). Reachable today from the TEAM page,
+   * whose top-editions read is DECORATIVE — `sectionRows` degrades it to `[]`
+   * after retries, so a timeout rendered "No editions yet." for a franchise
+   * with plenty. The entity pages that pass a STRUCTURAL read already gate this
+   * component behind their own `ok`, so for them it stays `false`.
+   */
+  initialFailed?: boolean
   pageSize: number
   showSetLink?: boolean
   showSort?: boolean
@@ -82,10 +94,12 @@ interface Props {
   exhaustedTotal?: number
 }
 
-export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0 }: Props) {
+export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, initialFailed = false, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0 }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
+  // ⚠ A FAILED PAGE FETCH IS NOT THE END OF THE LIST — see loadMore().
+  const [loadFailed, setLoadFailed] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
   const [sortKey, setSortKey] = useState<EditionSortKey>("fmv_desc")
   const [showExhausted, setShowExhausted] = useState(false)
@@ -116,14 +130,23 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       setOffset(prev => prev + safe.length)
       if (safe.length < pageSize) setExhausted(true)
     } catch {
-      setExhausted(true)
+      // ⚠ THIS USED TO `setExhausted(true)` — a failed request rendered as "that
+      // is the whole list". Same class as the empty state below: the reader
+      // cannot tell a network failure from the end of the data, and the grid
+      // simply stops with no indication. Exhaustion is a claim; a failure is not.
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
   }
 
   if (rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No editions yet.</div>
+    return (
+      <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+        {sectionEmptyCopy(!initialFailed, "Editions", "No editions yet.")}
+      </div>
+    )
   }
 
   return (
@@ -157,9 +180,25 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
         ))}
       </div>
       {!exhausted && (
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
-          <button type="button" className="rpc-btn-ghost" disabled={loading} onClick={loadMore}>
-            {loading ? "Loading…" : `Load ${pageSize} more`}
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          {/* ⚠ The failure line, and the button STAYS so the reader can retry.
+              Previously a failed fetch set `exhausted`, which removed the button
+              and left the list looking complete. */}
+          {loadFailed && (
+            <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "center" }}>
+              Couldn&rsquo;t load more &mdash; that isn&rsquo;t the end of the list. Try again.
+            </div>
+          )}
+          <button
+            type="button"
+            className="rpc-btn-ghost"
+            disabled={loading}
+            onClick={() => {
+              setLoadFailed(false)
+              void loadMore()
+            }}
+          >
+            {loading ? "Loading…" : loadFailed ? "Retry" : `Load ${pageSize} more`}
           </button>
         </div>
       )}

@@ -89,7 +89,71 @@ const FILES = ROOTS.flatMap((r) => walk(r))
 // what the platform knows, and a failed filter read is a different surface.
 // ⚠ `g` is required — `matchAll` throws on a non-global regexp, and `i` alone
 // would have made every arm below a TypeError rather than a finding.
-const CONCLUDES = /No (?:sales|open offers|notable serials|recent sales|offers|listings|history)\b/gi
+// 🚨 WIDENED 2026-08-23, AND THE WIDENING FOUND THE FIFTH THIS GUARD EXISTS TO STOP.
+//
+// The previous pattern was
+//   /No (?:sales|open offers|notable serials|recent sales|offers|listings|history)\b/
+// — an alternation of the four KNOWN SPELLINGS. The player page says
+// **"No recorded sales yet"**, and `No recorded sales` does not match `No sales`
+// because of one adjective. **That is a spelling list, not the property**, and
+// this repo's standing rule is to pin the property. Measured while it was live:
+// `get_player_top_sales` degraded **202 times across 157 distinct users in 24 h**
+// — and `lib/entity/section-empty-copy.ts` names that very RPC in its own
+// 2026-08-21 header, so the instance was in the measured population and the fix
+// landed on the edition page instead. **Fix per PANEL, not per page.**
+//
+// Now: "No" + up to two intervening words + a DATA noun.
+const CONCLUDES = /\bNo\s+(?:[a-z]+\s+){0,2}(?:sales|offers|serials|listings|history|activity|collectors|holders|editions|moments)\b/gi
+
+/**
+ * A match that is NOT a claim about the data.
+ *
+ * ⚠ Both arms are load-bearing and both were earned by a false positive when the
+ * pattern above was widened:
+ *
+ *  1. THE NEGATION. `*Unavailable` copy says "it does **not mean** this player has
+ *     no moments" — the correct DENIAL of the very claim this guard bans. The
+ *     register already records a word-ban being tried here and being WRONG for
+ *     exactly this reason; a static check cannot separate a claim from its denial
+ *     by keyword, so the denial is excluded by its own shape.
+ *  2. THE OTHER SANCTIONED GATE. `sectionEmptyCopy(ok, …)` is not the only honest
+ *     pattern — `TeamChecklist` renders `failed ? <load-failure> : empty` and is
+ *     completely correct. Requiring the helper by name would have reddened it and
+ *     pushed a caller toward the helper for a case it does not model.
+ */
+/**
+ * The curated half, as this file's header says it should be: the POPULATION is a
+ * tree walk, the EXCEPTIONS are named with a reason. Each entry is asserted to
+ * still match, so a suppression cannot outlive the code it excuses.
+ */
+const SUPPRESSED: Array<{ file: string; phrase: RegExp; why: string }> = [
+  {
+    file: "app/(collections)/[collection]/series/[slug]/page.tsx",
+    phrase: /No editions/,
+    why:
+      "Gated on `isEmpty = detail.edition_count === 0` — an ANSWER from the DETAIL read, not a section read. " +
+      "Deliberately `=== 0` and NOT `(x ?? 0) === 0`: since 2026-08-23 `edition_count` is NULL when that series " +
+      "has never been rolled up, and the `?? 0` form turned that UNKNOWN into this very sentence. A NULL now " +
+      "falls through to the grid, so the claim renders only on a measured zero.",
+  },
+]
+
+function rel(f: string): string {
+  return f.replace(process.cwd() + "/", "")
+}
+
+function isSuppressed(file: string, phrase: string): boolean {
+  return SUPPRESSED.some((s) => s.file === file && s.phrase.test(phrase))
+}
+
+function isExempt(window: string): boolean {
+  return (
+    /does\s*(?:<!--\s*-->)?\s*not\s+mean/i.test(window) ||
+    /\bnot\b[\s\S]{0,40}\bmean\b/i.test(window) ||
+    /sectionEmptyCopy\(/.test(window) ||
+    /\b(?:failed|loadFailed|degraded)\b\s*\?/.test(window)
+  )
+}
 
 describe("no entity section concludes about the data from a failed read", () => {
   it("the walk still finds the entity surfaces (not vacuously passing)", () => {
@@ -109,8 +173,16 @@ describe("no entity section concludes about the data from a failed read", () => 
       CONCLUDES.lastIndex = 0
       for (const m of src.matchAll(CONCLUDES)) {
         const at = m.index ?? 0
-        const window = src.slice(Math.max(0, at - 200), at + 40)
-        if (!/sectionEmptyCopy\(/.test(window)) {
+        // ⚠ The window reaches BACK far enough to see a `failed ? … :` gate that
+        // sits above two sibling branches, and FORWARD past the sentence so a
+        // trailing negation ("… no moments. Reloading …") is visible.
+        // ⚠ 520 IS MEASURED, NOT GUESSED. `TeamChecklist`'s honest
+        // `failed ? <load-failure> : … : rows.length === 0 ? <empty>` chain puts
+        // **394 characters** between the gate and the sentence, because these are
+        // long single-line style props. A shorter window reddened correct code.
+        // It reaches forward 120 so a trailing negation is visible.
+        const window = src.slice(Math.max(0, at - 520), at + 120)
+        if (!isExempt(window) && !isSuppressed(rel(f), m[0])) {
           offenders.push(`${f.replace(process.cwd() + "/", "")} :: ${m[0]}`)
         }
       }
@@ -145,5 +217,21 @@ describe("no entity section concludes about the data from a failed read", () => 
     // no claim. It must stay allowed or this guard pushes people to add copy.
     CONCLUDES.lastIndex = 0
     expect(CONCLUDES.test("{parallels.length > 0 && (<Section …/>)}")).toBe(false)
+  })
+
+  it("every suppression still matches something — a stale one must be deleted", () => {
+    // ⚠ A suppression that no longer matches is invisible debt: it reads as a
+    // considered exception while excusing nothing, and it silently widens the
+    // ban's blast radius the day someone re-adds the phrase in that file.
+    for (const s of SUPPRESSED) {
+      const full = join(process.cwd(), s.file)
+      const src = stripComments(readFileSync(full, "utf8"))
+      CONCLUDES.lastIndex = 0
+      const matches = [...src.matchAll(CONCLUDES)].map((m) => m[0])
+      expect(
+        matches.some((m) => s.phrase.test(m)),
+        `suppression for ${s.file} (${s.phrase}) matches nothing any more — delete it. Reason on file: ${s.why}`,
+      ).toBe(true)
+    }
   })
 })
