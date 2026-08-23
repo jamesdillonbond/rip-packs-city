@@ -6,7 +6,8 @@ import { NextResponse } from "next/server"
 // rather than an availability signal.
 //
 // For DB/pipeline freshness see /api/ready — the readiness probe that
-// runs the Supabase health_check RPC and returns per-collection telemetry.
+// returns the per-collection sales slice. It no longer calls health_check() —
+// that function is service_role only and must stay that way (deep-audit R44).
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 

@@ -109,21 +109,21 @@ export async function POST(req: NextRequest) {
     // response, so awaiting a single fast insert costs the user nothing.
     let { error: insertError } = await supabase.from("funnel_events").insert(row);
 
-    // ⚠ SELF-HEALING ORDERING, deliberately. The migration adding `user_agent`
-    // and `bot_ua` is committed but NOT applied (it needs the 20:00-00:00Z
-    // healthy window — `apply_migration` costs a ~10-20 s burst of user-facing
-    // PGRST002 500s). Shipping this route first would otherwise break the sink
-    // entirely: an unknown column fails the insert and EVERY funnel row is lost.
+    // ⚠ SELF-HEALING ORDERING, deliberately. This route shipped BEFORE the
+    // migration adding `user_agent` and `bot_ua` existed in the database, so an
+    // unknown column would have failed the insert and lost EVERY funnel row.
     //
-    // So: try the full row, and on an unknown-column error retry the old shape.
-    // Before the migration this is a silent no-op; the moment it lands the flag
-    // starts recording with no second deploy. Removes the ordering constraint
-    // rather than documenting it and hoping.
+    // The migration LANDED 2026-08-23 02:0xZ, so the fallback below is now
+    // dormant — but it is kept, not deleted, because it is also the branch that
+    // survives a rollback or a branch DB that has not caught up. ⚠ Do not
+    // rewrite this comment to say "not applied yet"; that sentence was true for
+    // about an hour and a stale ordering note is how the next person concludes
+    // the columns are missing when they are not.
     if (insertError && /column|schema cache|PGRST204/i.test(insertError.message)) {
       const retry = await supabase.from("funnel_events").insert(baseRow);
       insertError = retry.error;
       if (!insertError) {
-        console.log("[track-funnel] bot_ua columns absent — migration not applied yet; logged without them");
+        console.log("[track-funnel] bot_ua columns absent from the schema cache; logged without them");
       }
     }
     if (insertError) console.error("[track-funnel] Supabase insert failed:", insertError.message);

@@ -1,30 +1,43 @@
 // app/api/ready/route.ts
 //
-// Readiness signal — runs the heavy health_check RPC against Supabase and
-// folds fmv/sales/listings per-collection telemetry into one response.
-// Kept separate from /api/health (liveness) so a slow or timing-out
-// Supabase doesn't cascade into "the app is down" on monitoring tools.
+// Readiness signal. Reads the per-collection sales slice that the two
+// thin-volume consumers below actually use, and nothing else.
 //
 // Consumers:
-//   - /[collection]/market  → thin-volume notice (sales_24h < 10)
+//   - /[collection]/market    → thin-volume notice (sales_24h < 10)
 //   - /[collection]/analytics → same
-//   - Dashboards / readiness probes
+//   - Dashboards / readiness probes (these read the STATUS CODE, not the body)
 //
-// Response shape is the same as the pre-split /api/health:
-// {
-//   status: "ok" | "degraded" | "error",
-//   fmv_pipeline, data_integrity, ... (whatever health_check returns)
-//   per_collection: [
-//     {
-//       slug, db_slug, name,
-//       fmv_coverage_pct, fmv_last_computed, fmv_staleness_minutes,
-//       editions,
-//       sales_24h, last_sale_at, total_sales,
-//       listing_count, listings_last_cached_at, listings_staleness_minutes
-//     }
-//   ],
-//   overall_staleness_minutes: number | null
-// }
+// ── WHY THIS IS NOT `health_check()` ANY MORE (deep-audit R44) ──────────────
+//
+// This route 500'd from 2026-08-15 to 2026-08-23. The proximate cause was that
+// `anon` lost EXECUTE on `health_check()`, and the obvious repair — put the
+// grant back — is INVERTED. That revoke closed a real anon data leak:
+// `health_check()` is SECURITY DEFINER and returns `users` (auth_users,
+// active_7d, user_profiles, saved_wallets, active_allowed), `telemetry`
+// (total_events, distinct_wallets, distinct_features), `insider_signals` and
+// `db_size_mb`; this route spread the WHOLE payload (`{ ...data, … }`) and is
+// anon-reachable via PUBLIC_READ_APIS. Until 2026-08-15 an unauthenticated GET
+// published every one of those numbers to anyone on the internet.
+//
+// ⚠ AND THE GRANT WAS NEVER THE WHOLE STORY. Restoring it would not have made
+// this route work: `health_check()` returns `collections` as a
+// `json_object_agg` KEYED BY SLUG, and this file called `.map()` on it — a
+// TypeError on an object, caught below, 500. There is no `fmv_pipeline`,
+// `data_integrity`, `sales_pipeline` or `listing_cache` key in the deployed
+// function either. The route was written against a shape the DB does not
+// return, and `__tests__/api-ready.test.ts` stayed green the whole time because
+// it MOCKED that invented payload. Nothing in CI compared the mock to the live
+// function; a payload-shape test can only ever pin the fixture's own beliefs.
+//
+// ── WHAT WAS DROPPED, AND WHY IT IS NOT NULLED ─────────────────────────────
+// `fmv_coverage_pct`, `fmv_staleness_minutes`, `overall_staleness_minutes`,
+// `editions`, `total_sales`, `listing_count`, `listings_*` and the
+// `status: "degraded"` / 503 branch are GONE, not set to 0 or null. They were
+// never really being measured (see above), no caller in the repo reads any of
+// them, and re-emitting them as zeros is precisely the fabricated-number shape.
+// A field that is not measured should be absent, not present and wrong.
+// `status` is now honest and binary: the read succeeded, or it did not.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -48,83 +61,56 @@ const DB_TO_FRONTEND: Record<string, string> = {
   "ufc": "ufc",
 };
 
-function minutesSince(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  return Math.max(0, Math.round((Date.now() - t) / 60000));
+function failed(err: unknown, where: string) {
+  console.error(`[api/ready] ${where}: ${errorLogDetail(err)}`);
+  return NextResponse.json(
+    // Shape is preserved (`status: "error"` is this probe's contract with the
+    // monitoring consumers listed above), but the driver text is not published:
+    // /api/ready is anon-reachable via PUBLIC_READ_APIS, so `error.message` put
+    // Postgres's own wording in front of anyone who asked. Detail goes to the log.
+    { status: "error", ...safeApiError(err, "Readiness check failed.") },
+    { status: 500 }
+  );
 }
 
 export async function GET() {
   try {
-    const { data, error } = await supabase.rpc("health_check");
+    const { data, error } = await supabase.rpc("readiness_collection_stats");
 
-    if (error) {
-      // Shape is preserved (`status: "error"` is this probe's contract with the
-      // monitoring consumers listed above), but the driver text is not published:
-      // /api/ready is anon-reachable via PUBLIC_READ_APIS, so `error.message` put
-      // Postgres's own wording in front of anyone who asked. Detail goes to the log.
-      console.error(`[api/ready] health_check failed: ${errorLogDetail(error)}`);
-      return NextResponse.json(
-        { status: "error", ...safeApiError(error, "Readiness check failed.") },
-        { status: 500 }
+    if (error) return failed(error, "readiness_collection_stats failed");
+
+    // ⚠ A non-array payload is a BROKEN CONTRACT, not an empty market, and the
+    // difference is the whole of R44: the previous version reached `.map()` on
+    // whatever came back and let a shape change surface as a 500 with no clue
+    // in it. `[]` from the RPC is a legitimate "no active collections"; an
+    // object or a null is the function having changed underneath us, and that
+    // must be loud rather than rendered as "every collection is thin".
+    if (!Array.isArray(data)) {
+      return failed(
+        new Error(`readiness_collection_stats returned ${data === null ? "null" : typeof data}, expected an array`),
+        "unexpected RPC shape"
       );
     }
 
-    const fmvByName: Record<string, any> = {};
-    for (const row of data?.fmv_pipeline?.per_collection ?? []) {
-      if (row?.name) fmvByName[row.name] = row;
-    }
-    const salesByName: Record<string, any> = {};
-    for (const row of data?.sales_pipeline?.per_collection ?? []) {
-      if (row?.name) salesByName[row.name] = row;
-    }
-    const listingsByName: Record<string, any> = {};
-    for (const row of data?.listing_cache?.per_collection ?? []) {
-      if (row?.name) listingsByName[row.name] = row;
-    }
+    const perCollection = data.map((c: any) => ({
+      slug: DB_TO_FRONTEND[c?.slug] ?? c?.slug ?? null,
+      db_slug: c?.slug ?? null,
+      name: c?.name ?? null,
+      // Never coerce a missing count to 0 — a fabricated zero here renders as
+      // "THIN-VOLUME ECOSYSTEM" on a collection that may be trading heavily.
+      sales_24h: typeof c?.sales_24h === "number" ? c.sales_24h : null,
+      last_sale_at: c?.last_sale_at ?? null,
+    }));
 
-    const perCollection = (data?.collections ?? []).map((c: any) => {
-      const fmv = fmvByName[c.name] ?? {};
-      const sales = salesByName[c.name] ?? {};
-      const listings = listingsByName[c.name] ?? {};
-      const frontendSlug = DB_TO_FRONTEND[c.slug] ?? c.slug;
-      return {
-        slug: frontendSlug,
-        db_slug: c.slug,
-        name: c.name,
-        fmv_coverage_pct: fmv.coverage_pct ?? null,
-        fmv_last_computed: fmv.last_computed ?? null,
-        fmv_staleness_minutes: minutesSince(fmv.last_computed),
-        editions: c.editions ?? 0,
-        sales_24h: sales.sales_24h ?? c.sales_24h ?? 0,
-        last_sale_at: sales.last_sale ?? null,
-        total_sales: sales.total_sales ?? 0,
-        listing_count: listings.count ?? c.cached_listings ?? 0,
-        listings_last_cached_at: listings.last_cached ?? null,
-        listings_staleness_minutes: minutesSince(listings.last_cached),
-      };
-    });
-
-    const isHealthy =
-      !data?.fmv_pipeline?.is_stale && data?.data_integrity?.orphaned_editions_ok !== false;
-
-    const body = {
-      ...data,
-      per_collection: perCollection,
-      overall_staleness_minutes: Math.round(Number(data?.fmv_pipeline?.staleness_minutes ?? 0)),
-      status: isHealthy ? "ok" : "degraded",
-    };
-
-    return NextResponse.json(body, {
-      status: isHealthy ? 200 : 503,
-      headers: { "Cache-Control": "no-store, max-age=0" },
-    });
-  } catch (err: any) {
-    console.error(`[api/ready] exception: ${errorLogDetail(err)}`);
     return NextResponse.json(
-      { status: "error", ...safeApiError(err, "Readiness check failed.") },
-      { status: 500 }
+      {
+        status: "ok",
+        generated_at: new Date().toISOString(),
+        per_collection: perCollection,
+      },
+      { status: 200, headers: { "Cache-Control": "no-store, max-age=0" } }
     );
+  } catch (err: any) {
+    return failed(err, "exception");
   }
 }

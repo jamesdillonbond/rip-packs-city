@@ -73,11 +73,15 @@ type MarketResponse = {
   diagnostics: { rawCount: number; postClampCount: number; postFilterCount: number }
 }
 
+// Mirrors /api/ready's per_collection rows. `sales_24h` is nullable on
+// purpose: the route emits null rather than a fabricated 0 when the count is
+// missing (deep-audit R44). `fmv_coverage_pct` was dropped from the route —
+// it was never measured there and nothing read it.
 type HealthPerCollection = {
   slug: string
   name: string
-  sales_24h: number
-  fmv_coverage_pct: number | null
+  sales_24h: number | null
+  last_sale_at: string | null
 }
 
 type SortKey =
