@@ -19,6 +19,18 @@
 // on verification if they were unified.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+/**
+ * Budget for the single-row lookup below.
+ *
+ * ⚠ Tighter than `BOARD_LIVE_TIMEOUT_MS` (8s) on purpose. This is one indexed
+ * row keyed on `(user_id, collection_id)`, not a board aggregate — 8s of waiting
+ * buys nothing a collector wants, and both callers have a real branch to show
+ * instead. A number chosen to match a board's budget would be borrowed rather
+ * than measured.
+ */
+const PINNED_WALLET_TIMEOUT_MS = 3_000
 
 /** A Flow address is exactly 16 hex digits. */
 const FLOW_ADDR_RE = /^0x[a-f0-9]{16}$/i
@@ -46,16 +58,41 @@ export async function fetchPinnedWallet(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
 ): Promise<PinnedWallet> {
-  const { data, error } = await db
-    .from("saved_wallets")
-    .select("wallet_addr, pinned_at")
-    .eq("user_id", userId)
-    .eq("collection_id", collectionId)
-    .order("pinned_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) {
-    console.log("[pinned-wallet] read error:", error.message)
+  let data: unknown
+  try {
+    // ⚠ BOUNDED. A query that is merely SLOW errors nowhere: supabase-js resolves
+    // `{ data: null, error: null }` only when it finishes, so under DB saturation
+    // this await simply never returns and BOTH pages hang on a streaming shell
+    // that Vercel logs as a 200. Rejecting on the budget routes a slow read into
+    // the `ok: false` branch this module already has and both callers already
+    // render — the same trade `withBoardBudget` documents: we stop WAITING on the
+    // query, we do not stop it.
+    //
+    // ⚠ The bound is deliberately the SAME failure as an error, not a third
+    // state. "We could not read your pinned wallet" is the honest thing to say
+    // for both, and a distinct `timedOut` flag would only tempt a caller into
+    // treating one of them as "no wallet pinned" — which is the exact false claim
+    // about the reader's own account this file was created to stop.
+    const res = await withBoardBudget<{ data: unknown; error: { message: string } | null }>(
+      db
+        .from("saved_wallets")
+        .select("wallet_addr, pinned_at")
+        .eq("user_id", userId)
+        .eq("collection_id", collectionId)
+        .order("pinned_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      "pinned-wallet",
+      PINNED_WALLET_TIMEOUT_MS,
+      "wallet/",
+    )
+    if (res.error) {
+      console.log("[pinned-wallet] read error:", res.error.message)
+      return { wallet: null, ok: false }
+    }
+    data = res.data
+  } catch (e) {
+    console.log("[pinned-wallet] read bound:", e instanceof Error ? e.message : e)
     return { wallet: null, ok: false }
   }
   const candidate = (data as { wallet_addr?: unknown } | null)?.wallet_addr ?? null

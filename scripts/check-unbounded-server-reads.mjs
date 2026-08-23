@@ -44,16 +44,39 @@
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { stripComments } from "./lib/strip-comments.mjs"
 
 // ⚠ RATCHET BASELINE. This may only ever go DOWN. Lower it in the same commit
 // that bounds a page — never raise it to make a build pass.
-const MAX_UNBOUNDED = 17
+//
+// 17 (2026-08-22) → 15 (2026-08-22, same day): `lib/wallet/pinned-wallet.ts`
+// bounded (clears `/fast-break`, `/road-to-the-ring`) and `lib/flowty-username.ts`
+// bounded (clears `/moment/[id]`, `/analytics/wallets/[address]`).
+//
+// ⚠ CONTROL RUN, because `analyze()` changed in the same commit and a number
+// measured by two different instruments is two numbers. The corrected analysis
+// was run against the tree with BOTH lib fixes reverted and also reported 17 —
+// the two agree at the baseline, because before this commit no shared lib on
+// those paths carried a budget primitive for the old rule to over-clear on.
+// With the fixes applied it reports 15. So the drop is 2 real pages, not an
+// artifact. ⚠ The intermediate reading of 11, seen with the OLD analyze and the
+// new lib bounds, was the artifact — see the note on `analyze()`.
+const MAX_UNBOUNDED = 15
 
 const strip = (s) => stripComments(s)
 
 const USE_CLIENT = /^\s*["']use client["']/
-const DIRECT_QUERY = /(?<![A-Za-z])(?<!Array)\.from\s*\(\s*["'`]|\.rpc\s*(?:as any\))?\s*\(\s*["'`]/
+// ⚠ `(?<!\bArray)` and NOT `(?<![A-Za-z])(?<!Array)`. The original pair was
+// meant to exclude `Array.from(`, but the first lookbehind excludes ANY letter
+// before the dot — which is every `supabaseAdmin.from("x")` written on ONE LINE.
+// The guard only ever matched real queries because most chains put `.from(` on
+// its own line after a newline. Measured 2026-08-22: 12 files under `app/` and
+// `lib/` carry a `.from("…")` the old pattern could not see. Correcting it does
+// not move the page-level count (15 either way — none of the 12 changes a
+// verdict), which is why it ships as a pure sensitivity fix rather than with a
+// ratchet bump: the blind spot is closed BEFORE it hides something.
+const DIRECT_QUERY = /(?<!\bArray)\.from\s*\(\s*["'`]|\.rpc\s*(?:as any\))?\s*\(\s*["'`]/
 const BOUNDED = [
   /readBoardOrLive\s*(?:<[^>]*>)?\s*\(/,
   /fetchBoardForPage\s*(?:<[^>]*>)?\s*\(/,
@@ -62,8 +85,7 @@ const BOUNDED = [
 ]
 const MAX_DEPTH = 3
 
-const entries = []
-function walk(dir) {
+function walk(dir, entries) {
   let names
   try {
     names = readdirSync(dir)
@@ -72,11 +94,10 @@ function walk(dir) {
   }
   for (const name of names) {
     const p = join(dir, name)
-    if (statSync(p).isDirectory()) walk(p)
+    if (statSync(p).isDirectory()) walk(p, entries)
     else if (name === "page.tsx" || name === "layout.tsx") entries.push(p)
   }
 }
-walk("app")
 
 function resolveModule(spec) {
   for (const ext of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
@@ -94,30 +115,60 @@ function importsOf(src) {
   return out
 }
 
-/** Walk the module graph from a server entry. A budget primitive anywhere on the
- *  path counts as bounded — the same one-level-of-delegation reasoning the
- *  /insights ban uses, widened to the depth this tree actually has. */
-function analyze(file) {
+/**
+ * Walk the module graph from a server entry. A budget primitive counts for the
+ * module that carries it AND everything it reaches — the one-level-of-delegation
+ * reasoning the /insights ban uses (a page calling `fetchBoardForPage(fetcher)`
+ * is bounded even though the raw query lives in the fetcher), widened to the
+ * depth this tree actually has.
+ *
+ * ⚠ FIXED 2026-08-22 — IT USED TO RETURN THE MOMENT IT SAW A BUDGET PRIMITIVE
+ * ANYWHERE IN THE GRAPH, which cleared the whole page. That made the instrument
+ * LESS sensitive as the tree got partially fixed: bounding one shared lib
+ * silently cleared every page that imports it, including pages whose OWN reads
+ * were still unbounded. Measured when it happened — bounding
+ * `lib/flowty-username.ts` dropped SIX pages off the report, but only four of
+ * them had actually been fixed; `analytics/wallets/page.tsx` and
+ * `[collection]/pack/dist/[distId]` were cleared purely by importing it.
+ *
+ * ⚠ The distinction is PER PATH, not per graph: `boundedOnPath` is inherited by
+ * a module's own imports and by nothing else, so a sibling's budget can no
+ * longer vouch for a read it does not wrap. `seen` is keyed on the pair, because
+ * a module first reached down a BOUNDED path must still be examined when it is
+ * also reachable down an unbounded one — keying on the filename alone made the
+ * verdict depend on DFS pop order.
+ */
+export function analyze(file) {
   const seen = new Set()
   let readAt = null
-  const stack = [[file, 0]]
+  const stack = [[file, 0, false]]
   while (stack.length) {
-    const [f, depth] = stack.pop()
-    if (seen.has(f) || depth > MAX_DEPTH) continue
-    seen.add(f)
+    const [f, depth, boundedOnPath] = stack.pop()
+    const key = `${f}|${boundedOnPath}`
+    if (seen.has(key) || depth > MAX_DEPTH) continue
+    seen.add(key)
     let src
     try {
       src = strip(readFileSync(f, "utf8"))
     } catch {
       continue
     }
-    if (BOUNDED.some((re) => re.test(src))) return { bounded: true, readAt: null }
-    if (DIRECT_QUERY.test(src) && !readAt) readAt = f
-    for (const dep of importsOf(src)) stack.push([dep, depth + 1])
+    const bounded = boundedOnPath || BOUNDED.some((re) => re.test(src))
+    if (!bounded && DIRECT_QUERY.test(src) && !readAt) readAt = f
+    for (const dep of importsOf(src)) stack.push([dep, depth + 1, bounded])
   }
-  return { bounded: false, readAt }
+  return { bounded: readAt === null, readAt }
 }
 
+// ── CLI ─────────────────────────────────────────────────────────────────────
+// Everything above is importable so `__tests__/unbounded-server-reads-analyze.test.ts`
+// can exercise `analyze()` directly. Everything below runs only as the entry
+// point — an unguarded top-level `walk("app")` would make importing the module
+// scan the whole tree, which is exactly how a test ends up asserting against
+// production instead of its fixtures.
+function main() {
+const entries = []
+walk("app", entries)
 let asyncServer = 0
 const unbounded = []
 for (const file of entries) {
@@ -168,3 +219,6 @@ if (unbounded.length < MAX_UNBOUNDED) {
   )
 }
 console.log("[unbounded-server-reads] ok")
+}
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main()
