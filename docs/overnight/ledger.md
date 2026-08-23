@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — 🚨 BOTH Pinnacle trade cron jobs had NEVER run: I revoked the grant the scheduler was relying on
+
+🚨 **P1, self-inflicted, and invisible for hours.** `cron.job_run_details` shows every run of BOTH jobs failing since creation:
+
+    rpc-backfill-pinnacle-trade-acquisitions  (23 */3)   ERROR: permission denied for function
+    rpc-backfill-pinnacle-trade-editions      (41 * * *) ERROR: permission denied for function
+
+**CAUSE.** Both were scheduled under `cron_heavy`, and **EXECUTE is checked against the CALLER even on a SECURITY DEFINER function.** Their creating migrations did `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` then `GRANT … TO postgres, service_role`. ⚠ **A new function gets `EXECUTE TO PUBLIC` by default and `cron_heavy` was relying on it** — the anon revoke (correct, and required) removed the scheduler's only grant, and the explicit list did not name `cron_heavy`. Measured: `has_function_privilege('cron_heavy', …)` was FALSE for both trade functions and **TRUE for the sibling `backfill_pinnacle_mint_acquisitions`**, which is scheduled identically and works precisely because it still carries the PUBLIC grant.
+
+🚨 **WHY I DID NOT CATCH IT, AND THIS IS THE LESSON: I "VERIFIED" BOTH FUNCTIONS BY CALLING THEM OVER THE SUPABASE MCP, WHICH CONNECTS AS `postgres` — A ROLE THAT HAS EXECUTE.** They returned clean JSON and I recorded them as working. **A positive control that does not use the PRODUCTION CALLER is not a positive control.** Neither function writes `pipeline_runs`, so the failure happened before any logging and presented as SILENCE — I even wrote "updated: 0 is CORRECT right now" in an earlier entry, and it was, for the wrong reason. The only witness was `cron.job_run_details`, which nothing watches.
+
+⚠ **A CONCURRENT SESSION HIT THE IDENTICAL TRAP THE SAME NIGHT** (`20260823032000_audit_20260823_series_rollup_cron_heavy_execute_grant.sql`). **Two independent instances in one night makes it a house rule: after scheduling any pg_cron job under a non-postgres role, assert `has_function_privilege('<role>', '<fn>', 'EXECUTE')` before calling it done.**
+
+**FIXED** (`20260823050000`): `GRANT EXECUTE … TO cron_heavy` on both. ✅ **Verified as the production caller this time** — `SET LOCAL ROLE cron_heavy; SELECT backfill_pinnacle_trade_editions()` returned **`updated: 1044`**, the backlog the broken cron had been silently accumulating. Impact while broken was bounded and lossless: no acquisition row was written for any trade (absent, never wrong), and already-written trade rows were not promoted to an `edition_id`. New rows were unaffected — the indexer resolves inline at insert, which is why coverage still climbed 7.8% → 10.1% **and masked this**. Both functions are idempotent, so nothing needs replaying.
+
+⚠ **A SECOND DIAGNOSIS WAS HEADING THE WRONG WAY AND A CONTROL STOPPED IT.** `backfill_pinnacle_trade_acquisitions` then timed out >60s, and I had a tidy story: its `lower(wallet_address)` join cannot use any wmc index, and unlike the mint sibling it has no `NOT EXISTS` prune, so it rescans everything. I was about to restructure it. **Control first: the MINT function's equivalent join — which demonstrably SUCCEEDS in production every 3 h, last at 03:19 — also times out right now.** So it is **saturation, not the query**, and the redesign would have been a fix for a defect that does not exist. Function left alone.
+
+**Backfill range DIALLED BACK 50,000 → 25,000, which is the re-measurement I promised.** ⚠ **I raised it to 50k on TWO ticks (4,146 ms / 4,501 ms at 10k) and called it ~44× headroom. Two points was not a rate — again.** The real distribution over a night of concurrent load: **17.6 · 24.2 · 27.7 · 31.6 · 36.2 s, and one 248.0 s that TRIPPED THE SOFT DEADLINE** and cleanly deferred 37,500 blocks. ✅ **The soft deadline earned itself in production within hours of shipping** — without it that tick was heading past the 300 s wall into a kill that writes no row at all. 25,000 keeps most of the speed-up (~7 days vs ~17 at the original) while halving the per-tick burst on a shared, IO-bound instance.
+
+✅ **And the `unclassifiedSample` earned itself too.** `unclassified` reached 101; I read the answer straight out of `pipeline_runs` instead of re-scanning Flow REST: **every sampled tx is `senders: 1, receivers: 1`** (bulk one-way transfers, 3 and 40 Pins). **No trades are being dropped.** One query instead of 80 HTTP requests.
+
+⚠ Also observed and correctly handled: one backfill tick failed at 03:15 with `Could not query the database for the schema cache` — the **PGRST002 burst from the concurrent session's own migrations**. The route logged `ok:false`, wrote nothing, held the cursor, and the next tick resumed. Working as designed.
+
+**REVERT:** `REVOKE EXECUTE ON FUNCTION public.backfill_pinnacle_trade_acquisitions(integer) FROM cron_heavy;` · `REVOKE EXECUTE ON FUNCTION public.backfill_pinnacle_trade_editions() FROM cron_heavy;` · `git revert <sha>` for the range change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two pages left the ratchet a SECOND time, and that is the guard working rather than a regression
 
 **Bounded `lib/fast-break/page-data.ts` and `lib/moment-detail/fetchers.ts`** (11 reads between
