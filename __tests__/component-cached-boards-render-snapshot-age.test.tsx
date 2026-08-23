@@ -5,6 +5,8 @@ import React from "react"
 
 import RookiesBoardClient, { type ApiResponse as RookiesResponse } from "@/app/insights/rookies/RookiesBoardClient"
 import FirstMintBoardClient, { type ApiResponse as FirstMintResponse } from "@/app/insights/first-mint/FirstMintBoardClient"
+import DealsBoardClient from "@/app/insights/deals/DealsBoardClient"
+import PaniniSqueezeClient from "@/app/insights/panini-squeeze/PaniniSqueezeClient"
 
 // The source guard (cached-boards-surface-their-snapshot-age) proves the tag is
 // PRESENT. This proves it renders the SNAPSHOT'S instant rather than the render
@@ -89,6 +91,67 @@ describe("snapshot-cached boards render the age of the data they are serving", (
       // No <time> at all: "—" must not be paired with a fabricated machine-readable
       // instant that crawlers and assistive tech would read as a real freshness claim.
       expect(container.querySelector("time")).toBeNull()
+    })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The two MATERIALIZED boards whose clients take bespoke props, so they cannot
+// join the parametrised loop above — and which were therefore OUTSIDE this
+// guard's population on 2026-08-22, the day their freshness stamp regressed.
+//
+// ⚠ That is the lesson worth keeping: this file already pinned "render the age of
+// the DATA, not the render clock", and it still passed while /insights/deals told
+// collectors "Updated just now" about rows up to 30 minutes old — because `deals`
+// and `panini-squeeze` were never in BOARDS. A guard's blast radius is fixed by
+// how its population is DERIVED, and a hand-listed population drifts away from
+// the thing it is meant to cover. Both are added here explicitly.
+// ─────────────────────────────────────────────────────────────────────────────
+const MATERIALIZED = [
+  {
+    name: "deals",
+    // page.tsx feeds initialFetchedAt from payload.data_as_of (the MV's refresh
+    // instant), NOT from meta.fetched_at (when the request was answered).
+    render: (iso: string | null) =>
+      React.createElement(DealsBoardClient as unknown as React.ComponentType<any>, {
+        initialRows: [],
+        initialFetchedAt: iso,
+      }),
+  },
+  {
+    name: "panini-squeeze",
+    render: (iso: string | null) =>
+      React.createElement(PaniniSqueezeClient as unknown as React.ComponentType<any>, {
+        initialRows: [],
+        fetchedAt: iso,
+        coverage: null,
+        totals: null,
+        degraded: null,
+      }),
+  },
+] as const
+
+describe("materialized boards stamp the MV's instant, not the render clock", () => {
+  for (const { name, render: renderBoard } of MATERIALIZED) {
+    it(`${name} renders the supplied data instant`, () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date("2026-08-21T19:45:00.000Z"))
+      const { container } = render(renderBoard(SNAPSHOT_ISO))
+      const t = container.querySelector("time")
+      expect(t, `${name}: no <time> — the data age is not on screen`).not.toBeNull()
+      // Not the fake "now": a regression to the request clock would put 08-21 here.
+      expect(t!.getAttribute("dateTime")).toBe(SNAPSHOT_ISO)
+    })
+
+    it(`${name} renders "—" rather than inventing a time when the age is unknown`, () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date("2026-08-21T19:45:00.000Z"))
+      const { container } = render(renderBoard(null))
+      // The whole point of returning null from readMvAsOf: unknown must LOOK unknown.
+      // A <time> here would be a machine-readable freshness claim we cannot support,
+      // and crawlers and assistive tech would read it as real.
+      expect(container.querySelector("time")).toBeNull()
+      expect(container.textContent).toMatch(/—/)
     })
   }
 })
