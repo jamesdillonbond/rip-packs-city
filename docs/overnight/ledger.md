@@ -71,7 +71,7 @@ removed · a stale suppression).
 2. **The edition page's `generateMetadata` throw is already fixed** — bounded in R19; last occurrence
    00:48Z, ~18 h before this reading.
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert 977b850c` — code + tests only, no DB half. Ledger half: `2e790500`.
 
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the TENTH saturation breaker, missed because the ban that fixed nine walked one DIRECTORY; and the instrument that was under-counting its own subject 3×
 
