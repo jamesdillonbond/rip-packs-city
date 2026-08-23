@@ -10,16 +10,30 @@
 --     SUM() over pipeline_runs would go NULL and a broken pipeline would read
 --     as healthy-but-empty — a silent failure in the layer whose whole job is
 --     to make failure loud.
---   • finished_at is stamped by the FUNCTION (now()), while started_at is the
---     caller's value. That pairing is what makes duration measurable; if
---     finished_at were also caller-supplied, an unset one would read as a
---     zero-length run.
+--   • finished_at is stamped by the FUNCTION, while started_at is the caller's
+--     value. That pairing is what makes duration measurable; if finished_at were
+--     also caller-supplied, an unset one would read as a zero-length run.
+--   • 🚨 finished_at uses `clock_timestamp()`, NOT `now()`, and that ONE WORD is
+--     the whole of `pipeline_runs.duration_ms`. `duration_ms` is GENERATED over
+--     (finished_at - started_at) and GREATEST-clamped at 0. Callers pass
+--     `p_started_at := clock_timestamp()` taken at their own entry — a real
+--     wall-clock reading DURING the transaction — while `now()` is transaction
+--     START, which is always EARLIER. Under `now()` the subtraction went negative
+--     on every call, the clamp fired, and `duration_ms` was a structural hard 0
+--     for TEN pipelines. Two of them were taking 37.8 s and 78.4 s while
+--     reporting zero to every duration-ranked board and arm.
+--     ⚠ THE OLD ASSERTION COULD NOT SEE ANY OF THAT. It called the function with
+--     `now() - interval '5 seconds'`, so `finished_at > started_at` held under
+--     BOTH bodies — the fixture back-dated the problem away. The pin below is
+--     written the way production actually calls it, so it FAILS on `now()`.
 --   • ok=false + error text round-trip intact (the alerting predicate).
 --   • It RETURNS the new id (callers chain on it).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260812033500_audit_20260812_snapshot_log_pipeline_run.sql);
--- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
+-- (supabase/migrations/20260823190648_audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp.sql),
+-- pulled from live prod via pg_get_functiondef on 2026-08-23 (md5
+-- 6dd327eea2dfb888e0340816dddc9fe8, verified against the DB's own md5 rather than
+-- by eye); __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -56,7 +70,10 @@ BEGIN
     rows_found, rows_written, rows_skipped,
     cursor_before, cursor_after, ok, error, extra
   ) VALUES (
-    p_pipeline, p_collection_slug, p_started_at, now(),
+    -- clock_timestamp(), NOT now(): now() is transaction start, which precedes
+    -- the clock_timestamp() every caller passes as p_started_at, so duration_ms
+    -- (GREATEST-clamped) was pinned at 0 for 10 pipelines.
+    p_pipeline, p_collection_slug, p_started_at, clock_timestamp(),
     COALESCE(p_rows_found,0), COALESCE(p_rows_written,0), COALESCE(p_rows_skipped,0),
     p_cursor_before, p_cursor_after, p_ok, p_error, p_extra
   )
@@ -79,9 +96,36 @@ SELECT _assert_eq((SELECT rows_skipped::text FROM pipeline_runs), '3', 'rows_ski
 SELECT _assert_eq((SELECT ok::text FROM pipeline_runs), 'true', 'ok defaults to true');
 
 -- finished_at is stamped by the function; started_at is the caller's.
+-- ⚠ KEPT, BUT IT IS NOT THE PIN. The fixture back-dates started_at by 5 s, so
+-- this holds under `now()` too. It is the clock-skew case below that discriminates.
 SELECT _assert(
   (SELECT finished_at > started_at FROM pipeline_runs),
   'finished_at is stamped by the function, so duration is measurable'
+);
+
+-- 🚨 THE PIN THAT MAKES duration_ms REAL — written the way production calls it.
+-- Every caller passes `clock_timestamp()` captured at its own entry, which is
+-- LATER than transaction start. Under the pre-2026-08-23 body (`now()`) the
+-- function stamped transaction start, so finished_at landed BEFORE started_at and
+-- the GREATEST-clamped duration_ms was a hard 0. The sleep makes the gap
+-- unambiguous rather than a microsecond race.
+DO $clockskew$
+DECLARE
+  v_started timestamptz;
+BEGIN
+  PERFORM pg_sleep(0.05);
+  v_started := clock_timestamp();
+  PERFORM public.log_pipeline_run('clockskew', v_started);
+END
+$clockskew$;
+
+SELECT _assert(
+  (SELECT finished_at >= started_at FROM pipeline_runs WHERE pipeline='clockskew'),
+  'a caller passing clock_timestamp() gets finished_at AT OR AFTER it — this is FALSE under now()'
+);
+SELECT _assert(
+  (SELECT finished_at > now() FROM pipeline_runs WHERE pipeline='clockskew'),
+  'finished_at is WALL-CLOCK, not transaction start — this is the one word the whole metric rests on'
 );
 
 -- THE COUNTER INVARIANT: explicit NULLs must land as 0, never NULL.

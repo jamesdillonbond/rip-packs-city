@@ -44,7 +44,12 @@ const PINS = [
     // downstream SUM and make a broken pipeline read as healthy-but-empty.
     fn: "log_pipeline_run",
     test: "supabase/tests/log_pipeline_run.sql",
-    migration: "supabase/migrations/20260812033500_audit_20260812_snapshot_log_pipeline_run.sql",
+    // Re-pinned 2026-08-23 onto the clock_timestamp() fix, whose migration was
+    // applied via MCP the same evening with no committed file — so the live
+    // sweep went red and `migration-parity` had a gap for the same one change.
+    // The file this now names IS that missing git half.
+    migration:
+      "supabase/migrations/20260823190648_audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp.sql",
   },
   {
     // Added 2026-08-11. Batch writer into wallet_moments_cache (~2.2M rows).
