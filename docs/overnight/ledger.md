@@ -8,6 +8,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the pack-detail page had ONE bounded read and THIRTEEN bare ones, and that asymmetry is why a tempting guard shortcut is wrong
+
+**Bounded all 13 bare reads in `lib/pack-dist/fetchers.ts`** and taught the ratchet a fourth budget
+primitive. Ceiling **10 → 8**, no slack (7 reds).
+
+🚨 **This is production's top user-impacting page.** Vercel's 24h window:
+`[pack-detail] pack_realized_ev … statement timeout` at **124 users**, `pack_lifecycle` **86**,
+`ev_contributors` **26**, `pack_table_rows` **22**. Those are the reads that ANSWERED with an error —
+each already had an `ok: false` branch and a test pinning it. The ones that merely **hang** answer
+nothing at all, so the page waited on a streaming shell logged as a 200.
+
+🚨 **ONE of its reads was bounded and THIRTEEN were not** (`get_pack_detail_bundle` went through
+`rpcWithRetry` in the 08-13 pass; the rest stayed bare). **That asymmetry is the finding**, because it
+falsifies the obvious next move on the guard: recognising `rpcWithRetry` as a budget primitive would
+have cleared this entire page on the strength of that single read — while the thirteen were producing
+every error above. Written into the BOUNDED list as the reason it is deliberately absent.
+
+⚠ **THE BOUND RESOLVES, IT DOES NOT REJECT, and that is not a style choice.** Every call site here is
+a bare `await` followed by `if (error)` — there is no try/catch to reject into, so a rejection would
+escape and render an **error boundary instead of a page**, which is the trap the guard's own header
+warns about ("bounding without a degraded branch turns a slow page into a thrown error boundary").
+One shared helper resolves with a synthetic `{ data: null, count: null, error }`, which every one of
+the thirteen sites already knows how to handle. Same reasoning `withPagedBoardBudget` records for the
+paged /insights boards.
+
+⚠ **ONE envelope for all thirteen, not a generic** — `Db` is `any` in that module, so a generic infers
+`unknown` and every call site stops compiling; and a different shape per caller would be thirteen
+chances to get one wrong. The `count`-shaped caller has its own assertion for exactly that reason.
+
+**The instrument also gained `withQueryDeadline`, and the two halves of 10 → 8 were measured
+SEPARATELY** — a number produced by two different instruments is two numbers:
+
+    withQueryDeadline recognised, pack-dist bounds REVERTED   ->  9   (false positive removed)
+    pack-dist bounds applied                                  ->  8   (real fix)
+
+⚠ **The first half is a FALSE POSITIVE REMOVED, not a page fixed.**
+`/[collection]/edition/[slug]` performs no read of its own, and both of `lib/edition/fetchers.ts`'s
+reads already went through `withQueryDeadline`. It sat on this report only because the BOUNDED list is
+a **curated list** — the shape CLAUDE.md has already recorded as drifting, twice. Verified read-by-read
+before adding, not inferred from the import.
+
+⚠ **AND `withQueryDeadline`'s ceiling is 45s, which is ABOVE the ~30s a document has.** So "bounded"
+here does not mean "cannot take the page down". That 45s is a deliberate, argued number — a ceiling
+above Postgres' own 30s `statement_timeout`, existing to catch stuck acquires and dead sockets, with
+its header explicitly saying not to tune it down because these pages really do render in 11–17s under
+load. **Do not read this ceiling drop as the pack page now fitting in 30s**: its worst case is still
+dominated by the bundle read's 45s, and that is a separate, already-argued decision. Stated in the
+file so the next reader does not infer safety from a smaller number.
+
+**Tests appended to the existing suite** — 6 assertions, **4 bounds mutation-proven** at a 120s budget.
+Each asserts the absence of the false claim; controls cover a read inside the budget, and — the state
+this file's own header calls the one carrying most weight — **a section that does not APPLY to the
+collection is still `ok: true`, not a failure**, or every All Day pack page would carry a permanent
+"unavailable" banner.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **14,794 tests, 0 failures** ·
+`check-unbounded-server-reads` 8/8, reds at 7 · eslint adds no new errors.
+
+**Revert path:** `git revert <sha of "perf(pack-detail): bound the thirteen bare reads">`. Library +
+guard + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · FILED + SHIPPED (Claude Code, interactive — memory pass, part 3) — the file that "wins on any disagreement" was 25 days stale and wrong, and re-running its own SQL found the RLS invariant standing red
 
 **Docs + one filing. No DB write, no migration, no cron change.** `schema-truth.md` opens by claiming
