@@ -8,6 +8,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · NO CODE SHIPPED — R20 re-derives as REFUTED: the backfill family is FINISHED, not throttled, and one raw payload said so
+
+**R20 was filed as P1** — "the 9-pipeline `*-sales-history-backfill` family is throttled off by its own saturation breaker and is invisible to every failure instrument". Re-measured before acting. **Three of its four claims do not survive, and the first was refuted by the condition R20 itself wrote down.**
+
+**1. The breaker DOES decay.** R20's own INFERRED sub-claim was "the breaker may not decay, since a skip logs `ok:true` and cannot retire the `recent_fails` it counts — **refuted if `recent_fails` on any arm falls materially**". `recent_fails`, oldest → newest tick over 48 h:
+
+| arm | oldest | newest |
+|---|---|---|
+| `golazos-studio` | 154 | **21** |
+| `pinnacle-studio` | 163 | **22** |
+| `allday-studio` | 91 | **20** |
+| `ufc` | 32 | **20** |
+| `ufc-studio` | 22 | **18** |
+
+Every arm fell. The named refutation condition is met on five of them.
+
+**2. "The other eight wrote zero rows in 48 h" is TRUE, and the cause is not throttling.** One raw `extra` payload per arm — cheap-check (2) in the register's own preamble, which exists for precisely this — gives:
+
+- `topshot` · `allday-studio` · `golazos-studio` · `pinnacle-studio` → **`{"note": "queue_empty"}`**
+- `allday` → **`{"note": "reached_spork_floor_hint", "next": "deeper history (<2025-12-29) needs spork-proxy"}`**
+
+**Five of the nine are FINISHED.** `pinnacle` writes normally (70 rows found and written on its newest tick). `golazos` and `ufc` do real work — 40,000 blocks, ~44–48 s, thousands of raw events scanned — and decode 0; but **Golazos trades ≈2.4 sales/day and UFC has 0 sales in `sales` in 30 days**, and 40k Flow blocks ≈ 11 h, so **a zero there is the EXPECTED yield**, not a failure. ⚠ I have not proved the Golazos/UFC decoders CAN decode — that needs a positive control on a block range holding a known sale, and it is not claimed here.
+
+**3. "Invisible to every failure instrument" is false.** `extra` distinguishes all four states — `queue_empty`, `reached_spork_floor_hint`, `skipped: saturation`, and a real scan payload. The information was there the whole time; the audit read `rows_written`.
+
+**4. `ufc-studio` at 1 tick/day against its siblings' 8 is its SCHEDULE, not starvation** — `vercel.json` gives it `0 6 * * *` while the other three studio arms are `52/56/58 */3`. Measured 7 d: ufc-studio 0/1/1/1/0 per day against 1/8/8/8/2 for each sibling. ⚠ This is the shape where "a tick that never started writes no row" would have been the tempting inference; the schedule file settled it in one read.
+
+✅ **WHAT STANDS.** 131 of 196 ticks (**66.8%**) skip on saturation — real, and an R46 symptom rather than a property of this family. And `rows_written = 0` **together with** `ok = true` genuinely IS a null instrument at the top level: the discrimination exists only inside `extra`, so any check keyed on the columns cannot see the difference between finished, throttled and broken.
+
+**No code was changed, and that is the outcome.** A filed finding is a hypothesis; this one measured a family that had simply run to completion. ⚠ I deliberately did NOT retire the five finished arms from `pipeline_cadence_watchlist` — the `allday-pack-opens-backfill` note argues the opposite case (keep the row while the scheduler still fires, because silence then means the SCHEDULER stopped), and choosing between those is a decision, not a diagnosis.
+
 ### 2026-08-22 · SHIPPED — 26 series pages were 500ing on a query 3–5× over its own ceiling; `get_series_detail` is now 18 ms
 
 **Found by a Cowork session** (`docs/overnight/inbox/2026-08-23T0210Z-…`) while proving the phantom Golazos series, and **re-derived here before acting.** Filed as register **R49** (R47/R48 were taken by a concurrent session between my read and my write — a register id is not reservable). `get_series_detail` recomputed six aggregates from **1.16M `fmv_snapshots` rows on every request**, via a per-edition `LEFT JOIN LATERAL` top-1.
