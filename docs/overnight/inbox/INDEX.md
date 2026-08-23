@@ -1,4 +1,4 @@
-# Inbox index — 196 live filings
+# Inbox index — 197 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Last reconciled 2026-08-22 21:2x PT — 196 files, 196 links, 0 missing, checked by diffing the directory against this file rather than by trusting the count in this heading.**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 30 filings
+## 2026-08-22 — 31 filings
+
+- [`check_public_security_invariants()` is RED for the first time since it was written — on a table whose grants are correct](2026-08-23T0510Z-the-rls-invariant-check-is-red-on-a-table-that-is-correctly-locked.md)
 
 - [`public_board_slow_count` / `public_board_empty_count` write their "could not measure" sentinel at 21 of their last 36 slots — the standing breach is partly an unmeasured arm, not 45 unhealthy boards](2026-08-23T0255Z-the-board-liveness-arms-read-their-999-cannot-measure-sentinel-at-21-of-36-slots.md)
 - [🚨 Sentry has ingested NOTHING since 2026-08-18 13:21:59Z — and Vercel logged the identical error string 447 times in the last 24 hours](2026-08-23T0250Z-sentry-has-received-nothing-since-08-18-while-production-throws-the-same-error-hundreds-of-times-a-day.md)

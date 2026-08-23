@@ -11,7 +11,9 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
-**Last generated:** 2026-07-28 (Claude Code, interactive regen off the file's own SQL; prior: 2026-07-16, 2026-06-30 handoff-2026-06-30-schema-truth-generator).
+**Last generated:** 2026-08-22 (Claude Code, interactive — re-run via Supabase MCP `execute_sql`; prior: 2026-07-28, 2026-07-16, 2026-06-30).
+
+⚠ **THIS FILE HAS NO GENERATOR SCRIPT.** `grep -rn schema-truth scripts/ package.json .github/workflows/` returns **nothing** — "generated" means someone ran the SQL at the bottom by hand. So its authority ("this file wins") is only as good as the stamp above, and it went **25 days** without a regeneration while holding that authority. ⚠ **It was WRONG in that window and the prose was right:** it said `editions` has 32 columns; `database.md` had carried the live figure of **36** since 2026-08-14. **Read the stamp before invoking the precedence rule.**
 
 ---
 
@@ -45,7 +47,7 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 
 ## Wide-table column counts + partitioning (facts CLAUDE.md cites)
 
-- `editions` has **32 columns** (verified live 2026-07-16) — matches CLAUDE.md's "editions
+- `editions` has **36 columns** (verified live 2026-08-22; 32 on 2026-07-16 — `description` landed 08-12 and three player-bio columns 08-14) — matches CLAUDE.md's "editions
   table (32 columns)" block, including `jersey_number`, `subedition_id`, `subedition_name`
   and the denormalized `player_name`/`set_name`/`team_name`/`circulation_count`.
 - `sales` is year-partitioned: **`sales_2020` … `sales_2027`** (8 partitions; `sales_2027`
@@ -67,17 +69,17 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 
 ## RLS posture
 
-- Public tables: **340** (was 290 on 2026-07-16, 245 on 2026-06-30, 88 in older CLAUDE.md
+- Public tables: **372** (2026-08-22; was 340 on 2026-07-28, 290 on 2026-07-16, 245 on 2026-06-30, 88 in older CLAUDE.md
   prose — the count drifts upward as tables are added; treat the exact number as
-  informational, the invariant below is the fact that matters). Public views: **122**.
-- Tables with `rowsecurity=false`: **0** — the invariant ("RLS on every public table")
-  holds. The number that drifts is the table count, not the invariant.
+  informational, the invariant below is the fact that matters). Public views: **136** (was 122).
+- 🔴 **Tables with `rowsecurity=false`: 1 as of 2026-08-22 — the invariant no longer holds as stated.** It was 0 through 2026-07-28. The table is **`series_detail_rollup`**, created hours earlier the same day by the series-precompute work. ⚠ **This is an INSTRUMENT problem, not a measured exposure:** its migration ran `REVOKE ALL … FROM PUBLIC, anon, authenticated`, and `has_table_privilege` confirms **anon SELECT false, authenticated SELECT false**, while its only reader `get_series_detail` is SECURITY DEFINER (which bypasses RLS anyway). **No anon-reachable path exists.** What IS true is that `check_public_security_invariants()` now returns **1 row** (`rls_off_base_table`) — and a SETOF check is **0-rows-clean**, so the repo's own security invariant is RED and will stay red until someone either enables RLS on the table (one statement, no behaviour change given the grants) or teaches the check that a base table with zero anon/authenticated privileges is compliant. **A standing red instrument trains people to skim past it, which is the documented failure class.** Filed 2026-08-22.
 - **RLS-on is NOT the whole posture** (the 2026-07-19 Panini/Candy lesson): Supabase's
   default per-role `anon`/`authenticated` grant survives `REVOKE … FROM PUBLIC`, so a
   table can be RLS-on and still readable at `/rest/v1/<table>`. The live checks that cover
-  that class, both **0 rows** as of this regeneration:
-  `check_public_security_invariants()` (RLS-off + unexpected-definer views) and
-  `check_anon_write_surface()` (RLS-on + anon write grant + permissive no-auth policy).
+  that class, re-run 2026-08-22: `check_anon_write_surface()` **0 rows — clean**;
+  `check_secdef_anon_exec_drift()` **array length 0 — clean** (⚠ its `count(*)` is 1 when clean;
+  read the LENGTH); `check_public_security_invariants()` **1 row — NOT clean**, the
+  `series_detail_rollup` RLS-off entry described above.
 
 ## Collections registry (live `public.collections`)
 
