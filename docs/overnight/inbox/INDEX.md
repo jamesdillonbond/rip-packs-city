@@ -30,7 +30,7 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 12 filings
+## 2026-08-23 — 13 filings
 
 - [⭐ The series-rollup fix WAS load-tested — its best run happened in the day’s worst hour, and I spent all evening saying it was unverified](2026-08-23T2055Z-the-series-rollup-fix-was-already-load-tested-i-just-never-read-the-neighbours.md)
 - [SIXTEEN more migrations applied today still have no committed file — a SECOND batch, after this morning's recovery](2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md)

@@ -63,3 +63,34 @@ contributor — last occurred **2026-08-23T00:48Z** and has not recurred in ~18 
 ⚠ **NOT established:** that the quota was exhausted. I cannot see accepted-vs-dropped from here. What is
 established is the stop minute, the burst, the burst's composition, and that spike protection is ruled out by
 duration.
+
+---
+
+## RE-CHECKED 2026-08-23 ~14:56 PT (21:56Z) — day 6, still zero, and two inferences replaced with measurements
+
+**Still dark.** `search_events(dataset='errors', period='24h')` returns **no results** — 0 events in the
+trailing 24 h, unchanged. That is now **six consecutive days** since `2026-08-18T13:21:59Z`.
+
+**The DSN was not deleted — measured, not inferred.** `find_dsns` returns exactly one client key
+(`Default`) for `rip-packs-city/javascript-nextjs`, and it is still there. This filing had ruled a
+config change out on a *reasoning* argument ("a deactivated key has no reason to coincide with a 5.7×
+spike"); one of the three config candidates is now eliminated by a direct read instead. ⚠ The response
+shape does not carry `isActive` or a rate limit, so **deactivation and a per-DSN rate limit remain
+unmeasured** — do not read this as clearing them.
+
+🚨 **"Needs the operator's Stats page" is now VERIFIED, not assumed — and that matters, because it is the
+thing this filing has been waiting on.** I searched the Sentry MCP tool catalogue for the outcomes
+instrument (`organization stats outcomes quota usage rate limited dropped`): **there is no stats/outcomes
+tool exposed**, and the org has **exactly one project**, so the cross-project discriminator does not exist
+either. The accepted-vs-`rate_limited`-vs-`dropped` split — the one reading that separates *"the SDK stopped
+sending"* from *"Sentry received and discarded"* — is genuinely unreachable from here.
+
+**So the open question is unchanged and the path to it is now known to be operator-only:**
+Settings → Subscription → **Usage / Stats**, look at the **outcomes** for 2026-08-18 13:21Z onward.
+- `rate_limited` / `dropped` climbing → **quota**, and it resumes at the billing reset.
+- Nothing arriving at all → the SDK or the DSN, and the burst coincidence was chance.
+
+⚠ **The falsifiable prediction is NOT yet testable and should not be scored as pending-confirmed.** It says
+capture resumes at the billing reset; six days in, no reset boundary is known to have been crossed. **Record
+the billing anniversary when the operator reads the Stats page** — without it the prediction has no date to
+be wrong on, which is how a prediction quietly becomes unfalsifiable.
