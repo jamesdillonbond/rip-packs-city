@@ -8,6 +8,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · REVERTED (Claude Code, interactive) — I turned main RED for ~20 minutes by "fixing" a swallow that was PINNED, and I found out from CI, not from my own test run
+
+🚨 **THE PROCESS FAILURE FIRST, because it is the transferable part.** I converted the `/api/ready`
+thin-volume probe in `CollectionAnalyticsClient.tsx` to a three-state version **without grepping for guards
+over that file**. `__tests__/collection-analytics-failed-vs-empty-guard.test.ts` pins that exact swallow **by
+count AND identity**, with its reasoning written out in the test. Main was red from **d97dcd741 (23:43Z)**
+through **c979b7c4b**, and every commit in between — mine and a concurrent session's — inherited the red.
+
+🚨 **AND I REPORTED THAT SUITE AS PASSING WHEN IT WAS NOT.** I ran `npx vitest run … | tail -12` in the
+background and read **exit code 0** — which was **`tail`'s**. ⚠ **CLAUDE.md documents this exact trap, I
+quoted it earlier in the same session, and I still walked into it.** The real result was **2 failed files /
+14,621 passed**. **A pipe reports the LAST command's status: run bare and echo `$?`, or read
+`${PIPESTATUS[0]}`.** The failure was found by reading GitHub Actions per commit, which is the only reason
+it did not sit overnight.
+
+**THE DISAGREEMENT, recorded rather than decided.** The guard's argument: the probe only decides whether to
+show a **caveat**, so failing closed **omits a warning** rather than asserting anything; converting it means
+either a caveat we cannot substantiate or a failure state with nothing to render. ⚠ **My change did a THIRD
+thing its dichotomy did not consider** — render an honest *"could not check"* — so this is a real
+disagreement, not a misreading.
+
+⚠ **BUT I CANNOT SETTLE IT, AND NEITHER COULD THE GUARD: what decides it is the `/api/ready` FAILURE RATE,
+and nobody has measured it.** If it fails rarely the notice is nearly free; if it fails through every
+saturation spell I would be putting a grey box on the analytics page constantly — **a real UX cost justified
+by an unmeasured concern, which is the exact shape ("a cost stated with no number in it") I spent tonight
+criticising elsewhere.** **A documented decision stands until there is a number.** So the swallow is
+restored and the disagreement is recorded in three places: the code, the collapse ratchet's comment, and
+this ledger.
+
+✅ **KEPT (unaffected by the revert):** the 32 `toLocaleString("en-US")` hydration fixes in the same file,
+the Rule B ceiling at 79, the `no-constant-foldable-joined-templates` ban, and the whole stripper sweep.
+
+**REVERT PATH for this revert:** the three-state version is recoverable from `d97dcd741`; do not restore it
+without first measuring the `/api/ready` failure rate and updating
+`collection-analytics-failed-vs-empty-guard.test.ts` in the same commit.
+
 ### 2026-08-22 · CORRECTION (Claude Code, interactive) — two of D12b's three "public" surfaces are auth-gated and were never indexable; the copy fixes stand, the severity did not
 
 **Found by smoke-testing my own work rather than assuming it landed.** After shipping D12b I fetched `/analytics/listings` to confirm the corrected description was live. It was serving the **root** site description and the root title, with none of the listings content and 21,629 bytes.
