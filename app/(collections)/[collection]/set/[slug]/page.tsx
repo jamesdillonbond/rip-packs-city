@@ -124,10 +124,26 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   if (!detail) notFound()
 
   const setNames = [detail.set_name, ...(detail.set_name_variants ?? [])]
-  const [editions, tierMix] = await Promise.all([
-    fetchEditions(coll.id, slug, PAGE_SIZE, 0),
-    fetchFullTierMix(coll.id, setNames),
-  ])
+  // ⚠ THE SECOND HALF OF THE BOUND, and the first fix was incomplete without it.
+  // Guarding only the detail read above left THIS unguarded, and these are the
+  // HEAVY reads — verified live: with the detail read already bounded and
+  // deployed, the page still served Next's default 500, because the throw was
+  // here. Fixing the first read and stopping is the same partial-fix shape that
+  // turned D12 into D12b.
+  //
+  // Whole-section failure degrades the page rather than the section because the
+  // sections below consume these unconditionally; per-section degradation is the
+  // better end state and is filed, not done here.
+  let editions: Awaited<ReturnType<typeof fetchEditions>>
+  let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>>
+  try {
+    ;[editions, tierMix] = await Promise.all([
+      fetchEditions(coll.id, slug, PAGE_SIZE, 0),
+      fetchFullTierMix(coll.id, setNames),
+    ])
+  } catch {
+    return <SetUnavailable collection={collection} slug={slug} />
+  }
 
   const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
   const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null

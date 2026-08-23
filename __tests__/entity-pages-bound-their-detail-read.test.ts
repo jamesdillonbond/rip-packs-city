@@ -43,6 +43,31 @@ describe("R19 — entity detail reads are bounded, and a failure is not a 404", 
       expect(body).toMatch(/if \(detailFailed\) return </)
     })
 
+    it(`${file.split("/").slice(-3).join("/")} leaves NO unguarded data read in the page body`, () => {
+      // ⚠ THIS TEST EXISTS BECAUSE THE FIRST VERSION OF IT PASSED ON A BROKEN FIX.
+      //
+      // I bounded the detail read, shipped, and asserted "there is a try and a
+      // detailFailed branch" — which was TRUE and INSUFFICIENT. The heavy
+      // Promise.all AFTER it was still unguarded, so the page kept serving Next's
+      // default 500 with the fix deployed. Verified live: the served build
+      // contained the new copy and the page still 500'd.
+      //
+      // A test that checks "a guard exists" cannot see the read it does not
+      // cover. Assert instead that NO unguarded read remains.
+      const body = pageBody(readFileSync(file, "utf8"))
+
+      // The unguarded assignment forms. The guarded rewrite declares the binding
+      // first and assigns inside a try, so it does not match these.
+      const unguardedAwaitAssign = /^\s*const\s+[\w[\]{},:\s]+=\s*await\s+(fetch\w+|Promise\.all)/gm
+      // ⚠ The escaping here was WRONG on the first attempt and the check was
+      // silently vacuous: a heredoc ate the backslashes, leaving /^s*consts+.../
+      // which matches nothing and passes always. Verified by reverting the fix
+      // and watching it still pass. Any guard written by scripted file-edit
+      // needs its escaping checked by running it against a KNOWN offender.
+      const offenders = [...body.matchAll(unguardedAwaitAssign)].map((m) => m[0].trim())
+      expect(offenders).toEqual([])
+    })
+
     it(`${file.split("/").slice(-3).join("/")} still 404s a genuinely absent entity`, () => {
       // NO-CHANGE CONTROL. Turning every miss into "unavailable" would leave
       // junk slugs indexed and is dishonest in the other direction.

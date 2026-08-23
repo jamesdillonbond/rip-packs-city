@@ -166,14 +166,34 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster
 
-  const [players, topEditions, activityRes, teamSets, squeeze, nextGame] = await Promise.all([
-    fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
-    fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
-    fetchActivity(coll.id, slug, 40),
-    fetchSets(coll.id, slug),
-    fetchSqueeze(coll.id, slug, 12),
-    fetchNextGame(coll.id, slug),
-  ])
+  // ⚠ THE SECOND HALF OF THE BOUND, and the first fix was incomplete without it.
+  // Guarding only the detail read above left THIS unguarded, and these are the
+  // HEAVY reads — verified live: with the detail read already bounded and
+  // deployed, the page still served Next's default 500, because the throw was
+  // here. Fixing the first read and stopping is the same partial-fix shape that
+  // turned D12 into D12b.
+  //
+  // Whole-section failure degrades the page rather than the section because the
+  // sections below consume these unconditionally; per-section degradation is the
+  // better end state and is filed, not done here.
+  let players: Awaited<ReturnType<typeof fetchPlayers>>
+  let topEditions: Awaited<ReturnType<typeof fetchTopEditions>>
+  let activityRes: Awaited<ReturnType<typeof fetchActivity>>
+  let teamSets: Awaited<ReturnType<typeof fetchSets>>
+  let squeeze: Awaited<ReturnType<typeof fetchSqueeze>>
+  let nextGame: Awaited<ReturnType<typeof fetchNextGame>>
+  try {
+    ;[players, topEditions, activityRes, teamSets, squeeze, nextGame] = await Promise.all([
+      fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
+      fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
+      fetchActivity(coll.id, slug, 40),
+      fetchSets(coll.id, slug),
+      fetchSqueeze(coll.id, slug, 12),
+      fetchNextGame(coll.id, slug),
+    ])
+  } catch {
+    return <TeamUnavailable collection={collection} slug={slug} />
+  }
   const activity = activityRes.rows
 
   return (
