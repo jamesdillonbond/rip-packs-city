@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
@@ -151,6 +152,84 @@ export function findUnorderedRangeSites(roots: string[] = ROOTS): string[] {
   return hits
 }
 
+/**
+ * The order keys on a `.range()` chain, in source order.
+ *
+ * ⚠ Reads the RAW (comment-stripped but string-INTACT) source, because the key
+ * IS a string literal — `blankNonCode` erases exactly what we need here. Offsets
+ * are preserved by both passes, so the two views index identically.
+ */
+function orderKeysFor(rawStripped: string, fromIdx: number, rangeIdx: number): string[] {
+  return [...rawStripped.slice(fromIdx, rangeIdx).matchAll(/\.order\s*\(\s*["'`]([^"'`]+)["'`]/g)].map(
+    (m) => m[1],
+  )
+}
+
+/**
+ * A column name that CANNOT be a unique key in this schema. Timestamps are the
+ * whole population in practice and the one that actually bit.
+ */
+const TIMESTAMPISH = /^(.*_at|.*_time|.*timestamp|day|date|created|updated)$/i
+
+/**
+ * Every `.range()` whose ONLY `.order()` key is timestamp-shaped.
+ *
+ * ⚠ THIS IS THE HALF THE CHECK ABOVE CANNOT SEE, and R47 is the proof: that
+ * check was GREEN on `/sitemap/3.xml`, which paged `editions` ordered by
+ * `updated_at`. It asserts `.order()` PRESENCE — the spelling — while the rule
+ * the file's own header states is that the key must be UNIQUE. **A guard whose
+ * assertion is weaker than the rule it cites reads as coverage for the rule.**
+ *
+ * Re-measured live 2026-08-23 over the four published collections:
+ * `editions.updated_at` has **8,927 distinct values across 27,121 rows — 68.4%
+ * of rows in a tied group, largest group 1,084**. ⚠ That is WIDER THAN THE
+ * 1,000-ROW PAGE, which is the case where loss is not merely possible but
+ * forced.
+ *
+ * ⚠ Uniqueness is not decidable from source, so this does not try. It bans the
+ * shape that is never unique and requires a SECOND `.order()` alongside it —
+ * which is what makes a wrong tiebreaker a code-review question rather than an
+ * invisible one. (Choosing that tiebreaker still needs checking against
+ * `pg_indexes`: `wallet_moments_cache.moment_id` looked natural here and is
+ * NOT unique — the constraint is (wallet_address, collection_id, moment_id).)
+ */
+export function findTimestampOnlyOrderSites(roots: string[] = ROOTS): string[] {
+  const hits: string[] = []
+  for (const root of roots) {
+    for (const file of walk(root)) {
+      const raw = readFileSync(file, "utf8")
+      const code = blankNonCode(raw)
+      const rawStripped = stripComments(raw)
+      const re = /\.range\s*\(/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(code))) {
+        const fromIdx = code.slice(0, m.index).lastIndexOf(".from(")
+        if (fromIdx === -1) continue
+        // ⚠ COUNT from the blanked view, KEY from the string-intact one. A second
+        // `.order()` is what clears a site, so the count is the primary signal.
+        const orderCount = (code.slice(fromIdx, m.index).match(/\.order\s*\(/g) ?? []).length
+        if (orderCount !== 1) continue
+        const keys = orderKeysFor(rawStripped, fromIdx, m.index)
+        const line = code.slice(0, m.index).split("\n").length
+        // 🚨 A NON-LITERAL SOLE ORDER KEY COUNTS. Mutation caught this: the very
+        // site R47 found — `lib/sitemap-data.ts::fetchAllByCollection` — takes its
+        // order column as a PARAMETER, so a literal-only detector could not see
+        // it, and the guard written FOR that defect did not cover it. The same
+        // hole hid `/api/badges`, where the sort column comes from the QUERY
+        // STRING and every allowed value is non-unique. When the key is unknown,
+        // a single `.order()` cannot be shown to be deterministic, so a second
+        // one is required — which is exactly the fix in both places.
+        if (keys.length === 0) {
+          hits.push(`${file}:${line} order=<non-literal>`)
+        } else if (TIMESTAMPISH.test(keys[0])) {
+          hits.push(`${file}:${line} order=${keys[0]}`)
+        }
+      }
+    }
+  }
+  return hits
+}
+
 describe("paginated .range() must carry a deterministic .order()", () => {
   const sites = findUnorderedRangeSites()
 
@@ -216,5 +295,99 @@ describe("paginated .range() must carry a deterministic .order()", () => {
   it("blankNonCode preserves line offsets so reported line numbers are true", () => {
     const src = 'const a = 1\n/* block\ncomment */\nconst b = 2\n'
     expect(blankNonCode(src).split("\n").length).toBe(src.split("\n").length)
+  })
+})
+
+describe("a paged .range() must not order by a TIMESTAMP alone", () => {
+  // ⚠ BAN AT ZERO, and the population was measured BEFORE the assertion was
+  // written rather than after — 5 sites (the sitemap's `editions.updated_at`
+  // plus four backfills), all fixed in the same commit, so there is nothing to
+  // grandfather. A ban at zero is what this file already chose for the sibling
+  // check, for the same reason.
+  const sites = findTimestampOnlyOrderSites()
+
+  it("no paged read is ordered by a timestamp with no unique tiebreaker", () => {
+    expect(sites).toEqual([])
+  })
+
+  it("POSITIVE CONTROL: a sole order key that is a VARIABLE is flagged", () => {
+    // 🚨 The mutation that caught the first draft. `fetchAllByCollection` and
+    // `/api/badges` both order by a value the source does not name, and a
+    // literal-only detector reported ZERO on both — a guard silently blind to
+    // the defect it was written for.
+    const dir = mkdtempSync(join(tmpdir(), "range-order-var-"))
+    try {
+      writeFileSync(
+        join(dir, "param.ts"),
+        `const r = await sb.from("editions").select("id").order(sortCol, { ascending: true }).range(from, from + 999)`,
+      )
+      expect(findTimestampOnlyOrderSites([dir]).length).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a VARIABLE key with a second .order() is accepted", () => {
+    const dir = mkdtempSync(join(tmpdir(), "range-order-var-ok-"))
+    try {
+      writeFileSync(
+        join(dir, "param-ok.ts"),
+        `const r = await sb.from("editions").select("id").order(sortCol, { ascending: true }).order("id", { ascending: true }).range(from, from + 999)`,
+      )
+      expect(findTimestampOnlyOrderSites([dir])).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("POSITIVE CONTROL: the detector fires on the exact shape R47 found", () => {
+    // Without this, a detector that silently matches NOTHING passes forever and
+    // reads as coverage. Drives the real function over a temp tree rather than
+    // asserting on a regex, so a broken walk fails here too.
+    const dir = mkdtempSync(join(tmpdir(), "range-order-"))
+    try {
+      writeFileSync(
+        join(dir, "offender.ts"),
+        `const r = await sb.from("editions").select("id").order("updated_at", { ascending: false }).range(0, 999)`,
+      )
+      expect(findTimestampOnlyOrderSites([dir]).length).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a timestamp WITH a unique tiebreaker is accepted", () => {
+    // The mirror-image defect would be to ban timestamp ordering outright, which
+    // would push callers toward a worse key rather than a second one.
+    const dir = mkdtempSync(join(tmpdir(), "range-order-ok-"))
+    try {
+      writeFileSync(
+        join(dir, "fine.ts"),
+        `const r = await sb.from("editions").select("id").order("updated_at", { ascending: false }).order("id", { ascending: true }).range(0, 999)`,
+      )
+      expect(findTimestampOnlyOrderSites([dir])).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a non-timestamp single order key is accepted", () => {
+    const dir = mkdtempSync(join(tmpdir(), "range-order-uniq-"))
+    try {
+      writeFileSync(
+        join(dir, "fine2.ts"),
+        `const r = await sb.from("profile_bio").select("username").order("username", { ascending: true }).range(0, 999)`,
+      )
+      expect(findTimestampOnlyOrderSites([dir])).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("the order key is read from the SOURCE, not from a blanked view", () => {
+    // blankNonCode() erases string literals, and the order key IS a string
+    // literal — reading the blanked view would make every key the empty string
+    // and the detector would match nothing. Pins the reason for the two views.
+    expect(blankNonCode(`x.order("updated_at")`)).not.toContain("updated_at")
   })
 })

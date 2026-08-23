@@ -109,7 +109,8 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
   // is intentionally public-readable but service role keeps this fast.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
+  // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE — see fetchAllByCollection.
+  if (!url || !key) throw new SitemapReadIncomplete('public profiles: supabase env missing, so nothing could be read')
   try {
     const sb: any = createClient(url, key)
     // PostgREST caps reads at 1,000 and silently CLAMPS a bare .limit(5000) to
@@ -127,17 +128,23 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
         .order('username', { ascending: true })
         .range(from, from + PAGE - 1)
       if (error) {
-        console.log('[sitemap] profile_bio page ' + from + ' error: ' + error.message)
-        break
+        // R47: partial-under-200. `username` is already the order key and is
+        // UNIQUE (it is the public handle), so this loop needs no tiebreaker —
+        // only the honest error.
+        throw new SitemapReadIncomplete(
+          'profile_bio page ' + from + ' failed, so the set is partial: ' + error.message,
+        )
       }
       const rows = data ?? []
       out.push(...rows)
-      if (rows.length < PAGE) break
+      if (rows.length < PAGE) return out as Array<{ username: string; updated_at: string | null }>
     }
-    return out as Array<{ username: string; updated_at: string | null }>
+    throw new SitemapReadIncomplete('profile_bio filled every page up to 50000, so there are probably more')
   } catch (err) {
-    console.log('[sitemap] profile_bio query threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
+    if (err instanceof SitemapReadIncomplete) throw err
+    throw new SitemapReadIncomplete(
+      'profile_bio query threw: ' + (err instanceof Error ? err.message : String(err)),
+    )
   }
 }
 
@@ -162,10 +169,73 @@ const PACK_COLLECTION_IDS = [
   '7dd9dd11-e8b6-45c4-ac99-71331f959714', // disney_pinnacle
 ]
 
+/**
+ * Thrown when a sitemap read could not be COMPLETED. Never swallow it into an
+ * empty or partial list — see the header on `fetchAllByCollection`.
+ */
+export class SitemapReadIncomplete extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SitemapReadIncomplete'
+  }
+}
+
+/**
+ * Reject a tiebreaker that cannot break ties.
+ *
+ * ⚠ CHECKED BY VALUE, BECAUSE THE VALUE ONLY EXISTS AT RUNTIME. The static ban
+ * in __tests__/paginated-range-requires-order-ratchet.test.ts can see that a
+ * SECOND `.order()` is present but not what was passed to it — mutation proved
+ * the gap: swapping `getEditionRows`'s `'id'` back to `'updated_at'` left that
+ * ban green while restoring R47 in full. A shape check and a value check are
+ * different guards.
+ *
+ * ⚠ It caught a live one on the day it was written: `getPackRows` passed
+ * `'dist_id'` as BOTH keys, which reads as a tiebreaker and provides nothing.
+ */
+export function assertUsableTiebreak(table: string, orderColumn: string, tiebreakColumn: string): void {
+  if (tiebreakColumn === orderColumn) {
+    throw new Error(
+      `fetchAllByCollection(${table}): tiebreakColumn must differ from orderColumn (both '${orderColumn}') — a column cannot break its own ties`,
+    )
+  }
+  if (/(_at|_time|timestamp)$/i.test(tiebreakColumn)) {
+    throw new Error(
+      `fetchAllByCollection(${table}): tiebreakColumn '${tiebreakColumn}' is timestamp-shaped and cannot be unique — pass a unique key`,
+    )
+  }
+}
+
 // PostgREST enforces a hard db-max-rows cap (1000 on this project), so a single
 // .limit(50000) silently returns only the first 1000 rows. Page through with
-// .range() in 1000-row windows until a short page signals the end. Stable
-// ordering is required for correct pagination.
+// .range() in 1000-row windows until a short page signals the end.
+//
+// ── R47 / known-issues #28, fixed 2026-08-23. TWO defects, and the first hid
+//    the second. ────────────────────────────────────────────────────────────
+//
+// 1. THIS LOOP USED TO `break` ON ERROR AND RETURN WHAT IT HAD. Measured from a
+//    production runtime log: `editions page 24000 error: canceling statement due
+//    to statement timeout`, served under a **200**. A sitemap is a claim about
+//    which URLs EXIST — a partial one under a 200 tells Google the missing
+//    3,000-odd pages are gone. **No caller could tell a truncated list from a
+//    complete one**, because the only difference was a log line.
+//    ⚠ There is no copy to grep for this defect class: the tell is the
+//    CONTROL-FLOW KEYWORD. It now THROWS, and the route serves 503 so a crawler
+//    retries and keeps the sitemap it already has.
+//
+// 2. STABLE ORDERING IS NOT ENOUGH — THE KEY MUST BE UNIQUE. `.range()` paging
+//    over a non-unique ORDER BY is free to return rows in a different order per
+//    page, so rows repeat and rows vanish. ⚠ **The duplicates and omissions
+//    CANCEL**, so every count-based check passes and only a DISTINCT count sees
+//    it. `editions.updated_at` was the order key: re-measured 2026-08-23 over
+//    the four published collections, **8,927 distinct values across 27,121 rows
+//    — 68.4% of rows sit in a tied group, and the LARGEST TIE GROUP IS 1,084,
+//    which is bigger than the 1,000-row page.** A tie group wider than a page is
+//    the case where loss is not merely possible but forced.
+//    Hence the required `tiebreakColumn`, which must be UNIQUE.
+//
+// 3. `maxRows` was a third silent truncation: the loop simply ended. It now
+//    throws too, because "we stopped counting" is not "that is all of them".
 async function fetchAllByCollection(
   sb: any,
   table: string,
@@ -173,8 +243,19 @@ async function fetchAllByCollection(
   collectionIds: string[],
   orderColumn: string,
   orderAsc: boolean,
+  // ⚠ MUST BE UNIQUE over the selected set, or defect 2 above is unfixed. Verified
+  // live 2026-08-23: editions.id (uuid PK); pack_distributions.dist_id
+  // (5,514/5,514 distinct). Do not pass a timestamp here.
+  tiebreakColumn: string,
   maxRows = 60000,
 ): Promise<any[]> {
+  // ⚠ CHECKED HERE BECAUSE THE VALUE ONLY EXISTS HERE. The static guard
+  // (__tests__/paginated-range-requires-order-ratchet.test.ts) can see that a
+  // SECOND `.order()` is present but not what the caller passed to it — mutation
+  // proved that: swapping this call's `'id'` back to `'updated_at'` left the
+  // static ban green while restoring the whole defect. A shape check and a value
+  // check are different guards, and this one is two lines.
+  assertUsableTiebreak(table, orderColumn, tiebreakColumn)
   const PAGE = 1000
   const out: any[] = []
   for (let from = 0; from < maxRows; from += PAGE) {
@@ -183,16 +264,20 @@ async function fetchAllByCollection(
       .select(select)
       .in('collection_id', collectionIds)
       .order(orderColumn, { ascending: orderAsc, nullsFirst: false })
+      .order(tiebreakColumn, { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) {
-      console.log(`[sitemap] ${table} page ${from} error: ` + error.message)
-      break
+      throw new SitemapReadIncomplete(
+        `${table} page ${from} failed, so the set is partial: ${error.message}`,
+      )
     }
     const rows = data ?? []
     out.push(...rows)
-    if (rows.length < PAGE) break
+    if (rows.length < PAGE) return out
   }
-  return out
+  throw new SitemapReadIncomplete(
+    `${table} filled every page up to maxRows=${maxRows}, so there are probably more rows we never read`,
+  )
 }
 
 interface EditionRow {
@@ -212,7 +297,9 @@ async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS):
   // set/player/team slugs from these rows for the entity sitemap entries.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
+  // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE. `return []` here published a
+  // sitemap asserting the site has no editions, out of a configuration problem.
+  if (!url || !key) throw new SitemapReadIncomplete('editions: supabase env missing, so nothing could be read')
   try {
     const sb: any = createClient(url, key)
     // Source the lastModified hint from `updated_at` (100% populated, kept
@@ -229,6 +316,9 @@ async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS):
       collectionIds,
       'updated_at',
       false,
+      // ⚠ `updated_at` is 68.4% ties with a largest group of 1,084 — WIDER than
+      // the 1,000-row page. The uuid PK is what makes the paging deterministic.
+      'id',
     )
     return ((data ?? []) as Array<{
       id: string
@@ -248,8 +338,13 @@ async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS):
       last_updated_at: r.updated_at,
     }))
   } catch (err) {
-    console.log('[sitemap] editions query threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
+    // ⚠ RETHROWN, NOT SWALLOWED (R47). `return []` here defeated the throw one
+    // level down: the loop stopped lying and this caught the truth and published
+    // the same empty list. Every failure to read is now the route's decision.
+    if (err instanceof SitemapReadIncomplete) throw err
+    throw new SitemapReadIncomplete(
+      'editions query threw: ' + (err instanceof Error ? err.message : String(err)),
+    )
   }
 }
 
@@ -262,7 +357,8 @@ interface SeriesRow {
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
+  // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE — see fetchAllByCollection.
+  if (!url || !key) throw new SitemapReadIncomplete('collection series: supabase env missing, so nothing could be read')
   try {
     const sb: any = createClient(url, key)
     // collection_series carries no timestamp column — select only what exists
@@ -273,8 +369,8 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
       .in('collection_id', EDITION_COLLECTION_IDS)
       .limit(2000)
     if (error) {
-      console.log('[sitemap] collection_series query error: ' + error.message)
-      return []
+      // R47: a failed read is not "this site has no series".
+      throw new SitemapReadIncomplete('collection_series read failed: ' + error.message)
     }
     return ((data ?? []) as Array<{
       display_label: string | null
@@ -287,8 +383,10 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
         last_updated_at: null,
       }))
   } catch (err) {
-    console.log('[sitemap] collection_series query threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
+    if (err instanceof SitemapReadIncomplete) throw err
+    throw new SitemapReadIncomplete(
+      'collection_series query threw: ' + (err instanceof Error ? err.message : String(err)),
+    )
   }
 }
 
@@ -304,7 +402,9 @@ async function getPackRows(): Promise<PackRow[]> {
   // collections. ~5.2K rows today (AllDay + Top Shot + Golazos).
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
+  // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE. `return []` here published a
+  // sitemap asserting the site has no pack distributions, out of a configuration problem.
+  if (!url || !key) throw new SitemapReadIncomplete('pack distributions: supabase env missing, so nothing could be read')
   try {
     const sb: any = createClient(url, key)
     const data = await fetchAllByCollection(
@@ -314,6 +414,13 @@ async function getPackRows(): Promise<PackRow[]> {
       PACK_COLLECTION_IDS,
       'dist_id',
       true,
+      // ⚠ `dist_id` is already unique here (5,514/5,514 distinct, verified
+      // 2026-08-23), so this tiebreaker is a no-op — but it must still be a
+      // DIFFERENT column: the helper rejects `tiebreakColumn === orderColumn`,
+      // and it caught this line when it was first written as `'dist_id'`. A
+      // column cannot break its own ties, so passing the same one reads as a
+      // tiebreaker while providing nothing.
+      'id',
     )
     return ((data ?? []) as Array<{
       dist_id: string | null
@@ -327,8 +434,13 @@ async function getPackRows(): Promise<PackRow[]> {
         updated_at: r.updated_at,
       }))
   } catch (err) {
-    console.log('[sitemap] pack_distributions query threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
+    // ⚠ RETHROWN, NOT SWALLOWED (R47). `return []` here defeated the throw one
+    // level down: the loop stopped lying and this caught the truth and published
+    // the same empty list. Every failure to read is now the route's decision.
+    if (err instanceof SitemapReadIncomplete) throw err
+    throw new SitemapReadIncomplete(
+      'pack_distributions query threw: ' + (err instanceof Error ? err.message : String(err)),
+    )
   }
 }
 
@@ -344,7 +456,9 @@ async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
   // Limited to catalogued pins (character_name present) — ~2,079 rows.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return []
+  // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE. `return []` here published a
+  // sitemap asserting the site has no pinnacle renders, out of a configuration problem.
+  if (!url || !key) throw new SitemapReadIncomplete('pinnacle renders: supabase env missing, so nothing could be read')
   try {
     const sb: any = createClient(url, key)
     const PAGE = 1000
@@ -358,17 +472,25 @@ async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
         .order('render_id', { ascending: true })
         .range(from, from + PAGE - 1)
       if (error) {
-        console.log('[sitemap] pinnacle_catalog page ' + from + ' error: ' + error.message)
-        break
+        // Same defect as fetchAllByCollection's, in the one loop that does not
+        // use it (pinnacle_catalog has no collection_id to filter on).
+        throw new SitemapReadIncomplete(
+          'pinnacle_catalog page ' + from + ' failed, so the set is partial: ' + error.message,
+        )
       }
       const rows = (data ?? []) as PinnacleRenderRow[]
       out.push(...rows)
-      if (rows.length < PAGE) break
+      if (rows.length < PAGE) return out
     }
-    return out
+    throw new SitemapReadIncomplete('pinnacle_catalog filled every page up to 10000, so there are probably more')
   } catch (err) {
-    console.log('[sitemap] pinnacle_catalog query threw: ' + (err instanceof Error ? err.message : String(err)))
-    return []
+    // ⚠ RETHROWN, NOT SWALLOWED (R47). `return []` here defeated the throw one
+    // level down: the loop stopped lying and this caught the truth and published
+    // the same empty list. Every failure to read is now the route's decision.
+    if (err instanceof SitemapReadIncomplete) throw err
+    throw new SitemapReadIncomplete(
+      'pinnacle_catalog query threw: ' + (err instanceof Error ? err.message : String(err)),
+    )
   }
 }
 

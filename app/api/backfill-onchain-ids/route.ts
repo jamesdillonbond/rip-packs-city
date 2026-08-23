@@ -103,6 +103,9 @@ export async function GET(req: Request) {
     .select("id, external_id, set_id")
     .is("set_id_onchain", null)
     .order("created_at", { ascending: true })
+    // ⚠ UNIQUE TIEBREAKER (R47). `created_at` is not unique, and an offset-paged
+    // read over a tied order key silently skips rows between pages.
+    .order("id", { ascending: true })
     .range(offset, offset + limit - 1)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -51,6 +51,15 @@ export async function GET(req: NextRequest) {
       .from("badge_editions")
       .select("*")
       .order(sortCol, { ascending: sortDir })
+      // ⚠ UNIQUE TIEBREAKER (R47). Every column in ALLOWED_SORTS is non-unique —
+      // `badge_score` heavily so — and offset-paging a tied ORDER BY lets Postgres
+      // return the tied rows in a different order per page, so a collector paging
+      // this board sees rows REPEAT on one page and VANISH from another. The
+      // duplicates and omissions roughly cancel, so the total count stays right
+      // and nothing looks wrong. `id` is the PK (verified against pg_indexes
+      // 2026-08-23); `external_id` alone is NOT unique here — the unique index is
+      // (external_id, collection_id).
+      .order("id", { ascending: true })
       .range(offset, offset + limit - 1)
 
     // ── Filters (applied to both) ─────────────────────────────────────────────

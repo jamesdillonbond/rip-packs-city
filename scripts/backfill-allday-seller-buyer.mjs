@@ -147,6 +147,9 @@ async function loadTargets() {
       .eq('collection', 'nfl_all_day')
       .is('seller_address', null)
       .order('sold_at', { ascending: false })
+      // ⚠ UNIQUE TIEBREAKER (R47): many sales share a `sold_at`, and paging a
+      // tied order key duplicates rows on one page and drops them from another.
+      .order('id', { ascending: true })
       .range(offset, offset + PAGE - 1)
     if (error) throw new Error(`load: ${error.message}`)
     if (!data || data.length === 0) break

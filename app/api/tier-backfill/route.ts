@@ -99,6 +99,12 @@ export async function GET(req: NextRequest) {
     .eq("wallet_address", WALLET)
     .is("tier", null)
     .order("created_at", { ascending: true })
+    // ⚠ UNIQUE TIEBREAKER (R47) — see the note in backfill-onchain-ids.
+    // ⚠ `id` (the PK), NOT `moment_id`: the unique constraint here is
+    // (wallet_address, collection_id, moment_id) and this query filters on
+    // wallet_address ONLY, so moment_id can repeat across collections. Verified
+    // against pg_indexes 2026-08-23 rather than inferred from the column name.
+    .order("id", { ascending: true })
     .range(offset, offset + limit - 1)
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })

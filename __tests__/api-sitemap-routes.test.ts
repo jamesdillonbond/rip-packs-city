@@ -19,6 +19,16 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 
 const REAL_SEGMENT_IDS = [0, 1, 2, 3, 4]
 
+// The real class, so `instanceof` in the handler behaves as it does in prod. A
+// hand-rolled stand-in would let the handler take its "unexpected" branch while
+// the test still saw a 503, which is the vacuous version of these assertions.
+class RealIncomplete extends Error {
+  constructor(m: string) {
+    super(m)
+    this.name = "SitemapReadIncomplete"
+  }
+}
+
 afterEach(() => {
   vi.resetModules()
   vi.doUnmock("@/lib/sitemap-data")
@@ -90,7 +100,19 @@ describe("/sitemap/<id>.xml — the segment children", () => {
   function mockSegment(entries: unknown[]) {
     vi.doMock("@/lib/sitemap-data", () => ({
       SITEMAP_SEGMENT_IDS: REAL_SEGMENT_IDS,
+      SitemapReadIncomplete: RealIncomplete,
       buildSitemapSegment: async () => entries,
+    }))
+  }
+
+  /** Segment build that REJECTS, as an incomplete read now does. */
+  function mockSegmentThrows(err: Error) {
+    vi.doMock("@/lib/sitemap-data", () => ({
+      SITEMAP_SEGMENT_IDS: REAL_SEGMENT_IDS,
+      SitemapReadIncomplete: RealIncomplete,
+      buildSitemapSegment: async () => {
+        throw err
+      },
     }))
   }
 
@@ -169,6 +191,48 @@ describe("/sitemap/<id>.xml — the segment children", () => {
     expect(res.status).toBe(200)
     expect(xml).toContain("<urlset")
     expect(xml.trimEnd().endsWith("</urlset>")).toBe(true)
+  })
+
+  // ── R47 / known-issues #28: an INCOMPLETE read must not ship as a sitemap ──
+  // A sitemap is a claim about which URLs EXIST. Measured from a production
+  // runtime log: segment 3 built its whole set/player/team universe from 24,000
+  // of 27,121 editions after a statement timeout, and served it under a 200 —
+  // telling Google the other ~3,000 pages were gone.
+  describe("an incomplete read serves 503, never a partial or empty 200", () => {
+    it("503s when the segment build rejects with SitemapReadIncomplete", async () => {
+      mockSegmentThrows(new RealIncomplete("editions page 24000 failed"))
+      const { res, xml } = await get("3.xml")
+      expect(res.status).toBe(503)
+      // ⚠ The load-bearing half: assert the ABSENCE of a urlset, not merely the
+      // presence of a status. A 503 that still emitted <urlset> would leave a
+      // crawler with a body to parse.
+      expect(xml).not.toContain("<urlset")
+    })
+
+    it("503s on an UNEXPECTED throw too — an unknown failure is not an empty site", async () => {
+      mockSegmentThrows(new TypeError("rows is not iterable"))
+      const { res } = await get("3.xml")
+      expect(res.status).toBe(503)
+    })
+
+    it("tells the crawler to come back, and is NOT cached", async () => {
+      // Caching the failure would serve it for the full 6h window, turning a
+      // transient timeout into a long outage of the sitemap.
+      mockSegmentThrows(new RealIncomplete("boom"))
+      const { res } = await get("3.xml")
+      expect(res.headers.get("retry-after")).toBeTruthy()
+      expect(res.headers.get("cache-control")).toContain("no-store")
+      expect(res.headers.get("cache-control")).not.toContain("s-maxage")
+    })
+
+    it("NO-CHANGE CONTROL: a successful build is still a cached 200", async () => {
+      // The mirror-image defect would be to 503 whenever a segment is quiet.
+      mockSegment([{ url: "https://www.rippackscity.com/x", lastModified: new Date() }])
+      const { res, xml } = await get("3.xml")
+      expect(res.status).toBe(200)
+      expect(xml).toContain("<urlset")
+      expect(res.headers.get("cache-control")).toContain("s-maxage")
+    })
   })
 
   describe("id validation — a bad id must 404, never render a wrong segment", () => {

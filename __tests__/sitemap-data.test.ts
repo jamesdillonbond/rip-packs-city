@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest"
 import { publishedCollections } from "@/lib/collections"
+import { SitemapReadIncomplete, assertUsableTiebreak } from "@/lib/sitemap-data"
 
 // lib/sitemap-data.ts::buildSitemapSegment enumerates every anon-indexable URL
 // for Googlebot across 5 segment children. A regression here wastes crawl
@@ -8,20 +9,28 @@ import { publishedCollections } from "@/lib/collections"
 // 0), the Top Shot fossil filter + edition-URL/priority mapping (segments 1-2),
 // the set/player/team entity derivation with exhibition-team denylist + top-200
 // moment cap (segment 3), and pack + Pinnacle pin mapping (segment 4). It also
-// pins the defensive branches (Supabase query error → [], row-shape throw → [],
-// missing service-role env → []). @supabase/supabase-js is mocked with a
+// pins what REPLACED the old defensive branches: a Supabase query error, a
+// row-shape throw and a missing service-role env each REJECT with
+// SitemapReadIncomplete rather than publishing an empty or partial sitemap
+// (R47, 2026-08-23) — each with a no-change control that a genuinely empty
+// table still resolves. @supabase/supabase-js is mocked with a
 // thenable builder whose per-table result is driven by a hoisted `t` map, reset
 // each test. Counts/priorities were read from a real run, never guessed.
 
-const h = vi.hoisted(() => ({ t: {} as Record<string, { data: any; error: any }> }))
+const h = vi.hoisted(() => ({
+  t: {} as Record<string, { data: any; error: any }> ,
+  // Set by the tiebreaker test to record the ORDER KEYS a read actually used.
+  orderSpy: undefined as undefined | ((col: string, table: string) => void),
+}))
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from: (table: string) => {
       const b: any = { _t: table }
-      for (const m of ["select", "eq", "order", "limit", "in", "is", "gte", "lt", "not", "ilike"]) {
+      for (const m of ["select", "eq", "limit", "in", "is", "gte", "lt", "not", "ilike"]) {
         b[m] = () => b
       }
+      b.order = (col: string) => { h.orderSpy?.(col, table); return b }
       // .range(from,to) records the window so the thenable can slice a paged read,
       // matching real PostgREST behavior (a caller that pages 1,000-row windows
       // must see a short final page to stop). Backward-compatible: when data is a
@@ -155,16 +164,38 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(profiles.some((p) => p.url === `${BASE}/profile/u1499`)).toBe(true)
   })
 
-  it("a series query error yields no series pages (defensive branch)", async () => {
+// ── ⚠ INVERTED 2026-08-23 (R47 / known-issues #28), NOT DELETED ─────────────
+// EIGHT tests in this file asserted that a failed read yields an EMPTY or
+// PARTIAL sitemap, and two of them carried the defect in their own NAME
+// ("...is caught → segment returns []", "...short-circuits edition enumeration
+// to []"). A sitemap is a claim about which URLs EXIST: publishing the rows we
+// happened to get says the rest are gone. Measured from a production runtime
+// log — segment 3 built its whole set/player/team universe from 24,000 of
+// 27,121 editions after a statement timeout, served under a 200.
+//
+// A passing test asserting a promise is what holds that promise in place, so
+// each is now inverted to the property that replaced it: the read must REJECT
+// with SitemapReadIncomplete, and the route turns that into a 503 a crawler
+// retries. Every case is paired with a NO-CHANGE CONTROL, because turning a
+// genuinely empty table into an error is the mirror-image defect.
+  it("a series read FAILURE rejects — it must not publish a sitemap without series", async () => {
     h.t.collection_series = err("boom")
-    const s = await buildSitemapSegment(0)
-    expect(s.some((x) => x.url.includes("/series/"))).toBe(false)
+    await expect(buildSitemapSegment(0)).rejects.toThrow(SitemapReadIncomplete)
   })
 
-  it("a profile query error yields no profile pages (defensive branch)", async () => {
-    h.t.profile_bio = err("boom")
+  it("NO-CHANGE CONTROL: a series table that is genuinely EMPTY still resolves", async () => {
+    h.t.collection_series = ok([])
+    h.t.profile_bio = ok([])
     const s = await buildSitemapSegment(0)
-    expect(s.some((x) => x.url.includes("/profile/"))).toBe(false)
+    // The static URLs still come through; only the series ones are absent, and
+    // that absence is now an ANSWER rather than a failure.
+    expect(s.some((x) => x.url.includes("/series/"))).toBe(false)
+    expect(s.length).toBeGreaterThan(0)
+  })
+
+  it("a profile read FAILURE rejects — it must not publish a sitemap without profiles", async () => {
+    h.t.profile_bio = err("boom")
+    await expect(buildSitemapSegment(0)).rejects.toThrow(SitemapReadIncomplete)
   })
 })
 
@@ -277,8 +308,17 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     expect((pins[0].lastModified as Date).toISOString()).toBe("2026-06-01T00:00:00.000Z")
   })
 
-  it("a pack query error yields no pack pages but pinnacle pins still emit", async () => {
+  it("a pack read FAILURE rejects — a surviving SIBLING is not a reason to publish", async () => {
+    // ⚠ The old version of this test asserted the sibling's survival as the
+    // GOOD outcome. It is not: a segment carrying the pins but silently missing
+    // every pack URL is exactly the partial-under-200 this file now bans.
     h.t.pack_distributions = err("boom")
+    h.t.pinnacle_catalog = ok([{ render_id: "r9", updated_at: null }])
+    await expect(buildSitemapSegment(4)).rejects.toThrow(SitemapReadIncomplete)
+  })
+
+  it("NO-CHANGE CONTROL: packs empty + pins present still resolves with the pins", async () => {
+    h.t.pack_distributions = ok([])
     h.t.pinnacle_catalog = ok([{ render_id: "r9", updated_at: null }])
     const s = await buildSitemapSegment(4)
     expect(s.some((x) => x.url.includes("/pack/dist/"))).toBe(false)
@@ -286,27 +326,80 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
   })
 })
 
-describe("defensive branches", () => {
-  it("a non-iterable editions payload is caught → segment returns []", async () => {
-    // data=123 makes `out.push(...rows)` throw inside fetchAllByCollection,
-    // caught by getEditionRows.
-    h.t.editions = ok(123 as any)
-    const s = await buildSitemapSegment(1)
-    expect(s).toEqual([])
+describe("assertUsableTiebreak", () => {
+  it("rejects a tiebreaker equal to the order column — it breaks no ties", () => {
+    // The live one it caught: getPackRows passed 'dist_id' as both.
+    expect(() => assertUsableTiebreak("pack_distributions", "dist_id", "dist_id")).toThrow(
+      /must differ from orderColumn/,
+    )
   })
 
-  it("missing SUPABASE_SERVICE_ROLE_KEY short-circuits edition enumeration to []", async () => {
+  it("rejects a timestamp-shaped tiebreaker — it cannot be unique", () => {
+    for (const bad of ["updated_at", "created_at", "sold_at", "computed_time", "some_timestamp"]) {
+      expect(() => assertUsableTiebreak("editions", "player_name", bad), bad).toThrow(/timestamp-shaped/)
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a distinct non-timestamp key is accepted", () => {
+    // Banning too much would push callers toward removing the tiebreaker.
+    for (const good of ["id", "external_id", "render_id", "username"]) {
+      expect(() => assertUsableTiebreak("editions", "updated_at", good), good).not.toThrow()
+    }
+  })
+})
+
+describe("the paging tiebreaker is checked by VALUE, not just by shape", () => {
+  // 🚨 THE MUTATION THE STATIC BAN COULD NOT CATCH. The order column and the
+  // tiebreaker are both PARAMETERS here, so a source-level guard sees two
+  // `.order()` calls and stops. Swapping this module's `'id'` back to
+  // `'updated_at'` left that ban green while restoring R47 in full — 68.4% of
+  // editions rows sit in a tied `updated_at` group, largest group 1,084, wider
+  // than the 1,000-row page. A shape check and a value check are different
+  // guards; this file owns the value one.
+  it("editions page by a tiebreaker that is NOT the order column", async () => {
+    const seen: string[] = []
+    h.orderSpy = (col: string, table: string) => { if (table === "editions") seen.push(col) }
+    try {
+      h.t.editions = ok([])
+      await buildSitemapSegment(1)
+    } finally {
+      h.orderSpy = undefined
+    }
+    const cols = seen
+    expect(cols, "the editions read must carry TWO order keys").toHaveLength(2)
+    expect(cols[0]).toBe("updated_at")
+    expect(cols[1], "the tiebreaker must not be the order column").not.toBe(cols[0])
+    // ...and it must not be another timestamp wearing a different name.
+    expect(cols[1]).not.toMatch(/(_at|_time|timestamp)$/i)
+  })
+})
+
+describe("defensive branches", () => {
+  it("a non-iterable editions payload REJECTS — the old name for this was the defect", async () => {
+    // data=123 makes `out.push(...rows)` throw inside fetchAllByCollection.
+    // This test used to be called "...is caught → segment returns []".
+    h.t.editions = ok(123 as any)
+    await expect(buildSitemapSegment(1)).rejects.toThrow(SitemapReadIncomplete)
+  })
+
+  it("a missing SUPABASE_SERVICE_ROLE_KEY REJECTS — a config gap is not an empty catalogue", async () => {
     const saved = process.env.SUPABASE_SERVICE_ROLE_KEY
     delete process.env.SUPABASE_SERVICE_ROLE_KEY
     try {
       h.t.editions = ok([
         { id: "e1", external_id: "8:133", collection_id: TS_ID, updated_at: null, player_name: null, set_name: null, team_name: null },
       ])
-      const s = await buildSitemapSegment(1)
-      expect(s).toEqual([])
+      await expect(buildSitemapSegment(1)).rejects.toThrow(SitemapReadIncomplete)
     } finally {
       process.env.SUPABASE_SERVICE_ROLE_KEY = saved
     }
+  })
+
+  it("NO-CHANGE CONTROL: a genuinely empty editions table resolves to an empty segment", async () => {
+    // The mirror-image defect would be to call every empty result a failure,
+    // which would 503 a segment that is legitimately empty.
+    h.t.editions = ok([])
+    await expect(buildSitemapSegment(1)).resolves.toEqual([])
   })
 })
 
@@ -314,37 +407,30 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-// ── The remaining defensive catch arms ───────────────────────────────────────
-// Every enumerator wraps its query + row mapping and returns [] on a throw, so a
-// malformed payload from one table costs Googlebot that table's URLs — not the
-// whole sitemap segment. The editions arm is pinned above; these are its three
-// siblings, driven the same way (a non-iterable payload makes the row mapping
-// throw inside the try).
+// ── The remaining read arms ─────────────────────────────────────────────────
+// ⚠ This block's header used to read: "Every enumerator wraps its query + row
+// mapping and returns [] on a throw, so a malformed payload from one table costs
+// Googlebot that table's URLs — not the whole sitemap segment." That was the
+// defect stated as a design goal. Costing Googlebot "that table's URLs" is
+// telling it those pages are GONE. Each arm now rejects; the route serves 503.
 describe("buildSitemapSegment — defensive catch arms", () => {
-  it("a non-iterable collection_series payload drops only the series pages", async () => {
+  it("a non-iterable collection_series payload REJECTS rather than dropping the series pages", async () => {
     h.t.collection_series = ok(42 as never)
     h.t.profile_bio = ok([{ username: "trevor", updated_at: null }])
-    const urls = await buildSitemapSegment(0)
-    expect(urls.some((u) => u.url.includes("/series/"))).toBe(false)
-    // The sibling enumerator still contributed.
-    expect(urls.some((u) => u.url === `${BASE}/profile/trevor`)).toBe(true)
+    await expect(buildSitemapSegment(0)).rejects.toThrow(SitemapReadIncomplete)
   })
 
-  it("a non-iterable pack_distributions payload drops only the pack pages", async () => {
+  it("a non-iterable pack_distributions payload REJECTS rather than dropping the pack pages", async () => {
     h.t.pack_distributions = ok(7 as never)
     h.t.pinnacle_catalog = ok([{ render_id: "GEN-DPIN-SIMB-S0", updated_at: null }])
-    const urls = await buildSitemapSegment(4)
-    expect(urls.some((u) => u.url.includes("/pack/dist/"))).toBe(false)
-    expect(urls.some((u) => u.url.includes("/pinnacle/moment/"))).toBe(true)
+    await expect(buildSitemapSegment(4)).rejects.toThrow(SitemapReadIncomplete)
   })
 
-  it("a non-iterable pinnacle_catalog page drops only the pin pages", async () => {
+  it("a non-iterable pinnacle_catalog page REJECTS rather than dropping the pin pages", async () => {
     h.t.pinnacle_catalog = ok(9 as never)
     h.t.pack_distributions = ok([
       { dist_id: "5048", collection_id: TS_ID, updated_at: null },
     ])
-    const urls = await buildSitemapSegment(4)
-    expect(urls.some((u) => u.url.includes("/pinnacle/moment/"))).toBe(false)
-    expect(urls.some((u) => u.url.includes("/pack/dist/5048"))).toBe(true)
+    await expect(buildSitemapSegment(4)).rejects.toThrow(SitemapReadIncomplete)
   })
 })

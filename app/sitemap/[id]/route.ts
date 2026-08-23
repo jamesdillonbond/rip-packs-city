@@ -9,7 +9,7 @@
 // /sitemap/<id>.xml to anon.
 
 import { NextResponse } from "next/server"
-import { buildSitemapSegment, SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
+import { buildSitemapSegment, SitemapReadIncomplete, SITEMAP_SEGMENT_IDS } from "@/lib/sitemap-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 21600 // 6h, matching the old app/sitemap.ts
@@ -28,7 +28,31 @@ export async function GET(
     return new NextResponse("Not Found", { status: 404 })
   }
 
-  const entries = await buildSitemapSegment(id)
+  // ⚠ 503, NEVER A PARTIAL 200 (R47 / known-issues #28). A sitemap is a claim
+  // about which URLs EXIST, so serving the rows we happened to get says the rest
+  // are gone — measured: segment 3 built its whole set/player/team universe from
+  // 24,000 of 27,121 editions after a statement timeout, under a 200. A 5xx is
+  // the honest answer: a crawler retries it and keeps the sitemap it already
+  // has, which is the outcome a truncated 200 destroys.
+  //
+  // ⚠ NOT 404 and NOT an empty <urlset> — both are affirmative statements. 404
+  // contradicts the index that advertises this segment; an empty urlset says the
+  // site has no pages of this kind.
+  let entries
+  try {
+    entries = await buildSitemapSegment(id)
+  } catch (e) {
+    const partial = e instanceof SitemapReadIncomplete
+    console.log(`[sitemap] segment ${id} unavailable (${partial ? "incomplete read" : "unexpected"}): ${e instanceof Error ? e.message : String(e)}`)
+    return new NextResponse("Sitemap segment temporarily unavailable", {
+      status: 503,
+      headers: {
+        "Retry-After": "3600",
+        // ⚠ Must not be cached: the next request should be able to succeed.
+        "Cache-Control": "no-store",
+      },
+    })
+  }
   const body = entries
     .map((e) => {
       const lastmod =

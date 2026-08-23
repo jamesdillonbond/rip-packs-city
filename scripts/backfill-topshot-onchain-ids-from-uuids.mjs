@@ -134,6 +134,8 @@ async function loadCohort() {
       .is("set_id_onchain", null)
       .like("external_id", "%-%-%-%-%:%-%-%-%-%")
       .order("created_at", { ascending: false })
+      // ⚠ UNIQUE TIEBREAKER (R47) — see backfill-allday-seller-buyer.mjs.
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) throw new Error(`cohort load: ${error.message}`)
     const rows = data ?? []
