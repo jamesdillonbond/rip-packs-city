@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — retired the dead FCL wallet-auth objects, and the documented drop list would have silently stopped the weekly purge of ten tables
+
+**known-issues #0 deferred this on 2026-08-08 "until the deploy is READY"; that condition has been met for two weeks.** The bullet names three objects to drop — `fcl_auth_nonces`, `purge_old_fcl_auth_nonces`, `verify_wallet_via_fcl`.
+
+🚨 **IT OMITS THE CALLER THAT MAKES THE ORDER MATTER.**
+
+```
+pg_cron rpc-weekly-log-purges
+  └─ run_weekly_log_purges()
+       └─ purge_old_fcl_auth_nonces(7)
+            └─ DELETE FROM public.fcl_auth_nonces
+```
+
+`run_weekly_log_purges()` also purges **ten other tables** — `pipeline_runs`, `debug_logs`, `fmv_phantom_attempts`, three failure tables, `smoke_test_results`, `usage_events`, `wallet_holdings_snapshots`, `support_conversations`. Drop the table first and that function raises `42P01`, which propagates **before** the `log_pipeline_run` call at the end. ⚠ **So the whole weekly purge stops AND WRITES NO ROW — it presents as SILENCE, not failure** — and `pipeline_runs` retention is one of the things that stops. The only instrument that would eventually notice is `/api/admin/pipeline-health`, at a **7-day** drift threshold, if someone looked.
+
+⚠ **Third missed dependency:** `supabase/tests/purge_old_fcl_auth_nonces.sql` is a registered DB-invariant pin, so dropping the function while that pin stands reddens CI.
+
+**Ordering, which is the whole trick and is not cosmetic:** the **repo half went first** (delete the pin file + its PINS entry), then the DDL. ✅ That direction is green in BOTH intermediate states — *pin gone + function still present* means the guard simply does not check it. The reverse reddens `main` for the length of the gap, and coupling a DB drop to a repo change across a push boundary is exactly the `apply_migration`-bypasses-the-repo trap.
+
+**Then, in one migration:** `CREATE OR REPLACE run_weekly_log_purges()` **without** the nonce leg → `DROP FUNCTION purge_old_fcl_auth_nonces` → `DROP FUNCTION verify_wallet_via_fcl` → `DROP TABLE fcl_auth_nonces`.
+
+✅ **VERIFIED BY RUNNING THE JOB, which is the only check that matters here.** `run_weekly_log_purges()` after the change: **`ok: true`, 1,995 ms, all ten legs reported, 880 rows purged**, and the `pipeline_runs` row carries **exactly 10 `extra` keys with `fcl_auth_nonces_deleted` gone** — against the 2026-08-22 run, which still has it. A clean before/after on the same instrument.
+
+**Callers enumerated (six-source rule) before touching anything:** `pg_proc.prosrc` 2 · `pg_views.definition` 0 · `cron.job.command` 0 direct · `pg_trigger` 0 · inbound FKs 0 · full-repo grep 1 (the PINS entry). ⚠ **`cron.job.command` returning 0 is exactly why `prosrc` is in the list** — the cron reaches the table through two levels of function call and names none of them.
+
+⚠ **Correction to the bullet's stated motive:** *"dropping them in the same window as the code would 500 anyone mid-flow"* no longer holds. The table held **0 rows** and both functions are **service_role-only** (anon and authenticated EXECUTE false on each), so this was dead weight, not a live surface — the security upside I went looking for was not there. Post-drop: `check_secdef_anon_exec_drift()` **0**, `check_public_security_invariants()` **0**.
+
+⚠ **A guard fired on my own comment, as this repo keeps recording:** the "does any function still reference the table" check returned **1** after the drop — the note I left in `run_weekly_log_purges` explaining the removal. Stripping comments: **1 mention, 0 outside comments.**
+
+**Also written back: a settled answer that never left its source file.** The Golazos-offers gate in *Deferred hardening* still reads as open pending "one authenticated POST from prod". **That POST ran on 2026-07-28** and the result lives only in `app/api/golazos-offers-indexer/route.ts`'s header: **Golazos has NO DapperOffersV2 offers at all, of either type** — 0 `OfferAvailable` events in a contiguous 400,000-block window carrying 14,495 offers (TopShot 9,460, MFLPlayer 3,986, AllDay 775, MFLClub 274, **Golazos 0**), with AllDay and TopShot as same-contract positive controls. The cause is demand. ⚠ Re-derived tonight: `golazos_open_offers` **0**, `highest_offer` **0/218**, `low_ask` **75/218** (the doc says 81 — a dated sample), 30-day sales **Golazos 70 vs Top Shot 110,873**, *more* extreme than at recon time. **Building that indexer would index nothing.**
+
+**Revert:** repo `git revert <sha>` restores the pin + PINS entry · DB: recreate the table, `purge_old_fcl_auth_nonces` and the ORIGINAL `run_weekly_log_purges` body from `20260517140000_backfill_pack_pull_source_rip_id_and_nonces_cleanup.sql`, and `verify_wallet_via_fcl` from its own migration.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 8) — the index guard caught a live concurrent CLOBBER within three hours of shipping, and the clobber had buried a HIGH-PRIORITY filing
 
 **Docs only. No DB, no migration, no prod-state change.**
