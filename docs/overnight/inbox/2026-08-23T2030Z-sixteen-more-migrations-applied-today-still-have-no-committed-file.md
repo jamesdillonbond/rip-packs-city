@@ -40,6 +40,41 @@ AFTER that recovery**, between **17:29Z and 19:28Z**, and the sixteenth (`drop_p
 sixteen for another eleven hours. Anyone reading a green-since-recovery badge tonight would conclude the repo
 describes production. It does not.
 
+## 🚨 CORRECTION — 20:50Z, ~20 minutes after filing. My "do not reconstruct" instruction was WRONG, and it points away from the tool this repo built for exactly this.
+
+**The forward SQL is recoverable BYTE-EXACTLY, and there is a script.** I reasoned from
+`pg_get_functiondef`, which does lose the original statement text. But
+`supabase_migrations.schema_migrations` **stores the applied statements**, and the parity job's own
+failure message says so:
+
+```
+SELECT array_to_string(statements, E'\n'), md5(array_to_string(statements, E'\n'))
+  FROM supabase_migrations.schema_migrations WHERE name = '<name>';
+```
+
+⚠ **And `scripts/recover-fileless-migrations.mjs` already automates it** — written this morning by the
+session that recovered the first eight (`307ce25e`). It reads only, writes each file byte-exactly, and
+**verifies its own bytes against the md5 prod computes over the same slice**, treating a mismatch as a hard
+error. Its header is explicit: *"That recipe is correct and nobody should be running it by hand — it is
+per-migration, it is transcription."* **My instruction told the next reader to do the opposite of that.**
+
+**What survives of the objection, precisely:** only the *header prose and the commented revert block* are
+unrecoverable — those are authored, and only the session that applied the migration knows what it reverted
+to. **The SQL is not**, and parity is satisfied by the file existing under the right NAME. So the correct
+instruction is **"run the recovery script, then let the author add the header"**, not "leave it alone".
+
+**Why I still did not run it here:** it needs `SUPABASE_SERVICE_ROLE_KEY`, which this sandbox does not
+carry, and reproducing it by hand through MCP is precisely the per-migration transcription its author warns
+against. **That is a credential limitation, not a judgement** — anyone with the key can run one command.
+
+✅ **Verified live rather than predicted: I dispatched `migration-parity` on demand at 20:43Z** rather than
+leaving the gap unnamed until 07:40Z. It fails and names all sixteen with `[MISSING] <version> <name>`, so
+the list is in a log now.
+
+⚠ **All sixteen were checked for secret-shaped content before any of this** (`secret|token|api_key|password|
+bearer|eyJ…|sk_…|github_pat_` over the stored statements): **zero matches**, 1.2–9.4 KB each. That check
+belongs in front of any recovery, because committing prod SQL is committing whatever prod SQL contains.
+
 ## ⛔ Why I did not just write the sixteen files
 
 Fifteen of them are one coherent, **still-moving** piece of work — the `series_detail_rollup` /
@@ -72,7 +107,7 @@ the other one.** The new pin calls it the way production does and is mutation-pr
 
 ## Recommended, in order
 
-1. **The other session commits its sixteen files** with real revert blocks. Nobody else can write those honestly.
+1. **Run `scripts/recover-fileless-migrations.mjs`** (needs `SUPABASE_SERVICE_ROLE_KEY`; `--dry-run` first). That is byte-exact and md5-verified, and it is one command for all sixteen — see the CORRECTION above, which retracts this section's original "nobody else can write those honestly". The **authored header and revert block** are the only part that still belongs to the session that applied each migration; the SQL does not.
 2. ⚠ **Consider whether parity's daily cadence is enough** on a day like this one. Two independent batches
    opened and one closed inside twelve hours, and the second is unobserved for eleven more. This is a
    question about cadence, not a defect in the check — **do not "fix" it by widening the window**, which

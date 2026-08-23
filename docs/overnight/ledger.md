@@ -49,6 +49,14 @@ guard 197 tests pass; `npx tsc --noEmit` clean; full vitest 1369 files / 14,925 
 #24-style closure is a MOMENT, not a state: any migration redefining a pinned function re-opens it the
 same day, so re-pointing the pin is part of shipping the change.
 
+🚨 **CORRECTION, same day:** this entry's "not touched on purpose" reasoning about the 16 fileless
+migrations was **wrong on the recoverable half**. `supabase_migrations.schema_migrations` stores the applied
+statements, and `scripts/recover-fileless-migrations.mjs` writes each file byte-exactly with an md5 check
+against prod — so the SQL IS recoverable by anyone with the service-role key, which this sandbox lacks. Only
+the authored header and revert block belong to the applying session. Both the filing and `focus.md` are
+corrected in place. `migration-parity` was also dispatched on demand at 20:43Z, so all sixteen are named in
+a log now instead of at 07:40Z; all sixteen were first checked for secret-shaped content (zero matches).
+
 **Revert path:** `git revert` the code commit (find by message `test(db-pins): commit log_pipeline_run`).
 Nothing to undo in the database — the function was already live.
 

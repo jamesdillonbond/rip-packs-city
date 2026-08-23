@@ -58,11 +58,15 @@
 - 🚨 **`migration-parity` went RED on 08-23 07:58Z — its FIRST failure after 14 consecutive greens** — and
   the gap **re-opened behind this morning's recovery**. Measured 20:30Z: 61 migrations applied since 08-21,
   **17 with no committed file**; I committed the one I needed, so **16 remain**, fifteen of them applied
-  17:29–19:28Z as one still-moving `series_detail_rollup` / `edition_fmv_current` piece. ⛔ **Do NOT
-  reconstruct those files from `pg_get_functiondef`** — a migration header carries the REVERT PATH, and only
-  the session that applied it knows what it reverted to; a reconstructed file records the current state with
-  an invented revert path, which is worse than an absent file because it looks authoritative. **That session
-  commits its own sixteen.** Filing:
+  17:29–19:28Z as one still-moving `series_detail_rollup` / `edition_fmv_current` piece. ✅ **CORRECTED 20:50Z — RUN THE
+  SCRIPT.** My first version of this steer said do not reconstruct them, reasoning from
+  `pg_get_functiondef`. Wrong: `supabase_migrations.schema_migrations` **stores the applied statements**, and
+  **`scripts/recover-fileless-migrations.mjs`** (written this morning, `307ce25e`) writes each file
+  byte-exactly and verifies it against the md5 prod computes. It needs `SUPABASE_SERVICE_ROLE_KEY` — which is
+  why I did not run it from this sandbox — and it never commits. Only the **authored header and revert
+  block** still belong to the session that applied each migration. ⚠ Scan the stored statements for
+  secret-shaped content first; I did, and all sixteen are clean. ✅ I dispatched `migration-parity` on demand
+  at 20:43Z so the sixteen are named in a log now rather than at 07:40Z. Filing:
   `docs/overnight/inbox/2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md`.
 - ⚠ **NEW DB TRAP, and it is general: on PostgreSQL 17 a partial index whose predicate says
   `col IS NOT NULL` on a column declared `NOT NULL` is UNREACHABLE.** PG 17 removes the redundant qual before
