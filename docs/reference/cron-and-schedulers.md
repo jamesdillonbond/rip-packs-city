@@ -359,3 +359,45 @@ Measuring the Top Shot fossil population looked impossible: five probes had time
 non-existence proof over a large table is often cheap even when the corresponding existence scan is not** —
 seek for what should be absent rather than scanning for what is present. That plus a chunked loose index scan
 enumerated all **11,799** distinct keys across three calls and settled a question recorded as unmeasurable.
+
+---
+
+## Two traps from the board-materialisation pass (2026-08-22/23)
+
+### ⚠ A duration of exactly `0.0` on EVERY row of a pipeline is `now()` vs `clock_timestamp()`, not broken telemetry
+
+`log_pipeline_run` stamps `finished_at` from **`now()`, which is frozen at transaction start**. A refresh
+function that (correctly) captures `v_started := clock_timestamp()` *after* the transaction opens therefore
+produces a `finished_at` a few milliseconds **BEFORE** its own `started_at`:
+
+```
+select round(extract(epoch from (finished_at - started_at))::numeric, 2) …
+→ 0.00, -0.04, 0.00, -0.01, -0.01, 0.00, -0.02      ← always ≤ 0, never the real duration
+```
+
+**The real duration is in `extra->>'refresh_ms'`.** Three MV pipelines were read as "duration telemetry is
+broken" off `finished_at - started_at` and were one step from being filed as a defect; the functions were
+right and the *query* was wrong. ⚠ **The negative value is the tell** — a duration that is occasionally
+*below zero* cannot be a measurement, so stop and find the real column instead of reporting the zero. Same
+family as `rows_written = 0`: **an instrument reading zero is not evidence of anything until you have
+established that it can read non-zero.**
+
+### ⚠ Before changing how scheduled work is SELECTED, ask: does failing make the next attempt MORE likely?
+
+This is the property that distinguishes the two changes made to the board-refresh subsystem on 2026-08-22.
+
+- **The warm-tick rotation (reverted, took production down ~25 min).** The selector was *stalest board
+  first*. Panini was both the slowest board and the paged one, so it was permanently the stalest → picked
+  every tick → exceeded `maxDuration` → a 504 writes **no snapshot and no `pipeline_runs` row** → it got
+  staler → picked again. **Failure fed the selector.** No steady state exists, and the average-case
+  measurement that was taken (mean tick duration, which improved) is structurally blind to it.
+- **The fixed-schedule MV crons (safe).** A refresh that times out simply leaves the MV stale; nothing about
+  the miss raises that job's chance of running next. The worst case is bounded by
+  `statement_timeout × ticks/hour`, and it degrades into an honest stamp plus a cadence alarm.
+
+**So the check is not "is this faster on average" but "is there a term where failure increases future
+selection".** If there is, a worst-case measurement is mandatory and the average is misleading. ⚠ Related:
+when a cron command carries `SET statement_timeout = 'Ns'`, **N is a ceiling on WASTE, not on cost** — a
+rolled-back refresh at the ceiling delivers nothing and still spends the IO. Size it just above the healthy
+run, not at the pain threshold; the 600 s first chosen for the three board MVs let one job burn the full ten
+minutes for zero rows during a spell.

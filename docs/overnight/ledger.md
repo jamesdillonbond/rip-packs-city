@@ -8,6 +8,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED + ONE OPERATOR ACTION (Claude Code, interactive) — the MV refreshes measured six hours on: a spell not a runaway, a null instrument I nearly filed as a defect, and a 600s cap of mine that is too generous
+
+**Shipped (repo only, no DB state changed by this entry):**
+- **`app/insights/candy-mlb/page.tsx` — the last `?? new Date().toISOString()` freshness fabrication is gone.**
+  `FreshnessStamp` already renders `—` for null, so the fix is to pass `null`; `CandyBoardClient`'s prop
+  widened to `string | null`. **Revert:** `git revert <sha>`.
+- **The freshness guard's curated `PAGES` list is now a TREE WALK** over `app/insights/**/page.tsx` — 2 pages
+  → **30**. ⚠ This is why candy survived: the list held only the two pages I had just fixed, so candy was
+  outside the guard **by construction**. Mutation-checked — reintroducing the coalesce in candy reddens the
+  candy case specifically. Also asserts the walk finds >3 pages, so a zero population cannot pass vacuously.
+
+**⛔ OPERATOR ACTION — I cannot run it, the sandbox's auto-mode classifier denies `cron.schedule` writes.**
+I registered the three board-MV cron jobs with `SET statement_timeout = '600s'`. That is too generous: during
+a spell, `rpc-refresh-panini-squeeze` at 00:18Z **burned the full 600 s and rolled back**, writing nothing,
+and my three jobs took **911 s in hour 00 — 8.3% of all cron time on the instance**. Fix, as `postgres`
+(upserts on `(jobname, username)`, so no jobid churn; revert = re-run with `'600s'`):
+
+```sql
+SELECT cron.schedule('rpc-refresh-cross-collection-deals', '12,42 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_cross_collection_deals();$$);
+SELECT cron.schedule('rpc-refresh-panini-squeeze', '18,48 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_panini_squeeze();$$);
+SELECT cron.schedule('rpc-refresh-topshot-first-mint', '21,51 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_topshot_first_mint_trophies();$$);
+```
+
+⚠ **LIVE AS OF 00:53Z: panini is failing EVERY tick.** The 00:48Z run was still going at 299 s when this
+was written, and the board is ~70 min stale — so the `public_board_liveness_watchlist` arm will fire at 100 min.
+**That alarm is correct and expected; it is this item, not a new fault.** If 300 s still fails repeatedly once
+applied, the next knob is panini to hourly — but change one at a time.
+
+**Two things I was about to report and did not, because a control refuted them:**
+- ⚠ **"MV refresh duration telemetry is broken."** `finished_at - started_at` reads `0.00` on every row —
+  and occasionally **negative**. `log_pipeline_run` stamps `finished_at` from `now()` (frozen at transaction
+  start) while the functions pass `clock_timestamp()`. **The duration is correct, in `extra->>'refresh_ms'`.**
+  The functions were right; my query was wrong.
+- ⚠ **"`refresh_wmc_fmv_changed` has gone to a ~96% duty cycle."** Three consecutive long runs said so. Hour
+  by hour over 9 hours it is 21/61/62/62/62/56/42/25/44/**50**%. **The ~50% recorded earlier today stands.**
+
+**And the escalation is a SPELL, not my MVs** — `rpc-refresh-mv-pack-ev-latest`, an MV refresh I never
+touched, went **0.6 → 4.8 → 14.6 → 314.2 s** across the same four ticks. An untouched control moving
+identically is the evidence. ⚠ Nor is it a runaway: deals went 120.4 → **110.7 s**, plateauing. **Four points
+in one direction is not a trend when the fifth is thirty minutes away.**
+
+✅ **The honesty fix holds under the failure that would most have tempted a paper-over:** a failed refresh
+writes no `pipeline_runs` row, so `readMvAsOf()` returns the last **successful** time — the board correctly
+said "57 minutes ago" while 57 minutes stale, and the cadence watchlist fires at 100 min.
+
+**Durable lessons promoted** to [cron-and-schedulers.md](../reference/cron-and-schedulers.md): the
+`now()`-vs-`clock_timestamp()` zero-duration signature (an instrument reading zero is not evidence until you
+show it can read non-zero), and the property that separates the reverted rotation from these safe crons —
+**does failing make the next attempt MORE likely?** The rotation's selector was staleness, so a timeout made
+re-selection certain; a fixed schedule has no such term. Where that term exists, a worst-case measurement is
+mandatory and the average is blind.
+
+**Still open, unchanged:** `refresh_wmc_fmv_changed` (684 GB, ~50%, architectural) · unmapped-sales backlog
+(operator data decision) · pack-sales `count=exact` (529 GB) · impossible-parallel double scan (183 GB).
+⚠ **Instance-level improvement is still NOT demonstrated** — measure at hour 09 or 13 UTC against prior days.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — R19 is not an SEO item: 15,388 throws across 2,963 users on ONE page, and the four remaining entity pages are now bounded
 
 **Reading Vercel's runtime errors for the four pages I had FILED rather than fixed turned R19 from a branding nit into the largest user-facing defect in the register.** 7 days to 2026-08-23:

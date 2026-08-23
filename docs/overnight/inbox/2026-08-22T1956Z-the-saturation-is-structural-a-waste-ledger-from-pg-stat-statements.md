@@ -688,3 +688,103 @@ control, and this is what happens without one.**
 completely different instrument. It runs `7-57/10` (every 10 min, all day), so it is the constant FLOOR
 rather than the cause of the six-hour shape. It remains the largest single item in the database and its
 fix is still architectural (§4 / ledger 2026-08-22).
+
+---
+
+## 11. SIX HOURS LATER — the three MV refreshes measured properly, one OPERATOR ACTION needed, and a null instrument I nearly reported as a finding
+
+Measured 2026-08-23 ~00:45Z, i.e. 6h after the three materialisations shipped. **This section corrects two
+things I was about to conclude.**
+
+### 11.1 ⚠ `finished_at - started_at` IS A NULL INSTRUMENT on these pipelines — read `extra->>'refresh_ms'`
+
+My first read of `pipeline_runs` reported `avg_s = 0.0, max_s = 0.0` for all three MV pipelines. I was one
+step from filing "the MV refresh duration telemetry is broken". **It is not.** `log_pipeline_run` stamps
+`finished_at` from `now()` — **frozen at transaction start** — while the refresh functions pass
+`p_started_at := clock_timestamp()`, taken *after* the transaction opened. So `finished_at` lands a few
+milliseconds BEFORE `started_at`:
+
+```
+finished_minus_started: 0.00, -0.04, 0.00, -0.01, -0.01, 0.00, -0.02 …   ← always ≤ 0
+```
+
+**The duration is recorded correctly, in `extra->>'refresh_ms'`.** The functions were right; my query was
+wrong. ⚠ **A duration of exactly 0.0 across every row of a pipeline is the signature of `now()` vs
+`clock_timestamp()`, not of missing telemetry** — and a *negative* duration is the tell that confirms it.
+Same family as the `rows_written = 0` trap already in CLAUDE.md: an instrument reading zero is not evidence.
+
+### 11.2 The real refresh-cost series, from the right column
+
+| pipeline | 22:0x | 22:3x | 23:1x | 23:4x | 00:1x | 00:4x |
+|---|---|---|---|---|---|---|
+| `cross-collection-deals-mv` | 8.9 s | 3.9 s | 9.1 s | **89.0 s** | **120.4 s** | 110.7 s |
+| `topshot-first-mint-mv` | 2.7 s | 2.0 s | 16.3 s | **51.0 s** | **78.4 s** | — |
+| `panini-squeeze-mv` | 9.9 s | 11.9 s | 23.7 s | **379.9 s** | **FAILED @ 600 s** | — |
+
+**This is a step change around 23:40Z, not a runaway** — deals went 120.4 → 110.7, i.e. it plateaued and
+ticked back down. ⚠ **I nearly called it monotone escalation off the first four points.** Four points in one
+direction is not a trend when the fifth is available thirty minutes later.
+
+### 11.3 ✅ CONTROL: the escalation is a SPELL, not something my MVs caused
+
+`rpc-refresh-mv-pack-ev-latest` (jobid 73) is a pre-existing MV refresh **I never touched**. Across the same
+four ticks it went **0.6 s → 4.8 s → 14.6 s → 314.2 s** — the same shape, the same window. An untouched
+control moving identically is the strongest evidence available here that the cause is environmental.
+
+⚠ **And a hypothesis I had already half-formed is REFUTED:** I read three consecutive
+`rpc-refresh-wmc-fmv-changed` runs at 423/378/578 s on a 10-minute cadence and was ready to report that the
+684 GB consumer had gone to a ~96% duty cycle. **Measured hour by hour over 9 hours it is 21 / 61 / 62 / 62 /
+62 / 56 / 42 / 25 / 44 / 50 %.** Hour 00 is 49.5% — *unremarkable*. The three long runs were a sample, not a
+shift. **The ~50% duty cycle recorded earlier today still stands.**
+
+### 11.4 ⛔ WHAT IS ACTUALLY MINE, AND IT NEEDS AN OPERATOR — the 600 s cap I chose is too generous
+
+I registered all three cron jobs with `SET statement_timeout = '600s'`. During the spell that produced:
+
+- `rpc-refresh-panini-squeeze` at 00:18Z burned the **full 600 s and rolled back**, writing no MV rows and no
+  `pipeline_runs` row. The board sat 57+ minutes stale.
+- My three jobs together consumed **911 s in hour 00** (95 s in hour 22, 570 s in hour 23) — **8.3% of all
+  cron time on the instance**, with one of them delivering nothing for a third of it.
+
+That is the exact waste class this whole document was opened to remove, and I added it. It is bounded and
+one line to fix; **the sandbox's auto-mode classifier denies `cron.schedule` writes, so this is an operator
+action.** Run as `postgres`:
+
+```sql
+SELECT cron.schedule('rpc-refresh-cross-collection-deals', '12,42 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_cross_collection_deals();$$);
+SELECT cron.schedule('rpc-refresh-panini-squeeze', '18,48 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_panini_squeeze();$$);
+SELECT cron.schedule('rpc-refresh-topshot-first-mint', '21,51 * * * *',
+  $$SET statement_timeout = '300s'; SELECT public.refresh_topshot_first_mint_trophies();$$);
+```
+
+`cron.schedule` upserts on `(jobname, username)`, so this edits the three jobs in place — no unschedule, no
+jobid churn. **Revert:** re-run the same three statements with `'600s'`.
+
+**Why 300 s, and why this cannot repeat the rotation lock-up.** 300 s clears every healthy run by 3–30× and
+cuts exactly one observed success (panini's 379.9 s, which by this document's own break-even test cost more
+than the reads it replaced, so cutting it is correct). ⚠ **The structural reason this is safe where the warm
+rotation was not: a skipped refresh does not raise that board's chance of being picked next time.** The
+rotation failed because staleness *was* the selector, so a board that timed out became more likely to be
+chosen again — a feedback loop. A fixed-schedule cron has no such term. **That is the property to check
+before touching this subsystem again: does failing make the next attempt more likely?**
+
+⚠ **Not shipped deliberately, and NOT because it is unimportant:** cadence stays at 30 min. One knob, so the
+next measurement is interpretable. If 300 s still burns during hour 01/03/09/12/13/15, halve the cadence
+next — do not do both at once.
+
+### 11.5 What the failure does NOT break
+
+✅ A failed refresh writes **no `pipeline_runs` row at all**, so `readMvAsOf()` keeps returning the last
+**successful** refresh time. The board's stamp therefore said "57 minutes ago" while it was 57 minutes stale.
+**The honesty fix holds under exactly the failure it would have been most tempting to paper over** — and the
+silence-as-alarm cadence watchlist fires at 100 min, which is the correct second line.
+
+### 11.6 Still open, unchanged
+
+`refresh_wmc_fmv_changed` (684 GB, ~50% duty, architectural) · the unmapped-sales backlog (needs an operator
+data decision) · pack-sales `count=exact` (529 GB) · the impossible-parallel double scan (183 GB).
+⚠ **Instance-level improvement is STILL not demonstrated** — six of the nine hours sampled here predate the
+materialisations and hour 00 contains a spell. Measure at hour 09 or 13 UTC against the same hour on prior
+days, per §10.3.
