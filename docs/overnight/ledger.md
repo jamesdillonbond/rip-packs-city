@@ -17,7 +17,7 @@ leave it alone — so the check is the LOCK'S OWN EVIDENCE, not the message:** s
 `Get-Process | ? ProcessName -match git` returning nothing. All three said stale. Removed, and the
 day's work committed.
 
-**1. Eight migrations applied to prod today had NO repo file** (shas stamped below). Their revert
+**1. Eight migrations applied to prod today had NO repo file**, and now do (`307ce25e`). Their revert
 paths existed only in a chat transcript. Recovered byte-exactly out of
 `supabase_migrations.schema_migrations` and md5-verified against what prod computes over the same
 slice — **a record, not a re-application; nothing new ran against the database.**
@@ -59,7 +59,7 @@ structurally 0 for ten pipelines, `promote_unmapped_sales`). `INDEX.md` **206 �
 into upstream's copy on a rebase conflict, per the recipe. **5.** Two rescued stash diffs moved out of
 the repo root to `docs/archive/stash-rescue-2026-08-23/`; both stash entries remain in `git stash list`.
 
-**Revert:** `git revert <docs-shas> <code-sha>` removes the *record* only. ⚠ **It does NOT undo the
+**Revert:** `git revert 307ce25e a5a868be 9bf286de 136f0caf` removes the *record* only. ⚠ **It does NOT undo the
 database** — each migration carries its own DB revert in its header comment, and reverting
 `…_incremental_by_watermark` restores the unconditional full pass, which is what took down the 17:59
 tick. **Files:** `supabase/migrations/20260823*_audit_20260823_*.sql` (8),
