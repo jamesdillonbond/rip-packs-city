@@ -71,7 +71,7 @@ A `if (error) … break`-inside-a-paging-loop detector finds **one** site: `app/
 correct code reddens correct code, and this repo records that such guards get worked around. The good
 pattern is worth naming instead: **carry `complete:false`, or throw.**
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert 9b862dc8` — code + tests only, no DB half. Ledger half: `b8fb097c`.
 
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — the per-section degradation VERIFIED END-TO-END in production, both directions, and R19's long-standing "not established" is now established
 
