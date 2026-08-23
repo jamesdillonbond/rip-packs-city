@@ -68,7 +68,7 @@ roots narrowed back · bare PostgREST object thrown · empty `extra` restored).
 construction that was unrecorded — which is the defect, not a gap in the write-up. Recorded now, going
 forward.
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert a12299d7` — code + tests only, no DB half. Ledger half: `ca10d6a3`.
 
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — R6's owed in-band re-measure: 1 of 5, not 4 of 5 — and the band was NOT saturated, so the exit condition itself is wrong
 
