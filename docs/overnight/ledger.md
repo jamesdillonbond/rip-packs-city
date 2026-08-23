@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass, part 9) — the index guard's OTHER half fired: archiving two drained filings left the index calling them open
+
+**Docs plus one guard-message change. No DB, no migration, no prod-state change.**
+
+⚠ **Second production catch in twelve hours, and it is the opposite direction from the first.** The
+overnight pass moved two drained filings into `inbox/archive/` and left their entries in `INDEX.md`,
+so **the index listed two items as open that were closed** — 201 links against 199 files, and `main`
+was red on my own guard when this session picked it up. The first catch (2026-08-22 22:59) was the
+mirror image: a concurrent session dropped **nine** filings from the index while they were still open.
+**A map can lie in both directions and neither was ever noticed by a reader.**
+
+✅ **Fixed the file, not the guard.** The two archived entries are pruned, per-day counts recomputed
+from the entries themselves, header re-derived from the directory: **199 files / 199 links / 0
+missing**. ⛔ **The guard was NOT relaxed to accept `archive/`** — this index says "N **live** filings"
+in its own title, so an entry for an archived filing is a false claim about the queue, not a
+formatting nit.
+
+✅ **What DID change is the failure message**, because the archiver was not told what to do: the
+dangling arm now detects that a missing target sits in `inbox/archive/` and says *archiving a filing
+means deleting its entry here in the same commit*. Proven on a known offender — re-adding an archived
+link reds the arm and prints the new sentence — then restored to 5/5 green. The same rule is now in
+the INDEX header, where a human archiving by hand will read it.
+
+✅ **AND THE FILING I OPENED YESTERDAY IS CLOSED, verified rather than assumed.**
+`check_public_security_invariants()` returns **0 rows** live — RLS was enabled on
+`series_detail_rollup` by another session between 05:10Z and the overnight pass, which reports the same
+security-clean 3/3 independently. **Two instruments, one conclusion.** Register **R51 → RESOLVED**,
+with its original severity left as filed (instrument, not exposure) rather than rewritten in hindsight.
+
+**Revert path:** docs + one test file, no DB half. Shas stamped in a follow-up commit **after reading
+`git log`** — a rule this ledger now carries twice in my hand.
+
 ### 2026-08-23 · SHIPPED — R14 re-added a `SET search_path` clause to two COMMIT-ing procedures; both were 2D000-ing, restored by RESET
 
 **Nightly autonomous pass (cloud, NO-PUSH — pushurl empty; DB migrations still apply live, code deploys queue for Trevor). Genuine overnight ~01:10 PT.** This is a same-day-class regression-revert of R14 (migration `20260823021500`, shipped 2026-08-22).
