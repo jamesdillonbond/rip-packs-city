@@ -108,3 +108,47 @@ ts-listings-retired.ts`). It flags that site as **CONSTANT-FOLDABLE**, naming bo
 **The durable lesson at the bottom of this filing stands unchanged and is the part worth keeping:** a green
 `tsc`, a green unit suite and a READY deploy do not establish that the string a user reads is the string in
 the repo.
+
+## ADDENDUM 2026-08-22 19:58 PT (2026-08-23 02:58Z) — the at-risk population re-derived, and it is **0**, not 28
+
+**Re-derived rather than quoted, per this file's own "Recommended next step".** Walked `app`,
+`components`, `lib`, `workers` (tests excluded) for `+`-joined template chains:
+
+| population | count |
+|---|---|
+| `+`-joined template **chains** | **60** |
+| …whose first template carries text **after its last `${}`** (the shape that lost text) | **51** |
+| …whose interpolations are **all bare identifiers** | **9** |
+| …where every such identifier resolves to a **module-level string literal or an import** | **0** |
+
+**The narrowing hypothesis, stated so it can be falsified.** The confirmed instance was
+`` `…switched off on ${TS_LISTINGS_RETIRED_ON} and its last row was ` + … ``, where **both**
+interpolations were module-level `const … = "2026-05-26"` string literals. The filing itself records
+that "the date constants are **inlined as literals**, so the bundler constant-folded the
+concatenation — and dropped one quasi while folding." **Constant folding is the step that dropped the
+text; a chain with even one runtime interpolation is never folded, so it never enters that code
+path.** On that hypothesis the at-risk precondition is *all interpolations compile-time constant*,
+and **no site in the repo currently satisfies it** — the only one that did is the one already fixed.
+
+⚠ **This narrows the population; it does NOT confirm the mechanism.** The hypothesis is inferred from
+one instance plus how folding works in general, not from a reproduction. Two things would overturn it:
+
+- a site with a **runtime** interpolation observed losing its tail in a served chunk;
+- a folding path that fires on **partially** constant chains.
+
+⚠ **And the scan has a known blind spot, stated rather than left implicit:** it only recognises *bare
+identifiers* as constants. `${CONFIG.name}` or `${A + B}` over constant operands would be foldable
+and my scan classifies them as runtime. The 9 all-bare-identifier chains were checked individually
+and none resolve to literals; the remaining 51 were **not** hand-audited for constant member
+expressions.
+
+**Consequence for the recommended next step:** step 2's "cheap blanket fix — a lint rule banning
+`+`-joined template literals" would today rewrite **51 sites to prevent 0 measured instances**. That
+is the "cost stated with no number in it" shape this file warns about, pointed at itself. Better
+targeting, if a rule is wanted at all: ban the `+`-join **only where every interpolation is a
+compile-time constant** — a rule that is satisfiable at a population of zero and fires exactly on the
+precondition that produced the one real defect.
+
+⚠ **The file's durable lesson is untouched by any of this** and remains the reason to keep it: a
+green `tsc`, a green unit suite and a READY deploy do not establish that the string a user reads is
+the string in the repo. Only rendering production does.

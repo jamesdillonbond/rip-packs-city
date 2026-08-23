@@ -1,0 +1,108 @@
+# 🚨 Sentry has ingested NOTHING since 2026-08-18 13:21:59Z — and Vercel logged the *identical* error string 447 times in the last 24 hours
+
+**Filed 2026-08-22 19:50 PT (2026-08-23 02:50Z), Claude Code interactive.** Found while sweeping for
+open work, not while chasing a report. Nobody reported it, which is the point: **a dark error
+reporter reports nothing, including its own darkness.**
+
+## The measurement, with the positive control
+
+**Sentry side.** `rip-packs-city / javascript-nextjs`, errors dataset, 14-day window, sorted by
+`-timestamp`. The **newest error event in the entire project** is:
+
+```
+Error: edition detail unavailable: rpc get_edition_detail timed out after 45000ms with no response
+issue JAVASCRIPT-NEXTJS-26 · timestamp 2026-08-18T13:21:59+00:00
+```
+
+`lastSeen:-48h` over the same project returns **zero issues**. Every one of the 15 unresolved issues
+reads `last seen 4 days ago`.
+
+**Vercel side, same window, same error string** (`get_runtime_errors`, `since=24h`, run
+2026-08-23T02:45Z):
+
+```
+Error: edition detail unavailable: rpc get_edition_detail timed out after 45000ms with no response
+count=447  users=64  routes=/[collection]/edition/[slug], /[collection]/edition/[slug].rsc
+first=2026-08-15T13:16:59Z  last=2026-08-23T00:48:40Z
+```
+
+⚠ **This is the control that makes the finding structural rather than a sampling artifact.** It is
+not "Sentry is quiet and production might be quiet too" — it is **the same error, by string, in the
+same hours, present on one instrument and absent from the other.** Production threw it 447 times in
+the last 24h. Sentry's copy of it stopped 4½ days ago.
+
+And it is not one class. The same 24h Vercel window carries **50 error groups**, many still firing
+minutes before the read: `[pack-detail] pack_realized_ev` (271 / **124 users**),
+`[panini-squeeze] backing view error` (257 / **230 users**), five `[candy-mlb] *_board` timeouts
+(~220 users each), `[wallet-backfill-allday] upsert err` (1,826), the 300s Vercel runtime timeout
+(3,897 / 403 users). **None of it is reaching Sentry.**
+
+## What is NOT the cause — each ruled out, not assumed
+
+- **Not a code change.** `git log --since=2026-08-18` over `*sentry*`, `instrumentation*` and
+  `next.config*` is **empty**. The four init files are byte-identical to what was live on 08-18.
+- **Not a missing server DSN.** `sentry.server.config.ts` and `sentry.edge.config.ts` hardcode the
+  DSN as a literal — there is no env var to have been unset. (`sentry.client.config.ts` *does* read
+  `NEXT_PUBLIC_SENTRY_DSN`, so a browser-side outage could be env-driven; the server side cannot be.)
+- **Not an `enabled` gate.** Only the client config carries one (`NODE_ENV === "production"`). The
+  server and edge configs have none.
+- **Not "the errors stopped."** See the control above.
+
+## What the cause most likely IS — and why I cannot confirm it from here
+
+The intact-code + silent-ingest shape points **upstream of the app**: an org-level quota exhausted,
+or spike protection engaged. The volume makes that easy to believe — issue
+`JAVASCRIPT-NEXTJS-26` alone logged **2,718 events in six days**, and Vercel's 24h picture is
+thousands more.
+
+⚠ **I am naming this as the leading hypothesis, not a measurement.** Confirming it needs the Sentry
+org's **Stats / Usage page** (dropped-vs-accepted event counts and the quota bar), which is an
+operator surface — the MCP exposes issues and events, not billing. **Do not record the cause as
+settled until someone reads that page.** If accepted events flatline against a full quota bar on
+08-18, it is confirmed; if the quota has headroom, the cause is something else and this filing's
+conclusion needs re-deriving, not patching.
+
+## Why this outranks most of the open register
+
+CLAUDE.md already states the rule this violates: *"A permanently-red or permanently-zero instrument
+is indistinguishable from a broken one at a glance — check the LOG, not the badge, and **prove a
+watcher can see a FAILURE** before relying on it."* Sentry has been the assumed watcher for the
+honest-degradation paths. For 4½ days it has been unable to see anything, so:
+
+- every `apiErrorResponse()` / `summarizeDegraded()` capture since 08-18 went nowhere;
+- **a NEW defect shipped in that window would have produced exactly the same silence** as a healthy
+  week. This is the "alert" sub-class from the honesty canon — *its output is silence, so the error
+  is unfalsifiable* — applied to the alerting system itself.
+
+## The second-order finding, which is the actual fix
+
+⚠ **If the cause is quota, the chronic saturation noise is what spent it.** The honest-degradation
+paths fire on every `57014` and every pool-acquire timeout, and the DB saturates daily by design of
+the current instance size. That is thousands of events a day describing **one already-documented,
+already-triaged condition** — and it crowds out the novel error the reporter exists to catch.
+
+So the durable fix is not "raise the quota". It is to stop paying full price for a condition already
+tracked elsewhere:
+
+1. A `beforeSend` that collapses the chronic classes — Postgres `57014`, `Timed out acquiring
+   connection from connection pool`, `rpc … timed out after 45000ms` — to **one representative event
+   per class per window**, rather than one per request.
+2. ⚠ **Suppression must be BOUNDED and VISIBLE, or this becomes the very defect it is fixing.**
+   Whatever is dropped must still be counted somewhere a human reads (the sampled event's own tags,
+   or the existing `pipeline_runs` / trust-board path). Dropping to silence would replace a dark
+   reporter with a lying one.
+3. ⚠ **Do NOT filter on the message text of a whole route.** The chronic classes are identified by
+   SQLSTATE / a fixed transport phrase; a route-level filter would also swallow a genuinely new
+   failure on the same route.
+
+## Recommended next step, in order
+
+1. **Operator:** open Sentry → Stats/Usage, read accepted vs dropped for 08-18 onward. That single
+   page decides whether the cause above is right.
+2. **Prove recovery with a positive control, never with a quiet dashboard.** After whatever fix:
+   deliberately emit one uniquely-tagged test error and confirm it appears. ⚠ "Events started
+   arriving again" is not the same claim as "this reporter can see a failure", and only the second
+   one is worth relying on.
+3. Then ship the `beforeSend` sampling above, so the next spike does not re-spend the quota.
+
+---
