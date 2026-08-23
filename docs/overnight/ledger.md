@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — /api/ready's 500s are NOT just the band, and my "10.9 ms warm" was the cached case
+
+🚨 **I re-measured with the instance QUIET and the answer contradicts my own earlier claim.** At 06:45Z, **5 active backends and 6 IO waiters — not a saturation spell** — `readiness_collection_stats()` took **4,863 ms as `postgres` and 24,523 ms as `anon`**. Roughly 8,000 buffers, of which **~340 are DISK READS** that this instance serves at 10–40 ms each. The anon path is bound by `authenticator`'s 8 s, so an origin miss 500s often.
+
+⚠ **And the 24,523 ms run BEAT a `SET LOCAL statement_timeout = '8s'`** — the recorded "statement_timeout overshoots under IO throttle: best-effort, not a cap", live.
+
+⚠⚠ **So the band caveat I filed two hours ago understates it.** I wrote that `/api/ready` "flaps with the band". It does — but it also takes 24.5 s on a quiet instance, and **my headline "10.9 ms warm / 3,907 buffers" was the fully-cached case and should never have been quoted as the cost.** Quote reads, not just buffers, when the buffers are cheap and the disk is not.
+
+✅ **Mitigated, and the asymmetry is the design.** The SUCCESS path now carries `s-maxage=60, stale-while-revalidate=120` — ~60× fewer origin DB hits — because the only real consumers are two `sales_24h < 10` thin-volume caveats, for which minute-old data is indistinguishable from live, and an uptime probe reads the STATUS CODE, not the body. **The FAILURE path is explicitly `no-store`.** Caching a failure is exactly what turned a database blip into five minutes of "no top sales" on `/api/top-sales` (R33, fixed an hour ago) — doing it here would have re-created that defect on the route I had just repaired.
+
+⚠ **This is a MITIGATION, not the fix, and I am not calling it closed.** The durable fix is to stop counting: the consumers need only `sales_24h < 10`, and a probe **bounded to 10 rows answers that EXACTLY** while reading ~10 index rows instead of 3,844. It is deferred rather than rushed because it changes the payload contract — an unknown count must not reach the clients' `(row.sales_24h ?? 0) < 10` and read as *thin*, so both clients move with it, and one of them is covered by a pinned guard whose reasoning explicitly says to read it first.
+
+**Test proven against BOTH mutations** (each verified applied): caching the failure reddens it, and reverting the success path to `no-store` reddens it.
+
+**Revert:** `git revert <sha>` — no DB half.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the last entity page whose structural read had no catcher, and a guard for it whose first draft was vacuous
 
 **`/[collection]/series/[slug]` now routes its STRUCTURAL editions read into `SeriesUnavailable`**, which
