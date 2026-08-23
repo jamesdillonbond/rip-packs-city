@@ -64,7 +64,7 @@ hash.
 one of them on the line I edited). Count measured before and after — unchanged, so not a regression. **This
 repo does not run eslint in CI at all**; do not cite it as coverage.
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert b601f6f4` — code + tests only, no DB half. Ledger half: `13108a22`.
 
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — R19's last open half: a failed structural read now costs the reader ONE SECTION, not the page
 
