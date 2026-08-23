@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the tx-shape census earned itself on its first non-zero reading, and unclassified is now self-diagnosing
+
+**`unclassified` went from 0 to 9** on one backfill tick (blocks 161,983,001–162,033,000; 9 of 1,394 txs, 0.6%). ✅ **Re-scanned the first 10,000 blocks of that range against Flow REST — all 80 reads HTTP 200, so every count is real — and the answer is clean: 227 trades (2 senders / 2 receivers), 132 mints, 29 sale-shaped, and the unclassified are ALL bulk ONE-WAY transfers** (1 sender, 1 receiver, 3 Pins each). **No trades are being dropped.** The classifier's most debatable decision — refusing to call a multi-Pin two-wallet ONE-WAY move a trade — is now validated against real chain data, and the census surfaced them rather than absorbing them into a trade count. **That is what it was built for, on its first non-zero reading.**
+
+**Shipped: `unclassifiedSample` on the classifier**, a capped list of `{transactionId, withdraws, deposits, senders, receivers}` logged to `pipeline_runs.extra` only when non-empty. ⚠ **A bare count is UNDIAGNOSABLE** — it says "9 did not match" but not which, so the question I just answered cost an 80-request re-scan; next time it costs one `pipeline_runs` read. ⚠ **The COUNT stays complete when the sample truncates** — capping the count would under-report the very thing the census exists to surface.
+
+**Filed, NOT built: [bulk one-way transfers are untracked](inbox/2026-08-22T2030Z-pinnacle-bulk-one-way-transfers-are-untracked.md).** They are a genuine ownership change leaving no sale row, no mint row and no acquisition row — the same shape of hole trading was in, one size smaller. ⚠ **It must never be labelled `gift`**: a one-way move is equally a gift, a wallet consolidation between two wallets one person owns, or an off-platform sale, and naming it `gift` publishes a motive from a geometry. ⚠ **Do not size it from the one sample** (~1% of txs) — the trade rate already varies ~20× by epoch.
+
+**Also promoted two durable lessons out of the session log**, because a fact left only there stops being read: the **fixture-batching class** → [testing-and-ci.md](../reference/testing-and-ci.md), and **`net.http_get` as a probe channel when the sandbox network policy denies a host** → [tooling-gotchas.md](../reference/tooling-gotchas.md). The local-Postgres recipe already existed in testing-and-ci, so tooling-gotchas POINTS at it rather than duplicating it (two copies drift apart), and its **file count is corrected 178 → 179** for the invariant added earlier tonight. ⚠ **CLAUDE.md untouched — measured at 39,946 of 40,000 with Node's `.length`, the binding count. 54 characters of headroom; nothing new belongs there.**
+
+**Lane health at hand-off: 15 ticks, 0 failed / 0 soft-deadline / 0 partial-scan / 0 decode-failure.** Forward 162,173,000 (caught up), backfill 161,983,001, **4,173 rows / 1,189 trades**, table 2,648 kB.
+
+**REVERT:** `git revert <sha>` — classifier + route logging + docs. No DB change.
+
 ### 2026-08-22 · CORRECTION (Claude Code, interactive) — the memo fix holds, and my own "four arms are skipping" finding was retracted by the next run
 
 ✅ **The e2e memo-leak fix holds under the conditions that produced the flake.** Re-dispatch on
