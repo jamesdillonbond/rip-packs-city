@@ -1,0 +1,408 @@
+# RESCUED 2026-08-23T16:07Z from stash@{0}
+# subject : On main: autostash
+# taken   : 2026-08-16 11:39:29 -0700
+# BASE    : f29c33739ffe408bdbb3b2d227396fb49502ea1c  <-- pop/apply ONLY on this base
+# base subj: fix(insights): pin timeZone/locale on hydrated board dates to stop React #418
+# untracked-files component (stash^3) present: no
+#
+diff --git a/app/insights/top-sales/TopSalesBoardClient.tsx b/app/insights/top-sales/TopSalesBoardClient.tsx
+index 255fa6f34..b43c10ad0 100644
+--- a/app/insights/top-sales/TopSalesBoardClient.tsx
++++ b/app/insights/top-sales/TopSalesBoardClient.tsx
+@@ -103,11 +103,25 @@ function fmtInt(n: number | null): string {
+   return Number(n).toLocaleString("en-US")
+ }
+ 
+-function relTime(iso: string | null): string {
+-  if (!iso) return "—"
++/**
++ * Relative time against an EXPLICIT instant — never `Date.now()` directly.
++ *
++ * ⚠ HYDRATION (React #418). Reading the wall clock during render makes the
++ * server and the first client render disagree: this board is ISR
++ * (`revalidate = 900`), so the served HTML can be up to 15 minutes old and
++ * "12h ago" becomes "13h ago" the moment a boundary is crossed — a text
++ * mismatch, which React reports as the minified #418 seen live on this page on
++ * 2026-08-16. `nowMs` is anchored to a PROP for the first render (see the
++ * `nowMs` state below), so both sides compute the identical string.
++ *
++ * `nowMs === null` means we have no deterministic anchor yet; render the
++ * em-dash rather than guess, which is still identical on both sides.
++ */
++function relTime(iso: string | null, nowMs: number | null): string {
++  if (!iso || nowMs == null) return "—"
+   const then = new Date(iso).getTime()
+   if (!Number.isFinite(then)) return "—"
+-  const diff = Date.now() - then
++  const diff = nowMs - then
+   const m = Math.floor(diff / 60000)
+   if (m < 1) return "just now"
+   if (m < 60) return `${m}m ago`
+@@ -187,7 +201,7 @@ function SaleImage({ r, className }: { r: Row; className: string }) {
+ }
+ 
+ // Hero tile — the top sales by price, art-forward.
+-function HeroTile({ r }: { r: Row }) {
++function HeroTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
+   const title = r.player_name || r.set_name || "—"
+   const sl = serialLabel(r)
+   return (
+@@ -203,7 +217,7 @@ function HeroTile({ r }: { r: Row }) {
+         <div className="rpc-ts-hero-meta">
+           <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
+           <span className="rpc-ts-dot">·</span>
+-          <span>{relTime(r.sold_at)}</span>
++          <span>{relTime(r.sold_at, nowMs)}</span>
+         </div>
+         <div className="rpc-ts-hero-parties">
+           <span className="rpc-ts-party">
+@@ -222,7 +236,7 @@ function HeroTile({ r }: { r: Row }) {
+ 
+ // Compact card for the "Just sold · last 48 hours" horizontal rail. Same art /
+ // drill-down / price formatting as everywhere else, sized for a scroll strip.
+-function RecentTile({ r }: { r: Row }) {
++function RecentTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
+   const title = r.player_name || r.set_name || "—"
+   return (
+     <Link href={rowHref(r)} className="rpc-ts-recent-card">
+@@ -231,13 +245,13 @@ function RecentTile({ r }: { r: Row }) {
+       </div>
+       <div className="rpc-ts-recent-price">{fmtPrice(r.price_usd)}</div>
+       <div className="rpc-ts-recent-name">{title}</div>
+-      <div className="rpc-ts-recent-when">{relTime(r.sold_at)}</div>
++      <div className="rpc-ts-recent-when">{relTime(r.sold_at, nowMs)}</div>
+     </Link>
+   )
+ }
+ 
+ // Ranked list row.
+-function SaleRow({ r, rank }: { r: Row; rank: number }) {
++function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | null }) {
+   const title = r.player_name || r.set_name || "—"
+   const sl = serialLabel(r)
+   return (
+@@ -276,7 +290,7 @@ function SaleRow({ r, rank }: { r: Row; rank: number }) {
+       </div>
+       <div className="rpc-ts-row-right">
+         <div className="rpc-ts-row-price">{fmtPrice(r.price_usd)}</div>
+-        <div className="rpc-ts-row-when">{relTime(r.sold_at)}</div>
++        <div className="rpc-ts-row-when">{relTime(r.sold_at, nowMs)}</div>
+       </div>
+     </Link>
+   )
+@@ -293,6 +307,30 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+   const [error, setError] = useState<string | null>(null)
+   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+ 
++  /**
++   * The clock this board renders against — anchored, never read live during the
++   * first render.
++   *
++   * ⚠ Every clock read during render is a hydration mismatch waiting to happen
++   * (React #418), because this page is ISR (`revalidate = 900`): the server
++   * rendered its HTML up to 15 minutes ago, the browser hydrates now, and any
++   * output derived from "now" differs. Measured live 2026-08-16 on this page:
++   * the 48h rail rendered 13 rows server-side and 12 after hydration, and #418
++   * was thrown.
++   *
++   * The initial value comes from `initialFetchedAt`, which is a PROP — so the
++   * server and the client's first render compute byte-identical output. Only
++   * after mount do we swap to the live clock, which is the same shape as
++   * components/insights/FreshnessStamp.
++   */
++  const [nowMs, setNowMs] = useState<number | null>(() => {
++    const t = initialFetchedAt ? Date.parse(initialFetchedAt) : NaN
++    return Number.isFinite(t) ? t : null
++  })
++  useEffect(() => {
++    setNowMs(Date.now())
++  }, [])
++
+   const [collection, setCollection] = useState<CollectionFilter>("all")
+   const [window, setWindow] = useState<WindowFilter>("7d")
+   const [sort, setSort] = useState<SortKey>("price")
+@@ -364,7 +402,15 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+     // Derived from the loaded rows (already price/recency-bounded) so it needs
+     // no extra fetch and stays in sync with the active filters. Hidden when the
+     // window is quiet (no sales in 48h).
+-    const cutoff = Date.now() - 48 * 60 * 60 * 1000
++    //
++    // ⚠ The cutoff rides `nowMs`, NOT `Date.now()`. A useMemo runs during the
++    // server render AND during hydration, so a live clock puts rows sitting near
++    // the 48h boundary on one side of it server-side and the other side
++    // client-side — measured 13 rows vs 12 on 2026-08-16, which is a DOM
++    // mismatch, not a cosmetic difference. Null (no anchor yet) yields an empty
++    // rail on both sides rather than a guess.
++    if (nowMs == null) return []
++    const cutoff = nowMs - 48 * 60 * 60 * 1000
+     return [...rows]
+       .filter((r) => {
+         if (r.price_usd == null || !r.sold_at) return false
+@@ -373,7 +419,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+       })
+       .sort((a, b) => new Date(b.sold_at!).getTime() - new Date(a.sold_at!).getTime())
+       .slice(0, 12)
+-  }, [rows])
++  }, [rows, nowMs])
+ 
+   const kpis = useMemo(() => {
+     const priced = rows.filter((r) => r.price_usd != null)
+@@ -454,7 +500,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+           <div className="rpc-ts-section-label">Featured · highest value</div>
+           <div className="rpc-ts-hero-grid">
+             {heroRows.map((r) => (
+-              <HeroTile key={r.sale_id} r={r} />
++              <HeroTile key={r.sale_id} r={r} nowMs={nowMs} />
+             ))}
+           </div>
+         </section>
+@@ -466,7 +512,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+           <div className="rpc-ts-section-label">Just sold · last 48 hours</div>
+           <div className="rpc-ts-recent-rail">
+             {recentRows.map((r) => (
+-              <RecentTile key={r.sale_id} r={r} />
++              <RecentTile key={r.sale_id} r={r} nowMs={nowMs} />
+             ))}
+           </div>
+         </section>
+@@ -528,7 +574,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
+         ) : (
+           <div className="rpc-ts-list">
+             {rows.map((r, i) => (
+-              <SaleRow key={r.sale_id} r={r} rank={i + 1} />
++              <SaleRow key={r.sale_id} r={r} rank={i + 1} nowMs={nowMs} />
+             ))}
+           </div>
+         )}
+diff --git a/docs/overnight/ledger.md b/docs/overnight/ledger.md
+index 0195a1202..6fb4f1cc0 100644
+--- a/docs/overnight/ledger.md
++++ b/docs/overnight/ledger.md
+@@ -8,6 +8,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
+ 
+ **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+ 
++### 2026-08-16 · SHIPPED (Cowork, rpc-dependency-advisory-digest bi-weekly task) — dropped redundant non-unique index `idx_moments_nft_id` (27 MB, 0 lifetime scans), an exact duplicate of UNIQUE `moments_nft_id_key` on `moments(nft_id)` which serves every lookup it could. Plain index (not a partitioned-index child), so drop is direct. **Revert:** `CREATE INDEX idx_moments_nft_id ON public.moments USING btree (nft_id);` (run standalone via execute_sql; add CONCURRENTLY if rebuilding on a live table). Not a `main`/code change — DB-only, no migration file. The near-identical `price_snapshots_2026_edition_id_bucket_idx` (prefix of a UNIQUE index but a CHILD of partitioned index `idx_price_snap_edition`) was NOT dropped — flagged for a human.
++
+ ### 2026-08-16 · SHIPPED (Claude Code, interactive — Cowork handoff `docs/handoff-2026-08-16-insights-boards-418-hydration.md`) — `/insights/first-mint` threw React #418 on every load; the cause was an unpinned timezone, and NO gate in this repo could have seen it
+ 
+ **Code-only (3 client components + 1 new guard + 1 inbox filing). No DB, migration, cron, edge-fn, auth/`proxy.ts`, hot-wallet, or FMV/pricing change.**
+diff --git a/e2e/healthy-page.ts b/e2e/healthy-page.ts
+index e5cfd0b3d..3ed4577c4 100644
+--- a/e2e/healthy-page.ts
++++ b/e2e/healthy-page.ts
+@@ -26,7 +26,68 @@ const ERROR_SIGNS: RegExp[] = [
+ 
+ const DEFAULT_MIN_CONTENT = 200
+ 
++// Console/pageerror text that means the page BROKE, as opposed to the ambient
++// noise every real site emits.
++//
++// ⚠ THE CLASS THIS CATCHES, AND WHY NOTHING ELSE CAN. React #418 is a hydration
++// mismatch: the server-rendered text differs from what the client renders on
++// hydration. It does NOT change the final DOM (React re-renders client-side),
++// so every assertion above this one passes; it is invisible to the API smoke
++// gate, and it is unreachable in vitest because that renders both sides in one
++// UTC process. A live browser reading the console is the only detector — which
++// is why /insights/first-mint threw #418 on every load for an unknown period
++// while all three coverage gates stayed green (2026-08-16).
++//
++// ⚠ DELIBERATELY NARROW. Measured against all 30 public pages on 2026-08-16,
++// asserting on ALL console errors would red this monitor permanently: 35x HTTP
++// 405, 26x 500, 8x CSP image-src, plus 503/504 on subresources. Those are
++// ambient (third-party images, best-effort beacons) and a gate that cries wolf
++// gets ignored — this is the only gate that catches the 200-but-broken-DOM
++// class, so its signal must stay trustworthy. Add a pattern here only when it
++// means the PAGE is broken for a user.
++//
++// ⚠ WHAT THIS DOES NOT CLAIM — do not read a green run as "no hydration bugs".
++// A #418 of this kind is DATA-DEPENDENT: it fires only when a value crosses a
++// boundary between the moment the ISR snapshot was rendered and the moment the
++// browser hydrates (a UTC day boundary for a date, a 48h window edge for a
++// rail). Measured 2026-08-16: a sweep of all 30 public pages caught
++// /insights/top-sales throwing #418, and a full run of this suite ~40 minutes
++// later passed that same page. So this is BROAD but PROBABILISTIC detection —
++// it tells you the class exists somewhere, on some run.
++//
++// The DETERMINISTIC half lives in unit tests, which run on every CI build:
++// render the component with renderToString() at two different wall-clock times
++// and assert the markup is identical (see
++// __tests__/component-TopSalesBoardClient-hydration-safe.test.tsx), and forbid
++// runtime-zone/locale formatting in hydrated insights components (see
++// __tests__/insights-client-dates-are-hydration-safe-guard.test.ts). Prevention
++// belongs there; this monitor is the net that catches what those cannot model.
++const CONSOLE_FAILURES: RegExp[] = [
++  /Minified React error #\d+/i, // any React invariant, incl. #418/#419/#423/#425
++  /Hydration failed/i,
++  /Text content does not match server-rendered HTML/i,
++  /There was an error while hydrating/i,
++]
++
++// How long to let the client settle after load before reading the console.
++// Hydration errors surface once the bundle executes, which is after the
++// `domcontentloaded` the content assertions run against.
++const HYDRATION_SETTLE_MS = 1_500
++
+ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<void> {
++  // Attach BEFORE navigating — a listener added after goto() misses everything
++  // the page emitted while loading, which is precisely when hydration runs.
++  const consoleFailures: string[] = []
++  const record = (text: string) => {
++    if (CONSOLE_FAILURES.some((rx) => rx.test(text))) consoleFailures.push(text.slice(0, 300))
++  }
++  page.on("console", (msg) => {
++    if (msg.type() === "error" || msg.type() === "warning") record(msg.text())
++  })
++  // An uncaught exception never reaches page.on("console") — React throws #418
++  // as a real error, so this listener is the one that actually catches it.
++  page.on("pageerror", (err) => record(err.message))
++
+   const resp = await page.goto(check.path, { waitUntil: "domcontentloaded" })
+   expect(resp, `no HTTP response for ${check.path}`).toBeTruthy()
+ 
+@@ -55,4 +116,17 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
+       `${check.path} is missing expected content ${check.expectText}`,
+     ).toBe(true)
+   }
++
++  // Give the bundle time to execute and hydrate, THEN read what it logged. This
++  // is last on purpose: a page that fails a content assertion should report that
++  // clearer failure rather than a console symptom of it.
++  await page.waitForLoadState("load").catch(() => {})
++  await page.waitForTimeout(HYDRATION_SETTLE_MS)
++
++  expect(
++    consoleFailures,
++    `${check.path} logged a client-side failure (hydration mismatch or React invariant). ` +
++      `React #418 means the server HTML and the hydrated DOM disagree — usually a render that ` +
++      `reads the wall clock or the runtime timezone. Messages: ${consoleFailures.join(" | ")}`,
++  ).toEqual([])
+ }
+diff --git a/e2e/smoke-selfcheck.spec.ts b/e2e/smoke-selfcheck.spec.ts
+index 8fd59847e..03eff045f 100644
+--- a/e2e/smoke-selfcheck.spec.ts
++++ b/e2e/smoke-selfcheck.spec.ts
+@@ -64,6 +64,48 @@ const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></
+ // ~130 chars of real content: above a custom 100 floor, below the default 200.
+ const SHORT_OK = `<!doctype html><html><body><main>${"Short but genuine content here. ".repeat(4)}</main></body></html>`
+ 
++// ── hydration-mismatch fixtures (React #418) ────────────────────────────────
++// These pages are HEALTHY by every other measure the helper checks: HTTP 200,
++// no error-boundary text, plenty of content. That is the entire point — a #418
++// does not change the final DOM, so it is invisible to the status/content
++// assertions and only the console listener can see it. Both delivery paths are
++// covered because React can surface it either way depending on the build.
++
++// Thrown, so it arrives via page.on("pageerror") — this is the shape production
++// actually emitted on /insights/top-sales and /insights/first-mint.
++const HYDRATION_THROW = `<!doctype html><html><body>
++  <main>${CONTENT}</main>
++  <script>
++    setTimeout(function () {
++      throw new Error("Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message");
++    }, 0);
++  </script>
++</body></html>`
++
++// Logged, so it arrives via page.on("console") — the dev-build spelling.
++const HYDRATION_CONSOLE = `<!doctype html><html><body>
++  <main>${CONTENT}</main>
++  <script>
++    console.error("Text content does not match server-rendered HTML. Warning: Text content did not match.");
++  </script>
++</body></html>`
++
++// ⚠ THE CRY-WOLF CONTROL, and the more important half of this pair. Real pages
++// emit console errors constantly — measured on production 2026-08-16: 35x HTTP
++// 405, 26x 500, 8x CSP img-src, on pages that are working perfectly. If the
++// helper asserted on ALL console errors it would be red forever and get ignored,
++// which is worse than not having it. This fixture reproduces that ambient noise
++// and MUST still pass.
++const AMBIENT_NOISE = `<!doctype html><html><body>
++  <main>${CONTENT}</main>
++  <img src="/definitely-missing.png" alt="">
++  <script>
++    console.error("Failed to load resource: the server responded with a status of 405 ()");
++    console.error("Loading the image 'https://cdn.example.com/x.png' violates the following Content Security Policy directive: \\"img-src 'self'\\"");
++    console.warn("[Fast Refresh] rebuilding");
++  </script>
++</body></html>`
++
+ // Sitemap fixtures for the entity-URL discovery self-check (entity-urls.ts).
+ // Segment 1 = TopShot editions, 3 = entities (set/player/team) + top moments,
+ // 4 = packs, 0 = series (served EMPTY here to exercise the no-URL -> skip path).
+@@ -101,6 +143,9 @@ test.beforeAll(async () => {
+     else if (url.startsWith("/error-with-content")) html(ERROR_WITH_CONTENT)
+     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
+     else if (url.startsWith("/short-ok")) html(SHORT_OK)
++    else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
++    else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
++    else if (url.startsWith("/ambient-noise")) html(AMBIENT_NOISE)
+     else if (url.startsWith("/four-oh-four-with-content")) html(`<!doctype html><html><body><main>${CONTENT}</main></body></html>`, 404)
+     else if (url.startsWith("/five-hundred")) html("<!doctype html><html><body><h1>Internal Server Error</h1></body></html>", 500)
+     else if (/^\/sitemap\/(\d)\.xml/.test(url)) {
+@@ -128,6 +173,33 @@ test("PASSES a healthy page (h1 + real content)", async ({ page }) => {
+   })
+ })
+ 
++test("FAILS a page that throws a React hydration error (#418) despite a healthy DOM", async ({ page }) => {
++  // The regression this whole check exists for: HTTP 200, no error boundary,
++  // ~590 chars of content — every other assertion in the helper passes, and the
++  // page is still broken for the user. Verified live on /insights/top-sales and
++  // /insights/first-mint on 2026-08-16.
++  await expect(
++    assertHealthyPage(page, { path: `${base}/hydration-throw`, name: "hydration throw" }),
++  ).rejects.toThrow(/client-side failure|#418/)
++})
++
++test("FAILS a page that LOGS a hydration mismatch (console path, not pageerror)", async ({ page }) => {
++  // React surfaces this either as a thrown error or a console message depending
++  // on the build, so both listeners have to be wired; covering only pageerror
++  // would miss the dev-build spelling entirely.
++  await expect(
++    assertHealthyPage(page, { path: `${base}/hydration-console`, name: "hydration console" }),
++  ).rejects.toThrow(/client-side failure/)
++})
++
++test("PASSES a page with ambient console noise (does not cry wolf)", async ({ page }) => {
++  // ⚠ The control that keeps the check trustworthy. A failed subresource, a CSP
++  // image warning and a 405 are what every real page emits; if these tripped the
++  // helper the monitor would be permanently red and would stop being read —
++  // strictly worse than not having it. Measured production noise, reproduced.
++  await assertHealthyPage(page, { path: `${base}/ambient-noise`, name: "ambient noise" })
++})
++
+ test("FAILS a page rendering a client-side error boundary", async ({ page }) => {
+   await expect(
+     assertHealthyPage(page, { path: `${base}/error-boundary`, name: "error boundary" }),
+diff --git a/playwright.config.ts b/playwright.config.ts
+index 0566e4408..cc1bbf82e 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -24,6 +24,26 @@ export default defineConfig({
+   use: {
+     baseURL,
+     ignoreHTTPSErrors: true,
++
++    // ⚠ A NON-UTC TIMEZONE IS LOAD-BEARING, not cosmetic.
++    //
++    // React #418 (hydration text mismatch) is the one user-visible defect class
++    // no other gate here can see: vitest renders "server" and "client" in one
++    // Node process, and CI runners are UTC — so a page whose SSR output depends
++    // on the runtime zone renders IDENTICALLY on both sides and the mismatch is
++    // unreachable *by construction*. That is exactly how /insights/first-mint
++    // shipped a #418 that only a live browser in a real timezone could produce
++    // (2026-08-16: a sale at 00:00Z rendered "Aug 16" server-side and "Aug 15"
++    // to a Pacific visitor).
++    //
++    // Pinning America/Los_Angeles makes this monitor render in a zone that
++    // DISAGREES with the UTC server, so the console assertion in
++    // e2e/healthy-page.ts can actually observe the class. Pinning the locale too
++    // keeps number/date formatting deterministic run-to-run. Override with
++    // PW_TIMEZONE if a future zone is more representative — but do NOT set it to
++    // UTC, which silently disarms the check.
++    timezoneId: process.env.PW_TIMEZONE || "America/Los_Angeles",
++    locale: "en-US",
+     actionTimeout: 15_000,
+     navigationTimeout: 30_000,
+     proxy: process.env.PW_PROXY_SERVER

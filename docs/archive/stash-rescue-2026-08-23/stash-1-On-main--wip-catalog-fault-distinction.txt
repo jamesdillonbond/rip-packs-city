@@ -1,0 +1,582 @@
+# RESCUED 2026-08-23T16:07Z from stash@{1}
+# subject : On main: wip-catalog-fault-distinction
+# taken   : 2026-08-13 08:04:02 -0700
+# BASE    : 85562e25bc720296e392fb8eb6f513fc4cd61a16  <-- pop/apply ONLY on this base
+# base subj: fix(alerting): detect_stalled_pipelines carries watchlist notes with the alert
+# untracked-files component: stash^3 REF EXISTS BUT HOLDS ZERO FILES (git ls-tree -r = 0). No untracked content.
+#
+diff --git a/__tests__/api-admin-catalog-backfills-deep.test.ts b/__tests__/api-admin-catalog-backfills-deep.test.ts
+index 76811cffe..434eaf9c5 100644
+--- a/__tests__/api-admin-catalog-backfills-deep.test.ts
++++ b/__tests__/api-admin-catalog-backfills-deep.test.ts
+@@ -108,6 +108,30 @@ const KD_EDITION = {
+ // No play.flowID → unkeyable → counted as skipped, never written.
+ const SKIPPED_EDITION = { tier: "MOMENT_TIER_COMMON", set: { flowId: 165 }, play: null }
+ 
++// The GQL query MUST select `description` on `Play`, not on `Play.stats` —
++// `PlayStats` has no such field and asking for it 422s the whole page. This
++// fixture puts the prose at the correct depth and a decoy at the wrong one, so
++// a regression that reads stats.description writes the decoy (or null) instead.
++const DESCRIBED_EDITION = {
++  tier: "MOMENT_TIER_LEGENDARY",
++  circulationCount: 99,
++  assetPathPrefix: "https://assets.nbatopshot.com/editions/165_x/uuid/play_uuid_capture_",
++  set: { flowId: 165, flowName: "MVP Moments", flowSeriesNumber: 5 },
++  play: {
++    flowID: "7001",
++    description: "  Damian Lillard  pulls up\nfrom the logo   as time expires.  ",
++    stats: {
++      playerName: "Damian Lillard",
++      teamAtMoment: "Portland Trail Blazers",
++      playCategory: "Jump Shot",
++      playType: "3 Pointer",
++      dateOfMoment: "2026-02-01T03:00:00Z",
++      // Decoy at the WRONG depth — must never reach editions.description.
++      description: "WRONG-DEPTH-SENTINEL",
++    },
++  },
++}
++
+ describe("/api/admin/backfill-topshot-catalog", () => {
+   it("is RPC_ADMIN_TOKEN-only: INGEST and CRON bearers are rejected", async () => {
+     for (const auth of [undefined, "Bearer ingest-secret", "Bearer cron-secret", "Bearer nope"]) {
+@@ -460,12 +484,114 @@ describe("/api/admin/backfill-topshot-catalog", () => {
+       adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+     )
+     const body = await res.json()
+-    // All three sets yielded zero editions and were marked processed (bump only).
+-    expect(body).toMatchObject({ ok: true, sets_processed: 3, editions_upserted: 0, gql_calls: 3 })
++    // All three sets FAULTED. This used to assert ok:true — a test pinning the
++    // exact silent-success that let the 2026-08-11 malformed-query outage run a
++    // full day reporting sets_processed=257 / editions_upserted=0 /
++    // errors_count=0. Every set faulting is unambiguous and must be loud.
++    expect(body).toMatchObject({
++      ok: false,
++      sets_processed: 3,
++      sets_faulted: 3,
++      editions_upserted: 0,
++      gql_calls: 3,
++      errors_count: 3,
++    })
++    // The fault REASON is what makes the next outage diagnosable in one look:
++    // for a malformed query the upstream body names the offending field.
++    const reasons = (body.errors_sample as Array<{ reason: string }>).map((e) => e.reason)
++    expect(reasons[0]).toMatch(/HTTP 500/)
++    expect(reasons[1]).toMatch(/gql: gql err/)
++    expect(reasons[2]).toMatch(/network down/)
++    // Sets are still stamped, so a persistently-broken set cannot pin itself at
++    // the head of the least-recently-touched queue and starve everything behind.
+     expect((spy.writes.editions ?? [])).toHaveLength(0)
+     expect((spy.writes.sets ?? []).filter((w) => w.method === "update")).toHaveLength(3)
+   })
+ 
++  it("reads the play description from Play, not Play.stats, and normalizes it", async () => {
++    const spy = install({
++      sets: [
++        {
++          data: [{
++            id: "s1", external_id: SET_UUID, name: "MVP Moments",
++            set_id_onchain: null, cover_art_url: null, asset_path_prefix: null, updated_at: null,
++          }],
++          error: null,
++        },
++        { data: null, error: null },
++      ],
++      pipeline_runs: { data: null, error: null },
++    })
++    fetchMock = installFetchMock([
++      {
++        match: (_url, init) => String(init?.body ?? "").includes("SearchEditionBackfill"),
++        respond: () => ({ json: tsPage([DESCRIBED_EDITION], null) }),
++      },
++    ])
++
++    const res = await tsCatalog.GET(
++      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
++    )
++    expect(res.status).toBe(200)
++
++    // The query itself must ask at the right depth. Selecting `description`
++    // inside `stats { … }` is the 2026-08-11 outage: PlayStats has no such
++    // field, so the upstream 422s every page and nothing is ever written.
++    const sent = String(fetchMock.calls[0]?.init?.body ?? "")
++    // Slice to the stats block's own closing brace — a fixed-width window is
++    // long enough to look right and short enough to assert nothing.
++    const statsStart = sent.indexOf("stats {")
++    expect(statsStart).toBeGreaterThan(-1)
++    const statsBlock = sent.slice(statsStart, sent.indexOf("}", statsStart))
++    expect(statsBlock).not.toContain("description")
++    expect(sent).toMatch(/flowID\\n\s*description/)
++
++    const rows = (spy.writes.editions ?? []).flatMap((w) => w.rows as any[])
++    const row = rows.find((r) => r.external_id === "165:7001")!
++    // Whitespace collapsed for trigram consistency; decoy never reached it.
++    expect(row.description).toBe("Damian Lillard pulls up from the logo as time expires.")
++    expect(row.description).not.toContain("WRONG-DEPTH-SENTINEL")
++  })
++
++  it("a genuinely EMPTY set is not a fault — walk stays ok with sets_faulted 0", async () => {
++    // The other half of the distinction the fault type exists to draw: a set
++    // that really holds no editions answers HTTP 200 with an empty data array.
++    // That is a RESULT, not a failure to obtain one, so it must not redden the
++    // run — otherwise the fix trades a silent failure for a crying-wolf one.
++    const spy = install({
++      sets: [
++        {
++          data: ["s1", "s2"].map((id) => ({
++            id, external_id: SET_UUID, name: id,
++            set_id_onchain: null, cover_art_url: null, asset_path_prefix: null, updated_at: null,
++          })),
++          error: null,
++        },
++        { data: null, error: null },
++      ],
++      pipeline_runs: { data: null, error: null },
++    })
++    fetchMock = installFetchMock([
++      {
++        match: (_url, init) => String(init?.body ?? "").includes("SearchEditionBackfill"),
++        respond: () => ({ json: tsPage([], null) }),
++      },
++    ])
++
++    const res = await tsCatalog.GET(
++      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
++    )
++    const body = await res.json()
++    expect(body).toMatchObject({
++      ok: true,
++      sets_processed: 2,
++      sets_faulted: 0,
++      editions_upserted: 0,
++      errors_count: 0,
++    })
++    expect((spy.writes.editions ?? [])).toHaveLength(0)
++  })
++
+   it("500s when the natural-mode sets read errors", async () => {
+     install({ sets: { data: null, error: { message: "sets boom" } } })
+     const res = await tsCatalog.GET(
+diff --git a/app/api/admin/backfill-topshot-catalog/route.ts b/app/api/admin/backfill-topshot-catalog/route.ts
+index fd232ffca..686d1d3a4 100644
+--- a/app/api/admin/backfill-topshot-catalog/route.ts
++++ b/app/api/admin/backfill-topshot-catalog/route.ts
+@@ -47,6 +47,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+ // Append "Hero_2880_2880_Transparent.png" for image, "Animated_1080_1080_Black.mp4" for video.
+ // Synthesizing /resize/editions/{set_int}_{play_int}/... short-path URLs (the
+ // pre-2026-05-12 behavior) 404s on the CDN.
++//
++// ⚠ `description` sits on `Play`, NOT on `Play.stats`. Getting this wrong took
++// the whole pipeline down silently for a day (2026-08-11 → 08-12, commit
++// ef551927): `PlayStats` has no `description`, so the upstream answered
++// HTTP 422 `Cannot query field "description" on type "PlayStats"` for EVERY
++// page, fetchEditionsPage swallowed it as null, and the run reported
++// sets_processed=257 / gql_calls=257 / editions_upserted=0 / errors_count=0.
++// The discovery probe HAD the right answer — it probes the two types
++// separately and reported description "no" on PlayStats and "yes" on Play —
++// but its top-level `found` array merged both arms with no type provenance, so
++// the field looked like a stats field. Do not move it back.
+ const SEARCH_EDITIONS_QUERY = `
+   query SearchEditionBackfill($input: SearchEditionsInput!) {
+     searchEditions(input: $input) {
+@@ -66,6 +77,7 @@ const SEARCH_EDITIONS_QUERY = `
+                 }
+                 play {
+                   flowID
++                  description
+                   stats {
+                     playerName
+                     teamAtMoment
+@@ -73,7 +85,6 @@ const SEARCH_EDITIONS_QUERY = `
+                     playCategory
+                     playType
+                     dateOfMoment
+-                    description
+                   }
+                 }
+               }
+@@ -96,6 +107,19 @@ interface RawEdition {
+   } | null;
+   play?: {
+     flowID?: string | null;
++    /**
++     * Prose description of the play — the paragraph the Top Shot moment page
++     * renders. Confirmed present and populated 2026-08-11 via
++     * /api/admin/discover-moment-descriptors (sample: "Mike James has
++     * returned to make an impact at the NBA level. The Brooklyn Nets guard
++     * drives hard along the baseline…"). This is the ONLY narrative text in
++     * the catalog; without it a search for "game winner" or "buzzer beater"
++     * has nothing to match. `headline` was probed alongside and is just the
++     * player name again, so it is deliberately NOT ingested.
++     *
++     * ⚠ On `Play`, NOT on `Play.stats` — see the query comment above.
++     */
++    description?: string | null;
+     stats?: {
+       playerName?: string | null;
+       teamAtMoment?: string | null;
+@@ -103,17 +127,6 @@ interface RawEdition {
+       playCategory?: string | null;
+       playType?: string | null;
+       dateOfMoment?: string | null;
+-      /**
+-       * Prose description of the play — the paragraph the Top Shot moment page
+-       * renders. Confirmed present and populated 2026-08-11 via
+-       * /api/admin/discover-moment-descriptors (sample: "Mike James has
+-       * returned to make an impact at the NBA level. The Brooklyn Nets guard
+-       * drives hard along the baseline…"). This is the ONLY narrative text in
+-       * the catalog; without it a search for "game winner" or "buzzer beater"
+-       * has nothing to match. `headline` was probed alongside and is just the
+-       * player name again, so it is deliberately NOT ingested.
+-       */
+-      description?: string | null;
+     } | null;
+   } | null;
+ }
+@@ -163,10 +176,25 @@ function buildVideoUrl(prefix: string | null | undefined): string | null {
+   return `${prefix}Animated_1080_1080_Black.mp4`;
+ }
+ 
++/**
++ * Outcome of one GQL page fetch.
++ *
++ * ⚠ This used to be `… | null`, and that single collapsed `null` is what let a
++ * total upstream outage render as a clean run for a day (see the
++ * SEARCH_EDITIONS_QUERY comment). "The set has no editions" and "we could not
++ * ask" are opposite facts and must not share a return value: the first is a
++ * result, the second is a failure to obtain one. The `fault` string carries
++ * the HTTP status or the GQL error message, because for a malformed query the
++ * upstream's own body names the offending field and is the whole diagnostic.
++ */
++type PageFetch =
++  | { ok: true; editions: RawEdition[]; nextCursor: string | null }
++  | { ok: false; fault: string };
++
+ async function fetchEditionsPage(
+   setUuid: string,
+   cursor: string,
+-): Promise<{ editions: RawEdition[]; nextCursor: string | null } | null> {
++): Promise<PageFetch> {
+   type Resp = {
+     searchEditions?: {
+       searchSummary?: {
+@@ -192,26 +220,41 @@ async function fetchEditionsPage(
+       body: JSON.stringify(body),
+       signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
+     });
+-    if (!res.ok) return null;
++    if (!res.ok) {
++      // The BODY is the diagnostic: Top Shot answers 422 for an invalid query
++      // and names the offending field in the message.
++      const body = await res.text().catch(() => "");
++      return { ok: false, fault: `HTTP ${res.status}: ${body.slice(0, 200)}` };
++    }
+     const json = (await res.json()) as { data?: Resp; errors?: unknown[] };
+-    if (Array.isArray(json.errors) && json.errors.length > 0) return null;
++    if (Array.isArray(json.errors) && json.errors.length > 0) {
++      const first = json.errors[0] as { message?: string } | undefined;
++      return { ok: false, fault: `gql: ${String(first?.message ?? "unknown").slice(0, 200)}` };
++    }
+     const summary = json.data?.searchEditions?.searchSummary;
+     return {
++      ok: true,
+       editions: summary?.data?.data ?? [],
+       nextCursor: summary?.pagination?.rightCursor ?? null,
+     };
+-  } catch {
+-    return null;
++  } catch (e) {
++    return { ok: false, fault: e instanceof Error ? e.message.slice(0, 200) : "fetch failed" };
+   }
+ }
+ 
++/**
++ * `fault` is the reason the walk stopped early, or null when it completed.
++ * A set that genuinely holds no editions returns `editions: []` with
++ * `fault: null` — the caller distinguishes the two and must not conflate them.
++ */
+ async function walkSet(
+   setUuid: string,
+-): Promise<{ editions: RawEdition[]; gqlCalls: number }> {
++): Promise<{ editions: RawEdition[]; gqlCalls: number; fault: string | null }> {
+   const collected: RawEdition[] = [];
+   const seenCursors = new Set<string>();
+   let cursor = "";
+   let gqlCalls = 0;
++  let fault: string | null = null;
+   // Hard cap at 50 pages = 5000 editions/set. No real Top Shot set is that
+   // large; this is a runaway-loop guard.
+   for (let page = 0; page < 50; page++) {
+@@ -219,14 +262,20 @@ async function walkSet(
+     if (cursor) seenCursors.add(cursor);
+     const result = await fetchEditionsPage(setUuid, cursor);
+     gqlCalls++;
+-    if (!result) break;
++    if (!result.ok) {
++      // Page 0 failing means we learned nothing about this set. A later page
++      // failing means we hold a PARTIAL set, which is still a fault: upserting
++      // it silently would look like a complete walk.
++      fault = `page ${page}: ${result.fault}`;
++      break;
++    }
+     const { editions, nextCursor } = result;
+     collected.push(...editions);
+     // Loop while cursor is truthy and not equal to the previous cursor.
+     if (!nextCursor || nextCursor === cursor) break;
+     cursor = nextCursor;
+   }
+-  return { editions: collected, gqlCalls };
++  return { editions: collected, gqlCalls, fault };
+ }
+ 
+ interface EditionUpsertRow {
+@@ -309,7 +358,7 @@ function buildEditionRow(
+     // walker, so a bulk upsert with the key present on some rows and missing on
+     // others would be an inconsistent payload. Empty string collapses to null
+     // so "has prose" stays a simple NOT NULL test.
+-    description: normalizePlayDescription(e.play?.stats?.description),
++    description: normalizePlayDescription(e.play?.description),
+     updated_at: now,
+   };
+ }
+@@ -409,6 +458,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+   let editionsSkipped = 0;
+   let setsProcessed = 0;
+   let setsWithCoverSet = 0;
++  let setsFaulted = 0;
++  let upsertErrors = 0;
+   let gqlCalls = 0;
+   let lastSetId: string | null = null;
+   let terminatedReason: string = "no_more_sets";
+@@ -427,12 +478,23 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+     }
+ 
+     const setUuid = setRow.external_id as string;
+-    const { editions, gqlCalls: setGqlCalls } = await walkSet(setUuid);
++    const { editions, gqlCalls: setGqlCalls, fault } = await walkSet(setUuid);
+     gqlCalls += setGqlCalls;
+ 
++    // A fault is recorded even when some editions came back, because a partial
++    // walk upserted silently is indistinguishable from a complete one.
++    if (fault) {
++      setsFaulted++;
++      errors.push({ set_id: setRow.id, reason: fault });
++    }
++
+     if (editions.length === 0) {
+-      // Either an empty set (rare) or a GQL fault. Mark processed and move on
+-      // so we don't get stuck re-walking it every tick.
++      // An empty set (rare) or a faulted walk — the two are now told apart by
++      // `fault` above, so this branch is only about not getting stuck
++      // re-walking the same set every tick. The updated_at stamp is applied in
++      // both cases deliberately: withholding it on a fault would pin a
++      // persistently-broken set at the head of the least-recently-touched
++      // queue forever and starve every set behind it.
+       setsProcessed++;
+       lastSetId = setRow.id;
+       await supabase
+@@ -456,6 +518,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+         .from("editions")
+         .upsert(rows, { onConflict: "external_id,collection_id", count: "exact" });
+       if (upsertErr) {
++        upsertErrors++;
+         errors.push({ set_id: setRow.id, reason: upsertErr.message });
+       } else {
+         editionsUpserted += count ?? rows.length;
+@@ -494,7 +557,17 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+ 
+   const durationMs = Date.now() - startedAt;
+   const finishedAt = new Date().toISOString();
+-  const ok = errors.length === 0;
++
++  // `ok` deliberately does NOT redden on any single fault. Top Shot's GQL is
++  // intermittently flaky and a pipeline that is chronically red trains the
++  // operator to skim past it — the lesson this repo already paid for with
++  // ufc_fmv_stale_hours. What IS unambiguous, and is exactly the shape of the
++  // 2026-08-11 outage, is EVERY walked set faulting: that cannot be upstream
++  // noise, it means we are asking a question the upstream refuses. Partial
++  // faults stay fully visible in errors_count / errors_sample / sets_faulted
++  // without flipping the flag.
++  const totalFault = setsProcessed > 0 && setsFaulted >= setsProcessed;
++  const ok = upsertErrors === 0 && !totalFault;
+ 
+   try {
+     await supabase.from("pipeline_runs").insert({
+@@ -510,6 +583,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+       extra: {
+         sets_processed: setsProcessed,
+         sets_with_cover_set: setsWithCoverSet,
++        sets_faulted: setsFaulted,
+         editions_upserted: editionsUpserted,
+         editions_skipped: editionsSkipped,
+         gql_calls: gqlCalls,
+@@ -531,6 +605,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
+     mode: staleThumbnailMode ? "stale_thumbnails" : "natural",
+     sets_processed: setsProcessed,
+     sets_with_cover_set: setsWithCoverSet,
++    sets_faulted: setsFaulted,
+     editions_upserted: editionsUpserted,
+     editions_skipped: editionsSkipped,
+     gql_calls: gqlCalls,
+diff --git a/app/api/admin/discover-moment-descriptors/route.ts b/app/api/admin/discover-moment-descriptors/route.ts
+index 4e7a03072..c0fa67c45 100644
+--- a/app/api/admin/discover-moment-descriptors/route.ts
++++ b/app/api/admin/discover-moment-descriptors/route.ts
+@@ -14,6 +14,24 @@
+ // (measured: curl to both returns status=000).
+ //
+ // ─────────────────────────────────────────────────────────────────────────────
++// V4 (2026-08-12). V3's ANSWERS were right; its REPORT was misreadable, and a
++// reader acted on the misreading. `description` was probed on two types and
++// correctly returned "no" on `PlayStats` / "yes" on `Play` — but the top-level
++// `found` array merged both arms into bare field names, so `description` and
++// `headline` appeared in `found` AND in `absent` simultaneously with nothing to
++// say which type each verdict belonged to. The catalog walker was then shipped
++// selecting `stats { description }`, which 422s every page; it ran a full day
++// writing zero rows and reporting success.
++//
++// So V4 makes the type travel with every verdict: each ProbeResult carries the
++// TYPE it was probed on, `found` entries carry a ready-to-paste `select_as`
++// path, `absent`/`indeterminate` are {type, field} objects rather than names,
++// and a new `type_sensitive` block names exactly those fields whose answer
++// DIFFERS by type — the dangerous ones. A discovery probe's output is an
++// instruction to a future implementer; a shape that reads plausibly wrong is a
++// defect in the probe, not in the reader.
++//
++// ─────────────────────────────────────────────────────────────────────────────
+ // V3 (2026-08-11). V2's controls did their job: the run came back INCONCLUSIVE
+ // on both arms rather than lying, and the captured error BODIES named the two
+ // causes exactly.
+@@ -78,6 +96,18 @@ type Status = "yes" | "no" | "unknown"
+ 
+ interface ProbeResult {
+   field: string
++  /**
++   * The GraphQL TYPE the field was probed on. Load-bearing, not decoration.
++   *
++   * ⚠ V3 probed `description` on BOTH `PlayStats` (no) and `Play` (yes) and
++   * reported it correctly in `stats_probe` / `play_probe` — but `found` merged
++   * the two arms with no provenance, so the reader took a Play field for a
++   * stats field and shipped `stats { description }`. That 422'd every page of
++   * the catalog walker for a day while it reported success (see
++   * app/api/admin/backfill-topshot-catalog/route.ts). A field name alone does
++   * not tell you where to select it; the type must travel with it.
++   */
++  type: string
+   status: Status
+   sample?: unknown
+   detail?: string
+@@ -164,7 +194,8 @@ async function probeField(
+   variables: Record<string, unknown>,
+   field: string,
+   pluck: (data: any) => unknown,
+-  withSecret: boolean
++  withSecret: boolean,
++  type: string
+ ): Promise<ProbeResult> {
+   const r = await gql(url, buildQuery(field), variables, withSecret)
+ 
+@@ -172,19 +203,19 @@ async function probeField(
+     // A transport failure says NOTHING about the schema — unless the body
+     // itself names the field as unknown, which is how Top Shot reports it.
+     if (isUnknownFieldError(r.transport)) {
+-      return { field, status: "no", detail: r.transport.slice(0, 200) }
++      return { field, type, status: "no", detail: r.transport.slice(0, 200) }
+     }
+-    return { field, status: "unknown", detail: r.transport.slice(0, 200) }
++    return { field, type, status: "unknown", detail: r.transport.slice(0, 200) }
+   }
+ 
+   const err = r.errors?.[0]?.message
+-  if (err && isUnknownFieldError(err)) return { field, status: "no", detail: err.slice(0, 200) }
+-  if (err) return { field, status: "unknown", detail: err.slice(0, 200) }
++  if (err && isUnknownFieldError(err)) return { field, type, status: "no", detail: err.slice(0, 200) }
++  if (err) return { field, type, status: "unknown", detail: err.slice(0, 200) }
+ 
+   let sample: unknown
+   try { sample = pluck(r.data) } catch { sample = undefined }
+   if (typeof sample === "string" && sample.length > 400) sample = sample.slice(0, 400) + "…"
+-  return { field, status: "yes", sample }
++  return { field, type, status: "yes", sample }
+ }
+ 
+ async function inBatches<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+@@ -207,9 +238,35 @@ function summarize(controls: ProbeResult[], probes: ProbeResult[]) {
+     warning: conclusive
+       ? null
+       : "INCONCLUSIVE — control fields we query in production did not resolve, so the transport or query shape is wrong. The per-field results below are NOT evidence that anything is absent. Fix the transport and re-run.",
+-    found: conclusive ? probes.filter((p) => p.status === "yes").map((p) => ({ field: p.field, sample: p.sample })) : [],
+-    absent: conclusive ? probes.filter((p) => p.status === "no").map((p) => p.field) : [],
+-    indeterminate: probes.filter((p) => p.status === "unknown").map((p) => p.field),
++    // Every entry carries its TYPE. A bare field name is not actionable: the
++    // same name can exist on one type and not another, and reading `found` as
++    // a flat name list is exactly how `description` (a `Play` field) got
++    // shipped as `stats { description }` and 422'd the catalog walker.
++    found: conclusive
++      ? probes
++          .filter((p) => p.status === "yes")
++          .map((p) => ({ type: p.type, field: p.field, select_as: `${p.type}.${p.field}`, sample: p.sample }))
++      : [],
++    absent: conclusive
++      ? probes.filter((p) => p.status === "no").map((p) => ({ type: p.type, field: p.field }))
++      : [],
++    indeterminate: probes.filter((p) => p.status === "unknown").map((p) => ({ type: p.type, field: p.field })),
++    // Names probed on more than one type whose answer DIFFERS. These are the
++    // dangerous ones — the reader must select on the winning type only.
++    type_sensitive: conclusive
++      ? Object.entries(
++          probes.reduce<Record<string, ProbeResult[]>>((acc, p) => {
++            ;(acc[p.field] ??= []).push(p)
++            return acc
++          }, {})
++        )
++          .filter(([, rs]) => rs.length > 1 && new Set(rs.map((r) => r.status)).size > 1)
++          .map(([field, rs]) => ({
++            field,
++            present_on: rs.filter((r) => r.status === "yes").map((r) => r.type),
++            absent_on: rs.filter((r) => r.status === "no").map((r) => r.type),
++          }))
++      : [],
+   }
+ }
+ 
+@@ -271,13 +328,13 @@ export async function POST(req: NextRequest) {
+   const tsPlayPluck = (f: string) => (d: any) => tsRow(d)?.play?.[f]
+ 
+   const tsControls = await inBatches(TOPSHOT_STATS_CONTROLS, 3, (f) =>
+-    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
++    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true, "PlayStats")
+   )
+   const tsStats = await inBatches(TOPSHOT_STATS_CANDIDATES, 4, (f) =>
+-    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
++    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true, "PlayStats")
+   )
+   const tsPlay = await inBatches(TOPSHOT_PLAY_CANDIDATES, 4, (f) =>
+-    probeField(topshotUrl(), tsPlayQuery, tsVars, f, tsPlayPluck(f), true)
++    probeField(topshotUrl(), tsPlayQuery, tsVars, f, tsPlayPluck(f), true, "Play")
+   )
+ 
+   report.topshot = {
+@@ -293,10 +350,10 @@ export async function POST(req: NextRequest) {
+   const adPluck = (f: string) => (d: any) => d?.allEditions?.edges?.[0]?.node?.play?.[f]
+ 
+   const adControls = await inBatches(ALLDAY_PLAY_CONTROLS, 2, (f) =>
+-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
++    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
+   )
+   const adProbe = await inBatches(ALLDAY_PLAY_CANDIDATES, 4, (f) =>
+-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
++    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
+   )
+ 
+   report.allday = {
+### UNTRACKED COMPONENT (stash@{1}^3) ###
+commit 5260c35cd4ce2a984a48e7fa08a3920ca575976d
+Author: Trevor <tdillonbond@gmail.com>
+Date:   Thu Aug 13 08:04:02 2026 -0700
+
+    untracked files on main: 85562e25 fix(alerting): detect_stalled_pipelines carries watchlist notes with the alert
+
+### NO UNTRACKED COMPONENT — verified with `git ls-tree -r stash@{1}^3` = 0 files.
+### (An earlier capture attempt here was VACUOUS: `git show --name-only` lists nothing for a
+###  parentless stash commit, so it appended a header and no content. Corrected 2026-08-23.)
