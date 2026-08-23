@@ -142,7 +142,23 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   // that are already indexed (Team LeBron, Rising Stars, …).
   if (isExhibitionTeamSlug(slug)) notFound()
 
-  const detail = await fetchDetail(coll.id, slug)
+  // ⚠ BOUNDED READ (deep-audit R19) — same shape as the set page.
+  // Observed live: /nba-top-shot/team/los-angeles-lakers served a bare
+  // "500: This page couldn't load" under DB load. An error.tsx boundary does NOT
+  // catch it: this route is ISR, so the throw happens during GENERATION, not
+  // while a mounted tree renders, and Next serves its own default error page.
+  //
+  // ⚠ A FAILED READ MUST NOT BECOME notFound(). `!detail` means the RPC answered
+  // and this team does not exist. A THROW means we could not ask — 404-ing there
+  // tells a crawler a real franchise page is gone.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <TeamUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
   const labels = getEntityLabels(collection)
@@ -261,5 +277,32 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         />
       </Section>
     </div>
+  )
+}
+
+// Rendered when get_team_detail could not be READ — distinct from a team that
+// does not exist (that still 404s). Reports our failure and makes no claim about
+// the team's holdings.
+function TeamUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  const name = slug.replace(/-/g, " ")
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Team unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(28px, 5vw, 44px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load {name}
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The team data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the team has no moments. Reloading often works.
+      </p>
+      <a
+        href={`/${collection}/overview`}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+      >
+        Back to overview
+      </a>
+    </main>
   )
 }

@@ -99,7 +99,28 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  const detail = await fetchDetail(coll.id, slug)
+  // ⚠ BOUNDED READ (deep-audit R19). This was a bare `await fetchDetail(...)`.
+  // Observed live 2026-08-22: /nba-top-shot/set/base-set returned a bare
+  // "500: This page couldn't load" after 18 s under DB load.
+  //
+  // ⚠ AND AN error.tsx BOUNDARY DOES NOT CATCH IT. This route is ISR
+  // (`revalidate = 600`, `dynamicParams = true`), so the throw happens while the
+  // page is being GENERATED, not while a mounted tree renders — Next serves its
+  // own default error page and the segment boundary never runs. Verified: the
+  // boundary IS in the deployed bundle and the 500 was still Next's default.
+  // `generateMetadata` above already degrades; only the page body did not.
+  //
+  // ⚠ A FAILED READ MUST NOT BECOME notFound(). `!detail` means the RPC answered
+  // and this set does not exist — a 404 is then true. A THROW means we could not
+  // ask, and rendering 404 there would tell a crawler a real set is gone.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <SetUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
   const setNames = [detail.set_name, ...(detail.set_name_variants ?? [])]
@@ -258,4 +279,32 @@ const SERIES_DISPLAY: Record<number, string> = {
 function seriesDisplay(n: number, collectionUrlSlug: string): string {
   if (collectionUrlSlug === "nba-top-shot") return SERIES_DISPLAY[n] ?? `Series ${n}`
   return `Series ${n}`
+}
+
+// Rendered when get_set_detail could not be READ — distinct from a set that does
+// not exist (that still 404s above). Reports our failure and makes no claim
+// about the set's contents; a heavy page under load must degrade in brand rather
+// than bail to Next's unbranded default.
+function SetUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  const name = slug.replace(/-/g, " ")
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Set unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(28px, 5vw, 44px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load {name}
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The set data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the set is empty or gone. Reloading often works.
+      </p>
+      <a
+        href={`/${collection}/sets`}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+      >
+        All sets
+      </a>
+    </main>
+  )
 }
