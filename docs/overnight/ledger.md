@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · MEASURED (Claude Code, interactive) — I corrected my OWN filing from three hours earlier: both `/api/ready` fixes I proposed are wrong
+
+**No code, no DB state change — a prod READ that cost IO, recorded because it did.**
+
+**What I filed at 00:25Z** was `/api/ready` returning 500 for eight days (`42501 permission denied for
+function health_check`), with two candidate fixes framed as an operator choice: grant `anon` EXECUTE, or
+move the route to the service-role client.
+
+🚨 **BOTH ARE WRONG, and they share one false premise — that `health_check` is a viable SYNCHRONOUS call.**
+Run as `postgres` in the **quiet window** (~00:45Z), it **did not return inside 60 s**. ⚠ The MCP cap
+abandons the **result, not the query**, so I did not retry: I read `pg_stat_activity` instead — still
+`active` at **76 s**, `wait_event = DataFileRead` — and **cancelled it** (`pg_cancel_backend`, verified 0
+remaining). ⚠ **That is ~80 s of disk-IO burn I added to the budget this instance is actually constrained
+by. Recording it rather than omitting it.**
+
+- ⛔ **Candidate 1 dies on `authenticator`'s `statement_timeout=8s`**, which is the binding ceiling on the
+  PostgREST path (`anon`'s declared 3 s never applies — `rolconfig` is LOGIN-time and PostgREST logs in as
+  `authenticator`); `health_check` declares only a `search_path`. **Granting anon EXECUTE swaps a 42501 for
+  an 8 s statement timeout: still a 500, now burning 8 s of IO per probe.** ⚠ **It would ship green and
+  change nothing a user sees** — the worst kind of fix.
+- ⛔ **Candidate 2 dies on the client:** no Postgres timeout bounds a `supabaseAdmin` RPC, so Vercel kills
+  it — **which is literally the other error cluster already on this route** (`Task timed out after 10
+  seconds`, 13 since 06-16).
+
+✅ **Corroborated with a positive control:** `pg_stat_statements` holds **4,777 rows since 2026-08-12** (so
+it is populated and the window spans the outage) and **ZERO for `health_check`** — it has not successfully
+executed in 11 days.
+
+**The fix must change the SHAPE, not the privilege.** A >60 s aggregate cannot be served synchronously on
+an anon-reachable route under any role. Unmeasured, explicitly NOT recommendations: precompute the snapshot
+on a schedule and read the row, or split the probe to its cheap legs. ⚠ **60 s is a FLOOR, not the runtime
+— it was cancelled, not finished. Re-measure before costing either option.**
+
+⚠ **The transferable lesson: a filed DECISION is a hypothesis too, and the ones offering a tidy A-or-B
+choice are the least likely to be re-checked.** Mine survived three hours and would have sent an operator
+to ship a privilege grant that fixes nothing.
+
+**Also checked and deliberately NOT filed:** the large family of `rpc … timed out after 45000ms` errors
+across entity pages looks like a dated regression (all first-seen 08-15/16) but is **already registered**
+as R19 / `rpcWithRetry` / the `withDeadline` normalization, and a concurrent session is working it tonight.
+
 ### 2026-08-22 · VERIFIED (Claude Code, interactive) — R19's throwers are NAMED from runtime logs: both are catchable, they are DIFFERENT on the two pages, and team's has hit 8 real users
 
 **The end-to-end probe came back CONFOUNDED, so I stopped trying to reproduce and read the instrument instead.** Polling production after the fix returned 500 on the old deployment and 200 on the new one — two things changed at once (deploy AND load), and a 200 does not exercise the failure path. **That observation proves nothing about the fix, and is recorded as proving nothing.**
