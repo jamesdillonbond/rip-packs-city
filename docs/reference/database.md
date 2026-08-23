@@ -194,6 +194,44 @@ Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, p
 
   ⚠ **ALSO DISPLACED VERBATIM FROM that same rule (2026-08-23), to make room for the production-caller control below — two fragments, in full:** *"(8 artifact-only views; a sweep without it breaks 3 live boards)"* (i.e. when enumerating callers, the Cowork artifacts' HTML is a source outside BOTH the repo and the catalogue, and a sweep that omits it breaks three live boards) and, on the seventh source, *"; the 08-22 canary greps ZERO callers, runs every 30 min"* (an EDGE function invisible to all six sources *and* to `cron.job`, because cron-job.org drives it).
 
+## 🚨 A PARTIAL INDEX WHOSE PREDICATE SAYS `col IS NOT NULL` ON A `NOT NULL` COLUMN IS UNREACHABLE ON PG 17 (2026-08-23)
+
+This DB is **PostgreSQL 17.6**. PG 17 removes a redundant `col IS NOT NULL` qual when `col` is declared
+`NOT NULL` — correct as a *filter*, but it happens **before partial-index predicate proving**, and the prover
+reasons over clauses, not over column constraints. The index's own predicate then cannot be proven, so the
+planner **drops it from the candidate set entirely**. It is not out-costed; it is invisible. It becomes
+reachable again only if the query supplies some other **strict** clause on that column (`col = $1`,
+`col <> $1`, …), because a strict operator clause does prove `col IS NOT NULL`.
+
+- ⚠ **This is why `idx_sales_2026_fmv_recalc_window` has `idx_scan = 0` at 98 MB** while
+  `fmv_recalc_edition_page` — the function it is named for, whose predicate it matches exactly — times out.
+  Measured on `sales_2026`, same 30-day window, same 128,534 output rows, both plans non-parallel: as the
+  function writes it, **50,471 ms / 97,669 buffers**; with one redundant `edition_id <> '000…'::uuid` added,
+  **17,425 ms / 48,494 buffers** via `Index Only Scan` — **2.9× faster on 2.0× fewer buffers**. At the real
+  90-day window the as-written form did not complete in 60 s (twice) against ~16 s reachable.
+- ⚠ **The estimate over-promises: the planner said 7.4×, the measurement said 2.9×.** The index-only scan
+  still did **46,625 heap fetches** — `sales_2026` is 99.7% all-visible *overall*, but the last 90 days are
+  the part autovacuum has not caught up on, and that is exactly the range this query reads.
+- ⚠ **`idx_scan > 0` DOES NOT MEAN REACHABLE.** `idx_sales_2026_top_sales_board` carries 502 recorded scans
+  and is unreachable today (bitmap+sort at cost 28,149 where the index costs 9.75 once a strict qual on
+  `edition_id` is added). **A scan count is a claim about the past.** The unused-index advisor is structurally
+  blind to this class on exactly the indexes that used to work.
+- **Controls, both directions, all measured:** same predicate shape on a NULLABLE column is chosen instantly
+  (`sales_2026_tx_nft_sold_idx`, cost 0.55); a NOT NULL column whose predicate also carries a strict clause is
+  chosen with no residual filter (`unmapped_sales_sold_at_unresolved_idx`, via `nft_id <> ''`); one index goes
+  both ways in one session (`pack_drop_pool_edition_idx`: bare `IS NOT NULL` seq-scans, `edition_id = $1`
+  index-scans); and an index with no `IS NOT NULL` conjunct at all is fine
+  (`idx_sales_2026_ts_otherserial_cover`), which rules out `price_usd > 0` as the blocker.
+- **Current population: 6 partial indexes in `public` carry the shape** (`pg_index.indpred` ×
+  `pg_attribute.attnotnull`). Two measured unreachable, three reachable via a strict clause, one predicted
+  unreachable and not measured (`idx_pinnacle_editions_set_name`). **The repair is free of behaviour change** —
+  the conjunct excludes zero rows — but it is an index rebuild, so it is DDL: `CREATE INDEX CONCURRENTLY` is
+  reachable here only via a one-statement pg_cron job, and every `apply_migration` costs a ~10–20 s
+  `PGRST002` burst.
+
+Full evidence, plans and the enumerated population:
+`docs/overnight/inbox/2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md`.
+
 ## 🚨 A CONTROL THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL (2026-08-23)
 
 **Both Pinnacle TRADE cron jobs failed on EVERY run from creation and it went unnoticed for hours**, because the check that was supposed to prove they worked used the wrong caller.

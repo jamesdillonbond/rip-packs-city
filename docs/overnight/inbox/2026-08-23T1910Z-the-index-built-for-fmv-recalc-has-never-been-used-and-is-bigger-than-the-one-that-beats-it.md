@@ -3,6 +3,9 @@
 **Filed:** 2026-08-23 ~12:10 PT (19:10Z) · **By:** Claude Code, interactive · **Status:** MEASURED, nothing dropped
 **Relates to:** R46 (working set) · `fmv-recalc` (72.7% wall-kills) · the Supabase performance advisor's 294 `unused_index` lints
 
+🚨 **READ THE CORRECTION AT THE BOTTOM BEFORE ACTING ON JUDGEMENT 1.** The mechanism in the next section is
+wrong and the conclusion inverts: the index must be REPAIRED, not dropped.
+
 ## The headline
 
 | index on `sales_2026` | scans (72 d) | tuples read | size |
@@ -73,3 +76,37 @@ the space lever; they are different arguments and should not be merged into one 
 
 ⚠ **Re-measure before acting** — these figures are a dated sample, and a `DROP INDEX` is not reversible in the
 cheap sense: rebuilding a 98 MB index on this instance is itself an IO event.
+
+---
+
+## ⚠ CORRECTION — 2026-08-23 ~14:30 PT. The numbers stand; the mechanism above is WRONG, and it inverts the conclusion.
+
+**What was wrong.** The section "Why it can never be used, from the plan rather than from reasoning" EXPLAINs
+`fmv_recalc_90d_catchup_editions` and concludes the index is "dead by construction" because `collection_id`
+is INCLUDEd rather than a key. **I EXPLAINed the wrong function.** There are two `fmv_recalc_*` functions and
+the index is named for the other one, `fmv_recalc_edition_page`, which does **not** filter
+`collection_id = $1` — it filters `collection_id <> p_pinnacle_collection_id` over a `sold_at` window. For
+*that* function the index matches the predicate **exactly**: leading key, partial predicate, covering columns.
+
+**What is actually true.** The index is not dead by construction. It is **unreachable** — PostgreSQL 17
+removes the query's `edition_id IS NOT NULL` qual because the column is declared NOT NULL, which makes the
+index's own predicate unprovable, so the planner drops the index from the candidate set. Full evidence, four
+controls and a causal manipulation:
+[2026-08-23T2130Z — Postgres 17 makes partial indexes with `IS NOT NULL` predicates unreachable](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md).
+
+**Why the correction matters rather than being a footnote.** Judgement 1 above proposes **dropping** this
+index as "provably unusable by its own query". Measured, the opposite holds: made reachable, it runs
+`fmv_recalc_edition_page`'s window **2.9× faster on 2.0× fewer buffers**, and at the real 90-day window it
+completes in ~16 s where the as-written form does not complete in 60 s. **Do not drop
+`idx_sales_2026_fmv_recalc_window` — repair its predicate.**
+
+**What is unaffected.** Everything measured rather than reasoned: the 0 scans / 98 MB / 72-day uptime figures,
+the never-reset stats argument, the 1,212-index population, the write-amplification table, and judgements 2
+and 3 (the two pack-sales-history indexes and the empty `sales_2022` partition). The reasoning defect was
+confined to *which query I attributed the index to* — the repo's own rule, "read `cron.job.command` / the
+function body to learn what a name calls; never infer the callee from the name", applied to an **index** name
+and I did not apply it.
+
+⚠ **And one more general lesson from it:** `idx_sales_2026_top_sales_board` has **502 recorded scans** and is
+unreachable *today*. A non-zero `idx_scan` is a claim about the past. An unused-index sweep cannot see this
+defect class on exactly the indexes that used to work.

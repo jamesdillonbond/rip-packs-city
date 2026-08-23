@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — the 98 MB index `fmv-recalc` needs is UNREACHABLE on PG 17, not unused; the earlier "drop it" filing is corrected and inverted
+
+**No code, no DB.** Docs only: two inbox filings + a correction + a `docs/reference/database.md` section.
+
+PostgreSQL **17.6** removes a redundant `col IS NOT NULL` qual when the column is declared `NOT NULL`. That
+removal happens **before partial-index predicate proving**, so a partial index carrying the same conjunct can
+no longer be proven applicable and the planner **drops it from the candidate set**. It is not out-costed — it
+is invisible. A strict clause on the column (`col = $1`, `col <> $1`) restores it.
+
+`idx_sales_2026_fmv_recalc_window` (98 MB, `idx_scan = 0` in 72 days) matches `fmv_recalc_edition_page`'s
+predicate exactly and is unreachable for this reason. Same instrument, same 30-day window, same 128,534 output
+rows, both plans non-parallel: **50,471 ms / 97,669 buffers** as written vs **17,425 ms / 48,494 buffers**
+(`Index Only Scan`) with one redundant `edition_id <> '000…'::uuid` added — **2.9× / 2.0×**. At the real
+90-day window the as-written form did **not complete in 60 s, twice**, against ~16 s reachable. That is the
+same page-0 stall filed at 20:00Z.
+
+⚠ **The earlier 19:10Z filing is CORRECTED, and the correction inverts its recommendation.** It EXPLAINed
+`fmv_recalc_90d_catchup_editions` and concluded the index was "dead by construction"; the index is named for
+the *other* `fmv_recalc_*` function. Judgement 1 there proposed **dropping** the index. **Do not drop it —
+repair its predicate.** The repo's own rule (never infer a callee from a name) applies to index names too.
+
+⚠ **`idx_scan > 0` is not evidence of reachability.** `idx_sales_2026_top_sales_board` has 502 recorded scans
+and is unreachable today (cost 28,149 vs 9.75 once a strict qual is added). The unused-index advisor is
+structurally blind to this class on exactly the indexes that used to work.
+
+⚠ **A splice trap, recorded because it nearly shipped:** the rebase resolver read its payload from a
+scratchpad `entry.md` left over from an earlier entry **that same session**, and the heading-count assertion
+(`1899 → 1900`) passed anyway — it counts headings, not identity. **Assert on the CONTENT you meant to write
+(a unique string from it), not on a count that any valid entry satisfies**, and never reuse a generic
+scratch filename across entries.
+
+**Not shipped, deliberately:** the repair is an index rebuild — DDL on the FMV path (off-limits to autonomous
+shipping), `CREATE INDEX CONCURRENTLY` is reachable here only via a one-statement pg_cron job, and every
+`apply_migration` costs a ~10–20 s user-facing `PGRST002` burst. Trevor's call; R52's context applies.
+
+**Revert path:** `git revert` the docs commit (find by message `docs: PG 17 partial-index reachability`). No
+DB or production state was changed.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — eight production migrations got their git half back, the pack-opens filing is retracted in place, and a STALE `index.lock` had silently blocked every commit in this clone since 11:20
 
 **Why the tree had a day of work in it: a 0-byte `.git/index.lock` dated 11:20 PT with no git process
