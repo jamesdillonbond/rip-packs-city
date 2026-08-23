@@ -102,7 +102,15 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // chain of up to six sequential steps. A per-read budget on either would have
 // multiplied the worst case it was added to cap. Both are mutation-proven
 // against that specific mistake, not just against "no bound at all".
-const MAX_UNBOUNDED = 6
+//
+// 6 → 4 (2026-08-22): `/[collection]/hot-floors` and `/[collection]/challenges`
+// had their single read EXTRACTED into `lib/hot-floors/fetchers.ts` and
+// `lib/challenges/hub-fetchers.ts`, then bounded and tested. ⚠ Both pages already
+// wrapped the read in `try/catch` and already had the right honest branch — and
+// neither was reachable, because **a try/catch catches a THROW and a hang throws
+// nothing**. That is the sharpest statement of this whole class: the error
+// handling looked complete and could not fire.
+const MAX_UNBOUNDED = 4
 
 const strip = (s) => stripComments(s)
 

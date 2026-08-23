@@ -117,7 +117,12 @@ const APP_DIR = join(process.cwd(), "app")
  * ⚠ Both were already covered by comments asserting the right behaviour. The
  * comment is not the check; moving the code somewhere a test can drive it is.
  */
-const BUDGET = 8
+// 8 → 6 (2026-08-22): `/[collection]/hot-floors` and `/[collection]/challenges`
+// had their single read extracted into `lib/hot-floors/fetchers.ts` and
+// `lib/challenges/hub-fetchers.ts`, which is what takes a page off this list.
+// ⚠ Lowered because THIS FILE'S own no-slack assertion demanded it, not from a
+// count carried over by hand — which is the check working exactly as intended.
+const BUDGET = 6
 
 /**
  * ── THE WALK WAS BLIND TO EVERYTHING THAT IS NOT A `page.tsx` (widened 2026-08-17) ──

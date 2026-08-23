@@ -9,25 +9,10 @@
 
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
 
 export const revalidate = 300
 
-interface HotEdition {
-  external_id: string
-  set_id_onchain: number | null
-  play_id_onchain: number | null
-  player_name: string | null
-  set_name: string | null
-  tier: string | null
-  thumbnail_url: string | null
-  swept_sales: number
-  sweep_buyers: number
-  swept_spend: number | null
-  last_swept_at: string | null
-  floor_ask: number | null
-  fmv_usd: number | null
-}
 
 const TIER_COLOR: Record<string, string> = {
   COMMON: "#9ca3af",
@@ -69,16 +54,11 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
     )
   }
 
-  let editions: HotEdition[] = []
-  let errored = false
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabaseAdmin as any).rpc("get_topshot_hot_floors", { p_days: 3 })
-    if (error) errored = true
-    else editions = (data?.editions ?? []) as HotEdition[]
-  } catch {
-    errored = true
-  }
+  // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
+  // header. The `errored` distinction below is unchanged; what changed is that a
+  // read which merely HANGS can now reach it.
+  const { editions, ok } = await fetchHotFloors()
+  const errored = !ok
 
   return (
     <div style={{ padding: "8px 0 40px" }}>

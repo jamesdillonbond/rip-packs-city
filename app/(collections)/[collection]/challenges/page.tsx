@@ -9,29 +9,10 @@
 
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
-import { supabaseAdmin } from "@/lib/supabase"
+import { fetchActiveChallenges } from "@/lib/challenges/hub-fetchers"
 
 export const revalidate = 300
 
-interface ChallengeRow {
-  challengeId: string
-  slug: string
-  name: string
-  challengeType: string
-  endsAt: string | null
-  rewardKind: string | null
-  rewardLabel: string | null
-  totalRewardAllocation: number | null
-  completedCount: number | null
-  totalRequired: number
-  missingCount: number
-  unresolvedSlots?: number
-  completionPct: number | null
-  costToComplete: number | null
-  rewardValue: number | null
-  netEv: number | null
-  worthIt: boolean | null
-}
 
 const TYPE_LABEL: Record<string, string> = {
   set_locking: "Set Lock",
@@ -70,16 +51,11 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
     )
   }
 
-  let challenges: ChallengeRow[] = []
-  let errored = false
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabaseAdmin as any).rpc("get_active_challenges", { p_wallet: null })
-    if (error) errored = true
-    else challenges = (data?.challenges ?? []) as ChallengeRow[]
-  } catch {
-    errored = true
-  }
+  // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
+  // header. The `errored` distinction below is unchanged; what changed is that a
+  // read which merely HANGS can now reach it.
+  const { challenges, ok } = await fetchActiveChallenges()
+  const errored = !ok
 
   return (
     <div style={{ padding: "8px 0 40px" }}>
