@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — closed the gap I had just declared, and mutation testing found one of my new assertions pins nothing
+
+**I ended the last entry with "neither new function is pinned by a `supabase/tests/*.sql` invariant — verified live, not guarded." Both are now pinned**, registered in the drift guard, and mutation-tested. DB suite **181/181, exit 0**; JS suite green.
+
+**`supabase/tests/pinnacle_get_unresolved_batch_v2.sql`** pins the resolver's candidate FEED — the thing that decides which Pins ever get an edition, where a Pin outside the population is invisible forever while every pipeline reports healthy. ⚠ **Leg ORDER is asserted FIRST because it is what regresses silently**: the outer LIMIT truncates from the BOTTOM, so `sales → sales_owner → trades → wmc` is the only thing keeping FMV ahead of trades, and a plain `UNION` (which does not preserve order) would starve pricing with nothing going red. A second assertion proves the truncation actually bites (at `p_limit=2` only the two pricing legs survive) — **an order claim is meaningless if the limit never binds.**
+
+**`supabase/tests/backfill_pinnacle_trade_editions.sql`** pins the promotion step, load-bearing half being the **dangling-edition guard**: a map key pointing at an edition we do not carry reads as NAMED while joining to nothing — **strictly worse than an honest NULL.**
+
+🚨 **MUTATION TESTING FOUND ONE OF MY OWN ASSERTIONS PINS NOTHING, AND THE FINDING IS KEPT IN THE FILE RATHER THAN PAPERED OVER.** Five mutations, four red as intended (leg order reordered · cross-leg dedup dropped · dangling guard dropped · already-named rows overwritten). **The fifth stayed GREEN: removing `sales_owner_targets`'s `ps.buyer_address IS NULL` clause changes NOTHING.** ⚠ **The clause is REDUNDANT GIVEN THE DEDUP and cannot change output** — `sales_owner` already excludes anything in `sales_targets`, and `sales_targets` carries the SAME `LIMIT p_limit` as the outer query, so either every buyer-hint sale fits (and the dedup excludes them all) or `sales_targets` alone fills the batch and nothing below is visible. **There is no reachable poaching state.** The clause stays as an intent marker; the test now says so, and says the DEDUP is the enforcer, so nobody "strengthens" an assertion for a property that is genuinely enforced elsewhere.
+
+🚨 **AND THE DRIFT GUARD CAUGHT ME PUTTING PROD AND THE REPO OUT OF SYNC.** I added explanatory comments **inside two function bodies in the migration FILES after applying them**, so the files no longer matched `pg_get_functiondef` in prod. Both comments moved to the migration HEADERS, where they cannot drift. **Verified by md5, not by eye: `pinnacle_get_unresolved_batch_v2` file body and live definition both `10be1db246b7c9ed9d6154036561c104`.** ⚠ **An in-body comment on a `CREATE OR REPLACE` is not free — it is a divergence between the repo and the database.**
+
+**Also corrected: the local DB-suite file count in [testing-and-ci.md](../reference/testing-and-ci.md), 179 → 181** (re-measured, not inferred — it moved twice tonight as I added invariants).
+
+**REVERT:** `git revert <sha>` — two test files and two `PINS` entries, plus comment-only edits to two migration headers. No DB change and no production code.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — 16 guards were reading blanked source, and the ratchet that watched them could never reach zero
 
 **The burn-down.** `guards-use-the-shared-comment-stripper` stood at **25**. It is now **2**, and the
