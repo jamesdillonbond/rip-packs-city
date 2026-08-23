@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — R32: two scheduled workflows died BEFORE the line that names the failure; and the filing's scope was wrong in both directions
+
+**Fixed** the `bash -e` fallible-assignment shape in the two places where it is actually a defect:
+
+- **`offer-fill-backfill.yml`** (SCHEDULED) — four `jq` assignments inside the drain loop. `jq` exits **5** on a non-JSON body and `2>/dev/null` suppresses the **message, not the status**, so a 200 carrying an HTML error page killed the step *before* the `::warning::` that exists to name it. Everything past that point was dead code that read as coverage. Now `X=$(…) || X=""` plus an explicit unparseable-body branch that **names the fault and prints the first 200 bytes** — an unparseable body is its own outcome, not something to infer from a downstream `ok != true`.
+- **`allow-list-reconcile.yml`** (SCHEDULED, **not named in the filing**) — same shape, worse consequence: `SKIPPED=$(echo "$BODY" | jq …)` sits *above* the `HTTP_CODE != 200` check, so a 502 with an HTML body aborted the step and **nothing reported the 502 at all**.
+
+⚠ **THE FILING'S SCOPE WAS WRONG IN BOTH DIRECTIONS, and my first re-measure was too.**
+- It named **two workflows**. A sweep of `.github/workflows` finds **30** unguarded fallible assignments across ~14 files.
+- ⚠ **But 30 is NOT a defect count, and I nearly reported it as one.** Most are `STATUS=$(curl -s -o file -w "%{http_code}" …)`, where curl only fails at the *transport* layer (no `-f`, so HTTP 4xx/5xx still return 0) — aborting there is arguably correct, since there is no body to inspect, and the very next line handles the HTTP status. `ci.yml`'s `node`/`awk` ledger guards are the same: a guard that cannot run *should* fail the build loudly.
+- ⚠ **My first sweep said 33 and flagged `ops-monitor.yml:118` — the file the audit called the correct reference implementation.** That was a **scanner artifact**: its `|| echo ''` sits on a *continuation line*, which my single-line regex could not see. Re-run with continuations joined, `ops-monitor` is clean where it matters, and its `CONCLUSION`/`SHA`/`URL` parses are safe because `$RUN` is validated non-empty and non-null immediately above.
+
+**So the real rule, which the filing did not state:** the shape is dangerous **only when a fallible parse sits UPSTREAM of the branch that would report the failure**. That is 2 sites, both now fixed. The other 28 are the shape without the consequence, and **blanket-fixing them would have been the "cost stated with no number in it" error in reverse** — 28 edits to prevent nothing.
+
+⚠ **Local proof boundary, stated rather than glossed:** I demonstrated the abort mechanism with `bash -e`, but **`jq` is not installed on this box** — the probe exited **127** (command not found), not jq's 5. The mechanism (a fallible command in an assignment aborts the step) is proven; jq's specific exit code is not locally reproducible. The corrected form survives either way, which is the property that matters.
+
+**Verified:** both files still parse as YAML (`js-yaml`), line endings preserved, and the new form was run under `bash -e` against an unparseable body and reached the naming branch.
+
+**Revert:** `git revert <this commit>`.
+
 ### 2026-08-22 · SHIPPED + CORRECTION (Claude Code, interactive) — R23: the funnel can finally say "this was a crawler", and R19's "2026-08-15 regression" is NOT a regression, it is the day the error got its name
 
 ⚠ **CORRECTION FIRST, because I filed the wrong conclusion two hours ago.** My R19 entry said the 45,000 ms timeout class *"all begins 2026-08-15 … That looks like a regression date, not a chronic condition, and nobody has explained it."* **It is not a regression date. It is the date the INSTRUMENT was created.**
