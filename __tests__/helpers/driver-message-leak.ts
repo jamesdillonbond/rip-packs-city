@@ -14,6 +14,8 @@
 // Callers differ only in WHICH route files they scan, never in what counts as a
 // leak.
 
+import { stripComments } from "../../scripts/lib/strip-comments.mjs"
+
 /**
  * Spellings the leak has actually taken in this repo. All five were found in
  * production code; a grep for any ONE of them finds well under half the class,
@@ -21,7 +23,21 @@
  *
  * Returns `"<line>: <text>"` for each offending line.
  */
-export function leakSites(src: string): string[] {
+export function leakSites(rawSrc: string): string[] {
+  // ⚠ COMMENTS STRIPPED FIRST, and this is the repo's own standing rule for any
+  // guard that greps source for a string: at least six guards here have fired on
+  // the prose explaining the very fix they were checking. This one did too — a
+  // comment on `app/api/top-sales/route.ts` describing why an internal envelope
+  // field had been RENAMED away from `message:` was reported as a leak, on
+  // 2026-08-23, minutes after the rename that satisfied the guard.
+  //
+  // ⚠ Stripping can only make this guard fire LESS, so it is worth stating why
+  // that is safe rather than a loosening: a driver message inside a comment is
+  // not published to anybody. The property is about what reaches a RESPONSE.
+  //
+  // ⚠ The shared stripper BLANKS rather than deletes, so line numbers survive
+  // and the reported `<line>: <text>` still points at the real line.
+  const src = stripComments(rawSrc)
   const hits: string[] = []
   const lines = src.split("\n")
 

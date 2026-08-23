@@ -137,3 +137,55 @@ describe("driver-message leak guard — it is actually RUN, and the live tree is
     expect(code).toBe(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `leakSites` strips comments before it looks.
+//
+// ⚠ Added 2026-08-23 after the detector fired on the PROSE explaining a fix it
+// had just accepted: `app/api/top-sales/route.ts` renamed an internal envelope
+// field away from `message:` to satisfy this guard, and the comment describing
+// WHY quoted the banned shape — so the guard reddened on the documentation,
+// minutes after the code satisfied it. At least six guards in this repo have hit
+// that trap; the standing rule is that any check greping source for a string
+// strips comments first.
+//
+// ⚠ Stripping can only make this detector fire LESS, so the pair below is what
+// keeps it from being a loosening: the comment case must NOT be reported, and a
+// real leak on the very next line MUST still be.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { leakSites } from "./helpers/driver-message-leak"
+
+describe("leakSites — comments are not code", () => {
+  it("does NOT report a leak that exists only inside a comment", () => {
+    const src = [
+      "// the shape of a published leak is `message: error.message`, which is why",
+      "/* a block comment naming error: err.message must not count either */",
+      "const safe = 1",
+    ].join("\n")
+
+    expect(leakSites(src)).toEqual([])
+  })
+
+  it("STILL reports a real leak on the line after a comment naming one", () => {
+    // ⚠ The control that makes the assertion above meaningful. Without it,
+    // "strip comments" could be satisfied by a stripper that blanked the file.
+    const src = [
+      "// documented shape: error: err.message",
+      'return NextResponse.json({ error: err.message }, { status: 500 })',
+    ].join("\n")
+
+    const hits = leakSites(src)
+    expect(hits).toHaveLength(1)
+    // ⚠ Line numbers must survive the strip — the shared stripper blanks rather
+    // than deletes, and the report is only actionable if it points at the real
+    // line.
+    expect(hits[0].startsWith("2:"), `expected the hit on line 2, got ${hits[0]}`).toBe(true)
+  })
+
+  it("STILL reports a leak on a line that also carries a trailing comment", () => {
+    const src = 'return NextResponse.json({ error: err.message }) // known leak'
+
+    expect(leakSites(src)).toHaveLength(1)
+  })
+})
