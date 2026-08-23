@@ -316,3 +316,22 @@ duplicate; 436 wallets own a challenge slot edition all-time; **the two sets are
 impact query returned "0 affected wallets" and was VACUOUS** — there are zero active challenges, so it could
 not have returned anything else. The 436 is the positive control that makes the zero mean something. **One
 query separated a finding from a scare.** Both pinned tests now assert the case semantics explicitly.
+
+---
+
+## Displaced from CLAUDE.md — measurement traps that cost a wrong conclusion (verbatim, 2026-08-22)
+
+The bullet below was condensed to a one-line rule in CLAUDE.md on 2026-08-22 to make room for the
+DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; only the cases moved.
+
+> - ⚠ **A byte-identical HTTP response is as much the signature of a CACHE HIT as of a correct change**
+>   (`/api/public/insights/**` sets a public `s-maxage`; the tell was an `elapsed_ms` identical to the
+>   millisecond — re-run with a cache-buster) — ⚠ **and its DB analogue: an A/B benchmark must be
+>   WARM-vs-WARM** (a cold candidate against a warm incumbent read as *5.6× slower* and nearly killed a
+>   correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample**
+>   but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
+
+**Which `check_*` shape is which** (displaced from CLAUDE.md 2026-08-22, verbatim): a jsonb-array one
+(`check_secdef_anon_exec_drift`, `…_execute_violations`, `check_edge_fn_http_failures`) returns
+`count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one (`check_public_security_invariants`,
+`check_anon_write_surface`) returns **zero rows** when clean.

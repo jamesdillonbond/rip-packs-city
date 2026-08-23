@@ -709,3 +709,54 @@ already the second error cluster on that route.
 
 ⚠ **The A-or-B framing is what suppressed the check** — it reads as though the analysis is finished and only
 a preference remains. **Before offering a choice, state the premise both options share and test THAT.**
+
+## A fail-soft SKIP is a GREEN job, and a module-level memo leaks across Playwright spec FILES (2026-08-22)
+
+Two lessons from adding one arm (`edition_golazos`) to `e2e/entity-smoke.spec.ts`. Both are about the
+instrument, not the pages it checks.
+
+⚠ **`entity-smoke.spec.ts` fail-softs by design: a type it cannot discover from the sitemap is SKIPPED, and
+a skip counts as a passing job.** In the dispatched run on `bb945049` four of eight arms — `moment`, `set`,
+`player`, `team`, every type resolved from **sitemap segment 3** — skipped, and the job was green. Nothing in
+"the run succeeded" said four page types went unchecked; only the log lines did. **So "the smoke run passed"
+is not evidence that an arm ran** — read the per-arm lines, or assert the count of arms that resolved.
+Same family as the permanently-green instrument: an instrument that cannot report its own non-execution.
+
+🚨 **`fetchSitemapLocs`'s memo is MODULE-level and Playwright reuses a worker PROCESS across spec FILES.**
+`entity-smoke.spec.ts` runs against production and fills that cache; `smoke-selfcheck.spec.ts` then read
+**production** locs instead of the fixture server it had just started — expected the fixture's
+`/laliga-golazos/edition/541`, received a production URL. **The self-check was passing against the wrong
+corpus**, i.e. a green self-check that proved nothing about the fixture. Fixed by keying the memo on the
+base URL rather than caching a single global list. ⚠ **Verified against the conditions that produced it, not
+just re-run**: re-dispatch on `6fce088b` gave **100 passed, 0 flaky, 0 skipped** against `1 flaky` before.
+
+⚠ **And the same re-dispatch RETRACTED a filing written eight minutes earlier** which reported the four
+segment-3 arms as skipping — all four resolved on the next run. **A single observation of a failure is not a
+standing state.** What survived the retraction is the structural half (the sitemap's partial-read `break`
+and its 72%-tie paging key — see `known-issues.md`), because that half is a property of the code rather than
+a sample.
+
+## Nothing here sees the BUILT BUNDLE either (2026-08-22)
+
+CLAUDE.md records that no gate in this repo measures LAYOUT. The same is true of the **build artifact**:
+turbopack constant-folded a `+`-joined template literal whose interpolations were all module-level string
+constants and **dropped one quasi**, so production rendered *"…switched off on 2026-05-26**written on**
+2026-05-15…"* — a sentence the committed source does not contain. vitest evaluates the module and gets the
+correct string; `tsc` is clean; the served JS chunk itself was wrong. **A real-browser read of production is
+the only instrument that sees this class.**
+
+⚠ **The generalisation was REFUTED and the blanket lint rule must not be written.** The fold requires
+*every* interpolation in the chain to be compile-time constant, so a template carrying any runtime value
+cannot lose a quasi this way: **42 at-risk-SHAPED concatenations across `app`/`components`/`lib`/`workers`,
+ZERO constant-foldable.** The guard `no-constant-foldable-joined-templates` therefore bans the
+**precondition at population zero** rather than cleaning up 42 sites that cannot exhibit the defect — and
+the zero means something only because the same detector, run against the pre-fix source at `e0f3186dc`,
+flags the one real site and names both of its constants.
+
+### Displaced from CLAUDE.md 2026-08-22 — the second "silent by construction" example (verbatim)
+
+CLAUDE.md's *"ask what a passing guard is structurally SILENT about"* bullet used to carry two examples; the
+second moved here to make room for the built-bundle instrument gap. The rule is unchanged.
+
+> `check_secdef_anon_exec_drift()` reads `prosecdef = true`, so 84 anon-executable INVOKER functions were
+> outside it.

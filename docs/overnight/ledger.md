@@ -8,6 +8,80 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — docs/memory only) — the memory files had drifted from the platform in four measurable places, and the two newest filings had no register row
+
+**Ask:** *"update CLAUDE.md along with the roadmap or anything else holding memories or session history."*
+No code, no DB write, no migration, no cron or prod-state change. Every claim touched was **re-derived,
+not re-read** — and four came back different from what the docs said.
+
+🚨 **CLAUDE.md's account of the 2026-08-03 credential purge implied it SUCCEEDED.** It says the
+`filter-repo` + force-push "rewrote every pre-purge sha", which is true of `main` and reads as closure.
+`origin/claude/todo-implementation-e4tib3` branches from the ROOT commit, was never rewritten, and still
+carries the pre-purge blob on a **public** repo — **verified present 2026-08-22 19:36 PT via
+`git ls-remote`** (`ee94c8a2a98d…`). The correction now sits in the same paragraph as the dead-sha
+warning, which is the paragraph a session actually reads. Operator queue unchanged (known-issues #22).
+
+✅ **`/api/ready`'s eight-day 500 is closed and known-issues #26 said OPEN.** Verified at the privilege
+layer rather than from the commit message: `readiness_collection_stats` `prosecdef = false`, `anon`
+EXECUTE **true**; `health_check` `anon`/`authenticated` EXECUTE **false** — the revoke that closed the
+anon leak is intact and the route no longer depends on it. ⚠ **The HTTP 200 is NOT verified from here** —
+the web sandbox is egress-blocked from production (`curl` returns 000), and #26 now says so instead of
+implying an end-to-end check.
+
+✅ **The roadmap's headline metric had drifted in every copy of it.** Live from
+`rpc_trust_health_precompute` (the sanctioned read; `rpc_fmv_confidence_share()` blows the statement
+budget): Top Shot **49.6%** · Candy **59.2%** · Pinnacle **43.2%** · All Day **22.5%** · Golazos **0.0%** ·
+UFC **0.0%**, against an 08-13 baseline of 54.5 / 60.0 / 30.3 / 27.7 / 0.9 / 0.0. ⚠ **Written up as two
+instants, not a trend** — this file's own rule forbids reading a snapshot delta as a regression. Recorded
+with the two facts that make the number usable: Top Shot has **two honest figures** differing by one
+deliberate predicate (49.6 canonical-only vs 34.2 all-keys, R41), and **accuracy tracks LIQUIDITY
+monotonically** (5.51 sales/edition/month → 34.2% · 1.69 → 22.7% · 0.17 → 0.0% · 0.00 → 0.0%), which
+bounds roadmap §6's All Day target by market depth rather than estimator quality. `roadmap-status.md`
+updated; a dated status stamp saying the same three things closes `docs/strategy/roadmap-2026-08-03.md`.
+
+✅ **Repo map re-derived:** `route.ts` under `app/api/**` 453 → **454** (456 under `app/`), `lib/` 295 →
+**301**, `scripts/` 95 → **97**; `page.tsx` 119, `components/` 161, workers 17, edge fns 39 unchanged.
+Method recorded so the next re-derive is comparable (`components/` = `.ts`+`.tsx`; `scripts/` = depth-1
+files).
+
+✅ **TWO NEW REGISTER ROWS — the gap `inbox/INDEX.md` says IS the finding.** The index itself was complete
+(**192 filings, 192 links, 0 missing** — checked, not assumed), but the two newest filings had no row.
+**R47:** `/sitemap/3.xml` truncates on a Postgres statement timeout and serves the partial set under a
+**200** — `fetchAllByCollection` logs and `break`s, **24,000 of 27,246** editions (`editions` re-counted
+live = 27,246), and `paginated-range-requires-order-ratchet` is green on it because it asserts `.order()`
+**presence, not key uniqueness**. **R48:** `allday-pack-opens-backfill`.
+
+⚠ **AND R48 CHANGED UNDER RE-DERIVATION, which is the entry's durable half.** The 02:00Z filing reported
+it **silent for 12.6 h**; by the time I measured it had written **482 rows at 02:16:55Z, `ok`**. The
+outage was over before anyone acted on it. What survives is the RATE — **47 `pipeline_runs` rows across
+79.0 h against a 6/h schedule (~474 expected) = 9.9%, 13 of 47 `ok`** — and why nothing noticed:
+`succeeded` in `cron.job_run_details` means the `net.http_get` was **DISPATCHED**, so 141/144 read healthy
+over a pipeline writing nothing. **A filed OUTAGE decays faster than a filed MECHANISM** — and that is the
+second time in one day (the e2e "four arms are skipping" filing was retracted by the next dispatch).
+Re-measure the liveness half before acting; the structural half usually stands.
+
+**Promoted into the reference docs, each paid for by displacing text verbatim** (CLAUDE.md is at its size
+equilibrium): the fail-soft **SKIP is a GREEN job** + the Playwright module-level memo that fed production
+locs to a fixture self-check → `testing-and-ci.md`; **nothing here sees the BUILT BUNDLE** (turbopack
+dropped a quasi while constant-folding; the generalisation was REFUTED, so the guard bans the precondition
+at population zero) → `testing-and-ci.md`; **a paged read that `break`s on error is the honesty defect with
+no copy to grep for** → `key-files-and-honesty.md`. Displaced out of CLAUDE.md, verbatim: the
+cache-hit/warm-vs-warm/unordered-`LIMIT` case histories and the `check_*` return-shape function names →
+`database.md`; the `check_secdef_anon_exec_drift` blast-radius example → `testing-and-ci.md`; the
+success-coverage boundary pointer (already verbatim in `trust-board-and-safety.md`).
+
+⚠ **One number deliberately NOT propagated:** `testing-and-ci.md` says **28** guards were migrated to the
+shared comment stripper, the register says **24**, and I could not adjudicate. CLAUDE.md now carries what
+I measured — **34** files import `scripts/lib/strip-comments.mjs`, `MAX_LOCAL_STRIPPERS` = **25** — and
+neither prose figure was edited.
+
+**CLAUDE.md: 39,924 chars** (Node `.length`, the binding instrument — not `wc -c`, which reads 40,4xx
+bytes on this same file). Ledger integrity after this write: `find-swallowed-ledger-headings.awk` prints
+**3**, `find-future-dated-ledger-headings.mjs` prints **0**.
+
+**Revert path:** `git revert <sha>` — docs only, no DB half. Resolve the sha with
+`git log -1 --format=%H --grep='the memory files had drifted'`.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the tx-shape census earned itself on its first non-zero reading, and unclassified is now self-diagnosing
 
 **`unclassified` went from 0 to 9** on one backfill tick (blocks 161,983,001–162,033,000; 9 of 1,394 txs, 0.6%). ✅ **Re-scanned the first 10,000 blocks of that range against Flow REST — all 80 reads HTTP 200, so every count is real — and the answer is clean: 227 trades (2 senders / 2 receivers), 132 mints, 29 sale-shaped, and the unclassified are ALL bulk ONE-WAY transfers** (1 sender, 1 receiver, 3 Pins each). **No trades are being dropped.** The classifier's most debatable decision — refusing to call a multi-Pin two-wallet ONE-WAY move a trade — is now validated against real chain data, and the census surfaced them rather than absorbing them into a trade count. **That is what it was built for, on its first non-zero reading.**

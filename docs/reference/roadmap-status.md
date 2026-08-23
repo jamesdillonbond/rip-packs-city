@@ -15,3 +15,42 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+
+---
+
+## Headline metric — re-measured 2026-08-22 (supersedes the 08-13 figures above)
+
+⚠ **The 2026-08-13 shares quoted earlier in this file are now the stale baseline.** Read live from
+`public.rpc_trust_health_precompute` (metrics `<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`) at **2026-08-22 19:45 PT**:
+
+| collection | HIGH/MED share | 08-13 baseline |
+|---|---:|---:|
+| nba_top_shot | **49.6%** | 54.5% |
+| candy_mlb | **59.2%** | 60.0% |
+| disney_pinnacle | **43.2%** | 30.3% |
+| nfl_all_day | **22.5%** | 27.7% |
+| laliga_golazos | **0.0%** | 0.9% |
+| ufc_strike | **0.0%** | 0.0% |
+
+⚠ **Do not read the Top Shot and All Day deltas as a regression without a distribution** — these are two
+instants, and this file's own rule (a directional claim needs a series, not a snapshot) applies to its own
+table. The metric legs' `computed_at` at read time were **19:48Z / 21:09Z**, i.e. **5–7 h old**; the
+2026-08-22T1745Z filing measures the leg as unreadable ~20 h a day for structural reasons, so an age of
+hours is the normal case, not a fault.
+
+⚠ **TWO honest figures exist for Top Shot and neither is fabricated (deep-audit R41).** The precompute leg
+filters Top Shot to canonical `setID:playID` keys (dated in its own comment 2026-08-04, *"the TopShot leg
+is CANONICAL-ONLY"*) and reads **49.6–49.7%**; a direct all-keys measure over `fmv_snapshots` reads
+**34.2%**. The instruments agree on the other four collections. **Always state the denominator with the
+number.**
+
+⚠ **STRUCTURAL FINDING that qualifies the Gate-2 target: accuracy tracks LIQUIDITY, not the pricing code.**
+Ordering the four `fmv_snapshots` collections by sales per edition per month reproduces the accuracy
+ordering with no inversions — Top Shot 5.51 → 34.2% · All Day 1.69 → 22.7% · Golazos 0.17 → 0.0% · UFC
+0.00 → 0.0% (measured 2026-08-21T0256Z filing). **An edition with 0.17 sales a month cannot reach a
+sales-based HIGH/MEDIUM however good the estimator is**, so roadmap §6's *"All Day → the Top Shot band or
+better"* is bounded by market depth, and Golazos/UFC's zeros are the honest label rather than a defect
+queue. ⚠ **Pinnacle is read from `pinnacle_catalog.fmv_confidence`, NOT `fmv_snapshots`, and its sales are
+in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 for Pinnacle and reads as
+"Pinnacle is broken".

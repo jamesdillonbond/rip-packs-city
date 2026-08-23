@@ -240,3 +240,29 @@ timestamp" into "prefers the age of the DATA over the age of the REQUEST".
 `?? new Date().toISOString()`. Candy is not materialised, so its `fetchedAt` is genuinely the data time
 and the coalesce is latent rather than live — but it is the same shape, one materialisation away from
 being the same bug.
+
+## A PAGED read that `break`s on error is the same defect with no error branch to audit (2026-08-23)
+
+Every instance in the canon above is a read that failed and got *rendered* as a fact. This one has the
+same ending and a different shape: the read **partly succeeded**, and the loop that gave up returned what
+it had.
+
+`lib/sitemap-data.ts`'s `fetchAllByCollection` pages with `.range()` and, on a PostgREST error, logs the
+message and **`break`s** — so the caller receives an array that is indistinguishable from a complete one.
+Measured in production 2026-08-23T02:19:54Z: `[sitemap] editions page 24000 error: canceling statement
+due to statement timeout`, response **200**, **24,000 of 27,246** edition rows. `/sitemap/3.xml` then
+asserted that truncated set to Googlebot as the complete list of our set / player / team pages.
+
+⚠ **There is no dishonest COPY to grep for here**, which is why the copy sweeps that found the other
+instances could never have found this one. The claim is made by the response's existence, not by a
+sentence in it. **The tell is the control-flow keyword**: a `break`/`return` inside a pagination loop's
+error branch, with a caller that takes the accumulated array.
+
+⚠ **Three states again, and the middle one is the whole point:** all pages read · **some pages read** ·
+zero pages read. A partial result must either throw (so the caller can 500 or serve the last good
+artifact) or carry a `complete: false` the caller must handle. Returning it bare makes truncation
+unobservable downstream.
+
+⚠ **Its monitor is silent by construction too** — the four entity-smoke arms fed by sitemap segment 3
+fail-soft to SKIP when they cannot discover a URL, and a skipped arm is a green job. The first evidence
+anyone saw was four skips inside a passing run.
