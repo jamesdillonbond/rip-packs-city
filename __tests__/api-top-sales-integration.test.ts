@@ -47,11 +47,13 @@ describe("GET /api/top-sales — integration", () => {
     })
   })
 
-  it("500s with an empty list when the RPC errors", async () => {
+  it("500s with sales NULL — not an empty list — when the RPC errors", async () => {
+    // ⚠ INVERTED 2026-08-23 (R33). An empty ARRAY on failure is a claim; null
+    // is the absence of one.
     Object.assign(fx.tables, { "rpc:get_top_sales": { error: { message: "agg fail" } } })
     const res = await GET(get("?collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).sales).toEqual([])
+    expect((await res.json()).sales).toBeNull()
   })
 
   it("resolves Pinnacle sales from pinnacle_sales with the nested edition join", async () => {
@@ -87,30 +89,44 @@ describe("GET /api/top-sales — integration", () => {
     void seenLimit
   })
 
-  it("Pinnacle: a query error degrades to an empty list (200, not 500)", async () => {
+  it("Pinnacle: a query error is a 500, NOT a 200 with an empty list", async () => {
+    // 🚨 INVERTED 2026-08-23 — this test's own NAME was the defect (R33).
+    // "degrades to an empty list (200, not 500)" meant a database error
+    // rendered as "no top sales" at HTTP 200, and the success path's
+    // s-maxage=300 then served that false claim for five minutes. The
+    // non-Pinnacle branch returned 500 for the identical failure: one route,
+    // two answers. The root cause was a SIGNATURE — pinnacleTopSales returned
+    // a bare array, which cannot express "the read failed".
     Object.assign(fx.tables, { pinnacle_sales: { error: { message: "pinnacle boom" } } })
     const res = await GET(get("?collection=disney-pinnacle"))
-    expect(res.status).toBe(200)
-    expect((await res.json()).sales).toEqual([])
+    expect(res.status).toBe(500)
+    expect((await res.json()).sales).toBeNull()
+    expect(res.headers.get("cache-control")).toMatch(/no-store/)
   })
 
-  it("Pinnacle: a missing edition join falls back to Unknown / '' / 0", async () => {
+  it("Pinnacle: a missing edition join yields NULLs, never Unknown / '' / 0", async () => {
+    // ⚠ INVERTED 2026-08-23 (R33). "Unknown" is a moment name a collector can
+    // read; `serialNumber: 0` is a serial that cannot exist; and
+    // circulationCount was HARDCODED to 0 on every Pinnacle row. Measured that
+    // day: 5 of the top 5 Pinnacle sales by price in 7d carry a NULL serial, so
+    // every row this route emitted for Pinnacle said #0.
     Object.assign(fx.tables, {
       pinnacle_sales: { data: [{ sale_price_usd: null, serial_number: null, pinnacle_editions: null }] },
     })
     const res = await GET(get("?collection=disney-pinnacle"))
     const body = await res.json()
     expect(body.sales[0]).toEqual({
-      playerName: "Unknown",
-      setName: "",
-      tier: "",
-      serialNumber: 0,
-      circulationCount: 0,
-      price: 0,
+      playerName: null,
+      setName: null,
+      tier: null,
+      serialNumber: null,
+      circulationCount: null,
+      price: null,
     })
   })
 
-  it("get_top_sales: null fields fall back to Unknown / '' / 0", async () => {
+  it("get_top_sales: null fields stay NULL, never Unknown / '' / 0", async () => {
+    // ⚠ INVERTED 2026-08-23 (R33) — same reasoning as the Pinnacle case above.
     Object.assign(fx.tables, {
       "rpc:get_top_sales": {
         data: [{ player_name: null, set_name: null, tier: null, serial_number: null, circulation_count: null, price_usd: null }],
@@ -119,12 +135,22 @@ describe("GET /api/top-sales — integration", () => {
     const res = await GET(get("?collection=nba-top-shot"))
     const body = await res.json()
     expect(body.sales[0]).toEqual({
-      playerName: "Unknown",
-      setName: "",
-      tier: "",
-      serialNumber: 0,
-      circulationCount: 0,
-      price: 0,
+      playerName: null,
+      setName: null,
+      tier: null,
+      serialNumber: null,
+      circulationCount: null,
+      price: null,
     })
+  })
+
+  it("a genuine empty window is still an empty ARRAY at 200 — the no-change control", async () => {
+    // ⚠ The other direction. Turning failures into null must NOT turn a real
+    // "no sales in this window" into null, or the route stops being able to say
+    // the true thing.
+    Object.assign(fx.tables, { "rpc:get_top_sales": { data: [] } })
+    const res = await GET(get("?collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).sales).toEqual([])
   })
 })

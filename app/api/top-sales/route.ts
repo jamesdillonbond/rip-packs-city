@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { errorLogDetail } from "@/lib/api-error"
 
 // Multi-collection "Recent Top Sales" feed. Uses the get_top_sales() RPC
 // (7 day lookback) for non-Pinnacle collections, and queries pinnacle_sales
@@ -73,7 +74,7 @@ function str(v: unknown): string | null {
 async function pinnacleTopSales(
   limit: number,
   since: string
-): Promise<{ ok: true; rows: TopSaleRow[] } | { ok: false; message: string }> {
+): Promise<{ ok: true; rows: TopSaleRow[] } | { ok: false; detail: string }> {
   const { data, error } = await (supabaseAdmin as any)
     .from("pinnacle_sales")
     .select(
@@ -83,7 +84,12 @@ async function pinnacleTopSales(
     .gte("sold_at", since)
     .order("sale_price_usd", { ascending: false })
     .limit(limit)
-  if (error) return { ok: false, message: error.message }
+  // ⚠ `errorLogDetail`, and the field is `detail`, not `message`. Carrying a
+  // raw `error.message` on an internal result is one careless spread away from
+  // publishing Postgres's own wording — which is why
+  // `authed-api-no-driver-message-leak-guard` flags the shape at the SOURCE
+  // rather than waiting for it to reach a response. It flagged this line.
+  if (error) return { ok: false, detail: errorLogDetail(error) }
 
   return {
     ok: true,
@@ -101,8 +107,8 @@ async function pinnacleTopSales(
 }
 
 /** A failure must never be cached — five minutes of a false "no sales". */
-function failed(where: string, message: string) {
-  console.error(`[top-sales] ${where}: ${message}`)
+function failed(where: string, detail: string) {
+  console.error(`[top-sales] ${where}: ${detail}`)
   return NextResponse.json(
     { error: "Top sales are unavailable right now.", sales: null },
     { status: 500, headers: { "Cache-Control": "no-store" } }
@@ -132,7 +138,7 @@ export async function GET(req: NextRequest) {
   try {
     if (slug === "disney-pinnacle") {
       const result = await pinnacleTopSales(limit, since)
-      if (!result.ok) return failed("pinnacle read", result.message)
+      if (!result.ok) return failed("pinnacle read", result.detail)
       return ok(result.rows)
     }
 
@@ -141,7 +147,7 @@ export async function GET(req: NextRequest) {
       p_since: since,
       p_limit: limit,
     })
-    if (error) return failed("get_top_sales rpc", error.message)
+    if (error) return failed("get_top_sales rpc", errorLogDetail(error))
 
     const rows = (data ?? []) as RpcTopSaleRow[]
     return ok(
@@ -155,6 +161,6 @@ export async function GET(req: NextRequest) {
       }))
     )
   } catch (err) {
-    return failed("exception", err instanceof Error ? err.message : String(err))
+    return failed("exception", errorLogDetail(err))
   }
 }

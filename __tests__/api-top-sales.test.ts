@@ -33,10 +33,28 @@ describe("GET /api/top-sales", () => {
     expect(body.sales[0]).toMatchObject({ playerName: "Curry", tier: "RARE", price: 250 })
   })
 
-  it("500s (with empty sales) on an RPC error", async () => {
+  it("500s on an RPC error, and sales is NULL — not an empty list", async () => {
+    // ⚠ INVERTED 2026-08-23 (deep-audit R33), not deleted. This asserted
+    // `sales: []` on failure, which is the defect: an empty ARRAY is a claim
+    // ("there were no top sales"), and a caller cannot tell it from a genuine
+    // empty. `null` says we do not know. The 500 was always right here; the
+    // BODY was not.
     rpc.error = { message: "db" }
     const res = await GET(req("https://t/api/top-sales?collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).sales).toEqual([])
+    const body = await res.json()
+    expect(body.sales).toBeNull()
+    expect(body.error).toBeTruthy()
+    // The driver's own wording must not reach the caller.
+    expect(JSON.stringify(body)).not.toContain("db")
+  })
+
+  it("a failure is NEVER cached", async () => {
+    // Caching a failure is what made this route serve "no top sales" for five
+    // minutes per blip — the success path carries s-maxage=300.
+    rpc.error = { message: "db" }
+    const res = await GET(req("https://t/api/top-sales?collection=nba-top-shot"))
+    expect(res.headers.get("cache-control")).toMatch(/no-store/)
+    expect(res.headers.get("cache-control")).not.toMatch(/s-maxage/)
   })
 })
