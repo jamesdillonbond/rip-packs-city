@@ -8,6 +8,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — edition-grain dapper.market link: Golazos only, because only Golazos is verified
+
+**What shipped.** `dapperMarketEditionUrl(collectionUrlSlug, externalId)` in `lib/collections.ts`, wired
+into both edition-grain surfaces: the canonical `app/(collections)/[collection]/edition/[slug]/page.tsx`
+(which carried **no outbound marketplace CTA at all**) and the edition branch of `app/moment/[id]/page.tsx`
+(where both existing CTAs are null by design because there is no single NFT id).
+
+**Why it was missing.** The native marketplaces are deep-linkable at MOMENT grain only — the comment on
+`marketplaceMomentUrl` says so and declines to fabricate an edition URL. dapper.market does publish a real
+per-EDITION page, keyed by the numeric on-chain editionID, which is exactly what `editions.external_id`
+already holds. No new data, no new read.
+
+**GOLAZOS ONLY, and that is the point of the change, not a limitation of it.** Verified against a page
+Trevor supplied: `dapper.market/laliga/edition/541` is the Messi ElClásico /11, and our `external_id` for
+it is `"541"`.
+- `nba-top-shot` can **never** join from `external_id` — it is a composite (`<setUUID>:<playUUID>`, or
+  `258:9004::16`), not a numeric editionID. Measured: 0 of 19,838 TS external_ids are numeric.
+- `nfl-all-day` **does** store a numeric editionID (6,190 of 6,190), so the URL shape is plausible — and it
+  is **UNVERIFIED**, so it is not in the map. An unverified outbound CTA is a 404 pointed at a collector,
+  which is the exact failure the native null-cases exist to prevent. ⚠ **This is a filed decision NOT to
+  act, so re-derive it rather than re-reading it: one confirmed /nfl/edition/<id> page closes it.**
+- Two gates, not one: the seg map, then a `^[0-9]+$` test on the id, so a composite or slug external_id can
+  never reach an `/edition/<id>` path whatever the map grows to hold. Mutation-checked — deleting the
+  numeric gate reddens exactly one test.
+
+⚠ **The sandbox could not open any of it.** Egress denied CONNECT to `laligagolazos.com`,
+`dapper.market`, `rest-mainnet.onflow.org` **and `www.rippackscity.com`** — so this is verified by test,
+typecheck and the six CI guards, and **NOT by rendered DOM**, which CLAUDE.md requires before calling a
+page done. **Someone with egress must load one Golazos edition page and click through.**
+
+⚠ **A red I filed and then had to retract WITHIN THE SAME SESSION, recorded because the retraction is the
+useful part.** `__tests__/collection-analytics-failed-vs-empty-guard.test.ts` failed on the full run
+(14,600 passed / 1 failed) and stashing the diff proved it was already red on `main` at **65da421d** — not
+mine. I left it alone on the grounds that rewriting an honesty guard to go green is Trevor's call. **Then
+the push was rejected non-fast-forward, and `c979b7c4` — "restore the /api/ready swallow, it was pinned,
+and I did not check" — turned out to have fixed it upstream while I was measuring.** Re-verified green
+after the rebase. **A red observed on a base sha is a statement about THAT SHA and expires the moment
+someone else pushes; a concurrent session had already corrected it before I finished writing it up.**
+
+**Revert path:** `git revert <sha of "feat(collections): edition-grain dapper.market link">`. No DB or
+prod-state change — code only.
+
+
 ### 2026-08-22 · REVERTED (Claude Code, interactive) — I turned main RED for ~20 minutes by "fixing" a swallow that was PINNED, and I found out from CI, not from my own test run
 
 🚨 **THE PROCESS FAILURE FIRST, because it is the transferable part.** I converted the `/api/ready`
