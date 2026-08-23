@@ -80,7 +80,12 @@ function flowStubs(opts: {
   sealedHeight?: number
   sealedStatus?: number
   withdrawStatus?: number
+  /** Burn this much FAKE clock on every event fetch, to drive the soft deadline. */
+  advanceMsPerFetch?: number
 }): FetchStub[] {
+  const burn = () => {
+    if (opts.advanceMsPerFetch) vi.setSystemTime(Date.now() + opts.advanceMsPerFetch)
+  }
   return [
     {
       match: (url) => url.includes("/v1/blocks?height=sealed"),
@@ -91,12 +96,17 @@ function flowStubs(opts: {
     },
     {
       match: (url) => url.includes("Pinnacle.Withdraw"),
-      respond: () =>
-        opts.withdrawStatus
+      respond: () => {
+        burn()
+        return opts.withdrawStatus
           ? { status: opts.withdrawStatus, ok: false, text: "boom" }
-          : { json: opts.withdraws ?? [] },
+          : { json: opts.withdraws ?? [] }
+      },
     },
-    jsonRoute("Pinnacle.Deposit", opts.deposits ?? []),
+    {
+      match: (url) => url.includes("Pinnacle.Deposit"),
+      respond: () => ({ json: opts.deposits ?? [] }),
+    },
   ]
 }
 
@@ -372,6 +382,39 @@ describe("pinnacle-trades-indexer — observability and control paths", () => {
     expect(extra.first_failed_chunk).toBe(CURSOR_START + 1)
     // ⚠ blocks_scanned must report what was READ. A failed first chunk read none.
     expect(extra.blocks_scanned).toBe(0)
+  })
+
+  it("stops on the soft deadline and does NOT report it as a failed read", async () => {
+    // ⚠ The two are different diagnoses and must not share a flag. A soft
+    // deadline means every chunk we attempted read FINE and the clock ran out;
+    // partial_scan means a chunk ERRORED. Conflating them sends someone hunting
+    // a Flow REST fault that never happened.
+    //
+    // The deadline is tripped for real: each event fetch burns 60s of fake
+    // clock, so wave 0 (5 chunks) pushes elapsed past the 200s budget and wave
+    // 1 is deferred. Asserted unconditionally — a conditional assertion here
+    // would read as coverage while proving nothing.
+    // shouldAdvanceTime lets the route's inter-wave setTimeout actually resolve
+    // while setSystemTime still jumps the clock forward from the fetch stub.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      // Needs MORE chunks than CHUNK_CONCURRENCY, or there is only one wave and
+      // the deadline is never re-checked. 2,000 blocks = 8 chunks = 2 waves.
+      fetchMock = installFetchMock(flowStubs({ sealedHeight: CURSOR_START + 2000, advanceMsPerFetch: 60_000 }))
+      const spy = install({ event_cursor: cursorFixture })
+      const res = await POST(req("?range=2000"))
+      expect(res.status).toBe(200)
+      const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+      const extra = (logged[0].args as any)!.p_extra
+      expect(extra.soft_deadline).toBe(true)
+      expect(extra.partial_scan).toBeUndefined()
+      expect(extra.blocks_deferred).toBeGreaterThan(0)
+      // The cursor still advanced to the completed wave's frontier — a deferred
+      // tail is resumed next tick, not lost.
+      expect(Number((logged[0].args as any)!.p_cursor_after)).toBeGreaterThan(CURSOR_START)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("a fatal sealed-height failure 500s and logs ok:false", async () => {

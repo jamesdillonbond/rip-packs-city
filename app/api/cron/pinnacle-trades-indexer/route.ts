@@ -57,6 +57,24 @@ const CHUNK_CONCURRENCY = 5
 // Public Flow REST 404s below the current spork floor — pre-spork history needs
 // the spork proxy worker, which is a separate workstream.
 const SPORK_FLOOR = 137_390_146
+// ⚠ SOFT DEADLINE — stop starting waves past this, well under maxDuration=300s.
+//
+// This is not belt-and-braces. `try/catch` CANNOT catch a maxDuration kill, and
+// this route is fully SYNCHRONOUS, so a kill takes the terminal
+// log_pipeline_run with it and the tick leaves NO pipeline_runs row at all —
+// indistinguishable from "the cron never fired".
+//
+// Measured on the live forward lane 2026-08-22, same 2,000-block range each
+// time: 145,951 ms · 22,330 ms · 3,785 ms · 195,388 ms. ⚠ That is NOT a cold
+// start settling down — I called it one after two readings and the fourth
+// refuted it. Duration is highly variable and the spread is not in the fetches
+// (AbortSignal.timeout bounds those at 15s each, so 8 chunks cannot exceed
+// ~120s); the remainder is DB round-trip time on an instance where disk-IO
+// saturation is the dominant problem. A backfill tick walks 5x the range, so
+// without a deadline a saturation spell could push it past the wall.
+//
+// 200s leaves ~100s for the resolve + write + log phase that follows the scan.
+const SOFT_DEADLINE_MS = 200_000
 const INTER_CHUNK_DELAY_MS = 75
 const PIPELINE_NAME = "pinnacle-trades-indexer"
 const COLLECTION_SLUG = "disney_pinnacle"
@@ -282,7 +300,22 @@ async function runIndexer(req: NextRequest) {
     // Concurrency inside a wave is safe because a transaction's events all live
     // in ONE block, so no chunk boundary can split a trade across two fetches;
     // ordering between waves is what preserves the no-leapfrog invariant.
+    // ⚠ A soft-deadline stop is NOT the same event as a failed read, and they
+    // must not share a flag. `partial_scan` means a chunk ERRORED and its range
+    // needs investigating; `soft_deadline` means every chunk we attempted read
+    // fine and we simply ran out of clock. Conflating them would send someone
+    // hunting a Flow REST fault that never happened.
+    let softDeadlineHit = false
+
     for (let w = 0; w < chunks.length; w += CHUNK_CONCURRENCY) {
+      if (Date.now() - started > SOFT_DEADLINE_MS) {
+        softDeadlineHit = true
+        console.log(
+          `[${PIPELINE_NAME}] soft deadline at wave ${w / CHUNK_CONCURRENCY}, ` +
+            `${chunks.length - w} chunks deferred to the next tick`
+        )
+        break
+      }
       const wave = chunks.slice(w, w + CHUNK_CONCURRENCY)
       const results = await Promise.all(
         wave.map(async (c) => {
@@ -373,10 +406,17 @@ async function runIndexer(req: NextRequest) {
     // ⚠ `blocks_scanned` reports what was READ, not the range we intended to
     // read — `targetHeight - lastBlock` on a partial scan is a measured-looking
     // number for blocks nothing fetched.
-    const partialScanExtra: Record<string, unknown> =
-      firstFailedChunkStart !== null
+    const partialScanExtra: Record<string, unknown> = {
+      ...(firstFailedChunkStart !== null
         ? { partial_scan: true, first_failed_chunk: firstFailedChunkStart, cursor_held_from: targetHeight }
-        : {}
+        : {}),
+      // Reported on every tick that hit it, including successful ones, so the
+      // frequency is visible before it becomes a wall-clock kill.
+      ...(softDeadlineHit
+        ? { soft_deadline: true, chunks_planned: chunks.length, blocks_deferred: Math.max(
+            backfill ? frontier - targetLow : targetHeight - frontier, 0) }
+        : {}),
+    }
 
     // ⚠ The tx-shape census ships on EVERY tick, including empty ones. Pinnacle
     // could change how it settles a trade at any time; if that happened, a lane
