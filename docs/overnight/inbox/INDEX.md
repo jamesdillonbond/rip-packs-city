@@ -1,4 +1,4 @@
-# Inbox index — 189 live filings
+# Inbox index — 191 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27.**
 
@@ -30,7 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 23 filings
+## 2026-08-22 — 25 filings
+
+- [/api/ready has been 500ing for eight days, and it settles a disagreement](2026-08-23T0025Z-api-ready-has-been-500ing-for-eight-days-and-it-settles-a-disagreement.md)
+
+- [pg_cron reports 141/144 successes while allday-pack-opens-backfill has written nothing for 12.6h](2026-08-23T0200Z-allday-pack-opens-backfill-silent-while-pg-cron-reports-141-successes.md)
 
 - [`collection_series` claims LaLiga Golazos has Series 2 and Series 3 — no instrument we own can see a single moment from either, and the series filter offers both](2026-08-23T0020Z-golazos-collection-series-claims-two-seasons-that-no-instrument-can-see.md)
 - [The production bundle rendered a user-facing sentence that the committed source does not contain — a `+`-joined template literal lost the tail of its first chunk](2026-08-22T2135Z-production-bundle-dropped-a-string-segment-the-source-contained.md)

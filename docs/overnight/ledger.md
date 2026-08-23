@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — the secret-rotation runbook, and its positive control turned out to be a live silent pipeline
+
+**No secret was rotated and none can be from here.** What was missing was the thing that makes a rotation survivable: the consumer list, and an instrument that can see the failure. Both now exist. Also filed: a pipeline that is green at every layer that reports and dead at the one that matters.
+
+🚨 **THE FACT THAT GOVERNS THIS ROTATION: a 401 writes NO `pipeline_runs` row.** Stated in `app/api/cron/pinnacle-trades-indexer/route.ts:29` and true of every gated route — the auth check returns before any logging. So a caller left on the old token does not appear as a *failure*, it appears as **silence**, indistinguishable from "never scheduled". **You cannot verify this rotation by looking for errors; there will not be any.** That rules out `ok = false` counts, `last_error` and the trust board in one stroke — all are fed by rows a 401 prevents from existing.
+
+**CONSUMER ENUMERATION — all seven caller sources checked, and two of them removed work rather than adding it.**
+
+| surface | carries these tokens? | measured |
+|---|---|---|
+| Vercel env | ✅ both | **186 route files** re-validate INLINE — there is no shared helper |
+| `vercel.json` crons | ✅ `CRON_SECRET` | **38 entries**, Vercel injects the header itself |
+| GitHub Actions | ✅ `INGEST_SECRET_TOKEN` | **16 files / 26 refs**, one repo secret. **Zero** use `CRON_SECRET` |
+| Cloudflare Workers | ✅ `INGEST_SECRET_TOKEN` | **5 workers**, each needing an operator `wrangler secret put` + `deploy` |
+| cron-job.org | ✅ | ⛔ operator-only, see below |
+| **pg_cron** | ❌ **NO** | **of 106 active jobs, ZERO carry `authorization`/`bearer`** — 14 call edge fns with a `?key=` **gate key**, a *different* secret |
+| Supabase edge fns | ❓ **unverified** | ⛔ `get_edge_function` returns full deployed source incl. live keys; not readable without leaking. **Stated as unknown, not assumed clean** |
+
+⚠ **`hybrid-custody-proxy` holds the same VALUE under a different NAME** (`PROXY_SECRET` / `HYBRID_CUSTODY_PROXY_SECRET`) — a name-based grep misses it entirely. ⚠ `dune-proxy` and `helius-proxy` say in their own READMEs that their secret is **independent**; rotating them together would be wrong. ⚠ `sales-counterparty-backfill` gates only its manual `fetch()` handler — its `scheduled()` path is ungated, so **it will look healthy through a broken rotation**.
+
+⚠ **VERIFIED: there is NO dual-accept anywhere** — no `*_OLD` / `*_PREV` path exists, and the 186 routes compare inline against `process.env`. **This is a flag-day rotation with a real broken window.** That is tolerable (cron/ingest lanes, not user surfaces, and they self-heal next tick) but it makes the post-rotation check mandatory rather than optional.
+
+⛔⛔ **cron-job.org stays operator-only.** The `Authorization` header is in the **COMMON-tab DOM**, so the standing "never open ADVANCED" rule does not cover it. Read `input[type=text]`**[2]** only.
+
+**THE SILENCE DETECTOR — and I got it wrong twice before it was right, which is the part worth keeping.**
+- **v0, fixed 6h window** — flagged `pipeline-runs-daily-rollup`, a 6-hourly lane that had missed exactly ONE tick. A fixed window cannot judge a lane whose cadence *is* that window.
+- **v1, 3× MEDIAN gap** — worse. The `wallet-backfill-*` lanes run in bursts, so their p50 inter-run gap is **0 seconds** and every pause read as ~100,000× cadence. **7 of 12 hits were that artifact.**
+- **v2, 3× P90 gap floored at 30 min** — p90 survives burstiness, the floor kills the rest. One hit, and it was real.
+
+⚠ **Its blind spots are written down rather than left to be discovered:** lanes with <5 runs in 72h are excluded *by construction*; a lane **already erratic** before the rotation is invisible to it (`topshot-active-listings-ingest` is 16.1h silent right now and v2 does **not** flag it, because `egress_blocked` already inflated its p90) — that class is caught only by the before/after **set diff**, not the query. Phase 0 snapshot is mandatory and **cannot be reconstructed afterwards**: `pipeline_runs` retains ~73h.
+
+🚨 **THE POSITIVE CONTROL WAS A LIVE FINDING.** `allday-pack-opens-backfill`: pg_cron jobid 55 reports **141 `succeeded` / 3 `job startup timeout`** in 24h, last dispatch 01:46Z — while the pipeline has written **nothing since 2026-08-22 13:16:06Z (12.6h)**. ⚠ **And it is not a fresh break:** over the full 72h window it wrote **37 rows against a 10-minute schedule (~432 expected) — 8.6%**, only 7 of them `ok`. Total silence is where a three-day decline arrived, not an event.
+- **It is NOT auth:** `net._http_response` last 24h = 771×200, 11×504, ~236 NULL, and **zero 401s**. Rotating the gate key would not fix it, and jobs 20/55/56/83/84/44 remain do-not-rotate for the separate `_OLD` reason.
+- **The NULLs are DNS hangs**, not application errors — `timed_out = true` with *DNS time equal to total time* (`Timeout of 55000 ms … DNS time: 55000.800 ms, TCP/SSL handshake: 0.000 ms`). The request never resolved a hostname.
+- ⚠ **What I could NOT establish, stated as such:** which pg_net rows belong to job 55. `net.http_request_queue` is pruned once a response lands, so the `r.id = q.id` join returns **zero rows** and URL attribution after the fact is impossible. The DNS-hang population is real; **its overlap with this job is unmeasured**, and attributing it by time-window overlap is the exact mistake `attribute-by-set-membership-not-window-overlap` records.
+
+**Also fixed, pre-existing:** the inbox INDEX was **off by one** — `2026-08-23T0025Z-api-ready-…` had been filed but never indexed, and the index is what every session greps, so it was invisible. Index now reconciles exactly: **191 bullets, 191 files, zero missing.**
+
+**Files:** `docs/runbooks/rotate-ingest-and-cron-secrets.md`, `docs/overnight/inbox/2026-08-23T0200Z-allday-pack-opens-backfill-silent-….md`, `docs/overnight/inbox/INDEX.md`.
+
+**Revert:** `git revert <this commit>`. Docs only — no code, no DB, no schedule touched. Every query run this turn was a read; **no DDL was applied**, deliberately: it was ~02:00Z, inside the degraded band a migration header on this repo already forbids.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the trade acquisition is pinned at the DB level, and MUTATION TESTING caught my pin passing with the regression applied
 
 **End-to-end verification first — the whole chain is proven, not assumed.** `Pinnacle.Withdraw`/`Deposit` → geometric classifier → `pinnacle_trade_events` (58 rows / 14 trades) → `backfill_pinnacle_trade_acquisitions` → a real `moment_acquisitions` row: `acquisition_method='trade'`, **`buy_price` NULL**, `confidence='verified'`, `seller_address` = the counterparty, `source='pinnacle_trades'`. The surface RPC confirms it too — `get_acquisition_stats` returns `{"method":"trade","count":1}` beside marketplace 21 / mint 6, which is what feeds the "Traded" tile.
