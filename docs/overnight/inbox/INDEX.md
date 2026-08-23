@@ -1,4 +1,4 @@
-# Inbox index — 192 live filings
+# Inbox index — 193 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27.**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-22 — 26 filings
+## 2026-08-22 — 27 filings
+
+- [The `.range()` guard states the uniqueness rule in its own header and asserts something weaker — a repo-wide measurement of what it cannot see](2026-08-23T0236Z-the-paginated-range-guard-states-the-uniqueness-rule-in-a-comment-and-cannot-check-it.md)
 
 - [`/sitemap/3.xml` truncates on a statement timeout and returns the partial set as if it were complete — and it pages on a key where 72% of rows are ties](2026-08-23T0228Z-the-sitemap-truncates-on-a-statement-timeout-and-pages-on-a-key-that-is-72pct-ties.md)
 - [/api/ready has been 500ing for eight days, and it settles a disagreement](2026-08-23T0025Z-api-ready-has-been-500ing-for-eight-days-and-it-settles-a-disagreement.md)
