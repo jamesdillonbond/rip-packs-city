@@ -84,7 +84,17 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // path-sensitivity fix above made their OTHER reads visible once the first lib
 // each page reached had been bounded. That is the guard working: a page leaves
 // only when every read it can reach is accounted for.
-const MAX_UNBOUNDED = 10
+//
+// 10 → 8 (2026-08-22), and the two halves were measured SEPARATELY because the
+// instrument changed in the same commit:
+//   * `withQueryDeadline` added to BOUNDED above → 10 → 9. That is a FALSE
+//     POSITIVE removed, not a page fixed: `/[collection]/edition/[slug]` performs
+//     no read of its own and both of `lib/edition/fetchers.ts`'s reads already
+//     went through it. Verified read-by-read, with the pack-dist bounds reverted,
+//     before the ceiling moved.
+//   * `lib/pack-dist/fetchers.ts` bounded (13 reads) → 9 → 8. A real fix, on the
+//     page carrying production's top user-impacting errors.
+const MAX_UNBOUNDED = 8
 
 const strip = (s) => stripComments(s)
 
@@ -104,6 +114,24 @@ const BOUNDED = [
   /fetchBoardForPage\s*(?:<[^>]*>)?\s*\(/,
   /withBoardBudget\s*(?:<[^>]*>)?\s*\(/,
   /withPagedBoardBudget\s*(?:<[^>]*>)?\s*\(/,
+  // ⚠ A FOURTH primitive, added 2026-08-22, and the list is a CURATED LIST —
+  // the shape this repo has twice recorded as drifting. `withQueryDeadline`
+  // (lib/analytics/rpc-with-retry.ts) is a genuine wall-clock bound and had
+  // been invisible here, so `/[collection]/edition/[slug]` sat on this report
+  // while BOTH of its reads went through it and the page itself performs none.
+  // Verified read-by-read before adding, not inferred from the import.
+  //
+  // 🚨 `rpcWithRetry` IS DELIBERATELY *NOT* HERE, and the reason is measured.
+  // `lib/pack-dist/fetchers.ts` routed ONE read through it and left THIRTEEN
+  // bare — so recognising it would have cleared `/[collection]/pack/dist/[distId]`
+  // on the strength of a single bounded read, while the page's own top
+  // production errors (pack_realized_ev at 124 users, pack_lifecycle at 86)
+  // came from the thirteen. That is the module-level blind spot this file's
+  // `analyze()` note describes, one level down: a budget primitive vouches for
+  // every read in its module, whether or not it wraps them. ⚠ Before adding a
+  // fifth entry, check that every read in the modules it would clear actually
+  // passes through it.
+  /withQueryDeadline\s*(?:<[^>]*>)?\s*\(/,
 ]
 const MAX_DEPTH = 3
 

@@ -44,6 +44,73 @@
 import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+// ── BUDGET ──────────────────────────────────────────────────────────────────
+// ⚠ THIS PAGE IS THE TOP USER-IMPACTING ERROR IN PRODUCTION. Vercel's 24h window
+// on 2026-08-23 shows `[pack-detail] pack_realized_ev error canceling statement
+// due to statement timeout` at **124 users**, plus `pack_lifecycle` (86),
+// `ev_contributors` (26) and `pack_table_rows` (22). Those are the reads that
+// ANSWERED with an error. The ones that merely hang answer nothing at all —
+// supabase-js resolves `{ data, error }` only when the query finishes — so the
+// page waits on a streaming shell that Vercel logs as a 200.
+//
+// ⚠ ONE read here was already bounded (`get_pack_detail_bundle`, via
+// `rpcWithRetry`) and THIRTEEN were not. That asymmetry is worth recording,
+// because it is exactly the shape that would let a module-level "does this file
+// mention a budget primitive?" check clear the whole page: one bounded read
+// vouching for thirteen bare siblings. See scripts/check-unbounded-server-reads.mjs.
+//
+// ⚠ THE BOUND RESOLVES, IT DOES NOT REJECT. Every call site below is a bare
+// `await` followed by `if (error)` — there is no try/catch to reject into, so a
+// rejection would escape and render an error boundary instead of a page, which
+// is worse than slow and is the trap the guard's own header warns about.
+// Resolving with a synthetic `error` routes a timeout into the `ok: false`
+// branch each fetcher already has. Same reasoning `withPagedBoardBudget` records
+// for the paged /insights boards.
+//
+// ⚠ Page ceiling: `page.tsx` awaits `fetchPackRow` (+ fallback) and
+// `fetchPackDetailBundle` sequentially, then three separate `Promise.all`
+// groups. So the worst case is roughly 5 + 5 + 45 + 5 + 5 + 5 = 70s — dominated
+// by `rpcWithRetry`'s own 45s, which is deliberately a ceiling ABOVE Postgres'
+// 30s statement_timeout and must NOT be tuned down here (see its own header).
+// **Bounding these thirteen does not by itself put the page inside a document's
+// ~30s.** It removes the unbounded hangs; the bundle read's ceiling is a
+// separate, already-argued decision.
+const PACK_READ_TIMEOUT_MS = 5_000
+
+/**
+ * Bound one read, RESOLVING with a synthetic `error` rather than rejecting.
+ *
+ * ⚠ ONE envelope for all thirteen callers, not a generic. `Db` is `any` here, so
+ * a generic infers `unknown` and every call site stops compiling; and every
+ * caller destructures some subset of `{ data, count, error }`, so the overrun
+ * value supplies all three as null and each site's existing `if (error)` branch
+ * does the work. A different shape per caller would be thirteen chances to get
+ * one wrong.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReadEnvelope = { data: any; count: number | null; error: { message: string } | null }
+
+async function bounded(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  p: PromiseLike<any>,
+  label: string,
+): Promise<ReadEnvelope> {
+  try {
+    return await withBoardBudget<ReadEnvelope>(
+      Promise.resolve(p),
+      label,
+      PACK_READ_TIMEOUT_MS,
+      "pack-detail/",
+    )
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error(`[pack-detail] ${label} bound`, message)
+    return { data: null, count: null, error: { message } }
+  }
+}
+
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -262,13 +329,16 @@ export async function fetchPackRow(
   distId: string,
   db: Db = supabaseAdmin,
 ): Promise<RowResult<PackTableRow>> {
-  const { data, error } = await db
-    .from("pack_table_rows")
-    .select("*")
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .limit(1)
-    .maybeSingle()
+  const { data, error } = await bounded(
+    db
+      .from("pack_table_rows")
+      .select("*")
+      .eq("collection_id", collectionId)
+      .eq("dist_id", distId)
+      .limit(1)
+      .maybeSingle(),
+    "pack_table_rows",
+  )
   if (error) {
     console.error("[pack-detail] pack_table_rows error", error.message)
     return { data: null, ok: false }
@@ -281,13 +351,16 @@ export async function fetchDistFallback(
   distId: string,
   db: Db = supabaseAdmin,
 ): Promise<RowResult<DistFallbackRow>> {
-  const { data, error } = await db
-    .from("pack_distributions")
-    .select("metadata, image_url, title")
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .limit(1)
-    .maybeSingle()
+  const { data, error } = await bounded(
+    db
+      .from("pack_distributions")
+      .select("metadata, image_url, title")
+      .eq("collection_id", collectionId)
+      .eq("dist_id", distId)
+      .limit(1)
+      .maybeSingle(),
+    "pack_distributions",
+  )
   if (error) {
     console.error("[pack-detail] pack_distributions error", error.message)
     return { data: null, ok: false }
@@ -308,13 +381,16 @@ export async function fetchPackLifecycle(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<PackLifecycleRow>> {
   if (collectionSlug === "nfl-all-day") {
-    const { data, error } = await db
-      .from("v_allday_pack_lifecycle")
-      .select(
-        "packs_opened, minted, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted",
-      )
-      .eq("dist_id", distId)
-      .maybeSingle()
+    const { data, error } = await bounded(
+      db
+        .from("v_allday_pack_lifecycle")
+        .select(
+          "packs_opened, minted, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted",
+        )
+        .eq("dist_id", distId)
+        .maybeSingle(),
+      "allday_pack_lifecycle",
+    )
     if (error) {
       console.error("[pack-detail] allday_pack_lifecycle error", error.message)
       return { data: null, ok: false }
@@ -339,7 +415,10 @@ export async function fetchPackLifecycle(
     }
   }
   if (collectionSlug !== "nba-top-shot") return { data: null, ok: true }
-  const { data, error } = await db.rpc("get_pack_lifecycle_row", { p_dist_id: distId }).maybeSingle()
+  const { data, error } = await bounded(
+    db.rpc("get_pack_lifecycle_row", { p_dist_id: distId }).maybeSingle(),
+    "pack_lifecycle",
+  )
   if (error) {
     console.error("[pack-detail] pack_lifecycle error", error.message)
     return { data: null, ok: false }
@@ -353,11 +432,14 @@ export async function fetchPackRealizedEv(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<PackRealizedEvRow>> {
   if (collectionSlug === "nfl-all-day") {
-    const { data, error } = await db
-      .from("v_allday_pack_realized_ev")
-      .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_to_modeled_ratio")
-      .eq("dist_id", distId)
-      .maybeSingle()
+    const { data, error } = await bounded(
+      db
+        .from("v_allday_pack_realized_ev")
+        .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_to_modeled_ratio")
+        .eq("dist_id", distId)
+        .maybeSingle(),
+      "allday_pack_realized_ev",
+    )
     if (error) {
       console.error("[pack-detail] allday_pack_realized_ev error", error.message)
       return { data: null, ok: false }
@@ -377,7 +459,10 @@ export async function fetchPackRealizedEv(
     }
   }
   if (collectionSlug !== "nba-top-shot") return { data: null, ok: true }
-  const { data, error } = await db.rpc("get_pack_realized_ev_row", { p_dist_id: distId }).maybeSingle()
+  const { data, error } = await bounded(
+    db.rpc("get_pack_realized_ev_row", { p_dist_id: distId }).maybeSingle(),
+    "pack_realized_ev",
+  )
   if (error) {
     console.error("[pack-detail] pack_realized_ev error", error.message)
     return { data: null, ok: false }
@@ -391,13 +476,16 @@ export async function fetchAllDayCorrectedEv(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<AllDayCorrectedEvRow>> {
   if (collectionSlug !== "nfl-all-day") return { data: null, ok: true }
-  const { data, error } = await db
-    .from("v_allday_pack_detail_ev")
-    .select(
-      "corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev, opened_count, packnft_total, opened_pct_of_minted",
-    )
-    .eq("dist_id", distId)
-    .maybeSingle()
+  const { data, error } = await bounded(
+    db
+      .from("v_allday_pack_detail_ev")
+      .select(
+        "corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev, opened_count, packnft_total, opened_pct_of_minted",
+      )
+      .eq("dist_id", distId)
+      .maybeSingle(),
+    "allday_corrected_ev",
+  )
   if (error) {
     console.error("[pack-detail] allday_corrected_ev error", error.message)
     return { data: null, ok: false }
@@ -416,10 +504,10 @@ export async function fetchPackMarket(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<PackMarketRow>> {
   if (!PACK_MARKET_VIEW[collectionSlug]) return { data: null, ok: true }
-  const { data, error } = await db.rpc("get_pack_market_row", {
-    p_collection_slug: collectionSlug,
-    p_dist_id: distId,
-  })
+  const { data, error } = await bounded(
+    db.rpc("get_pack_market_row", { p_collection_slug: collectionSlug, p_dist_id: distId }),
+    "pack_market",
+  )
   if (error) {
     console.error(`[pack-detail] pack_market rpc error (${collectionSlug})`, error.message)
     return { data: null, ok: false }
@@ -436,7 +524,10 @@ export async function fetchEvContributors(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<EvContributor>> {
   if (collectionSlug !== "nba-top-shot") return { rows: [], ok: true }
-  const { data, error } = await db.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 })
+  const { data, error } = await bounded(
+    db.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 }),
+    "ev_contributors",
+  )
   if (error) {
     console.error("[pack-detail] ev_contributors error", error.message)
     return { rows: [], ok: false }
@@ -467,14 +558,17 @@ export async function fetchTopPulls(
   slots: number | null,
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<TopPull> & { partial: boolean }> {
-  const { data: poolRows, error: poolErr } = await db
-    .from("pack_drop_pool")
-    .select("edition_id, drop_weight")
-    .eq("dist_id", distId)
-    .eq("collection_id", collectionId)
-    .gt("drop_weight", 0)
-    .order("drop_weight", { ascending: false })
-    .limit(50)
+  const { data: poolRows, error: poolErr } = await bounded(
+    db
+      .from("pack_drop_pool")
+      .select("edition_id, drop_weight")
+      .eq("dist_id", distId)
+      .eq("collection_id", collectionId)
+      .gt("drop_weight", 0)
+      .order("drop_weight", { ascending: false })
+      .limit(50),
+    "drop_pool",
+  )
   if (poolErr) {
     console.error("[pack-detail] pack_drop_pool error", poolErr.message)
     return { rows: [], ok: false, partial: false }
@@ -537,12 +631,15 @@ export async function fetchPackContents(
   offset: number,
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<unknown>> {
-  const { data, error } = await db.rpc("get_pack_contents", {
-    p_collection_id: collectionId,
-    p_dist_id: distId,
-    p_limit: limit,
-    p_offset: offset,
-  })
+  const { data, error } = await bounded(
+    db.rpc("get_pack_contents", {
+      p_collection_id: collectionId,
+      p_dist_id: distId,
+      p_limit: limit,
+      p_offset: offset,
+    }),
+    "pack_contents",
+  )
   if (error) {
     console.error("[pack-detail] get_pack_contents error", error.message)
     return { rows: [], ok: false }
@@ -562,12 +659,15 @@ export async function fetchExhaustedCount(
   distId: string,
   db: Db = supabaseAdmin,
 ): Promise<{ count: number; ok: boolean }> {
-  const { count, error } = await db
-    .from("pack_drop_pool")
-    .select("edition_id", { count: "exact", head: true })
-    .eq("collection_id", collectionId)
-    .eq("dist_id", distId)
-    .eq("drop_weight", 0)
+  const { count, error } = await bounded(
+    db
+      .from("pack_drop_pool")
+      .select("edition_id", { count: "exact", head: true })
+      .eq("collection_id", collectionId)
+      .eq("dist_id", distId)
+      .eq("drop_weight", 0),
+    "exhausted_count",
+  )
   if (error) {
     console.error("[pack-detail] exhausted count error", error.message)
     return { count: 0, ok: false }
@@ -581,11 +681,14 @@ export async function fetchPackSalesHistory(
   limit = 10,
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<PackSaleRow>> {
-  const { data, error } = await db.rpc("get_pack_sales_history", {
-    p_collection_id: collectionId,
-    p_dist_id: distId,
-    p_limit: limit,
-  })
+  const { data, error } = await bounded(
+    db.rpc("get_pack_sales_history", {
+      p_collection_id: collectionId,
+      p_dist_id: distId,
+      p_limit: limit,
+    }),
+    "pack_sales_history",
+  )
   if (error) {
     console.error("[pack-detail] get_pack_sales_history error", error.message)
     return { rows: [], ok: false }

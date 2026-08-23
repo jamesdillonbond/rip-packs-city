@@ -458,3 +458,90 @@ describe("fetchEvContributors", () => {
     expect(await fetchEvContributors("nba-top-shot", "1", db)).toEqual({ rows: [], ok: true })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUNDS — a read that HANGS must reach the same `ok: false` these fetchers
+// already return for an error.
+//
+// 🚨 THIS PAGE IS THE TOP USER-IMPACTING ERROR IN PRODUCTION. Vercel's 24h window
+// on 2026-08-23: `[pack-detail] pack_realized_ev … statement timeout` at **124
+// users**, `pack_lifecycle` at 86, `ev_contributors` at 26, `pack_table_rows` at
+// 22. Those are the reads that ANSWERED with an error, and every `ok: false`
+// assertion above is the floor for them. The ones that merely HANG answer nothing
+// — supabase-js resolves `{ data, error }` only when the query finishes — so the
+// page waits on a streaming shell Vercel logs as a 200.
+//
+// ⚠ ONE read here was already bounded (`get_pack_detail_bundle`, via
+// `rpcWithRetry`) and THIRTEEN were not. That asymmetry is why
+// `scripts/check-unbounded-server-reads.mjs` deliberately does NOT recognise
+// `rpcWithRetry` as a budget primitive: doing so would have cleared this whole
+// page on the strength of the one bounded read.
+//
+// ⚠ The bound RESOLVES rather than rejecting, because every call site is a bare
+// `await` followed by `if (error)` with no try/catch to reject into. A rejection
+// would escape and render an error boundary instead of a page. These assertions
+// therefore check the fetcher's own contract, not that a throw was caught.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A double whose every terminal call never settles. */
+function hangingDb() {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "gt", "order", "limit", "in"]) b[m] = () => b
+  b.maybeSingle = () => new Promise(() => {})
+  b.single = () => new Promise(() => {})
+  b.then = () => new Promise(() => {})
+  return { from: () => b, rpc: () => b }
+}
+
+describe("bounds — a hung read is not an unindexed pack", () => {
+  it("fetchPackRealizedEv reports ok:false rather than hanging", async () => {
+    const res = await fetchPackRealizedEv("nba-top-shot", "d1", hangingDb())
+
+    expect(res.ok, "an overrun read must report FAILURE").toBe(false)
+    // ⚠ The absence of the false claim, not just the presence of a flag.
+    expect(res.data === null && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchPackLifecycle reports ok:false rather than hanging", async () => {
+    const res = await fetchPackLifecycle("nba-top-shot", "d1", hangingDb())
+
+    expect(res.ok).toBe(false)
+    expect(res.data === null && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchEvContributors reports ok:false rather than hanging — in the ROWS shape", async () => {
+    const res = await fetchEvContributors("nba-top-shot", "d1", hangingDb())
+
+    expect(res.ok).toBe(false)
+    expect(res.rows).toEqual([])
+    expect(res.rows.length === 0 && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchExhaustedCount reports ok:false rather than hanging — in the COUNT shape", async () => {
+    // ⚠ The one caller that destructures `count`, not `data`. The shared bound
+    // supplies all three fields, and this is what proves that envelope reaches
+    // the count-shaped site too rather than leaving `count` undefined.
+    const res = await fetchExhaustedCount("c1", "d1", hangingDb())
+
+    expect(res.ok).toBe(false)
+  }, 20_000)
+
+  it("CONTROL — a read inside the budget still resolves normally", async () => {
+    // Without this, a bound that failed unconditionally would satisfy every
+    // assertion above while the module had stopped working entirely.
+    const { db } = makeDb({ "rpc:get_pack_ev_contributors": { data: [{ edition_id: "e1" }] } })
+    const res = await fetchEvContributors("nba-top-shot", "d1", db)
+
+    expect(res.ok).toBe(true)
+    expect(res.rows).toHaveLength(1)
+  })
+
+  it("CONTROL — a section that does not APPLY is still ok:true, not a failure", async () => {
+    // The third state this file's header calls the one carrying the most weight:
+    // a Top-Shot-only panel on an All Day pack must not read as an outage, or
+    // every All Day pack page carries a permanent "unavailable" banner.
+    const res = await fetchEvContributors("nfl-all-day", "d1", hangingDb())
+
+    expect(res).toEqual({ rows: [], ok: true })
+  })
+})
