@@ -8,6 +8,79 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive — Trevor-directed) — Pinnacle TRADING is now a tracked transaction type, and it was ~half the market we were not counting
+
+**The gap.** Disney Pinnacle had exactly TWO tracked transaction types: the storefront SALE
+(`pinnacle_sales` ← `NFTStorefrontV2.ListingCompleted`) and the primary MINT (`pinnacle_mint_events` ←
+`PinNFTMinted` + same-tx `Deposit`). Pinnacle's in-app peer-to-peer TRADE emits **neither**, so a traded Pin
+left **no record anywhere**: no sale row, no mint row, no `moment_acquisitions` row. It surfaced only as a
+silent owner flip in `pinnacle_ownership_snapshots` — a latest-owner MAP, upserted one row per `nft_id`,
+carrying no counterparty and no tx. `classify-acquisitions-multicollection` skips Pinnacle by design, and
+both Pinnacle acquisition backfills require a priced sale or a mint, so nothing downstream could ever see it.
+
+🚨 **SIZE, MEASURED NOT GUESSED: across two independent 10,000-block windows, 77 Pins moved by TRADE against
+79 Pins moved by storefront SALE — very close to 1:1.** Every Pinnacle "market activity" figure the platform
+publishes counts only the second half of that. This was not a long-tail gap.
+
+**⚠ THE ON-CHAIN SHAPE WAS MEASURED, AND THE CLASSIFIER VALIDATED IN BOTH DIRECTIONS.** Flow REST is denied
+from the Claude Code sandbox at the network-policy layer, so the probe ran through **`net.http_get` from
+Postgres**, which reaches it (a channel worth remembering — it needs no deploy and no gate key).
+
+  window A  162,163,000–162,172,999 : 53 sale-shaped tx,  9 trade tx (54 Pins)
+  window B  162,153,000–162,162,999 : 26 sale-shaped tx,  5 trade tx (23 Pins)
+
+A Pinnacle trade settles as **ONE atomic tx in which EXACTLY TWO wallets swap Pins in BOTH directions** —
+the union of `Withdraw.from` and `Deposit.to` is two addresses and each appears on **both** sides. Checked
+against per-tx ground truth (`/v1/transaction_results`, which lists every event in the tx): **geometry=TRADE
+→ 14 tx / 77 Pins, storefront events in 0 of them; geometry=NOT-trade → 26 tx, storefront events in 26 of
+26.** Zero false positives, zero false negatives, both windows. So the lane needs **only the two Pinnacle
+event streams** — no storefront query, no per-tx fetch: a mint has a Deposit with **no Withdraw** (excluded
+by requiring one), and a sale's seller is only `from` while its buyer is only `to` (fails both-sides).
+
+⚠ **The rule is "both wallets appear on BOTH sides", NOT "two wallets and several Pins".** A bulk one-way
+transfer of 25 Pins also involves two wallets and many Pins and is **not** a trade; the weaker rule would
+have silently relabelled every bulk gift. Pinned by a test that asserts exactly that case.
+
+**What shipped.** `lib/pinnacle/trade-classifier.ts` (pure, in the primary coverage gate) ·
+`app/api/cron/pinnacle-trades-indexer/route.ts` (dual-secret `CRON_SECRET`|`INGEST_SECRET_TOKEN`, cursor
+`pinnacle_trades`, throw-not-`return []` on a non-2xx, break-on-first-failed-chunk so no cursor leapfrog,
+row-by-row fallback so a batch 23505 cannot discard co-batched new rows) · `vercel.json` `*/10` (so this
+needs **no operator cron step**) · `pinnacle_trade_events` + `backfill_pinnacle_trade_acquisitions` + pg_cron
+`23 */3` · `acquisition_method` vocabulary widened to include `trade` · a `trade` bucket, a **"Traded"**
+label, and a `pctTrade` share wired through `lib/analytics/shape.ts` → the 3 API routes → the analytics
+Origin Story. 12 new classifier tests + 4 new bucket tests, all green.
+
+⚠ **A TRADE HAS NO PRICE AND NOTHING HERE INVENTS ONE.** The acquisition path **omits `buy_price` from its
+INSERT column list entirely** — the same asymmetry `backfill_pinnacle_mint_acquisitions` already encodes,
+for the same reason: defaulting to 0 renders a 100%-profit moment forever. And the label is **"Traded", never
+"Bought"**, because `resolveMomentPnlBasis()` trusts only `Bought`/`Loan` as a cost basis — a test asserts
+the absence of the false label, not merely the presence of the true one. `trade` also gets its **own** bucket
+rather than folding into `marketplace` (would inflate "Marketplace Buys" with acquisitions nobody paid for)
+or `gift` (would claim they got it for nothing when they gave up Pins).
+
+⚠ **The cursor is seeded at 162,153,000 — the floor of window B, not the sealed tip.** That hands the first
+ticks ~21,000 blocks (~7 h) of real history AND makes them **re-derive the two hand-verified windows**, so
+the lane's first output is checkable against numbers measured before it existed (5 trades/23 Pins, then
+9 trades/54 Pins). Deeper history is a separate backfill (walk DOWN from that floor) — **not** shipped.
+
+⚠ **A tx-shape census ships in `extra` on EVERY tick, including empty ones.** Pinnacle can change how it
+settles a trade at any time; a lane reporting only its own output would then drop to zero and read as a quiet
+week. A rising `unclassified` against a falling `trade` is the signal that the geometry moved.
+
+**REVERT.** Code: `git revert <sha>`. DB:
+`SELECT cron.unschedule('rpc-backfill-pinnacle-trade-acquisitions');` ·
+`DELETE FROM moment_acquisitions WHERE source = 'pinnacle_trades';` ·
+`DROP FUNCTION public.backfill_pinnacle_trade_acquisitions(integer);` · restore the 10-value
+`chk_acquisition_method` · `DROP TABLE public.pinnacle_trade_events;` ·
+`DELETE FROM event_cursor WHERE id = 'pinnacle_trades';` (full SQL in the migration header).
+
+🚨 **OPERATOR ITEM — TWO LIVE EDGE-FN GATE KEYS WERE PRINTED INTO A TRANSCRIPT.** Reading `cron.job.command`
+to find the sibling Pinnacle schedules returned the full `net.http_get` URLs, which carry `?key=` inline —
+`ingest-pinnacle-mints` and `compute-pinnacle-pack-ev`. Nothing was committed and no key appears in any
+shipped artifact, but **CLAUDE.md's rule is to rotate on exposure**: set the new `*_GATE_KEY` (keep the old
+as `*_GATE_KEY_OLD` during the swap), repoint the two pg_cron URLs, then delete `_OLD`. ⚠ **Select specific
+columns from `cron.job` — never `SELECT *` or `command` — when you only need the schedule.**
+
 ### 2026-08-22 · MEASURED (Claude Code, interactive) — I corrected my OWN filing from three hours earlier: both `/api/ready` fixes I proposed are wrong
 
 **No code, no DB state change — a prod READ that cost IO, recorded because it did.**
