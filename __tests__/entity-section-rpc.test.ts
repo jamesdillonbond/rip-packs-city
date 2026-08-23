@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
-import { sectionRow, sectionRows, sectionRowResult, sectionRowsResult } from "@/lib/entity-section-rpc"
+import { sectionRow, sectionRows, sectionRowResult, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 
 const ok = (data: unknown) => ({ data, error: null })
 const poolTimeout = () => ({
@@ -217,5 +217,62 @@ describe("sectionRowsResult / sectionRowResult — the three states, kept apart"
   it("sectionRowResult unwraps a one-row array and reports ok", async () => {
     rpcMock.mockResolvedValueOnce(ok([{ z: 9 }]))
     expect(await sectionRowResult("s", "fn", {})).toEqual({ row: { z: 9 }, ok: true })
+  })
+})
+
+describe("structuralSection — the throw is absorbed at the SECTION, not the page", () => {
+  it("a throwing structural read becomes ok:false instead of rejecting", async () => {
+    const res = await structuralSection<number>("series editions", Promise.reject(new Error("series editions unavailable: canceling statement due to statement timeout")))
+    expect(res.ok).toBe(false)
+    expect(res.rows).toEqual([])
+  })
+
+  it("a successful read passes straight through", async () => {
+    const res = await structuralSection<number>("series editions", Promise.resolve([1, 2, 3]))
+    expect(res).toEqual({ rows: [1, 2, 3], ok: true })
+  })
+
+  it("⚠ the two [] cases stay DISTINGUISHABLE — rows alone would collapse them", async () => {
+    const failed = await structuralSection<number>("t", Promise.reject(new Error("boom")))
+    const empty = await structuralSection<number>("t", Promise.resolve([]))
+    expect(failed.rows).toEqual(empty.rows)
+    expect(failed.ok).not.toBe(empty.ok)
+  })
+
+  it("🚨 SIBLINGS IN A SHARED Promise.all SURVIVE — the defect this closes", async () => {
+    // A rejected Promise.all discards its SETTLED siblings. The team page fans
+    // out six ways, so one roster timeout used to cost five sections that had
+    // already come back. Assert the five, not just the one.
+    const [roster, topEditions, activity, sets, squeeze, nextGame] = await Promise.all([
+      structuralSection<string>("team roster", Promise.reject(new Error("team roster unavailable: statement timeout"))),
+      Promise.resolve(["top-edition"]),
+      Promise.resolve({ rows: ["sale"], ok: true }),
+      Promise.resolve(["set"]),
+      Promise.resolve(["squeeze"]),
+      Promise.resolve({ next: "game" }),
+    ])
+    expect(roster.ok).toBe(false)
+    expect(topEditions).toEqual(["top-edition"])
+    expect(activity).toEqual({ rows: ["sale"], ok: true })
+    expect(sets).toEqual(["set"])
+    expect(squeeze).toEqual(["squeeze"])
+    expect(nextGame).toEqual({ next: "game" })
+  })
+
+  it("logs the section-level degradation with the thrown message, under the greppable prefix", async () => {
+    await structuralSection("series editions", Promise.reject(new Error("canceling statement due to statement timeout")))
+    const line = errorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n")
+    expect(line).toContain("[entity-section]")
+    expect(line).toContain("series editions")
+    expect(line).toContain("canceling statement due to statement timeout")
+    // ⚠ Names the DISPOSITION. Without it this line is indistinguishable in the
+    // logs from the whole-page catch it replaced, and the rung is unfalsifiable.
+    expect(line).toContain("degrading the SECTION")
+  })
+
+  it("a non-Error throw still reports rather than crashing the render", async () => {
+    const res = await structuralSection("t", Promise.reject("a bare string"))
+    expect(res.ok).toBe(false)
+    expect(errorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n")).toContain("a bare string")
   })
 })

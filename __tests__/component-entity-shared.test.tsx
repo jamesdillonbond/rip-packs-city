@@ -9,6 +9,7 @@ vi.mock("next/link", () => ({
 import {
   fmtUsd, fmtCount, fmtPercent, truncWallet, relTime, tileSubject,
   marketplaceLabel, fmvBasisText, FmvBasis, TierBadge, WalletLink, EM_DASH,
+  SectionUnavailable,
 } from "@/components/entity/_shared"
 
 afterEach(cleanup)
@@ -117,5 +118,27 @@ describe("_shared formatters", () => {
     const a = container.querySelector("a")!
     expect(a.getAttribute("href")).toBe("/profile/0xabc1234567890000")
     expect(a.textContent).toBe("@ripper")
+  })
+
+  // ── SectionUnavailable ──────────────────────────────────────────────────
+  // ⚠ These assert the ABSENCE OF THE FALSE CLAIM, not the presence of an error
+  // string. A panel that said "Couldn't load the editions in this set" and then
+  // "no editions found" would pass any check for the first sentence.
+  it("SectionUnavailable names the section and reports OUR failure", () => {
+    const { container } = render(<SectionUnavailable noun="the editions in this set" />)
+    const text = container.textContent!
+    expect(text).toContain("Couldn\u2019t load the editions in this set")
+    expect(text).toContain("problem on our side")
+  })
+
+  it("SectionUnavailable DENIES the emptiness claim rather than leaving it open", () => {
+    const { container } = render(<SectionUnavailable noun="this team\u2019s roster" />)
+    const text = container.textContent!.replace(/\s+/g, " ")
+    // The disclaimer is the load-bearing sentence: without it the panel reads as
+    // a styled empty state, which is the two-state collapse it exists to avoid.
+    expect(text).toContain("does not mean there are none")
+    // ...and it must not conclude anything about the data in the other direction.
+    expect(text).not.toMatch(/\bno (results|editions|players|sets|moments)\b/i)
+    expect(text).not.toMatch(/\bnone found\b/i)
   })
 })

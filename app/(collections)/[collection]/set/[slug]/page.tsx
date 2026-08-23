@@ -9,9 +9,9 @@ import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
@@ -131,19 +131,35 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // here. Fixing the first read and stopping is the same partial-fix shape that
   // turned D12 into D12b.
   //
-  // Whole-section failure degrades the page rather than the section because the
-  // sections below consume these unconditionally; per-section degradation is the
-  // better end state and is filed, not done here.
-  let editions: Awaited<ReturnType<typeof fetchEditions>>
-  let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>>
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23). This used to catch the
+  // structural throw here and return `SetUnavailable`, discarding the hero, the
+  // merged-sets disclosure and the whole stat strip — all of them already read
+  // from `get_set_detail`, which is a different query with a different cost and
+  // routinely succeeds when `get_set_editions` times out. The reader now keeps
+  // everything the detail row carries, and the grid says for itself that it did
+  // not come back.
+  //
+  // ⚠ It also rejected the shared `Promise.all` and threw away the TIER MIX,
+  // which had already been fetched and already reports its own `ok`.
+  //
+  // ⚠ The outer try is a LAST RESORT, not the rung-2 catch it replaced. A
+  // decorative section fetcher cannot throw by policy and `structuralSection`
+  // absorbs the one that can — but an unexpected throw (a client-level error the
+  // section policy does not model) would still reject the whole `Promise.all`,
+  // and on an ISR route error.tsx does not run. So the catch marks EVERY section
+  // failed and lets the page render; it must never return a whole-page view.
+  let editionsRes: { rows: EditionTile[]; ok: boolean } = { rows: [], ok: false }
+  let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>> = { rows: [], ok: false }
   try {
-    ;[editions, tierMix] = await Promise.all([
-      fetchEditions(coll.id, slug, PAGE_SIZE, 0),
+    ;[editionsRes, tierMix] = await Promise.all([
+      structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
       fetchFullTierMix(coll.id, setNames),
     ])
-  } catch {
-    return <SetUnavailable collection={collection} slug={slug} />
+  } catch (e) {
+    console.error("[set] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
   }
+  const editions = editionsRes.rows
+  const editionsOk = editionsRes.ok
 
   const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
   const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null
@@ -160,14 +176,25 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // renders "COMMON · 62 · 62.0%" against a true ~2,200 — a wrong number
   // presented identically to a right one. Showing nothing is the honest
   // outcome; the editions grid below still carries the page.
-  const tierMixRows = tierMix.ok ? buildTierMixRows(tierMix.rows, editions) : []
+  //
+  // ⚠ `editionsOk` gates the SAMPLE leg too. `buildTierMixRows` falls back to
+  // counting the fetched page when the full-set read came back empty, and on a
+  // FAILED editions read that page is `[]` — which would render the bar off a
+  // sample of nothing.
+  const tierMixRows = tierMix.ok && editionsOk ? buildTierMixRows(tierMix.rows, editions) : []
 
   return (
     <div>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.set_name, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: detail.set_name })) }}
-      />
+      {/* ⚠ OMITTED, not emitted-with-zero, when the editions read failed:
+          `collectionEntityJsonLd` publishes `numberOfItems: items.length`, so a
+          failed read would hand a crawler a machine-readable "this set holds no
+          editions". No claim beats a false one. */}
+      {editionsOk && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.set_name, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: detail.set_name })) }}
+        />
+      )}
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
@@ -247,14 +274,18 @@ export default async function SetPage(props: { params: Promise<{ collection: str
 
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">
-        <EditionsGridPaginated
-          collectionUrlSlug={collection}
-          fetchUrl={`/api/entity/set?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
-          initial={editions}
-          pageSize={PAGE_SIZE}
-          showSetLink={false}
-          showSort
-        />
+        {editionsOk ? (
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/set?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+            initial={editions}
+            pageSize={PAGE_SIZE}
+            showSetLink={false}
+            showSort
+          />
+        ) : (
+          <SectionUnavailable noun="the editions in this set" />
+        )}
       </Section>
     </div>
   )

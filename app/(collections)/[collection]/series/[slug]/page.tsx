@@ -17,9 +17,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRow, sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRowResult, sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
-import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
@@ -79,11 +79,15 @@ interface SetRollupRow { set_slug: string; set_name: string; edition_count: numb
 interface PlayerRollupRow { player_slug: string; player_name: string; edition_count: number; fmv_total: number }
 interface SeriesRollups { sets: SetRollupRow[]; players: PlayerRollupRow[] }
 
-async function fetchRollups(collectionId: string, slug: string): Promise<SeriesRollups | null> {
-  const data = await sectionRow<{ sets?: unknown; players?: unknown }>("series rollups", "get_series_rollups", { p_collection_id: collectionId, p_series_slug: slug })
-  const d = data
-  if (!d || !Array.isArray(d.sets) || !Array.isArray(d.players)) return null
-  return { sets: d.sets as SetRollupRow[], players: d.players as PlayerRollupRow[] }
+// Three-state. `ok` distinguishes "the rollup RPC failed" from "it answered and
+// this series has no sets", which the caller needs: with the editions read ALSO
+// gone there is nothing left to derive the cards from, and rendering no cards
+// would publish "this series has no sets" out of two failed reads.
+async function fetchRollups(collectionId: string, slug: string): Promise<{ rollups: SeriesRollups | null; ok: boolean }> {
+  const { row, ok } = await sectionRowResult<{ sets?: unknown; players?: unknown }>("series rollups", "get_series_rollups", { p_collection_id: collectionId, p_series_slug: slug })
+  if (!ok) return { rollups: null, ok: false }
+  if (!row || !Array.isArray(row.sets) || !Array.isArray(row.players)) return { rollups: null, ok: true }
+  return { rollups: { sets: row.sets as SetRollupRow[], players: row.players as PlayerRollupRow[] }, ok: true }
 }
 
 // ── Metadata ────────────────────────────────────────────────────────────────
@@ -135,29 +139,44 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   const isEmpty = detail.edition_count === 0
   // ⚠ `fetchEditions` is STRUCTURAL — it THROWS after retries rather than render
   // a real series with a convincingly empty catalogue (see lib/entity-section-rpc.ts).
-  // It was the only one of the four entity pages whose structural read had no
-  // catcher: `set`, `team` and `player` each route theirs into a branded
-  // `*Unavailable`, and this one fell through to the segment error boundary.
   //
-  // ⚠ THAT IS NOT AN UNBRANDED 500 ANY MORE — `app/(collections)/[collection]/error.tsx`
-  // (added 2026-08-23, R19) catches it in brand. The remaining difference is what
-  // the reader keeps: the boundary replaces the WHOLE page with a generic
-  // "couldn't render this page", while `SeriesUnavailable` — which this file
-  // already defines and already uses for a failed DETAIL read — names the series
-  // and links to its sets. Same failure, one rung better, and it makes the four
-  // entity pages consistent instead of three-plus-one.
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23). This used to catch the throw
+  // out here and return `SeriesUnavailable`, which threw away the hero and all
+  // five stat cells — every one of them already read, already true, and cheap:
+  // `get_series_detail` answers in ~18 ms off `series_detail_rollup` while
+  // `get_series_editions` costs 6,615 ms / 32,484 buffers against an 8 s ceiling
+  // (R49), so on the two largest Top Shot series the editions read is the ONLY
+  // one that fails. The reader now keeps the series name, season, edition count,
+  // set count, player count, FMV total and floor total, and is told plainly that
+  // the editions grid did not come back.
   //
-  // ⚠ Per-SECTION degradation still beats this, and is still filed rather than
-  // done: the sections below consume `editions` unconditionally.
-  let editions: EditionTile[]
-  let rollups: SeriesRollups | null
-  try {
-    ;[editions, rollups] = isEmpty
-      ? [[] as EditionTile[], null]
-      : await Promise.all([fetchEditions(coll.id, slug, PAGE_SIZE, 0), fetchRollups(coll.id, slug)])
-  } catch {
-    return <SeriesUnavailable collection={collection} slug={slug} />
+  // ⚠ The throw also used to reject the shared `Promise.all` and discard the
+  // ROLLUPS alongside it, even when those succeeded. `structuralSection` absorbs
+  // it so each leg reports for itself.
+  //
+  // ⚠ The inner try is a LAST RESORT, not the rung-2 catch it replaced. A
+  // decorative section fetcher cannot throw by policy and `structuralSection`
+  // absorbs the one that can — but an unexpected throw would still reject the
+  // whole `Promise.all`, and on an ISR route error.tsx does not run. So the catch
+  // marks EVERY section failed and lets the page render; it must never return a
+  // whole-page view.
+  let editionsRes: { rows: EditionTile[]; ok: boolean } = { rows: [], ok: true }
+  let rollupsRes: Awaited<ReturnType<typeof fetchRollups>> = { rollups: null, ok: true }
+  if (!isEmpty) {
+    try {
+      ;[editionsRes, rollupsRes] = await Promise.all([
+        structuralSection<EditionTile>("series editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
+        fetchRollups(coll.id, slug),
+      ])
+    } catch (e) {
+      console.error("[series] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
+      editionsRes = { rows: [], ok: false }
+      rollupsRes = { rollups: null, ok: false }
+    }
   }
+  const editions = editionsRes.rows
+  const editionsOk = editionsRes.ok
+  const rollups = rollupsRes.rollups
 
   // Top 25 = first 25 (RPC pre-sorts by FMV desc).
   const top25 = editions.slice(0, 25)
@@ -170,7 +189,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   if (rollups) {
     setCards = rollups.sets.map(s => ({ setSlug: s.set_slug, setName: s.set_name, count: s.edition_count, fmvTotal: s.fmv_total ?? 0 }))
     topPlayers = rollups.players.map(p => ({ playerSlug: p.player_slug, playerName: p.player_name, count: p.edition_count, fmvTotal: p.fmv_total ?? 0 }))
-  } else {
+  } else if (editionsOk) {
     const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
     for (const e of editions) {
       if (!e.set_slug || !e.set_name) continue
@@ -198,14 +217,32 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       }
     }
     topPlayers = Array.from(playerMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal).slice(0, 12)
+  } else {
+    // Neither basis survived. Rendering zero cards here would publish "this
+    // series has no sets" out of two failed reads — see `cardsUnavailable`.
+    setCards = []
+    topPlayers = []
   }
+
+  // ⚠ The cards' empty state is SILENT (the sections simply do not render), and
+  // a silent absence on a page whose stat strip says "Sets: 42" is the two-state
+  // collapse in its quietest form. When neither the rollups nor the editions
+  // came back we have no basis at all, so say so instead of showing nothing.
+  const cardsUnavailable = rollups === null && !editionsOk
 
   return (
     <div>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.display_label, url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: detail.display_label })) }}
-      />
+      {/* ⚠ OMITTED, not emitted-with-zero, when the editions read failed.
+          `collectionEntityJsonLd` publishes `numberOfItems: items.length`, so a
+          failed structural read would hand a crawler a machine-readable claim
+          that a 4,895-edition series holds none — the fabricated-number shape,
+          in the one place no human proof-reads it. No claim beats a false one. */}
+      {editionsOk && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.display_label, url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: detail.display_label })) }}
+        />
+      )}
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
@@ -245,14 +282,18 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
         <>
           {/* ── Top 25 ────────────────────────────────────────────────────── */}
           <Section title="Top Editions">
-            <EditionsGridPaginated
-              collectionUrlSlug={collection}
-              fetchUrl={`/api/entity/series?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
-              initial={top25}
-              pageSize={PAGE_SIZE}
-              showSetLink
-              showSort={false}
-            />
+            {editionsOk ? (
+              <EditionsGridPaginated
+                collectionUrlSlug={collection}
+                fetchUrl={`/api/entity/series?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+                initial={top25}
+                pageSize={PAGE_SIZE}
+                showSetLink
+                showSort={false}
+              />
+            ) : (
+              <SectionUnavailable noun="the editions in this series" />
+            )}
           </Section>
 
           {/* ── Sets in this Series ──────────────────────────────────────── */}
@@ -273,6 +314,12 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
                   </Link>
                 ))}
               </div>
+            </Section>
+          )}
+
+          {cardsUnavailable && (
+            <Section title="Sets in this Series">
+              <SectionUnavailable noun={"this series’ sets and players"} />
             </Section>
           )}
 

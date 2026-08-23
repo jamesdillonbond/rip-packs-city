@@ -170,3 +170,42 @@ export async function sectionRowResult<T>(
   if (Array.isArray(data)) return { row: (data[0] as T) ?? null, ok: true }
   return { row: data as T, ok: true }
 }
+
+/**
+ * Catch a STRUCTURAL section's throw AT THE PAGE, so the failure costs the
+ * reader that SECTION instead of the whole page.
+ *
+ * ── Why this exists (R19, 2026-08-23) ──────────────────────────────────────
+ * The throw above is correct and stays: a structural section must never render
+ * a real entity with a convincingly empty catalogue. But every entity page
+ * caught it at the OUTERMOST level and returned its whole-page `*Unavailable`,
+ * which throws away everything the page already knows. On
+ * `/nba-top-shot/series/series-7` that is the whole hero and all five stat
+ * cells — `get_series_detail` answers in ~18 ms off `series_detail_rollup`
+ * while `get_series_editions` costs 6,615 ms / 32,484 buffers against an 8 s
+ * ceiling (R49). The reader was shown "couldn't load series-7" on a page whose
+ * name, season, edition count, set count, player count, FMV total and floor
+ * total were all sitting in memory, already read, already true.
+ *
+ * ⚠ It is also the DECORATIVE sections' problem, not only the structural one:
+ * a structural throw inside a shared `Promise.all` rejects the whole call and
+ * discards siblings that SUCCEEDED. The team page fans out six ways, so one
+ * roster timeout cost five sections that had already come back.
+ *
+ * ⚠ `ok: false` is NOT `rows: []`. A caller that renders the empty array is
+ * back to publishing "none" for "we could not look" — the two-state collapse
+ * this file's header spends forty lines on. Render a section-level unavailable
+ * on `!ok`; `[]` here is only so the type stays a list.
+ */
+export async function structuralSection<T>(
+  tag: string,
+  read: Promise<T[]>,
+): Promise<{ rows: T[]; ok: boolean }> {
+  try {
+    return { rows: await read, ok: true }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error(`[entity-section] ${tag} structural read failed — degrading the SECTION, not the page: ${message}`)
+    return { rows: [], ok: false }
+  }
+}

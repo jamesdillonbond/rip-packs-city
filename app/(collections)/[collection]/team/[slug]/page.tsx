@@ -9,11 +9,11 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRow, sectionRows, sectionRowsResult } from "@/lib/entity-section-rpc"
+import { sectionRow, sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
-import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/PlayersGridPaginated"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -173,27 +173,40 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   // here. Fixing the first read and stopping is the same partial-fix shape that
   // turned D12 into D12b.
   //
-  // Whole-section failure degrades the page rather than the section because the
-  // sections below consume these unconditionally; per-section degradation is the
-  // better end state and is filed, not done here.
-  let players: Awaited<ReturnType<typeof fetchPlayers>>
-  let topEditions: Awaited<ReturnType<typeof fetchTopEditions>>
-  let activityRes: Awaited<ReturnType<typeof fetchActivity>>
-  let teamSets: Awaited<ReturnType<typeof fetchSets>>
-  let squeeze: Awaited<ReturnType<typeof fetchSqueeze>>
-  let nextGame: Awaited<ReturnType<typeof fetchNextGame>>
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23), and this page is the sharpest
+  // case of why. The roster is structural and THROWS; catching that out here
+  // returned `TeamUnavailable` and threw away FIVE OTHER SECTIONS THAT HAD
+  // ALREADY COME BACK — a rejected `Promise.all` discards its settled siblings.
+  // One roster timeout cost the reader the hero, the stat strip, the activity
+  // feed, the sets, the squeeze list and the next game, none of which had
+  // failed. `structuralSection` absorbs the throw so each leg reports for
+  // itself, which is what the other five already do via their own `ok`.
+  //
+  // ⚠ The outer try is a LAST RESORT, not the rung-2 catch it replaced. Five of
+  // these six cannot throw by policy and `structuralSection` absorbs the sixth —
+  // but an unexpected throw would still reject the whole `Promise.all`, and on an
+  // ISR route error.tsx does not run. So the catch marks EVERY section failed and
+  // lets the page render; it must never return a whole-page view.
+  let rosterRes: { rows: PlayerTile[]; ok: boolean } = { rows: [], ok: false }
+  let topEditions: Awaited<ReturnType<typeof fetchTopEditions>> = []
+  let activityRes: Awaited<ReturnType<typeof fetchActivity>> = { rows: [], ok: false }
+  let teamSets: Awaited<ReturnType<typeof fetchSets>> = []
+  let squeeze: Awaited<ReturnType<typeof fetchSqueeze>> = []
+  let nextGame: Awaited<ReturnType<typeof fetchNextGame>> = null
   try {
-    ;[players, topEditions, activityRes, teamSets, squeeze, nextGame] = await Promise.all([
-      fetchPlayers(coll.id, slug, PAGE_SIZE, 0),
+    ;[rosterRes, topEditions, activityRes, teamSets, squeeze, nextGame] = await Promise.all([
+      structuralSection<PlayerTile>("team roster", fetchPlayers(coll.id, slug, PAGE_SIZE, 0)),
       fetchTopEditions(coll.id, slug, TOP_EDITIONS_PAGE_SIZE, 0),
       fetchActivity(coll.id, slug, 40),
       fetchSets(coll.id, slug),
       fetchSqueeze(coll.id, slug, 12),
       fetchNextGame(coll.id, slug),
     ])
-  } catch {
-    return <TeamUnavailable collection={collection} slug={slug} />
+  } catch (e) {
+    console.error("[team] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
   }
+  const players = rosterRes.rows
+  const playersOk = rosterRes.ok
   const activity = activityRes.rows
 
   return (
@@ -288,13 +301,17 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
 
       {/* ── Roster / Cast grid ───────────────────────────────────────────── */}
       <Section title={rosterLabel}>
-        <PlayersGridPaginated
-          collectionUrlSlug={collection}
-          fetchUrl={`/api/entity/team?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
-          initial={players}
-          pageSize={PAGE_SIZE}
-          isFranchise={isFranchise}
-        />
+        {playersOk ? (
+          <PlayersGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/team?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+            initial={players}
+            pageSize={PAGE_SIZE}
+            isFranchise={isFranchise}
+          />
+        ) : (
+          <SectionUnavailable noun={`${detail.team_name}\u2019s ${rosterLabel.toLowerCase()}`} />
+        )}
       </Section>
     </div>
   )

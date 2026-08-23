@@ -11,11 +11,11 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
-import { sectionRows } from "@/lib/entity-section-rpc"
+import { sectionRows, structuralSection } from "@/lib/entity-section-rpc"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
-import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import { buildPlayerSetCards } from "@/lib/player-page-view"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -254,19 +254,28 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   const labels = getEntityLabels(collection)
   const isCharacter = detail.is_character === true
   // get_player_editions is STRUCTURAL and throws (203 occurrences / 199 users).
-  let editions: Awaited<ReturnType<typeof fetchEditions>>
-  try {
-    editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
-  } catch {
-    return <PlayerUnavailable collection={collection} slug={slug} />
-  }
+  //
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23). This used to return
+  // `PlayerUnavailable`, discarding the hero, the headshot, the team link and
+  // every stat the detail row carries — a separate, far cheaper read that
+  // routinely succeeds when the editions read does not. The reader keeps all of
+  // it now; the grid and the derived set cards each report for themselves.
+  const editionsRes = await structuralSection<EditionTile>(
+    "player editions",
+    fetchEditions(coll.id, slug, PAGE_SIZE, 0),
+  )
+  const editions = editionsRes.rows
+  const editionsOk = editionsRes.ok
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
   const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
 
   // Group editions by set_slug → set summary cards (buildPlayerSetCards, tested).
-  const setCards = buildPlayerSetCards(editions)
+  // ⚠ Derived from `editions`, so it inherits that read's state: on a failure it
+  // would be `[]` and the Sets section would silently vanish from a player who
+  // has plenty. `editionsOk` is what keeps the two apart.
+  const setCards = editionsOk ? buildPlayerSetCards(editions) : []
 
   return (
     <div>
@@ -342,14 +351,18 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">
-        <EditionsGridPaginated
-          collectionUrlSlug={collection}
-          fetchUrl={`/api/entity/player?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
-          initial={editions}
-          pageSize={PAGE_SIZE}
-          showSetLink
-          showSort
-        />
+        {editionsOk ? (
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/player?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+            initial={editions}
+            pageSize={PAGE_SIZE}
+            showSetLink
+            showSort
+          />
+        ) : (
+          <SectionUnavailable noun={`${detail.name}\u2019s editions`} />
+        )}
       </Section>
 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
@@ -365,6 +378,15 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       </Suspense>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
+      {!editionsOk && (
+        <Section title="Sets">
+          {/* Derived from the editions read, so it is unavailable for the same
+              reason — and its empty state is SILENT, which on a player with a
+              deep catalogue reads as "no sets" rather than as a failure. */}
+          <SectionUnavailable noun={`the sets ${detail.name} appears in`} />
+        </Section>
+      )}
+
       {setCards.length > 0 && (
         <Section title="Sets">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>

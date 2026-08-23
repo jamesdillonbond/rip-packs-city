@@ -236,6 +236,46 @@ export function Section({ title, action, children }: { title: string; action?: R
   )
 }
 
+// ── Section-level failure ───────────────────────────────────────────────────
+
+/**
+ * Rendered INSIDE a section whose read failed, in place of that section's
+ * content. Reports OUR failure and claims nothing about the data.
+ *
+ * ⚠ This is the difference between "we could not look" and "there are none",
+ * on a surface where the second is a factual claim the reader will act on.
+ * The alternative it replaces is not an empty grid — it is the page's
+ * whole-page `*Unavailable`, which discards a hero and a stat strip that were
+ * already read and already true (R19).
+ *
+ * `noun` is a noun PHRASE and completes "Couldn't load ___" — "the editions in
+ * this series", "this team's roster". Keep it specific: the reader is looking
+ * at a page that otherwise rendered, so a generic "data" reads as a bug rather
+ * than as one section that did not come back.
+ */
+export function SectionUnavailable({ noun }: { noun: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--rpc-red-border)",
+        padding: "18px 16px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        className="rpc-mono"
+        style={{ fontSize: 11, letterSpacing: "0.24em", textTransform: "uppercase", color: "var(--rpc-red)" }}
+      >
+        Couldn&rsquo;t load {noun}
+      </div>
+      <p style={{ margin: "10px auto 0", maxWidth: 460, fontSize: 13, lineHeight: 1.5, color: "var(--rpc-text-secondary)" }}>
+        The data didn&rsquo;t come back in time. This is a problem on our side &mdash; it does{" "}
+        <strong>not</strong> mean there are none. Reloading often works.
+      </p>
+    </div>
+  )
+}
+
 // ── Marketplace label ───────────────────────────────────────────────────────
 
 export function marketplaceLabel(raw: string | null | undefined): string {

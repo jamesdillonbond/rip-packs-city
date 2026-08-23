@@ -290,9 +290,29 @@ describe("server pages distinguish a failed read from an absent record", () => {
 
     // The page must gate the whole bar on that flag. Anything else — including
     // passing `tierMix.rows` straight through — reinstates the defect.
-    expect(src, "the bar must be gated on the read having succeeded").toMatch(
-      /tierMix\.ok\s*\?\s*buildTierMixRows\(tierMix\.rows,\s*editions\)\s*:\s*\[\]/,
-    )
+    //
+    // ⚠ PINS THE PROPERTY, NOT THE SPELLING. This used to require the literal
+    // `tierMix.ok ? buildTierMixRows(...)`, and it went red on 2026-08-23 for a
+    // change that STRENGTHENED the gate: `tierMix.ok && editionsOk ? …`, added
+    // because the sample leg reads the editions page and that read can now fail
+    // on its own. A guard that fails correct code is the shape this repo keeps
+    // recording — so the condition is now parsed rather than matched: exactly one
+    // call, on the true branch of a gate that names `tierMix.ok`, ANDed with
+    // whatever else the page needs, with `[]` on the false branch.
+    const calls = [...src.matchAll(/buildTierMixRows\(/g)]
+    expect(calls.length, "expected exactly one buildTierMixRows call to reason about").toBe(1)
+    const at = calls[0].index!
+    const gate = src.slice(Math.max(0, at - 120), at)
+    expect(gate, "buildTierMixRows must sit on the true branch of a ternary").toMatch(/\?\s*$/)
+    const condition = gate.replace(/\?\s*$/, "")
+    expect(condition, "the gate must name tierMix.ok").toContain("tierMix.ok")
+    // ⚠ `||` would let a falsy `tierMix.ok` through — a weakening that reads
+    // identically to a strengthening at a glance.
+    expect(condition, "the gate must not be widened with ||").not.toContain("||")
+    expect(
+      src.slice(at, at + 140),
+      "the false branch must be [] — anything else keeps rendering a bar",
+    ).toMatch(/buildTierMixRows\(tierMix\.rows,\s*editions\)\s*:\s*\[\]/)
     // ...and the page must not hold its own client for this read any more; the
     // extraction is what put the logic under the primary coverage gate.
     expect(src, "the page must not query the database inline").not.toContain("@/lib/supabase")
