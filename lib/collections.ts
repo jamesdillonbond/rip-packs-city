@@ -406,6 +406,42 @@ export function dapperMarketMomentUrl(collectionId: string, momentId: string | n
   return `https://dapper.market/${seg}/moment/${momentId}`
 }
 
+// dapper.market EDITION pages. Distinct from the moment deep link above:
+// edition-grain (every serial of one edition) rather than one specific NFT, and
+// keyed by the numeric on-chain editionID — the exact value we already store in
+// `editions.external_id`. Verified 2026-08-22 against a real page: Golazos
+// edition 541 (Messi / ElClásico, /11) is dapper.market/laliga/edition/541.
+//
+// GOLAZOS ONLY, and deliberately so:
+//   - "nba-top-shot" has NO numeric editionID to link to. Its external_id is a
+//     COMPOSITE of set+play ("<setUUID>:<playUUID>", or "258:9004::16" for a
+//     subedition), so no /nba/edition/<id> URL is derivable from anything we
+//     store. This one can never be added from external_id alone.
+//   - "nfl-all-day" DOES store a numeric on-chain editionID, so the URL shape is
+//     plausible — but it is UNVERIFIED. An unverified outbound CTA sends a
+//     collector to a 404, which is the exact failure the native-template null
+//     cases above exist to prevent. Add `"nfl-all-day": "nfl"` here (plus its
+//     case in __tests__/collections-urls.test.ts) once one real
+//     /nfl/edition/<id> page has been opened and confirmed.
+const DAPPER_MARKET_EDITION_SEG: Record<string, string> = {
+  "laliga-golazos": "laliga",
+}
+
+// Two gates, not one. The seg map decides WHICH collections have an edition
+// page at all; the numeric test decides whether THIS id can legally sit in an
+// /edition/<id> path. A composite (Top Shot) or slug-form (UFC / Candy)
+// external_id must never be pasted into that path, whatever the seg map grows
+// to hold later.
+export function dapperMarketEditionUrl(
+  collectionId: string,
+  editionExternalId: string | null | undefined
+): string | null {
+  const seg = DAPPER_MARKET_EDITION_SEG[collectionId]
+  if (!seg || !editionExternalId) return null
+  if (!/^[0-9]+$/.test(editionExternalId)) return null
+  return `https://dapper.market/${seg}/edition/${editionExternalId}`
+}
+
 // dapper.market pack browse grid. Unlike moments (deep-linked by on-chain id),
 // packs are NOT cleanly deep-linkable — dapper.market keys pack detail by an
 // internal id we can't derive from distId, and the native TS /drop/<distId> page

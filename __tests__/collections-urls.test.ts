@@ -4,6 +4,7 @@ import {
   marketplaceWalletUrl,
   dapperMarketMomentUrl,
   dapperMarketPacksBrowseUrl,
+  dapperMarketEditionUrl,
 } from "@/lib/collections"
 
 // Outbound marketplace deep-links. These render as "View Listing" / "Buy on X"
@@ -68,6 +69,47 @@ describe("dapperMarketMomentUrl (dapper.market secondary)", () => {
     expect(dapperMarketMomentUrl("nba-top-shot", null)).toBeNull()
     expect(dapperMarketMomentUrl("nba-top-shot", undefined)).toBeNull()
     expect(dapperMarketMomentUrl("nba-top-shot", "")).toBeNull()
+  })
+})
+
+describe("dapperMarketEditionUrl (dapper.market edition grain)", () => {
+  it("builds the Golazos edition link from the on-chain editionID", () => {
+    // Verified against a live page 2026-08-22: Golazos edition 541 is the
+    // Messi ElClásico /11, and editions.external_id for it is exactly "541".
+    expect(dapperMarketEditionUrl("laliga-golazos", "541")).toBe(
+      "https://dapper.market/laliga/edition/541"
+    )
+  })
+
+  it("returns null for collections with no VERIFIED edition-URL shape", () => {
+    // Not "collections that are absent from dapper.market" — nba/nfl moments DO
+    // resolve there. These are null because no edition URL has been confirmed
+    // (nfl-all-day) or is derivable from external_id at all (nba-top-shot).
+    // If someone adds a seg entry, they must delete the matching line here, and
+    // that deletion is the prompt to verify a real page first.
+    expect(dapperMarketEditionUrl("nba-top-shot", "541")).toBeNull()
+    expect(dapperMarketEditionUrl("nfl-all-day", "541")).toBeNull()
+    expect(dapperMarketEditionUrl("disney-pinnacle", "541")).toBeNull()
+    expect(dapperMarketEditionUrl("ufc", "541")).toBeNull()
+  })
+
+  it("refuses a non-numeric external_id even for a mapped collection", () => {
+    // The second gate. Top Shot external_ids are composites
+    // ("<setUUID>:<playUUID>", "258:9004::16") and UFC/Candy ones are slugs;
+    // none may ever be pasted into an /edition/<id> path. Asserted against the
+    // MAPPED collection so the seg map can't be what makes it pass.
+    expect(dapperMarketEditionUrl("laliga-golazos", "258:9004::16")).toBeNull()
+    expect(
+      dapperMarketEditionUrl("laliga-golazos", "0055c39d-724b-444f-918f-ddff017151f5:02525340-0bd9-423f-b502-b62a80bf63bf")
+    ).toBeNull()
+    expect(dapperMarketEditionUrl("laliga-golazos", "aaron-judge")).toBeNull()
+    expect(dapperMarketEditionUrl("laliga-golazos", "541 ")).toBeNull()
+  })
+
+  it("returns null when the external_id is missing", () => {
+    expect(dapperMarketEditionUrl("laliga-golazos", null)).toBeNull()
+    expect(dapperMarketEditionUrl("laliga-golazos", undefined)).toBeNull()
+    expect(dapperMarketEditionUrl("laliga-golazos", "")).toBeNull()
   })
 })
 

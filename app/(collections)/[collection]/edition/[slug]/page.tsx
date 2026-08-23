@@ -55,6 +55,8 @@ import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
+import TrackedOutboundLink from "@/components/TrackedOutboundLink"
+import { dapperMarketEditionUrl } from "@/lib/collections"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -454,6 +456,19 @@ export default async function EditionPage(
   // explains the closure and the "30d Sales · Nd since last" stat stays honest
   // (its count is zeroed at the data layer). Same fix as the /moment page + OG.
   const marketClosed = isMarketClosed(collection)
+
+  // Outbound EDITION-grain marketplace link. The native marketplaces are
+  // deep-linkable at MOMENT grain only (see the comment on marketplaceMomentUrl
+  // in lib/collections.ts), which is why this page has carried no outbound CTA
+  // at all; dapper.market publishes a real per-EDITION page keyed by the same
+  // external_id we already hold, so this one link is honestly buildable.
+  // Returns null for every collection without a verified edition-URL shape, so
+  // the CTA self-hides rather than guessing. Suppressed on a closed market —
+  // UFC is not in the seg map today, but a future entry must not resurrect a
+  // "go buy this" CTA for a venue that stopped trading.
+  const dapperEditionUrl = marketClosed
+    ? null
+    : dapperMarketEditionUrl(collection, detail.external_id)
   const setHref = detail.set_slug ? `/${collection}/set/${encodeURIComponent(detail.set_slug)}` : null
   const playerHref = detail.player_name ? `/${collection}/player/${encodeURIComponent(slugifyName(detail.player_name))}` : null
   const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
@@ -723,6 +738,43 @@ export default async function EditionPage(
       {!fmvAvailable && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
           No recent market activity
+        </div>
+      )}
+
+      {/* ── Outbound marketplace CTA (dapper.market, edition grain) ─────── */}
+      {dapperEditionUrl && (
+        <div style={{ marginTop: 14 }}>
+          <TrackedOutboundLink
+            href={dapperEditionUrl}
+            payload={{
+              surface: "edition",
+              destination: "dapper_market_edition",
+              editionKey: detail.external_id,
+              playerName: detail.player_name,
+              setName: detail.set_name,
+              tier: detail.tier,
+              fmv: fmv?.fmv_usd ?? null,
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              padding: "12px 20px",
+              background: "transparent",
+              color: "var(--rpc-red)",
+              border: "1px solid var(--rpc-red)",
+              borderRadius: 8,
+              textDecoration: "none",
+              fontFamily: "var(--font-display)",
+              fontWeight: 800,
+              fontSize: 14,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+            }}
+          >
+            View edition on Dapper ↗
+          </TrackedOutboundLink>
         </div>
       )}
 

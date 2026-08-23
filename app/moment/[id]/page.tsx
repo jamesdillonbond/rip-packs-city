@@ -66,7 +66,7 @@ import {
 } from "@/lib/moment-detail-format"
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
-import { marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections"
+import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -509,6 +509,18 @@ export default async function MomentPage(
   const dapperUrl =
     collectionSlugUrl && marketplaceNftId
       ? dapperMarketMomentUrl(collectionSlugUrl, marketplaceNftId)
+      : null
+
+  // EDITION-grain fallback. On an edition-level page (kind !== 'moment') there
+  // is no single NFT id, so both CTAs above are null by design and the page
+  // ends up with no outbound link at all. dapper.market publishes a real
+  // per-EDITION page keyed by the same editions.external_id we already hold, so
+  // those pages get one honest link instead of none. Null for every collection
+  // without a VERIFIED edition-URL shape (see dapperMarketEditionUrl), and
+  // suppressed on a closed market so a dead venue never gets a buy CTA.
+  const dapperEditionUrl =
+    !dapperUrl && collectionSlugUrl && !marketClosed
+      ? dapperMarketEditionUrl(collectionSlugUrl, e.external_id)
       : null
 
   // Item 1 (2026-06-13): resilient hero image. The constructed
@@ -1115,11 +1127,46 @@ export default async function MomentPage(
             </TrackedOutboundLink>
           ) : null}
 
+          {dapperEditionUrl ? (
+            <TrackedOutboundLink
+              href={dapperEditionUrl}
+              payload={{
+                surface: "moment",
+                destination: "dapper_market_edition",
+                editionKey: e.external_id,
+                playerName: e.player_name,
+                setName: e.set_name,
+                tier: e.tier,
+                fmv: f?.fmv_usd ?? null,
+              }}
+              style={{
+                marginTop: 4,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px 20px",
+                background: "transparent",
+                color: "var(--rpc-red)",
+                border: "1px solid var(--rpc-red)",
+                borderRadius: 8,
+                textDecoration: "none",
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 14,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+              }}
+            >
+              View edition on Dapper ↗
+            </TrackedOutboundLink>
+          ) : null}
+
           {/* UFC Strike is migrating to Aptos (Flow frozen since May 2026); its Flow moments are no
               longer tradeable on UFC Strike / Dapper, so the marketplace CTAs
               above are intentionally absent. Explain that rather than leaving a
               bare page with no external link and no reason. */}
-          {(e.collection_slug === "ufc_strike" || e.collection_slug === "ufc-strike") && !marketplaceUrl && !dapperUrl ? (
+          {(e.collection_slug === "ufc_strike" || e.collection_slug === "ufc-strike") && !marketplaceUrl && !dapperUrl && !dapperEditionUrl ? (
             <div
               role="note"
               style={{
