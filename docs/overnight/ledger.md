@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · CORRECTION + SHIPPED (Claude Code, interactive) — my R19 fix was INCOMPLETE and my test PASSED ON IT; both are fixed, and the test was vacuous for a second reason on top
+
+**Three failures of mine in one item, each caught only by the next check. Recording all three because the pattern is the point.**
+
+**1 · The fix was incomplete.** I bounded `fetchDetail` on `set/[slug]` and `team/[slug]` and shipped. Verified afterwards on the live site: **the new build was serving** (grepped the served chunk for the new copy — deployment `dpl_ybqmMVUwQMbBAhpTTvnWMe5StVTV`) **and `/nba-top-shot/set/base-set` still returned Next's default 500.** The throw was not in the detail read; it was in the **heavy `Promise.all` immediately after it**, which I had left unguarded. ⚠ **Bounding the first read and stopping is the same partial-fix shape that turned D12 into D12b — committed by me, in the commit whose message warns about it.** Both `Promise.all` blocks are now guarded and degrade to the in-brand unavailable state.
+
+**2 · My test passed on the broken fix.** It asserted *"there is a `try` and a `detailFailed` branch"* — **true, and insufficient**: a check that a guard EXISTS cannot see the read it does not cover. Replaced with the assertion that **no unguarded awaited read remains in the page body**, which is the property that actually matters.
+
+**3 · ⚠ Then the replacement was VACUOUS — and it took reverting the fix to notice.** A heredoc ate the backslashes, so the regex landed as `/^s*consts+[w[]{},:s]+=s*awaits+(fetchw+|Promise.all)/gm` — **matches nothing, passes always.** I only caught it by reverting the page to the exact broken state and watching the test stay green. It is now built without literal backslashes and **proved against a known offender before being trusted**: it matches `const [editions, tierMix] = await Promise.all([` and does not match the guarded rewrite.
+
+⚠ **THE DURABLE RULE, and this session earned it three separate times: a guard written by scripted file-edit must be run against a KNOWN OFFENDER before it is believed.** `tsc` is clean on a vacuous regex, the suite is green, and the diff looks right. Escaping survives none of that. The same backslash-eating heredoc produced the BOM incident earlier tonight and the `52 → 3` scanner artifact in R37.
+
+⚠ **What is still NOT established:** that the page now renders the branded state under real load. The `Promise.all` guard is deployed-pending at the time of writing, and the underlying cause — **DB load, not code** — is unchanged. If the failure is a platform wall-clock kill rather than a JS throw, **no `try/catch` can catch it** and the page will keep serving Next's default. That distinction is decided by the next observed 500, not by this commit.
+
+**Filed, not fixed:** 4 more ISR entity pages carry the same shape (`edition`, `player`, `series`, `pack/dist`), and per-SECTION degradation (rendering the page with unavailable panels rather than a whole-page unavailable) is the better end state.
+
+**Verified:** `npx tsc --noEmit` exit 0 · 8/8 tests, and the key one **proved to fail** on the exact incomplete state that shipped.
+
+**Revert:** `git revert <this commit>`. No DB change.
+
 ### 2026-08-22 · SHIPPED + CORRECTION (Claude Code, interactive) — R19: my error boundary does NOT catch the 500 it was built for, and I only found that because the page failed while I was smoke-testing
 
 **The boundary was the wrong half, and I would have reported R19 mitigated if the smoke test had not caught it live.**
