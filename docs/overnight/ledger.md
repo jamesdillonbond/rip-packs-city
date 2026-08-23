@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED + CORRECTION (Claude Code, interactive) — R19: my error boundary does NOT catch the 500 it was built for, and I only found that because the page failed while I was smoke-testing
+
+**The boundary was the wrong half, and I would have reported R19 mitigated if the smoke test had not caught it live.**
+
+**What happened.** Closing out, I re-smoked the public surfaces with redirects disabled. `/nba-top-shot/set/base-set` returned **500 in 18.1 s** — R19 reproducing under my own hands after failing to reproduce twice earlier tonight. The body was **still Next's default page**, title `500: This page couldn&rsquo;t load`, none of my boundary's copy.
+
+**Why the boundary cannot help, verified rather than assumed:**
+- ✅ **The boundary IS deployed** — grepped the served JS chunk on a working sibling page and found its copy. So "not shipped yet" is excluded.
+- ✅ **`generateMetadata` is not the thrower** — it already has its own `try/catch` and degrades to a generic title.
+- 🚨 **These routes are ISR** (`revalidate = 600`, `dynamicParams = true`). The throw happens while the page is being **GENERATED**, not while a mounted tree renders, so Next serves its own error page and **the segment boundary never runs.** An `error.tsx` covers runtime render errors; it does not cover a failed on-demand generation.
+
+⚠ **This is exactly what §4 asked for and I had done only half of it.** Its wording was *"an `error.tsx` boundary … **plus a bounded read** so the heavy pages fail as a degraded panel rather than a whole-page throw."* I shipped the boundary, verified it existed, and moved on. **The boundary is not useless — it covers a different, real failure mode — but it is not the fix for the observed 500.**
+
+**Now shipped: the bounded read**, on both pages actually observed failing (`set/[slug]`, `team/[slug]`). The detail fetch is wrapped and a throw renders an in-brand unavailable state.
+
+⚠ **THE DISTINCTION THAT MATTERS, and it is the honesty canon in miniature: a failed read must NOT become `notFound()`.** `!detail` means the RPC answered and the entity does not exist — 404 is then TRUE. A **throw** means we could not ask, and 404-ing there tells a crawler a real, indexed franchise page is **gone**. Both pages keep `if (!detail) notFound()` untouched and add a separate failure branch.
+
+**6 tests**, including a **no-change control** (a genuinely absent entity must still 404 — turning every miss into "unavailable" would leave junk slugs indexed and is dishonest in the other direction) and a **population listing** derived by walking `app/(collections)` rather than naming files, asserting the unguarded set does not GROW. ⚠ Filed rather than fixed: **4 more ISR entity pages carry the same shape** (`edition`, `player`, `series`, `pack/dist`) — not observed failing, and each needs its own degraded copy.
+
+⚠ **One more self-correction, same file.** My first version of that test banned the words "is empty" in the unavailable copy — and it **fired on `"does not mean the set is empty or gone"`, the correct negation.** A static check cannot separate a claim from its denial by keyword, and enforcing it would have pushed the copy toward being vaguer rather than more honest. The assertion now requires the **disclaimer to be present** and our own failure to be named, and says why the word-ban was wrong.
+
+**Verified:** `npx tsc --noEmit` exit 0 · 6/6 new tests · the pre-existing `entity-sections-do-not-conclude-from-a-failed-read` guard still green (4/4).
+
+**Revert:** `git revert <this commit>`. No DB change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — edition-grain dapper.market link: Golazos only, because only Golazos is verified
 
 **What shipped.** `dapperMarketEditionUrl(collectionUrlSlug, externalId)` in `lib/collections.ts`, wired
