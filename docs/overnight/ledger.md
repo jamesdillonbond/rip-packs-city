@@ -84,7 +84,7 @@ shape (five fetches in one `Promise.all`, one page-level catch) on the product's
 It carries no `structural: true` read, so this guard's tree-derived population does not include it, and its
 five fetchers are heterogeneous enough to deserve their own pass. **Named here rather than quietly skipped.**
 
-**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+**Revert path:** `git revert f2076b31` — code + tests only, no DB half. Ledger half: `9bcf7c90`.
 
 ### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass, part 11 / close-out) — the night's rules promoted into the reference docs, and CLAUDE.md paid for the two that belong in it
 
