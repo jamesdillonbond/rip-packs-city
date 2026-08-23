@@ -39,8 +39,8 @@ ceiling arm passes, which is exactly the vacuous pass the floor exists to catch)
 green, and `git diff --stat CLAUDE.md` clean**, so the probe left no residue. CLAUDE.md now reads
 39,909 characters — **91 of headroom** — and its header says CI guards it.
 
-**Revert path:** `git revert <sha>` — one new test file plus a one-clause edit to CLAUDE.md's header.
-No DB half. Sha stamped in the follow-up commit, read after the push.
+**Revert path:** `git revert fea5584f` (the guard + the header clause) and `git revert db4e55c1` (this
+entry). **Shas read after the push.** No DB half.
 
 ### 2026-08-22 · CONFIRMED (Claude Code, interactive) — the cron_heavy grant fix is proven on the SCHEDULER, not just by hand
 
