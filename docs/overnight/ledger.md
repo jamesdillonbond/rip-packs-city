@@ -37,7 +37,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **18 assertions in `seo.test.ts` and `honesty-disclosure-2026-08-02.test.ts` were UPDATED, not deleted.** They pinned `typeof meta.title === "string"` and exact title text; the TEXT is unchanged and still asserted — only the wrapper moved. The prototype-pollution cases now assert the object form too, because a leaked prototype member would arrive as a string.
 
-**Revert:** `git revert <sha>` — no DB half.
+**Revert:** `git revert d33f91ca` (read AFTER the push — the cherry-pick onto upstream rewrote the pre-push sha, and the old one still resolves locally, so it looks fine and is dead for everyone else) — no DB half.
 
 ⚠ `__tests__/metadata-catch-branch-is-not-a-404.test.ts` fails **locally only** and was already failing before this change: it `execSync`s `grep`, which Windows resolves to cmd.exe. Environment, not main.
 
