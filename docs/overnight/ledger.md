@@ -8,6 +8,78 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — two pages bounded, and the ratchet watching them had two defects that both hid work rather than creating it
+
+**Two shared libs bounded, clearing four pages of an unbounded server read.**
+`lib/wallet/pinned-wallet.ts` (`/fast-break`, `/road-to-the-ring`) and `lib/flowty-username.ts`
+(`/moment/[id]`, `/analytics/wallets/[address]`). Both already had an honest-degraded contract to
+reject INTO — `{ wallet: null, ok: false }` and a truncated-address fallback — which is the whole
+reason these two were safe to do first: bounding a page with no degraded branch turns a slow page
+into a thrown error boundary.
+
+⚠ **`resolveUsernames` gets ONE budget across BOTH legs, not one each.** Its RPC leg falls through
+to a `saved_wallets` leg, so two per-leg budgets would let a saturated DB spend the budget twice —
+a bound that doubles the worst case it was added to cap. The second leg gets whatever the first
+left. Its two `catch {}` blocks now log; a bound that is invisible when it fires reads exactly like
+a bound that never fires.
+
+⚠ **`fetchPinnedWallet` gets 3s, not the 8s `BOARD_LIVE_TIMEOUT_MS`.** One indexed row on
+`(user_id, collection_id)` is not a board aggregate, and both callers have a real branch to show
+instead. A number borrowed from a board's budget would not have been measured.
+
+🚨 **DEFECT 1 IN THE GUARD, and it fired the first time anyone bounded a shared lib.** `analyze()`
+returned `bounded` the moment it saw a budget primitive **anywhere** in a page's reachable graph.
+So bounding `lib/flowty-username.ts` dropped **six** pages off the report when only **four** had
+been fixed — `analytics/wallets/page.tsx` and `[collection]/pack/dist/[distId]` were cleared purely
+by importing it, with their own unbounded reads intact.
+
+⚠ **The failure mode is the one this repo keeps recording: the instrument got LESS sensitive as the
+tree got partially fixed — and it was invisible, because the count went DOWN, which is what a
+ratchet is built to celebrate.** Nothing in the report distinguished "two pages bounded" from "six
+cleared, four wrongly". Now path-sensitive: `boundedOnPath` is inherited by a module's own imports
+and nothing else, so a sibling's budget can no longer vouch for a read it does not wrap. `seen` is
+keyed on `(file, boundedOnPath)` — keyed on the filename alone, the verdict depended on DFS pop
+order. Delegation still counts, so `fetchBoardForPage(fetcher)` pages are unaffected.
+
+🚨 **DEFECT 2, found while writing the fixtures: `DIRECT_QUERY` could not see a single-line
+`supabaseAdmin.from("x")` at all.** The `Array.from` exclusion was spelled
+`(?<![A-Za-z])(?<!Array)`, and the first half excludes **any letter before the dot** — which is
+every query not written as a line-broken chain. It matched real code only because chains usually
+break the line before `.from(`. **Measured: 12 files under `app/` and `lib/` carry a query it could
+not see.** Corrected to `(?<!\bArray)`.
+
+⚠ **Neither instrument fix moves the page-level number**: the corrected regex reports **15** with or
+without it, so it ships as a pure sensitivity fix — the blind spot is closed BEFORE it hides
+something, rather than after.
+
+**Ratchet 17 → 15, and the 17 was CONTROLLED rather than carried over.** The corrected `analyze()`
+was run against the tree with both lib fixes reverted and also reported 17, so the two instruments
+agree at the baseline and the drop is 2 real pages. ⚠ The intermediate reading of **11** — new lib
+bounds, old `analyze()` — was the artifact, and is recorded in the file so nobody re-derives it.
+
+**New `__tests__/unbounded-server-reads-analyze.test.ts`** — the guard's decision procedure had no
+test of its own. 8 assertions over fixture trees, mutation-proven in three directions: restoring the
+early-return reds the sibling case; restoring the old regex reds three; and a `Array.from` control
+stops "fix the blind spot" being satisfied by deleting the exclusion, which once inflated this count
+from 19 to 31. The CLI half is now gated behind an entry-point check so importing the module does
+not scan `app/**` underneath the fixtures.
+
+**Also new: `__tests__/pinned-wallet-slow-read-is-not-an-unpinned-account.test.ts`** — 4 assertions,
+mutation-proven (budget raised to 120s → reds). ⚠ It asserts the **absence of the false claim**
+(`{ wallet: null, ok: true }`), not merely the presence of a flag, and carries a control that a read
+inside the budget still resolves normally — without it a stub that always failed would pass.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1355 files / 14,765 tests, 0 failures** ·
+`check-unbounded-server-reads` 15/15 · `check-responsive-flex-basis`, `check-memory-doc-links`,
+`check-driver-message-leaks` all clean.
+
+**STILL OPEN — 15 pages, and `/profile/[username]` is the one to read first.** It discards
+`result.ok` entirely (`const data = result.ok ? result.data : null`) and hands nulls to
+`ProfileClient`, so it has no degraded branch to bound INTO yet. Give it one before bounding it.
+
+**Revert path:** `git revert <sha of "perf(server): bound two shared reads">`. Library + guard +
+test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — closed the gap I had just declared, and mutation testing found one of my new assertions pins nothing
 
 **I ended the last entry with "neither new function is pinned by a `supabase/tests/*.sql` invariant — verified live, not guarded." Both are now pinned**, registered in the drift guard, and mutation-tested. DB suite **181/181, exit 0**; JS suite green.
