@@ -26,10 +26,16 @@ import { ownLookup } from "@/lib/safe-lookup"
 //     Pinnacle wallet read "Packs Pulled: 0" while total_tracked still counted
 //     the mints, so the numbers never reconciled).
 //   - `flowty_purchase` / `offer_accepted` are both secondary-market buys.
-// `loan_default` / `airdrop` / `unknown` have no honest home among the four
-// buckets and are deliberately left uncategorized (counted in total_tracked,
-// shown in none of the four cards).
-type AcquisitionBucket = "pack_pull" | "marketplace" | "challenge_reward" | "gift"
+//   - `trade` is Disney Pinnacle's peer-to-peer swap (see
+//     lib/pinnacle/trade-classifier.ts). It gets its OWN bucket rather than
+//     being folded into `marketplace`, because a trade has NO price: folding it
+//     in would inflate "Marketplace Buys" with acquisitions nobody paid for, and
+//     folding it into `gift` would claim the collector received it for nothing
+//     when they in fact gave up Pins for it. Neither is true, so it is neither.
+// `loan_default` / `airdrop` / `unknown` have no honest home among the buckets
+// and are deliberately left uncategorized (counted in total_tracked, shown in
+// none of the cards).
+type AcquisitionBucket = "pack_pull" | "marketplace" | "challenge_reward" | "gift" | "trade"
 const ACQUISITION_METHOD_BUCKET: Record<string, AcquisitionBucket> = {
   pack_pull: "pack_pull",
   mint: "pack_pull",
@@ -38,6 +44,7 @@ const ACQUISITION_METHOD_BUCKET: Record<string, AcquisitionBucket> = {
   offer_accepted: "marketplace",
   challenge_reward: "challenge_reward",
   gift: "gift",
+  trade: "trade",
 }
 
 export interface AcquisitionBucketCounts {
@@ -45,6 +52,7 @@ export interface AcquisitionBucketCounts {
   marketplace: number
   challenge_reward: number
   gift: number
+  trade: number
 }
 
 // Fold a get_acquisition_stats `breakdown` array into the four display buckets.
@@ -54,7 +62,7 @@ export interface AcquisitionBucketCounts {
 export function bucketAcquisitionCounts(
   breakdown: Array<{ method?: string | null; count?: number | string | null }> | null | undefined
 ): AcquisitionBucketCounts {
-  const counts: AcquisitionBucketCounts = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+  const counts: AcquisitionBucketCounts = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0 }
   for (const b of breakdown ?? []) {
     const bucket = ownLookup(ACQUISITION_METHOD_BUCKET, b?.method)
     if (bucket) counts[bucket] += Number(b?.count) || 0
@@ -76,6 +84,10 @@ const ACQUISITION_METHOD_LABEL: Record<string, string | null> = {
   mint: "Pack",
   loan_default: "Loan",
   gift: "Gift",
+  // ⚠ NOT "Bought". resolveMomentPnlBasis() trusts only "Bought"/"Loan" as a
+  // cost basis, so labelling a trade "Bought" against its absent buy_price would
+  // render a 100%-profit moment. "Traded" yields no P&L, which is the truth.
+  trade: "Traded",
   challenge_reward: "Reward",
   airdrop: "Airdrop",
   unknown: null,
@@ -190,9 +202,16 @@ export function computeFmvHealth(
   return { ...out, total, highPct, lowPct }
 }
 
-// Acquisition breakdown — the pack-pull / marketplace / reward / gift split as
-// share-of-total percentages, plus the "not indexed" flag (no acq object, or
-// total_tracked 0 — the honesty gate that hides a zeroed breakdown).
+// Acquisition breakdown — the pack-pull / marketplace / reward / gift / trade
+// split as share-of-total percentages, plus the "not indexed" flag (no acq
+// object, or total_tracked 0 — the honesty gate that hides a zeroed breakdown).
+//
+// ⚠ `trade_count` is OPTIONAL on the input and defaults to 0, because this
+// function is called with payloads built before the Pinnacle trade lane existed.
+// The default is safe here — and only here — because a caller that omits the
+// field is one whose acquisitions genuinely carry no trades, so the 0 is a real
+// count rather than a failed read standing in for one. It must NOT be copied to
+// a path where the field could be absent because a READ failed.
 export function computeAcquisitionBreakdown(
   acq:
     | {
@@ -200,6 +219,7 @@ export function computeAcquisitionBreakdown(
         marketplace_count: number
         challenge_reward_count: number
         gift_count: number
+        trade_count?: number
         total_tracked: number
       }
     | null
@@ -209,15 +229,18 @@ export function computeAcquisitionBreakdown(
   pctMarket: number
   pctReward: number
   pctGift: number
+  pctTrade: number
   acquisitionNotIndexed: boolean
 } {
+  const tradeCount = acq?.trade_count ?? 0
   const acqTotal = acq
-    ? acq.pack_pull_count + acq.marketplace_count + acq.challenge_reward_count + acq.gift_count
+    ? acq.pack_pull_count + acq.marketplace_count + acq.challenge_reward_count + acq.gift_count + tradeCount
     : 0
   const pctPack = acq && acqTotal > 0 ? (acq.pack_pull_count / acqTotal) * 100 : 0
   const pctMarket = acq && acqTotal > 0 ? (acq.marketplace_count / acqTotal) * 100 : 0
   const pctReward = acq && acqTotal > 0 ? (acq.challenge_reward_count / acqTotal) * 100 : 0
   const pctGift = acq && acqTotal > 0 ? (acq.gift_count / acqTotal) * 100 : 0
+  const pctTrade = acq && acqTotal > 0 ? (tradeCount / acqTotal) * 100 : 0
   const acquisitionNotIndexed = !acq || (acq.total_tracked ?? 0) === 0
-  return { acqTotal, pctPack, pctMarket, pctReward, pctGift, acquisitionNotIndexed }
+  return { acqTotal, pctPack, pctMarket, pctReward, pctGift, pctTrade, acquisitionNotIndexed }
 }

@@ -151,6 +151,63 @@ describe("computeFmvHealth", () => {
   })
 })
 
+describe("acquisition — Pinnacle trades", () => {
+  it("gives `trade` its OWN bucket rather than folding it into marketplace or gift", () => {
+    // ⚠ Folding a trade into `marketplace` would inflate "Marketplace Buys" with
+    // acquisitions nobody paid for; folding it into `gift` would claim the
+    // collector received it for nothing when they gave up Pins for it. The test
+    // asserts the ABSENCE of both false claims, not merely the presence of a
+    // trade count.
+    const out = bucketAcquisitionCounts([{ method: "trade", count: 7 }])
+    expect(out.trade).toBe(7)
+    expect(out.marketplace).toBe(0)
+    expect(out.gift).toBe(0)
+    expect(out.pack_pull).toBe(0)
+    expect(out.challenge_reward).toBe(0)
+  })
+
+  it("labels a trade \"Traded\", never \"Bought\" — the label gates cost basis", () => {
+    // resolveMomentPnlBasis() treats only "Bought"/"Loan" as a cost basis. A
+    // trade carries no buy_price, so a "Bought" label here would render a
+    // 100%-profit moment on a Pin nobody bought.
+    expect(acquisitionMethodLabel("trade")).toBe("Traded")
+    expect(acquisitionMethodLabel("trade")).not.toBe("Bought")
+  })
+
+  it("counts trades in the acquisition total and its share", () => {
+    const out = computeAcquisitionBreakdown({
+      pack_pull_count: 25,
+      marketplace_count: 25,
+      challenge_reward_count: 0,
+      gift_count: 0,
+      trade_count: 50,
+      total_tracked: 100,
+    })
+    expect(out.acqTotal).toBe(100)
+    expect(out.pctTrade).toBeCloseTo(50)
+    expect(out.pctPack).toBeCloseTo(25)
+    expect(out.pctMarket).toBeCloseTo(25)
+  })
+
+  it("treats an omitted trade_count as 0 without disturbing the other shares", () => {
+    // Callers built before the trade lane existed omit the field entirely; their
+    // shares must be byte-identical to what they were.
+    const out = computeAcquisitionBreakdown({
+      pack_pull_count: 50,
+      marketplace_count: 30,
+      challenge_reward_count: 15,
+      gift_count: 5,
+      total_tracked: 100,
+    })
+    expect(out.acqTotal).toBe(100)
+    expect(out.pctTrade).toBe(0)
+    expect(out.pctPack).toBeCloseTo(50)
+    expect(out.pctMarket).toBeCloseTo(30)
+    expect(out.pctReward).toBeCloseTo(15)
+    expect(out.pctGift).toBeCloseTo(5)
+  })
+})
+
 describe("computeAcquisitionBreakdown", () => {
   it("returns zeros + not-indexed for null", () => {
     expect(computeAcquisitionBreakdown(null)).toEqual({
@@ -159,10 +216,11 @@ describe("computeAcquisitionBreakdown", () => {
       pctMarket: 0,
       pctReward: 0,
       pctGift: 0,
+      pctTrade: 0,
       acquisitionNotIndexed: true,
     })
   })
-  it("computes the four shares against the sum", () => {
+  it("computes the shares against the sum", () => {
     const out = computeAcquisitionBreakdown({
       pack_pull_count: 50,
       marketplace_count: 30,
@@ -203,7 +261,7 @@ describe("computeAcquisitionBreakdown", () => {
 
 describe("bucketAcquisitionCounts", () => {
   it("returns all-zero for null/undefined/empty breakdown", () => {
-    const zero = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+    const zero = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0 }
     expect(bucketAcquisitionCounts(null)).toEqual(zero)
     expect(bucketAcquisitionCounts(undefined)).toEqual(zero)
     expect(bucketAcquisitionCounts([])).toEqual(zero)
@@ -212,7 +270,7 @@ describe("bucketAcquisitionCounts", () => {
     // Pinnacle records primary acquisitions as `mint`; before the fold it was
     // dropped and a Pinnacle wallet read "Packs Pulled: 0".
     expect(bucketAcquisitionCounts([{ method: "mint", count: 42 }])).toEqual({
-      pack_pull: 42, marketplace: 0, challenge_reward: 0, gift: 0,
+      pack_pull: 42, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0,
     })
   })
   it("ACCUMULATES methods that share a bucket (pack_pull + mint)", () => {
@@ -247,14 +305,14 @@ describe("bucketAcquisitionCounts", () => {
         { method: "airdrop", count: 9 },
         { method: "unknown", count: 9 },
       ]),
-    ).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 })
+    ).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0 })
   })
   it("skips an unmapped / malformed method without throwing", () => {
     expect(bucketAcquisitionCounts([{ method: "sorcery", count: 9 }])).toEqual({
-      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0,
+      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0,
     })
     expect(bucketAcquisitionCounts([{ count: 9 }, { method: null, count: 3 }])).toEqual({
-      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0,
+      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0,
     })
   })
   it("does not resolve a crafted prototype-name method to a function (ownLookup guard)", () => {
@@ -264,7 +322,7 @@ describe("bucketAcquisitionCounts", () => {
       { method: "hasOwnProperty", count: 1 },
       { method: "__proto__", count: 1 },
     ])
-    expect(out).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 })
+    expect(out).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0, trade: 0 })
   })
   it("coerces string counts and treats a malformed count as 0", () => {
     expect(

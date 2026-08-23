@@ -178,6 +178,7 @@ export async function GET(req: NextRequest) {
           marketplace_count: acqCounts.marketplace,
           challenge_reward_count: acqCounts.challenge_reward,
           gift_count: acqCounts.gift,
+          trade_count: acqCounts.trade,
           total_tracked: acqTotal,
         }
 

@@ -125,6 +125,7 @@ function WalletMomentsBody() {
     marketplace_count: number
     challenge_reward_count: number
     gift_count: number
+    trade_count?: number
     total_count: number
     locked_count: number
     total_spent: number

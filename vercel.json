@@ -2,6 +2,10 @@
   "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"preview\" ] && case \"$VERCEL_GIT_COMMIT_REF\" in dependabot/*) true;; *) false;; esac; then exit 0; else git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'; fi",
   "crons": [
     {
+      "path": "/api/cron/pinnacle-trades-indexer",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/smoke-test",
       "schedule": "17 */4 * * *"
     },

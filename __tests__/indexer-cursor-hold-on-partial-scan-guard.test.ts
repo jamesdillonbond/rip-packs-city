@@ -266,7 +266,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     it("discovered every route that fetches an event range itself", () => {
       // A no-slack count. `toBeGreaterThanOrEqual` would let a route that lost
       // its fetcher to a rename drop out of the population unnoticed.
-      expect(fetchers.length, "the event-range fetcher family is exactly 17").toBe(17)
+      expect(fetchers.length, "the event-range fetcher family is exactly 18").toBe(18)
       // sales-indexer is absent by construction rather than by exemption: it
       // reaches Flow through fcl, which THROWS, so it never had the swallow.
       expect(fetchers).not.toContain("app/api/sales-indexer/route.ts")

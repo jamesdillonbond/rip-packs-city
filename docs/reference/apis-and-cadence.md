@@ -80,6 +80,7 @@ File: `app/api/sniper-feed/route.ts`
 - NFL All Day: `0xe4cf4bdc1751c65d`
 - AllDay/Golazos/UFC trade contract (buyer = contract addr): `0xedf9df96c92f4595`
 - Disney Pinnacle: `0xedf9df96c92f4595`
+  - Events used: `Pinnacle.PinNFTMinted` (mint marker) · `Pinnacle.Deposit {id, to: Address?}` · `Pinnacle.Withdraw {id, from: Address?}`. ⚠ **`Pinnacle.NFTListed` DOES NOT EXIST** — listings come from the storefront (`A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable`); see `workers/pinnacle-events-proxy`. A peer-to-peer TRADE emits Withdraw+Deposit and NOTHING else: no storefront event, no mint event (see `docs/reference/database.md` → "Disney Pinnacle has THREE transaction types").
 - DapperStorageRent: `0xa08e88e23f332538` (reference only — no longer imported by any script since the storefront-cleanup machinery was removed, Known issues #9; the other 10 addresses above are all actively referenced in code, verified 2026-07-16)
 
 ### Cadence purchase transaction rules

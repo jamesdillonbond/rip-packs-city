@@ -28,6 +28,28 @@ The denormalised `player_name` / `set_name` / `tier` / `team_name` / `circulatio
 
 Pinnacle editions live in parallel table `pinnacle_editions` with different schema: id (text), external_id (text), edition_key (text), character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, ask_price, ask_source, plus 10+ Pinnacle-native columns (studio, materials, effects, size, color, thickness). `edition_key` format: `royalty_code || ':' || variant_type || ':' || printing`.
 
+### Disney Pinnacle has THREE transaction types, not two (2026-08-22)
+
+⚠ **A Pinnacle Pin changes hands three ways, and until 2026-08-22 only two were tracked.** Reading Pinnacle "market activity" off `pinnacle_sales` alone under-counts the market by roughly HALF.
+
+| type | table | on-chain signature | writer |
+|---|---|---|---|
+| storefront **SALE** (priced) | `pinnacle_sales` | `NFTStorefrontV2.ListingCompleted` | `/api/pinnacle-sales-indexer` |
+| primary **MINT** (pack/airdrop/primary-buy — indistinguishable on chain, so labelled `mint`, never `pack_pull`) | `pinnacle_mint_events` | `Pinnacle.PinNFTMinted` + same-tx `Deposit` | `supabase/functions/ingest-pinnacle-mints` |
+| peer-to-peer **TRADE** (no price) | `pinnacle_trade_events` | ≥1 `Pinnacle.Withdraw` + ≥1 `Deposit`, **exactly two wallets, each on BOTH sides**, one atomic tx | `/api/cron/pinnacle-trades-indexer` |
+
+⚠ **The trade rule is geometric and needs no storefront or mint lookup** — a mint emits a Deposit with **no** Withdraw, and a sale's seller appears only as `from` while its buyer appears only as `to`. Measured over two independent 10,000-block windows (2026-08-22) and validated in both directions against `/v1/transaction_results`: geometry=TRADE → 14 tx / 77 Pins, storefront events in **0**; geometry=NOT-trade → 26 tx, storefront events in **26 of 26**. **In the same windows 77 Pins moved by trade against 79 by sale.**
+
+⚠ **"Two wallets and several Pins" is NOT the rule.** A bulk one-way transfer of 25 Pins is two wallets and many Pins and is not a trade. The test is that **both** wallets appear on **both** sides. Rule + fixtures: `lib/pinnacle/trade-classifier.ts`.
+
+⚠ **`pinnacle_trade_events.pins_in_trade` is trade SIZE, not trade count** — a 25-Pin swap is 25 rows and ONE trade. `count(*)` gives Pins moved; group by `transaction_id` (or read `pins_in_trade`) for trades.
+
+⚠ **A trade has NO price and no path here invents one.** `backfill_pinnacle_trade_acquisitions` (pg_cron `23 */3`) omits `buy_price` from its INSERT column list entirely — the same asymmetry the mint path uses, because a 0 renders a 100%-profit moment forever. `acquisition_method = 'trade'` labels as **"Traded"**, never "Bought": `resolveMomentPnlBasis()` trusts only `Bought`/`Loan` as a cost basis.
+
+⚠ **`pinnacle_ownership_snapshots` is NOT a transaction log and cannot count trades** — it is a latest-owner MAP, upserted one row per `nft_id`, with no counterparty and no tx, and its `observed_at` is write time (the backfill scan writes it too), not market time. A 7-day `observed_at` window returned rows spanning ~16.7M blocks.
+
+⚠ **History before block 162,153,000 is NOT backfilled.** The forward cursor was seeded at that floor; a downward backfill is a separate unbuilt workstream, so a trade-volume series has a hard left edge there.
+
 ### wallet_moments_cache (wmc)
 
 UNIQUE constraint: `(wallet_address, collection_id, moment_id)` — the cross-collection-safe shape (replaced the old `(wallet_address, moment_id)` on May 6). Columns include `edition_key`, `serial_number`, `tier`, `set_name`, `player_name`, `character_name`, `mint_count`, all populated by JOIN-to-editions backfill RPCs.

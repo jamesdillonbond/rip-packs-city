@@ -107,7 +107,7 @@ describe("GET /api/analytics — the acquisition honesty rule", () => {
     state.acq = [{ breakdown: [{ method: "pack_pull", count: 3 }, { method: "sorcery", count: 9 }], total_moments: 4 }]
     const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
     expect(body.acquisition).toEqual({
-      pack_pull_count: 3, marketplace_count: 0, challenge_reward_count: 0, gift_count: 0, total_tracked: 4,
+      pack_pull_count: 3, marketplace_count: 0, challenge_reward_count: 0, gift_count: 0, trade_count: 0, total_tracked: 4,
     })
   })
 

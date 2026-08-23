@@ -51,6 +51,7 @@ type AnalyticsResponse = {
     marketplace_count: number
     challenge_reward_count: number
     gift_count: number
+    trade_count?: number
     total_tracked: number
   } | null
   locked: {
@@ -1062,7 +1063,7 @@ function AnalyticsInner() {
   }, [urlWallet])
 
   const acq = data?.acquisition ?? null
-  const { acqTotal, pctPack, pctMarket, pctReward, pctGift, acquisitionNotIndexed } =
+  const { acqTotal, pctPack, pctMarket, pctReward, pctGift, pctTrade, acquisitionNotIndexed } =
     computeAcquisitionBreakdown(acq)
   const seriesEmpty = !marketData?.seriesAnalytics || marketData.seriesAnalytics.length === 0
   const badgeEmpty = !marketData?.badgePremium || marketData.badgePremium.length === 0
@@ -1627,7 +1628,7 @@ function AnalyticsInner() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className={(acq!.trade_count ?? 0) > 0 ? "grid grid-cols-2 gap-3 sm:grid-cols-4" : "grid grid-cols-3 gap-3"}>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Packs Pulled</div>
                         <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString("en-US")}</div>
@@ -1640,6 +1641,16 @@ function AnalyticsInner() {
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Challenge Rewards</div>
                         <div className="text-3xl font-black" style={{ color: "var(--rpc-warning)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString("en-US")}</div>
                       </div>
+                      {/* Pinnacle peer-to-peer trades. Shown only when the wallet
+                          has any, because every other collection's trade_count is
+                          a real 0 and a permanent "Traded 0" tile would be noise
+                          on four of the five collections. */}
+                      {(acq!.trade_count ?? 0) > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Traded</div>
+                          <div className="text-3xl font-black" style={{ color: "var(--rpc-info)", fontFamily: "var(--font-mono)" }}>{(acq!.trade_count ?? 0).toLocaleString("en-US")}</div>
+                        </div>
+                      )}
                     </div>
                     {acqTotal > 0 && (
                       <div className="mt-4">
@@ -1648,12 +1659,14 @@ function AnalyticsInner() {
                           {pctMarket > 0 && <div style={{ width: `${pctMarket}%`, background: "rgb(161,161,170)" }} />}
                           {pctReward > 0 && <div style={{ width: `${pctReward}%`, background: "var(--rpc-warning)" }} />}
                           {pctGift > 0 && <div style={{ width: `${pctGift}%`, background: "var(--rpc-info)" }} />}
+                          {pctTrade > 0 && <div style={{ width: `${pctTrade}%`, background: "var(--tier-rare)" }} />}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                           <span>Pack {pctPack.toFixed(0)}%</span>
                           <span>Market {pctMarket.toFixed(0)}%</span>
                           <span>Reward {pctReward.toFixed(0)}%</span>
                           {pctGift > 0 && <span>Gift {pctGift.toFixed(0)}%</span>}
+                          {pctTrade > 0 && <span>Trade {pctTrade.toFixed(0)}%</span>}
                         </div>
                       </div>
                     )}

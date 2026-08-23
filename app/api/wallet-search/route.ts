@@ -60,6 +60,7 @@ type AcquisitionStats = {
   marketplace_count: number
   challenge_reward_count: number
   gift_count: number
+  trade_count: number
   total_count: number
   locked_count: number
   total_spent: number
@@ -1508,6 +1509,7 @@ export async function POST(req: NextRequest) {
           marketplace_count: counts.marketplace,
           challenge_reward_count: counts.challenge_reward,
           gift_count: counts.gift,
+          trade_count: counts.trade,
           total_count: Number(result?.total_moments ?? 0),
           locked_count: Number(result?.locked_count ?? 0),
           total_spent: Number(result?.total_spent ?? 0),
