@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — the Dune incremental lane's "no targets" state bought the most expensive run the account can make; that is closed, and a second stranded cloud handoff is on `main`
+
+**A Cowork cloud session wrote `docs/handoff-2026-08-22-dune-ownership-incremental.md` and could not push it, so it sat untracked in the working tree — the same stranded-work pattern as this morning's run-3 audit. It is committed here, and its three items are implemented.**
+
+**The defect (item 1, blocking).** In `sync-topshot-ownership-dune`, incremental mode built `executeBody` only when `batchSets.length > 0`. When the batch came back empty, `executeBody` stayed `undefined` and the code below sent an `/execute` **with no `query_parameters`** — which on this query is the **FULL walk: 146,100 rows × 6 columns = 876,600 datapoints, 87.7% of the 1,000,000-datapoint cycle.**
+
+⚠ **So the two states that should be CHEAPEST were the two that spent the month:** the backfill being finished, and the targets RPC throwing. The `catch` around that RPC already swallows the error into `refreshNote` and falls straight through, so **a transient DB blip was one unlucky tick away from buying 87.7% of the cycle.** Now both log a terminal row with `skipped: "no_incremental_targets"`, `ok: true` (nothing was owed, nothing was spent), and **return without executing**. `skipped` is a key this pipeline already emits, so `extra_key_counts` in `pipeline_runs_daily` picks it up with no other change.
+
+**Item 2 — the budget now reaches the targets RPC.** `p_max_datapoints: dpAllowance` caps the batch's cumulative estimate. Unbounded, the cheapest-first walk eventually reaches a set larger than a whole cycle (**Base Set S4 alone is ~91,979,724 datapoints**), truncates at the allowance, **restarts at offset 0 next run**, and burns the reservation every cycle without ever finishing that set. ✅ Signature verified live before wiring: `(p_limit integer, p_max_datapoints bigint DEFAULT NULL)`.
+
+**Item 3 — two stale numbers in the route's own comments, both RE-DERIVED rather than copied from the handoff.** `dune_budget_allocation` live: `min_start_datapoints` is **880,000**, not the 600,000 the comment claimed, and the walk is **876,600 dp / 87.7%**, not 684,498 / 68.4%. ⚠ The old figure came from sizing the reservation to the **last execution's 114,083 rows** instead of to the **table** — the wrong bound, because a reservation the workload outgrows fails as a lane that silently stops starting. The comment now says which bound it uses and why.
+
+⚠ **Scope check the handoff explicitly asked for, and it mattered:** the `return` is inside the `after()` callback's `try`, and this route has **no `finally`** (its own comment records that `finally` does not run reliably here) — so the skip path writes **exactly one** terminal row, not two. Pinned by a test.
+
+**5 tests.** The load-bearing one asserts **no `/execute` was made at all** — not that the body was right, because a parameterless execute *is* the full walk. Plus the RPC-throws path, a **one-terminal-row** assertion, the `p_max_datapoints` wiring, and a **no-change control** (with targets it still executes) — over-skipping would silently retire the lane, which is the direction no counter would notice.
+
+⚠ **My own test was vacuous first and the harness did not say so.** I keyed the budget fixture on `get_dune_budget_state`; the live RPC is **`dune_budget_status`**. A mis-keyed fixture does not fail loudly — it returns `undefined`, `readDuneBudget` reports "unexpected payload", and the route bails **before** the incremental block, so four assertions passed against a path that never ran. Caught only because one *other* assertion contradicted them. **The existing suites were checked and use the correct key** — this was mine alone.
+
+**Verified:** `npx tsc --noEmit` exit 0 · all three ownership-dune suites green (**45 tests**) · DB function signature and both budget figures read live from prod, not taken from the handoff.
+
+**Revert:** `git revert <this commit>`. No DB change (the migration and the cron-job.org move shipped earlier from Cowork); the route change is confined to the `DUNE_OWNERSHIP_INCREMENTAL` block, which is **inert while that env var is unset** — and it is unset today.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the three materialized boards were telling users "Updated just now" about rows up to 30 minutes old. That was MY regression, from four hours earlier.
 
 **CODE.** Trevor: "do what you think is best for the platform and for our users." This is the answer,
