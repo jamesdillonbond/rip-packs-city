@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — /my-teams had the honest branch and could not reach it from a hang
+
+**Bounded all three reads in `lib/fan-teams/fetchers.ts`**, clearing `/my-teams`. Ratchet **13 → 12**,
+no slack (11 reds).
+
+⚠ **THE POINT OF THIS ONE IS THAT THE HONESTY WORK WAS ALREADY DONE AND WAS UNREACHABLE.** All three
+functions already separated a failed read from an empty one — `fetchFanTeams` returns
+`{ teams: [], ok: false }`, `fetchBoundWallet` documents "three states, not two", and the page's
+`if (!teamsOk)` branch renders *"Your teams couldn't be loaded … says nothing about which teams you
+follow"* BEFORE the empty state. None of it could be reached from the failure this class actually
+produces: **a read that is merely SLOW errors nowhere**, so the page hangs on a streaming shell and
+Vercel logs a 200. **"The page has an `ok: false` branch" reads like coverage and, for a hang, was
+not.**
+
+**Budgets, and the arithmetic stated rather than left to be discovered.** The page awaits
+`fetchFanTeams` then `fetchBoundWallet` **sequentially**, then every `fetchTeamCard` in ONE
+`Promise.all`. So the ceiling is **4 + 3 + 5 = 12s regardless of how many teams are followed**, sized
+against the ~30s a document has rather than borrowed from a board's 8s. ⚠ Written into the file with
+a note that a fourth sequential await means re-doing the arithmetic, not assuming headroom.
+
+⚠ **`fetchTeamCard` still has NO `ok` flag, deliberately, and the bound did not add one.** Its doc
+comment already argues that both halves render as an OMISSION — the safe direction, no claim a reader
+could mistake for a measurement — and that N failure banners for one blip would be worse. The timeout
+lands in that same `{ detail: null, progress: null }` shape: **the bound made an existing state
+reachable, it did not invent one.**
+
+**Tests appended to `__tests__/lib-fan-teams-fetchers.test.ts`** (kept with its siblings rather than a
+new file) — 5 assertions, all three bounds **mutation-proven** by raising every budget to 120s. Each
+asserts the **absence of the false claim** (`{ teams: [], ok: true }` is what tells a collector who
+follows six teams to follow their first), plus two controls: a read inside the budget still resolves,
+and a genuinely empty follow list is still `ok: true`.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **14,780 tests, 0 failures** ·
+`check-unbounded-server-reads` 12/12, reds at 11.
+
+**Revert path:** `git revert <sha of "perf(my-teams): bound the three fan-team reads">`. Library +
+guard + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — main was RED because a guard failed a CORRECT revoke over its wording, for the second time today
 
 **`main` was red on `migration-new-function-states-its-anon-exec-decision`**, naming two migrations
