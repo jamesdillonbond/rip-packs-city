@@ -14,6 +14,21 @@
 // Both lived in a `page.tsx`, which neither coverage gate measures.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+// ── BUDGETS ─────────────────────────────────────────────────────────────────
+// ⚠ Both reads are awaited INLINE by the server page with no Suspense boundary,
+// and a read that is merely SLOW errors nowhere — supabase-js resolves
+// `{ data, error }` only when the query finishes. So the `ok: false` branches
+// above, written for exactly this page's copy, were unreachable from the failure
+// DB saturation actually produces: the page hangs on a streaming shell and
+// Vercel logs a 200.
+//
+// ⚠ The page awaits these SEQUENTIALLY (run, then slate), so its ceiling is the
+// SUM: 3 + 3 = 6s. Both are single-table indexed reads, which is why neither
+// borrows a board's 8s.
+const ACTIVE_RUN_TIMEOUT_MS = 3_000
+const SLATE_TIMEOUT_MS = 3_000
 
 export interface ActiveRun {
   id: string
@@ -43,11 +58,31 @@ export async function fetchActiveRun(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
 ): Promise<{ run: ActiveRun | null; ok: boolean }> {
-  const { data, error } = await db
-    .from("fast_break_runs")
-    .select("id, name, lineup_size, has_captain, start_date, end_date")
-    .eq("is_active", true)
-    .maybeSingle()
+  let data: unknown
+  let error: { message: string } | null = null
+  try {
+    ;({ data, error } = await withBoardBudget<{
+      data: unknown
+      error: { message: string } | null
+    }>(
+      Promise.resolve(
+        db
+          .from("fast_break_runs")
+          .select("id, name, lineup_size, has_captain, start_date, end_date")
+          .eq("is_active", true)
+          .maybeSingle(),
+      ),
+      "active-run",
+      ACTIVE_RUN_TIMEOUT_MS,
+      "fast-break/",
+    ))
+  } catch (e) {
+    // ⚠ Same outcome as an error, deliberately. "No active Fast Break run" is a
+    // claim about TOP SHOT'S SCHEDULE, and it must not be manufactured from a
+    // read we could not finish any more than from one that failed.
+    console.log("[fast-break] active run read bound:", e instanceof Error ? e.message : e)
+    return { run: null, ok: false }
+  }
   if (error) {
     console.log("[fast-break] active run read error:", error.message)
     return { run: null, ok: false }
@@ -68,11 +103,28 @@ export async function fetchSlate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
 ): Promise<{ games: SlateGame[]; ok: boolean }> {
-  const { data, error } = await db
-    .from("nba_games")
-    .select("id, home_team_abbr, away_team_abbr, tipoff_at, status")
-    .eq("game_date", gameDate)
-    .order("tipoff_at", { ascending: true })
+  let data: unknown
+  let error: { message: string } | null = null
+  try {
+    ;({ data, error } = await withBoardBudget<{
+      data: unknown
+      error: { message: string } | null
+    }>(
+      Promise.resolve(
+        db
+          .from("nba_games")
+          .select("id, home_team_abbr, away_team_abbr, tipoff_at, status")
+          .eq("game_date", gameDate)
+          .order("tipoff_at", { ascending: true }),
+      ),
+      "slate",
+      SLATE_TIMEOUT_MS,
+      "fast-break/",
+    ))
+  } catch (e) {
+    console.log("[fast-break] slate read bound:", e instanceof Error ? e.message : e)
+    return { games: [], ok: false }
+  }
   if (error) {
     console.log("[fast-break] slate read error:", error.message)
     return { games: [], ok: false }

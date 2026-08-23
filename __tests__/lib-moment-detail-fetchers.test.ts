@@ -296,3 +296,63 @@ describe("fetchActiveListingAsk", () => {
     ])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUNDS — a read that HANGS must reach the same `ok: false` these fetchers
+// already return for an error.
+//
+// ⚠ The distinction between "the query failed" and "the answer is empty" was
+// already the whole point of this module (see its header). What none of it could
+// reach was the failure DB saturation actually produces: **a read that is merely
+// SLOW errors nowhere.** supabase-js resolves `{ data, error }` only when the
+// query finishes, so `/moment/[id]` waited on a streaming shell that Vercel logs
+// as a 200 — the "200-but-broken-DOM" shape in its latency form.
+//
+// ⚠ Two fetchers are asserted rather than all nine, and that is a deliberate
+// choice worth stating: they share ONE `bounded()` helper, so nine near-identical
+// assertions would test the helper nine times while reading as nine units of
+// coverage. What is NOT shared — that each call site's `catch` returns the right
+// SHAPE (`{ data: null }` vs `{ rows: [] }`) — is why one of each is asserted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A client whose rpc never settles. */
+const hangingDb = { rpc: () => new Promise<never>(() => {}) }
+
+describe("bounds — a hung read is a failed read", () => {
+  it("fetchHighOffer resolves ok:false rather than hanging", async () => {
+    const res = await fetchHighOffer("edition-1", hangingDb)
+
+    expect(res.ok, "an overrun read must report FAILURE").toBe(false)
+    expect(res.data).toBeNull()
+    // ⚠ The absence of the false claim, not just the presence of a flag:
+    // `{ data: null, ok: true }` means "asked, and there is no offer", which the
+    // page is entitled to render as a fact.
+    expect(res.data === null && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchParallels resolves ok:false rather than hanging — and in the ROWS shape", async () => {
+    const res = await fetchParallels("edition-1", hangingDb)
+
+    expect(res.ok).toBe(false)
+    expect(res.rows).toEqual([])
+    expect(res.rows.length === 0 && res.ok === true, "must not read as 'no parallels'").toBe(false)
+  }, 20_000)
+
+  it("CONTROL — a read inside the budget still resolves normally", async () => {
+    // Without this, a helper that rejected unconditionally would satisfy both
+    // assertions above and this block would report coverage for a dead module.
+    const fastDb = { rpc: async () => ({ data: [{ edition_id: "e2" }], error: null }) }
+    const res = await fetchParallels("edition-1", fastDb)
+
+    expect(res.ok).toBe(true)
+    expect(res.rows).toHaveLength(1)
+  })
+
+  it("CONTROL — a genuinely empty answer is still ok:true", async () => {
+    // The branch the bound must not swallow.
+    const emptyDb = { rpc: async () => ({ data: [], error: null }) }
+    const res = await fetchParallels("edition-1", emptyDb)
+
+    expect(res).toEqual({ rows: [], ok: true })
+  })
+})

@@ -30,6 +30,42 @@
 import { cache } from "react"
 import { supabaseAdmin } from "@/lib/supabase"
 import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+// ── BUDGET ──────────────────────────────────────────────────────────────────
+// ⚠ Every read below already returns `ok: false` on an error, and the page
+// already renders that distinction. None of it was reachable from the failure DB
+// saturation actually produces: **a read that is merely SLOW errors nowhere** —
+// supabase-js resolves `{ data, error }` only when the query finishes — so
+// `/moment/[id]` hangs on a streaming shell that Vercel logs as a 200.
+//
+// ⚠ The bound REJECTS, and every call site here is already inside a `try/catch`
+// that returns the honest failure. That is deliberate: routing the timeout into
+// the branch each fetcher already has means bounding cannot introduce a second,
+// divergent failure policy — the one risk in adding a bound to nine reads at once.
+//
+// ⚠ Page ceiling: `page.tsx` awaits `fetchMomentDetail` FIRST, then the other
+// eight in ONE `Promise.all`. So the worst case is 4 + 4 = 8s, not 9 × 4.
+// Anyone making a second sequential await must redo that arithmetic.
+const MOMENT_READ_TIMEOUT_MS = 4_000
+
+/**
+ * Bound one read. Rejects on overrun, into the caller's existing catch.
+ *
+ * ⚠ Returns the `{ data, error }` envelope rather than a generic `T`, because
+ * `Db` is `any` here (see above) — a generic would infer `unknown` and every
+ * call site would stop compiling. Stating the envelope keeps the destructuring
+ * at each site typed exactly as it was before the bound.
+ */
+function bounded(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  p: Promise<any>,
+  label: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ data: any; error: { message: string } | null }> {
+  return withBoardBudget(p, label, MOMENT_READ_TIMEOUT_MS, "moment-page/")
+}
+
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -128,7 +164,7 @@ export const fetchMomentDetail = cache(async function fetchMomentDetail(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<MomentDetailPayload>> {
   try {
-    const { data, error } = await db.rpc("get_moment_detail", { p_id: id })
+    const { data, error } = await bounded(db.rpc("get_moment_detail", { p_id: id }), "detail")
     if (error) {
       console.warn(`[moment-page] rpc error id=${id}: ${error.message}`)
       return { data: null, ok: false }
@@ -156,7 +192,10 @@ export async function fetchHighOffer(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<HighOffer>> {
   try {
-    const { data, error } = await db.rpc("get_edition_high_offer", { p_edition_id: editionId })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_high_offer", { p_edition_id: editionId }),
+      "high-offer",
+    )
     if (error) {
       console.warn(`[moment-page] high_offer rpc: ${error.message}`)
       return { data: null, ok: false }
@@ -174,10 +213,10 @@ export async function fetchMomentBestOffer(
   db: Db = supabaseAdmin,
 ): Promise<RowResult<MomentBestOffer>> {
   try {
-    const { data, error } = await db.rpc("get_moment_best_offer", {
-      p_edition_id: editionId,
-      p_serial: serial,
-    })
+    const { data, error } = await bounded(
+      db.rpc("get_moment_best_offer", { p_edition_id: editionId, p_serial: serial }),
+      "best-offer",
+    )
     if (error) {
       console.warn(`[moment-page] moment_best_offer rpc: ${error.message}`)
       return { data: null, ok: false }
@@ -196,7 +235,10 @@ export async function fetchParallels(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<ParallelEdition>> {
   try {
-    const { data, error } = await db.rpc("get_edition_parallels", { p_edition_id: editionId })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_parallels", { p_edition_id: editionId }),
+      "parallels",
+    )
     if (error) {
       console.warn(`[moment-page] parallels rpc: ${error.message}`)
       return { rows: [], ok: false }
@@ -219,9 +261,10 @@ export async function fetchSubeditionSiblings(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<SubeditionSibling>> {
   try {
-    const { data, error } = await db.rpc("get_edition_subedition_siblings", {
-      p_external_id: externalId,
-    })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_subedition_siblings", { p_external_id: externalId }),
+      "subedition-siblings",
+    )
     if (error) {
       console.warn(`[moment-page] subedition_siblings rpc: ${error.message}`)
       return { rows: [], ok: false }
@@ -247,7 +290,10 @@ export async function fetchBadges(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<EditionBadge>> {
   try {
-    const { data, error } = await db.rpc("get_edition_badges_unified", { p_edition_id: editionId })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_badges_unified", { p_edition_id: editionId }),
+      "badges",
+    )
     if (error) {
       console.warn(`[moment-page] badges rpc: ${error.message}`)
       return { rows: [], ok: false }
@@ -265,7 +311,10 @@ export async function fetchSpecialSerialsForSerial(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<SpecialSerialRow>> {
   try {
-    const { data, error } = await db.rpc("get_edition_special_serials", { p_edition_id: editionId })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_special_serials", { p_edition_id: editionId }),
+      "special-serials",
+    )
     if (error) {
       console.warn(`[moment-page] special_serials: ${error.message}`)
       return { rows: [], ok: false }
@@ -289,7 +338,10 @@ export async function fetchEditionNotableSerials(
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<NotableSerialRow>> {
   try {
-    const { data, error } = await db.rpc("get_edition_special_serials", { p_edition_id: editionId })
+    const { data, error } = await bounded(
+      db.rpc("get_edition_special_serials", { p_edition_id: editionId }),
+      "notable-serials",
+    )
     if (error) {
       console.warn(`[moment-page] notable_serials rpc: ${error.message}`)
       return { rows: [], ok: false }
@@ -320,14 +372,19 @@ export async function fetchActiveListingAsk(
   if (!Number.isFinite(flowId)) return { data: null, ok: true }
   if (!collectionId) return { data: null, ok: true }
   try {
-    const { data, error } = await db
-      .from("cached_listings_v2")
-      .select("price_usd")
-      .eq("flow_id", flowId)
-      .eq("collection_id", collectionId)
-      .is("completed_at", null)
-      .order("price_usd", { ascending: true })
-      .limit(1)
+    const { data, error } = await bounded(
+      Promise.resolve(
+        db
+          .from("cached_listings_v2")
+          .select("price_usd")
+          .eq("flow_id", flowId)
+          .eq("collection_id", collectionId)
+          .is("completed_at", null)
+          .order("price_usd", { ascending: true })
+          .limit(1),
+      ),
+      "active-listing-ask",
+    )
     if (error) {
       console.warn(`[moment-page] active_listing: ${error.message}`)
       return { data: null, ok: false }

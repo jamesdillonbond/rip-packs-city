@@ -134,3 +134,61 @@ describe("fetchPinnedWallet", () => {
     })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOUNDS — a read that HANGS must reach the same `ok: false` as one that errors.
+//
+// ⚠ Both fetchers already returned `ok: false` on an error, and the page already
+// renders that distinction. Neither was reachable from the failure DB saturation
+// actually produces: **a read that is merely SLOW errors nowhere**, so the page
+// waits on a streaming shell that Vercel logs as a 200.
+//
+// ⚠ `fetchActiveRun` is the one that matters most. Its false state is
+// "No active Fast Break run — we'll surface the next run here as soon as Top Shot
+// opens it": a claim about TOP SHOT'S SCHEDULE, made during a live run, whose copy
+// explicitly promises we would say otherwise.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A `fast_break_runs` / `nba_games` chain whose terminal call never settles. */
+function hangingTableDb() {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "order", "limit"]) b[m] = () => b
+  b.maybeSingle = () => new Promise(() => {})
+  b.then = () => new Promise(() => {})
+  return { from: () => b }
+}
+
+describe("bounds — a hung read is not a quiet night", () => {
+  it("fetchActiveRun reports ok:false rather than hanging", async () => {
+    const res = await fetchActiveRun(hangingTableDb())
+
+    expect(res.ok, "an overrun read must report FAILURE").toBe(false)
+    // ⚠ The absence of the false claim: `{ run: null, ok: true }` is the state
+    // that renders "No active Fast Break run" as a fact about Top Shot.
+    expect(res.run === null && res.ok === true).toBe(false)
+  }, 20_000)
+
+  it("fetchSlate reports ok:false rather than hanging", async () => {
+    const res = await fetchSlate("2026-08-22", hangingTableDb())
+
+    expect(res.ok).toBe(false)
+    expect(res.games.length === 0 && res.ok === true, "must not imply there are no games").toBe(
+      false,
+    )
+  }, 20_000)
+
+  it("CONTROL — a read inside the budget still resolves normally", async () => {
+    const db = tableDb({ data: { id: "r1", name: "Run", lineup_size: 5, has_captain: true, start_date: null, end_date: null } })
+    const res = await fetchActiveRun(db)
+
+    expect(res.ok).toBe(true)
+    expect(res.run?.id).toBe("r1")
+  })
+
+  it("CONTROL — a genuine between-runs answer is still ok:true", async () => {
+    // The page's normal off-season state, which the bound must not swallow.
+    const res = await fetchActiveRun(tableDb({ data: null }))
+
+    expect(res).toEqual({ run: null, ok: true })
+  })
+})

@@ -77,7 +77,14 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // honesty work was done and was UNREACHABLE from a hang, which is worth noting
 // because "the page has an ok:false branch" reads like coverage and, for a slow
 // read, was not.
-const MAX_UNBOUNDED = 12
+//
+// 12 → 10 (2026-08-22): `lib/fast-break/page-data.ts` and
+// `lib/moment-detail/fetchers.ts` bounded, clearing `/[collection]/fast-break`
+// and `/moment/[id]`. ⚠ Both pages were on this list a SECOND time — the
+// path-sensitivity fix above made their OTHER reads visible once the first lib
+// each page reached had been bounded. That is the guard working: a page leaves
+// only when every read it can reach is accounted for.
+const MAX_UNBOUNDED = 10
 
 const strip = (s) => stripComments(s)
 
