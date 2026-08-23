@@ -29,6 +29,40 @@
 
 import { cache } from "react"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+/**
+ * Wall-clock budget for the whole two-step bundle, shared across both steps.
+ *
+ * ⚠ Shared, not per-step: step 2 only runs if step 1 resolved, so two separate
+ * budgets would let a saturated DB spend the budget twice and the bound would
+ * double the worst case it exists to cap.
+ *
+ * ⚠ Bounding is safe here ONLY because both callers already handle `ok: false`
+ * — the API route forwards `status`, and `ProfileClient` re-fetches every field
+ * on mount, so the SSR payload is a first-paint optimisation rather than the
+ * page's only source. Bounding a page with no degraded branch would turn a slow
+ * page into a thrown error boundary, which is worse than slow.
+ */
+const PUBLIC_PROFILE_TIMEOUT_MS = 6_000
+
+/**
+ * ⚠ 503, NEVER 404. A read we could not finish is not evidence the profile does
+ * not exist, and 404 is the one status that says it does not — on a page
+ * collectors SHARE. Same reason the module already distinguishes `idErr` (500)
+ * from `!idRow` (404): the two answers look identical downstream and only one
+ * of them is true.
+ */
+const TIMEOUT_STATUS = 503
+
+/**
+ * A PostgREST row as this module has always handled it — loosely, because the
+ * shape guarantee lives at the exported boundary (`PublicProfileBio` and
+ * friends) rather than at each query. Declared once so the budget wrappers below
+ * do not each need their own escape hatch.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any
 
 // These mirror the prop types ProfileClient declares (ProfileBio /
 // SavedWalletPublic). They are stated explicitly rather than left loose
@@ -83,7 +117,11 @@ export type PublicProfilePayload = {
 
 export type PublicProfileResult =
   | { ok: true; data: PublicProfilePayload }
-  | { ok: false; status: 400 | 404 | 500; error: string; username?: string }
+  // ⚠ 503 added 2026-08-22 for a read that OVERRAN its budget. It is a distinct
+  // status from 500 on purpose: 500 says the database answered with an error,
+  // 503 says it did not answer. Both are honest; neither is 404, which is the
+  // one status that would tell a visitor the profile does not exist.
+  | { ok: false; status: 400 | 404 | 500 | 503; error: string; username?: string }
 
 /**
  * Request-scoped memo. `/profile/<username>` now has TWO server callers in the
@@ -109,13 +147,35 @@ async function getPublicProfileUncached(
 
   if (!handle) return { ok: false, status: 400, error: "username required" }
 
+  // ⚠ BOUNDED. A read that is merely SLOW errors nowhere — supabase-js resolves
+  // `{ data, error }` only when the query finishes — so under DB saturation this
+  // await never returns and `/profile/[username]` + `/profile/[username]/trophy-case`
+  // hang on a streaming shell that Vercel logs as a 200. Fourth occurrence of the
+  // unbounded-server-read class; see scripts/check-unbounded-server-reads.mjs.
+  const deadline = Date.now() + PUBLIC_PROFILE_TIMEOUT_MS
+  const remaining = () => Math.max(1, deadline - Date.now())
+
   // Step 1: username -> user_id.
   const resolveT0 = Date.now()
-  const { data: idRow, error: idErr } = await supabase
-    .from("profile_bio")
-    .select("user_id")
-    .ilike("username", handle)
-    .maybeSingle()
+  let idRow: Row
+  let idErr: { message: string } | null = null
+  try {
+    ;({ data: idRow, error: idErr } = await withBoardBudget<{
+      data: Row
+      error: { message: string } | null
+    }>(
+      Promise.resolve(
+        supabase.from("profile_bio").select("user_id").ilike("username", handle).maybeSingle(),
+      ),
+      "public-profile-resolve",
+      remaining(),
+      "profile/",
+    ))
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[public/profile resolve] bound:", msg)
+    return { ok: false, status: TIMEOUT_STATUS, error: msg }
+  }
   console.log(
     `[public/profile:${source}] resolve username->user_id elapsedMs=${Date.now() - resolveT0} found=${!!idRow}`
   )
@@ -140,7 +200,15 @@ async function getPublicProfileUncached(
   // acquisition_method so the public payload never leaks owner cost basis /
   // P&L. (fix 2026-06-15)
   const fanT0 = Date.now()
-  const [{ data: bio, error: bioErr }, { data: trophyData }, { data: wallets }] = await Promise.all([
+  let bio: Row
+  let bioErr: { message: string } | null = null
+  let trophyData: Row
+  let wallets: Row
+  try {
+    ;[{ data: bio, error: bioErr }, { data: trophyData }, { data: wallets }] = await withBoardBudget<
+      [{ data: Row; error: { message: string } | null }, { data: Row }, { data: Row }]
+    >(
+      Promise.all([
     supabase
       .from("profile_bio")
       .select(
@@ -157,7 +225,18 @@ async function getPublicProfileUncached(
         "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
       )
       .eq("user_id", userId),
-  ])
+      ]) as Promise<
+        [{ data: Row; error: { message: string } | null }, { data: Row }, { data: Row }]
+      >,
+      "public-profile-bundle",
+      remaining(),
+      "profile/",
+    )
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[public/profile bundle] bound:", msg)
+    return { ok: false, status: TIMEOUT_STATUS, error: msg }
+  }
 
   // jsonb array out of the RPC → original public-trophy shape, live values,
   // numerics coerced back from jsonb strings. No cost-basis fields.

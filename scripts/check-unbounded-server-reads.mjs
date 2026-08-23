@@ -62,7 +62,15 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // With the fixes applied it reports 15. So the drop is 2 real pages, not an
 // artifact. ⚠ The intermediate reading of 11, seen with the OLD analyze and the
 // new lib bounds, was the artifact — see the note on `analyze()`.
-const MAX_UNBOUNDED = 15
+//
+// 15 → 13 (2026-08-22): `lib/profile/public-profile.ts` bounded, clearing
+// `/profile/[username]` and `/profile/[username]/trophy-case`. ⚠ Safe there ONLY
+// because `ProfileClient` re-fetches every field on mount, so the SSR payload is
+// a first-paint optimisation rather than the page's sole source — and the module
+// already separated 500 (the DB answered with an error) from 404 (no such
+// username). The overrun answers a THIRD status, 503; see the module for why it
+// must never be 404 on a page collectors share.
+const MAX_UNBOUNDED = 13
 
 const strip = (s) => stripComments(s)
 
