@@ -8,6 +8,71 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the FIFTH concluding section, live at 202 degradations / 157 users a day, and the guard that missed it was a SPELLING LIST
+
+**Found from Vercel runtime errors** — production ground truth rather than a filing — after two false leads I am recording alongside it.
+
+## The defect: "No recorded sales yet" out of a failed read
+
+`/[collection]/player/[slug]`'s **Top Sales** used `sectionRows` (two-state), so a decorative failure
+degraded to `[]` and the section published **"No recorded sales yet"** — a factual claim about a player's
+market. Live measurement, 24 h to 2026-08-23 18:32Z: **202 degradations across 157 DISTINCT USERS**, last
+seen minutes before the fix.
+
+🚨 **It was IN the measured population and was skipped.** `lib/entity/section-empty-copy.ts` names
+`get_player_top_sales 254` in its own 2026-08-21 header — the fix landed on the EDITION page's sections and
+not on the player page's. **Fix per PANEL, not per page**, again.
+
+## 🚨 The guard existed, said it would stop "the FIFTH", and could not see it
+
+```
+/No (?:sales|open offers|notable serials|recent sales|offers|listings|history)\b/
+```
+
+**"No recorded sales" does not match "No sales" — one adjective.** That is an alternation of the four known
+SPELLINGS, not the property. Proven in isolation rather than through the harness: the old pattern returns
+`false` on the exact sentence, the new one `true`. Now `No` + ≤2 words + a data noun.
+
+⚠ **Widening it immediately reddened CORRECT code, and both false positives were worth keeping as
+exemptions rather than narrowing back:**
+- **The NEGATION.** `*Unavailable` copy says *"it does **not mean** this player has no moments"* — the
+  correct denial of the banned claim. The register already records a word-ban being tried here and being
+  WRONG for exactly this. A static check cannot separate a claim from its denial by keyword.
+- **The OTHER sanctioned gate.** `TeamChecklist` renders `failed ? <load-failure> : … : empty` and is
+  completely correct. Requiring `sectionEmptyCopy(` by name would have pushed a caller toward a helper that
+  does not model its shape.
+
+⚠ **The window is 520 chars because that was MEASURED** — TeamChecklist's honest gate sits **394 chars**
+from its sentence. A shorter window reddened correct code. And the series page's `No editions` is a named
+**suppression with its reason** (gated on `edition_count === 0`, an ANSWER from the detail read), with a new
+test that **a suppression matching nothing must be deleted** — a stale one reads as a considered exception
+while excusing nothing.
+
+## Two more the widening exposed, both real
+
+- **`EditionsGridPaginated`'s `catch { setExhausted(true) }`** — a failed page fetch rendered as *"that is
+  the whole list"*. The button vanished, so the grid simply stopped. Now a retry line, and the button stays.
+- **The same component's "No editions yet."**, reachable from the TEAM page's DECORATIVE top-editions read.
+  ⚠ And the team section was gated on **non-empty alone**, so a failed read made the whole block VANISH —
+  the quietest form of the collapse, on a franchise that plainly has editions. Now `rows.length > 0 || !ok`.
+- `TopCollectorsSection` given the same treatment: `return null` stays correct for a genuine zero (the index
+  is rookie-scoped, so most players legitimately have none), and only the failure now speaks.
+
+**6 mutations, all caught** (both empty states re-concluding · the regex narrowed back · each exemption
+removed · a stale suppression).
+
+## ⚠ Two readings I corrected before acting on them
+
+1. **The candy-mlb timeouts are NOT contaminating the edition page.** `get_runtime_errors` grouped them
+   under `/[collection]/edition/[slug]`, `/moment/[id]` and `/player/[slug]` with **229 users** — but
+   CLAUDE.md records that its `routes=`/`users=` are **SMEARED**. The import graph is decisive: nothing on
+   those pages reaches `lib/insights/candy-board.ts`, and `lib/pack-dist/fetchers.ts` only mentions it in a
+   COMMENT. Real callers: the `refresh-insights-cache` cron and the candy-mlb page itself.
+2. **The edition page's `generateMetadata` throw is already fixed** — bounded in R19; last occurrence
+   00:48Z, ~18 h before this reading.
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the TENTH saturation breaker, missed because the ban that fixed nine walked one DIRECTORY; and the instrument that was under-counting its own subject 3×
 
 **Found by grepping the EXPRESSION rather than the file**, which is the rule this repo wrote after the same
