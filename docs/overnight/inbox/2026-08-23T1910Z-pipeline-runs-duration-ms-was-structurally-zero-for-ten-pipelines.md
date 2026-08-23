@@ -98,3 +98,37 @@ real number existed was `cron.job_run_details`.
 - **Consider dropping the `GREATEST`** — or making it `NULL` rather than `0` on an inversion — so
   the next instance of this fails loudly instead of reading as instantaneous. Not shipped: it is a
   generated-column change and therefore a table rewrite.
+
+---
+
+## ✅ VERIFIED BY A BEFORE/AFTER ON THE SAME PIPELINES — 2026-08-23 ~13:45 PT (20:45Z), by a second session
+
+Split `pipeline_runs` at the apply time (`20260823190648` = **19:06:48Z**) over a 48-hour window, and keep
+only pipelines with **≥5 runs before and ≥2 after** whose `max(duration_ms)` was **exactly 0 before and > 0
+after**. That is the same-pipeline control this fix needed, rather than a claim from the post-fix side alone:
+
+| pipeline | runs before | runs after | max before | max after |
+|---|---:|---:|---:|---:|
+| **`panini-squeeze-mv`** | 34 | 3 | **0** | **379,698 ms** |
+| `topshot-atlas-pack-ev` | 34 | 2 | **0** | 104,055 ms |
+| `cross-collection-deals-mv` | 39 | 3 | **0** | 67,460 ms |
+| `pack-ask-hourly-low-roll` | 172 | 7 | **0** | 41,777 ms |
+| `topshot-first-mint-mv` | 42 | 3 | **0** | 33,295 ms |
+| `series-detail-rollup` | 24 | 2 | **0** | 4,046 ms |
+
+**172 consecutive runs of `pack-ask-hourly-low-roll` reported zero**, and the first seven after the fix report
+up to **41.8 s**. That is the clamp, not a change in the work.
+
+⚠ **This is SIX, and the filing says TEN — the difference is my SAMPLING BAR, not a claim that four are
+unfixed.** Pipelines that run less often than ~5 times in the pre-window, or fewer than twice since, are
+excluded by construction. **Re-run the split with a wider window before concluding anything about the other
+four.**
+
+⭐ **The number nobody had: `panini-squeeze-mv` is the largest of the six at 379.7 s** (avg 290 s over three
+runs). That is worth knowing next to the standing note that `panini_squeeze_board` is ~4.5% of the disk-IO
+budget while **79% of its refreshes are discarded** — but ⚠ **this is a RECORDING, not a new investigation**,
+and `focus.md` is explicit that saturation symptoms are one root cause and must not be re-opened separately.
+
+⚠ **Do NOT sum `duration_ms` across pipelines as a budget figure.** These are wall-clock durations of
+overlapping jobs, many of them concurrent HTTP routes — summing them produced 87 hours of "work" in a
+24-hour window on the first attempt. It is a per-run cost, not a share of the instance.
