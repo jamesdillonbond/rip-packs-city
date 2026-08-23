@@ -137,3 +137,40 @@ attribution.
 ⚠ **And the recovery test is unchanged:** prove a watcher can see a FAILURE. Emit one uniquely-tagged
 error and confirm it lands. "Events started arriving again" is a different claim from "this reporter
 can see a failure", and only the second one is worth relying on.
+
+---
+
+## ADDENDUM 2026-08-23 08:2x PT — a THIRD hypothesis with the identical shape, and the MCP limit is now verified rather than asserted
+
+**Read-only. Nothing was changed in Sentry.**
+
+⚠ **The "MCP does not expose it" claim above is now MEASURED.** I searched the Sentry MCP tool catalog
+for usage/stats/quota/rate-limit operations. It returns organisations, projects, issues, events, DSNs,
+alert rules, monitors and snapshots — **there is no stats, usage, or quota tool of any kind**. So the
+accepted-vs-dropped question genuinely cannot be answered from here, and the operator step stands.
+
+🚨 **But the filing lists only TWO causes for the intact-code + silent-ingest shape (org quota, spike
+protection), and there is a THIRD that produces it exactly and is checked on a different page:**
+
+- **A per-DSN rate limit**, or **a deactivated client key.** `find_dsns` shows this project has
+  **exactly one** key ("Default"). With a single key, a rate limit or an `isActive: false` on it takes
+  **every** lane dark at once — server, edge and browser — which is precisely what was measured. ⚠ It
+  also explains something the env-var hypothesis cannot: the server and edge configs hardcode the DSN,
+  so their silence has to come from the ingest side, and a key-level limit is ingest-side.
+- ⚠ **The read-only DSN listing does NOT return `isActive` or the rate-limit fields**, so this cannot be
+  settled from the MCP either. It is one page from the quota bar in the UI: **Settings → Client Keys
+  (DSN) → the key's rate limit, and whether it is enabled.**
+
+**So the operator checklist is now two items on one visit, not one:**
+1. **Stats / Usage** — accepted vs dropped from 08-18 onward; a flatline against a full bar confirms quota.
+2. **Settings → Client Keys** — is the single key **active**, and does it carry a **rate limit**?
+   If either is set, that is the cause and the quota reading will show headroom rather than a wall.
+
+⛔ **What I deliberately did NOT do.** The MCP exposes `update_dsn`, which can clear a rate limit or
+re-activate a key. **Firing it blind would have been a mutation of the production error reporter on an
+unconfirmed diagnosis — and worse, it would have destroyed the evidence that attributes the outage.**
+The two readings above cost one page-load each and settle it; guessing costs the attribution.
+
+⚠ **The recovery test is unchanged and still the point:** after any fix, emit one uniquely-tagged error
+and confirm it lands. *"Events started arriving again"* and *"this reporter can see a failure"* are
+different claims, and only the second is worth relying on.

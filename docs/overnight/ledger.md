@@ -8,6 +8,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive — memory pass, part 10) — the Sentry blackout has a THIRD candidate cause nobody listed, and it is one page from the one the filing names
+
+**Read-only. Nothing changed in Sentry, nothing shipped to prod, no DB write.** Sentry has now been
+dark ~4d 19h while production keeps throwing (the filing's control moved in the same minute as its
+last reading), and the open question was never *whether* — it was *why*, which the filing routed to an
+operator page.
+
+✅ **First, the filing's own limit is now MEASURED rather than asserted.** I searched the Sentry MCP
+catalogue for usage/stats/quota/rate-limit operations: it exposes organisations, projects, issues,
+events, DSNs, alert rules, monitors and snapshots — **no stats or usage tool of any kind**. The
+accepted-vs-dropped reading genuinely cannot be taken from here.
+
+🚨 **Second, and the reason this is worth an entry: the filing lists TWO causes for the intact-code +
+silent-ingest shape (org quota, spike protection). There is a THIRD — a per-DSN rate limit, or a
+deactivated client key.** `find_dsns` shows this project has **exactly one** key, so a limit or an
+`isActive:false` on it takes **every lane dark at once** — server, edge and browser — which is exactly
+what was measured. ⚠ **It also explains what the env-var hypothesis cannot:** the server and edge
+configs hardcode the DSN, so their silence must come from the ingest side, and a key-level limit *is*
+ingest-side. ⚠ The read-only DSN listing does not return `isActive` or the rate-limit fields, so this
+one cannot be settled from the MCP either — but it lives one page from the quota bar.
+
+**Operator checklist is now two readings on one visit:** Stats/Usage (accepted vs dropped from 08-18)
+**and** Settings → Client Keys (is the single key active, does it carry a rate limit). A flatline
+against a full bar confirms quota; headroom plus a set limit confirms the third cause.
+
+⛔ **What I deliberately did NOT do, recorded because the tool was right there.** The MCP exposes
+`update_dsn`, which can clear a rate limit or re-activate a key. **Firing it blind would have mutated
+the production error reporter on an unconfirmed diagnosis and destroyed the evidence that attributes
+the outage.** Two page-loads settle it; guessing costs the attribution permanently. Same reasoning as
+the `beforeSend` sampling the filing recommends — correct as a fix, wrong as a first move.
+
+**Revert path:** none needed — one addendum appended to an existing filing; no code, no config, no DB.
+
 ### 2026-08-23 · DECISION, NOT A SHIP — I was going to build the FMV rollup and stopped. The binding constraint is the DISK, and the case now belongs to Trevor
 
 **Asked to decide what is best for RPC, I decided NOT to ship the one remaining build.** Recording it as a decision with its evidence, because a decision not to act is the one nobody re-checks.
