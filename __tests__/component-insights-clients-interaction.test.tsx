@@ -290,10 +290,21 @@ describe("SerialPremiumsBoardClient — interaction + per-row branches", () => {
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]))
       expect(calls.some((u: string) => u.includes("/api/profile/me"))).toBe(true)
     })
-    fireEvent.click(getByText("Copy link"))
+    // ⚠ WAITING FOR THE FETCH TO BE *CALLED* IS NOT WAITING FOR IT TO BE
+    // *APPLIED*, and that gap made this test order-dependent: it failed once in
+    // a full-suite run and passed in isolation ON THE SAME COMMIT. /api/profile/me
+    // had been called, but `setMyUserId` had not flushed, so `copyUrl` was still
+    // the anon URL and the first `writeText` carried no `ref=`.
+    //
+    // `myUserId` has NO rendered signal — it only changes the URL built at click
+    // time — so there is nothing to wait ON. Retry the interaction until the
+    // state it depends on is live, and assert the LATEST call rather than the
+    // first. Re-clicking is side-effect-free here: it re-copies and re-sets
+    // `copied`. The button text flips to "Copied!", hence the alternation.
     await waitFor(() => {
+      fireEvent.click(getByText(/^(Copy link|Copied!)$/))
       expect(writeText).toHaveBeenCalled()
-      expect(String(writeText.mock.calls[0][0])).toContain("ref=user-42")
+      expect(String(writeText.mock.calls.at(-1)![0])).toContain("ref=user-42")
     })
     expect(getByText("Copied!")).toBeTruthy()
   })
