@@ -161,3 +161,9 @@ Main branch is the canonical clean branch.
 
 ---
 
+### Displaced from CLAUDE.md 2026-08-23 (verbatim) — the sports-proxy 403 bullet
+
+Moved here to pay for two new standing rules; nothing deleted. The one-line pointer in CLAUDE.md now
+carries only the verdict.
+
+> - **The sports-proxy `403` — NOT a secret, and ⛔ "PROXY ESPN" IS MEASURED DEAD.** ⚠ **"ESPN: 200 residential ⇒ proxy it" was a DATED SAMPLE and it EXPIRED — re-measured 08-22, ESPN 403s residentially too**, so a CF Worker is just another egress. ⛔ UA-refresh and 403-retry stay useless. ⚠ Restoring ESPN alone still would NOT refill `nba_players` (SLATE-GATED). ⚠ **The "no alert" gap is a MYTH** — the failure-rate arm reads 100%, deliberately SUPPRESSED to 2026-10-14.

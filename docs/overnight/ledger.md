@@ -8,6 +8,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive — memory pass) — the day's durable rules promoted, paid for by displacement, and a session log so today compounds
+
+**Docs only. No code, no DB, no prod-state change.** CLAUDE.md's own rule is that a fact left in a session
+log stops being read; this moves today's lessons to where a session meets them before it knows its topic.
+
+## Two new standing rules in CLAUDE.md, both earned twice today
+
+1. ⚠ **A SERVER-SEEDED PROP is a fifth layer the honesty table does not cover.** The canon names four layers
+   (route / server page / client dashboard / OG card). None of them is `initial={rows}`: a client component
+   handed a seed gets `[]` with **no provenance**, so a component that already distinguishes failure for its
+   OWN fetch still concludes on the seed. Two live instances — `FmvHistoryChart` rendering *"too few sales to
+   chart"* (a verdict on the market) and `EditionsGridPaginated` *"No editions yet."*
+   ⚠ **And it must be asserted by SSR (`renderToString`)**: a mount effect corrects the state before jsdom
+   looks, so **two OPPOSITE mutations** (`useState(false)` and `useState(true)`) passed every client test.
+2. ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — the same defect one
+   layer down. 8 of 10 saturation breakers logged `extra: {}`, so the obvious query saw **1** event and a
+   shape-independent one saw **3**.
+
+⚠ **And the guard-derivation rule gained the half today kept proving: a guard's ROOT is a CLAIM.**
+
+## Paid for by DISPLACEMENT, not deletion — the rule this file states about itself
+
+CLAUDE.md was at **39,924 / 40,000 — 76 characters of headroom**, so every addition had to buy its space:
+
+- the **sports-proxy 403** bullet → verbatim into `known-issues.md`, pointer retained (it is an open ITEM,
+  not something a session needs before knowing its topic);
+- the **"what a passing guard is silent about"** bullet → verbatim into `testing-and-ci.md`, with CLAUDE.md
+  keeping the RULES and the reference keeping the CASES;
+- the copy-paste-spread instance list → the reference doc it already had.
+
+**Final: 39,951 / 40,000.** Counted with Node's `.length`, which is the binding number — not `wc`.
+
+## Where the rest landed
+
+- **`testing-and-ci.md`** — the three guard-derivation cases in full: the ROOT that was one directory while
+  the tenth copy sat in the shared `lib/` module; the MATCHER that was a spelling list and missed
+  *"No recorded sales"* by one adjective; and **a window-based assertion must stop at the next STATEMENT**
+  (a 260-char window passed because the next line was `return NextResponse.json({ … skipped:"throttle_error" })`
+  — **the HTTP body is not the record; `pipeline_runs` is**). Includes why widening reddened correct code
+  twice and why both were kept as EXEMPTIONS, and that its 520-char window is **measured** (394 in the real case).
+- **`database.md`** — ⚠ **the "degraded band" is a CLOCK correlation, not a saturation guarantee**: measured
+  inside R6's named 16:20–18:05Z window at `4 active · 1 IO waiter`, against the audit's *31 / 30*. Any exit
+  condition worded "re-measure in-band" is under-specified and will be discharged by a quiet reading. Plus
+  the discarded **40,229 ms** cold timing and why it cannot be the cost.
+- **`docs/sessions/2026-08.md`** — the day's entry, including **my own worst moment**: pushing `d7f398f5`
+  while a test run was reporting two failures, because I chained `git push` after `npm test` without gating
+  on the exit code.
+
+**Revert path:** `git revert <sha>` — docs only, no DB half.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — the FIFTH concluding section, live at 202 degradations / 157 users a day, and the guard that missed it was a SPELLING LIST
 
 **Found from Vercel runtime errors** — production ground truth rather than a filing — after two false leads I am recording alongside it.

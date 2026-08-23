@@ -797,3 +797,33 @@ these are the names that gave it away.
 
 > The tell is the TITLE: a name carrying a negative claim ("without claiming none are saved") or a
 > transformation ("is not an error", "at or below FMV") is a promise the assertion usually fails to keep.
+
+### Displaced from CLAUDE.md 2026-08-23 (verbatim) — what a passing guard is silent about
+
+Moved here to pay for two new standing rules; nothing deleted. CLAUDE.md keeps the rules, this keeps the cases.
+
+> ⚠ **Ask what a passing guard is structurally SILENT about** — every guard's own derivation fixes its blast radius (the anon driver-message guard derived its file set from `isPublicPath`, so everything behind sign-in was outside it *by construction*). **Prefer a directory/tree walk over a curated list, and a ban at population zero over an allowlist.** ⚠ **A curated list drifts, and COVERAGE IS ONLY REAL AGAINST WHAT THE GUARD READS** — `detect_stalled_pipelines`'s `WHERE w.is_active` blind spot is **76 of 164** (08-23; numerator held while the population grew — diff the SET). Derive from `pipeline_runs`; make *suppression* the curated list. ⚠ **Assert an exclusion at the PROPERTY's granularity** — a FILE-level grep vouched for a per-HANDLER exclusion (4 dishonest handlers).
+
+**Two more instances, both found 2026-08-23, both by asking what the guard's DERIVATION excludes:**
+
+1. 🚨 **A guard's ROOT is a claim.** `saturation-throttle-reads-its-error` walked `app/api/cron` ONLY, and its own
+   header argued *"a guard that walks the tree cannot miss the tenth"*. It walked one DIRECTORY. The tenth copy of
+   the fail-open breaker was one directory over in `lib/studio-sales-history.ts` — the SHARED implementation that
+   `golazos-studio-` and `allday-studio-sales-history-backfill` delegate to entirely, so those two never entered the
+   population and their breaker was the broken one. Fixed by walking a SECOND ROOT **plus an assertion that the
+   second root CONTRIBUTES**, so a widening that matches nothing fails loudly instead of silently narrowing back.
+
+2. 🚨 **A SPELLING LIST is not the property.** `entity-sections-do-not-conclude-from-a-failed-read` matched
+   `/No (?:sales|open offers|notable serials|recent sales|offers|listings|history)\b/` and said in its header that it
+   existed to stop "the FIFTH". The fifth said **"No recorded sales yet"** — one adjective, no match — and was live
+   at **202 degradations / 157 users a day**. Widened to `No` + ≤2 words + a data noun. ⚠ **Widening reddened CORRECT
+   code twice, and both were kept as EXEMPTIONS rather than narrowing back:** the NEGATION (`*Unavailable` copy says
+   "it does **not mean** this player has no moments" — the register already records a word-ban failing here for
+   exactly this), and the OTHER SANCTIONED GATE (`TeamChecklist`'s `failed ? <load-failure> : … : empty`).
+   ⚠ **Its window is 520 chars because that was MEASURED** — TeamChecklist's honest gate sits **394** chars from its
+   sentence; a shorter window reddened correct code.
+
+3. ⚠ **A window-based assertion must stop at the next STATEMENT.** A 260-char window from `throttle_read:` passed
+   with the log's `extra` emptied, because the next line is
+   `return NextResponse.json({ ok:false, skipped:"throttle_error" })` — the same string. **The HTTP body is not the
+   record; `pipeline_runs` is.**

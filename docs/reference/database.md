@@ -358,3 +358,22 @@ DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; 
 (`check_secdef_anon_exec_drift`, `…_execute_violations`, `check_edge_fn_http_failures`) returns
 `count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one (`check_public_security_invariants`,
 `check_anon_write_surface`) returns **zero rows** when clean.
+
+### ⚠ The "degraded band" is a CLOCK correlation, not a saturation guarantee (2026-08-23)
+
+R6 has carried *"a degraded-band re-measure is still owed before closing"* since 08-22, naming the window
+**16:20–18:05Z**. Measured **17:55–17:58Z, inside that window**, the database was **NOT saturated**:
+`4 active · 1 IO waiter · longest active query 1.9 s`, against the audit's degraded reading of
+*31 active / 30 IO waiters*.
+
+🚨 **So an in-band reading does NOT discharge an owed saturation measurement, and any exit condition worded
+"re-measure in-band" is under-specified.** "During the band" and "during saturation" are different asks and
+only the second tests the claim. Re-word such an exit condition to name SATURATION — otherwise it gets
+discharged by a quiet reading and a P1 closes on it. **Check `pg_stat_activity` (active / `wait_event_type='IO'`)
+and state the reading alongside any timing taken "in-band".**
+
+⚠ **A cold direct timing is not comparable to a warm production one, and mixing them fabricates a headline.**
+The same day, a direct timing of AllDay's per-edition FMV lateral read **40,229 ms** — which cannot be its cost,
+because the AllDay HTTP endpoint had returned **200 with real data two minutes earlier**. **A DB A/B must be
+WARM-vs-WARM**; at ~74 ms per disk read a cold run measures the buffer cache, not the query. Discarded, and
+recorded so nobody re-derives it and believes it.
