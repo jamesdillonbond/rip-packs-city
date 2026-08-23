@@ -8,6 +8,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — two paged/chained reads bounded, and my own first test for the property was VACUOUS
+
+**Bounded `lib/set-detail/tier-mix.ts` and `lib/pinnacle/moment-detail.ts`**, clearing
+`/[collection]/set/[slug]` and `/pinnacle/moment/[id]`. Ceiling **8 → 6**, no slack (5 reds).
+
+⚠ **BOTH NEEDED A SHARED DEADLINE, AND THE ARITHMETIC IS WHY.** `fetchFullTierMix` pages up to
+`MAX_ROWS / PAGE` = **60** times, so a 5s per-page budget would bound it at **five minutes** — a
+ceiling far above the ~30s a document has, i.e. no bound at all in practice. `load()` in the Pinnacle
+module is a **chain**, not a fan-out: catalog read → numeric resolve (two more reads) → catalog
+re-read → a six-way `Promise.all` → a usernames read; per-read budgets would let a saturated DB spend
+the budget six times over. In both cases the bound would have MULTIPLIED the worst case it exists to
+cap.
+
+🚨 **AND MY FIRST TEST FOR THAT PROPERTY WAS VACUOUS — caught by mutating, not by review.** The
+shared-deadline test used pages that resolved INSTANTLY and hung on the third. Mutating the
+implementation to a **per-page budget PASSED it**, because instant pages spend none of the budget and
+the third page times out under either design. The comment said "the deadline is shared"; the
+assertion tested something strictly weaker — **the exact shape CLAUDE.md records as the worst kind,
+and the one mutation testing is supposed to catch but only catches if you mutate the RIGHT thing.**
+Rewritten with pages that actually CONSUME the budget (2.5s each against a 6s deadline), which now
+kills the per-page mutant. Same treatment for Pinnacle: 5s reads against an 8s shared budget.
+⚠ **Mutating to "no bound at all" would have left both tests green-looking and wrong.**
+
+⚠ **`resolveNumericToRenderId` takes the CALLER's deadline** rather than starting its own — it runs
+two more reads inside a chain that has already spent budget, and a fresh allowance there is how one
+bound quietly becomes three. Its timeout returns `RESOLVE_FAILED`, **not `null`**: `null` means
+"asked, and no such pin", which the page is entitled to render as a 404.
+
+⚠ **On both surfaces the failure had to land in an EXISTING branch, not a new one.** tier-mix's
+timeout discards the partial counts, for the reason the module already states — *a truncated mix is
+not a smaller answer, it is a WRONG one; the percentages would still sum to 100 and read as
+complete*, and running out of budget mid-sweep is exactly where the temptation to keep them is
+strongest. Pinnacle's bundle timeout is `ok: false` and never `{ data: null, ok: true }`, which would
+have told a visitor a pin does not exist because our database was busy, on a URL collectors share.
+Its usernames read stays deliberately swallowed — decoration, raw addresses understate — but now
+LOGS, because a bound nobody can see is indistinguishable from one that never fires.
+
+**Tests appended to both existing suites** — 6 assertions, mutation-proven in **two** directions each
+(budget → 120s, and shared deadline → per-read). Controls pin what the bounds must not swallow: a
+sweep inside budget still returns its counts, and an absent pin is still `ok: true`.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **14,805 tests, 0 failures** ·
+`check-unbounded-server-reads` 6/6, reds at 5 · eslint back to each file's pre-existing count (the
+Pinnacle module needed one documented `Row` alias rather than 13 scattered escapes).
+
+**STILL OPEN — 6, and their shape has changed.** Four now hold their reads INLINE in `page.tsx`
+(`analytics/wallets`, `challenges`, `hot-floors`, `pack/[id]`, `admin/flowty-errors`), so each needs
+EXTRACTING before it can be bounded or tested — the same move that made every fix above possible. The
+sixth is `lib/packs/pack-deals.ts` behind `/pack-sniper`, which the roadmap lists as untouchable.
+
+**Revert path:** `git revert <sha of "perf(server): bound the tier-mix sweep and the pinnacle load chain">`.
+Library + guard + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 4) — a CHECK constraint this file says protects three tables protects ONE, and the Golazos phantom series vanished with nobody recording it
 
 **Docs only, no DB write.** Verification sweep over the Quick-reference constants a session trusts
