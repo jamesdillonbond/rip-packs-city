@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the two `cross_collection_cohort` pins re-pinned onto the lock-window rewrite, and the behaviour change it introduced is now pinned rather than merely absent
+
+**Code only. No DB, no migration, no prod state** — the migration this repoints to
+(`20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql`) was applied on 2026-08-22 and its
+bodies are **byte-identical to live** (verified by md5, not by eye: `b6b3492…` / `7c8e783…` from `pg_proc`,
+the same from the migration, the same from my transcription).
+
+**What was red.** The daily `DB pin staleness` sweep failed on 2026-08-23 07:51Z with
+`checked 189 pins — 187 clean, 2 needing attention`: `refresh_cross_collection_cohort_step1` and `_step2`.
+⚠ **This pair is NOT the six closed the day before** — the 08-22 07:49Z run names six different functions. The
+08-22 ~20:35Z lock-window rewrite shipped a NEW pin file (`refresh_cross_collection_cohort_lock_window.sql`,
+which correctly asserts output-equivalence in both directions) **and left the two existing pins pointing at
+the superseded 08-16 snapshot.** In-CI drift stayed green the whole time, because it compares the test copy
+against **the migration the pin names** — repo vs repo. Only the live sweep can see this.
+
+**The assertion review, which is the actual work.** Two things in the old pins had become false:
+
+1. **A REASON that no longer holds.** step2's closing assertion said the previous contents are gone *"because
+   the TRUNCATE happens first"*. It does not any more — the aggregate builds into a temp table and the
+   TRUNCATE lands immediately before the insert. The assertion still passes; its stated reason was the part a
+   reader would have carried forward as fact. Rewritten to the reason that is still true (full replace, not a
+   merge).
+2. **A REAL behaviour change nobody pinned.** `CREATE TEMP TABLE _ccm_step*_next ON COMMIT DROP` makes both
+   functions **non-re-entrant within one transaction** — a second call raises `42P07`, where the pre-08-22
+   bodies could be called repeatedly. Harmless in production (pg_cron gives each tick its own transaction),
+   but it is a difference, and an unpinned behaviour change is how the next caller finds out the hard way.
+   Both tests now assert it explicitly. **Mutation-proven in both files**: dropping the temp table before the
+   second call makes the new assertion fire and reds the file; restoring is hash-verified.
+
+Also corrected the stale `10 4` / `25 4` cron schedules in both headers and in the PINS comments — the jobs
+moved to `10 23` / `25 23` with the rewrite.
+
+**Verified:** 180/180 DB-invariant SQL files pass against a throwaway PG 16 (exit 0); the drift guard's 194
+tests pass; `npx tsc --noEmit` clean; full vitest 1369 files / 14,925 tests green.
+
+**Revert path:** `git revert` the code commit (find by message `test(db-pins): re-pin the two cross_collection`).
+Nothing to undo in the database.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — the 98 MB index `fmv-recalc` needs is UNREACHABLE on PG 17, not unused; the earlier "drop it" filing is corrected and inverted
 
 **No code, no DB.** Docs only: two inbox filings + a correction + a `docs/reference/database.md` section.
