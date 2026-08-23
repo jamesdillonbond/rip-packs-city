@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — main is GREEN again, and the new probe's first live run caught a memo leak that had been faking a passing self-check
+
+✅ **`main` is green.** CI run 3638 on `bb945049` — **success**, ending the red that had stood
+across five commits since 01:46Z. The migration marker was the whole of it, as the
+one-failing-job evidence predicted.
+
+✅ **The new `edition_golazos` arm RAN, and passed** — dispatched `e2e-smoke.yml` on `main` rather
+than guessing: `entity · edition_golazos detail page renders (7.3s)`. ⚠ **That distinction matters
+because the spec SKIPS a type it cannot discover, and a skip counts as a green job** — so "the run
+succeeded" would NOT have been evidence. A live Golazos edition page rendering real content is the
+first rendered-DOM check any non-Top-Shot edition page has ever had here.
+
+🚨 **The same run exposed a LEAK THAT WAS FAKING A PASSING SELF-CHECK, and my new arm is only what
+made it visible.** `fetchSitemapLocs`'s memo is MODULE-level and Playwright reuses a worker
+PROCESS across spec FILES, so `entity-smoke.spec.ts` (live, production) fills the cache and
+`smoke-selfcheck.spec.ts` then reads PRODUCTION locs instead of the fixture server it just started.
+Measured: expected the fixture's `/laliga-golazos/edition/541`, received production's
+`/laliga-golazos/edition/471`.
+
+⚠ **It reported as `1 flaky` and the job stayed GREEN** — attempt 1 failed, the retry got a fresh
+worker with a clean module cache and passed. ⚠ **The leak is OLDER than the arm that caught it:**
+every pre-existing assertion happened to expect a value production also returns first, so pollution
+was indistinguishable from a pass — the self-check could have been verifying production while
+reporting on its fixtures. **Two workers is why it hit segment 2 and not segment 1.**
+
+Fixed with `__resetSitemapCache()` + a `beforeEach`, and — because **a reset is invisible when it
+works, so the next cleanup deletes it and nothing goes red** — a POSITIVE CONTROL IN BOTH
+DIRECTIONS: prime the memo, change what the fixture server serves, assert the STALE value still
+comes back (the flake's mechanism, in-process), reset, assert the new one. 21/21 locally.
+
+🚨 **NEW FINDING, filed separately — 4 of the monitor's 8 entity arms SKIPPED: `moment`, `set`,
+`player`, `team`, all of which resolve from sitemap segment 3.** Segments 0, 1, 2 and 4 all
+resolved in the SAME run, which is the control that makes this segment-specific rather than a
+network blip. If `/sitemap/3.xml` is serving nothing, those pages are absent from the sitemap
+Google reads as well as unwatched — an SEO consequence, not just a monitor gap. ⚠ **One run is a
+snapshot; re-dispatch before treating it as standing.**
+
+**Revert path:** `git revert <sha of "fix(e2e): the sitemap memo leaks across spec files">`. Test
+code only — no DB or prod-state change.
+
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — main was RED on a migration guard, and the entity monitor could not see three collections' edition pages
 
 **Two items, both found by running the gates rather than assuming my own change was the only thing in flight.**
