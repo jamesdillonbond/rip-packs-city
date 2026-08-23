@@ -8,6 +8,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED (Claude Code, interactive) — /analytics/wallets extracted and bounded, and a guard that pinned the property in the PAGE had to move with it
+
+**Extracted `loadDirectory` into `lib/analytics/wallet-directory.ts`** (renamed `loadWalletDirectory`),
+bounded and tested. Unbounded ceiling **4 → 3**; server-page data-access ratchet **6 → 5**.
+
+Same shape as the two hub pages earlier today, including the part that matters: the `ok` contract
+already existed — a bare `[]` used to render *"No wallet activity to display."*, a claim about the loan
+book manufactured from a database error — and it was **unreachable from a hang**, because the page's
+`try/catch` catches a THROW and a read that merely hangs throws nothing.
+
+⚠ **AN EXISTING GUARD BROKE, AND IT WAS RIGHT TO.** `server-pages-error-vs-absent-guard` asserted
+`return { rows: [], ok: false }` **against the PAGE file**, so extracting the function reddened it.
+Re-pointed rather than relaxed, and deliberately split across BOTH files: the **producer's** contract is
+now checked in the module, the **consumer's** gating (`const { rows, ok } = await loadWalletDirectory()`
+and the `ok ? "No wallet activity…"` copy) still in the page. ⚠ **Checking only the module would let a
+page that stopped consulting `ok` pass — and that is the half of this defect that actually reaches a
+reader.** Mutation-proven: flipping the module's `ok: false` to `ok: true` reds it.
+
+🚨 **MY OWN SHAPE-GUARD TEST WAS VACUOUS, AND THIS IS THE SECOND TIME TODAY.** I asserted that a
+non-array payload yields `ok: false` — and **mutating the guard away still PASSED**, because the very
+next statement is `.map()`, which throws on a non-array and lands in the same catch. Identical outcome,
+so the test proved nothing about the guard. Rewritten to assert the **log line**, which is the only
+observable that distinguishes the two paths; the mutant now reds. ⚠ Recorded on the assertion itself,
+along with why this module differs from `hot-floors`/`challenges` — there the payload is RETURNED
+rather than mapped, so a missing guard silently yields "empty" and the mutation DID kill.
+
+⚠ **The `|| 0` on the principals is a PARSE fallback, not a fabricated number**, and the module now
+says so: the row exists and its value is non-numeric or absent, which is a different thing from
+defaulting a measurement nobody took. `ok` still carries the read's outcome independently.
+
+**Verified:** `tsc --noEmit` clean · `npm test` **1,359 files / 14,821 tests, 0 failures** ·
+`check-unbounded-server-reads` 3/3, reds at 2 · data-access ratchet 5/5 · eslint clean.
+
+⚠ **ONE FULL-SUITE RUN EXITED 1 WITH EVERY TEST PASSING** — an unhandled rejection
+(`ReferenceError: window is not defined`) from the pack simulator's flip loop calling `setFlipIndex`
+after teardown. **Not mine, not caused by this diff**, and controlled both ways: that spec alone passes
+three times, and a re-run of the FULL suite on the identical tree exits 0 with zero errors. It is a
+real unmount-safety defect in `PackSimulatorClient.tsx:249-253` (an uncancelled 70 ms timer chain), not
+a flake to shrug at — filed as
+`inbox/2026-08-23T0555Z-the-pack-simulator-flip-loop-keeps-setting-state-after-unmount.md`.
+
+**Revert path:** `git revert <sha of "refactor(analytics): extract and bound the wallet directory read">`.
+Page + library + test code only — no DB, no prod-state change.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive — memory pass, part 7) — main went red because one ledger guard PUNISHED the repair its sibling guard demanded
 
 **One detector, one CI edit, one test file. No DB, no migration, no prod-state change.**
