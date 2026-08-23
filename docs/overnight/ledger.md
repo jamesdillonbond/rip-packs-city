@@ -8,6 +8,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — eight production migrations got their git half back, the pack-opens filing is retracted in place, and a STALE `index.lock` had silently blocked every commit in this clone since 11:20
+
+**Why the tree had a day of work in it: a 0-byte `.git/index.lock` dated 11:20 PT with no git process
+alive.** Every `git add`/`git commit` in this clone had been failing with *"Another git process seems to
+be running"* for ~8h. ⚠ **That message reads like a concurrent session and the documented reflex is to
+leave it alone — so the check is the LOCK'S OWN EVIDENCE, not the message:** size (0), mtime, and
+`Get-Process | ? ProcessName -match git` returning nothing. All three said stale. Removed, and the
+day's work committed.
+
+**1. Eight migrations applied to prod today had NO repo file** (shas stamped below). Their revert
+paths existed only in a chat transcript. Recovered byte-exactly out of
+`supabase_migrations.schema_migrations` and md5-verified against what prod computes over the same
+slice — **a record, not a re-application; nothing new ran against the database.**
+
+| migration | what it did |
+|---|---|
+| `audit_20260823_drop_duplicate_series_stats_rollup` | dropped the parallel rollup built before discovering `series_detail_rollup` + jobid 357 already existed and were healthy |
+| `audit_20260823_series_detail_rollup_enable_rls` | RLS on a pre-existing table; ACL was already `postgres + service_role` only, so exposure was nil, but jobid 232 selfheal only covers `audit_`-prefixed tables |
+| `audit_20260823_oneoff_populate_edition_fmv_current` | one-off as `postgres` — **died at exactly 120 s on the GLOBAL timeout**, because a function's `SET statement_timeout` is INERT under pg_cron |
+| `…_as_cron_heavy` | rescheduled under `cron_heavy` (600 s ceiling) — finished in 13 s |
+| `…_unschedule_oneoff_edition_fmv_current` | removed it |
+| `audit_20260823_oneoff_verify_series_rollup_refresh` + `…_unschedule…` | exercised the rewritten refresh, then removed |
+| `audit_20260823_edition_fmv_current_incremental_by_watermark` | **the repair for a self-inflicted outage** — the full pass took jobid 357 past `cron_heavy`'s 600 s at 17:59 UTC (prior ticks 49 s / 177 s / 351 s). Now watermarked with a 2 h safety lag, because FMV backfills write rows with *older* `computed_at` than the run that follows them |
+
+⚠ **The lesson inside the watermark migration's own header, recorded here because it is general:** the
+one-off verification runs that pronounced it healthy were **76 s and 2 s, both seconds after a
+previous run had warmed the same pages.** A scheduled job verified by back-to-back manual runs is
+verified under the warmest possible condition. **Verify a scheduled job on a tick it does not share
+a cache with.**
+
+**2. `scripts/recover-fileless-migrations.mjs` + `npm run db:migrations:recover`.** Replaces the hand
+recipe in the parity failure message — per-migration transcription, run by exactly the sessions that
+could not use git in the first place. Read-only; writes files, never commits. Two traps it encodes:
+**no trailing newline** (`array_to_string` produces none, so appending one breaks every md5) and
+**match on NAME, not version** (`apply_migration` stamps its own).
+
+**3. The pack-opens-backfill finding is RETRACTED in place, not deleted.** The walk is `desc`, so the
+failing chunk was **query #1**, not the last — and the `skipped_permanent` escalation it proposed
+would have **permanently skipped real AllDay opens** on a backfill that never revisits them. ⚠ The
+disproof (`queries: 1`, `scanned_floor = end + 1`) was inside the telemetry the filing itself quoted,
+under a caveat that correctly flagged the inference as unverified. **A labelled inference is not a
+safe inference — it is a flagged one.** Real cause: our own 15 s abort against the worker's 25 s
+budget, measured 08-21, fixed and unshipped pending the gate-key window. Live `pipeline_runs` shows
+the lane was never wedged — the window called permanently stuck was swept clean **eleven minutes
+after the filing was written**.
+
+**4. Four filings added** (saturation spell at ~18:10Z, `get_team_detail`, `pipeline_runs.duration_ms`
+structurally 0 for ten pipelines, `promote_unmapped_sales`). `INDEX.md` **206 → 210** after re-splicing
+into upstream's copy on a rebase conflict, per the recipe. **5.** Two rescued stash diffs moved out of
+the repo root to `docs/archive/stash-rescue-2026-08-23/`; both stash entries remain in `git stash list`.
+
+**Revert:** `git revert <docs-shas> <code-sha>` removes the *record* only. ⚠ **It does NOT undo the
+database** — each migration carries its own DB revert in its header comment, and reverting
+`…_incremental_by_watermark` restores the unconditional full pass, which is what took down the 17:59
+tick. **Files:** `supabase/migrations/20260823*_audit_20260823_*.sql` (8),
+`scripts/recover-fileless-migrations.mjs`, `package.json`,
+`docs/finding-2026-08-23-allday-pack-opens-backfill.md`, four `docs/overnight/inbox/2026-08-23T18*/19*`
+filings, `docs/overnight/inbox/INDEX.md`, `docs/archive/stash-rescue-2026-08-23/`.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — Sentry's blackout has a MINUTE, a burst, and a falsifiable prediction; spike protection is ruled out and the burst is 86% the defect fixed today
 
 **No code, no DB.** The standing filing had this as *"dark, cause unknown, needs the operator's Stats page"*
