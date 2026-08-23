@@ -227,3 +227,136 @@ elsewhere and that is worth knowing too.
 - `check_public_security_invariants()` → `[]` · `check_secdef_anon_execute_violations()` → `[]`.
 - Every touched function: **one overload, SECURITY DEFINER intact, `postgres | service_role`
   only** (plus `cron_heavy` on the refresh, which needs it). No `CREATE OR REPLACE` re-grant.
+
+---
+
+## 10. ⛔⛔ TWO MORE CORRECTIONS, both found after Trevor pasted the ledger entry
+
+### 10a. "A rollup with no reader" is wrong — I clobbered a concurrent session
+
+`supabase_migrations.schema_migrations`, UTC:
+
+| time | |
+|---|---|
+| 01:58 | I measure `get_series_detail` at 21 s and read its body — the per-edition lateral is genuinely there |
+| 03:14 | `audit_20260823_series_detail_rollup` — **another session creates the table** |
+| 03:16 | `audit_20260823_get_series_detail_reads_the_rollup` — **that session swaps the reader** |
+| 03:21 | `audit_20260823_watchlist_series_detail_rollup` — staleness arm, 180 min, medium |
+| 03:23 | jobid 357 scheduled |
+| 05:16 | I build a duplicate rollup, never having re-read the function |
+| 05:20 | I `CREATE OR REPLACE get_series_detail`, overwriting 03:16 |
+
+So §3's "the rollup existed and the reader was never wired up" is false: it had been wired for
+two hours. My diagnosis was right at 01:58 and stale by 03:16. ⚠ **A 21-minute-old rollup and a
+21-month-old rollup look identical — freshness is not provenance, and `schema_migrations` was
+one query away.**
+
+The clobber silently dropped a 13th return key, `stats_computed_at`. Nothing in `app/ lib/
+components/ __tests__/` reads it, so no surface broke, but the committed migration promised it
+and production stopped delivering it. Restored; 13 keys and a non-null stamp verified on all 26
+series. The one difference I kept on purpose is the live fallback for a series with no rollup
+row — theirs returns NULLs, mine computes it.
+
+Also: the staleness arm I listed as "still open" in §6 **already shipped at 03:21**.
+
+### 10b. ⛔⛔ "26/26 return 200 with full payloads" was a quiet-window measurement
+
+At 17:20 UTC the same day, `/nba-top-shot/series/series-7` was back to an empty grid
+(`get_series_editions … STRUCTURAL — throwing`, `get_series_rollups … degrading to empty`).
+
+| `get_series_editions`, TS series-7 | time | buffers | **reads** |
+|---|---|---|---|
+| 06:00 UTC quiet, warm | 219 ms | 24,739 | 125 |
+| 17:20 UTC under load | **47,669 ms** | 24,739 | **2,926** |
+
+**Buffers identical, reads 23×, time 217×.** The work was always read-bound and the warm reading
+hid it. 👉 **On this instance a warm timing is not evidence. Quote reads.** I cited both
+warm/cold memory entries in this very filing and then made the mistake anyway.
+
+### 10c. What fixed it for real
+
+**`edition_fmv_current`** — latest snapshot per edition, materialised: 27,075 rows (22,539 with
+FMV), 9.4 MB, one ordered pass instead of 27,075 random probes. Rebuilt at the TOP of
+`refresh_series_detail_rollup` (order is load-bearing) so it inherits jobid 357's existing
+staleness arm.
+
+⭐ **Ordering comes from the rollup; the displayed price is still read LIVE** for the ≤100 rows
+that survive the LIMIT. No collector sees a stale price — only which rows appear can lag, on a
+page already cached 600 s.
+
+| | before | after |
+|---|---|---|
+| `get_series_editions` TS series-7 | 47,669 ms · 2,926 reads | **55 ms · 14 reads** |
+| jobid 357 refresh | 99 s cold / 11 s warm | **76 s cold / 2 s warm** |
+
+`get_series_rollups` reads the same table, so the per-set/per-player breakdown and the series
+total now come from the **same FMV tick** — previously they could disagree. Both readers carry an
+`EXISTS` guard so an unrefreshed rollup degrades to the honest slow path instead of silently
+reordering the page.
+
+**Verified under load:** 26/26 clean 200s with full payloads and zero "Couldn't load" markers at
+~17:55 UTC. Equivalence md5s captured before every swap; `edition_fmv_current` checked against a
+live per-edition read for all 575 Golazos editions (0 differences). Security invariants: 0 rows
+and `[]`. No leftover one-off crons.
+
+⚠ **Everything in §10c lives only in the DB.** For `get_series_detail` the repo's committed
+version (`2bca41b4`) is now three revisions behind production.
+
+---
+
+## 11. ⛔⛔ I BROKE jobid 357, AND THE WAY I "VERIFIED" IT IS THE POINT
+
+Seven minutes after folding `refresh_edition_fmv_current()` into
+`refresh_series_detail_rollup`, the real **17:59 UTC tick failed at exactly 600 s** —
+cron_heavy's ceiling — inside the full-population `DISTINCT ON` I had added.
+
+| tick | result |
+|---|---|
+| 14:59 | succeeded, 351 s |
+| 15:59 | succeeded, 177 s |
+| 16:59 | succeeded, 49 s |
+| **17:59** | **FAILED, 600 s** — `canceling statement due to statement timeout` in `WITH latest AS MATERIALIZED (SELECT DISTINCT ON (s.edition_id) …` |
+
+**How I had "verified" it: two one-off runs, 76 s and 2 s — both starting seconds after a
+previous run had warmed the same pages.** That is the warmest condition available, on a job whose
+whole risk is being cold. §10b of this filing is me writing down "a warm timing is not evidence
+on this instance", and I committed the same error inside the same hour, on a scheduled job, where
+the cache state at 59 past the hour is precisely what I failed to sample.
+
+👉 **A scheduled job is not verified by a manual run. It is verified by a tick it does not share
+a cache with.** Nothing else counts.
+
+Two independent faults, two fixes:
+
+**1. The rebuild was O(whole table) every hour.** Now incremental off a watermark
+(`max(computed_at)` in `edition_fmv_current`) minus a **2-hour safety lag**, because FMV backfills
+write rows with older `computed_at` than the run that follows them and a bare `> watermark` would
+skip those forever. Served by `idx_fmv_snapshots_2026_computed_at_desc`, so the scan is
+proportional to what changed. The upsert also carries
+`WHERE EXCLUDED.computed_at >= t.computed_at` so a late-arriving older snapshot cannot move a row
+backwards. Full pass survives only for a cold start.
+
+> **>600 s (failed) → 2.1 s, 321 rows.** Whole job end to end: **4.1 s**, `ok: true`, 0 skipped,
+> down from 49–351 s even before my change.
+
+⚠ Stated, not hidden: the incremental path cannot mark-and-sweep orphans. An edition whose
+snapshots are deleted keeps a stale row until a full rebuild. `full_rebuild` in the return value
+says which path ran.
+
+**2. A new component was wired into a load-bearing job with no isolation.** The series rollup —
+26 indexable pages depend on it — died alongside a table it does not need in order to run. The
+`PERFORM` now sits in its own `BEGIN/EXCEPTION` block: if the FMV rebuild fails, the aggregates
+still refresh from the previous hour's copy. ⚠ **And it is not silent** — the error goes into the
+return value and `pipeline_runs.extra`, and the run is marked **`ok = false`**. Catching an
+exception to keep pages served is fine; catching one to report success is the silent-degradation
+class.
+
+**Re-verified after the fix:** `edition_fmv_current` still matches a live per-edition read for all
+**1,093** Golazos + UFC editions (0 differences on fmv/floor/confidence, 0 missing); the stored
+series aggregates re-derive live for all three of those series; `series-7` and `golazos series-1`
+serve 253 KB / 228 KB in ~0.6 s with 0 "Couldn't load" markers.
+
+⚠ **Still unverified at the time of writing, deliberately flagged rather than claimed:** the real
+**18:59 tick**. A check is scheduled for 19:04 UTC. If it fails again the answer is to take the
+FMV rebuild off the critical path entirely and give it its own job — the coupling is the part I
+got wrong, not just the cost.
