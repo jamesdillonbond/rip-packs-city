@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · SHIPPED — 26 series pages were 500ing on a query 3–5× over its own ceiling; `get_series_detail` is now 18 ms
+
+**Found by a Cowork session** (`docs/overnight/inbox/2026-08-23T0210Z-…`) while proving the phantom Golazos series, and **re-derived here before acting.** Filed as register **R49** (R47/R48 were taken by a concurrent session between my read and my write — a register id is not reservable). `get_series_detail` recomputed six aggregates from **1.16M `fmv_snapshots` rows on every request**, via a per-edition `LEFT JOIN LATERAL` top-1.
+
+| series | editions | cost |
+|---|---|---|
+| NFL All Day `series-4` | 54 | 10 ms |
+| LaLiga Golazos `series-1` | 575 | 1,573 ms warm / 4,610 ms cold |
+| NBA Top Shot `series-4` | 3,600 | **21,229 ms warm / 43,750 ms cold** |
+
+⚠ **Its own `SET statement_timeout = '8s'` is INERT under psql/pg_cron but BINDS on the PostgREST `rpc/` path, which is how production reaches it** — so those are the TRUE costs and production simply got 57014. Vercel logs, 24 h: five distinct series URLs, all HTTP 500. **R19 counts 259 "series detail unavailable" across 38 users in 7 days.**
+
+⚠ **BOTH OBVIOUS REWRITES ARE MEASURED DEAD ENDS and neither was used.** `JOIN fmv_current` / `IN (subquery)` is the recorded **1.05M buffers / 28.7 s** shape; I re-tested the `= ANY(<array from a CTE>)` variant today hoping the qual would push below the view's `DISTINCT ON` and it **TIMED OUT**. And a `LIMIT` bounds OUTPUT, not COST. **Precompute was the only lever left.**
+
+**What shipped:** `series_detail_rollup` (26 rows) + `refresh_series_detail_rollup()`, pg_cron **jobid 357** `59 * * * *` owned by **cron_heavy** (600 s). `get_series_detail`'s **signature, argument names and payload keys are unchanged**, so all four callers — the layout's 404 gate, `generateMetadata`, the page, `/api/og/series` — needed no edit and the gate keeps its exact meaning.
+
+✅ **EQUIVALENCE PROVED BEFORE THE SWAP, with both sides read by the SAME instrument in one query** (the old body was still deployed while the rollup was seeded). All six aggregates matched **exactly** on four series covering every code path: All Day `series-4`, Golazos `series-1`, UFC `series-1`, Pinnacle `2025`. ⚠ The Pinnacle row is the one worth keeping — its floor total **exceeds** its FMV total (57.65 > 43.64). That is a real quirk of the collapse helper and it is **reproduced, not quietly corrected**: an equivalence proof that fixes an oddity on the way past is not an equivalence proof.
+
+**After:** `get_series_detail` on Top Shot `series-7` — **4,895 editions, the largest and previously untested — 18 ms / 504 buffers.** All 26 slugs resolve; 0 unresolved, 0 NULL counts, 0 never-computed, **1 genuinely zero** (`ufc_strike` series 0, which really is empty).
+
+🚨 **THE CRON WOULD HAVE FAILED SILENTLY EVERY HOUR AND I ALMOST SHIPPED IT.** `cron_heavy` did not have EXECUTE on the new function — EXECUTE is checked against the **CALLER** even on a SECURITY DEFINER function. And the `pipeline_runs` row is written by the function's own body, so a 42501 happens **before any logging**: it would have presented as **silence, not failure**, the same shape as a 401 on a gated route. Caught by asking whether the caller can run it rather than assuming a schedule implies permission. Verified end-to-end **as `cron_heavy`**: 5 collections, 26 series, 99 s cold (Top Shot 69 s of it), ~11 s warm, `ok:true` with full per-collection telemetry.
+
+⚠ **A FROZEN ROLLUP IS INVISIBLE TO EVERY OTHER CHECK** — the pages stay fast and the RPC still returns a fully populated row, just with old numbers. `pipeline_cadence_watchlist` row added at **180 min / medium**; silence there is the only alarm.
+
+⚠ **THE PAGE'S `?? 0` HAD TO GO IN THE SAME COMMIT.** `isEmpty = (detail.edition_count ?? 0) === 0` was harmless while the count was always computed; against a rollup a missing row means **UNKNOWN**, and `?? 0` turned that into "No editions in this series yet" **and** short-circuited the two fetches that would have contradicted it. Now `=== 0`. Guard **proven** against the restored `?? 0` form, with a detector positive control and a no-change control (a genuine zero must still render the empty state). ⚠ Deliberately a **NARROW** ban: the shape appears at 12 sites and most are legitimate — banning it everywhere would be a rule with no failure behind it.
+
+⚠ **`SET LOCAL ROLE` SURVIVES THE `DO` BLOCK for the rest of the transaction**, so the schedule migration's first apply failed 42501 on the migration runner's own `INSERT` into `supabase_migrations` and **rolled back with the schedule looking fine**. `RESET ROLE;` added. Minute **59** was chosen by elimination against every active schedule — `job startup timeout` is 67–80% of pg_cron failures here and writes nothing to `pipeline_runs`, so a collision is invisible tick loss.
+
+⚠ **NOT FIXED, and this migration must not be credited with it:** the same filing's **Mode 2** — `/nfl-all-day/series/series-4` renders all 71,982 characters into `<div hidden id="S:0">` and the Suspense boundary never completes, on a page the server finished in 10 ms. That is client-side streaming; no query tuning touches it. `get_series_editions` and `get_series_rollups` are also untouched.
+
+**Revert:** `git revert <sha>` · DB: `DROP FUNCTION public.refresh_series_detail_rollup(integer);` · `DROP TABLE public.series_detail_rollup;` · restore `get_series_detail`'s pre-2026-08-23 body (`git log -S get_series_detail`) · `SET LOCAL ROLE cron_heavy; SELECT cron.unschedule('rpc-series-detail-rollup');` · `DELETE FROM pipeline_cadence_watchlist WHERE pipeline = 'series-detail-rollup';`
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — two pages bounded, and the ratchet watching them had two defects that both hid work rather than creating it
 
 **Two shared libs bounded, clearing four pages of an unbounded server read.**
