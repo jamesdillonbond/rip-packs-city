@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-22 · FILED, NOT FIXED — R39's two "cannot measure" arms started answering, and the answer is that 11 public boards run persistently over budget
+
+**R39 self-resolved and that is how this was found.** It recorded `public_board_empty_count` and `public_board_slow_count` both stuck at **999**, the failure sentinel — "a metric that cannot reach its clean value is not a metric". Re-read 2026-08-23 03:34Z: the arm is answering, `budget_exhausted: false`, **45 of 45 active boards probed**, `empty_or_error: 0`, **`slow: 12`**. The instrument is fine. What it now says is the problem.
+
+⚠ **MEASURED AS A DISTRIBUTION, NOT A SNAPSHOT** — `public_board_liveness_history` retains 90 days, so this is 12 days and n = 26–36 samples per board rather than the one sweep the state table shows.
+
+| board | budget | p50 | p90 | max observed | % of samples over budget |
+|---|---|---|---|---|---|
+| `allday_scarcity_board` | 8,300 | **23,429** | 207,092 | **725,799** | **86.1%** |
+| `candy_offer_spread_board` | 3,000 | 8,871 | 57,302 | 86,758 | 85.7% |
+| `candy_pack_market` | 3,000 | 16,064 | 65,973 | 128,767 | 80.0% |
+| `candy_scarcity_board` | 3,000 | 14,837 | 141,182 | 211,912 | 73.5% |
+| `candy_player_board` | 3,000 | 6,281 | 34,323 | 118,747 | 58.8% |
+| `candy_special_serials_board` | 4,100 | 6,452 | 59,291 | 174,507 | 57.6% |
+| `topshot_2025_rookie_cohort_stats` | 3,000 | 2,279 | 16,727 | 24,381 | 46.4% |
+| `candy_secondary_board` | 3,000 | 2,455 | 20,944 | 35,249 | 45.5% |
+| `panini_sale_feed_status` | 3,000 | 1,142 | 7,906 | 10,889 | 40.0% |
+| `pack_table_rows` | 3,900 | 2,065 | 12,711 | 21,805 | 35.5% |
+| `topshot_set_squeeze_board` | 19,300 | 7,552 | 39,920 | 62,540 | 30.8% |
+
+`allday_scarcity_board`'s **MEDIAN is 2.8× its budget** and its worst observed read is **twelve minutes**. That is a steady state, not a spell.
+
+⚠ **`topshot_serial_premiums_board` IS NOT IN THIS LIST AND MUST NOT BE ADDED TO IT.** It appeared in today's sweep at 8,822 ms against a 3,000 ms budget, which is exactly what the snapshot shows — but over 12 days its p50 is **64 ms** and only **3.8%** of samples exceed budget. Today's read was its outlier. Diffing the sweep's SET of slow boards against the history is what separated it from the other eleven; the count alone (12) would have carried it along.
+
+🚨 **WHAT IS *NOT* ESTABLISHED, and I went looking specifically to knock this down: that any user is waiting.** The three pages these boards back returned **200 in 359–654 ms with no degraded copy** (`/insights/allday-scarcity`, `/insights/candy-mlb`, `/insights/pack-drops`). They are ISR — `revalidate = 1800` — so a visitor is served a cached render and the cost lands on **REGENERATION**, not on the request. **A "12 public boards are slow for users" claim would have been false**, and the fast page loads are the evidence against it.
+
+**Where the cost actually lands, which is still worth acting on:**
+1. **The instance's IO budget.** These are among the most expensive repeated reads on a box whose saturation R46 measured as structural (765 GB/day against a 22 MB/s floor). Every 30 min, per board.
+2. **The production BUILD.** CLAUDE.md records that prerendered `/insights` pages get **60 s each** and that a slow board can **fail the whole production build**, twice on a page the pushing commit never touched. Six of these eleven have a p90 above 60 s.
+
+⚠ **I did NOT raise the budgets to make the arm green.** Six of the eleven are red on a majority of samples, which by this repo's own doctrine makes them "permanently-red instruments indistinguishable from broken ones" — but the fix for that is the query, not the threshold. Raising it would convert a true signal into a false green.
+
+**NOT SHIPPED, deliberately.** The fix is materialisation, following the `mv_cross_collection_deals` pattern that landed earlier today — and a concurrent session is actively working board MVs in this same area. Starting an eleven-board materialisation now would collide with it and land half-verified. Filed with the measurement so whoever takes it starts from a distribution rather than a snapshot. Highest-value single target: **`allday_scarcity_board`**.
+
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the public profile page could answer 404 out of a timeout, and now cannot
 
 **Bounded `lib/profile/public-profile.ts`**, clearing `/profile/[username]` and
