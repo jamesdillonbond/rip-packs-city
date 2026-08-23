@@ -8,6 +8,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the FIFTH page, and the half a component already knew but was never told
+
+**`edition/[slug]` — the product's highest-traffic public page — plus `FmvHistoryChart`.** Named as open in
+the entry below rather than quietly skipped; this closes it.
+
+## 1. One throw among five reads cost the whole page
+
+The fast shell runs five fetches in a single `Promise.all` with **no per-member `.catch()`**, under one
+page-level catch returning `EditionUnavailable`. Every render site below **already** gates on `!= null` /
+`length >= 2`, and every fetcher **already** returns its own typed-empty on an RPC error — so the whole-page
+catch only ever fired on an *unexpected* throw, and when it did it discarded a hero, an FMV strip and a badge
+row the DETAIL read had already paid for.
+
+Now each member is declared at its own typed-empty (`EMPTY_MARKET_BUNDLE`, `EMPTY_INSIGHT_LINKS`, an empty
+`Map`, `[]`) with `ok: false`, and the catch only records why. ⚠ **The try STAYS** — on an ISR route
+`error.tsx` does not run, so nothing else would catch it.
+
+## 2. 🚨 The chart could tell a failure from a thin market, and the SERVER could not tell it which
+
+`FmvHistoryChart` has carried a separate `failed` state since it was written, precisely so a failed request
+never renders **"too few sales to chart"** — a verdict on the market. ⚠ **That only ever covered the CLIENT
+fetch.** The 30-day view — **the one the page opens on** — is server-seeded and short-circuits that fetch, so
+a failed server read arrived as `[]` **with no provenance** and rendered the verdict. `fetchHistory` is now
+three-state and the page passes `initialFailed={!history.ok}`.
+
+⚠ **The reset branch was the second half:** returning to 30d ran `setFailed(false)`, so one round-trip
+through another range **laundered the failure back into the verdict**.
+
+## 🚨 Two mutations passed every jsdom test, and the reason is worth keeping
+
+Mutating `useState(initialFailed)` to `useState(false)` — **and** to the mirror-image `useState(true)` — left
+every client-side test green, because the mount effect's 30d short-circuit calls `setFailed(initialFailed)`
+and corrects the state before testing-library looks. **The difference survives only in the SERVER-RENDERED
+HTML**, which is what the reader sees first and which ISR can cache for the whole revalidate window. Both are
+now pinned with `renderToString`, one asserting the failure copy and one a **no-change control** that a
+genuinely thin edition still gets the true sentence.
+
+⚠ **And a third mutation showed the component's own tests can never see the WIRING:** deleting
+`initialFailed` from the page's call site left all 20 chart tests passing. Pinned in
+`server-pages-error-vs-absent-guard` as case 6, which also rejects a hardcoded `initialFailed={false}`.
+
+## The generalised guard
+
+`entity-pages-bound-their-detail-read` gains a **count**, tree-derived over all five pages: **exactly one**
+`return <*Unavailable>` per page body, and it must be the `detailFailed` branch. The detail read has no page
+left to degrade, so its whole-page view is legitimate; **every other one is a section failure being charged
+to the page.** Pins the property, not a spelling, and a sixth page is inside it by construction.
+
+**Mutations: 6, all caught** (E1 whole-page catch reinstated · C1/C3 the two useState directions · C2 the
+laundering reset · C4 prop dropped at the call site · C5 prop hardcoded). Each restore verified by content
+hash.
+
+⚠ **`components/entity/FmvHistoryChart.tsx` carries 2 PRE-EXISTING eslint errors** (`react-hooks/set-state-in-effect`,
+one of them on the line I edited). Count measured before and after — unchanged, so not a regression. **This
+repo does not run eslint in CI at all**; do not cite it as coverage.
+
+**Revert path:** `git revert <sha>` — code + tests only, no DB half.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — R19's last open half: a failed structural read now costs the reader ONE SECTION, not the page
 
 **Four public entity pages (`set` / `team` / `player` / `series`), plus the helper and the guard.** R19's row
