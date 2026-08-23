@@ -1,0 +1,19 @@
+-- check_public_security_invariants() returns (rls_off_base_table, series_detail_rollup).
+--
+-- PRE-EXISTING, not introduced today: this table was created with the rollup
+-- refresh job, before this session. It surfaced now because I was verifying the
+-- invariants after re-pointing get_series_detail at it.
+--
+-- Practical exposure was nil — its ACL is postgres + service_role only, no anon,
+-- no authenticated — but "no grants today" is not the same guarantee as RLS, and
+-- the selfheal cron (jobid 232) only covers `audit_`-prefixed tables, so this one
+-- would have stayed off indefinitely.
+--
+-- Safe for both readers: the table is OWNED by postgres and FORCE ROW LEVEL
+-- SECURITY is NOT set, so the owner and the SECURITY DEFINER functions
+-- (get_series_detail, refresh_series_detail_rollup) bypass RLS unchanged. No
+-- policy is added deliberately — with no anon/authenticated grant there is no
+-- role for a policy to admit, and adding one would only invite a future grant.
+--
+-- REVERT: ALTER TABLE public.series_detail_rollup DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.series_detail_rollup ENABLE ROW LEVEL SECURITY;

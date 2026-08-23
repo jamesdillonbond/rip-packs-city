@@ -22,7 +22,8 @@
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",
     "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs",
     "seed:usernames": "tsx scripts/seed-wallet-usernames.ts",
-    "db:migrations:check": "node scripts/check-migration-parity.mjs"
+    "db:migrations:check": "node scripts/check-migration-parity.mjs",
+    "db:migrations:recover": "node scripts/recover-fileless-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
