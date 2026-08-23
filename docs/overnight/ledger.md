@@ -39,7 +39,7 @@ years (`2023`–`2026`).
 their rules (case histories already verbatim in `apis-and-cadence.md` and `cron-and-schedulers.md`).
 **CLAUDE.md: 39,856 chars**, 144 of headroom.
 
-**Revert path:** docs only, no DB half. Shas stamped in the follow-up commit, read after the push.
+**Revert path:** docs only, no DB half — `git revert 97f1b095` (CLAUDE.md + register) and `git revert 711c58dc` (this entry). **Shas read after the push.**
 
 ### 2026-08-22 · SHIPPED (Claude Code, interactive) — the pack-detail page had ONE bounded read and THIRTEEN bare ones, and that asymmetry is why a tempting guard shortcut is wrong
 
