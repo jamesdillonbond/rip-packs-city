@@ -259,9 +259,18 @@ async function run(req: NextRequest) {
           // 🚨 Incremental mode ON with nothing to fetch. Falling through here would
           // send an /execute with NO query_parameters — which is the FULL walk,
           // 876,600 datapoints, 87.7% of the cycle — i.e. the exact opposite of what
-          // "no targets" means. Two ways to land here and both are skips, not walks:
-          // the backfill is complete, or the targets RPC threw (see refreshNote, whose
-          // catch above swallows the error and falls straight through).
+          // "no targets" means. THREE ways to land here and all are skips, not walks:
+          // the backfill is complete; the targets RPC threw (see refreshNote, whose
+          // catch above swallows the error and falls straight through); or the cheapest
+          // remaining set on its own costs more than dpAllowance.
+          //
+          // ⚠ The third case did not exist when this branch was written — the function
+          // guaranteed at least one row via an `OR rn = 1` escape, dropped 2026-08-22 in
+          // audit_20260823_ownership_targets_drop_rn1_escape once this skip made an empty
+          // list safe. To tell case 1 from case 3 by hand, ONE unbounded call:
+          //   SELECT * FROM public.get_ownership_backfill_targets(1);
+          // a row means "cannot afford it" and its est_datapoints is the price; no row
+          // means genuinely done. refreshNote being empty rules out case 2.
           //
           // ok:true is right — nothing was owed and nothing was spent. `skipped` is
           // already a key this pipeline emits (`dune_not_configured`), so
