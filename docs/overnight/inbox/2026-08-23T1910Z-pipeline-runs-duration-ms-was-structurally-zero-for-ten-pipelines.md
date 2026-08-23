@@ -132,3 +132,53 @@ and `focus.md` is explicit that saturation symptoms are one root cause and must 
 ⚠ **Do NOT sum `duration_ms` across pipelines as a budget figure.** These are wall-clock durations of
 overlapping jobs, many of them concurrent HTTP routes — summing them produced 87 hours of "work" in a
 24-hour window on the first attempt. It is a per-run cost, not a share of the instance.
+
+⭐ **The "other four" question above is CLOSED by the next section** — a full-population sweep
+over every pipeline written since the apply time, rather than the ≥5-before/≥2-after subset.
+
+## ✅ ROLLOUT CONFIRMED 2026-08-23 20:58Z — all ten fixed, zero residual inversions, and one look-alike that must be left alone
+
+**By:** Claude Opus 5, Cowork cloud. The one-word change (`finished_at := clock_timestamp()`) went
+live at **19:06:48Z**. Measured across **everything** written since, not just the three pipelines
+I had spot-checked:
+
+```sql
+select pipeline, count(*) runs,
+       count(*) filter (where finished_at < started_at) still_inverted,
+       count(*) filter (where duration_ms = 0)          zero_duration
+from pipeline_runs where started_at > '2026-08-23 19:06:48+00' group by 1;
+```
+
+**~100 distinct pipelines, 800+ runs, `still_inverted` = 0 on every single one.** All ten named in
+the filing above now record real elapsed time. Spot values from the window:
+`panini-squeeze-mv` 379,698 ms · `drain-conflated-subeditions` 295,187 ms ·
+`allday-lock-refresh` 281,304 ms · `promote_unmapped_sales` 277,215 ms ·
+`lock-check-batch` 207,523 ms · `fmv-recalc` 203,367 ms · `series-detail-rollup` 4,046 ms.
+
+⚠ **The window is 19:06:48Z→20:58Z, about 1 h 51 m.** `pipeline_runs` retains 72.7 hours, so a
+longer read is possible but would mix pre-fix rows back in; state the window from
+`min(started_at)` rather than assuming a day.
+
+### ⛔ Fourteen pipelines still read duration_ms = 0, and that is CORRECT. Do not "fix" them.
+
+They are **not** inverted (`still_inverted` = 0 for all of them) — they are instantaneous marker
+rows, and every one but the last is named `*-heartbeat`:
+
+```
+snapshot-pack-asks-heartbeat            fmv-recalc-heartbeat
+golazos-sales-indexer-heartbeat         allday-sales-indexer-heartbeat
+topshot-sales-indexer-heartbeat         allday-listings-indexer-heartbeat
+golazos-listings-indexer-heartbeat      allday-listings-retry-heartbeat
+pinnacle-listings-indexer-heartbeat     allday-pack-listings-heartbeat
+drain-fmv-cold-tail-heartbeat           sales-seller-recovery-dune-heartbeat
+classify-acquisitions-multicollection-heartbeat
+editions-hydrate-at-insert
+```
+
+The pairing proves it: `snapshot-pack-asks` logged 21 runs with real durations in the same window,
+and `snapshot-pack-asks-heartbeat` logged 21 runs at 0. The heartbeat is a companion row marking
+"this ran", written at a single instant — `started_at == finished_at` is its honest value.
+
+⚠ **This is the trap the original filing set up.** Anyone who re-runs the "which pipelines report
+duration_ms = 0" query as a regression check will get **fourteen hits and conclude the fix did not
+take.** The discriminator is not `duration_ms = 0`, it is `finished_at < started_at`. Use that.
