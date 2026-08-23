@@ -98,6 +98,33 @@ describe("R19 — entity detail reads are bounded, and a failure is not a 404", 
       expect(offenders).toEqual([])
     })
 
+    it(`${file.split("/").slice(-3).join("/")} degrades a SECTION failure per section, not per page`, () => {
+      // R19's last half (2026-08-23). Every one of these pages used to catch its
+      // section fan-out and return the same whole-page *Unavailable the DETAIL
+      // read returns — throwing away a hero and a stat strip that were ALREADY
+      // READ. The reads have different costs: get_series_detail answers in ~18ms
+      // off series_detail_rollup while get_series_editions is 6,615ms / 32,484
+      // buffers (R49), so in practice only the section read fails.
+      //
+      // ⚠ THE PROPERTY IS A COUNT, not a spelling. The detail read has no page
+      // left to degrade, so it legitimately returns the whole-page view. Every
+      // OTHER return of one is a section failure being charged to the page — so
+      // assert there is EXACTLY ONE, and that it is the detailFailed branch.
+      const body = pageBody(readFileSync(file, "utf8"))
+      const returns = [...body.matchAll(/return <\w*Unavailable/g)]
+      expect(
+        returns.length,
+        `${file}: expected exactly one whole-page *Unavailable return (the detail read); a second one is a SECTION failure costing the reader the page`,
+      ).toBe(1)
+      // ...and it must be the detail branch, not a section catch that happens to
+      // be the only one left.
+      const at = returns[0].index!
+      expect(
+        body.slice(Math.max(0, at - 40), at),
+        `${file}: the single *Unavailable return is not the detailFailed branch`,
+      ).toContain("detailFailed")
+    })
+
     it(`${file.split("/").slice(-3).join("/")} still 404s a genuinely absent entity`, () => {
       // NO-CHANGE CONTROL. Turning every miss into "unavailable" would leave
       // junk slugs indexed and is dishonest in the other direction.

@@ -277,6 +277,35 @@ describe("server pages distinguish a failed read from an absent record", () => {
   //    ⚠ The fallback is KEPT for the case it was written for. Deleting it would
   //    be the mirror-image defect: a collection whose editions are not reachable
   //    by set_name would lose a bar it can legitimately render.
+  // 6. /[collection]/edition/[slug] — the SERVER-SEEDED half of a component that
+  //    already knew better. FmvHistoryChart has distinguished "the fetch failed"
+  //    from "too few sales to chart" since it was written — but only for the
+  //    CLIENT fetch. The 30-day view, which the page opens on, is server-seeded
+  //    and short-circuits that fetch, so a failed server read arrived as `[]`
+  //    with no provenance and rendered the too-few-sales verdict. Highest-traffic
+  //    public page in the product.
+  //
+  //    ⚠ Pins the WIRING, which is the half a component test cannot see: mutation
+  //    showed that deleting `initialFailed` from this call site left every one of
+  //    the component's own tests passing.
+  it("edition/[slug] tells the FMV chart whether the SEED read failed", () => {
+    const src = read("app", "(collections)", "[collection]", "edition", "[slug]", "page.tsx")
+
+    // The history fetcher must report ok — a bare list cannot carry the failure.
+    expect(src, "the history fetch must be three-state").toMatch(
+      /rows: HistoryRow\[\]; ok: boolean/,
+    )
+    // ...and the page must hand that state to the chart, derived from the read
+    // rather than hardcoded. `initialFailed={false}` would pass a presence check.
+    const at = src.indexOf("<FmvHistoryChart")
+    expect(at, "the edition page must render FmvHistoryChart").toBeGreaterThan(-1)
+    const call = src.slice(at, at + 400)
+    expect(call, "the chart must be told whether the seed failed").toContain("initialFailed=")
+    expect(call, "initialFailed must be DERIVED from the history read, not a literal").toMatch(
+      /initialFailed=\{!\w+\.ok\}/,
+    )
+  })
+
   it("set/[slug] does not sample the first page when the full-set count FAILED", () => {
     const fetcherSrc = read("lib", "set-detail", "tier-mix.ts")
     const src = read("app", "(collections)", "[collection]", "set", "[slug]", "page.tsx")

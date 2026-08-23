@@ -44,6 +44,16 @@ interface Props {
   collectionUrlSlug: string
   routeSlug: string
   initial: HistoryPoint[]
+  /**
+   * Whether the SERVER read that produced `initial` failed.
+   *
+   * ⚠ Without this the 30-day view — the one the page opens on — renders a
+   * server-side failure as "too few sales to chart", which is the exact
+   * sentence the `failed` state below exists to avoid. The client fetch has
+   * been able to tell the two apart since it was written; the SEEDED path
+   * could not, because `[]` reached it with no provenance.
+   */
+  initialFailed?: boolean
 }
 
 interface SalePoint {
@@ -107,7 +117,7 @@ export function fmtUsd(n: number | null | undefined): string {
   return `$${n.toFixed(2)}`
 }
 
-export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial }: Props) {
+export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial, initialFailed = false }: Props) {
   const [days, setDays] = useState<number>(30)
   const [data, setData] = useState<HistoryPoint[]>(initial)
   const [saleData, setSaleData] = useState<SalePoint[]>([])
@@ -115,7 +125,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
   // A failed fetch must not render as "too few sales to chart" — that sentence
   // is a claim about the DATA, and using it for a network error tells the user
   // an actively-traded edition has no market. Tracked separately.
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState(initialFailed)
   const source: Source = RANGES.find(r => r.days === days)?.source ?? "fmv"
   // recharts stroke/fill take raw SVG color strings — CSS var() doesn't resolve
   // there (the documented brand-exception), so axis/grid colors are picked in
@@ -133,7 +143,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
 
   useEffect(() => {
     // 30d is server-seeded, so it needs no fetch.
-    if (days === 30 && source === "fmv") { setData(initial); setFailed(false); return }
+    if (days === 30 && source === "fmv") { setData(initial); setFailed(initialFailed); return }
     let cancelled = false
     setLoading(true)
     setFailed(false)
@@ -155,7 +165,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [days, source, collectionUrlSlug, routeSlug, initial])
+  }, [days, source, collectionUrlSlug, routeSlug, initial, initialFailed])
 
   // One shape for the chart regardless of source: `value` is FMV on the short
   // ranges and the MEDIAN PRINT on the long ones.

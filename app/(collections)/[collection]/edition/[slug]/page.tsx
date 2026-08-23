@@ -24,6 +24,7 @@ import {
   type MarketBundle,
   type InsightLinks,
   EMPTY_INSIGHT_LINKS,
+  EMPTY_MARKET_BUNDLE,
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames, type PackProvenanceRow } from "@/lib/edition/fetchers"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
@@ -232,8 +233,12 @@ async function fetchOffers(editionId: string, limit: number): Promise<{ rows: Of
   return sectionRowsResult<OfferRow>("edition offers", "get_edition_offers", { p_edition_id: editionId, p_limit: limit })
 }
 
-async function fetchHistory(collectionId: string, routeSlug: string, days: number): Promise<HistoryRow[]> {
-  return sectionRows<HistoryRow>("edition FMV history", "get_edition_fmv_history", {
+// Three-state. ⚠ `ok` has to reach FmvHistoryChart: the 30-day view is
+// SERVER-SEEDED, so a failed read arrives as `[]` with no provenance and the
+// chart renders "not enough sales to chart" — a verdict on the market, out of a
+// read we could not finish, on the highest-traffic public page in the product.
+async function fetchHistory(collectionId: string, routeSlug: string, days: number): Promise<{ rows: HistoryRow[]; ok: boolean }> {
+  return sectionRowsResult<HistoryRow>("edition FMV history", "get_edition_fmv_history", {
     p_collection_id: collectionId,
     p_route_slug: routeSlug,
     p_days: days,
@@ -429,14 +434,18 @@ export default async function EditionPage(
   // one of them throwing takes the page to Next's unbranded 500 — and on an ISR
   // route error.tsx does not run, so nothing else can catch it.
   //
-  // Whole-page degradation here rather than per-section because the render below
-  // consumes these unconditionally; per-section is the better end state and is
-  // filed, not done.
-  let history: Awaited<ReturnType<typeof fetchHistory>>
-  let bundleRes: Awaited<ReturnType<typeof fetchMarketBundle>>
-  let insightRes: Awaited<ReturnType<typeof fetchInsightLinks>>
-  let badgeArt: Awaited<ReturnType<typeof fetchBadgeArt>>
-  let repSales: Awaited<ReturnType<typeof fetchSales>>
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23) — the fifth page, after the
+  // four entity routes. The catch used to return `EditionUnavailable`, so a
+  // single unexpected throw among five reads cost the reader a hero, an FMV
+  // strip and a badge row the DETAIL read had already paid for. It now degrades
+  // every member to the SAME typed-empty each fetcher returns on its own error,
+  // which the render sites below already handle (`!= null` / `length >= 2`), and
+  // marks them failed so nothing downstream mistakes the absence for a zero.
+  let history: Awaited<ReturnType<typeof fetchHistory>> = { rows: [], ok: false }
+  let bundleRes: Awaited<ReturnType<typeof fetchMarketBundle>> = { data: EMPTY_MARKET_BUNDLE, ok: false }
+  let insightRes: Awaited<ReturnType<typeof fetchInsightLinks>> = { data: EMPTY_INSIGHT_LINKS, ok: false }
+  let badgeArt: Awaited<ReturnType<typeof fetchBadgeArt>> = new Map()
+  let repSales: Awaited<ReturnType<typeof fetchSales>> = []
   try {
     ;[history, bundleRes, insightRes, badgeArt, repSales] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
@@ -457,8 +466,11 @@ export default async function EditionPage(
     // sales page is fetched in the streamed bottom block.
       fetchSales(coll.id, slug, 1, 0),
     ])
-  } catch {
-    return <EditionUnavailable collection={collection} slug={slug} />
+  } catch (e) {
+    // ⚠ Must NOT return a whole-page view. The declared defaults above are
+    // already the failed state; this only records why they are in it. On an ISR
+    // route error.tsx does not run, which is why the try is here at all.
+    console.error("[edition] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
   }
   // `.data` only — see lib/entity/edition-market-fetchers.ts on why `ok` is not
   // consumed here: every render site below gates on `!= null` / `length >= 2`,
@@ -524,7 +536,7 @@ export default async function EditionPage(
   const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
 
   // 24h delta from history (latest day vs day prior).
-  const dayDelta = fmvDayDelta(history)
+  const dayDelta = fmvDayDelta(history.rows)
 
   const isAllDay = collection === "nfl-all-day"
   const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
@@ -937,7 +949,7 @@ export default async function EditionPage(
 
       {/* ── FMV history chart ────────────────────────────────────────────── */}
       <Section title="FMV History">
-        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history} />
+        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows} initialFailed={!history.ok} />
       </Section>
 
       {/* ── Heavy bottom sections stream in (recent sales, parallels, packs,

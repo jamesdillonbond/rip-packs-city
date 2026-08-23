@@ -122,6 +122,96 @@ describe("FmvHistoryChart render", () => {
   })
 })
 
+describe("FmvHistoryChart — the SERVER-seeded read can fail too", () => {
+  // ⚠ The 30d view is server-seeded and needs no fetch, so until `initialFailed`
+  // existed a failed SERVER read arrived as `[]` with no provenance and rendered
+  // "too few sales to chart" — a verdict on the market published out of a read we
+  // could not finish, on the product's highest-traffic public page. The client
+  // fetch has always distinguished the two; the seed could not.
+  it("a failed SEED renders the failure copy, NOT the too-few-sales verdict", () => {
+    render(
+      <FmvHistoryChart collectionUrlSlug="nba-top-shot" routeSlug="1-1" initial={[]} initialFailed />,
+    )
+    expect(screen.getByText(/Couldn.t load price history right now/i)).toBeTruthy()
+    // The load-bearing half: assert the ABSENCE of the false claim, not just the
+    // presence of an error string. A component rendering both would pass the first.
+    expect(screen.queryByText(/too few sales to chart/i)).toBeNull()
+  })
+
+  it("NO-CHANGE CONTROL: a successful but thin read still says too few sales", () => {
+    // Turning every empty seed into "couldn't load" is the mirror-image defect —
+    // it would take away the product's ability to say the true thing about a
+    // genuinely thin edition.
+    render(
+      <FmvHistoryChart
+        collectionUrlSlug="nba-top-shot"
+        routeSlug="1-1"
+        initial={[pt(10, "2026-07-01")]}
+        initialFailed={false}
+      />,
+    )
+    expect(screen.getByText(/too few sales to chart/i)).toBeTruthy()
+    expect(screen.queryByText(/Couldn.t load price history right now/i)).toBeNull()
+  })
+
+  // 🚨 THESE TWO ARE SERVER-SIDE ON PURPOSE, and mutation is why.
+  // Mutating `useState(initialFailed)` to `useState(false)` — and to the
+  // mirror-image `useState(true)` — left EVERY jsdom test above passing, because
+  // the mount effect's 30d short-circuit immediately calls `setFailed(initialFailed)`
+  // and corrects the state before testing-library looks. The difference survives
+  // only in the SERVER-RENDERED HTML, which is what the reader actually sees
+  // first — and on an ISR route that markup can be cached and served for the
+  // whole revalidate window. A client-only assertion cannot see the sentence the
+  // reader reads.
+  it("SSR: a failed seed's first paint already says couldn't load, not too few sales", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <FmvHistoryChart collectionUrlSlug="nba-top-shot" routeSlug="1-1" initial={[]} initialFailed />,
+    )
+    expect(html).toMatch(/Couldn.{1,8}t load price history right now/)
+    expect(html).not.toMatch(/too few sales to chart/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a thin successful seed's first paint still says too few sales", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <FmvHistoryChart
+        collectionUrlSlug="nba-top-shot"
+        routeSlug="1-1"
+        initial={[pt(10, "2026-07-01")]}
+        initialFailed={false}
+      />,
+    )
+    expect(html).toMatch(/too few sales to chart/i)
+    expect(html).not.toMatch(/Couldn.{1,8}t load price history right now/)
+  })
+
+  it("returning to 30d restores the seed's failure, rather than assuming success", async () => {
+    // The 30d branch short-circuits the fetch and used to `setFailed(false)`,
+    // so one round-trip through another range silently laundered the failure
+    // back into the too-few-sales verdict.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    try {
+      render(
+        <FmvHistoryChart collectionUrlSlug="nba-top-shot" routeSlug="1-1" initial={[]} initialFailed />,
+      )
+      fireEvent.click(screen.getByRole("button", { name: "90d" }))
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      fireEvent.click(screen.getByRole("button", { name: "30d" }))
+      await waitFor(() =>
+        expect(screen.getByText(/Couldn.t load price history right now/i)).toBeTruthy(),
+      )
+      expect(screen.queryByText(/too few sales to chart/i)).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe("FmvHistoryChart 90d toggle re-fetch", () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {
