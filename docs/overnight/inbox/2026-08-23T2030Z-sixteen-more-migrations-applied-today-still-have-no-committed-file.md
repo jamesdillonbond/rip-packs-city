@@ -79,3 +79,52 @@ the other one.** The new pin calls it the way production does and is mutation-pr
    would drag in ~2,000 historical non-actionable rows and make the report unreadable.
 3. **Re-derive before quoting any number here.** 61 applied / 17 missing / 16 remaining is a dated sample from
    20:30Z on 2026-08-23.
+
+---
+
+## FOLLOW-UP 2026-08-23 20:40Z (13:40 PT) — the other direction, and the reason the gap re-opens
+
+Folded in from `docs/migration-drift-2026-08-23T2030Z.md`, the working doc behind this filing. It
+sat untracked at the repo root where nothing indexes it; the filing above carried only the
+prod-has-no-file direction, and these two findings would have rotted with it. The scratch file is
+removed — this is now the single copy.
+
+### ⚠ The recovery script is a catch-up tool, not a guard
+
+**The point is not the list, it is the rate.** `scripts/recover-fileless-migrations.mjs` closes the
+gap when someone runs it, and **nothing fails when prod gains a migration the repo lacks** — which
+is why the drift re-opened within hours of this morning's recovery pass closing it. A `--check`
+mode wired into CI or the nightly pass converts this from a thing someone has to remember into a
+thing that reddens.
+
+Several of the recovered migrations carry **revert paths that exist only in a chat transcript**,
+which is the exact condition `307ce25e` was written to fix.
+
+### The reverse direction — in repo, no prod row: 9
+
+Name-matching runs both ways, and the filing above only reported one of them.
+
+**Five are deliberate and must stay unapplied** — documented as byte-identical to live, where
+applying only buys a PGRST002 burst:
+
+```
+audit_20260822_snapshot_get_active_challenges_sargable_wallet_join
+audit_20260822_snapshot_get_challenge_plan_sargable_wallet_join
+audit_20260822_snapshot_get_pack_detail_bundle_partition_prune
+audit_20260822_snapshot_get_set_detail_underlying_set_count
+audit_20260822_snapshot_public_board_liveness_sweep_predictive_skip
+```
+
+**Four are unaccounted for** — ⚠ this is NOT an assertion that they are unapplied. They may have
+landed under a different name, which is precisely the failure mode name-matching cannot see:
+
+```
+audit_20260822_board_mv_crons_and_cadence_panini_firstmint
+audit_20260822_cross_collection_deals_mv_cron_and_cadence
+audit_20260822_least_privilege_cron_and_net_tables
+audit_20260822_rwfc_temp_build_materialized_cte
+```
+
+⚠ **A repo file with no prod row is the more dangerous direction of the two**, because it reads as
+"applied" to anyone browsing `supabase/migrations/`. The five above are safe only because each says
+so in its own header; the four have nothing saying either way.
