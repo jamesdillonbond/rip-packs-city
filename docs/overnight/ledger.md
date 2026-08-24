@@ -46,6 +46,35 @@ the data already exists and only the label is in question.
 ⚠ The population churns fast: an All Day count taken 4 h earlier read 167 where the re-measure read 150,
 because `fmv_current` is delete-then-insert and the sweep rewrites continuously. Re-derive, expect ±10%.
 
+⭐ **RESOLVED 02:40Z, same session — reading (b) is REFUTED and the demotion is BY DESIGN**, via the
+MEDIUM dispersion ceiling. Re-measured on Top Shot selecting by **my own raw 30-day count from `sales`**,
+never the column: **368 editions publish LOW on a TRUE 39.6 sales/30 d average** against MEDIUM's 22.2 and
+HIGH's 18.3 — and the column reads **lower** than the truth (29.5), so 90-day widening cannot explain it. All
+352 on the current algo were computed within 24 h, `days_since_sale` 4.7, true counts **5 → 643**, 118 with ≥20.
+
+**Who they are is the tell:** the five most-traded are **sub-$2.50 WNBA Series 8 moments at 5/5 liquidity with
+a sale today** — a **$0.49** FMV built from **643 trades** publishes as **LOW**. The rule does contain a
+MEDIUM→LOW demotion I missed on the first read: `MEDIUM_MAX_DISPERSION = 0.35`, applied once count ≥7. **So
+only high-volume editions are eligible to be demoted at all** — which is exactly why the LOW cohort is the
+most-traded one. The rule is working as written.
+
+🎯 **That makes it a CALIBRATION question: dispersion is RELATIVE, the marketplace tick is ABSOLUTE.** The
+repo's own dust-filter decision puts the price histogram's mode at the **$0.25 minimum**, so at $0.33–$0.71 a
+single tick is a **35–75% relative swing** — a sub-dollar edition clears 0.35 for a reason that has nothing to
+do with price uncertainty. ⛔ **Do not raise the ceiling** (real work at dollar scale) and ⛔ **do not
+bulk-promote**; the honest options are a tick-aware dispersion measure at low price levels, or surfacing the
+reason ("the spread is one marketplace tick") instead of a bare LOW. Product decisions, both.
+
+⚠ **NOT MEASURED and it is the last step:** per-edition `stddev_pop(price)/avg(price)` over 30 d by
+confidence, split at `avg(price) < $1`. **Two attempts timed out at 60 s** against a database mid-sweep — run
+it in a quiet window. The mechanism is identified in code and consistent with the cohort, **not yet confirmed
+numerically.**
+
+⚠ **A trap this splice itself hit, recorded:** my first attempt asserted on a marker string that the text
+**line-WRAPPED** across, so the assert failed and the write correctly did not happen. That is the third
+recorded instance of pinning a SPELLING rather than a property — **choose a marker that cannot straddle a
+wrap.**
+
 **Revert path:** `git revert` the docs commit (find by message `docs(accuracy): ~1,000 editions publish LOW`).
 No DB or production state was changed.
 
