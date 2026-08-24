@@ -56,6 +56,36 @@ function writeSkill(skills: string, name: string, source: string, packed: string
 
 const BODY = "---\nname: x\ndescription: y\n---\n\n# Body\n\n- a rule\n"
 
+// ⚠ The fixture arms below BUILD zip archives, so they need `zip` on PATH.
+// ubuntu-latest ships it; Git Bash on Windows does NOT, and on 2026-08-24 their
+// `spawnSync zip ENOENT` left `npm test` permanently red on Trevor's box — which
+// destroys the property that makes a red run informative there ("a red file now
+// MEANS something"). They are gated rather than deleted, and the gate is LOUD:
+// a silent skip reads as coverage, which is the failure mode this repo keeps
+// hitting. CI is unaffected — `zip` is present, so every arm runs there.
+//
+// ⛔ This gate is NOT what stopped the destruction. The packer itself now
+// preflights `zip` BEFORE `unlinkSync`, because the determinism arm ran
+// `scripts/pack-cowork-skill.mjs` against the REAL working tree and its
+// delete-then-recreate DELETED the tracked `rpc-handoff.skill` when `zip` was
+// missing. Skipping the arm hides the symptom; the preflight fixes the cause.
+function hasBin(bin: string): boolean {
+  try {
+    execFileSync(bin, ["-v"], { stdio: "ignore" })
+    return true
+  } catch (e) {
+    return (e as { code?: string }).code !== "ENOENT"
+  }
+}
+const HAS_ZIP = hasBin("zip")
+if (!HAS_ZIP) {
+  console.warn(
+    "\n⚠ cowork-skill-bundle guard: `zip` is not on PATH, so the 5 FIXTURE arms are " +
+      "SKIPPED (the 3 live-tree arms still ran). This is an environment gap on this " +
+      "machine, not a passing guard — CI runs all 8. Install zip to close it.\n",
+  )
+}
+
 describe("Cowork skill bundles match the SKILL.md they were packed from", () => {
   it("passes on the LIVE tree — a ban at population zero, not an allowlist", () => {
     const { code, out } = run()
@@ -75,7 +105,7 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     expect(n).toBeGreaterThanOrEqual(5)
   })
 
-  it("REDS when a bundle's content drifts from its source — the real 2026-08-24 defect", () => {
+  it.skipIf(!HAS_ZIP)("REDS when a bundle's content drifts from its source — the real 2026-08-24 defect", () => {
     const dir = fixture((skills) => {
       for (const n of ["a", "b", "c", "d", "e"]) writeSkill(skills, n, BODY, BODY)
       writeSkill(skills, "f", BODY, BODY.replace("- a rule", "- a RETIRED rule"))
@@ -86,7 +116,7 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it("REDS when a skill has no bundle beside it at all", () => {
+  it.skipIf(!HAS_ZIP)("REDS when a skill has no bundle beside it at all", () => {
     const dir = fixture((skills) => {
       for (const n of ["a", "b", "c", "d", "e"]) writeSkill(skills, n, BODY, BODY)
       mkdirSync(path.join(skills, "orphan"), { recursive: true })
@@ -98,7 +128,7 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it("passes when every fixture bundle matches — so the red arms above are not vacuous", () => {
+  it.skipIf(!HAS_ZIP)("passes when every fixture bundle matches — so the red arms above are not vacuous", () => {
     // NO-CHANGE CONTROL. Without it, a guard that reds unconditionally would
     // satisfy both arms above and look like working detection.
     const dir = fixture((skills) => {
@@ -108,7 +138,7 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it("ignores pure whitespace/CRLF differences — a re-pack that changed nothing must not red", () => {
+  it.skipIf(!HAS_ZIP)("ignores pure whitespace/CRLF differences — a re-pack that changed nothing must not red", () => {
     const dir = fixture((skills) => {
       for (const n of ["a", "b", "c", "d"]) writeSkill(skills, n, BODY, BODY)
       writeSkill(skills, "e", BODY, BODY.replace(/\n/g, "\r\n") + "\n\n  \n")
@@ -125,7 +155,7 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it("the packer is DETERMINISTIC — re-packing unchanged content is a no-op diff", () => {
+  it.skipIf(!HAS_ZIP)("the packer is DETERMINISTIC — re-packing unchanged content is a no-op diff", () => {
     // The stale bundle survived from 2026-05-30 to 2026-08-24 partly because a
     // binary diff on every re-pack trains reviewers to skip it.
     const before = execFileSync("md5sum", ["docs/cowork-skills/rpc-handoff.skill"], {

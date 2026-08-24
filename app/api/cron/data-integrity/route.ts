@@ -48,7 +48,9 @@ export const maxDuration = 30;
 //
 // Now: a cheap (<3s) integrity/security check. All FLAGGED checks have clean
 // 0/healthy baselines:
-//   1. security invariants — new RLS-off / anon-writable base tables
+//   1. security invariants — 6 arms: RLS-off base tables, anon-writable base
+//      tables, updatable+anon-writable views, unexpected-definer views,
+//      anon-EXECUTE secdef trigger fns, and anon-readable materialized views
 //      (check_public_security_invariants(); replaces the old dead RLS-key check).
 //   2. FMV coverage — overall editions-with-an-fmv-snapshot, via the
 //      get_fmv_coverage() RPC (replaces the old health_check() call). Flags only
@@ -80,7 +82,14 @@ export async function GET(request: NextRequest) {
     const secCount = secErr ? null : Array.isArray(secViolations) ? secViolations.length : 0;
     stats.security_invariant_violations = secCount;
     if (secCount && secCount > 0) {
-      issues.push(`${secCount} security invariant violation(s) — RLS-off or anon-writable base table(s)`);
+      // ⚠ REPORT the arms that actually fired, never restate a fixed subset of
+      // them. This string used to read "RLS-off or anon-writable base table(s)",
+      // which names 2 of the 6 arms — so a view, a secdef trigger fn or an
+      // anon-readable materialized view was reported under the wrong cause.
+      const kinds = Array.isArray(secViolations)
+        ? [...new Set(secViolations.map((v: any) => String(v?.kind ?? "unknown")))].sort().join(", ")
+        : "unknown";
+      issues.push(`${secCount} security invariant violation(s) — ${kinds}`);
     }
 
     // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.

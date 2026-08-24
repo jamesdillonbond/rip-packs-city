@@ -1101,7 +1101,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         ...meta,
         passed,
         detail: passed
-          ? "0 violations — all public base tables have RLS on and no anon write grant"
+          ? "0 violations across all 6 invariant arms (RLS-off / anon-write base tables, updatable+writable views, unexpected-definer views, anon-EXECUTE secdef trigger fns, anon-readable materialized views)"
           : `${violations.length} violation(s): ${violations.map((v: { kind: string; object_name: string }) => `${v.kind}:${v.object_name}`).join(", ")}`,
         statusCode: null,
         bodyExcerpt: passed ? null : JSON.stringify(violations).slice(0, 500),

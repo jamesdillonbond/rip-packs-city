@@ -30,6 +30,35 @@ if (!names.length) {
   process.exit(2);
 }
 
+// ⛔ PREFLIGHT `zip` AND `touch` BEFORE MUTATING ANYTHING. The loop below is a
+// delete-then-recreate: `unlinkSync(out)` removes a TRACKED repo file and only
+// the `zip` on the next line puts it back. On a box without `zip` on PATH that
+// second step throws and the bundle is GONE from the working tree — which is
+// exactly what happened on Trevor's Windows box on 2026-08-24: a plain
+// `npm test` deleted `docs/cowork-skills/rpc-handoff.skill`, and the checker
+// then misreported the wreckage as "no rpc-handoff.skill bundle beside the
+// source" — a MISSING-file message for a file the test itself had just removed.
+//
+// ⚠ CI IS STRUCTURALLY BLIND TO THIS: ubuntu-latest ships `zip`, so the guard
+// is green there and destructive only on a developer machine. Checking here
+// costs one spawn and converts silent repo corruption into a clear message.
+// ⚠ Keys on ENOENT (the binary is genuinely absent), NOT on a non-zero exit —
+// a version flag this build does not accept must not be reported as "missing".
+for (const bin of ["zip", "touch"]) {
+  try {
+    execFileSync(bin, ["-v"], { stdio: "ignore" });
+  } catch (err) {
+    if (err?.code !== "ENOENT") continue; // present, just unhappy with `-v`
+    console.error(
+      `pack-cowork-skill: \`${bin}\` is not on PATH, so packing would DELETE each ` +
+        `.skill bundle and fail before rewriting it. Refusing to touch the working ` +
+        `tree. Install ${bin} (CI ubuntu-latest ships it; on Windows use Git Bash ` +
+        `with the full MSYS toolchain) and re-run.`,
+    );
+    process.exit(2);
+  }
+}
+
 for (const name of names) {
   const src = join(SKILLS_DIR, name, "SKILL.md");
   if (!existsSync(src)) {
