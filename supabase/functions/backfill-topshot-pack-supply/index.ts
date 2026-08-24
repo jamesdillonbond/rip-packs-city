@@ -42,6 +42,44 @@ const GQL_HEADERS: Record<string, string> = { "Content-Type": "application/json"
 if (USING_PROXY) GQL_HEADERS["X-Proxy-Secret"] = TS_PROXY_SECRET
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// pipeline_runs telemetry. Until 2026-08-23 this function wrote NO pipeline_runs
+// row at all, so its work-per-outcome was unreadable: pg_cron job_run_details
+// records DISPATCH of the net.http_get, never the outcome, and a query across
+// pipeline_runs_daily for every plausible name returned []. jobid 16
+// (rpc-backfill-pack-pool, every 5 min) drives the SYNCHRONOUS path
+// (sync=1&limit=3&conc=1), so a terminal row is a complete instrument for it.
+// NOTE the residual: the background (waitUntil) path returns 202 before the work
+// runs, and a killed worker there writes no row at all — for that path ONLY,
+// absence means killed. Nothing schedules it today.
+async function logPipelineRun(pipeline: string, args: {
+  startedAt: string;
+  rowsFound: number | null;
+  rowsWritten: number | null;
+  rowsSkipped: number | null;
+  ok: boolean;
+  error?: string | null;
+  extra: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: pipeline,
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: args.extra,
+    })
+  } catch (err) {
+    console.log(`[pack-supply] log_pipeline_run failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 const DYNAMIC_QUERY = `query GetPackListing_DynamicData($input: GetPackListingInput!) { getPackListing(input: $input) { data { id forSale isSoldOut remaining dropType packListingContentRemaining { unopened totalPackCount remainingByTier { common rare legendary ultimate fandom autograph anthology } originalCountsByTier { common rare legendary ultimate fandom autograph anthology } } } } }`
 const EDITIONS_QUERY = `query GetPackEditions($input: GetPackListingInput!, $after: ID) { getPackListing(input: $input) { data { packEditionsV3(after: $after) { pageInfo { endCursor hasNextPage } edges { node { count remaining edition { id tier set { id flowId } play { id flowID } } } } } } } }`
 const EDITIONS_QUERY_LEGACY = `query GetPackEditions($input: GetPackListingInput!, $after: ID) { getPackListing(input: $input) { data { packEditionsV3(after: $after) { pageInfo { endCursor hasNextPage } edges { node { count remaining edition { id tier set { id } play { id } } } } } } } }`
@@ -66,8 +104,14 @@ async function gql(query: string, variables: Record<string, unknown>, timeoutMs 
 }
 
 async function backfillSupply(limit: number, conc: number) {
+  const startedAt = new Date().toISOString()
   const { data: targets, error } = await supabase.rpc("get_topshot_supply_backfill_targets", { p_limit: limit })
-  if (error) return { error: "targets: " + error.message }
+  if (error) {
+    // A failed targets read is a FAILURE, not an empty batch. rows_* stay NULL —
+    // a 0 here would be indistinguishable from a genuinely empty queue.
+    await logPipelineRun("topshot-pack-supply-backfill", { startedAt, rowsFound: null, rowsWritten: null, rowsSkipped: null, ok: false, error: "targets: " + error.message, extra: { mode: "supply", limit, conc, stage: "targets" } })
+    return { error: "targets: " + error.message }
+  }
   const rows = (targets ?? []) as Array<{ dist_id: string; uuid: string }>
   let ok = 0, fail = 0, applyErr: string | null = null, gqlErr: string | null = null
   for (let i = 0; i < rows.length; i += conc) {
@@ -83,12 +127,20 @@ async function backfillSupply(limit: number, conc: number) {
     }))
     await sleep(300)
   }
+  await logPipelineRun("topshot-pack-supply-backfill", { startedAt, rowsFound: rows.length, rowsWritten: ok, rowsSkipped: fail, ok: !applyErr && !gqlErr, error: applyErr ?? gqlErr, extra: { mode: "supply", limit, conc, processed: rows.length, ok_count: ok, fail_count: fail } })
   return { processed: rows.length, ok, fail, applyErr, gqlErr }
 }
 
 async function backfillPool(limit: number, conc: number) {
+  const startedAt = new Date().toISOString()
   const { data: targets, error } = await supabase.rpc("get_topshot_pool_backfill_targets", { p_limit: limit, p_only_with_rips: false })
-  if (error) { console.error("[pool] targets:", error.message); return }
+  if (error) {
+    // Was a BARE `return` — undefined spread into the sync response, so a failed
+    // targets read rendered as a 200 carrying no counts. Now it reports.
+    console.error("[pool] targets:", error.message)
+    await logPipelineRun("topshot-pack-pool-backfill", { startedAt, rowsFound: null, rowsWritten: null, rowsSkipped: null, ok: false, error: "targets: " + error.message, extra: { mode: "pool", limit, conc, stage: "targets" } })
+    return { error: "targets: " + error.message }
+  }
   const rows = (targets ?? []) as Array<{ dist_id: string; uuid: string }>
   let ok = 0, fail = 0, poolRows = 0, lastErr: string | null = null
   for (let i = 0; i < rows.length; i += conc) {
@@ -135,6 +187,7 @@ async function backfillPool(limit: number, conc: number) {
     await sleep(300)
   }
   console.log(`[pool] processed=${rows.length} ok=${ok} fail=${fail} poolRows=${poolRows} lastErr=${lastErr ?? ""}`)
+  await logPipelineRun("topshot-pack-pool-backfill", { startedAt, rowsFound: rows.length, rowsWritten: poolRows, rowsSkipped: fail, ok: !lastErr, error: lastErr, extra: { mode: "pool", limit, conc, processed: rows.length, dists_ok: ok, dists_fail: fail, pool_rows: poolRows } })
   return { processed: rows.length, ok, fail, poolRows, lastErr }
 }
 
@@ -171,7 +224,9 @@ Deno.serve(async (req) => {
     // pool backfill stalled at 39/1385 dists for 7 days despite the 10-min cron).
     if (sync) {
       const result = await backfillPool(limit, conc)
-      return new Response(JSON.stringify({ done: true, mode, sync: true, ...result }), { status: 200, headers: { "content-type": "application/json" } })
+      // A failed targets read must not render as a completed batch.
+      const failed = Boolean(result && (result as { error?: string }).error)
+      return new Response(JSON.stringify({ done: !failed, mode, sync: true, ...result }), { status: failed ? 500 : 200, headers: { "content-type": "application/json" } })
     }
     // Heavy (paginated per dist) -> run in background, ack immediately so neither
     // the 150s gateway nor the cron's net.http_get times out.
