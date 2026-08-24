@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the fifth-layer sweep WIDENED and found three more; **five public boards fixed today, and four candidates deliberately REJECTED**
+
+**Code + tests. No DB, no migration.** Follow-on to the entry below. ⚠ **The first sweep was scoped wrong and I nearly stopped at two.** It looked for boards with no `initialDegraded` PROP — which is a property of the CLIENT. **The population that matters is a property of the PAGE: server pages that KNOW `ok` and seed a client without passing it.** Re-derived from the tree with that predicate: **9 candidates, 5 real, 4 correctly rejected.**
+
+✅ **Three more fixed** — all identical in shape to the first two, all with a `DegradedDataNotice` already above them, all dropping `ok` on the floor:
+- **`/insights/set-completers`** — *"No completion data available yet."* ⚠ **No client refetch at all**, so the wrong answer is permanent for that viewer.
+- **`/insights/underpriced-serials`** — *"No underpriced headline serials right now — the board is empty when nothing's listed below value."* ⚠ **A claim about the MARKET that then EXPLAINS ITSELF** — the documented worst sub-class, an empty state that CONCLUDES rather than reports. ⓘ This is the same board whose OG card I bounded this morning; **the page's own empty state was the third panel on it.** *Fix per PANEL, not per page*, demonstrated three times on one surface.
+- **`/insights/serial-premiums`** — *"No qualifying #1 sales in this window."*
+
+⛔ **FOUR CANDIDATES REJECTED, AND THAT IS THE POINT.** `pack-sniper`, `parallel-premiums`, `rookie-board` and `top-sales` all say *"… match those filters"* — **a claim about the FILTER the reader just set, not about what the platform knows.** `market-pulse` renders **nothing** when empty, so it makes no claim at all. ➡ **Widening a guard until every candidate passes is how a correct surface gets made incorrect** — the register already records a "fix" that would have done exactly that. The rejections are written into the test file with their reasons.
+
+**Guarded by SSR (`renderToString`) with a NO-CHANGE CONTROL on every case, plus `it.each` wiring assertions requiring `initialFailed={!ok}` DERIVED rather than literal. 16 tests.** ✅ **Mutation-proven three ways, including the mirror image:** reverting set-completers' copy, dropping underpriced-serials' wiring, and flipping serial-premiums' `useState(initialFailed)` to `useState(false)` each red **exactly their own arm** — and the mirror-image one is the mutation CLAUDE.md records as passing every client-side test.
+
+**Verified:** `npm test` **1372/1372 files · 14,961/14,961 tests**, `tsc` clean, **all coverage gates pass** — primary 92.21 / 79.88 / 93.95 / 94.22, components 91.04 / 82.16 / 89.65 / 93.92. CI green on the preceding batch (`97a5c0d1`).
+
+**Revert:** `git revert <this commit>`. **Target metric:** five public boards stop publishing a failed read as a fact about the market, and the sweep's PREDICATE is recorded so the sixth is found by derivation rather than by luck.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — two more FIFTH-LAYER honesty defects on public insights boards, and the 5s test timeout raised because it was HIDING errors, not reporting them
 
 **Code + tests. No DB, no migration.** Swept `app/insights/**` for the server-seeded-prop class CLAUDE.md flags as *"a fifth layer the table does not cover"* (two found 08-23). **Found two more, fixed both.**
