@@ -51,9 +51,10 @@ Docs/memory only — no code, no migration, no DB write, no prod-state change.
   `NEXT_PUBLIC_WALLETCONNECT_ID` (**zero usages anywhere in the tree**, a leftover of the 08-08 wallet-sign-in
   removal) and switched the install line to `npm ci`.
 
-**Revert path:** `git revert <this sha>` (docs-only; nothing to undo in the DB or on Vercel). Reverting
-restores the prose UUID copy and the payer-wallet line in CLAUDE.md, and takes the file back to 39,984 —
-still under the limit, so the revert is safe on its own.
+**Revert path (real shas):** `git revert 7e6aafef 107a038a` — docs-only, nothing to undo in the DB or on
+Vercel. `107a038a` is the CLAUDE.md + reference refresh; `7e6aafef` is the README + RPC_DESIGN_SYSTEM.md
+half. Reverting `107a038a` restores the prose UUID copy and the payer-wallet line and takes CLAUDE.md back
+to **39,984** — still under the limit, so the revert is safe on its own. The ledger commit is `f5a1e1f2`.
 
 ### 2026-08-24 · DIAGNOSED, NOT FIXED (Claude Code, Trevor's Windows box) — the DB-pin check is RED again, on a DIFFERENT pin, and the cause is a FIX LANDING rather than drift
 
