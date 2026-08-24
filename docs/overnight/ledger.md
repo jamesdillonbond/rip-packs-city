@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Written to:** the filing (annotated IN PLACE) and known-issues **#29**. ⛔ **Not fixed** — the heartbeat is an edge-function deploy (a gated channel with a known gate-key rotation blocker) plus a decision on chunking.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** a killed tick is distinguishable from a cron that never fired.
+**Revert:** `git revert eb732a94` (docs-only). **Target metric:** a killed tick is distinguishable from a cron that never fired.
 
 ### 2026-08-24 · REFUTED A PROPOSED SUPPRESSION (Claude Code, Trevor's Windows box) — the daytime monitor called `allday-pack-opens-backfill`'s `cron_silent` arm a FALSE POSITIVE; **the arm is right and suppressing it would have hidden a real fault**
 
