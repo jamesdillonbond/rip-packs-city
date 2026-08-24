@@ -21,3 +21,51 @@ Confirm the walk logged `done:true` (its last real `pipeline_runs` payload befor
 - `fmv_sweep_wedge_hours` 5.98 BREACH → fmv-recalc saturation class (R46 / disk-IO budget), owned.
 - `unmapped_resolution_backlog_max` 350 BREACH → owned honest-finding; the arm's own catches text says DO NOT raise `breach_at`.
 - pg_cron statement/startup-timeout cluster (rpc-atlas-pack-ev, refresh-new-collectors, ccm-step2, thin-sale-ask-disclosure, refresh-challenge-costs, etc.) → saturation collateral, one root (SMALL-instance disk-IO budget), focus.md item 3: do not open new investigations.
+
+---
+
+## ⛔ REFUTED — 2026-08-24 ~15:45Z (08:45 PT), Claude Code on Trevor's Windows box. **The walk is NOT done, and suppressing the arm would silence a TRUE signal.**
+
+⚠ **Acting on the suggested remedy would have been the harmful move.** This filing said to *"suppress `cron_silent` for this pipeline while jobid 55 `active=true` AND its last run `status=succeeded`."* **Both of those conditions hold right now, and the pipeline is still genuinely broken** — so that suppression would have hidden a real fault behind a green board. ✅ **The filing's own instruction — *"do NOT act from this read"* — is what made this catchable. It was right to say so.**
+
+### The `done:true` state this filing rests on HAS NEVER BEEN RECORDED
+
+`pipeline_runs` for `allday-pack-opens-backfill`, whole retention window:
+
+| measure | value |
+|---|---:|
+| rows | **25** |
+| rows carrying a **`done`** key in `extra` | **0** |
+| `ok = true` | 7 |
+| `ok = false` | **18** |
+| oldest → newest | 2026-08-21 13:56Z → **2026-08-23 21:26Z** |
+
+**There is no `done` field in this pipeline's `extra` at all** — the keys it actually writes are `partial`, `progress_blocks`, `scanned_floor`, `resolve_exhausted`, `skipped_permanent`, `spork_available`. ➡ **The premise "once `done:true`, the finite walk stops writing a row" describes a state this pipeline has never emitted.**
+
+### And the walk is ~19.4 MILLION blocks from its floor
+
+| | block |
+|---|---:|
+| `scanned_floor`, oldest row | 84,703,248 |
+| `scanned_floor`, newest row | **84,662,756** |
+| target `floor` | **65,264,619** |
+| **remaining** | **19,398,137** |
+
+Progress across the ~2.3-day window: **40,492 blocks**, i.e. ~17.5k/day. **At that rate the floor is ~1,100 days away.** ⚠ **This is a dated sample on a small window — the RATE is soft. The SIGN is not: the walk is descending and nowhere near finished.**
+
+### The last two runs are FAILURES, not completions
+
+Both `ok:false`, both `transient:true`, on upstream scan errors — `events 84662506-84662755 status 503` and the same range `status 0`. **A finished walk does not end on a 503.**
+
+### What IS true, and what I did NOT establish
+
+✅ **The scheduler is firing** — jobid 55 over 20 h: **117 `succeeded` / 3 `failed`** dispatches against a 6/hour schedule. **That part of the filing is correct.**
+🚨 **And `pipeline_runs` has been silent for ~18.3 h through ~110 of those dispatches** (last row 08-23 21:26Z; measured 08-24 15:41Z). ➡ **So the arm is reporting something REAL: the callee is not writing a run row.**
+
+⛔ **NOT ESTABLISHED — why.** `succeeded` in `cron.job_run_details` means the `net.http_get` was **dispatched** and says nothing about the callee (the documented split). I could not attribute responses to this job: **`net._http_response` carries no URL**, and `net.http_request_queue` drains, so the URL is gone by the time a response lands. The plausible shape — the function now returns before reaching `log_pipeline_run`, the same structural blindness `topshot-active-listings-ingest` has — **is a hypothesis I did not test. Do not repeat it as fact.**
+
+### ➡ The corrected action
+
+**Do NOT make the arm done-aware.** The remaining honest options are (a) find why the callee stops short of `log_pipeline_run` — needs the edge function's logs, not `pipeline_runs`, which is blind here by construction — or (b) re-point the arm at `cron.job_run_details` for **scheduler** liveness *and keep a separate arm on work liveness*, since those are two different questions and this filing's own reasoning shows why collapsing them loses information.
+
+ⓘ **The generalisable bit:** *"the instrument is a false positive"* is the most expensive conclusion a monitor can reach, because the remedy is **suppression** — and a wrong suppression is silent by construction. **It deserves the same re-derivation as a positive finding, and this one did not survive it.**

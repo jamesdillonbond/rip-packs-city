@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · REFUTED A PROPOSED SUPPRESSION (Claude Code, Trevor's Windows box) — the daytime monitor called `allday-pack-opens-backfill`'s `cron_silent` arm a FALSE POSITIVE; **the arm is right and suppressing it would have hidden a real fault**
+
+**Docs only. No code, no DB.** ⚠ **The most expensive conclusion a monitor can reach is "the instrument is a false positive", because the remedy is SUPPRESSION — and a wrong suppression is SILENT BY CONSTRUCTION.** This one did not survive re-derivation. ✅ **The filing said *"do NOT act from this read"*, which is exactly what made it catchable — it was right to say so.**
+
+🚨 **The proposed remedy would have fired TODAY.** It was: *suppress `cron_silent` while jobid 55 is `active=true` AND its last run is `succeeded`.* **Both conditions hold right now, and the pipeline is still broken** — so it would have painted a real fault green.
+
+⛔ **THE PREMISE HAS NEVER EXISTED.** The remedy rests on the walk having reached **`done:true`**. `pipeline_runs` holds **25 rows** for this pipeline and **ZERO carry a `done` key** — the keys it actually writes are `partial` / `progress_blocks` / `scanned_floor` / `resolve_exhausted` / `skipped_permanent`. **18 of 25 are `ok:false`**, and the last two end on upstream **`status 503`** and **`status 0`**. ➡ **A finished walk does not end on a 503.**
+
+🚨 **AND IT IS ~19.4 MILLION BLOCKS FROM ITS FLOOR** — `scanned_floor` **84,662,756** against target **65,264,619**, having advanced **40,492 blocks in ~2.3 days** (~17.5k/day). ⚠ **The RATE is a soft number off a small window; the SIGN is not.**
+
+✅ **WHAT IS REAL, and it is the half the filing got right:** the scheduler fires — **117 `succeeded` / 3 `failed`** dispatches over 20 h against a 6/hour schedule — while `pipeline_runs` has been **silent ~18.3 h** across ~110 of them (last row 08-23 21:26Z, measured 08-24 15:41Z). **So the arm is reporting a TRUE anomaly.**
+
+⛔ **NOT ESTABLISHED, and deliberately not asserted: WHY the callee stops short of `log_pipeline_run`.** `succeeded` in `cron.job_run_details` means **dispatched** and says nothing about the callee. I could not attribute responses: **`net._http_response` carries NO URL** and `net.http_request_queue` **drains**, so the URL is gone by the time a response lands. The tempting shape — *"returns before logging, like `topshot-active-listings-ingest`"* — is **a hypothesis I did not test.**
+
+➡ **Corrected action: do NOT make the arm done-aware.** Either find why the callee stops short (needs the edge function's logs — `pipeline_runs` is blind here **by construction**), or split the arm: `cron.job_run_details` for **scheduler** liveness and a separate arm for **work** liveness. **They are two questions and this filing's own reasoning shows why collapsing them loses information.**
+
+⚠ **Written to the filing itself (annotated IN PLACE, never moved) and to known-issues #29.** ⓘ **Incidental, and a documented hazard I walked into:** reading `cron.job.command` for jobid 55 **echoed a gate key into the transcript** — the exact `cron.job.command` trap CLAUDE.md names. Query the columns you need; do not select `command`.
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the arm keeps reporting until the real cause is found, rather than being tuned into silence.
+
 ### 2026-08-24 · CORRECTION TO MY OWN METHOD (Claude Code, Trevor's Windows box) — I was reading the WRONG CI instrument all day; it happened to be right seven times, which is what let it survive
 
 **Docs only. No code, no DB.** ⚠ **Self-correction, caught by the tenth check rather than the first.**
