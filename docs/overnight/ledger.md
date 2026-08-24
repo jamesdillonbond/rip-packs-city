@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified before this push, the way the new rule prescribes:** enumerated the guards that read the edited files (`grep -rln` over `__tests__/`), then ran all five — `claude-md-stays-under-the-memory-file-limit`, `memory-doc-links-guard`, `find-future-dated-ledger-headings`, `find-swallowed-ledger-headings`, `inbox-index-lists-every-filing` — **47 tests, all passing**.
 
-**Written to:** CLAUDE.md (clause corrected, net −9) · [testing-and-ci.md](../reference/testing-and-ci.md) (new section with the four-assertion table) · two Cowork memories. **Revert:** `git revert <sha>` (docs-only). **Target metric:** no future session reddens `main` on a count in a guarded index it did not know it had to bump.
+**Written to:** CLAUDE.md (clause corrected, net −9) · [testing-and-ci.md](../reference/testing-and-ci.md) (new section with the four-assertion table) · two Cowork memories. **Revert:** `git revert 641e0b20` (docs-only). **Target metric:** no future session reddens `main` on a count in a guarded index it did not know it had to bump.
 
 
 ### 2026-08-23 · SHIPPED (Claude Code, VSCode on Trevor's box) — `backfill-topshot-pack-supply` v30 → v31: the biggest un-instrumented job on the box now writes `pipeline_runs`, and its silent-failure path now reports
