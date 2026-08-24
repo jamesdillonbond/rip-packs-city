@@ -29,7 +29,10 @@ export default async function SetCompletersPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Set completers", ok)])} />
-      <SetCompletersBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+      {/* ⚠ The banner above is NOT a substitute: without this the board states
+          "No completion data available yet." as a fact, directly under a notice
+          saying the data is degraded. Fix per PANEL, not per page. */}
+      <SetCompletersBoardClient initialBoard={board} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -244,9 +245,16 @@ function PremiumRow({ r, rank }: { r: Row; rank: number }) {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /**
+   * Did the SERVER-SIDE read fail? The page's fallback is `[]`, indistinguishable
+   * from a window in which nothing qualified.
+   */
+  initialFailed?: boolean
 }
 
-export default function SerialPremiumsBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function SerialPremiumsBoardClient({ initialRows, initialFetchedAt, initialFailed = false }: Props) {
+  // Seed provenance only; cleared by a successful refresh. See the sibling boards.
+  const [seedFailed, setSeedFailed] = useState(initialFailed)
   const [rows, setRows] = useState<Row[]>(initialRows)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -313,6 +321,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setSeedFailed(false)
         setFetchedAt(j.meta?.fetched_at ?? null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
@@ -497,7 +506,14 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         ) : loading ? (
           <div className="rpc-sp-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-sp-state">No qualifying {mintLabel} sales in this window.</div>
+          <div className="rpc-sp-state">
+            {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+            {sectionEmptyCopy(
+              !seedFailed,
+              "Serial premiums",
+              `No qualifying ${mintLabel} sales in this window.`,
+            )}
+          </div>
         ) : (
           <div className="rpc-sp-list">
             {rows.map((r, i) => (

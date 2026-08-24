@@ -9,6 +9,7 @@ import { useMemo, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { METHOD_NOTE, type SetCompletersBoard } from "@/lib/set-completers-board"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 
 type SortKey = "completers" | "rate" | "size"
 
@@ -29,9 +30,16 @@ function tdStyle(align: "left" | "right"): CSSProperties {
 export default function SetCompletersBoardClient({
   initialBoard,
   initialFetchedAt,
+  initialFailed = false,
 }: {
   initialBoard: SetCompletersBoard
   initialFetchedAt: string
+  /**
+   * Did the SERVER-SIDE read fail? The page's fallback is an empty board, which
+   * is indistinguishable from a genuinely empty one. There is NO client refetch
+   * here, so a wrong answer is permanent for that viewer.
+   */
+  initialFailed?: boolean
 }) {
   const [sort, setSort] = useState<SortKey>("completers")
 
@@ -87,7 +95,8 @@ export default function SetCompletersBoardClient({
 
       {rows.length === 0 ? (
         <div className="rpc-card" style={{ marginTop: 18, padding: 24, textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 13 }}>
-          No completion data available yet.
+          {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+          {sectionEmptyCopy(!initialFailed, "Set completers", "No completion data available yet.")}
         </div>
       ) : (
         <div className="rpc-scroll-x" style={{ marginTop: 14, overflowX: "auto" }}>

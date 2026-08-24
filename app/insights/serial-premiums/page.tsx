@@ -41,7 +41,10 @@ export default async function SerialPremiumsPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Serial premiums", ok)])} />
-      <SerialPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+      {/* ⚠ The banner above is NOT a substitute: without this the board states
+          "No qualifying … sales in this window." as a fact about the window.
+          Fix per PANEL, not per page. */}
+      <SerialPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

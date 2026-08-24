@@ -41,7 +41,10 @@ export default async function UnderpricedSerialsPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Underpriced serials", ok)])} />
-      <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+      {/* ⚠ The banner above is NOT a substitute: without this the board states
+          "No underpriced headline serials right now" — a claim about the MARKET —
+          out of a failed read. Fix per PANEL, not per page. */}
+      <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

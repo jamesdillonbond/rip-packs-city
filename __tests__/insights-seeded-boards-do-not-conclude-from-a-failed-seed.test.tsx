@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest"
+import type React from "react"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import PackDropsBoardClient from "@/app/insights/pack-drops/PackDropsBoardClient"
+import SetCompletersBoardClient from "@/app/insights/set-completers/SetCompletersBoardClient"
+import UnderpricedSerialsBoardClient from "@/app/insights/underpriced-serials/UnderpricedSerialsBoardClient"
+import SerialPremiumsBoardClient from "@/app/insights/serial-premiums/SerialPremiumsBoardClient"
 import NewCollectorsBoardClient from "@/app/insights/new-collectors/NewCollectorsBoardClient"
 import { EMPTY_BOARD } from "@/lib/new-collectors-board"
 
@@ -111,6 +115,92 @@ describe("new-collectors does not conclude about the data from a failed seed", (
   })
 })
 
+// ── The other three, found by widening the same sweep to every server page ──
+// ⚠ The widening is why there are five and not two. The first pass looked only at
+// boards with no `initialDegraded` prop, which missed the ones whose PAGE has an
+// `ok` and simply drops it on the floor. The population that matters is "server
+// pages that KNOW ok and seed a client without passing it" — derived from the
+// tree, never a list.
+//
+// ⓘ Four of the nine candidates that sweep surfaced were correctly REJECTED
+// rather than "fixed": pack-sniper, parallel-premiums, rookie-board and top-sales
+// all say "… match those filters", which is a claim about the FILTER the reader
+// just set, not about what the platform knows; market-pulse renders nothing at
+// all when empty and so makes no claim. Widening a guard until every candidate
+// passes is how a correct surface gets made incorrect — the register already
+// records one "fix" that would have done exactly that.
+describe("three more boards, same class, found by widening the sweep", () => {
+  const ssr = async (el: React.ReactElement) => {
+    const { renderToString } = await import("react-dom/server")
+    return renderToString(el)
+  }
+
+  it("SSR: set-completers does not claim there is no completion data", async () => {
+    const html = await ssr(
+      <SetCompletersBoardClient
+        initialBoard={{ rows: [] } as never}
+        initialFetchedAt="2026-08-24T00:00:00Z"
+        initialFailed
+      />,
+    )
+    expect(html).not.toMatch(/No completion data available yet/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty set-completers still says so", async () => {
+    const html = await ssr(
+      <SetCompletersBoardClient
+        initialBoard={{ rows: [] } as never}
+        initialFetchedAt="2026-08-24T00:00:00Z"
+        initialFailed={false}
+      />,
+    )
+    expect(html).toMatch(/No completion data available yet/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR: underpriced-serials does not claim the market has nothing underpriced", async () => {
+    const html = await ssr(
+      <UnderpricedSerialsBoardClient initialRows={[]} initialFetchedAt={null} initialFailed />,
+    )
+    expect(html).not.toMatch(/No underpriced headline serials right now/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty underpriced board still says so", async () => {
+    const html = await ssr(
+      <UnderpricedSerialsBoardClient
+        initialRows={[]}
+        initialFetchedAt="2026-08-24T00:00:00Z"
+        initialFailed={false}
+      />,
+    )
+    expect(html).toMatch(/No underpriced headline serials right now/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR: serial-premiums does not claim the window had no qualifying sales", async () => {
+    const html = await ssr(
+      <SerialPremiumsBoardClient initialRows={[]} initialFetchedAt={null} initialFailed />,
+    )
+    expect(html).not.toMatch(/No qualifying .{0,24}sales in this window/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty serial-premiums window still says so", async () => {
+    const html = await ssr(
+      <SerialPremiumsBoardClient
+        initialRows={[]}
+        initialFetchedAt="2026-08-24T00:00:00Z"
+        initialFailed={false}
+      />,
+    )
+    expect(html).toMatch(/No qualifying .{0,24}sales in this window/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+})
+
+
 describe("the WIRING, which a component test cannot see", () => {
   // ⚠ Mutation on the 2026-08-23 pair showed that deleting `initialFailed` from
   // the CALL SITE left every one of the component's own tests passing. The prop
@@ -136,6 +226,20 @@ describe("the WIRING, which a component test cannot see", () => {
     expect(call, "the board must be told whether the seed failed").toContain("initialFailed=")
     expect(call, "initialFailed must be derived from the read's ok").toMatch(/initialFailed=\{!ok\}/)
   })
+
+  it.each([
+    ["set-completers", "SetCompletersBoardClient"],
+    ["underpriced-serials", "UnderpricedSerialsBoardClient"],
+    ["serial-premiums", "SerialPremiumsBoardClient"],
+  ])("%s/page.tsx tells the board whether the SEED read failed", (dir, component) => {
+    const src = read("app", "insights", dir, "page.tsx")
+    const at = src.indexOf("<" + component)
+    expect(at, "the page must render " + component).toBeGreaterThan(-1)
+    const call = src.slice(at, at + 400)
+    expect(call, "the board must be told whether the seed failed").toContain("initialFailed=")
+    expect(call, "initialFailed must be derived from the read's ok").toMatch(/initialFailed=\{!ok\}/)
+  })
+
 
   it("both pages still destructure `ok` from the fetch, so the derivation has a source", () => {
     // Guards the other half: `{!ok}` is only honest while `ok` comes from the read.

@@ -32,6 +32,7 @@ import type {
   QualityFilter,
   UnderpricedSortKey,
 } from "@/lib/underpriced-serials-board"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -241,9 +242,19 @@ function BoardRow({ r, rank }: { r: Row; rank: number }) {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /**
+   * Did the SERVER-SIDE read fail? The page's fallback for a failed read is
+   * `[]`, indistinguishable from a board where nothing currently qualifies —
+   * and the empty copy here makes a claim about the MARKET.
+   */
+  initialFailed?: boolean
 }
 
-export default function UnderpricedSerialsBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function UnderpricedSerialsBoardClient({ initialRows, initialFetchedAt, initialFailed = false }: Props) {
+  // Tracks the SEED only. Cleared by a successful refresh: after that the rows on
+  // screen are the client's own read, and a genuinely empty board must be allowed
+  // to say so.
+  const [seedFailed, setSeedFailed] = useState(initialFailed)
   const [rows, setRows] = useState<Row[]>(initialRows)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -290,6 +301,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setSeedFailed(false)
         setFetchedAt(j.meta?.fetched_at ?? null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
@@ -480,8 +492,12 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
           <div className="rpc-us-state">Loading…</div>
         ) : rows.length === 0 ? (
           <div className="rpc-us-state">
-            No underpriced headline serials right now — the board is empty when nothing&apos;s listed
-            below value.
+            {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+            {sectionEmptyCopy(
+              !seedFailed,
+              "Underpriced serials",
+              "No underpriced headline serials right now — the board is empty when nothing's listed below value.",
+            )}
           </div>
         ) : (
           <div className="rpc-us-list">
