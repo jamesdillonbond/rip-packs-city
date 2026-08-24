@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · REGISTER RE-DERIVATION (Claude Code, Trevor's Windows box) — **FOUR stale entries in one day**; #10 and #14 point at files that are now 11–28 line SHELLS, and the biggest monolith is untracked
+
+**Docs only. No code, no DB.** After #28 (stale by a day) and #11 (stale by ~3 months), I stopped treating stale entries as one-offs and **spot-checked every open item whose central claim is cheaply verifiable.** Two more failed immediately.
+
+🚨 **#10 and #14 name FOUR files. All four are now 11–28 line server shells.** The 2026-08-17 refactor moved each body to a `*Client.tsx` sibling, and **no entry followed it:**
+
+| entry's claim | that file today | the body's real home |
+|---|---|---|
+| `app/dashboard/page.tsx` **~1,750** | **13** | `DashboardClient.tsx` **2,613** |
+| `collection/page.tsx` **~1,600** | **11** | `CollectionTabClient.tsx` **1,347** |
+| `sniper/page.tsx` **~1,705** | **28** | `SniperClient.tsx` **1,804** |
+| `analytics/page.tsx` **~1,754** | **11** | `CollectionAnalyticsClient.tsx` **1,840** |
+
+⚠ **THE NUMBERS DID NOT JUST MOVE, THEY GREW — and only in the direction nobody re-checks.** The dashboard is **+863** on the figure #10 deferred; two of #14's three are **+99 / +86** while the entry recorded them *shrinking* from a May snapshot. ➡ **A size claim that is only ever re-measured downward is not a measurement.** ⓘ **"Defer until stable" has no exit condition**, and three months later the file it deferred is the largest client body in the repo — the recorded shape of a decision-not-to-act.
+
+🚨 **AND #14's POPULATION IS A CURATED LIST, SO IT IS SILENT ABOUT THE BIGGEST ONE.** `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` is **2,384 lines** — larger than all three it names — a **SERVER** page with no client sibling, in no entry. ⚠ **It is also unmeasured by BOTH coverage gates**: primary is `lib/**` + `app/**/route.ts(x)`, components is `components/**` + `app/**/*Client.tsx`, so **`app/**/page.tsx` is in neither** (one hand-added exception, `app/insights/squeeze-check/page.tsx`). Not unguarded — two static ratchets read it — but **nothing measures whether its branches run.** ➡ **Derive the population from the tree by SIZE; a curated list cannot name what nobody added to it.**
+
+⚠⚠ **ONE NEAR-MISS, RECORDED BECAUSE IT NEARLY BECAME A FALSE FINDING OF MINE.** Reading the components config **with a regex**, I concluded `app/**` was absent from its `coverage.include` and that the 08-17 move had therefore failed its own stated purpose — a big, wrong claim. **It carries a blanket `app/**/*Client.tsx` glob**, added for exactly that reason, and the coverage **REPORT** shows those files measured. My regex matched the wrong `include:` in a 180-line commented config. ➡ **CHECK THE INSTRUMENT'S OUTPUT, NOT ITS CONFIGURATION** — the same lesson as this morning's `renderToString` refutation, arriving from the opposite direction.
+
+✅ **Verified GREEN, not assumed, while here:** #15's four fixture globs are all `0 tracked`; `check-brand-tokens.mjs` exits 0 over 399 + 69 surfaces (#11).
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the register's numbers describe the tree, and the monolith population is derived rather than remembered.
+
 ### 2026-08-24 · CORRECTED A STALE REGISTER ENTRY (Claude Code, Trevor's Windows box) — known-issues **#11**'s only named remaining item is a GHOST, and has been for ~3 months
 
 **Docs only. No code, no DB.** ⚠ **Second stale-register correction today** (the first was #28, which sat 🔴 OPEN for a day after its fix shipped). **This one sat wrong for ~3 months.**
