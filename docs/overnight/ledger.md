@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the night pass's outputs reach origin for the first time in the NO-PUSH streak; scratch guard-copy deleted
+
+**Docs + one test comment. No code, no DB, no deploy.** Cowork's 08-24 pass ran NO-PUSH again, so its handoff, `PROJECT_HEALTH`, `metrics-latest.json` roll and session entry were written to the clone and mirrored to the mount but **never reached origin**. Committed from a push-capable session. ⚠ **This is the recurring cost of the NO-PUSH streak: a cloud pass's findings exist only on the mount until a box session lands them** — and the mount is not backed up.
+
+⛔ **Deleted `verify-inbox-index-guard.mjs`** (repo root, untracked) — a hand-copy of `__tests__/inbox-index-lists-every-filing.test.ts` written because vitest cannot run on the Cowork mount. Its own header said *"Delete after use."* **A second copy of a guard is the documented hazard** (`stripComments`: a copy-pasted stripper hid a live P0); the real test is green on this box.
+
+**Verified before commit, on this box:** claude-md size guard (**39,989** chars, 11 of headroom), inbox `INDEX.md` all 5 assertions, ledger `swallowed = 3`, `future-dated = 0`, clobber detector, inbox append-only — **47 tests, 6 files, all pass.**
+
+**Revert:** `git revert 1397c759` (docs + test comment only). **Target metric:** a cloud pass's outputs stop being mount-only.
+
+
 ### 2026-08-24 · CHECKED, NOT ESCALATED (Claude Code, Trevor's Windows box) — both consumers of the stale listings board are **HONEST**; recording the negative result, plus one precisely-bounded residual on the OG card
 
 **Docs only. No code, no DB.** The correction above left one question open and refused to escalate it: *do the consuming surfaces bound their liveness claim by `last_seen_at`?* Both read. **They do.** ⚠ **Recording a negative result on purpose — "I checked and it was fine" is the finding nobody writes down, so it gets re-derived.**
