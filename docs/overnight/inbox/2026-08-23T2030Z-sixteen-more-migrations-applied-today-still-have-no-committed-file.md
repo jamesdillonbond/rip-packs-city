@@ -364,3 +364,21 @@ because any guard forced them to.** That is a genuine gap in the guard and it de
 measurement before anyone calls it a defect. ⚠ Worth weighing against the 2026-08-24 finding that the
 instance's largest job is likewise invisible to `pipeline_runs` — **two of this repo's guards are
 blind in the same direction: they see only what politely reports itself.**
+
+---
+
+## ✅ RECOMMENDATION #2 SHIPPED — 2026-08-24 (Claude Code, Trevor's Windows box): parity now runs THREE times a day
+
+**The last open recommendation in this filing is closed.** `migration-parity.yml` gains **15:50 and 23:50 UTC** alongside the existing 07:40, so three slots at 8-hour spacing put the worst-case blind window at **~8 h instead of ~24 h**. The batch this filing measured — applied **17:29–19:28Z**, unnamed until 07:40Z the next morning — would now be named by **23:50Z the same evening**.
+
+⚠ **CADENCE, NOT A WIDER LOOK-BACK — exactly as this filing insisted twice.** `window_days` is untouched; widening it drags in ~2,000 historical non-actionable rows and re-creates the "permanently red arm" failure the job's own POSTURE note was written about.
+
+ⓘ **Precedent, and the same argument:** `db-pin-staleness` moved weekly → daily on 2026-08-10 for this reason (*"weekly meant up to 7 days of silent drift; daily closes that to ≤24h"*). This job reads only `supabase_migrations.schema_migrations` and mutates nothing, so the cost is two ~30 s read-only runs a day.
+
+⚠ **Minutes chosen to dodge busy slots, not by taste:** `ops-monitor` runs at `:13/:43` every hour and `e2e-smoke` at `:41` every 6 h (…, 17:41, 23:41), so `:50` clears both with room either side. The workflow comment says to re-check that list before adding a fourth slot.
+
+✅ **Baseline re-derived before shipping, the way the CORRECTION above prescribes — against `origin/main`, never the working tree:** prod's 3-day window holds **67** migrations, `git ls-tree -r origin/main supabase/migrations` holds **671** files, and **0 applied migrations have no committed file.** Shipped against a known-clean window. ⚠ Dated sample; re-derive.
+
+### What remains open in this filing
+
+🚨 **`execute_sql`-applied DDL is still invisible to parity in the prod-ahead direction** — it writes no `schema_migrations` row, so there is nothing for the check to compare against, and the repo files that exist for those migrations are **authorship discipline, not something the guard forced.** **Deliberately still unmeasured**: it needs its own measurement of how much DDL actually takes that path before anyone calls it a defect. ⚠ Worth weighing beside the 2026-08-24 finding that the drift census and the largest cron job are blind the same way — **three of this repo's guards see only what politely reports itself.**

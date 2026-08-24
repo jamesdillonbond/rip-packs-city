@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — migration parity runs 3×/day instead of 1×; the 08-23 filing's last open recommendation is closed
+
+**CI cadence only. No code, no DB, no product change.** `.github/workflows/migration-parity.yml` gains **15:50 and 23:50 UTC** beside the existing **07:40**, so three slots at 8-hour spacing put the worst-case blind window at **~8 h instead of ~24 h**.
+
+**Why it was the residual.** The 08-23 filing measured the gap rather than asserting it: **two independent drift batches opened and one closed inside twelve hours**, and the second (applied **17:29–19:28Z**) would have gone **unnamed until 07:40Z the next morning** — *"anyone reading a green-since-recovery badge that evening would have concluded the repo describes production. It did not."* **Under the new cadence that batch is named by 23:50Z the same evening.** The filing left this open twice, and the Cowork session that closed everything else wrote *"recommendation #2 stands, unaddressed."*
+
+⚠ **CADENCE, NOT A WIDER LOOK-BACK — the filing insisted on that twice and it is right.** `window_days` is untouched; widening it drags in **~2,000 historical non-actionable rows** and re-creates the *"permanently red arm"* failure the job's own POSTURE note exists to describe.
+
+ⓘ **Precedent, same argument, same repo:** `db-pin-staleness` moved weekly → daily on 2026-08-10 for exactly this reason (*"weekly meant up to 7 days of silent drift; daily closes that to ≤24h"*). Parity reads only `supabase_migrations.schema_migrations` and mutates nothing, so the cost is **two ~30 s read-only runs a day**.
+
+⚠ **Minutes chosen to dodge busy slots, not by taste** — `ops-monitor` runs `:13/:43` hourly and `e2e-smoke` `:41` every 6 h (…, 17:41, **23:41**), so `:50` clears both with room either side; the original 07:40 was itself placed to avoid `db-pin-staleness` at 07:20. **The workflow comment now says to re-check that list before adding a fourth slot.**
+
+✅ **Shipped against a re-derived clean baseline, and read from `origin/main` rather than the working tree** — the exact correction that filing records (*"a local run on an unpushed branch will report clean while CI reports drift"*): prod's 3-day window holds **67** migrations, `git ls-tree -r origin/main supabase/migrations` holds **671** files, **0 applied with no committed file.** ⚠ Dated sample. **YAML parsed (not eyeballed) and all three guards that read this workflow re-run green** — `migration-parity-workflow-is-enforcing`, `check-migration-parity-logic`, `db-invariants-drift-guard`, 221 tests.
+
+⚠ **STILL OPEN, and correctly unmeasured: `execute_sql`-applied DDL is invisible to parity in the prod-ahead direction** — it writes no `schema_migrations` row, so there is nothing to compare against, and the repo files that exist for those are **authorship discipline, not something the guard forced.** ⓘ **Third instance of one shape today:** parity, the edge-fn drift census (#31) and the largest cron job's telemetry are all blind the same way — **they see only what politely reports itself.**
+
+**Revert:** `git revert <this commit>` (drops the two extra slots; the 07:40 daily is unchanged). **Target metric:** the interval between a fileless migration reaching prod and something naming it.
+
 ### 2026-08-24 · POST-SHIP WATCH + FILED (Claude Code, Trevor's Windows box) — the honesty fix CONFIRMED ITSELF IN PRODUCTION on a real failure within minutes, and the failure it exposed is a new filing
 
 **Docs only (one inbox filing + INDEX). No code, no DB.** Post-ship verification of `34d8ff78` / `97a5c0d1`, by **rendered DOM, not HTTP 200.**

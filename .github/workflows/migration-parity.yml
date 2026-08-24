@@ -59,9 +59,33 @@ name: Migration parity
 
 on:
   schedule:
-    # Daily 07:40 UTC — after db-pin-staleness's Monday 07:20 slot so the two
-    # secret-bearing DB sweeps never overlap.
+    # 07:40 UTC — after db-pin-staleness's 07:20 slot so the two secret-bearing DB
+    # sweeps never overlap.
     - cron: '40 7 * * *'
+    # ── 15:50 + 23:50 added 2026-08-24: DAILY WAS A 14-HOUR BLIND WINDOW ───────
+    # The 2026-08-23 filing measured it: two independent drift batches opened and
+    # one closed inside twelve hours, and the second batch (applied 17:29-19:28Z)
+    # would have gone unnamed until 07:40Z the next morning. Anyone reading a
+    # green-since-recovery badge that evening would have concluded the repo
+    # describes production. It did not.
+    #
+    # ⚠ THE FIX IS CADENCE, NOT A WIDER LOOK-BACK. That filing says so twice, and
+    # it is right: widening the window_days input drags in ~2,000 historical
+    # non-actionable rows and makes the report unreadable — the 'permanently red
+    # arm' failure this job's own POSTURE note was written about.
+    #
+    # Three slots at 8-hour spacing put the worst case at ~8h instead of ~24h.
+    # ⓘ Precedent, and the same argument: db-pin-staleness moved weekly -> daily on
+    # 2026-08-10 for exactly this reason ('weekly meant up to 7 days of silent
+    # drift; daily closes that to <=24h'). This job reads only
+    # supabase_migrations.schema_migrations and mutates nothing, so the added cost
+    # is two ~30s read-only runs a day.
+    #
+    # ⚠ Minutes chosen to dodge the busy slots, not by taste: ops-monitor runs at
+    # :13/:43 every hour and e2e-smoke at :41 every 6h (...,17:41,23:41), so :50
+    # clears both with room either side. Re-check that list before adding a fourth.
+    - cron: '50 15 * * *'
+    - cron: '50 23 * * *'
   workflow_dispatch:
     inputs:
       window_days:
