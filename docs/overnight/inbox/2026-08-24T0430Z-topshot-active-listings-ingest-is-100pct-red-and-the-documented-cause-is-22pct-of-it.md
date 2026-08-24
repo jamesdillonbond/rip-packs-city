@@ -94,3 +94,57 @@ Stated explicitly because the temptation runs the other way:
 The obvious shape is to bound the target selection the way `/api/ready`'s count was bounded — but **`topshot_serial_board_targets` returns a working set, not a scalar**, so the `/api/ready` trick does not transfer, and a `LIMIT` bounds output rather than cost (the recorded `drain_fmv_cold_tail` lesson). **This needs the `EXPLAIN` from a quiet window before anyone proposes a fix**, which is precisely what I declined to do tonight.
 
 ⚠ And per the R46 decision: any remedy that adds a cron, an index build or a materialisation must state **its steady-state IO cost and what it displaces**. The budget is at 100% by choice now.
+
+---
+
+## FOLLOW-UP 2026-08-23 22:35 PT — the plan is read, and it wants the object R52 was parked on
+
+**Method note:** everything below is either a catalogue read or a **plain `EXPLAIN`** — no `ANALYZE`, nothing executed. That is deliberate: a plan *shape* is structural and valid in a spell, whereas a *timing* is not. The filing's open item #2 asked for a quiet window; this is the part that did not need one.
+
+### The function chain
+
+`topshot_serial_board_targets` is a thin `jsonb_agg` wrapper. The cost is one level down in **`topshot_serial_board_candidates`**, whose leading CTE is:
+
+```sql
+WITH latest_fmv AS (
+  SELECT DISTINCT ON (fs.edition_id) fs.edition_id, fs.fmv_usd, fs.confidence::text
+  FROM fmv_snapshots fs
+  WHERE fs.collection_id = '95f28a17-…'   -- all of Top Shot
+  ORDER BY fs.edition_id, fs.computed_at DESC
+)
+```
+
+### 🚨 The measured plan: **857,293 rows scanned to return 13,230** — a ~65:1 read amplification
+
+```
+Unique  (cost=0.70..69396.13 rows=13230)
+  ->  Merge Append  (cost=0.70..67252.89 rows=857295)
+        ->  Index Scan using fmv_snapshots_2026_collection_id_edition_id_computed_at_idx
+              on fmv_snapshots_2026  (rows=857293)
+```
+
+- **`Index Scan`, not `Index Only Scan`.** Every one of those ~857k index entries takes a **heap fetch**, because the CTE also selects `confidence`, which no index covers.
+- ⚠ **There IS a covering index and it is the wrong cover:** `fmv_snapshots_2026_coll_ed_ct_fmv_idx` is `(collection_id, edition_id, computed_at DESC) INCLUDE (fmv_usd)` — **118 MB** — and the planner **declined it** in favour of the smaller 91 MB index, because `INCLUDE (fmv_usd)` buys nothing while `confidence` still forces the heap. **A 118 MB index is being maintained for this query shape and cannot serve it.**
+- **`DISTINCT ON` cannot skip.** Postgres has no index-skip-scan, so it walks every historical snapshot of every Top Shot edition to keep one row each. This is the documented `drain_fmv_cold_tail` shape — *a `LIMIT` bounds output, not cost* — in a second place.
+
+That accounts for the ~6.2 GB of buffer touches per call, and for why the mean sits at 44% of a 30 s ceiling.
+
+### ⚠ The obvious fix is the one this repo has already measured as WORSE
+
+Three prior fixes in this codebase replaced raw `fmv_snapshots` with the **`fmv_current`** view (watchlist ×2, concierge FMV distribution). **Do not reach for it here.** The recorded measurement: `fmv_current` pushdown is **shape-dependent** — a literal `IN` list is ~335 buffers, but a **`JOIN` or `IN (subquery)` is ~1.05M buffers**. This call site is a `JOIN`. **The idiomatic fix is the pessimal one at this shape.**
+
+### ➡ What it actually wants is R52's object, and that changes R52's arithmetic
+
+`topshot_serial_board_candidates` needs *latest-FMV-per-edition, precomputed*. **That is exactly the missing object R52 identified** — and R52 was parked on the R46 capacity decision, which has now been answered "no capacity change."
+
+🚨 **So R52 has a second consumer, and this one is not a latency complaint — it is a pipeline that has been 100% red for five days.** R52's own note says the rollup cuts buffers ~10× and *"cannot fix ~74 ms per disk read"*; that reasoning was written against ISR pages that still serve 200. **It does not transfer to a caller that fails outright at a 30 s ceiling**, where a 10× buffer cut is the difference between finishing and not. R52 should be re-litigated with this consumer counted — which is the re-litigation I flagged as owed when the gate opened, now with a concrete reason.
+
+### ⚠ What is STILL not attributed, and the instrument that cannot do it
+
+`serial_fmv_estimate` is called **twice per surviving row** — and it is **plpgsql, 6,776 chars, and reads tables**. It is the other candidate for the bulk of the cost.
+
+⛔ **`pg_stat_statements.track = 'top'` on this instance, so nested statements inside plpgsql are NOT tracked.** The 6.2 GB/call figure therefore *includes* everything `serial_fmv_estimate` does but **cannot be split from it**. There is no way to attribute between the `DISTINCT ON` and the 2×-per-row function from `pg_stat_statements` at all.
+
+➡ **Sharpened next step:** `EXPLAIN (ANALYZE, BUFFERS)` in a **13:00–17:00 PT** window is the *only* instrument that can separate these two. Not "run EXPLAIN to see the plan" — the plan is now read — but specifically to get **per-node actual buffers**. Until then, "the `DISTINCT ON` is the cost" is a **well-supported hypothesis, not a measurement**, and the 65:1 amplification is its evidence rather than its proof.
+
+⚠ And per the R46 decision: if the remedy is a rollup, it must state its steady-state IO cost and what it displaces. **The honest version of that argument here is that it would DISPLACE the 118 MB index the planner already refuses to use.**
