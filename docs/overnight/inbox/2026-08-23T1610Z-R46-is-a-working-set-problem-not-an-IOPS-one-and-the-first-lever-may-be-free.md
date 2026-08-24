@@ -172,3 +172,94 @@ does not decide it. **C at $111/mo remains Trevor's call**, now against A being 
 **Method note:** the value was only trustworthy once it reproduced the docs' published MB/s figure.
 A units check, not a lookup — `baseline_disk_io_mbs` names megabits and would have read as a 8×
 overstatement of headroom taken at face value.
+
+---
+
+## CORROBORATION 2026-08-23 ~13:50 PT — the published table confirms the API reading, and adds four things
+
+The follow-up above rests on one API field with an 8× unit trap in it, caught only by reproduction. I read the **published** [Compute and Disk](https://supabase.com/docs/guides/platform/compute-and-disk) table as an independent second instrument. **It agrees exactly** — Small 22 MB/s baseline / 261 max / 1,000 IOPS; Large 79 / 594 / 3,600, `2-core (dedicated)` vs Small and Medium's `2-core (shared)`. The refutation stands on two instruments now, not one. Four additions:
+
+**1. ⛔ A SECOND, INDEPENDENT REASON OPTION A IS VOID — you cannot buy disk throughput on Small at all.** The docs, on provisioning extra IOPS/throughput: *"**This requires Large compute size or above.**"* So even setting aside the compute budget binding first, the purchase is **not offered** at this tier. Two independent kills; the row is void either way, which is stronger than the single argument above.
+
+**2. Supabase's own stated upgrade criterion, and this project meets it.** Verbatim: *"If the `Disk IO % consumed` stat is more than 1%, it indicates that your workload has exceeded the baseline IO throughput during the day. If this metric goes to 100%, the workload has used up all available disk IO budget. **Projects that use any disk IO budget are good candidates for upgrading to a larger compute instance with higher throughput.**"* RPC does not merely dip into the budget — **exhausting it is the documented 22 MB/s throttle**, i.e. the band itself. By the vendor's own published criterion this instance is an upgrade candidate. ⓘ Recorded as an *input* to the decision, not an argument for it: a vendor's upgrade criterion is not disinterested, and it is still Trevor's call.
+
+**3. ⚠ Medium and Large are different REGIMES, not just different numbers — which makes option B weaker than its row suggests.** The docs: *"Smaller compute instances like Nano, Micro, Small, and Medium can burst above baseline for short periods. Once burst capacity is exhausted, performance returns to baseline. If you need consistent disk performance, consider upgrading your compute size."* **Medium keeps Small's 261 MB/s burst ceiling and its shared, burstable CPU** — so B doubles RAM and baseline IO but stays inside the same burst-exhaustion mechanism that produces the band. Large is the first tier that changes the mechanism (dedicated CPU, 594 MB/s ceiling). **Read B as "the same failure mode, later" rather than as half of C.**
+
+**4. 💡 Why this went unnoticed for months, worth recording so it is not re-derived.** Supabase's sizing guidance is **`Max DB Size (Recommended)` = 50 GB for Small**, and RPC is at **13.5 GB** — comfortably inside, at 27% of the recommendation. **The vendor's own sizing metric is DATABASE SIZE, not WORKING SET**, so by the number anyone would naturally check, this box looks correctly provisioned. The 6.5 GB hot set against 2 GB RAM is invisible to that metric. ⚠ **Generalisable: a "you are within the recommended size" reading says nothing about whether the hot set is resident.**
+
+⚠ **What this does NOT do:** it does not decide anything, and it does not make C safe to credit with ending the band absent a before/after measurement. Every caution in the original filing and the follow-up stands.
+
+---
+
+## ✅ THE PROBE TREVOR ASKED FOR — read 2026-08-23 14:31 PT from the Supabase dashboard
+
+Trevor's instruction was *"read `Disk IO % consumed` first, then decide."* Read via Chrome on `/observability/database`, window **Aug 23 1:31pm → 2:31pm PT (60 min)**.
+
+### Supabase is displaying the answer as a banner, unprompted
+
+> ⚠ **"Your project is about to deplete its Disk IO Budget."**
+> *"Once exhausted, disk throughput will return to its baseline of 22 MB/s until the budget resets. **Upgrade your compute** or use the AI Assistant to identify and optimize disk-intensive queries."*
+> Buttons offered: `Troubleshoot` · **`Upgrade compute`**
+
+The vendor's banner names the same two remedies this filing identified, in the same order, and states the 22 MB/s baseline as a **compute** property — independently confirming the follow-up's refutation of the gp2 theory.
+
+### The numbers
+
+| panel | reading | tier baseline | verdict |
+|---|---:|---:|---|
+| **Disk throughput** | **22.4 MB/s** | 22 MB/s | ⚠ **Pinned AT the baseline** — not approaching it, sitting on it |
+| **Disk IOPS** | **2,067** | 1,000 | **2.1× baseline**, bars ranging ~1.5K–4K |
+| CPU usage | ~25% ceiling, **overwhelmingly `IOwait`** | — | IO-bound, not CPU-bound — visually unambiguous |
+| Database Connections | **11 / 90** | — | ⓘ Rules out connection exhaustion as a contributor |
+
+⚠⚠ **The throughput panel is itself an instance of the trap this filing is about.** Its dotted "Max throughput" reference line sits at **125 MB/s** — the *gp3 disk's* capability — while actual sits at 22.4 and the banner says 22 is the ceiling. **A reader looking only at the chart sees 82% headroom that does not exist.** The disk can do 125; the compute tier sustains 22; the lower number binds. Anyone re-deriving this from the dashboard alone will reach the wrong conclusion, which is roughly how the original "$0 disk lever" error happened.
+
+### What this settles, and what it does not
+
+**Settles:** the budget is being consumed, continuously, at the ceiling — this is not an intermittent spell, matching the 10-day `pg_stat_statements` finding from a completely different instrument. By Supabase's published criterion (*"projects that use any disk IO budget are good candidates for upgrading"*) this instance qualifies, and by its own dashboard it is being told so.
+
+⚠ **Does not settle:** this is a **single 60-minute window** — a snapshot, not a distribution. It corroborates the 10-day measurement rather than standing alone, and it still does not license crediting any upgrade with "ending the band" absent a before/after reading of the same panel. **Take the same screenshot after any tier change; that is the before/after this filing has been asking for, and it costs nothing.**
+
+**The decision remains Trevor's.** Every input either of us can produce is now in.
+
+---
+
+## ⛔ DECIDED 2026-08-23 20:48 PT — Trevor: **option E, stay on Small.** No spend.
+
+Asked directly with all four options and the numbers above in front of him. **The answer is E.** This closes R46 as a decision; it does not close it as a measurement.
+
+⚠ **This section exists because of a standing rule in CLAUDE.md: a filed DECISION NOT TO ACT is the one nobody re-checks, because declining reads as the conservative choice, and the tell is a cost stated with no number in it.** So the cost is stated with numbers.
+
+### What was NOT bought: $96/mo (Large, $111 vs $15) = **$1,152/year**
+
+### What that $1,152/year buys instead — every figure already measured, none re-derived here
+
+| the cost being accepted | measurement | source |
+|---|---|---|
+| the instance cannot cache its own working set | 6.5 GB hot set vs **512 MB** `shared_buffers` / 2 GB RAM; 765 GB/day read against a 13.5 GB database ⇒ **≈57 full re-reads per day** | this filing |
+| the IO budget is not dipped into, it is **exhausted** | throughput pinned at **22.4 MB/s** against a 22 MB/s baseline; IOPS **2,067** against 1,000; CPU ~25% and overwhelmingly `IOwait` | 14:31 PT probe |
+| the box is saturated at rest | **≈4.5 backends busy at all times** on 2 cores (1,171 exec-hours in 258 wall-hours, `dealloc = 0`) | R46 |
+| FMV freshness | `fmv-recalc` **72.7% wall-kills**, ~92% of its work done in 5–6 hours of 24 | cron-and-schedulers |
+| ingest completeness | **131 of 196 (66.8%)** sales-history-backfill ticks skip on saturation | R20 |
+| board freshness | 11 public board views persistently over budget; `allday_scarcity_board` **p50 23,429 ms** against an 8,300 ms budget, **max 725,799 ms**; cross-collection mats went **132 h** stale | R50 |
+| ⚠ **build risk, not just latency** | **6 of those 11 have a p90 above 60 s**, and prerendered `/insights` pages get **60 s each** — a slow board can fail the whole production build | R50 |
+| public-page reads | `readiness_collection_stats()` **24,523 ms as `anon` with the instance QUIET** (not in a spell), overshooting an 8 s `statement_timeout` | R44 |
+| SEO page latency | `get_series_editions(allday, series-9)` **97,443 ms**; the Top Shot series-7 call **timed out even as `postgres`** | R52 |
+| work not done | **R52 stays unbuilt**, and R6 / R50 / R53 stay downstream of a constraint that is now permanent by choice | register |
+
+### ⚠ Three things E does NOT decide, stated so they are not swept up with it
+
+1. **E declines the SPEND. It does not decline the free work.** R52's piggyback on `refresh_series_detail_rollup()` costs near-zero extra IO *because that pass already computes latest-FMV per edition* — it was deferred pending R46, and R46 is now answered "no capacity change," so it must be re-litigated **on its own merits**, not left gated on a gate that has opened. Same for the read-path attribution in [2026-08-23T2235Z](2026-08-23T2235Z-the-read-path-attributed-and-two-severity-corrections.md).
+2. 🚨 **The budget is at 100%, so every new recurring job now spends someone else's headroom.** Before E it was possible to argue "add the rollup, capacity is coming." It is not coming. **Any proposal that adds a cron, a refresh, or an index build must now state its steady-state IO cost and what it displaces** — the 15-minute cadence already rejected at 97 min/day of full-tilt IO is the worked example.
+3. **Nothing here says the queries are good.** R46 said the instance cannot cache its working set; that is a separate fact from whether the workload should be that large. Reducing the 765 GB/day remains the only lever E leaves standing, and it is *harder* now, not moot.
+
+### ⛔ Do not re-suggest the upgrade. These are the conditions that expire this decision.
+
+Re-open R46 **only** on one of these, and bring the reading with you:
+
+- **A production build fails on a prerendered `/insights` board read.** That is outage class, not latency class, and it is the nearest measured hard failure — 6 of 11 boards sit above the 60 s per-page budget at p90.
+- **First revenue, or 50+ weekly active users** — the "no infra spend pre-revenue" premise expires by its own terms, and CLAUDE.md already names 50 WAU as the monetization threshold.
+- **A public page serves degraded or error copy to anonymous visitors for a sustained window** (not a blip). The honesty layer currently absorbs these; when it starts publishing them, the trade has changed.
+- **The hot set grows past ~8 GB.** That does not argue for Large — it argues that Large would *also* be insufficient, which is a different decision than the one made here.
+
+⚠ **And if the tier ever does change: take the `/observability/database` screenshot BEFORE and AFTER, same 60-minute window shape.** Without it nothing licenses crediting the change with ending the band. That requirement survives this decision unchanged.

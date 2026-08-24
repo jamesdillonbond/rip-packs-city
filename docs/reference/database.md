@@ -415,3 +415,27 @@ The same day, a direct timing of AllDay's per-edition FMV lateral read **40,229 
 because the AllDay HTTP endpoint had returned **200 with real data two minutes earlier**. **A DB A/B must be
 WARM-vs-WARM**; at ~74 ms per disk read a cold run measures the buffer cache, not the query. Discarded, and
 recorded so nobody re-derives it and believes it.
+
+---
+
+## Compute-tier IO budgets — what the 22 MB/s floor actually is (2026-08-23, R46)
+
+⚠ **CLAUDE.md's Infrastructure bullet points here.** It used to read *"fix expensive queries, don't upgrade (Medium is the same 2 cores for 4×)"*. **The policy is unchanged — don't upgrade — but two of its facts were wrong and are corrected below.** Trevor's call 2026-08-23: correct the facts, keep the policy.
+
+**The 22 MB/s is a COMPUTE-TIER budget, not a disk property.** Settled two ways: the Management API reports `ci_small: { baseline_disk_io_mbs: 174, max_disk_io_mbs: 2085 }` — ⚠ **that field is MEGABITS and reads like megabytes**; 174/8 = 21.75 MB/s and 2085/8 = 260.6 MB/s, which reproduces the published table exactly. Taken at face value it overstates headroom **8×**. The published [Compute and Disk](https://supabase.com/docs/guides/platform/compute-and-disk) table is the independent second instrument and agrees.
+
+| tier | baseline MB/s | burst MB/s | baseline IOPS | RAM | CPU | $/mo |
+|---|---:|---:|---:|---:|---|---:|
+| **Small (current)** | **22** | 261 | 1,000 | 2 GB | 2-core shared | $15 |
+| Medium | 43 | 261 | 2,000 | 4 GB | 2-core shared | $60 |
+| Large | **79** | **594** | 3,600 | 8 GB | **2-core DEDICATED** | $110 |
+| XL | 149 | 594 | 6,000 | 16 GB | 4-core dedicated | $210 |
+
+- ⛔ **No disk change lifts this instance.** *"The effective throughput is the lower of the throughput supported by the compute size and the provisioned throughput of the disk."* gp3's 125 MB/s default is capped by Small's 22. ⚠ **And provisioning extra IOPS/throughput at all "requires Large compute size or above"** — on Small the purchase is not offered. Two independent reasons; a gp2→gp3 migration was filed as a "$0 lever" and is **void**.
+- ⚠ **"Same 2 cores" is true of Medium ONLY.** Large flips `cpu_dedicated` false→true. Small and Medium are burstable; the docs: *"Once burst capacity is exhausted, performance returns to baseline. If you need consistent disk performance, consider upgrading your compute size."* **Medium keeps Small's 261 MB/s ceiling and shared CPU — the same failure mechanism, later, not half a fix.**
+- 💡 **Why this box looked correctly sized for months:** Supabase's guidance is `Max DB Size (Recommended)` = **50 GB** for Small, and this DB is **13.5 GB** — 27% of it. **The vendor's sizing metric is DATABASE SIZE, not WORKING SET.** The 6.5 GB hot set against 2 GB RAM is invisible to the number anyone would naturally check. ⚠ Generalisable: *"within the recommended size"* says nothing about whether the hot set is resident.
+- ⓘ Vendor's own upgrade criterion, recorded as an input and not an argument: *"Projects that use any disk IO budget are good candidates for upgrading to a larger compute instance."* This instance does not dip into the budget — **exhausting it IS the 22 MB/s throttle.**
+
+⛔ **DECIDED 2026-08-23 20:48 PT — Trevor: stay on Small. No spend, permanently, not "for now".** $96/mo (Large) declined = **$1,152/yr**. 🚨 **The operational consequence is the part to carry into other work: the IO budget is now at 100% BY CHOICE, so every new cron job, refresh, or index build spends headroom that does not exist — state its steady-state IO cost and what it displaces before proposing it.** ⛔ Do not re-suggest the upgrade except on a production build failing on a board read · first revenue or 50+ WAU · a public page serving degraded copy to anon visitors for a sustained window · the hot set passing ~8 GB. **E declined the SPEND, not the free work** — a zero-extra-IO piggyback is still on the table.
+
+Full analysis, the numbered cost of declining, and the standing-rule collision: `docs/overnight/inbox/2026-08-23T1610Z-R46-…md`.

@@ -86,7 +86,7 @@ Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase 
 
 ## Infrastructure IDs (required on every tool call)
 
-- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ Disk-IO-budget (burst-credit) model → throttles to a **22 MB/s** baseline when depleted; the intermittent saturation is **disk-IO-bound, NOT compute-bound** — fix expensive queries, don't upgrade (Medium is the same 2 cores for 4×).
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ The **22 MB/s** burst floor is the COMPUTE TIER's IO budget, NOT the disk — no disk change lifts it. Saturation is **IO-, not CPU-bound** — fix expensive queries, don't upgrade. ⚠ "same 2 cores" is Medium-only; **Large = 2 DEDICATED cores / 8 GB / 79 MB/s** (database.md).
 - Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
