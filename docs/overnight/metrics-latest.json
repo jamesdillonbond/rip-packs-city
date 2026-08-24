@@ -1,46 +1,41 @@
 {
-  "run": "nightly-20260823T0804Z-cloud-NOPUSH",
-  "captured_at_utc": "2026-08-23T08:15Z",
-  "captured_at_pt": "2026-08-23T01:15 PT",
-  "mode": "NO-PUSH (cloud Cowork; remote.origin.pushurl EMPTY, git push unavailable). DB migrations + verification only. This blocker is specific to THIS cloud session; Trevor's box and Claude Code push normally via the PAT in remote.origin.pushurl.",
+  "run": "nightly-20260824T0804Z-cloud-NOPUSH",
+  "captured_at_utc": "2026-08-24T08:12Z",
+  "captured_at_pt": "2026-08-24T01:12 PT",
+  "mode": "NO-PUSH (cloud Cowork; remote.origin.pushurl EMPTY, git push refused no-creds). DB migrations + verification available; nothing clearly-safe + net-positive to ship. Blocker specific to THIS cloud session; Trevor's box + Claude Code push normally.",
   "genuine_overnight": true,
-  "clock_check": "sandbox date -u 08:02:20Z vs DB now() 08:02:33Z — 13s drift, NOT skewed. Real local ~01:02 PT.",
-  "shipped_to_prod_state": "1 DB migration: 20260823081000_audit_20260823_reset_searchpath_on_commit_procedures (RESET search_path on two COMMIT-ing procedures broken by R14). Verified end-to-end + independent subagent PASS. No code deploy (NO-PUSH), no data mutation, no edge-fn deploy, no artifact change.",
+  "clock_check": "sandbox date -u 08:02:35Z vs DB now() 08:02:46Z — 11-13s drift, NOT skewed. Real local ~01:04 PT.",
+  "shipped_to_prod_state": "NOTHING. No DB migration, no code deploy (NO-PUSH), no data mutation, no edge-fn, no artifact change. Quiet honest night.",
   "security": {
-    "check_secdef_anon_exec_drift": "clean (empty array)",
-    "public_tables_rls_off": "clean (0 rows) — series_detail_rollup RLS was enabled by a prior session between 05:10Z and this run; invariant back to 0",
-    "check_public_security_invariants": "clean (0 rows)",
-    "anon_authenticated_write_on_rls_off": "clean (0 rows)"
+    "invariants": "clean ([])",
+    "anon_write_holes": "clean ([])",
+    "rls_off_base_tables": "clean ([])",
+    "secdef_anon_violations": "clean ([])"
   },
-  "post_ship_watch_prev": "Last night (08-22) shipped 0 — no regression to watch. This run's ship (procedure RESET) is itself the post-ship remediation of R14 (08-22).",
-  "demand_gate": {
-    "note": "Not re-measured this pass (unchanged 21/0 since 08-18 per prior 4 passes; not a night-pass lever). Carry forward."
+  "trust_precompute_max_age_hours": 5.27,
+  "trust_health_breaches": ["public_board_slow_count=3 (candy-mlb boards, known-structural)", "unmapped_resolution_backlog_max=361 (All Day ~47k actionable, ~1047d, known-structural)"],
+  "post_ship_watch_prev": {
+    "20260823081000_reset_searchpath": "GREEN — reconcile-saved-wallet-stats committing (soft_deadline partial-sweep by-design; 2D000 gone; 02:44Z fully ok). 4-run silence since 03:44Z is saturation/pg_cron-startup class, not a regression.",
+    "20260824033743_ufc_golazos_park": "GREEN — 1079/1079 parked (UFC 1070 + Golazos 9), All Day untouched. No prior ledger entry; recorded this pass.",
+    "panini_squeeze_cutover": "STRONG POSITIVE — public_board_liveness_sweep 45/45 twice post-cutover (00:28 @34s, 06:28 @85s) vs 0/45 and 6/45 before. De-escalates board-watchdog durability fix to hygiene. No prior ledger entry; recorded this pass."
   },
-  "db_size_mb": 13679,
-  "db_size_mb_note": "not re-measured this pass; last known 13679 (08-22).",
+  "db_size_mb": 13848,
+  "editions_by_collection": {"nba_top_shot": 19838, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
   "total_editions": 27246,
-  "total_editions_note": "not re-measured this pass; last known 27246 (08-22).",
-  "saturation": {
-    "io_wait_active": "reconcile CALL elapsed_ms 37513 for 1 wallet — moderate saturation present, consistent with the known structural disk-IO-budget class. Timings partially uninterpretable; the ship is config-only so cost is not load-sensitive.",
-    "verdict": "PRESENT, MODERATE, known-class. Not a severe spell."
-  },
   "pipeline_health": {
-    "dominant_error_class": "canceling statement due to statement timeout / upstream request timeout / connection pool — all saturation-class (known structural root).",
-    "high_sev_failure_rate_pipelines": ["allday-buyer-backfill 68.8%", "allday-pack-opens-backfill 64.7%", "compute-allday-pack-ev 68.0%", "fmv-recalc 57.1%", "lock-check-batch 56.6%", "populate-pinnacle-wmc-fmv 73.1%", "refresh_wmc_fmv_drift_active 56.8%", "topshot-active-listings-ingest 80.0% egress_blocked", "topshot-fmv-populate 66.7%", "wallet-username-resolver 88.2%"],
-    "note": "All saturation-class except topshot-active-listings-ingest (atlas-proxy egress_blocked operator item). No new non-saturation class. reconcile-saved-wallet-stats REMOVED from the broken set this pass (was 2D000 every tick; now committing).",
-    "apply_fmv_haircut_silent": "cron_silent >24h — long-standing dead cron since 2026-05-11, known, not new."
+    "dominant_error_class": "saturation-class (statement/lock/connection-pool timeout, upstream request timeout) — known R46 structural root, decided 08-23 no-capacity-change permanently.",
+    "high_sev_failure_rate_pipelines": ["allday-buyer-backfill 62.5%", "allday-pack-opens-backfill 78.3%", "compute-allday-pack-ev 58.2%", "fmv-recalc 52.9%", "populate-pinnacle-wmc-fmv 72.0%", "topshot-pack-pool-backfill 94.4%", "wallet-username-resolver 78.6%"],
+    "note": "All saturation-class. topshot-active-listings-ingest no longer in the alert set this snapshot (only 2 fails/24h) but the residential arm is still ~7/8 red on the GET-targets DB timeout — see inbox 08-24T0430Z."
   },
-  "cross_collection_mats_stale": {
-    "note": "OPEN ESCALATION carried from 08-21. Not re-measured in depth this pass; rpc-ccm-step1/step2 still timing out (known). Was 124h stale at 08-22. Still QUEUED — needs an expensive-refresh restructure in a quiet window, not shippable mid-saturation via MCP.",
-    "night_count": 4
-  },
+  "vercel_runtime": "24h pull — 50 groups, all saturation-class (Vercel timeouts, connection-pool, candy-mlb board timeouts, edition/pack read-bound guards degrading gracefully). No new non-saturation class. DEP0169 url.parse deprecation warning is a benign long-standing node warning.",
   "sentry_new_issues_24h": 0,
-  "sentry_caveat": "⚠ Sentry ingestion reported dark since 08-18 (inbox 2026-08-23T0250Z) — '0 new' may be an instrument-silence artifact, NOT proof of no errors. QUEUED (needs config/route work, not shippable in NO-PUSH).",
-  "vercel_runtime": "not re-pulled this pass; prior pass all saturation-class, no new non-saturation class.",
+  "sentry_caveat": "Sentry reported dark since 08-18 (inbox 08-23T0250Z) — '0 new' may be instrument-silence, NOT proof of no errors. QUEUED (needs config/route work, NO-PUSH).",
+  "artifacts": "11 present, none flagged broken/stale in the inbox. No repair needed.",
   "operator_blockers_unchanged": [
-    "git push credentials in cloud/desktop-Cowork sessions (blocks all code deploys; Trevor's box + Claude Code unaffected)",
-    "atlas-proxy wrangler deploy + Cloudflare-egress probe (topshot-active-listings-ingest egress_blocked)",
-    "sports-proxy 403 (ESPN slate-gated until ~Oct)",
-    "Sentry ingestion dark since 08-18 (needs investigation)"
-  ]
+    "git push credentials in cloud/desktop Cowork (blocks all code deploys; Trevor's box + Claude Code unaffected)",
+    "atlas-proxy wrangler deploy (topshot-active-listings egress arm)",
+    "sports-proxy 403 (ESPN slate-gated ~Oct)",
+    "Sentry ingestion dark since 08-18"
+  ],
+  "inbox_archiving_note": "NOT performed — NO-PUSH means archive moves cannot reach origin, and each pass re-clones from origin, so archiving churns without effect. ~200 un-archived files is the accrued cost of the long NO-PUSH streak; a desktop/Claude-Code pass that CAN push should archive resolved items."
 }
