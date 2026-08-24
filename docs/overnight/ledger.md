@@ -20,7 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ✅ **The right views, recorded in [tooling-gotchas.md](../reference/tooling-gotchas.md):** `gh run list --workflow=CI --json headSha,status,conclusion` filtered on the sha, requiring **`completed success`** (⚠ `conclusion` is `null` until then, so a truthiness test on it reads as failure), or `gh api .../commits/:sha/check-runs` for the per-check breakdown.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** a "CI green" claim in this repo comes from the workflow-run conclusion, never from the commit-status endpoint.
+**Revert:** `git revert f737a156` (docs-only). **Target metric:** a "CI green" claim in this repo comes from the workflow-run conclusion, never from the commit-status endpoint.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — `refresh_wmc_fmv_changed` RE-PINNED; the pin check should go green because the pin was RE-READ, not overwritten
 
