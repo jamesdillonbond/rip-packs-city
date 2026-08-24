@@ -1,4 +1,4 @@
-# Inbox index — 220 live filings
+# Inbox index — 222 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,15 +30,17 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 19 filings
+## 2026-08-23 — 21 filings
 
 - [⛔ The largest job on the instance writes NO telemetry — and a second, cheaper caller wears its name in `pipeline_runs`](2026-08-24T0400Z-the-biggest-job-on-the-instance-has-no-telemetry-and-another-caller-wears-its-name.md)
 - [⭐ SHIPPED — the UFC and Golazos promote legs are parked, using the function's own recheck mechanism rather than a new gate](2026-08-24T0345Z-ufc-and-golazos-promote-legs-parked-using-the-functions-own-mechanism.md)
 - [⛔ The public-board watchdog discards ALL completed probes when any single board times out — and a "succeeded" tick covered 6 of 45](2026-08-24T0225Z-the-board-watchdog-loses-every-probe-it-completed-when-any-one-times-out.md)
+- [The read path ATTRIBUTED — 15 RPCs are 93 h of DB time in 11 d, and 0.9% of the calls are 14.6% of it; plus `apply-fmv-haircut` is NOT an FMV-staleness incident and `sync-nba-projections` is off-season](2026-08-23T2235Z-the-read-path-attributed-and-two-severity-corrections.md)
 - [⭐ SHIPPED — one leading-wildcard `LIKE` was seq-scanning 88,086 rows 4,684 times per refresh, and it cost 13,000 worker-seconds a day](2026-08-23T2210Z-one-leading-wildcard-LIKE-was-costing-13000-worker-seconds-a-day.md)
 - [🚨 ~1,000 editions are labelled LOW confidence while their own row records them as the MOST-traded on the platform — in every collection the LOW cohort trades ~2× the MEDIUM cohort](2026-08-24T0225Z-a-thousand-editions-are-labelled-LOW-while-they-are-the-most-traded-on-the-platform.md) — ⭐ **RESOLVED in-file, then SELF-FALSIFIED**: the demotion is BY DESIGN (dispersion — LOW avg CV **0.731** vs HIGH **0.222**, measured), but my sub-dollar-tick story is **REFUTED by its own prediction** (HIGH has the LOWEST median price, $0.31, and 72% under $1). ⛔ Recommendation withdrawn. ⭐ What stands: **`LOW` conflates "no data" with "643 sales that disagree"**
 - [⭐ PRIORITY 1 CAPTURED, first time since 2026-07-26: signed-in WAU is 0, and the accuracy gate stands at 30.1% HIGH/MEDIUM — with three denominator caveats](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md) — ⚠ **§5 RETRACTS its own "Golazos is the target"** (follow-up in-file): Golazos is market thinness (max 3 sales/edition/month), the confidence model is VALIDATED against volume, and the one bounded question is **167 LOW editions with ≥5 sales/30d**
 - [⭐ The series-rollup fix WAS load-tested — its best run happened in the day’s worst hour, and I spent all evening saying it was unverified](2026-08-23T2055Z-the-series-rollup-fix-was-already-load-tested-i-just-never-read-the-neighbours.md)
+- [Daytime monitor — the saturation spell DEEPENED since 18:10Z and `apply-fmv-haircut` missed a full daily cycle](2026-08-23T2110Z-daytime-monitor-spell-deepened-and-apply-fmv-haircut-missed-a-full-daily-cycle.md)
 - [SIXTEEN more migrations applied today still have no committed file — a SECOND batch, after this morning's recovery](2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md)
 - [Postgres 17 makes a partial index UNREACHABLE when its predicate says `col IS NOT NULL` and the column is declared NOT NULL — including the 98 MB index `fmv-recalc` needs](2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md)
 - [`fmv-recalc` is NOT wedged mid-catalogue — page 0 can no longer COMPLETE, and the trust board has been breaching for 20 h unread](2026-08-23T2000Z-fmv-recalc-is-not-wedged-mid-catalogue-page-0-can-no-longer-complete.md) — 🚨 **the TITLE is FALSIFIED** (re-test in-file): page 0 completed at 20:28:06Z and the arm self-cleared for the fifth time; severity DOWN, mechanism unchanged
