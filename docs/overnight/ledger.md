@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · MECHANISM FOUND (Claude Code, Trevor's Windows box) — `allday-pack-opens-backfill` is silent because **185 of 186 invocations are `EarlyDrop`ped before they can log**, and that breaks a rule CLAUDE.md already carries
+
+**Docs only. No code, no DB.** Closes the question I left open one entry ago, in the same session that opened it.
+
+⚠ **I had written *"needs the edge function's logs — `pipeline_runs` is blind here by construction"* and stopped. The logs are REACHABLE** — the Supabase MCP's unified log stream exposes `function_logs` and `function_edge_logs`. **`net._http_response`'s missing URL was a dead end, not the only instrument**, and I nearly let one blocked path stand for "unavailable".
+
+🚨 **THE MEASUREMENT.** `function_logs`, `ingest-allday-pack-opens`: **186 Boot · 185 Shutdown `reason: EarlyDrop` · 2 `TerminationRequested`.** **185 of 186 invocations are dropped before they finish, so the function never reaches its logging call.** That is the whole silence.
+
+**The timing corroborates.** `function_edge_logs`, ~24 h: **51× 200 at avg 12.7 s / max 124.4 s**, 2× 502 (~81 s), 1× 504 (150 s) — against the caller's **`timeout_milliseconds = 90000`**. `net._http_response` holds **76 `timed_out = true`** in a single 3-hour window. ⚠ **And ~54 logged invocations against ~140 scheduled dispatches** — most dispatches never produce an invocation at all.
+
+⛔ **STATED AS INFERENCE, NOT MEASUREMENT: the trigger for every `EarlyDrop`.** The 51 fast 200s (12.7 s avg) **did not time out**, yet their boots still end in `EarlyDrop` — which hints at work continuing after the response and dying with the isolate. **That is a hypothesis and is recorded as one.**
+
+🚨 **THE FIX IS A RULE THIS REPO ALREADY WROTE, FOR EXACTLY THIS CLASS.** CLAUDE.md: *"any `after()` route needs an **invocation heartbeat written BEFORE the work** … **`try/catch` CANNOT catch a `maxDuration` kill** — without it a killed tick is indistinguishable from a cron that never fired. Read kills by CORRELATION (heartbeat, no terminal row), never a `finally`."* **Same defect, edge function instead of a Vercel route.** A heartbeat turns today's indistinguishable silence into *heartbeat present, terminal row absent*. Separately, a walk needing >90 s per tick should be chunked to fit its caller.
+
+⭐ **Sequence worth keeping:** the monitor called the arm a false positive → I refuted the premise (`done:true` never emitted) → then found the actual mechanism. ➡ **Each step needed the previous one'S measurement, and the FIRST proposed action — suppress the arm — would have ended the investigation with the bug intact and the board green.**
+
+**Written to:** the filing (annotated IN PLACE) and known-issues **#29**. ⛔ **Not fixed** — the heartbeat is an edge-function deploy (a gated channel with a known gate-key rotation blocker) plus a decision on chunking.
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** a killed tick is distinguishable from a cron that never fired.
+
 ### 2026-08-24 · REFUTED A PROPOSED SUPPRESSION (Claude Code, Trevor's Windows box) — the daytime monitor called `allday-pack-opens-backfill`'s `cron_silent` arm a FALSE POSITIVE; **the arm is right and suppressing it would have hidden a real fault**
 
 **Docs only. No code, no DB.** ⚠ **The most expensive conclusion a monitor can reach is "the instrument is a false positive", because the remedy is SUPPRESSION — and a wrong suppression is SILENT BY CONSTRUCTION.** This one did not survive re-derivation. ✅ **The filing said *"do NOT act from this read"*, which is exactly what made it catchable — it was right to say so.**

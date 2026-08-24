@@ -69,3 +69,46 @@ Both `ok:false`, both `transient:true`, on upstream scan errors — `events 8466
 **Do NOT make the arm done-aware.** The remaining honest options are (a) find why the callee stops short of `log_pipeline_run` — needs the edge function's logs, not `pipeline_runs`, which is blind here by construction — or (b) re-point the arm at `cron.job_run_details` for **scheduler** liveness *and keep a separate arm on work liveness*, since those are two different questions and this filing's own reasoning shows why collapsing them loses information.
 
 ⓘ **The generalisable bit:** *"the instrument is a false positive"* is the most expensive conclusion a monitor can reach, because the remedy is **suppression** — and a wrong suppression is silent by construction. **It deserves the same re-derivation as a positive finding, and this one did not survive it.**
+
+---
+
+## ✅ MECHANISM FOUND — 2026-08-24 ~15:50Z. The open question above ("why does the callee stop short of `log_pipeline_run`?") is answered, and the repo already has the rule it breaks.
+
+⚠ **I said `pipeline_runs` was blind here by construction and the cause needed the function's own logs. It did — and they have it.** `function_logs` and `function_edge_logs` are queryable through the Supabase MCP's unified log stream; `net._http_response`'s missing URL was a dead end, not the only instrument.
+
+### The measurement
+
+`function_logs`, `function_id = 95b832c1-…` (`ingest-allday-pack-opens`):
+
+| event | reason | count |
+|---|---|---:|
+| Boot | — | **186** |
+| Shutdown | **`EarlyDrop`** | **185** |
+| Shutdown | `TerminationRequested` | 2 |
+
+🚨 **185 of 186 boots end in `EarlyDrop` — the isolate is dropped before it finishes.** That is why no `pipeline_runs` row is written: **the function does not survive long enough to reach its logging call.**
+
+`function_edge_logs` for the same path, ~24 h:
+
+| status | n | avg ms | max ms |
+|---|---:|---:|---:|
+| 200 | 51 | **12,751** | **124,361** |
+| 502 | 2 | 80,784 | 86,601 |
+| 504 | 1 | 150,189 | 150,189 |
+
+**The caller's patience is `timeout_milliseconds = 90000` (90 s)**, read from `cron.job` jobid 55 — and the function's max execution is **124 s**, comfortably past it. `net._http_response` corroborates: **76 rows with `timed_out = true`** in a single 3-hour window.
+
+⚠ **Note the shape of the population: ~54 function invocations against ~140 scheduled dispatches.** Most dispatches never produce a logged invocation at all.
+
+### ⛔ What is established, and what is still inference
+
+✅ **Established:** essentially every invocation ends in `EarlyDrop`; the function routinely runs longer than the 90 s caller timeout; pg_net records timeouts; no run row is written.
+⚠ **NOT established:** the precise trigger for *each* `EarlyDrop`. **51 invocations returned HTTP 200 with a 12.7 s average — those did not time out**, yet the boots still end in `EarlyDrop`, which suggests work continuing *after* the response is sent and being dropped with the isolate. **That is a hypothesis. Do not record it as the mechanism without testing it.**
+
+### 🚨 THE REPO ALREADY HAS THE RULE THIS BREAKS
+
+CLAUDE.md, on fire-and-forget work: *"Any `after()` route needs an **invocation heartbeat written BEFORE the work** (separate `<pipeline>-heartbeat` name), because **`try/catch` CANNOT catch a `maxDuration` kill** — without it a killed tick is indistinguishable from a cron that never fired. Read kills by CORRELATION (heartbeat, no terminal row), never a `finally`."*
+
+**That is exactly this failure, in an edge function instead of a Vercel route.** A heartbeat row written *before* the scan would make a killed tick visible as `heartbeat present, terminal row absent` — the correlation the rule prescribes — instead of the indistinguishable silence the `cron_silent` arm is currently reporting.
+
+➡ **So the fix is NOT to teach the arm about `done:true`** (a state this pipeline has never emitted — see the refutation above). **It is to give the pipeline a heartbeat, per a rule this repo wrote for precisely this class**, and separately to decide whether a walk that needs >90 s per tick should be chunked to fit its caller's timeout.
