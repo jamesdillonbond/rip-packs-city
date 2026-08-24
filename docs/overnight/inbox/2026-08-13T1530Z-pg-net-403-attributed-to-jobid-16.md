@@ -122,7 +122,7 @@ Realign `TOPSHOT_PACK_SUPPLY_GATE_KEY` with what cron 15/16 send. Either:
 
 Option 2 is preferable because **the partial-rotation state is what produced both this and the
 08-11 outage**, and four other functions are still un-rotated. Full mechanics:
-[docs/handoff-2026-08-10-gate-key-rotation-progress.md](../../handoff-2026-08-10-gate-key-rotation-progress.md).
+[docs/handoff-2026-08-10-gate-key-rotation-progress.md](../../archive/handoffs/handoff-2026-08-10-gate-key-rotation-progress.md).
 
 **Re-probe after fixing** — the check is one query, and it should return zero rows:
 

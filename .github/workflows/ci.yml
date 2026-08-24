@@ -476,7 +476,7 @@ jobs:
   # to npm: and replace the 2 std/http `serve` imports with Deno.serve — was
   # based on the wrong root cause and is NOT needed. It was deploy-affecting
   # churn against a repo↔deployed divergence that already exists; do not
-  # resurrect it. See docs/handoff-2026-07-30-deno-edge-ci.md (now superseded on
+  # resurrect it. See docs/archive/handoffs/handoff-2026-07-30-deno-edge-ci.md (now superseded on
   # this point).
   #
   # deno lint auto-discovers supabase/functions/deno.json (excludes the
