@@ -545,6 +545,53 @@ smell — `components/MobileNav.tsx:44` is one). 60 is not a ban either; it woul
 
 ---
 
+## 🚨 THE GUARD FAMILY WAS NOT PORTABLE, SO `npm test` ON TREVOR'S BOX WAS AN UNTRUSTWORTHY INSTRUMENT (2026-08-24)
+
+**Measured 2026-08-24 on the Windows box: `npm test` reported 54 failures across 10 files. 53 were not defects.** After the fixes below: **1371/1371 files, 14,945/14,945 tests green** — the first clean full run on that machine. **CI was green throughout**, because every cause is one that only exists off the Linux runner.
+
+⚠ **THE COST IS NOT THE FALSE REDS — IT IS WHAT THEY TRAIN.** CLAUDE.md requires a full-suite run before every push. **A permanently-red instrument is one a reader learns to skim, and a real failure hides in the noise.** Exactly **one** of the 54 was real (a whole-shape `toEqual` in `og-insights-headline-count-is-not-a-page-length`), and it was found only because the other 53 were traced to a cause first.
+
+⚠ **"IT PASSES IN CI" IS NOT THE COUNTER-ARGUMENT — IT IS THE OTHER HALF OF THE FINDING.** CI is the platform on which all four causes below happen to work. That is precisely what let them accumulate. **Where the dev machine and CI differ, each is blind to the other's failures; neither alone is "the" test result.**
+
+### Cause 1 — `execSync("grep -rl … || true")` to discover a guard's own population
+
+Correct on the runner, broken under `cmd.exe`, **in three ways and only one of them loud**:
+
+| mode | instance | what happened |
+|---|---|---|
+| **LOUD** | `metadata-catch-branch-is-not-a-404` | pattern contains SPACES → cmd.exe re-split it → `execSync` threw **at module scope** → suite reported **"0 test"**. 🚨 **DEAD on that box, green in CI.** |
+| **QUIET** | `log-pipeline-run-args-match-the-function` | a simpler pattern happens to work, so the mechanism looks sound until someone widens it |
+| **SILENT** ⚠ | `indexer-cursor-hold-on-partial-scan-guard` | **`\|\| true` swallows the cmd.exe failure into an EMPTY list, so the guard walks ZERO files and PASSES.** Its two `--include='*.ts'` sites had exactly this shape — cmd.exe does not strip the quotes, so grep matched no filename at all. |
+
+⚠ **The SILENT mode is the one that matters: a guard inspecting nothing is indistinguishable at a glance from a guard finding nothing.** Same lesson as *"ASSERT THE COUNT IT INSPECTED"* above, arriving by a new route.
+
+### Cause 2 — `f.replace(process.cwd() + "/", "")`
+
+`node:path.join` yields backslashes on Windows, so this **never matches**, the value silently stays ABSOLUTE, and **any allowlist or suppression keyed on a relative path stops matching**. `entity-sections-do-not-conclude-from-a-failed-read` therefore **reported its own deliberately-SUPPRESSED entry as an offender** — ⚠ **which for ten minutes read like a live honesty defect on `/series/[slug]`. It was not.**
+
+### Cause 3 — an AMBIENT SECRET in the developer's shell
+
+**`INGEST_SECRET_TOKEN` is exported from the user profile on that box**, so every process started there inherits the live token. Many routes gate as `if (expectedToken && authHeader !== …)` — **auth is enforced only when the secret is SET** — so a test written against the *unset* branch got a **401** locally and the intended status in CI. ⚠ **`api-ingest-backfill.test.ts` states that contract in its own header and then failed for having it set by someone else.** ⚠ **`vitest.setup.ts`'s `||=` cannot help: it defaults a MISSING var and is silent about a PRESENT one.** It now **deletes** a named list of auth secrets so the test process matches CI. **The list is the CLASS, not the instance.**
+
+### Cause 4 — a SECOND COPY OF A PACKAGE, which defeats `vi.mock` SILENTLY
+
+`workers/topshot-moments-hydrator/` and `workers/pack-events-ingest/` each carry **their own `node_modules/`** (`@supabase/supabase-js` **2.105.4** vs the root's **2.104.0**). 🚨 **The consequence is not a version skew — it is a MOCK MISS.** A worker importing the bare specifier resolved the **NESTED** copy, **a different module id from the one `vi.mock("@supabase/supabase-js")` registered**, so the mock silently did not apply, the worker built a **REAL** client, and the suite made **REAL network calls** that hung to the 5 s timeout.
+
+- ⚠ **It presented as FLAKINESS.** At `--testTimeout=60000` the mask came off and it was an ordinary assertion failure underneath. ➡ **Re-run a "timeout" with a long timeout before believing it is one.**
+- ⚠ **Those dirs are gitignored, so they exist on a dev box and NEVER in CI.**
+- ⓘ **One probe nearly stopped the hunt:** `createClient` showed **0 calls** with the worker plainly having run — which reads as *"it never gets there"* and actually means *"it called a DIFFERENT module's `createClient`"*.
+- **Control both ways: 22 of 25 worker suites pass, and the 3 that failed are EXACTLY the two dirs with a nested install; every other worker dir has none.**
+- ⛔ **Fixed by ALIASING the specifier to the root copy in both vitest configs, NOT by deleting those `node_modules`** — they are a local wrangler convenience, and deleting a developer's install to make a test pass is the wrong direction.
+
+### The replacement, and the ban
+
+`__tests__/helpers/source-files.ts` — `filesMatching` / `repoRelative` / `walkSourceFiles`. Returns **repo-relative, forward-slash, sorted** paths, **byte-identical to `grep -rl` on Linux, so no migrated guard needed edits to its allowlists or ratchets.** ⚠ **PARITY MEASURED, not assumed — all seven populations match POSIX grep exactly: 32 / 11 / 18 / 23 / 10 / 98 / 1.**
+
+`__tests__/guards-do-not-shell-out-to-grep.test.ts` bans both shapes at zero across `__tests__` + `scripts`, **proven end-to-end in both directions with a planted offender file**, not merely against string literals.
+
+- ⚠ **It excludes ITSELF**, because its detector-proof block must carry the banned shapes as **string LITERALS, which survive comment-stripping** (comment-stripping alone was tried first and it still reported itself — the seventh guard here to fire on its own documentation, this time via fixtures rather than prose). The exclusion is **DERIVED from `import.meta.url`**, never spelled out, since **a guard that names its instances dies on a rename**; and it is **asserted at the property's granularity** — exactly one file dropped, it is this one, and it genuinely carries both shapes.
+- 🚨 **AND IT RED-ON-LOAD IN CI, WHICH IS THE SAME DEFECT IT WAS WRITTEN ABOUT.** It passed locally and standalone, then **timed out at 5217 ms inside CI's `--coverage` run** — it read and comment-stripped ~1,400 files **four times** (once per arm, twice per assertion: the value and the failure message). ⚠ **The very next commit's CI passed by luck**, which is what load-sensitive flakiness looks like. Now reads once, memoised, with an explicit 60 s timeout on the scan-bound arms. ➡ **A guard that reds for being SLOW is indistinguishable at a glance from one that found something, and it trains exactly the same skimming.** ⚠ **Budget a whole-tree scan for the FULL parallel coverage run, never for a standalone run.**
+
 ## Displaced from CLAUDE.md — full case histories (verbatim)
 
 Both bullets below were condensed to their rule in CLAUDE.md on 2026-08-22 to make room for the LAYOUT
