@@ -132,7 +132,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 | client dashboard | `lib/analytics/fetch-json.ts` → `fetchJson()` (discriminate on `ok`, **never** on `json == null`) |
 | OG social card | `lib/og/board-empty-copy.ts` → `boardEmptyCopy(fetched, noun)` |
 
-- ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **OPEN: #28.**
+- ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **FIXED #28.**
 - **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test.
 - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (two found 08-23). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
 - **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page — instance six landed on a page a prior audit had already hardened.
