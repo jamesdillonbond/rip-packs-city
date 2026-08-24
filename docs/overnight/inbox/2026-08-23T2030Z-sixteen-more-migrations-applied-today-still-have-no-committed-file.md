@@ -297,3 +297,70 @@ changed*, not the keyword you added.
    how much DDL actually takes that path.
 3. **Decide `rwfc_temp_build_materialized_cte`**: apply it, or add a `COMMITTED UNAPPLIED` header so
    it stops reading as shipped. Doing neither leaves the exact ambiguity this filing warned about.
+
+---
+
+## 🧹 RECOVERED 2026-08-24 04:30Z — the fold-in of `docs/migration-drift-2026-08-23T2030Z.md` was PARTIAL
+
+`fded5585` says of that working doc: *"The scratch file is removed — this is now the single copy."*
+⚠ **Neither half held.** The file was still on disk, untracked, at 04:30Z; and three of its sections
+existed **nowhere in `docs/overnight/inbox/`** — verified by grep, not by eye. They are recovered
+below verbatim in substance, after which the scratch file carries nothing unique and can go.
+
+⭐ **This is the failure mode the doc itself is about**: a finding parked in an untracked scratch file
+at the repo root, where nothing indexes it and a "folded in" note makes it look handled.
+
+### The nine repo-only migrations, with dispositions — read from the file headers
+
+| migration | state |
+|---|---|
+| `board_mv_crons_and_cadence_panini_firstmint` | applied via `execute_sql` (cron DML) — header says so |
+| `cross_collection_deals_mv_cron_and_cadence` | applied via `execute_sql` — header says so |
+| `least_privilege_cron_and_net_tables` | **COMMITTED UNAPPLIED**, Trevor's call — PUBLIC still SELECTs `cron.job` |
+| the five `snapshot_*` | deliberate: byte-identical to live, applying only buys a PGRST002 burst |
+| `rwfc_temp_build_materialized_cte` | 🚨 was **not applied and silent about it** — ✅ **CLOSED 2026-08-24**, Trevor committed and pushed the APPLIED marker after re-verifying |
+
+### ⚠ The substring test that would have called `rwfc` applied
+
+```
+refresh_wmc_fmv_changed:
+  occurrences of 'MATERIALIZED' in prosrc      1     <- a June migration's LOOP body
+  bare CREATE TEMP TABLE _rwfc_recent          true
+  build statement is a MATERIALIZED CTE        false
+```
+
+**`position('MATERIALIZED' in prosrc) > 0` returns TRUE here and is wrong.** The occurrence **count**
+plus reading the actual build statement is what answers it — **a substring test on a 9 KB function
+body is not a state check.**
+
+### ⭐ The common root of both retracted errors
+
+Both were **using the convenient reference instead of the authoritative one**: the working tree
+instead of `origin/main`, and an assumption instead of `ls scripts/`. Neither needed more evidence —
+both needed one cheap lookup that was skipped before writing a recommendation.
+
+⚠ **And it recurred within the day.** The 2026-08-24 Cowork handoff reported local `main` as
+"8 ahead, 19 behind — diverged, needs a rebase" and recommended one. It needed a **fast-forward**:
+`origin/main..HEAD` had been read off a **stale tracking ref in a session with no fetch**. Same root,
+third instance. 👉 **`ahead/behind` is meaningless without a fetch; say so or don't quote it.**
+
+### Method, corrected
+
+```sql
+select string_agg(name, chr(10) order by name)
+from supabase_migrations.schema_migrations where version >= '20260822000000';
+```
+
+diffed with `comm` against
+`git ls-tree -r --name-only origin/main supabase/migrations | cut -c16- | sed 's/\.sql$//'`
+— **`origin/main`, never the working tree, never `ls`.** Better still: `npm run db:migrations:check`,
+which is what CI runs (needs `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`).
+
+### 👉 Unfiled, and still correctly unmeasured — a real hole in parity's coverage
+
+**`execute_sql`-applied DDL writes no `schema_migrations` row, so parity has nothing to compare
+against.** The three `execute_sql` migrations above kept repo files by **authorship discipline, not
+because any guard forced them to.** That is a genuine gap in the guard and it deserves its own
+measurement before anyone calls it a defect. ⚠ Worth weighing against the 2026-08-24 finding that the
+instance's largest job is likewise invisible to `pipeline_runs` — **two of this repo's guards are
+blind in the same direction: they see only what politely reports itself.**
