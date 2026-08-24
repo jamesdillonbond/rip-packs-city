@@ -8,6 +8,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — **3 of 5 edge-function `pipeline_runs` inserts discard their error**; ratcheted at 3 so a fourth cannot land
+
+**Tests only. No product code, no DB, no deploy.** Follow-through on the `logRun` defect I found while chasing `allday-pack-opens` — **and which I explicitly ruled OUT as that bug's cause.** CLAUDE.md's rule when you find one of these is *"grep for the EXPRESSION, not the file"*, because it spreads by copy-paste. **It had.**
+
+**Swept every `.ts` under `supabase/functions` for `pipeline_runs` INSERT sites: 5 total, 2 checked, 3 UNCHECKED.**
+
+| | site |
+|---|---|
+| ⛔ | `backfill-pack-opens-api/index.ts:115` |
+| ⛔ | `ingest-allday-pack-opens/index.ts:444` |
+| ⛔ | `ingest-topshot-pack-opens-history/index.ts:343` |
+| ✅ | `hybrid-custody-backfill/index.ts:279` — destructures `error` **and logs it** |
+| ✅ | `hybrid-custody-events/index.ts:188` — same |
+
+**Why it matters on a TELEMETRY write specifically:** supabase-js **RETURNS** errors rather than throwing, so a discarded result is a **silent success** — and a failed `pipeline_runs` insert is **indistinguishable from the pipeline never having run**, which is exactly what the `cron_silent` arms key on. ⓘ **The two `hybrid-custody-*` sites are the positive control: the correct shape is already present here, so this is not a platform limitation.**
+
+⚠ **A RATCHET, NOT A BAN AT ZERO, and the reason is stated in the file.** The three cannot be fixed from the repo alone — fixing source without deploying adds repo-vs-prod drift (#23 / #31), and edge deploys are gated on the gate-key rotation blocker. **A ban at zero would be permanently red, which is the failure this repo has already paid for once.** `MAX_UNCHECKED = 3`, **down-only, lower it in the same commit that fixes one.**
+
+⭐ **THE DETECTOR WAS WRONG TWICE AND MY OWN FIXTURES CAUGHT BOTH** — which is the argument for proving a detector in **both** directions rather than only against the offender:
+1. It walked into the function dirs' vendored `node_modules` — **1,756 files instead of ~40.** A ratchet over third-party source measures the wrong thing and can only drift upward.
+2. ⚠ **The statement-boundary heuristic cut at the last `{` or `}` — which severs the destructuring pattern `{ error }` that is the very thing being detected.** Every site classified UNCHECKED, including its own CHECKED fixture. **Cut on `;` only.**
+
+✅ **Mutation-proven end to end:** a planted fourth offender reds it (`expected 4 to be less than or equal to 3`, naming the file:line) and its removal returns it to green. Also asserts the population is non-vacuous (≥5 sites) and that a `pipeline_runs` **READ** is not counted — miscounting reads would inflate the population and quietly stop the ratchet meaning anything.
+
+**Verified:** `tsc` clean, full suite **1373/1373 · 14,965/14,965**.
+
+**Revert:** `git revert <this commit>` (tests only). **Target metric:** the number of edge-function telemetry writes that can fail silently only goes down.
+
 ### 2026-08-24 · RESOLVED (Claude Code, Trevor's Windows box) — `allday-pack-opens` silence explained: **the two modes SHARE ONE EDGE FUNCTION and only BACKFILL is silent.** The asymmetry is the whole answer, and it kills my second wrong hypothesis as well as my first
 
 **Docs only. No code, no DB.** Fourth and final entry in one chain: the monitor's false-positive call → my refutation of its premise → **my wrong `EarlyDrop` mechanism (retracted)** → **my wrong `logRun` mechanism (killed below)** → the measured answer.
