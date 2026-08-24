@@ -1,4 +1,4 @@
-# Inbox index — 226 live filings
+# Inbox index — 227 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,9 +30,10 @@ failure it documents.
 
 ---
 
-## 2026-08-24 — 2 filings
+## 2026-08-24 — 3 filings
 
 - [There are TWO client `Sentry.init()` calls, and which one wins depends on the BUNDLER — under production's turbopack the richer config is INERT](2026-08-24T1510Z-there-are-two-client-sentry-inits-and-which-one-wins-depends-on-the-bundler.md)
+- [`allday-pack-opens-backfill` `cron_silent` watchlist arm is now a FALSE POSITIVE — the finite walk finished and the arm cannot tell "done" from "scheduler stopped"](2026-08-24T1507Z-allday-pack-opens-cron-silent-arm-is-a-false-positive-now-the-finite-walk-is-done.md)
 - [A COLD ISR regeneration can exceed the 8 s board budget and bake the failure into 15 minutes of cached HTML — and `pack-drops` has no stale snapshot](2026-08-24T1441Z-a-cold-isr-regeneration-can-bake-a-failed-read-into-15-minutes-of-cached-html.md)
 
 ## 2026-08-23 — 23 filings

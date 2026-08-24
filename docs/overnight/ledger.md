@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · LANDED A CONCURRENT WRITER'S FILING (Claude Code, Trevor's Windows box) — the daytime monitor filed mid-session, **unindexed**, which RED the inbox guard; committed and indexed it
+
+**Docs only. No code, no DB.** `rpc-daytime-monitor` wrote `inbox/2026-08-24T1507Z-…` into the working tree while I was mid-task on an unrelated item. ⚠ **It added the FILE without adding its `INDEX.md` entry**, so `inbox-index-lists-every-filing` went red on **both** of its count assertions (*"filings on disk but absent from INDEX.md"* and *"expected 226 to be 227"*). Indexed under the 08-24 section (2 → **3 filings**, header 226 → **227**); both guards green, 227 on disk / 227 listed.
+
+⚠ **Stated narrowly on purpose: this is ONE tick, not a proven habit.** Commits that only ANNOTATE an existing filing correctly leave `INDEX.md` alone (several of mine today do), so a mixed history does not establish a pattern — **whether the monitor habitually files unindexed, or whether later sessions have simply been repairing it, is NOT established from one observation.** Worth watching on the next tick rather than asserting now.
+
+ⓘ **The filing itself is good and is about an instrument, which is the day's theme.** `allday-pack-opens-backfill`'s `cron_silent` arm is now a **FALSE POSITIVE**: pg_cron jobid 55 is **firing and succeeding** (`cron.job_run_details` `succeeded` at 15:06 / 14:56 / 14:46 / 14:36 / 14:26Z) while the finite walk has reached `done:true` and therefore stops writing `pipeline_runs` rows. ⚠ **The arm's own note said to keep it active because *"silence still means the SCHEDULER stopped"* — that reasoning no longer holds**, so it now conflates *done-and-healthy* with *scheduler-stopped* and **will re-raise on every sweep, training the reader to ignore it.** ⓘ It carries a positive control (io_wait 0, active 0/41 — **not a saturation spell**) and explicitly says **do not act from that read.** ➡ **Directly relevant to known-issues #29**, whose framing is the same pipeline.
+
+⛔ **Not acted on** — the suggested remedy is a watchlist/telemetry migration and the filing says so; it wants the `done:true` payload confirmed first.
+
+**Revert:** `git revert <this commit>` (docs-only; the filing is the monitor's and stays regardless). **Target metric:** a concurrent writer's filing reaches origin and the inbox guard stays green.
+
 ### 2026-08-24 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — **TWO client `Sentry.init()` calls**, and which one wins depends on the BUNDLER; under production's turbopack the richer config is INERT
 
 **Docs only (one inbox filing + INDEX). No code, no DB.** Went at the Sentry-dark item to test the 08-23 filing's falsifiable prediction and found a separate defect underneath it. **Filed: [`inbox/2026-08-24T1510Z-…`](inbox/2026-08-24T1510Z-there-are-two-client-sentry-inits-and-which-one-wins-depends-on-the-bundler.md).**
