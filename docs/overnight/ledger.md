@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `tsc` clean, full suite **1374/1374 · 14,970/14,970**.
 
-**Revert:** `git revert <this commit>`. **Target metric:** a partial aggregate on a public entity page is never rendered as a total.
+**Revert:** `git revert 6d955f3c`. **Target metric:** a partial aggregate on a public entity page is never rendered as a total.
 
 ### 2026-08-24 · NEGATIVE RESULT, RECORDED ON PURPOSE (Claude Code, Trevor's Windows box) — the `count ?? 0` shape has **62 occurrences and no user-facing defect** in the four surfaces that could carry one
 
