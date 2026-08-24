@@ -28,7 +28,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Unchanged and now more important:** the plan finding. The `DISTINCT ON` scanning **857,293 rows to return 13,230** is what kills the residential arm 7 times in 8, R52's second consumer is real, and `serial_fmv_estimate` stays unattributed with `pg_stat_statements.track = 'top'` unable to split it.
 
-**Written to:** the filing (⛔ CORRECTION section) · known-issues **#30** (headline corrected, consumers traced) · [database.md](../reference/database.md) (seventh/eighth caller sources + the population rule) · CLAUDE.md (**EIGHTH** source named, +15 chars, file **39,989**) · two Cowork memories. **Revert:** `git revert <sha>` (docs-only). **Target metric:** nobody calls a pipeline dead without checking this box's Task Scheduler, and nobody quotes a `pipeline_runs` rate as "the pipeline's rate".
+**Written to:** the filing (⛔ CORRECTION section) · known-issues **#30** (headline corrected, consumers traced) · [database.md](../reference/database.md) (seventh/eighth caller sources + the population rule) · CLAUDE.md (**EIGHTH** source named, +15 chars, file **39,989**) · two Cowork memories. **Revert:** `git revert 1e6c066b` (docs-only). **Target metric:** nobody calls a pipeline dead without checking this box's Task Scheduler, and nobody quotes a `pipeline_runs` rate as "the pipeline's rate".
 
 
 ### 2026-08-23 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — the listings-ingest plan is READ: an unbounded `DISTINCT ON` scanning **857,293 rows to return 13,230**, and it wants the object R52 was parked on
