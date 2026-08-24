@@ -5,16 +5,20 @@ description: Rip Packs City data-warehouse context — load when querying or ana
 
 # RPC data-warehouse context
 
-Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (one statement per call; PostgREST/MCP caps large reads — use `LIMIT`). Pair with the `data` plugin's analyze / write-query skills. Always confirm columns with `information_schema.columns` before a non-trivial query.
+Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (one statement per call). Pair with the `data` plugin's analyze / write-query skills. Always confirm columns with `information_schema.columns` before a non-trivial query.
+
+🚨 **THE 1000-ROW CAP IS NOT LIFTED BY A BIGGER `LIMIT` (corrected 2026-08-24; this line used to say "use `LIMIT`").** PostgREST caps reads at 1000 rows and **CLAMPS an explicit `.limit()` above that** — so a `.limit(10000)` hands back 1000 rows to a caller who believes they have 10,000, which is a partial read rendering as a complete one. **For a TOTAL, read the returned `count` (`head: true`), never `rows.length`.** Aggregate in SQL, or paginate. ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key**, or it reads the right *number* of rows and the wrong *rows* — the duplicates and omissions CANCEL, so every count-based check passes and only a DISTINCT count or a set comparison sees it.
 
 ## Collections — two vocabularies (critical)
 
 | Vocabulary | Used by | Values |
 |---|---|---|
 | Long-form | `sales`, `editions`, `collections.slug` | `nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike` |
-| Short-form | `flowty_*` tables (CHECK-constrained) | `topshot`, `allday`, `golazos`, `pinnacle`, `ufc` |
+| Short-form | `flowty_transactions` (CHECK-constrained); `flowty_loans` / `flowty_loan_events` have NO CHECK | `topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, `unknown` — **`other` is NOT valid** |
 
-Bridge view: `analytics_sales` (long→short). **Collection UUIDs:** TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1ad-a83f763ac070` · Golazos `06248cc4-b85f-47cd-af67-1855d14acd75` · UFC `9b4824a8-736d-4a96-b450-8dcc0c46b023` · Pinnacle `7dd9dd11-e8b6-45c4-ac99-71331f959714`. Every dependent row reaches chain via `collection_id` FK; `collection_chains` view is the canonical join. All 5 published = `chain='flow'`.
+⚠ **Because only `flowty_transactions` is CHECK-constrained, a wrong value fails LOUDLY there and persists SILENTLY in the other two, where it never matches** (verified against `pg_constraint` 2026-08-24). Bridge long→short with the `analytics_sales` view's CASE.
+
+**Collection UUIDs — there are SEVEN, not five.** Read them from the live-derived table in `docs/reference/schema-truth.md` rather than a hardcoded list here (re-verified against `public.collections` 2026-08-24, zero drift). The five published Flow collections are joined by **`candy_mlb` (`solana`)** and **`panini_blockchain` (`ethereum`)**, both `is_active=false` — ⚠ **but `is_active` is NOT the public-visibility switch**: both have public insights boards, so a "how many" query that stops at the five silently undercounts. Every dependent row reaches chain via `collection_id` FK; `collection_chains` view is the canonical join.
 
 ## Key tables
 

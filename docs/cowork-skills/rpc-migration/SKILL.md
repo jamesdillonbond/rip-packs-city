@@ -12,8 +12,8 @@ Work through every applicable item before applying, and the verification items a
 ## Before writing
 
 1. **Confirm the schema is what you think.** `SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='<t>'`. Never trust memory for column names.
-2. **Two collection vocabularies (footgun).** Long-form (`nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike`) is used by `sales`, `editions`, `collections.slug`. Short-form (`topshot`, `allday`, `golazos`, `pinnacle`, `ufc`) is used by `flowty_*` tables (CHECK-constrained). They are not interchangeable.
-3. **Collection UUIDs:** TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd`, AllDay `dee28451-5d62-409e-a1ad-a83f763ac070`, Golazos `06248cc4-b85f-47cd-af67-1855d14acd75`, UFC `9b4824a8-736d-4a96-b450-8dcc0c46b023`, Pinnacle `7dd9dd11-e8b6-45c4-ac99-71331f959714`.
+2. **Two collection vocabularies (footgun).** Long-form (`nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike`) is used by `sales`, `editions`, `collections.slug`. Short-form (`topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, **`unknown`** — six values) is used by the `flowty_*` tables. ⚠ **The CHECK exists on `flowty_transactions` ONLY** (verified against `pg_constraint` 2026-08-24); `flowty_loans` and `flowty_loan_events` carry no `collection` CHECK. So a wrong value (a long-form `'ufc_strike'`, or `'other'` — **`other` is NOT valid**) fails LOUDLY on the first table and persists SILENTLY on the other two, where it simply never matches. They are not interchangeable; bridge long→short with the `analytics_sales` view's CASE.
+3. **Collection UUIDs — there are SEVEN, not five.** Read them from the live-derived table in `docs/reference/schema-truth.md` rather than a hardcoded list here (re-verified against `public.collections` 2026-08-24, zero drift). The five published Flow collections are joined by **`candy_mlb` (`solana`)** and **`panini_blockchain` (`ethereum`)**, both `is_active=false` — ⚠ **but `is_active` is NOT the public-visibility switch**: both have public insights boards, so a "how many" query that stops at the five silently undercounts.
 4. **Enums are UPPERCASE.** `fmv_confidence` = `HIGH|MEDIUM|LOW|ASK_ONLY|SALES_ONLY|STALE|NO_DATA`. Use `.eq` never `.ilike` on enum columns. `tier_type` = `COMMON|FANDOM|RARE|LEGENDARY|ULTIMATE`; UFC uses `CHALLENGER|CONTENDER|FANDOM`. `nba_player_projections.confidence` uses 3-letter `MED` (different CHECK).
 
 ## Functions (the #1 recurring bug)
@@ -30,7 +30,7 @@ Work through every applicable item before applying, and the verification items a
 ## fmv_snapshots (partitioned)
 
 10. **Write pattern is delete-then-insert, NEVER upsert.** `collection_id` is `NOT NULL`. Daily duplicate snapshots are intentional history, not a bug.
-11. **`CREATE INDEX CONCURRENTLY` must be a standalone `execute_sql`**, NOT inside `apply_migration` (which wraps in a transaction).
+11. **`CREATE INDEX CONCURRENTLY` must be a standalone `execute_sql`**, NOT inside `apply_migration` (which wraps in a transaction). ⚠ **In practice `CONCURRENTLY` is reachable ONLY via a one-statement pg_cron job (libpq), never `execute_sql`.**
 12. **Latest-per-edition is `SELECT DISTINCT ON (edition_id) ... ORDER BY edition_id, computed_at DESC`.** Any `LIMIT 1` over snapshot history without `ORDER BY computed_at DESC` reads an arbitrary partition row. Never filter snapshot history *before* a `DISTINCT ON` re-stamp (the Step-6 self-perpetuating-NO_DATA class of bug).
 
 ## Destructive operations
@@ -40,9 +40,15 @@ Work through every applicable item before applying, and the verification items a
 15. **MCP `execute_sql` times out around ~700k-row transactions.** Use `apply_migration` or chunk into sequential migrations.
 16. **N-to-1 merges have TWO collision classes** on dependent UNIQUE constraints: dupe-vs-canonical AND intra-dupe. Dry-run both. Active crons write drift rows mid-migration — bundle a drift-repoint-and-delete sweep in the SAME atomic transaction before installing any post-merge invariant trigger.
 
+## Traps this checklist was missing (added 2026-08-24)
+
+- 🚨 **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** while PostgREST re-introspects the schema cache. **Prefer a low-traffic window and BATCH migrations.** `rpcWithRetry` does not save you — it retries for ~250 ms of a twenty-second outage.
+- ⚠ **`CREATE OR REPLACE VIEW` with no `WITH` clause RESETS reloptions and silently strips `security_invoker=on`** (four occurrences). This is distinct from item 8, which is about NEW views — the replace path un-does a fix that is already in place. Repair with `ALTER VIEW … SET (security_invoker = on)`. It also **cannot rename or reorder columns** (`42P16`), and a rolled-back SQL test cannot catch that, because it builds the object where no prior definition exists.
+- ⚠ **Verify a REVOKE with `has_function_privilege`, never the ACL text**, and revoke **`FROM PUBLIC, anon, authenticated` in ONE statement** — this DB carries both a PUBLIC default and `ALTER DEFAULT PRIVILEGES` grants, so either half alone leaves the hole open. Re-run `check_secdef_anon_exec_drift()` after creating ANY function.
+
 ## After applying
 
 17. **Verify, then write conclusions in a SEPARATE step.** Never fire the migration and the verifying query (or a doc capturing the result) in the same batch — the doc captures the assumed result, not the actual output. Run → read → then record.
 18. Re-run the relevant catalog check (RLS on base tables, no anon write on base tables, no anon EXECUTE on destructive fns, `security_invoker` on new views). The `rpc-security-drift` artifact runs all of these.
-19. **Log it** in `CLAUDE.md` Recent sessions + `docs/overnight/ledger.md` with the exact revert command.
+19. 🚨 **Log it in `docs/sessions/<YYYY-MM>.md` (PREPEND, newest-first) + `docs/overnight/ledger.md`, with the exact revert command. ⛔ NOT in `CLAUDE.md` — this line said "CLAUDE.md Recent sessions" until 2026-08-24 and that has been WRONG since the 2026-08-17 restructure.** CLAUDE.md's own rule is *"write new ones into `docs/sessions/`… **never here**"*, and the file runs within tens of characters of a **hard 40,000-character memory-file ceiling** — appending a session entry there can push it over, at which point the whole file is flagged and stops being trustworthy context. `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts` guards the ceiling, but this skill was actively directing the harmful edit. ⚠ **Ledger discipline:** re-read it from disk immediately before writing (it is append-at-top and sessions write it concurrently) and splice at a line-start `^### `.
 20. **Cowork deploy-split:** a migration/edge-function ships live from Cowork, but any paired route/.tsx change can't be pushed from here — package it with the `rpc-handoff` skill.

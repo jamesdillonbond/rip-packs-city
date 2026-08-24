@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the skills' CONTENT audited, and `rpc-migration` was actively directing an edit that can destroy CLAUDE.md
+
+Docs only (two skills + their bundles). No migration, no DB write, no prod-state change. Yesterday's pass
+guarded that the two COPIES of each skill agree; this one asks whether what they SAY is true.
+
+- 🚨 **`rpc-migration` item 19 said "Log it in **`CLAUDE.md` Recent sessions** + the ledger" — and that has been
+  WRONG since the 2026-08-17 restructure.** CLAUDE.md's own rule is *"write new ones into `docs/sessions/`…
+  **never here**"*. ⚠ **The severity is not that it points at the wrong file: CLAUDE.md runs within tens of
+  characters of a HARD 40,000-character memory-file ceiling** (39,958 today), so appending a session entry
+  there can push it over — at which point, per the guard's own header, *the whole file is flagged and stops
+  being trustworthy context*, a silent total loss of the project's memory. The CI guard catches it after the
+  fact; **the skill was directing the harmful edit.** ⛔ Only `rpc-migration` carried it — checked all nine.
+  Now points at `docs/sessions/<YYYY-MM>.md` with the ceiling warning and the ledger re-read/splice rule.
+- ⛔ **Both `rpc-migration` and `rpc-data` carried the SAME short-form vocabulary defect the design doc had**,
+  from the opposite side: they listed five values (omitting **`unknown`**) and called the `flowty_*` tables
+  "CHECK-constrained" as a group. Verified against `pg_constraint`: the CHECK is on **`flowty_transactions`
+  ONLY** and whitelists **six**. Both now say so, and both name **`other` as NOT valid**.
+- ⚠ **Both hardcoded FIVE collection UUIDs.** There are **seven** — `candy_mlb` (`solana`) and
+  `panini_blockchain` (`ethereum`) are `is_active=false` **but have public insights boards**, so a "how many"
+  query that stops at five silently undercounts. Both now point at `schema-truth.md` instead of carrying a
+  partial list that drifts.
+- 🚨 **`rpc-data`'s opening line said "PostgREST/MCP caps large reads — use `LIMIT`"** — the same wrong remedy
+  found in the design doc's §5 yesterday, in the skill whose whole job is "pull the numbers". The cap
+  **CLAMPS** an explicit limit above 1000. Corrected, with `count`/`head:true` for totals and the
+  `.range()`-needs-a-unique-`.order()` rule added.
+- **Added to `rpc-migration`, all previously absent:** `apply_migration` causes a ~10–20 s burst of
+  user-facing `PGRST002` 500s (batch, and `rpcWithRetry` does not save you); `CREATE OR REPLACE VIEW` resets
+  reloptions and strips `security_invoker=on` (distinct from item 8's NEW-view case — the replace path un-does
+  a fix already in place) and cannot rename/reorder columns (`42P16`); verify a REVOKE with
+  `has_function_privilege`, never the ACL text, `FROM PUBLIC, anon, authenticated` in one statement.
+- ⚠ **Caught my own instance of a known defect class:** I first titled the new section *"Two more traps"* over
+  three bullets. **A heading that names a count its body does not match is the same shape that reddened main
+  on 2026-08-22** (a guard doc naming SOME of its assertions reads as naming all). Retitled.
+- ✅ Both bundles re-packed deterministically; `npm run skills:bundles:check` green at 9/9.
+
+**Revert path:** `git revert <sha>` — docs + two deterministic bundle re-packs. ⚠ Reverting restores the
+CLAUDE.md-session-log instruction; revert only to undo a bad edit of mine.
+
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the Cowork skills were an entirely unguarded memory surface, and BOTH copies had drifted, in opposite directions
 
 Docs + one new guard + one re-packed bundle. No migration, no DB write, no prod-state change.
