@@ -8,6 +8,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · RESOLVED (Claude Code, Trevor's Windows box) — `allday-pack-opens` silence explained: **the two modes SHARE ONE EDGE FUNCTION and only BACKFILL is silent.** The asymmetry is the whole answer, and it kills my second wrong hypothesis as well as my first
+
+**Docs only. No code, no DB.** Fourth and final entry in one chain: the monitor's false-positive call → my refutation of its premise → **my wrong `EarlyDrop` mechanism (retracted)** → **my wrong `logRun` mechanism (killed below)** → the measured answer.
+
+🚨 **I had been treating `ingest-allday-pack-opens` as ONE population. It serves TWO pipelines**, and splitting them dissolves every confusion:
+
+| pipeline | rows / 24 h | ok | newest |
+|---|---:|---|---|
+| `allday-pack-opens-**forward**` | **46** | **46/46** | **2026-08-24 15:39:08Z** — minutes ago |
+| `allday-pack-opens-**backfill**` | 5 | 1/5 | 2026-08-23 21:26Z |
+
+**Same function, same `logRun`, same table. Forward writes; backfill does not.**
+
+⛔ **THAT KILLS MY SECOND HYPOTHESIS, WHICH I HAD JUST TALKED MYSELF INTO.** I found that `logRun` does `await supabase.from("pipeline_runs").insert({…})` **without checking the returned `error`** — a genuine instance of this repo's most-documented defect, since **supabase-js RETURNS errors rather than throwing**, so a failed insert is silently a success. It looked like the answer. **It cannot be: the identical call writes 46 forward rows a day.** ➡ **A defect that is REAL and is NOT the cause of the thing you are investigating must not be reported as the cause.** It is now filed as separate hygiene.
+
+✅ **And the code vindicates the FIRST refutation for the right reason.** `done:true` is emitted at line 507 under `if (cur <= floor)` — with `cur` = **84,662,756** and `floor` = **65,264,619**, that branch is **~19.4M blocks away**. **The state is real and unreachable, not absent** — which is a sharper statement than my original "never emitted".
+
+➡ **THE SUPPORTED EXPLANATION.** Forward scans a small tip window and finishes fast, so it responds and logs. **Backfill scans large historical ranges — observed up to 124.4 s against the caller's `timeout_milliseconds = 90000`**, with **76 `timed_out`** in one 3-hour window and **~54 logged invocations against ~140 dispatches**. **A request the caller abandons at 90 s never reaches `logRun`** — and `pipeline_runs` is blind to that *by construction*, which is exactly why `cron_silent` sees silence while `cron.job_run_details` sees success.
+
+⚠ **CONFIDENCE, STATED:** the **asymmetry** and the **timing** are measured. *"Every missing backfill row is a caller timeout"* is **well-supported, NOT proven** — individual dispatches cannot be matched to invocations (`net._http_response` carries no URL).
+
+➡ **Actions:** (1) **the heartbeat CLAUDE.md already prescribes** — *"written BEFORE the work … read kills by CORRELATION"* — **now supported by the measured timeout rather than by the retracted EarlyDrop argument**; (2) **chunk backfill to fit 90 s**, or raise the caller's timeout deliberately — *a walk needing >90 s per tick against a 90 s caller cannot both progress and report*; (3) fix `logRun`'s unchecked insert error as **separate hygiene**; (4) ⛔ **still do not suppress the arm — it has been correct throughout.**
+
+⭐ **The chain is the lesson: the monitor's proposed action (suppress) would have ended this at step one with the bug intact and the board green — and TWO of my three subsequent mechanisms were wrong.** ➡ **Each was killed by a control, not by more thinking.**
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** backfill either progresses within its caller's patience or says out loud that it cannot.
+
 ### 2026-08-24 · ⛔ RETRACTION (Claude Code, Trevor's Windows box) — I shipped an `EarlyDrop` mechanism 15 minutes ago and it is WRONG; `EarlyDrop` is the baseline for EVERY edge function here
 
 **Docs only. No code, no DB.** ⚠ **Retracting my own claim from the entry two below, pushed as `eb732a94`.**

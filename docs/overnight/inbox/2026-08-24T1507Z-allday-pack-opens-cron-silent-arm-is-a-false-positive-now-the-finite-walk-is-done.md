@@ -143,3 +143,35 @@ I found a striking positive and did not check whether it was universal. It is:
 ⛔ **OPEN AGAIN — why no run row.** ⚠ And the sharper form of the question, which the control surfaced: **51 invocations returned HTTP 200 and still produced no `pipeline_runs` row.** A 200 is not a kill. **Something in the function returns success without logging** — an early exit, a lock, a nothing-to-do path, or a failing `log_pipeline_run`. **That is where the next session should look, and it is a code read, not a log query.**
 
 ⚠ **Corrected in the same place it was claimed**, and in known-issues #29. **The heartbeat recommendation is NOT withdrawn** — it remains the right instrument for distinguishing a killed tick from a cron that never fired — **but it is no longer supported by an EarlyDrop argument, and the actual cause here is still unknown.**
+
+---
+
+## ✅ RESOLVED — 2026-08-24 ~16:10Z. **The two modes share one function, and only BACKFILL is silent. That asymmetry is the whole answer.**
+
+⚠ **I had been treating "the function" as one population. It serves TWO pipelines**, and separating them makes every earlier confusion evaporate:
+
+| pipeline | rows / 24 h | all ok? | newest |
+|---|---:|---|---|
+| `allday-pack-opens-**forward**` | **46** | **46/46 ok** | **2026-08-24 15:39:08Z** — minutes ago |
+| `allday-pack-opens-**backfill**` | 5 | 1/5 | 2026-08-23 21:26Z |
+
+**Same edge function. Same `logRun`. Same table. Forward writes; backfill does not.**
+
+### What this KILLS — including my own second hypothesis
+
+⛔ **`logRun` is not broken, and the unchecked-error shape is not the cause.** I had flagged that `logRun` does `await supabase.from("pipeline_runs").insert({…})` **without checking the returned `error`** — a genuine instance of this repo's documented top defect (supabase-js *returns* errors rather than throwing, so a failed insert is silently a success). ⚠ **But it cannot explain THIS**, because the identical call writes 46 forward rows a day. **A defect that is real and is not the cause of the thing you are investigating is still worth fixing — but it must not be reported as the cause.**
+⛔ **`EarlyDrop` — already retracted above; it is the project-wide baseline.**
+⛔ **`done:true` — the code DOES emit it (line 507, `if (cur <= floor)`), which is why my refutation was right for the right reason: `cur` = 84,662,756 against `floor` = 65,264,619, so that branch is ~19.4M blocks away. The state is real and unreachable, not absent.**
+
+### The supported explanation
+
+**Forward scans a small tip window and finishes fast, so it responds and logs.** **Backfill scans large historical ranges** — observed execution up to **124.4 s** against the caller's **`timeout_milliseconds = 90000`**, with **76 `timed_out = true`** in a single 3-hour window and only **~54 logged invocations against ~140 dispatches**. **A request the caller abandons at 90 s never reaches `logRun`**, and `pipeline_runs` is blind to it *by construction* — which is precisely why the `cron_silent` arm sees silence while `cron.job_run_details` sees success.
+
+⚠ **CONFIDENCE, stated honestly:** the **asymmetry is measured** and the **timing is measured**. *"Every missing backfill row is a caller timeout"* is **well-supported but not proven** — I have not matched individual dispatches to individual invocations, and `net._http_response` cannot do it (no URL).
+
+### ➡ What to do, unchanged in substance and now correctly supported
+
+1. **The heartbeat** — CLAUDE.md's own rule for this class: *"an invocation heartbeat written BEFORE the work … read kills by CORRELATION (heartbeat, no terminal row)."* This makes an abandoned backfill tick **visible** instead of silent. **The recommendation never depended on the EarlyDrop argument; it depends on the timeout, which is measured.**
+2. **Chunk the backfill so a tick fits inside 90 s** — or raise the caller's timeout deliberately. A walk that needs >90 s per tick against a 90 s caller cannot make progress *and* report it.
+3. ✅ **Fix `logRun`'s unchecked insert error anyway** — separately, and labelled as hygiene rather than as this bug's cause.
+4. ⛔ **Still do not suppress the `cron_silent` arm.** It has been correct throughout.
