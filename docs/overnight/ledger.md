@@ -35,7 +35,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Corrected in all three places it was claimed:** the filing (annotated in place), known-issues **#29**, and here.
 
-**Revert:** `git revert <this commit>` (docs-only) — ⚠ **but reverting this would restore a claim I have proven false.** **Target metric:** the register carries an honest open question instead of a confident wrong answer.
+**Revert:** `git revert 0a167cc7` (docs-only) — ⚠ **but reverting this would restore a claim I have proven false.** **Target metric:** the register carries an honest open question instead of a confident wrong answer.
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit I said was open, plus a live trust-board and accuracy-gate re-derivation
 
