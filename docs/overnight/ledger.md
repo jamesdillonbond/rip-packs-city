@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · RE-DERIVED + POST-SHIP VERIFIED (Claude Code, Trevor's Windows box) — **#25's three detector streaks have all moved, one of its claims is now FALSE**, and today's parity cadence change is confirmed firing in production
+
+**Docs only. No code, no DB.** #25's argument rests entirely on three streak numbers measured on 08-22. **All three are stale two days later** — which is the entry's own thesis about unread instruments, applied to the entry.
+
+| detector | #25 said (08-22) | re-derived 08-24 |
+|---|---|---|
+| `edge-fn-drift` | red **14** consecutive | **red 16** consecutive scheduled (unbroken 08-09 → 08-24) |
+| `db-pin-staleness` | red **13** consecutive | **still red — but on a DIFFERENT pin** |
+| `migration-parity` | **14/14 GREEN** | 🚨 **FALSE — it went RED on 08-23** |
+
+🚨 **The false one strengthens #25 rather than weakening it.** `migration-parity` failed **2026-08-23 07:58Z** (scheduled) and again on a 20:43Z dispatch, on the sixteen fileless migrations. ➡ **A detector went red, was CORRECT, and nothing surfaced it — it was found by a session reading logs.** That is #25's thesis playing out a **third** time, on the one detector it held up as healthy.
+
+ⓘ **`edge-fn-drift`'s 16-day red is now EXPLAINED differently by #31:** its authoritative arm has never once run (0 of 38 body reads; the API serves an `eszip` binary and the script calls `.json()`). **It has been loudly correct about the wrong half the entire time** — which is worse than "loudly correct", and neither #25 nor #23 could see it.
+
+✅ **`db-pin-staleness`'s red is no longer the original six** — those are closed. Today's is `refresh_wmc_fmv_changed`, stale because `rwfc_temp_build_materialized_cte` reached prod. **Re-pinned earlier today (`fb533970`)**, so **the 07:20Z run on 08-25 should be its first GREEN in ~14 days.** ⚠ **A prediction with a named falsifier: if it is still red tomorrow, the re-pin was wrong.**
+
+⭐ **POST-SHIP VERIFICATION of today's parity cadence change (`039527d8`), by its own telemetry rather than by assertion:** the new **15:50 UTC** slot **fired and passed** — `2026-08-24T16:16:56Z success schedule` (GitHub's usual scheduling delay). **Parity is now genuinely running 3×/day in production**, cutting the blind window ~24 h → ~8 h.
+
+⛔ **The sentinel arm #25 actually asks for is still blocked on the SECRETS decision** (a GitHub token with `actions: read` in Vercel env), which CLAUDE.md puts off-limits for autonomous change. **Cadence is a mitigation, not the fix** — a detector can still be red for 8 hours with nothing surfacing it.
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** #25's numbers describe the estate, and its "one healthy detector" claim is not left standing after it stopped being true.
+
 ### 2026-08-24 · RE-VERIFIED, STILL LIVE (Claude Code, Trevor's Windows box) — **#21's `wrangler deploy` trap is intact and has NOT fired**; plus one new, unexplained cadence observation
 
 **Docs only. No code, no DB.** Continuing the register re-derivation. ⚠ **Unlike the seven stale entries found today, this one is CORRECT IN EVERY PARTICULAR** — recording that on purpose, because *"I checked and it was right"* is as worth knowing as a correction, and an entry nobody re-checks is untrustworthy whether or not it happens to be true.
