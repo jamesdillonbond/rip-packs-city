@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Written to:** the handoff (⛔ CORRECTION section, so the next reader of that file cannot act on the refuted item) · `focus.md` (the rule now NAMES its guard and names the contrary instruction) · the sitemap filing. **Restored:** 224 on disk / 224 listed, both `INDEX.md` counts intact, both inbox guards green.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** no future push-capable pass spends its time undoing this, and a resolved filing gets annotated rather than moved.
+**Revert:** `git revert 3e2d90ac` (docs-only). **Target metric:** no future push-capable pass spends its time undoing this, and a resolved filing gets annotated rather than moved.
 
 ### 2026-08-24 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — the edge-fn drift detector's AUTHORITATIVE arm has NEVER produced a result, and every count it has published is Tier 1's lower bound
 
