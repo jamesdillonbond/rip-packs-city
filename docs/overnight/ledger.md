@@ -34,7 +34,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `tsc` clean, full suite **1373/1373 · 14,965/14,965**.
 
-**Revert:** `git revert <this commit>` (tests only). **Target metric:** the number of edge-function telemetry writes that can fail silently only goes down.
+**Revert:** `git revert 04614e10` (tests only). **Target metric:** the number of edge-function telemetry writes that can fail silently only goes down.
 
 ### 2026-08-24 · RESOLVED (Claude Code, Trevor's Windows box) — `allday-pack-opens` silence explained: **the two modes SHARE ONE EDGE FUNCTION and only BACKFILL is silent.** The asymmetry is the whole answer, and it kills my second wrong hypothesis as well as my first
 
