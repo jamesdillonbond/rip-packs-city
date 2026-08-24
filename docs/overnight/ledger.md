@@ -32,7 +32,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `db-invariants-drift-guard` **194 green**, `tsc` clean, full suite **1372/1372 · 14,961/14,961**.
 
-**Revert:** `git revert <this commit>` (repo-only; restores the 08-13 pin target, which would red the staleness check again). **Target metric:** the pin describes the function that actually runs.
+**Revert:** `git revert fb533970` (repo-only; restores the 08-13 pin target, which would red the staleness check again). ⚠ **This entry was RE-SPLICED into upstream's ledger during a rebase** — another session pushed a memory refresh mid-push. Baseline measured before asserting: upstream 1933 headings -> 1934, swallowed 3, future-dated 0, zero markers, `git add` gated on those four. **Target metric:** the pin describes the function that actually runs.
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — memory refresh: CLAUDE.md re-derived against live sources, one new honesty rule added and PAID FOR by a displacement
 
