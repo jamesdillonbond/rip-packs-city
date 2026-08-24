@@ -141,8 +141,23 @@ form: the string was accurate when written against 2 arms and silently decayed a
   VIEW — much larger blast radius, needs Trevor. **This guard makes the recurrence LOUD, not
   impossible.**
 
-## Open question for the next session
+## ✅ The one open question, closed the same session — by reading, not assuming
 
-`check_anon_write_surface()` also reads `information_schema.role_table_grants`. Its subject is base
-tables, so the MV blindness may be out of scope for it by design — **but that was my wrong
-assumption once already today.** Read its body before concluding, exactly as I should have here.
+`check_anon_write_surface()` also reads `information_schema.role_table_grants`, so I flagged it as
+possibly carrying the same blindness. **Read rather than assumed, because assuming is what went
+wrong earlier in this same investigation.** Its body joins **both**:
+
+```sql
+JOIN pg_tables  t ON t.schemaname = 'public' AND t.tablename = g.table_name
+JOIN pg_policies p ON a.table_name = p.tablename
+```
+
+A materialized view can hold **neither** — it has no `pg_tables` row and **cannot carry an RLS
+policy at all**, and it is not directly writable. So MVs are outside this function's scope **by the
+nature of the object, not by an oversight**, and no change is warranted. **Verdict: correct as
+written. Do not "fix" it.**
+
+⚠ Note the asymmetry that makes this worth recording: the *same* infoschema blindness is a real gap
+in one function and a non-issue in the other. **The instrument's limitation only matters where the
+invariant needs the objects it cannot see.** A blanket "audit everything using
+`role_table_grants`" sweep would have produced a wrong edit here.
