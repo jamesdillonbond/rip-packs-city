@@ -23,16 +23,15 @@
 
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "fs"
-import { execSync } from "child_process"
+import { filesMatching } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 /** Every route that writes a `phase: "started"` marker row. */
 function markerWriters(): string[] {
-  const out = execSync(
-    `grep -rl 'phase: "started"' app --include=route.ts || true`,
-    { cwd: process.cwd(), encoding: "utf8" }
-  ).trim()
-  return out ? out.split("\n") : []
+  // ⚠ WAS a shelled-out grep whose pattern carries BOTH a space and nested
+  // double quotes — the exact shape that killed metadata-catch-branch on
+  // Windows. It returned the right answer here by luck, not by construction.
+  return filesMatching("app", (n) => n === "route.ts", 'phase: "started"')
 }
 
 /** The object literal passed to the marker .insert(...), roughly bounded. */

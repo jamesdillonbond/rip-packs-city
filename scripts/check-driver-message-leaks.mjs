@@ -33,7 +33,7 @@
 // IT is gated. Ban at population zero for the ungated ones.
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 const rootFlag = process.argv.indexOf("--root");
 const ROOT = rootFlag !== -1 ? process.argv[rootFlag + 1] : ".";
@@ -58,7 +58,13 @@ function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) out.push(...walk(p));
-    else if (name.endsWith(".ts")) out.push(p);
+    // ⚠ FORWARD SLASHES, ALWAYS. node:path.join yields backslashes on Windows,
+    // and this path is not just read with — it is PRINTED as the finding and
+    // matched against by __tests__/driver-message-leak-guard.test.ts, whose
+    // fixtures name routes as "x/route.ts". Reporting a backslash path made the
+    // guard's own detection tests fail on the primary dev machine while CI was
+    // green. Node accepts forward slashes on Windows for reads, so this is free.
+    else if (name.endsWith(".ts")) out.push(p.split(sep).join("/"));
   }
   return out;
 }

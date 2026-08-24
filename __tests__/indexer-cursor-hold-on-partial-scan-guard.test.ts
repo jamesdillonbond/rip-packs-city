@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { filesMatching } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The block-scan cursor must never leapfrog a chunk that FAILED to scan.
@@ -49,13 +49,12 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
  */
 
 /** Every route that tracks a first-failed chunk, discovered from source. */
-const routes = execSync(
-  "grep -rl 'firstFailedChunkStart' app/api --include=route.ts || true",
-  { encoding: "utf8" },
-)
-  .split("\n")
-  .filter(Boolean)
-  .sort()
+// ⚠ WAS a shelled-out `grep -rl … || true`. The `|| true` is the dangerous
+// half: it swallows a cmd.exe failure into an EMPTY list, so a broken shell-out
+// makes this guard walk ZERO routes and PASS. The not-vacuous floor below is
+// the only thing that catches that, which is why every filesMatching caller
+// needs one.
+const routes = filesMatching("app/api", (n) => n === "route.ts", "firstFailedChunkStart")
 
 describe("block-scan indexers hold the cursor at a failed chunk", () => {
   it("is not vacuous: it discovered the indexer family", () => {
@@ -157,13 +156,7 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     //
     // A directory-driven grep for the fetcher itself is the derivation that
     // matches the claim, so a new indexer joins the population the day it lands.
-    const fetchers = execSync(
-      "grep -rl 'async function fetchEventRange' app/api --include=route.ts || true",
-      { encoding: "utf8" },
-    )
-      .split("\n")
-      .filter(Boolean)
-      .sort()
+    const fetchers = filesMatching("app/api", (n) => n === "route.ts", "async function fetchEventRange")
 
     // ⚠ KNOWN OFFENDERS — A RATCHET, NOT AN ALLOWLIST. Asserted by EXACT
     // EQUALITY below, so it can only ever SHRINK: fixing one reddens the guard
@@ -348,13 +341,11 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     // population is derived from it, and anything not in the fetchEventRange
     // family has to be ACCOUNTED FOR by name below. Suppression is the curated
     // list; the population is not.
-    const urlWalkers = execSync(
-      "grep -rl 'v1/events' app lib --include='*.ts' || true",
-      { encoding: "utf8" },
-    )
-      .split("\n")
-      .filter(Boolean)
-      .sort()
+    // ⚠ The shelled-out form QUOTED its glob (`--include='*.ts'`). cmd.exe does
+    // not strip those quotes, so grep matched no filename at all and this
+    // population was EMPTY on Windows — a guard whose whole point is that the
+    // population is derived rather than curated.
+    const urlWalkers = filesMatching(["app", "lib"], (n) => n.endsWith(".ts"), "v1/events")
 
     // Reads an event range but persists NO block cursor, so it cannot leapfrog
     // one. ⚠ That claim is ASSERTED below, not asserted-by-comment: the moment
@@ -495,13 +486,15 @@ describe("event-range walkers outside app/ and lib/ are enumerated, not invisibl
     "workers/spork-proxy/index.ts",
   ]
 
-  const found = execSync(
-    "grep -rlE 'v1/events|getEventsAtBlockHeightRange' workers supabase/functions --include='*.ts' || true",
-    { encoding: "utf8" },
+  // ⚠ Same quoted-glob problem as above, plus two roots passed as bare
+  // space-separated arguments. Asserted by EXACT EQUALITY below, so an empty
+  // population here would not merely pass — it would demand that the ratchet be
+  // emptied, i.e. the broken instrument would ask to have its findings deleted.
+  const found = filesMatching(
+    ["workers", "supabase/functions"],
+    (n) => n.endsWith(".ts"),
+    /v1\/events|getEventsAtBlockHeightRange/,
   )
-    .split("\n")
-    .filter(Boolean)
-    .sort()
 
   it("the set of out-of-scope event-range walkers is unchanged", () => {
     expect(

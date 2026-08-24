@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { repoRelative } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // COMPLETENESS: no entity-page section may CONCLUDE about the data from a read
@@ -138,8 +139,14 @@ const SUPPRESSED: Array<{ file: string; phrase: RegExp; why: string }> = [
   },
 ]
 
+// ⚠ `process.cwd() + "/"` NEVER MATCHED ON WINDOWS, where node:path.join
+// yields backslashes — so rel() returned the ABSOLUTE path, SUPPRESSED (keyed on
+// forward-slash repo-relative paths) could not match, and this guard reported
+// its own deliberately-suppressed series-page entry as an offender. A guard
+// whose curated exemptions are dead on one platform is red for a reason that has
+// nothing to do with the code it guards.
 function rel(f: string): string {
-  return f.replace(process.cwd() + "/", "")
+  return repoRelative(f)
 }
 
 function isSuppressed(file: string, phrase: string): boolean {
@@ -183,7 +190,7 @@ describe("no entity section concludes about the data from a failed read", () => 
         // It reaches forward 120 so a trailing negation is visible.
         const window = src.slice(Math.max(0, at - 520), at + 120)
         if (!isExempt(window) && !isSuppressed(rel(f), m[0])) {
-          offenders.push(`${f.replace(process.cwd() + "/", "")} :: ${m[0]}`)
+          offenders.push(`${rel(f)} :: ${m[0]}`)
         }
       }
     }

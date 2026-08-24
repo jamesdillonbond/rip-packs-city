@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { filesMatching } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // The link-preview honesty layer, from the side its existing guard cannot see.
@@ -104,12 +104,15 @@ function catchBlocks(body: string): string[] {
  * Do not re-inline a local copy.
  */
 
-const metadataFiles = execSync(
-  "grep -rl 'export async function generateMetadata\\|export function generateMetadata' app --include=*.tsx --include=*.ts || true",
-  { encoding: "utf8" },
+// ⚠ WAS a shelled-out `grep -rl`. Its pattern contains SPACES, so cmd.exe
+// re-split it on Windows and execSync THREW at module scope: this entire guard
+// reported "0 test" and was DEAD on the primary dev machine while CI stayed
+// green. Population verified identical across the migration: 32 files.
+const metadataFiles = filesMatching(
+  "app",
+  (n) => n.endsWith(".tsx") || n.endsWith(".ts"),
+  /export (?:async )?function generateMetadata/,
 )
-  .split("\n")
-  .filter(Boolean)
 
 /** Files whose generateMetadata catches at all — the population under test. */
 const filesWithCatch = metadataFiles.filter((f) => {

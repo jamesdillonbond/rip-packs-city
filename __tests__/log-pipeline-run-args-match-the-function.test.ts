@@ -28,7 +28,7 @@
 
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "fs"
-import { execSync } from "child_process"
+import { filesMatching } from "./helpers/source-files"
 
 /** Live signature of the 11-arg overload (pg_proc, 2026-08-15). */
 const VALID_ARGS = new Set([
@@ -52,10 +52,13 @@ interface CallSite {
 
 /** Top-level keys of every `.rpc("log_pipeline_run", { ... })` argument object. */
 function callSites(): CallSite[] {
-  const files = execSync(
-    `grep -rl 'log_pipeline_run' app --include=route.ts || true`,
-    { cwd: process.cwd(), encoding: "utf8" }
-  )
+  // ⚠ WAS a shelled-out grep. It happened to work on Windows, which is the
+  // trap rather than the reprieve: the mechanism holds only until someone
+  // widens the pattern to one containing a space, at which point it dies — or,
+  // via `|| true`, returns nothing and the guard passes having read no files.
+  // Population unchanged across the migration: 98 files.
+  const files = filesMatching("app", (n) => n === "route.ts", "log_pipeline_run")
+    .join("\n")
     .trim()
     .split("\n")
     .filter(Boolean)

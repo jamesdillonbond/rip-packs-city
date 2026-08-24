@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { repoRelative } from "./helpers/source-files"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // lib/og/brand-fonts — the shared loader, and a ratchet on the cards using it.
@@ -142,7 +143,11 @@ describe("OG card adoption ratchet", () => {
     // that does — and a 44th route has to do one or the other to land.
     const uncovered = sources
       .filter((s) => !branded.includes(s) && !viaEntityCard.includes(s))
-      .map((s) => s.f.replace(process.cwd() + "/", ""))
+      // `process.cwd() + "/"` never matches on Windows (join yields
+      // backslashes), so an offender would have been REPORTED as an absolute
+      // path. Latent rather than failing — this list is empty today — but it is
+      // the same defect that made the entity-sections guard red on this box.
+      .map((s) => repoRelative(s.f))
     expect(uncovered, `unbranded OG cards: ${uncovered.join(", ")}`).toEqual([])
   })
 
