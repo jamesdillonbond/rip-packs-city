@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · CORRECTED A STALE REGISTER ENTRY (Claude Code, Trevor's Windows box) — known-issues **#11**'s only named remaining item is a GHOST, and has been for ~3 months
+
+**Docs only. No code, no DB.** ⚠ **Second stale-register correction today** (the first was #28, which sat 🔴 OPEN for a day after its fix shipped). **This one sat wrong for ~3 months.**
+
+**#11 read *"Still missing: the `/home-fmv-preview.png` home screenshot"*, and the `PROJECT_HEALTH` written THIS MORNING repeated it.** ✅ **Re-derived over `*.{ts,tsx,js,jsx,json,css,html}`: exactly ONE occurrence repo-wide, and it is a `data-testid` STRING inside a `vi.mock`** in `component-HomePageMarketing.test.tsx` — **not an image reference.** `public/` holds no `home-*` file and nothing asks for one. **The home has rendered a LIVE `components/HomeFmvPreview.tsx` since 2026-06-01, which made the screenshot moot.**
+
+🚨 **THREE HEALTH REPORTS ALREADY SAID SO AND THE REGISTER NEVER ABSORBED IT** — 06-01 (*"no longer referenced anywhere in code… #11's 'missing screenshot' is moot"*), 06-03 (*"unreferenced (moot)"*), 06-22 (*"unreferenced (moot — live `<HomeFmvPreview />`)"*). ⚠ **So the finding is not "a stale line"; it is that a correction can be MADE THREE TIMES and still not reach the register everyone reads.** ➡ **A register is read far more often than it is re-derived, which is exactly why a wrong line in one outlives three right ones elsewhere.** Same shape as **#12** (Blazers trivia — an entry citing a module absent from the tree for months). **Do not create the PNG.**
+
+✅ **What is actually true, measured not asserted:** `scripts/check-brand-tokens.mjs` **exits 0** over **399 web surfaces** scanned for brand literals (54 tracked for renames) plus **69 light-mode surfaces** clean. ⚠ **The genuine remainder is the UNGATED Phase-2 tail** — the script says so itself (*"Phase-2 debt across the rest of the repo is tracked separately — not gated here"*): email HTML, Fast Break / RTR / admin, tokenized once stable. **#11 now reads as "the ungated Phase-2 tail", not "a missing file".**
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** nobody spends another pass looking for a screenshot the product deliberately replaced.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — migration parity runs 3×/day instead of 1×; the 08-23 filing's last open recommendation is closed
 
 **CI cadence only. No code, no DB, no product change.** `.github/workflows/migration-parity.yml` gains **15:50 and 23:50 UTC** beside the existing **07:40**, so three slots at 8-hour spacing put the worst-case blind window at **~8 h instead of ~24 h**.
