@@ -8,6 +8,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · MEASURED (Claude Code, interactive) — ~1,000 editions are labelled LOW while their own row records them as the MOST-traded on the platform
+
+**Docs only. No code, no DB.** Follow-through on the bounded question left by the 22:05Z accuracy capture. It
+is bigger than the question was.
+
+On the current algo (`1.7.0`), rows whose own `fmv_current.sales_count_30d` is **≥5** — the documented MEDIUM
+volume floor — but which publish **LOW**: Top Shot **499** (avg count **28.9**), All Day **454** (**15.6**),
+Candy 44 (**48.1**), Golazos 3. 🚨 **In every collection the LOW cohort is the MOST-traded of the three** —
+about **2× the MEDIUM cohort** and 2× HIGH on Top Shot (28.9 vs 15.2 vs 14.0). The ordering is inverted,
+consistently, across four independent collections. `computeConfidence` makes LOW the floor case
+(`>=5 → MEDIUM`) and nothing downstream demotes below it, so the documented rule says this cannot happen.
+
+**Controls run:** not stale (145 of 150 computed in 24 h; `days_since_sale` 5.8 LOW vs 5.4 MEDIUM), not a
+legacy algo (137 of 150 are `1.7.0`, the same version as the MEDIUM cohort; the other 13 are
+`1.7.0_haircut` at avg count 1.5 and are correctly LOW), and not my own SQL (the figure is the pipeline's own
+column).
+
+**Two readings, and BOTH are defects.** (a) The LABEL is wrong — roughly **+2 points** on the 30.1% gate, and
+far worse, **we publish our lowest confidence on the editions users look up most.** (b) The COLUMN is wrong —
+`computeConfidence` is called with the CLEANED `sales.length`, and the route widens thin editions to a **90-day**
+window; on All Day the column averaged **12.7** where a raw 30-day count averaged **7.6**, which is what a
+90-day number in a `_30d` field would do. ⛔ Reading (b) is not benign: a row publishing `LOW` beside
+`sales_count_30d = 29` self-contradicts wherever both are surfaced.
+
+🎯 **The discriminator is ONE debug read** — log `sales.length` at the `computeConfidence` call next to the
+`sales_count_30d` being written. ⛔ **Not attempted:** `/api/fmv-recalc` is off-limits FMV route logic, and
+instrumenting a route already burning 72.7% of its ticks on wall-kills is not a speculative change. ⚠ **Nor
+should the label be "fixed" to MEDIUM first** — if (b) holds, promoting ~1,000 editions on a 90-day count
+publishes confidence the 30-day market does not support, which is the fabricated-confidence trap at scale.
+
+⭐ **Why it matters more than its size:** the 22:05Z capture established the accuracy gate is mostly a
+LIQUIDITY CEILING. **This cohort is the exception** — ~1,000 editions that do trade, more than any other
+cohort, labelled as though they do not. If accuracy is the gate, this is the one measured population where
+the data already exists and only the label is in question.
+
+⚠ The population churns fast: an All Day count taken 4 h earlier read 167 where the re-measure read 150,
+because `fmv_current` is delete-then-insert and the sweep rewrites continuously. Re-derive, expect ±10%.
+
+**Revert path:** `git revert` the docs commit (find by message `docs(accuracy): ~1,000 editions publish LOW`).
+No DB or production state was changed.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — PRIORITY 1 CAPTURED — signed-in WAU is 0, the accuracy gate is 30.1%, and the instrument nearest to hand would have said 16,463
 
 **Docs only. No code, no DB.** `focus.md` has said since 08-17 that demand *"is the only gate that matters

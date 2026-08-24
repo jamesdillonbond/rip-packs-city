@@ -1,4 +1,4 @@
-# Inbox index — 215 live filings
+# Inbox index — 216 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 14 filings
+## 2026-08-23 — 15 filings
 
+- [🚨 ~1,000 editions are labelled LOW confidence while their own row records them as the MOST-traded on the platform — in every collection the LOW cohort trades ~2× the MEDIUM cohort](2026-08-24T0225Z-a-thousand-editions-are-labelled-LOW-while-they-are-the-most-traded-on-the-platform.md)
 - [⭐ PRIORITY 1 CAPTURED, first time since 2026-07-26: signed-in WAU is 0, and the accuracy gate stands at 30.1% HIGH/MEDIUM — with three denominator caveats](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md) — ⚠ **§5 RETRACTS its own "Golazos is the target"** (follow-up in-file): Golazos is market thinness (max 3 sales/edition/month), the confidence model is VALIDATED against volume, and the one bounded question is **167 LOW editions with ≥5 sales/30d**
 - [⭐ The series-rollup fix WAS load-tested — its best run happened in the day’s worst hour, and I spent all evening saying it was unverified](2026-08-23T2055Z-the-series-rollup-fix-was-already-load-tested-i-just-never-read-the-neighbours.md)
 - [SIXTEEN more migrations applied today still have no committed file — a SECOND batch, after this morning's recovery](2026-08-23T2030Z-sixteen-more-migrations-applied-today-still-have-no-committed-file.md)
