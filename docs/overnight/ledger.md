@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **Written to the filing itself (annotated IN PLACE, never moved) and to known-issues #29.** ⓘ **Incidental, and a documented hazard I walked into:** reading `cron.job.command` for jobid 55 **echoed a gate key into the transcript** — the exact `cron.job.command` trap CLAUDE.md names. Query the columns you need; do not select `command`.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the arm keeps reporting until the real cause is found, rather than being tuned into silence.
+**Revert:** `git revert 43ae5506` (docs-only). **Target metric:** the arm keeps reporting until the real cause is found, rather than being tuned into silence.
 
 ### 2026-08-24 · CORRECTION TO MY OWN METHOD (Claude Code, Trevor's Windows box) — I was reading the WRONG CI instrument all day; it happened to be right seven times, which is what let it survive
 
