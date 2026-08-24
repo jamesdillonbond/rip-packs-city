@@ -24,7 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **NOT FIXED, two reasons.** 🚨 **Turning replay ON while a QUOTA-EXHAUSTION hypothesis is live would be actively harmful** — replay is the heaviest thing Sentry ingests, so it would worsen the suspected cause and confound the pending prediction. And **a change to the error reporter cannot be verified while the reporter is dark** — *"shipped and unverifiable" on an instrument is how #31 happened.* ➡ **Consolidate as ONE change once ingest resumes**, deciding replay deliberately rather than inheriting it from a file nobody knew was dead. ⚠ **If the bundler ever reverts to webpack this stops being a dead file and becomes a double-`init()`** — delete it rather than leaving a latent switch.
 
-**Revert:** `git revert <this commit>` (docs-only; inbox is append-only so the filing stays). **Target metric:** client events carry an environment and a release, and nobody re-derives which of two inits is live.
+**Revert:** `git revert 92e2dd2f` (docs-only; inbox is append-only so the filing stays). **Target metric:** client events carry an environment and a release, and nobody re-derives which of two inits is live.
 
 ### 2026-08-24 · REGISTER RE-DERIVATION (Claude Code, Trevor's Windows box) — **FOUR stale entries in one day**; #10 and #14 point at files that are now 11–28 line SHELLS, and the biggest monolith is untracked
 
