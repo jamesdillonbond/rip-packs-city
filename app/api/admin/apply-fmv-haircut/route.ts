@@ -128,10 +128,39 @@ export async function POST(req: NextRequest) {
     // looking complete. A hardcoded member list is exactly what goes stale when
     // a collection is added.
     //
-    // ⚠ Top Shot is the one leg without comfortable headroom: at 67.3% of a
-    // workload that needs ~125s unsplit, it lands near ~85s of its own 120s.
-    // It should fit, and it will still be the first to fail under a saturation
-    // spike — but it will then fail ALONE.
+    // ⛔ MEASURED 2026-08-23: the Top Shot leg does NOT fit, and the estimate
+    // above was wrong in both directions. In a genuinely quiet window
+    // (io_wait 8 / active 9) the read half ALONE ran 101,425 ms and touched
+    // 800,545 buffers (~6.25 GB) — walking 850,490 index entries down to
+    // 19,667 editions to find FOURTEEN rows. This function runs that
+    // DISTINCT ON twice (measurement CTE + the UPDATE ... FROM latest), so the
+    // leg is ~200s of work. It has failed every run since the split.
+    //
+    // ⚠ AND THE BOUND NAMED ABOVE IS THE WRONG ONE. The observed error is
+    // `upstream request timeout`, which is the SUPABASE GATEWAY (~120s), not
+    // Postgres. The two are within seconds of each other, so the number cannot
+    // tell them apart — read the ERROR STRING. It matters practically: on the
+    // gateway path the statement is NOT cancelled when the client gives up, so
+    // each failed nightly run leaves ~100s of scan still burning after the
+    // failure has already been recorded.
+    //
+    // ⚠ Column projection is NOT the lever, tested rather than assumed: the
+    // unnarrowed SELECT * timed out at 110s and an eight-column projection
+    // still took 101.4s. The cost is the 850,490-entry walk.
+    //
+    // ⛔ Do NOT "fix" this by sourcing candidates from edition_fmv_current. It
+    // is 771x cheaper (1,038 buffers / 363 ms) and LOSES 71% OF THE ROWS —
+    // one statement, one MVCC snapshot, set difference: old 14 / new 4 /
+    // in_old_not_new 10 / in_new_not_old 0. It stores stale copies of the very
+    // columns the predicate tests, so it drops editions whose TRUE latest
+    // snapshot qualifies. Zero false positives is what makes it dangerous.
+    // Full write-up + the re-runnable refutation query:
+    // docs/overnight/inbox/2026-08-24T0455Z-the-fmv-haircut-topshot-leg-costs-800k-buffers-and-the-obvious-fix-loses-71pct-of-it.md
+    //
+    // Severity is MEDIUM, not an accuracy breach: /api/fmv-recalc applies the
+    // haircut inline per collection on every pass and this daily job is a
+    // catch-up sweep. Verified while measuring — topshot_fmv_stale_hours 0.1
+    // against a breach threshold of 6.
     let legs: Array<{ id: string | null; slug: string }>
     if (collectionId) {
       legs = [{ id: collectionId, slug: collectionParam ?? "unknown" }]

@@ -443,3 +443,61 @@ proof the guidance in this file demands: show the instrument can see a FAILURE, 
 ⚠ **Durable: check a new instrument's FIRST reading against something you already know is true.** Mine
 disagreed with a measurement taken ten minutes earlier from `net._http_response`, and the **instrument**
 was wrong, not the measurement. A new instrument that immediately agrees with your hopes has not been tested.
+
+### ⛔ ROOT CAUSE of the 95.7% zero-conversion — the queue head cannot drain, and the sort key is a TIE
+
+Measured 2026-08-24 immediately after the telemetry landed. The instrument only made the symptom
+durable; this is why it happens.
+
+`get_topshot_pool_backfill_targets` (SQL, SECDEF) is:
+
+```sql
+SELECT d.dist_id, d.metadata->>'uuid'
+FROM pack_distributions d
+WHERE d.collection_id = <TS>
+  AND d.metadata->>'uuid' IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM pack_drop_pool p
+                  WHERE p.collection_id=d.collection_id AND p.dist_id=d.dist_id)
+  AND (NOT p_only_with_rips OR EXISTS (SELECT 1 FROM pack_rips r …))
+ORDER BY (EXISTS (SELECT 1 FROM pack_rips r …)) DESC,
+         d.first_seen_at DESC NULLS LAST
+LIMIT …
+```
+
+**Two independent defects compound:**
+
+1. ⛔ **The only exit condition is "a `pack_drop_pool` row now exists".** A dist whose
+   `packEditionsV3` walk succeeds and returns **zero editions** writes no pool row, so it is returned
+   again on the very next tick — **forever**. There is no attempt counter, no cooldown, no
+   unconvertible marker. jobid 16 fires 288×/day and re-serves the same unconvertible head every time.
+   This is [[limit-before-join-starves-a-backfill]] in a different pipeline: *the dead head rows never
+   leave.*
+
+2. ⚠ **The sort key is a near-total TIE, so `LIMIT 3` is physical order, not progress.** Of the
+   **709** unpooled targets, **350** have rips (so they all tie on the first `ORDER BY` term), and
+   **322 share one single `first_seen_at` value — `2026-06-28 21:13:05.21`** (a one-shot seed batch);
+   only **77** distinct `first_seen_at` values exist across all 709. Within the tie Postgres is free to
+   return any rows, so this is CLAUDE.md's **"an unordered `LIMIT` is physical order, not a sample"**
+   and the `.range()`-needs-a-UNIQUE-key rule, in a `LIMIT`-only query nobody thought of as paginated.
+
+**Consequence.** ~288 invocations/day × 11–29 s of GQL pagination each, converting ~0. It is not merely
+wasteful — `get_topshot_pool_backfill_targets` is one of the two RPCs the read-path attribution named as
+**0.9% of calls / 14.6% of DB time** at ~1,657 buffers per call, so this wedge is a measurable share of
+the instance's IO against a working set that already does not fit in `shared_buffers`.
+
+⛔ **Do NOT "fix" this by writing a sentinel row into `pack_drop_pool`** — that table feeds pack-EV
+hit-probability (`drop_weight / sum(drop_weight)`), so a marker row would corrupt a pricing surface to
+fix a scheduler. The exclusion belongs on `pack_distributions`, not in the pool.
+
+**The shape a fix needs** (unmeasured, therefore proposed rather than shipped — and it touches pack-EV
+adjacent data, which is off-limits for autonomous shipping):
+- record the attempt on `pack_distributions.metadata` (e.g. `pool_attempts`, `pool_last_empty_at`),
+- exclude from the target query after N consecutive empty walks with a **cooldown** rather than
+  permanently — an empty `packEditionsV3` is plausibly a delisted/expired listing, but that can change,
+- **add a unique tiebreaker to the `ORDER BY`** (`d.dist_id`) so the queue actually advances,
+- and keep the new `topshot-pack-pool-backfill` rows as the acceptance test: `rows_written > 0` on some
+  ticks, and `empty_eds` falling.
+
+⚠ **Until that lands, the honest reading of a green-looking tick is in the row itself:** `ok=false`
+with `"0/N dists converted; N returned no editions"` is the *correct* report of a wedged queue, not a
+transient upstream failure.
