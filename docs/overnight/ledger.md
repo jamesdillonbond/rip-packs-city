@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the Cowork skills were an entirely unguarded memory surface, and BOTH copies had drifted, in opposite directions
+
+Docs + one new guard + one re-packed bundle. No migration, no DB write, no prod-state change.
+
+**`docs/cowork-skills/` stores every skill TWICE** — `<name>/SKILL.md` (what a human edits and reviews in a
+diff) and `<name>.skill` (the zip that actually gets UPLOADED and INSTALLED). ⚠ **Nothing in `scripts/`,
+`__tests__/` or `.github/` referenced that directory at all**, so neither copy was ever checked against the
+other.
+
+- 🚨 **`rpc-handoff.skill` was packed 2026-05-30 and still carried a RETIRED rule.** It held *"Plain text. NO
+  markdown code fences — the doc is copy-pasted from an iPhone"*, which was explicitly corrected on
+  **2026-07-25** (handoffs are read on desktop; normal markdown is fine) in both the repo `SKILL.md` and
+  `RPC_DESIGN_SYSTEM.md` §10. **Uploading that bundle would have reinstalled the retired rule** — and the drift
+  included the `description:` line, so it would also have changed **what the skill TRIGGERS on**. ✅ Re-packed;
+  the retired text is gone (`grep iPhone` = 0) and the corrected text is present.
+- 🚨 **The INSTALLED `rpc-cron-ops` is stale in the OPPOSITE direction — filed as known-issues #32,
+  OPERATOR-ONLY.** The loaded copy is a pre-2026-06-19 export (4,232 bytes vs the repo's 4,823) **missing the
+  post-leak secret-safety HARD RULE** — *not opening the Advanced tab is NOT enough; the Authorization header
+  is in the DOM regardless* — written after `INGEST_SECRET_TOKEN` leaked exactly that way from Cowork. Both the
+  repo file and its bundle carry it. ⚠ **A session loading `rpc-cron-ops` to drive the cron console today is
+  running the pre-incident instructions.** ⛔ Not fixable from the repo: Trevor must re-upload the bundle.
+- ⚠ **The two drifts together are why the obvious remedy is unsafe:** "just re-upload all the bundles" would
+  have fixed `rpc-cron-ops` and simultaneously **reinstalled the retired iPhone rule** from the stale
+  `rpc-handoff` bundle. #32 says so explicitly.
+- ✅ **NEW GUARD `scripts/check-cowork-skill-bundles.mjs`** (`npm run skills:bundles:check`), + deterministic
+  packer `scripts/pack-cowork-skill.mjs` (`npm run skills:pack`). Tree walk, never a curated list; compares
+  NORMALIZED text so a re-pack that changed nothing cannot red it; **asserts the count it inspected** and fails
+  loudly on an empty set. ⭐ **It found the real defect on its FIRST run, before any fixture existed** — the
+  strongest positive control available. 8 test arms incl. planted offenders, a **no-change control**, a
+  whitespace-tolerance arm, and a determinism arm (re-packing unchanged content is byte-identical, so a binary
+  diff never trains reviewers to skim).
+- ⚠ **Made a missing `unzip` fail with its OWN message.** Without that, the tool being absent threw inside the
+  per-skill `try/catch` and every skill reported *"bundle has no readable SKILL.md entry"* — **a broken
+  ENVIRONMENT masquerading as 9 broken bundles.**
+- ⛔ **Stated in the guard, the test and #32: the repo CANNOT see the installed copy.** This covers only the
+  direction the repo controls (edited source, unpackaged bundle), so **#32 cannot be closed by a green guard.**
+
+**Revert path:** `git revert <sha>` — docs, one guard, one deterministic bundle re-pack. Reverting restores the
+stale `rpc-handoff.skill` (the retired iPhone rule) and removes the guard; revert only to undo a bad edit.
+
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit finished, and the memory-doc link guard was blind to the file it most needed to cover
 
 Docs + one guard-root widening. No migration, no DB write, no prod-state change.
