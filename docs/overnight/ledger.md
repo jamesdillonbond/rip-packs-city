@@ -28,7 +28,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **The sentinel arm #25 actually asks for is still blocked on the SECRETS decision** (a GitHub token with `actions: read` in Vercel env), which CLAUDE.md puts off-limits for autonomous change. **Cadence is a mitigation, not the fix** — a detector can still be red for 8 hours with nothing surfacing it.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** #25's numbers describe the estate, and its "one healthy detector" claim is not left standing after it stopped being true.
+**Revert:** `git revert 74dc34ca` (docs-only). **Target metric:** #25's numbers describe the estate, and its "one healthy detector" claim is not left standing after it stopped being true.
 
 ### 2026-08-24 · RE-VERIFIED, STILL LIVE (Claude Code, Trevor's Windows box) — **#21's `wrangler deploy` trap is intact and has NOT fired**; plus one new, unexplained cadence observation
 
