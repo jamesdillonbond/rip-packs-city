@@ -24,7 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **Recorded in the filing: this is INTERMITTENT and easy to declare fixed by accident.** The honest test is not *"is the page OK now"* (it self-heals on the first warm revalidation) but ***"does a cold regeneration still exceed 8 s"***.
 
-**Revert:** `git revert <this commit>` (docs-only; inbox is append-only so the filing stays regardless). **Target metric:** the cold-miss window stops serving crawlers a drop-less page, and nobody raises a shared timeout off a single cold sample.
+**Revert:** `git revert 58125694` (docs-only; inbox is append-only so the filing stays regardless). **Target metric:** the cold-miss window stops serving crawlers a drop-less page, and nobody raises a shared timeout off a single cold sample.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the fifth-layer sweep WIDENED and found three more; **five public boards fixed today, and four candidates deliberately REJECTED**
 
