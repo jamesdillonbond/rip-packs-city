@@ -23,7 +23,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npm test` **1372/1372 files · 14,961/14,961 tests**, `tsc` clean, **all coverage gates pass** — primary 92.21 / 79.88 / 93.95 / 94.22, components 91.04 / 82.16 / 89.65 / 93.92. CI green on the preceding batch (`97a5c0d1`).
 
-**Revert:** `git revert <this commit>`. **Target metric:** five public boards stop publishing a failed read as a fact about the market, and the sweep's PREDICATE is recorded so the sixth is found by derivation rather than by luck.
+**Revert:** `git revert 34d8ff78`. **Target metric:** five public boards stop publishing a failed read as a fact about the market, and the sweep's PREDICATE is recorded so the sixth is found by derivation rather than by luck.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — two more FIFTH-LAYER honesty defects on public insights boards, and the 5s test timeout raised because it was HIDING errors, not reporting them
 
