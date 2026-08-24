@@ -5,6 +5,32 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // ⚠ PIN supabase-js TO THE ROOT COPY. Two worker directories
+      // (topshot-moments-hydrator, pack-events-ingest) carry their OWN
+      // node_modules with their own @supabase/supabase-js — 2.105.4 against the
+      // root's 2.104.0. Those directories are gitignored, so they exist on a
+      // developer's box and NEVER in CI.
+      //
+      // The consequence is not a version skew, it is a MOCK MISS: a worker
+      // module importing the bare specifier resolved to the NESTED copy, which
+      // is a different module id from the one `vi.mock("@supabase/supabase-js")`
+      // registered. The mock silently did not apply, the worker built a REAL
+      // client, and the suite made REAL network calls to the stub host that hung
+      // until the 5s timeout — presenting as flakiness, on three files, only on
+      // the machine where the development happens.
+      //
+      // Measured 2026-08-24, and the control runs both ways: 22 of 25 worker
+      // suites pass, and the 3 that failed are exactly the ones whose worker dir
+      // has a nested install. Every other worker dir has none.
+      //
+      // ⛔ The alias is the fix rather than deleting those node_modules: they are
+      // a local wrangler convenience and deleting a developer's install to make a
+      // test pass is the wrong direction. This makes resolution deterministic and
+      // equal to CI's.
+      "@supabase/supabase-js": path.resolve(
+        __dirname,
+        "node_modules/@supabase/supabase-js",
+      ),
     },
   },
   test: {

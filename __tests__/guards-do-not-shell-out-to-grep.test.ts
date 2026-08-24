@@ -99,15 +99,35 @@ function scanned(): string[] {
   return guardFiles().filter((f) => f !== SELF)
 }
 
-function offenders(re: RegExp): string[] {
-  const out: string[] = []
-  for (const f of scanned()) {
-    // Comments still have to go: several guards DOCUMENT the shape they migrated
-    // away from, and prose about a defect is not the defect.
-    const src = stripComments(readFileSync(f, "utf8"))
-    if (re.test(src)) out.push(f)
+// ⚠ READ AND STRIP ONCE. Comments still have to go — several guards DOCUMENT
+// the shape they migrated away from, and prose about a defect is not the defect
+// — but stripping ~1,400 files is the expensive part.
+//
+// ⚠ The first draft called this per ARM and twice per assertion (once for the
+// value, once to build the failure message): four full passes. Alone that was
+// 2.7s; under the full `--coverage` run's parallel load it crossed the 5s
+// timeout and this guard failed for being slow rather than for finding
+// anything. A guard that reds under load is the same untrustworthy-instrument
+// problem this file was written about.
+let _stripped: Array<[string, string]> | null = null
+function strippedSources(): Array<[string, string]> {
+  if (!_stripped) {
+    _stripped = scanned().map((f) => [f, stripComments(readFileSync(f, "utf8"))] as [string, string])
   }
-  return out.sort()
+  return _stripped
+}
+
+const _offenders = new Map<RegExp, string[]>()
+function offenders(re: RegExp): string[] {
+  let hit = _offenders.get(re)
+  if (!hit) {
+    hit = strippedSources()
+      .filter(([, src]) => re.test(src))
+      .map(([f]) => f)
+      .sort()
+    _offenders.set(re, hit)
+  }
+  return hit
 }
 
 describe("guards find their population in-process, not through a shell", () => {
@@ -118,7 +138,7 @@ describe("guards find their population in-process, not through a shell", () => {
     expect(files.length).toBeGreaterThan(200)
     expect(files).toContain("scripts/check-driver-message-leaks.mjs")
     expect(files.some((f) => f.startsWith("__tests__/"))).toBe(true)
-  })
+  }, 60_000)
 
   it("excludes ITSELF and nothing else, and would flag itself if it did not", () => {
     // ⚠ Assert the exclusion at the PROPERTY's granularity, not as a comment.
@@ -132,7 +152,7 @@ describe("guards find their population in-process, not through a shell", () => {
     const own = stripComments(readFileSync(SELF, "utf8"))
     expect(SHELLS_OUT.test(own)).toBe(true)
     expect(CWD_CONCAT.test(own)).toBe(true)
-  })
+  }, 60_000)
 
   it("NO guard shells out to grep/find to discover files", () => {
     expect(
@@ -143,7 +163,7 @@ describe("guards find their population in-process, not through a shell", () => {
         "Use filesMatching() from __tests__/helpers/source-files.ts:\n" +
         offenders(SHELLS_OUT).join("\n"),
     ).toBe("")
-  })
+  }, 60_000)
 
   it("NO guard compares paths with process.cwd() + '/'", () => {
     expect(
@@ -154,7 +174,7 @@ describe("guards find their population in-process, not through a shell", () => {
         "Use repoRelative() from __tests__/helpers/source-files.ts:\n" +
         offenders(CWD_CONCAT).join("\n"),
     ).toBe("")
-  })
+  }, 60_000)
 
   it("the detectors actually fire on the shapes they ban", () => {
     // ⚠ Proven against a KNOWN OFFENDER, because a regex written into a heredoc
