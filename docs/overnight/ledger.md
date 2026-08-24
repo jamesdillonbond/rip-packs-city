@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · POST-SHIP WATCH + FILED (Claude Code, Trevor's Windows box) — the honesty fix CONFIRMED ITSELF IN PRODUCTION on a real failure within minutes, and the failure it exposed is a new filing
+
+**Docs only (one inbox filing + INDEX). No code, no DB.** Post-ship verification of `34d8ff78` / `97a5c0d1`, by **rendered DOM, not HTTP 200.**
+
+⭐ **LIVE CONFIRMATION ON A REAL FAILURE, NOT A FIXTURE.** Minutes after the deploy `/insights/pack-drops` was **genuinely in a failed-read state in production** and rendered **"Pack drops couldn't be loaded — refresh to try again."** with the old sentence **"No live re-pack drops to score right now…" ABSENT.** ➡ **The defect was ACTIVE, not theoretical: before today that page told visitors and crawlers the re-pack market was empty whenever its read failed.** The other four boards read healthy and render real content.
+
+🚨 **AND THE FIX IMMEDIATELY EARNED ITS KEEP — it made a pre-existing, invisible degradation findable.** Filed: [`inbox/2026-08-24T1441Z-…`](inbox/2026-08-24T1441Z-a-cold-isr-regeneration-can-bake-a-failed-read-into-15-minutes-of-cached-html.md).
+
+⚠⚠ **AND I NEARLY FILED IT WRONG, OFF ONE SAMPLE.** The API's first call reported **`elapsed_ms: 11529`** against `BOARD_LIVE_TIMEOUT_MS` = **8 s**, which gives the tidy conclusion *"the read always exceeds the budget, so this page is permanently degraded."* **False.** Five more samples: **4,286 / 1,140 / 1,187 / 1,293 / 1,192 ms** — **warm it is ~1.2 s, six times under budget**, and the 11.5 s was the COLD path (`source: vaultopolis_public_api + rpc_fmv` — the cold cost is an EXTERNAL API, not the DB). ➡ **A directional claim needs a distribution, not a snapshot.** The one-instant read would have sent someone to raise a SHARED timeout for a query that is fine 5 times in 6.
+
+**What is actually true:** a **cold regeneration** that exceeds 8 s fails the page's read, and `revalidate = 900` then **serves that failure for up to 15 minutes** (observed live: `x-vercel-cache: HIT`, `age: 158`, degraded, while the API answered in 1.2 s throughout). 🚨 **And `pack-drops` HAS NO STALE SNAPSHOT** — the budget's own comment justifies itself as *"precisely when a stale-but-complete snapshot is the better answer"*, but this page passes `[]` as its fallback, so **the stated rationale does not hold for this caller.** Blast radius is the page's whole purpose: it exists to put the drops in **raw server HTML for crawlers.**
+
+⛔ **NOT FIXED, and three tempting remedies are wrong:** raising `BOARD_LIVE_TIMEOUT_MS` trades **every** board's worst case for this one's rare case (it is shared, and was created deliberately on first-mint 08-12); **retrying adds load during the exact window the budget protects** (the abandoned query keeps running — supabase-js has no cancel); **lowering `revalidate` increases how often the cold path is hit.** The two plausible ones — a **per-caller budget** (precedent: `SET_DETAIL_TIMEOUT_MS`) and/or **a real stale snapshot** — are Trevor's call.
+
+⚠ **Recorded in the filing: this is INTERMITTENT and easy to declare fixed by accident.** The honest test is not *"is the page OK now"* (it self-heals on the first warm revalidation) but ***"does a cold regeneration still exceed 8 s"***.
+
+**Revert:** `git revert <this commit>` (docs-only; inbox is append-only so the filing stays regardless). **Target metric:** the cold-miss window stops serving crawlers a drop-less page, and nobody raises a shared timeout off a single cold sample.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the fifth-layer sweep WIDENED and found three more; **five public boards fixed today, and four candidates deliberately REJECTED**
 
 **Code + tests. No DB, no migration.** Follow-on to the entry below. ⚠ **The first sweep was scoped wrong and I nearly stopped at two.** It looked for boards with no `initialDegraded` PROP — which is a property of the CLIENT. **The population that matters is a property of the PAGE: server pages that KNOW `ok` and seed a client without passing it.** Re-derived from the tree with that predicate: **9 candidates, 5 real, 4 correctly rejected.**
