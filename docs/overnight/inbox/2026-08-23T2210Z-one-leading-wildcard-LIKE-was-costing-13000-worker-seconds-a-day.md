@@ -85,3 +85,65 @@ The retired MV had `postgres | service_role`. Its replacement came out of `CREAT
 ## Migrations
 
 `20260823220439` create v2 · `20260823220555` repoint board (+ `security_invoker` restored in the same transaction) · `20260823220648` drop old, rename v2 into place · `20260823220755` revoke the anon leak. All four md5-verified and written to `supabase/migrations/`. `refresh_panini_squeeze()` and cron 353 are UNCHANGED — the rename means the function's literal name resolves to the new MV. Revert path in the header of `20260823220648`.
+
+---
+
+## ✅ POST-SHIP VERIFIED 2026-08-24 02:16Z — 8/8 ticks succeeded, and there is a matched-load comparison
+
+Eight scheduled ticks of jobid 353 since the cutover, **zero failures** (baseline: 9 of 48, 18.75%):
+
+| tick (UTC) | secs | | tick | secs |
+|---|---|---|---|---|
+| 22:18 | 1.7 | | 00:18 | 3.5 |
+| 22:48 | 1.5 | | 00:48 | 30.9 |
+| 23:18 | 1.7 | | 01:18 | 39.8 |
+| 23:48 | 1.3 | | 01:48 | 1.5 |
+
+Max **39.8 s** against a pre-ship max of **618 s**. Rows written 4,684–4,685 throughout, `ok=true`
+on every run.
+
+### ⚠ The post-ship hours ARE the quietest in the window — so read the matched pairs, not the average
+
+Instance-wide cron busy-seconds per hour:
+
+| pre-ship | busy_s | panini | | post-ship | busy_s | panini |
+|---|---|---|---|---|---|---|
+| 14:00 | 5,433 | 245.0 | | **22:00** | **1,501** | **1.7** |
+| 18:00 | 12,576 | 467.5 | | **23:00** | **1,544** | **1.7** |
+| **20:00** | **2,724** | **211.5** | | **00:00** | **2,505** | **30.9** |
+| **21:00** | **3,503** | **195.3** | | **01:00** | **2,829** | **39.8** |
+
+⭐ **The two bolded pairs are like-for-like on instance load and they are the real evidence:**
+
+- **20:00 (2,724 busy-s) → 211.5 s** vs **00:00 (2,505 busy-s) → 30.9 s** — **6.8× faster at
+  slightly HIGHER ambient load.**
+- **21:00 (3,503 busy-s) → 195.3 s** vs **01:00 (2,829 busy-s) → 39.8 s** — 4.9× faster, and 01:00
+  carried 3 instance-wide failures and one job at the ceiling, so it was not a calm hour.
+
+⚠ **And part of the post-ship quiet is SELF-CAUSED, which is a real effect but must not be double
+counted.** Panini alone was burning ~400–600 s per hour; removing that is a visible share of the
+20:00–21:00 (2,724/3,503) → 22:00–23:00 (1,501/1,544) drop. The job was a meaningful fraction of the
+instance's own baseline load in quiet hours.
+
+⛔ **NOT yet tested in a genuinely loaded hour.** Nothing in the post-ship sample approaches 18:00's
+12,576 busy-seconds. The 01:00 pair is the most contended evidence available and it holds.
+
+### Worker-seconds reclaimed
+
+81.9 s across 8 ticks over 4 hours ≈ **20.5 s/hour ≈ 491 s/day**, against a measured baseline of
+**13,040 s/day** — a **~96% reduction, roughly 3.5 worker-hours/day returned to the instance.**
+⚠ Projected from a 4-hour sample that excludes the daily peak; re-derive over a full day before
+quoting it.
+
+### Correctness, re-checked after 4 hours of live refreshes
+
+Re-measured at **02:17:20Z**, not carried over from the cutover check:
+`panini_squeeze_board` **4,685 rows** · MV **4,685 rows** · `is_rookie` **1,093** ·
+`check_public_security_invariants()` **0 rows** · board `security_invoker=on` ·
+MV ACL still **`postgres | service_role` only** — the anon leak fixed in `20260823220755` has NOT
+reappeared through 8 live refreshes (a `REFRESH ... CONCURRENTLY` does not reset an ACL, now
+confirmed rather than assumed).
+
+⚠ Row count moved 4,684 → 4,685 and rookies 1,092 → 1,093 during the window. That is `panini-ingest`
+doing its job, and it is the direct evidence for the earlier point that **cutting this job's cadence
+would have staled a live board** — the content genuinely moves.
