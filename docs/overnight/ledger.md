@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **One misdiagnostic COMMENT to fix when someone is next in that file.** The concierge block blames the Atlas WAF (*"the Atlas WAF blocks the GHA runner IP"*). **Its behaviour is right and must not change** — report the age, every time. **Its attribution is superseded:** the dominant failure is the `GET targets` DB timeout and the residential arm is the one that works. A reader trusting that comment will chase `atlas-proxy` again.
 
-**Written to:** the filing (✅ RESOLVED section) · known-issues **#30**. **Revert:** `git revert <sha>` (docs-only). **Target metric:** the OG card's liveness claim gets an age, and nobody re-derives whether the board is lying (it is not).
+**Written to:** the filing (✅ RESOLVED section) · known-issues **#30**. **Revert:** `git revert f3a8a4d1` (docs-only). **Target metric:** the OG card's liveness claim gets an age, and nobody re-derives whether the board is lying (it is not).
 
 
 ### 2026-08-24 · NIGHTLY PASS — NOTHING SHIPPED; health green-modulo-known-saturation; post-ship watch on the last three ships all green, one strongly positive (Cowork cloud, NO-PUSH)
