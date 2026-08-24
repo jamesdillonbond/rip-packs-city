@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **WHAT IS STILL NOT ATTRIBUTED, AND THE INSTRUMENT THAT CANNOT DO IT.** `serial_fmv_estimate` is called **twice per surviving row** and is **plpgsql, 6,776 chars, reads tables** — the other candidate for the bulk of the cost. ⛔ **`pg_stat_statements.track = 'top'`, so nested statements inside plpgsql are NOT tracked:** the 6.2 GB/call *includes* it and **cannot be split from it by that instrument at all**. ➡ **Sharpened next step: `EXPLAIN (ANALYZE, BUFFERS)` in a 13:00–17:00 PT window, for PER-NODE ACTUAL BUFFERS** — not "to see the plan", which is now read. Until then **"the `DISTINCT ON` is the cost" is a well-supported hypothesis, not a measurement**, and the 65:1 amplification is its evidence rather than its proof.
 
-**Written to:** the filing (follow-up section) · known-issues **#30** · the register's **R52** row (re-litigation input). **Revert:** `git revert <sha>` (docs-only). **Target metric:** R52 gets decided with this consumer counted, and nobody substitutes `fmv_current` into a JOIN here.
+**Written to:** the filing (follow-up section) · known-issues **#30** · the register's **R52** row (re-litigation input). **Revert:** `git revert 470319ab` (docs-only). **Target metric:** R52 gets decided with this consumer counted, and nobody substitutes `fmv_current` into a JOIN here.
 
 
 ### 2026-08-23 · SHIPPED (Claude Code, Trevor's Windows box) — **I reddened `main` on two commits** by editing a CI-guarded index whose guard has FOUR assertions where CLAUDE.md described two; fixed the description rather than only the counts
