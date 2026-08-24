@@ -490,3 +490,28 @@ it continuously. Comparing those two counts would have called the cheap shape "c
 same-snapshot set difference exposed it** — which is this file's own "diff the SET, not the count" rule
 and its "a DB A/B must be warm-vs-warm" rule combining into a stronger one: **for a volatile population,
 an A/B must share a snapshot, not merely a warm cache.**
+
+## Caller enumeration — the SEVENTH and EIGHTH sources (2026-08-23)
+
+CLAUDE.md requires **six** sources before believing a function has no caller (`pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep, and the Cowork artifacts' HTML), plus a **seventh** for edge functions: **cron-job.org**, invisible to all six *and* to `cron.job`.
+
+🚨 **There is an EIGHTH, and it runs production ingests: Windows Task Scheduler on Trevor's box.**
+
+| task | cadence | script |
+|---|---|---|
+| `RPC Deal Board Ingest` | every 3 h from 00:13 PT | `scripts/run-active-listings-ingest.ps1` |
+| `RPC Pinnacle Render Cache Fill` | **every 15 min** | `scripts/pinnacle-render-cache-fill.mjs` |
+| `RPC Panini Ingest` | every 4 h | — |
+| `RPC AllDay Badge Ingest` | daily 05:37 PT | `scripts/run-allday-badge-ingest.ps1` |
+
+Enumerate with `Get-ScheduledTask | Where-Object { $_.TaskName -match 'RPC' }`. ⚠ **Read the cadence from `$t.Triggers[0].Repetition.Interval`** — `StartBoundary` alone shows only the first fire and hides a `PT3H`/`PT15M` repetition entirely. Logs are under `%LOCALAPPDATA%\<task-name>\`; ⚠ they carry NUL bytes so `grep` calls them binary — pipe through `tr -d '\000'`.
+
+💡 **This is where "residential Atlas ingest" physically happens** — a phrase carried in the notes for months with no location attached. Atlas WAF-blocks GitHub runners and Vercel egress but not Trevor's home IP, so for `topshot-active-listings-ingest` **the local task is the arm that works and the GitHub Actions workflow is the arm that never could**. A GHA-only reading of that pipeline measures the arm that was never going to succeed (known-issues #30).
+
+### ⚠ A failure rate is a claim about a POPULATION — ask where the telemetry is written
+
+Three instruments gave three rates for that one pipeline and **none was wrong about its own population**: ~60% `egress_blocked` (a 5-of-7 `pipeline_runs` sample), 80% (all of `pipeline_runs`), 22.5% (GitHub Actions run conclusions).
+
+🚨 **`pipeline_runs` was blind to the dominant failure by construction:** the route writes `log_pipeline_run` in its **POST** phase and the failure killed the run in the **GET** phase, so the table held only runs that had already survived the thing that stops the pipeline. Inside that filtered population `egress_blocked` genuinely is ~80%. ⓘ The tell was arithmetic: two callers × 8/day should leave ~48 runs in the 73 h retention window; it held **7**.
+
+➡ **Before quoting a pipeline's failure rate, ask (a) which callers exist and (b) at what point in the run the telemetry is written.** A rate from the pipeline's self-report and a rate from its scheduler are not comparable, and neither is "the pipeline's rate". **`max(last_seen_at)` on the OUTCOME table is the only instrument that sees every arm** — it is what refuted a "100% red for 5 days" claim in one query.

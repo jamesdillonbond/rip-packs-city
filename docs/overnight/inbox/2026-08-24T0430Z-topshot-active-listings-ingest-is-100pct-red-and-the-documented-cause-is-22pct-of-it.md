@@ -148,3 +148,58 @@ Three prior fixes in this codebase replaced raw `fmv_snapshots` with the **`fmv_
 ➡ **Sharpened next step:** `EXPLAIN (ANALYZE, BUFFERS)` in a **13:00–17:00 PT** window is the *only* instrument that can separate these two. Not "run EXPLAIN to see the plan" — the plan is now read — but specifically to get **per-node actual buffers**. Until then, "the `DISTINCT ON` is the cost" is a **well-supported hypothesis, not a measurement**, and the 65:1 amplification is its evidence rather than its proof.
 
 ⚠ And per the R46 decision: if the remedy is a rollup, it must state its steady-state IO cost and what it displaces. **The honest version of that argument here is that it would DISPLACE the 118 MB index the planner already refuses to use.**
+
+---
+
+## ⛔ CORRECTION 2026-08-23 23:05 PT — **MY OWN HEADLINE IS WRONG. The pipeline has a SECOND caller, it works, and I measured one arm.**
+
+I went looking for the consumers of `topshot_active_listings` to decide whether this outage is user-facing. It is — and on the way the table refuted the filing above.
+
+### The measurement that broke it
+
+`topshot_active_listings`: **624 rows, 224 active, newest `last_seen_at` = 7.1 hours ago.** Not five days. **Something is writing this table.**
+
+`pipeline_runs` names it: **two `ok: true` runs, `rows_written` 224 (2026-08-23 22:13Z) and 257 (2026-08-21 22:13Z), with 1,274 and 1,408 `atlas_calls` and 0 skips.** Atlas was not blocking those runs at all. And **22:13Z is not on the workflow's `29 */3` schedule.**
+
+### 🚨 The second caller is an EIGHTH source, and nothing in this repo can see it
+
+**`RPC Deal Board Ingest` — a Windows Scheduled Task on Trevor's own box**, `PT3H` from `00:13 -07:00`, running `scripts/run-active-listings-ingest.ps1`. It is invisible to all six sources CLAUDE.md requires, *and* to cron-job.org (the documented seventh), *and* to GitHub Actions, `vercel.json`, and `cron.job`.
+
+**It is not alone. Four production ingests run from this box:**
+
+| task | cadence | last run (PT) | rc |
+|---|---|---|---|
+| `RPC Deal Board Ingest` | every 3 h from 00:13 | 08-23 22:20 | **1 — FAILED** |
+| `RPC Pinnacle Render Cache Fill` | **every 15 min** | 08-23 22:41 | 0 |
+| `RPC Panini Ingest` | every 4 h | 08-23 22:00 | still running |
+| `RPC AllDay Badge Ingest` | daily 05:37 | 08-23 05:37 | 0 |
+
+💡 **This is where "residential Atlas ingest" physically happens** — a phrase carried in the notes for months without a location. Atlas WAF-blocks GitHub runners and Vercel egress; it does **not** block Trevor's home IP. **So the local task is the arm that actually feeds the public board, and the GHA workflow is the arm that cannot.**
+
+### The corrected severity — worse-founded, and pointing the same way
+
+**❌ Wrong:** *"100% red for 5+ days"* — that is the GHA arm only, and GHA was never the working arm.
+
+**✅ Right:** the residential arm succeeded **1 of 8 runs on 2026-08-23** (15:13 PT only; 00:13, 03:13, 06:13, 09:13, 12:13, 18:13 and 22:20 all logged `start` and then died). **And it dies at the same `GET targets` DB timeout.**
+
+➡ **So the DB timeout is not merely breaking a WAF-blocked arm that was already useless. It is breaking the ONLY arm that works**, cutting the board's refresh from 8×/day to about once a day. That is a smaller headline and a stronger argument: the R46 symptom is the binding constraint on a working production path, and #20's `wrangler deploy` is even less of a remedy than the section above said.
+
+### ⚠ Three failure-rate numbers, three populations, and none of them is "the pipeline's rate"
+
+This is why the register, the monitor and I all disagreed — and **no one was lying**:
+
+| figure | source | population it actually measures |
+|---|---:|---|
+| "~60% `egress_blocked`" | known-issues #20 | a 5-of-7 sample of `pipeline_runs` |
+| "80.0% `egress_blocked`" | `metrics-latest.json` | all of `pipeline_runs` |
+| "22.5% `egress_blocked`" | this filing | GitHub Actions run conclusions |
+
+🚨 **`pipeline_runs` cannot see the dominant failure at all, by construction: the route writes its `log_pipeline_run` row in the POST phase, and the DB timeout kills the run in the GET phase.** So every instrument reading `pipeline_runs` sees a population *filtered to runs that got past the timeout* — and inside that population, `egress_blocked` really is ~80%. **The pipeline's own telemetry is structurally blind to the thing that stops it**, which is the recorded "green pipeline blind to its own work" shape in a new place. ⓘ Corroboration: ~48 runs should exist across the 73 h retention window (two callers × 8/day); `pipeline_runs` holds **7**.
+
+### ⚠ And the local task's failure leaves no trace in its own log
+
+The failing runs log the header and `[listings-ingest] start …` and then **nothing** — no error, no exit code, just the next run's header. ⚠ **The script does redirect every stream** (`node … *>&1 | Tee-Object -FilePath $log -Append`), so "stdout only" is not the explanation; my first guess was wrong. **Likely mechanism, corroborated by a recorded gotcha rather than measured here:** PowerShell 5.1 wraps a native executable's stderr in `NativeCommandError` records, which is exactly how a real error becomes invisible in a `Tee-Object` pipeline. **Unverified — do not repeat it as fact.** What IS measured: **a reader of this log cannot tell a failed run from a run that never started.**
+
+### What still stands from the sections above
+
+The plan finding is untouched and is now *more* important, not less: the `DISTINCT ON` scanning 857,293 rows to return 13,230 is what kills the residential arm 7 times in 8. R52's second consumer is real. `serial_fmv_estimate` is still unattributed and `pg_stat_statements.track = 'top'` still cannot split it.
