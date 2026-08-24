@@ -18,6 +18,58 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+## ⭐ Headline metric AND demand — measured 2026-08-24 02:00–03:35Z (supersedes 08-22 for the all-keys denominator)
+
+### The accuracy gate, all-keys denominator (`fmv_current`)
+
+| collection | priced editions | HIGH/MEDIUM | share |
+|---|---:|---:|---:|
+| `nba_top_shot` | 19,667 | 6,740 | **34.3%** |
+| `nfl_all_day` | 6,190 | 1,323 | **21.4%** |
+| `candy_mlb` | 125 | 77 | 61.6% |
+| `laliga_golazos` | 575 | **0** | **0.0%** |
+| `ufc_strike` | 518 | **0** | **0.0%** |
+| **total** | **27,075** | **8,140** | **30.1%** |
+
+⚠ **THREE DENOMINATORS, and the number is meaningless without naming one.** This is **all-keys**, and it
+**reproduces the 08-22 all-keys Top Shot figure (34.2% → 34.3%)**. The canonical-only precompute leg reads
+**49.6%** — a different question, not a better one. And ⚠ **`fmv_current` carries ZERO Pinnacle rows**
+(measured, against 2,564 in `pinnacle_catalog`; it prices through the triple-keyed path), so this denominator
+covers **four of five** published collections while the precompute leg's includes Pinnacle at 43.2%.
+
+⛔ **UFC's 0.0% is CORRECT and permanent** — 381 `STALE` + 137 `NO_DATA`, market closed since May 2026.
+It can never improve and drags the headline; **excluding it, 30.7%.**
+⛔ **Golazos' 0.0% is MARKET, not model** — 62 sales/30 d across **46 editions** (8% of its 575), and **not
+one that sold has more than THREE sales in a month** (avg 1.4). **Do not chase it with a threshold.**
+
+### The gate is mostly a LIQUIDITY CEILING — confirmed at the edition level
+
+All Day, every edition with a sale in 30 d, by assigned confidence: **HIGH avg 11.8 sales, 100% have ≥5** ·
+MEDIUM 5.5 · LOW 2.6. Monotonic. **The estimator is not the binding constraint for most of the catalogue.**
+
+⚠ **The apparent exception is not one.** ~1,000 editions publish LOW while trading MORE than the MEDIUM
+cohort (Top Shot: 368 at a **true 39.6 sales/30 d** vs MEDIUM's 22.2). Cause measured:
+`MEDIUM_MAX_DISPERSION = 0.35` demotes MEDIUM→LOW once count ≥7, so **only high-volume editions are eligible
+to be demoted at all**. **LOW avg CV 0.731 (76% over the ceiling) vs HIGH 0.222 (10%)** — working as written.
+⛔ **A "sub-dollar tick" explanation was tested and FALSIFIED**: HIGH has the **lowest** median price ($0.31)
+and the **most** sub-dollar editions (72%). **Do not build a tick-aware dispersion measure on it.**
+⭐ **What survives: `LOW` conflates *"almost no data"* with *"643 sales that disagree"*** — opposite messages
+to a collector. Splitting the label is a product decision, not a data problem.
+
+### Demand — first capture since 2026-07-26
+
+**21 accounts** (+1 in four weeks) · **0 signups in 7 d** (newest 2026-08-08) · **signed-in WAU = 0** ·
+MAU 2 · all 21 have a saved wallet. Gate is 50+ WAU.
+
+⛔ **`funnel_events` sessions are NOT users — wrong by ~3 orders of magnitude.** 16,463 weekly "non-bot"
+sessions of which **99.67% fire exactly one event and never return**; **4 `wallet_paste` sessions, 0
+`signin_click`, 0 `account_created`**. ⚠ **Vercel Web Analytics is NOT enabled**, so that table has no
+independent corroborator. ⚠ **`bot_ua` is only meaningful from 2026-08-23 02:00Z forward** — before that the
+column exists with no UA to classify (100% of rows carry one after, zero before), so `false` means *"never
+saw one"*, not *"human"*.
+
+⚠ Dated samples. `fmv_current` is delete-then-insert and the LOW cohort churns ±10% over hours. Re-derive.
+
 ## Headline metric — re-measured 2026-08-22 (supersedes the 08-13 figures above)
 
 ⚠ **The 2026-08-13 shares quoted earlier in this file are now the stale baseline.** Read live from

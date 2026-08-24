@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — memory pass: the roadmap gets a 2026-08-23 status stamp, and four durable lessons land in the reference docs
+
+**Docs only. No code, no DB.** Closing the thread by putting this session's durable output where it will be
+read, per CLAUDE.md's rule that *a fact left only in a session log stops being read.*
+
+**Roadmap** (`docs/strategy/roadmap-2026-08-03.md`) — a **2026-08-23 status stamp**, plan unchanged. §1's
+three consequences are now MEASURED rather than argued: the gate metric at **30.1% all-keys** (reproducing
+08-22's Top Shot 34.2% at 34.3%), §6's market-depth bound **confirmed at the EDITION level** (All Day: HIGH
+avg 11.8 sales and 100% ≥5, MEDIUM 5.5, LOW 2.6), the ~1,000 LOW-but-liquid cohort explained and its
+tick-calibration story **falsified**, and **WAU = 0** with §1.1 explicitly vindicated rather than treated as
+a problem. ⚠ **Three denominators exist and the stamp names them** — all-keys 30.1% (no Pinnacle),
+canonical-only 49.6% Top Shot, precompute-leg incl. Pinnacle 43.2%.
+
+**`docs/reference/roadmap-status.md`** — the full accuracy + demand tables, with UFC's zero marked CORRECT
+and permanent, Golazos' zero marked MARKET not model, and the `funnel_events`/`bot_ua` caveats that stop the
+next reader quoting 16,463 sessions as users.
+
+**`docs/reference/testing-and-ci.md`** — 🚨 **a RECOVERY TOOL CAN TRIP A GUARD A HAND-AUTHORED FILE
+SATISFIES**, plus **verify CI PER PUSH, not once per session** (main was red for six commits today because I
+checked once).
+
+**`docs/reference/tooling-gotchas.md`** — the two splice traps: a payload read from a **reused scratch
+filename** that **passed** its heading-count assert (count ≠ identity), and a marker that **line-wrapped** and
+failed its own. **Assert `MARK in entry` before `MARK in output`.**
+
+**`docs/reference/database.md`** already carries the PG 17 partial-index reachability trap from earlier in
+the session.
+
+⚠ **One claim of my own narrowed on review:** "Disney Pinnacle is NOT IN THE METRIC" was too broad — the
+canonical-only precompute leg does cover it (43.2%). What is true is that **`fmv_current`** carries none of
+it. Corrected in the filing.
+
+**Revert path:** `git revert` the docs commit (find by message `docs(memory): 2026-08-23 roadmap stamp`).
+No DB or production state was changed.
+
 ### 2026-08-23 · DECIDED, NOT SHIPPED (Claude Code, Trevor's Windows box) — R46 capacity: **Trevor chose option E, stay on Small. No spend, permanently.** Recorded with the cost of declining in NUMBERS, because this file's own rule says a decision-not-to-act is the one nobody re-checks
 
 **Docs only. No code, no DB, no prod state changed by this session.** Recording because it **closes a register row that was blocking four others** (R6, R50, R52, R53) and because an unrecorded no-action is indistinguishable from an open question.

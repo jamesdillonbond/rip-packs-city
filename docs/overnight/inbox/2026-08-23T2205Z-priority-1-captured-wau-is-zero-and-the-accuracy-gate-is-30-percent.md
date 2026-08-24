@@ -92,7 +92,9 @@ seconds old at capture):
 2. 🚨 **Golazos' 0.0% is a REAL gap, and it is a different shape from UFC.** 297 `STALE`, 110 `ASK_ONLY`,
    92 `LOW`, 76 `NO_DATA` — a live collection with **no HIGH or MEDIUM row at all**. This is the clearest
    single target the metric names.
-3. 🚨 **Disney Pinnacle is NOT IN THE METRIC.** Measured, not inferred: **0 rows** in `fmv_current` against
+3. 🚨 **Disney Pinnacle is not in THIS metric.** ⚠ **Refined 2026-08-24: "not in the metric" was too broad.**
+   The roadmap's canonical-only precompute leg DOES cover Pinnacle (43.2% on 2026-08-22). What is true is
+   narrower and still matters: **`fmv_current` — the denominator used here — carries none of it.** Measured, not inferred: **0 rows** in `fmv_current` against
    **2,564** in `pinnacle_catalog` — it prices through the separate Pinnacle path (the
    `character_name`/`set_name`/`variant_type` triple). **So "30.1% of prices" covers four of the five
    published collections.** Any headline that does not say so is overstating its own scope.

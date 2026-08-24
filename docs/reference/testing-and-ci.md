@@ -560,6 +560,38 @@ instrument. The rules still stand; only the examples moved.
 >   rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can
 >   see a FAILURE** — an unreachable monitor and a green build look identical.
 
+## 🚨 A RECOVERY TOOL CAN TRIP A GUARD THAT A HAND-AUTHORED FILE SATISFIES (2026-08-23) — and CI must be verified PER PUSH
+
+**`main` was red for six consecutive commits and nobody noticed, including me.** I verified CI green through
+one commit, then pushed six more on the assumption. ⚠ **CLAUDE.md already says *a red run is not
+automatically yours: read the failing JOB first* — the failure here was never reading it at all.**
+**Verify CI per push, not once per session.** A docs-only push is not exempt: the guard that broke was
+triggered by *other* files already on `main`.
+
+**The mechanism is the durable part.** `scripts/recover-fileless-migrations.mjs` reconstructs a `.sql` for a
+migration that was applied via MCP and never committed — byte-exactly, from
+`supabase_migrations.schema_migrations.statements`, md5-verified against prod. Running it and committing the
+sixteen recovered files was **correct**, and it turned CI red anyway:
+`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` requires every migration from its
+`20260817000000` CUTOFF forward to **state an anon-execute decision** per public function it creates — and
+**a byte-exact capture of an already-applied migration states none.** Ten files, five functions.
+
+⚠ **The guard's own header justifies its CUTOFF on the grounds that *"an applied migration is history —
+editing it cannot change production"*. Recovered files ARE history; they simply arrived in the repo late.**
+So the guard's scoping assumption — *in-repo files were authored here* — is the thing that broke, not the
+guard. **Any future recovery run hits this again until the script writes the marker itself.**
+
+**How it was fixed, and what was deliberately NOT done.** ⛔ The CUTOFF was not raised, the files were not
+exempted, the guard was not weakened. The decision was **stated and MEASURED**: `has_function_privilege`
+(never the acl text) on all five — `get_series_detail`, `get_series_editions`, `get_series_rollups`,
+`get_set_editions`, `refresh_series_detail_rollup` — reads **SECURITY DEFINER, anon false, authenticated
+false, service_role true**. No exposure; the guard wanted a statement, not a hole.
+⚠ **A REVOKE must NOT be added to a snapshot/recovered file** — `CREATE OR REPLACE FUNCTION` does not reset
+an ACL, so it would CHANGE production while presenting itself as a no-op.
+⚠ **Cost stated rather than hidden: those ten files no longer md5-match prod's stored `statements`.** Only a
+comment banner was added — not one SQL byte — so re-running them is still a no-op and each revert path is
+intact. Each file says so in its own header.
+
 ## The instrument audit of 2026-08-22 — three daily detectors, and the question that paid
 
 CLAUDE.md's standing rule is **"ask what RUNS a guard, not only whether it passes."** Applied to the three

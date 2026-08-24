@@ -198,6 +198,22 @@ and "the schedule fired" reads as "the work happened" in every instrument that r
 
 ---
 
+## ⚠ AN ASSERTION MARKER THAT LINE-WRAPS FAILS ITS OWN ASSERT — and a splice payload read from a REUSED scratch filename passes one (2026-08-23)
+
+Two ledger-splice traps in one session, both caught by asserts, both about **pinning a spelling rather than a
+property** — the third and fourth recorded instances of that class.
+
+- 🚨 **The dangerous one, because the assert PASSED.** A rebase resolver read its entry from a scratchpad
+  `entry.md` left over from an **earlier entry the same session**, and spliced the WRONG text at the top of
+  the ledger. The heading-count check (`1899 → 1900`) went green — **it counts headings, not identity.**
+  ⭐ **Assert on a unique string FROM THE CONTENT YOU MEANT TO WRITE**, and never reuse a generic scratch
+  filename across entries. (Caught only by reading the result back.)
+- ⚠ **The harmless one, twice.** A marker chosen for the assert **line-WRAPPED inside the prose** (`…BY DESIGN
+  via the MEDIUM\ndispersion ceiling`), so `count(MARK)` was 0 and the write correctly did not happen.
+  ⭐ **Choose a marker that cannot straddle a wrap** — a short unbroken token like a run number — **and assert
+  `MARK in entry` BEFORE asserting `MARK in output`,** so a bad marker fails loudly instead of looking like a
+  bad splice.
+
 ## `git stash push <path>` on an already-COMMITTED path is a silent no-op — and it fakes a negative control (2026-08-22)
 
 To prove an assertion could actually fail, I reverted the fix with
