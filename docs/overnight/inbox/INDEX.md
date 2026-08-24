@@ -32,6 +32,7 @@ failure it documents.
 
 ## 2026-08-23 — 21 filings
 
+- [🔴 `topshot-active-listings-ingest` is 100% red for 5+ days, and the documented cause is 22% of it](2026-08-24T0430Z-topshot-active-listings-ingest-is-100pct-red-and-the-documented-cause-is-22pct-of-it.md) — **40/40 runs failed** 08-19→08-24, classified by reading every log: **29 die on a DB statement timeout at `?phase=targets` before Atlas is reached**, 9 on the Atlas WAF, 2 on a 504. ⚠ **Refutes the register's "~60% `egress_blocked`" (it is 22.5%) and means #20's `wrangler deploy` cannot un-red this workflow.** `topshot_serial_board_targets` mean **13,163 ms** / max **29,949 ms** against `service_role`'s 30 s ceiling — marginal at rest, an R46 symptom not a cause (#30)
 - [⛔ The largest job on the instance writes NO telemetry — and a second, cheaper caller wears its name in `pipeline_runs`](2026-08-24T0400Z-the-biggest-job-on-the-instance-has-no-telemetry-and-another-caller-wears-its-name.md)
 - [⭐ SHIPPED — the UFC and Golazos promote legs are parked, using the function's own recheck mechanism rather than a new gate](2026-08-24T0345Z-ufc-and-golazos-promote-legs-parked-using-the-functions-own-mechanism.md)
 - [⛔ The public-board watchdog discards ALL completed probes when any single board times out — and a "succeeded" tick covered 6 of 45](2026-08-24T0225Z-the-board-watchdog-loses-every-probe-it-completed-when-any-one-times-out.md)
