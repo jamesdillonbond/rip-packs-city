@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · RE-VERIFIED, STILL LIVE (Claude Code, Trevor's Windows box) — **#21's `wrangler deploy` trap is intact and has NOT fired**; plus one new, unexplained cadence observation
+
+**Docs only. No code, no DB.** Continuing the register re-derivation. ⚠ **Unlike the seven stale entries found today, this one is CORRECT IN EVERY PARTICULAR** — recording that on purpose, because *"I checked and it was right"* is as worth knowing as a correction, and an entry nobody re-checks is untrustworthy whether or not it happens to be true.
+
+✅ **The config claim holds:** `workers/topshot-moments-hydrator/wrangler.toml` still has **no `[triggers]`/`crons` block**. ✅ **The control holds:** exactly **1 of 17** `wrangler.toml` files declares `crons` (`sales-counterparty-backfill`) — so the in-repo mechanism IS used in this repo and its absence here is meaningful rather than stylistic. ⚠ **So `wrangler deploy` on this worker would still reconcile cron triggers from config and silently delete a dashboard-set schedule.**
+
+✅ **And the schedule is still alive — the trap has not fired:** 44 runs / 24 h, **all `ok`**, newest 15:02:08Z, **every minute ≡ 2 (mod 10)** exactly as originally filed. ⓘ **Sharper than the filed signature: the MINIMUM inter-run gap is exactly 10.0 min**, which confirms the 10-minute cadence *and* shows it never double-fires.
+
+⚠ **NEW, UNEXPLAINED, AND DELIBERATELY NOT DIAGNOSED — the cadence is not uniform.** Of 43 intervals: **33 are ~10 min**, **10 exceed it**, **max 370 min (6.2 h)**, average 30.0. ⛔ **Stated as arithmetic, not a cause.** Skew, no-op ticks that never log, or real outages are all consistent with it and I did not test between them. 🚨 **The shape worth noticing regardless: all 44 recorded runs are `ok`, so `pipeline_runs` contains NOTHING to explain the gaps** — a gap with no failed row is **invisible to any arm keyed on `ok`**, which is the same blind spot the `allday-pack-opens` chain turned on earlier today.
+
+⚠ **Dated 24 h sample — re-derive before quoting.**
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the trap stays un-sprung, and the cadence gap gets measured before it gets explained.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the series page's rollup FALLBACK now says it is a **floor, not the series total**; and #17's "Set B5 remaining" was fixed on **2026-07-17**
 
 **Code + one guard. No DB, no migration.** Found while re-deriving #17's *Remaining* list — **the seventh stale register entry today.**
