@@ -142,7 +142,7 @@ async function backfillPool(limit: number, conc: number) {
     return { error: "targets: " + error.message }
   }
   const rows = (targets ?? []) as Array<{ dist_id: string; uuid: string }>
-  let ok = 0, fail = 0, poolRows = 0, lastErr: string | null = null
+  let ok = 0, fail = 0, poolRows = 0, lastErr: string | null = null, emptyEds = 0
   for (let i = 0; i < rows.length; i += conc) {
     const chunk = rows.slice(i, i + conc)
     await Promise.all(chunk.map(async (row) => {
@@ -161,7 +161,10 @@ async function backfillPool(limit: number, conc: number) {
         cursor = conn.pageInfo.endCursor
         await sleep(150)
       }
-      if (!okPages || eds.length === 0) { fail++; return }
+      // eds.length === 0 with okPages means the GQL walk SUCCEEDED and returned no
+      // editions. That path set no lastErr, so a tick converting nothing returned
+      // {"done":true,...,"ok":0,"fail":3,"lastErr":null} — a clean success. Count it.
+      if (!okPages || eds.length === 0) { if (okPages) emptyEds++; fail++; return }
       const exts = [...new Set(eds.map(e => e.ext))]; const idByExt = new Map<string, string>()
       for (let j = 0; j < exts.length; j += 300) { const { data: edRows } = await supabase.from("editions").select("id, external_id").eq("collection_id", TS).in("external_id", exts.slice(j, j + 300)); for (const e of (edRows ?? []) as any[]) idByExt.set(e.external_id, e.id) }
       // pack_drop_pool PK is (collection_id, dist_id, edition_id, slot_name); every
@@ -186,9 +189,16 @@ async function backfillPool(limit: number, conc: number) {
     }))
     await sleep(300)
   }
-  console.log(`[pool] processed=${rows.length} ok=${ok} fail=${fail} poolRows=${poolRows} lastErr=${lastErr ?? ""}`)
-  await logPipelineRun("topshot-pack-pool-backfill", { startedAt, rowsFound: rows.length, rowsWritten: poolRows, rowsSkipped: fail, ok: !lastErr, error: lastErr, extra: { mode: "pool", limit, conc, processed: rows.length, dists_ok: ok, dists_fail: fail, pool_rows: poolRows } })
-  return { processed: rows.length, ok, fail, poolRows, lastErr }
+  console.log(`[pool] processed=${rows.length} ok=${ok} fail=${fail} emptyEds=${emptyEds} poolRows=${poolRows} lastErr=${lastErr ?? ""}`)
+  // A tick that found targets and converted NONE of them is a failure, even when no
+  // upstream error was raised — that is the shape a green-but-idle pipeline hides in.
+  // Only a tick with nothing to do, or one that converted at least one dist, is ok.
+  const convertedNothing = rows.length > 0 && ok === 0
+  const poolError = lastErr ?? (convertedNothing
+    ? `0/${rows.length} dists converted${emptyEds > 0 ? `; ${emptyEds} returned no editions` : ""}`
+    : null)
+  await logPipelineRun("topshot-pack-pool-backfill", { startedAt, rowsFound: rows.length, rowsWritten: poolRows, rowsSkipped: fail, ok: !lastErr && !convertedNothing, error: poolError, extra: { mode: "pool", limit, conc, processed: rows.length, dists_ok: ok, dists_fail: fail, empty_eds: emptyEds, pool_rows: poolRows } })
+  return { processed: rows.length, ok, fail, emptyEds, poolRows, lastErr }
 }
 
 // DIAGNOSTIC (no writes): probe one pool target with both query shapes, returning

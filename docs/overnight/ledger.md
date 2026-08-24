@@ -45,6 +45,15 @@ gate rejection `403 {"error":"forbidden"}`, proving the module loaded and every 
 via `mcp__supabase__deploy_edge_function` with `files=[index.ts, deno.json]`, `import_map_path="deno.json"`,
 `verify_jwt=false`. Reverting the repo file alone deploys NOTHING.
 
+⚠ **v31 → v32, same session, caught by the instrument I had just built.** v31 logged `ok: !lastErr`.
+Its FIRST live row read `ok=true` on a tick that spent **29,189 ms**, found 3 dists and converted **0** —
+because the silent path leaves `lastErr` null, so my own predicate reproduced the exact defect I had just
+documented one paragraph above. v32: `eds.length === 0` with a successful walk is counted as `empty_eds`;
+`ok` is now false when targets were found and **none** converted; and `error` is synthesized
+("0/3 dists converted; 3 returned no editions") so the condition is never unfalsifiable. **A new instrument's
+first reading should be checked against what you already know is true — mine disagreed with a measurement
+taken ten minutes earlier, and the instrument was wrong, not the measurement.**
+
 **Owed, deliberately not done here:** the 95.7%-zero-conversion rate is now measured, so the cadence
 question the earlier filing declined for lack of evidence is decidable — but the decision is Trevor's, and
 cutting the cadence of a backfill is the mirror of the `skipped_permanent` error. One week of the new rows
