@@ -47,8 +47,9 @@ other.
 - ⛔ **Stated in the guard, the test and #32: the repo CANNOT see the installed copy.** This covers only the
   direction the repo controls (edited source, unpackaged bundle), so **#32 cannot be closed by a green guard.**
 
-**Revert path:** `git revert <sha>` — docs, one guard, one deterministic bundle re-pack. Reverting restores the
-stale `rpc-handoff.skill` (the retired iPhone rule) and removes the guard; revert only to undo a bad edit.
+**Revert path (real sha):** `git revert 7e19cb00` — docs, one guard, one deterministic bundle re-pack.
+⚠ Reverting **restores the stale `rpc-handoff.skill`** (the retired iPhone rule) and removes the guard, so
+revert only to undo a bad edit of mine. **#32 is unaffected either way** — it lives outside the repo.
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit finished, and the memory-doc link guard was blind to the file it most needed to cover
 
