@@ -18,7 +18,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ✅ **What is actually true, measured not asserted:** `scripts/check-brand-tokens.mjs` **exits 0** over **399 web surfaces** scanned for brand literals (54 tracked for renames) plus **69 light-mode surfaces** clean. ⚠ **The genuine remainder is the UNGATED Phase-2 tail** — the script says so itself (*"Phase-2 debt across the rest of the repo is tracked separately — not gated here"*): email HTML, Fast Break / RTR / admin, tokenized once stable. **#11 now reads as "the ungated Phase-2 tail", not "a missing file".**
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** nobody spends another pass looking for a screenshot the product deliberately replaced.
+**Revert:** `git revert eabbb3ab` (docs-only). **Target metric:** nobody spends another pass looking for a screenshot the product deliberately replaced.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — migration parity runs 3×/day instead of 1×; the 08-23 filing's last open recommendation is closed
 
