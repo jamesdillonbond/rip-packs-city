@@ -24,7 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npm test` **1372/1372 files · 14,952/14,952 tests**, `tsc` clean, and **all three coverage gates pass** — primary 92.22 / 79.88 / 93.95 / 94.23, components 91.04 / 82.16 / 89.65 / 93.92, workers 88.34 / 76.32 / 89.81 / 91.28.
 
-**Revert:** `git revert <this commit>`. **Target metric:** two more public boards stop publishing a failed read as a market fact, and a red test suite means something again.
+**Revert:** `git revert 97a5c0d1`. **Target metric:** two more public boards stop publishing a failed read as a market fact, and a red test suite means something again.
 
 ### 2026-08-24 · REFUTED A QUEUED INSTRUCTION (Claude Code, Trevor's Windows box) — the night pass told a push-capable session to ARCHIVE inbox filings; `inbox/` is APPEND-ONLY by a rule with a CI guard. **I was that session, I tried it, and the guard stopped me**
 
