@@ -122,3 +122,19 @@ into a 200** — which is worse than a hard failure precisely because it is inte
 SEO-critical path is still worth fixing, and is now known to be load-dependent — which points at
 the same disk-IO saturation the rest of the register tracks, and means it will be WORST exactly
 when the catalogue is largest.
+
+---
+
+## ✅ RESOLVED AND ARCHIVED — 2026-08-24 (Claude Code, Trevor's Windows box)
+
+**Both defects this filing named are fixed, and the fix is verified in production against the database.**
+
+- **Defect 1 (partial-under-200):** `fetchAllByCollection` no longer `break`s on a page error. It throws `SitemapReadIncomplete`, and `app/sitemap/[id]/route.ts` turns that into a **503** so a crawler retries and keeps the sitemap it already has. **A 503 from that route is now the fix working.** Fixed 2026-08-23 by `9b862dc8`.
+- **Defect 2 (`updated_at` is 68.4% ties, largest group 1,084 > the 1,000-row page):** `fetchAllByCollection` now REQUIRES a `tiebreakColumn`, validated **by value** at runtime by `assertUsableTiebreak` — because the static ratchet this filing correctly called out can only see that a second `.order()` exists, not what was passed to it. Mutation proved that gap.
+- **`maxRows` exhaustion**, a third silent truncation the filing did not name, also throws now: *"we stopped counting"* is not *"that is all of them"*.
+
+**Closed on a SET comparison, not a status read** (2026-08-24 04:50 PT): every segment fetched live from `www.rippackscity.com` and its `<loc>` count compared against `count(*)` over `editions` **using the route's own predicates**. **Segment 2 = 7,283 vs 7,283** (All Day 6,190 + Golazos 575 + UFC 518). **Segment 1 = 13,241 vs 13,241** Top Shot rows surviving `dropTsFossils`. Segments 0 / 3 / 4 all 200 (117 / 4,607 / 8,078). ⓘ **An exact match on BOTH sides is the control the truncating loop could not have passed** — and the ties defect drops and duplicates in ways only a set comparison sees, so a count alone would have been the wrong instrument had it not matched to the row.
+
+⚠ **What that measurement does NOT prove: it exercised the COMPLETE path, not the throw path.** That branch is covered by `__tests__/sitemap-data.test.ts` and `__tests__/api-sitemap-routes.test.ts`, not by the probe.
+
+**Register:** known-issues **#28**, now ✅ RESOLVED. ⚠ This entry sat at 🔴 OPEN for a full day after the code fix shipped, with CLAUDE.md's honesty bullet pointing at it as open — **the register lagging the tree is the same stale-instrument class the register exists to catch.**

@@ -48,3 +48,17 @@ NO-PUSH removes all code deploys. Of the DB-shippable candidates none was clearl
 
 ## Failed / reverted
 None. No shipping attempted.
+
+---
+
+## ⛔ CORRECTION — 2026-08-24 (Claude Code, Trevor's Windows box): the "archive resolved items" item above is REFUTED. **`docs/overnight/inbox/` is APPEND-ONLY, by a rule with a CI guard behind it.**
+
+I am the push-capable pass this handoff queued that work for. **I attempted it and the guard stopped me**, which is the outcome working as designed.
+
+**The rule:** [`docs/overnight/focus.md`](overnight/focus.md) — *"The convention and the citation practice are in conflict, and the citations win. Treat `inbox/` as append-only. If the directory's size becomes a real problem, the fix is a redirect/stub or an index — not a `git mv`."* **Filings are permanent citation targets**: the ledger, handoffs, the roadmap, committed migrations and live product source all reference them **by exact path**, and a migration is immutable history that must not be edited to chase a move. The guard is `__tests__/inbox-is-append-only-since-the-rule.test.ts`, which **bans any filing dated on or after the rule from sitting in `archive/`** — it reddened on both files within a minute of the `git mv` and named them.
+
+⚠ **So the framing is wrong too, not just the action.** *"~200 un-archived files is the accrued cost of the long NO-PUSH streak"* reads as debt. **It is the intended steady state.** The NO-PUSH streak did not cause it and a push-capable pass cannot "pay it down" — the count is managed by `INDEX.md`, which is exactly the "index, not a `git mv`" remedy the rule prescribes.
+
+⚠ **This is the shape CLAUDE.md warns about: a filed DECISION is a hypothesis, and it is the one nobody re-checks** — a queued cleanup reads as obviously-safe housekeeping, so it gets executed rather than re-derived. **Both files were `git mv`-ed back; tree restored to 224 on disk / 224 listed, both INDEX counts intact, both inbox guards green.**
+
+ⓘ **One thing salvaged from the attempt:** the sitemap filing gained a **✅ RESOLVED** section recording that #28 is closed and how it was verified. **That is the correct way to retire a filing — annotate in place, never move it.**

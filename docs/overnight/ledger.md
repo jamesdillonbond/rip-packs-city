@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · REFUTED A QUEUED INSTRUCTION (Claude Code, Trevor's Windows box) — the night pass told a push-capable session to ARCHIVE inbox filings; `inbox/` is APPEND-ONLY by a rule with a CI guard. **I was that session, I tried it, and the guard stopped me**
+
+**Docs only. No code, no DB. Net tree change: two files moved and moved back.** ⚠ **This is the shape CLAUDE.md flags as least-re-checked: a filed DECISION, and specifically a queued CLEANUP — housekeeping reads as obviously-safe, so the next session executes it instead of re-deriving it.** I executed it.
+
+**The rule, which predates the instruction:** `docs/overnight/focus.md` — *"The convention and the citation practice are in conflict, and the citations win. Treat `inbox/` as append-only. If the directory's size becomes a real problem, the fix is a redirect/stub or an index — not a `git mv`."* **Filings are permanent citation targets** — the ledger, handoffs, the roadmap, **committed migrations** and live product source reference them **by exact path**, and a migration is immutable history that must not be edited to chase a move. ✅ **`__tests__/inbox-is-append-only-since-the-rule.test.ts` reddened within a minute of the `git mv` and named both files.**
+
+⚠ **THE FRAMING IS WRONG, NOT JUST THE ACTION.** The handoff calls *"~200 un-archived files the accrued cost of the long NO-PUSH streak."* **They are the intended steady state.** The streak did not cause the count and a push-capable pass cannot pay it down — the count is managed by `INDEX.md`, which **is** the "an index, not a `git mv`" remedy the rule prescribes.
+
+ⓘ **A second guard fired first and was also right.** Removing the two `INDEX.md` entries, I decremented **one** day heading by 2 — but the two filings sat under **different** day headings (a filing timestamped 08-24 is indexed under the 08-23 NIGHT). `inbox-index-lists-every-filing` caught it immediately: *"2026-08-23: heading says 21, section holds 22; 2026-08-22: heading says 35, section holds 34."* ➡ **The documented "TWO of the four assertions are COUNTS" warning is real, and the second count is per-day, so a filing's DATE does not tell you which heading owns it.**
+
+✅ **Salvaged, and it is the correct pattern:** the sitemap filing (`2026-08-23T0228Z-…`) gained a **✅ RESOLVED** section recording that #28 is closed, how it was verified against the live DB, and what the measurement does not prove. **Retire a filing by ANNOTATING IT IN PLACE. Never by moving it.**
+
+**Written to:** the handoff (⛔ CORRECTION section, so the next reader of that file cannot act on the refuted item) · `focus.md` (the rule now NAMES its guard and names the contrary instruction) · the sitemap filing. **Restored:** 224 on disk / 224 listed, both `INDEX.md` counts intact, both inbox guards green.
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** no future push-capable pass spends its time undoing this, and a resolved filing gets annotated rather than moved.
+
 ### 2026-08-24 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — the edge-fn drift detector's AUTHORITATIVE arm has NEVER produced a result, and every count it has published is Tier 1's lower bound
 
 **Docs only. No code, no DB.** Went to re-derive #23's dated count and found the instrument half-dead underneath it. **Filed as known-issues #31**, cross-referenced from #23. ⛔ **Deliberately NOT fixed** — see below.
