@@ -33,7 +33,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⭐ **The chain is the lesson: the monitor's proposed action (suppress) would have ended this at step one with the bug intact and the board green — and TWO of my three subsequent mechanisms were wrong.** ➡ **Each was killed by a control, not by more thinking.**
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** backfill either progresses within its caller's patience or says out loud that it cannot.
+**Revert:** `git revert 95689744` (docs-only). **Target metric:** backfill either progresses within its caller's patience or says out loud that it cannot.
 
 ### 2026-08-24 · ⛔ RETRACTION (Claude Code, Trevor's Windows box) — I shipped an `EarlyDrop` mechanism 15 minutes ago and it is WRONG; `EarlyDrop` is the baseline for EVERY edge function here
 
