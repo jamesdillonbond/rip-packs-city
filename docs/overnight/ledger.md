@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · NEGATIVE RESULT, RECORDED ON PURPOSE (Claude Code, Trevor's Windows box) — the `count ?? 0` shape has **62 occurrences and no user-facing defect** in the four surfaces that could carry one
+
+**Read-only. No code, no DB.** ⚠ **"I checked and it was fine" is the finding nobody writes down, so it gets re-derived** — and 62 occurrences is exactly the kind of number that invites a re-sweep every few weeks.
+
+**Why I looked:** the sibling sweep an entry above found 3 unchecked `pipeline_runs` inserts, so I asked what else the same engine powers. CLAUDE.md names **`?? 0` on a supabase count** as a fabricated-number shape. ⚠ **And the existing guard does NOT cover it repo-wide:** `api-count-reads-are-null-not-zero.test.ts` is a **behavioural test for ONE route** (`/api/overview-stats`), not a tree walk. `no-fabricated-divisor-ratchet` bans the `|| 1` DIVISOR shape at zero — a different expression. **So the count shape is genuinely unguarded at the tree level.**
+
+**Swept `app` + `lib` + `components`: 62 occurrences.** ⚠ **Triaged to the four that could reach a reader** rather than ratcheting a raw count — most of the 62 are cron routes putting `count ?? 0` in a LOG payload, where no claim is published. **All four are correct:**
+
+- **`og/insights/panini-squeeze`** — `editions = agg.count ?? 0`, and `agg.error` is indeed unchecked. ✅ **But the render is `{editions ? "N editions · …" : <generic tagline>}`** — a zero **omits the claim** instead of printing "0 editions".
+- **`(analytics)/analytics/page.tsx`** — totals summed with `?? 0`, ✅ **both rendered behind `fmvTotalUsd > 0` / `setsTotalSets > 0` gates.**
+- **`CollectionAnalyticsClient`'s orderbook panel** — ⭐ **the exemplary one.** Its branches are `loading → retiredSource → failed → count === 0 → the count`, with **`failed` tested BEFORE the zero branch**, so a failed read renders *"Couldn't load the order book."* and never *"No live listings."* ⓘ Note `median`/`p90` use `?? null` while `count` uses `?? 0` — **that asymmetry is safe only because `failed` is checked first**, which is worth knowing before anyone "tidies" it.
+- **`PinnacleCollectionClient:221`** — inside a **sort comparator**. Not a published measurement.
+
+➡ **The pattern that explains 62 occurrences with 0 defects: `?? 0` here feeds a TRUTHINESS GATE or sits behind an explicit `failed` branch. The rule is about PUBLISHING a fabricated zero, and none of these publish one.**
+
+⚠ **SCOPE, STATED: I checked 4 of 62**, chosen as the user-facing subset. **The other 58 are not audited** — they are cron/internal by inspection of their paths, which is a weaker claim than having read them. ⛔ **And I deliberately did NOT add a ratchet at 62**: a ratchet over a population that is 95% benign freezes noise and teaches nobody anything. **The guard worth having would key on "reaches a render", which is not a grep.**
+
+**Revert:** n/a — nothing changed. **Target metric:** nobody re-derives these 62 from scratch.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — **3 of 5 edge-function `pipeline_runs` inserts discard their error**; ratcheted at 3 so a fourth cannot land
 
 **Tests only. No product code, no DB, no deploy.** Follow-through on the `logRun` defect I found while chasing `allday-pack-opens` — **and which I explicitly ruled OUT as that bug's cause.** CLAUDE.md's rule when you find one of these is *"grep for the EXPRESSION, not the file"*, because it spreads by copy-paste. **It had.**
