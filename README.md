@@ -6,7 +6,7 @@ Live: <https://www.rippackscity.com>
 
 ## What it is
 
-RPC is a production-grade analytics platform competing with LiveToken. It surfaces mispriced listings, edition depth, pack expected value, and badge-weighted FMV across five Flow collections, with a Claude-powered AI concierge on every page.
+RPC is a production-grade analytics platform competing with LiveToken. **It is read-only** — no cart, no in-app buying, no trading or gifting; every deal links out to the marketplace that owns the listing. It surfaces mispriced listings, edition depth, pack expected value, and badge-weighted FMV across five Flow collections, with a Claude-powered AI concierge on every page.
 
 ## Tech stack
 
@@ -14,7 +14,7 @@ RPC is a production-grade analytics platform competing with LiveToken. It surfac
 - **Tailwind 4** for styling
 - **Supabase** (Postgres + Edge Functions + RLS)
 - **Vercel** hosting + edge runtime for OG images
-- **Flow / @onflow/fcl** for on-chain reads and Cadence 1.0 purchase transactions
+- **Flow / @onflow/fcl** for on-chain reads (Cadence 1.0)
 
 ## Supported collections
 
@@ -41,7 +41,7 @@ cron-job.org hits `/api/pipeline-trigger?token=...` every 20 minutes and runs se
 ## Local development
 
 ```bash
-npm install
+npm ci             # lockfile-exact; a fresh sandbox has no node_modules
 npm run dev        # http://localhost:3000
 npx tsc --noEmit   # type check
 ```
@@ -55,7 +55,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-Optional: `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `INGEST_SECRET_TOKEN`, `NEXT_PUBLIC_WALLETCONNECT_ID`.
+Optional: `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `INGEST_SECRET_TOKEN`.
 
 ## Key routes
 

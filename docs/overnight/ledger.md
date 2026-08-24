@@ -38,6 +38,19 @@ Docs/memory only — no code, no migration, no DB write, no prod-state change.
 - **Honesty tally made honest:** "~24 recorded instances" was a 2026-08-17 sample presented as a standing
   number → "~24 by 08-17, ≥13 more by 08-24 — a count, so already stale".
 
+- **The two ROOT-LEVEL memory docs were stale in ways that contradict binding rules, and both are fixed.**
+  `RPC_DESIGN_SYSTEM.md`'s only sync stamp is **2026-05-12**, three months before CLAUDE.md was restructured,
+  so it now carries an explicit staleness banner; three divergences were verified against source and fixed in
+  place — the **email accent `#E55A4C`** exception missing from the §0 no-literal-hex checklist (a reader
+  following §0 would flag a correct email change), and the **`--rpc-black` / `--rpc-text-primary` rows printed
+  as flat dark values** when `[data-theme="light"]` redefines both (`#080808 → #FFFFFF`, `#F1F1F1 → #141414`),
+  which is how a hardcoded "matching" hex becomes a black slab in light mode. ⚠ **The rest of that file is NOT
+  audited** and full reconciliation is left open rather than implied. `README.md` (last touched 05-30) claimed
+  **"Cadence 1.0 purchase transactions"** on the repo's front door — the product is READ-ONLY, and *never offer
+  an action the product lacks* binds every surface; it now says so positively. Also dropped
+  `NEXT_PUBLIC_WALLETCONNECT_ID` (**zero usages anywhere in the tree**, a leftover of the 08-08 wallet-sign-in
+  removal) and switched the install line to `npm ci`.
+
 **Revert path:** `git revert <this sha>` (docs-only; nothing to undo in the DB or on Vercel). Reverting
 restores the prose UUID copy and the payer-wallet line in CLAUDE.md, and takes the file back to 39,984 —
 still under the limit, so the revert is safe on its own.
