@@ -8,6 +8,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit I said was open, plus a live trust-board and accuracy-gate re-derivation
+
+Docs/memory only — no code, no migration, no DB write, no prod-state change. Continuation of the memory
+refresh; the earlier entry deliberately left `RPC_DESIGN_SYSTEM.md` unaudited and named it open, so this
+closes most of it.
+
+- **`RPC_DESIGN_SYSTEM.md` §0/§1/§3/§4/§5/§5a/§6/§7 audited against LIVE sources; §2/§8/§9/§10/§11/§12 are
+  still NOT audited and the banner now says exactly that.** Eight corrections, every one verified:
+  - 🚨 **§5 told readers to defeat the PostgREST 1000-row cap with `.limit(10000)`. It does not work** — the
+    cap **CLAMPS** an explicit limit above 1000, so that advice handed back 1000 rows to a caller who
+    believed they had 10,000. A partial read rendering as a complete one, in the doc that calls itself
+    authoritative. Also added the two rules §5 never carried: `.range()` needs a deterministic `.order()`
+    on a UNIQUE key, and a batch `.insert()` is all-or-nothing.
+  - 🚨 **§5's read-path budget quoted DECLARED `rolconfig` as if it were EFFECTIVE.** `pg_roles` really does
+    say `anon` 3 s / `authenticated` 8 s / `service_role` 30 s — which is why it looked verifiable — but
+    `rolconfig` binds at LOGIN and PostgREST logs in as `authenticator`, so **`authenticator`'s 8 s is the
+    real ceiling and there is no 3 s bound on unauthenticated compute**; no Postgres timeout bounds a
+    `supabaseAdmin` RPC at all.
+  - ⛔ **§4 listed `other` as a valid short-form collection value.** Live `flowty_transactions_collection_check`
+    whitelists exactly six and `other` is not one — and the CHECK is on that table ONLY, so a bad value fails
+    loudly there and persists silently in `flowty_loans`/`flowty_loan_events`.
+  - 🚨 **§7 was missing the rule whose violation dropped 385,734 Top Shot rows on 2026-08-05** (the 0↔1
+    collision is TOP-SHOT-SPECIFIC; never blanket-remap). Added, with the **four** live label conventions
+    re-derived from `collection_series`: Top Shot's labels are offset by one against the repo's map, All Day
+    is identity, **UFC is identity including a literal `Series 0`**, and **Pinnacle uses YEARS, not "Series"**.
+  - **§3** listed a `dashboard/trade-hub/` deleted from the tree on 2026-08-01 and omitted three real
+    children (`api-keys/`, `history/`, `packs/`); its tab-availability rule was wrong in both directions
+    (it dropped `analytics` from the common set and called `packs`/`sets`/`market` Top-Shot-only when 4 of 5
+    collections carry them). Re-derived from `lib/collections.ts`.
+  - **§5's pg_cron census** 68/68/33 (07-25) → **99 jobs, 99 active, 45 `cron_heavy`** live.
+  - **§5a + the file header** still said §12 would be added "when the `rpc-mcp-proxy` worker ships, not
+    before" — the worker exists and §12 is present.
+- **Trust board re-derived live and recorded in `trust-board-and-safety.md`:** 19 precompute metrics; the two
+  board 999s are **still the deliberate `budget_exhausted` branch, not the exception sentinel** — settled by
+  that file's own discriminator (`duration_ms` 89/93 ms is far too fast to have probed). ⚠ **That is a change
+  since 08:12Z this morning**, when the night pass had the sweep at 45/45 twice post-panini-cutover; recorded
+  as one sample with the discriminating checks named, explicitly NOT as "the cutover's gain was illusory".
+  All eight leg jobs 324–331 re-verified intact.
+- **Accuracy gate re-read** into `roadmap-status.md`: canonical leg Top Shot **57.2** · Candy 62.4 ·
+  Pinnacle **43.4** · All Day **27.0** · Golazos 0.2 · UFC 0.0. ⛔ Recorded with the denominator named and
+  with an explicit refusal to call the 49.6 → 57.2 same-day move a gain — two instants of a continuously
+  rewritten population are not a trend.
+- **CLAUDE.md** unchanged except one dated sample restamped: the `collection_series` label divergence was
+  **re-verified** against live rather than re-quoted (`Series 5/6/7` for 6/7/8 still exact). 39,955 chars.
+
+**Revert path:** `git revert <sha>` — docs-only, nothing to undo in the DB or on Vercel.
+
 ### 2026-08-24 · MECHANISM FOUND (Claude Code, Trevor's Windows box) — `allday-pack-opens-backfill` is silent because **185 of 186 invocations are `EarlyDrop`ped before they can log**, and that breaks a rule CLAUDE.md already carries
 
 **Docs only. No code, no DB.** Closes the question I left open one entry ago, in the same session that opened it.

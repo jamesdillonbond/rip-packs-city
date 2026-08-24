@@ -18,6 +18,35 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+## ⭐ CANONICAL-LEG RE-READ, 2026-08-24 ~15:35Z (08:35 PT) — a same-day second sample, and it MOVED
+
+Read straight from `rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`, 1.75 h old at read time) — **never by calling `rpc_fmv_confidence_share()`**,
+which blows a 60 s budget on the live instance and is why the precompute leg exists.
+
+| collection | canonical-only HIGH/MEDIUM share |
+|---|---:|
+| `nba_top_shot` | **57.2%** |
+| `candy_mlb` | 62.4% |
+| `disney_pinnacle` | **43.4%** |
+| `nfl_all_day` | **27.0%** |
+| `laliga_golazos` | 0.2% |
+| `ufc_strike` | **0.0%** |
+
+⚠ **THIS IS THE CANONICAL-ONLY DENOMINATOR AND IT IS NOT COMPARABLE TO THE 30.1% ALL-KEYS HEADLINE BELOW.**
+Same day, same instance, different question. The block below records the canonical leg at **49.6%** for Top
+Shot at ~03:35Z; it reads **57.2%** at ~15:35Z. ⛔ **Do NOT call that a 7.6-point gain — it is two snapshots
+of a population `/api/fmv-recalc` rewrites continuously**, and this file's own standing rule is that a
+directional claim needs a distribution, not two instants. The honest statement is: *the canonical leg has
+read between 49.6 and 57.2 on 2026-08-24*, and anyone who needs the trend must read the series.
+
+⚠ **Pinnacle is present here (43.4%) and ABSENT from the all-keys table below**, because `fmv_current` carries
+zero Pinnacle rows — so the two denominators do not even cover the same set of collections.
+⛔ **UFC's 0.0% is still CORRECT and permanent** (market closed since May 2026), and Golazos' ~0% is still a
+liquidity ceiling, not a defect — do not chase either.
+
+---
+
 ## ⭐ Headline metric AND demand — measured 2026-08-24 02:00–03:35Z (supersedes 08-22 for the all-keys denominator)
 
 ### The accuracy gate, all-keys denominator (`fmv_current`)

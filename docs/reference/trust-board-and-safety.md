@@ -2,6 +2,49 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ RE-DERIVED LIVE 2026-08-24 ~15:35Z (08:35 PT) — the precompute census, and the two 999s are STILL the inconclusive branch
+
+⚠ **Every number below is a dated sample taken in one minute. Re-read `rpc_trust_health_precompute`; do not
+quote this.** Read from the precompute table, deliberately **not** from `v_rpc_trust_health` — this file's own
+rule is that the view blows the 60 s MCP budget under saturation, and there was no reason to spend that.
+
+**Census: 19 metrics, 19 distinct**, newest 0.39 h old, **oldest 11.75 h**. The 19 matches the
+`v_rpc_trust_health_freshness` row count recorded for 2026-08-16, so the precompute surface has not changed
+shape in eight days.
+
+- 🚨 **`public_board_empty_count` = 999 and `public_board_slow_count` = 999, at `duration_ms` 89 and 93.**
+  ⭐ **This file's own discriminator settles it without a second query: 77/85 ms was called "far too fast to
+  have probed anything" on 08-17, and 89/93 ms is the same order.** So this is the **deliberate
+  `budget_exhausted` branch — "incomplete sweep is INCONCLUSIVE, not green" — and NOT the exception
+  sentinel.** A reader who goes debugging an exception path will find one that did not fire. ⚠ **Do not read
+  it as a zero, and do not read `cron.job_run_details` for the answer either** — the branch returns normally,
+  so the leg reports `succeeded`.
+- ⚠ **AND THAT IS A CHANGE SINCE THIS MORNING, WHICH IS THE PART WORTH RE-CHECKING RATHER THAN THE 999.**
+  The 08-24 night pass recorded `public_board_liveness_sweep` running **45/45 twice** (00:28Z @34 s,
+  06:28Z @85 s) after the panini-squeeze worker-second cut, versus 0/45 and 6/45 before it, and published
+  `public_board_slow_count=3` at 08:12Z. By the **14:48Z** leg read it is back to inconclusive. ⛔ **One
+  sample — do NOT conclude the cutover's gain was illusory from this.** The sweep (jobid **288**,
+  `28 */6`, `postgres`-owned) and the leg that READS it (jobid **326**, `48 2,8,14,20`, `cron_heavy`) are
+  different jobs on different schedules, so the discriminating checks are `public_board_liveness_probe()`
+  called directly, and sweep 288's own 12:28Z/14:28Z run history — not this value.
+- ⚠ **`trust_precompute_max_age_hours` was reading ~11.75 h against a breach at 13** — `sales_serial_supply_worst_pct`,
+  written 03:48Z by leg **327** (`48 3,9,15,21`), which fires again at 15:48Z. **That is the split's designed
+  sawtooth, not an incident**, and it is exactly the shape this file warns reads as a regression. The leg cost
+  **480,061 ms**; the most expensive leg on the board remains `topshot_impossible_parallel_serials` at
+  **582,287 ms** (leg 324) — both well inside the 600 s `cron_heavy` budget they each now own since the 8-way
+  split, and both would have starved each other under the old monolith.
+- ✅ **All eight leg jobs 324–331 re-verified live: same jobids, same schedules, all `cron_heavy`, all
+  `active`.** The 8-way split is intact eight days on.
+- ⚠ **`panini_sale_field_mapping_shortfall` reads `-16` — a NEGATIVE shortfall.** Not characterised here;
+  noted because a shortfall arm reading below zero is a shape worth a look before anyone quotes it as 0.
+
+**Accuracy-gate legs, same read (canonical-only denominator — NOT the all-keys one):** Top Shot **57.2** ·
+All Day **27.0** · Candy **62.4** · Pinnacle **43.4** · Golazos **0.2** · UFC **0.0**. ⚠ **Name the
+denominator or the number means nothing** — see the THREE DENOMINATORS warning in
+[roadmap-status.md](roadmap-status.md).
+
+---
+
 ## Cross-session safety + coordination (added 2026-06-27)
 
 **Destructive-op circuit-breaker (LIVE).** A statement-level trigger (`rpc_guard_block_destructive`, thresholds in `rpc_delete_guard_config`) BLOCKS bulk/cross-cutting deletes on irreplaceable tables: `wallet_moments_cache` (DELETE spanning >3 distinct wallets), `editions` (>25 rows), `pinnacle_editions` (>25 rows), and any TRUNCATE on those. Routine scoped deletes (per-wallet wmc refresh, etc.) pass untouched. For a GENUINELY intentional bulk delete, opt in inside the txn: `SET LOCAL rpc.allow_bulk_delete = 'on';` — and only after confirming via the ledger it's intended. (This exists because a session blind-deleted 1,724 wmc rows on 2026-06-27.) `fmv_snapshots` + caches are deliberately NOT guarded (regenerable + hot delete paths).

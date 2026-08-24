@@ -234,7 +234,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ### Series map (on-chain UInt32 → display name)
 
-`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (verified 08-22) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
+`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (re-verified 08-24) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
 
 ⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a real 2026-08-05 incident silently dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
 

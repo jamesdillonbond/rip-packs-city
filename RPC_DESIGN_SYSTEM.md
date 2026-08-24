@@ -6,13 +6,18 @@ Authoritative reference for every frontend, DB, and concierge change in `rip-pac
 > **2026-05-12** and is the last full reconciliation of this file against `CLAUDE.md`. **CLAUDE.md has
 > been restructured since (2026-08-17, ~713k → ~40k, bulk moved verbatim to `docs/reference/*.md`) and
 > refreshed again 2026-08-24, so a rule stated here has NOT been re-checked against it in three months.**
-> Three specific divergences were found and fixed in place today (the email-red exception in §0, the
-> theme-aware palette rows, and this banner); **the rest of the file has not been audited.** ⚠ A stamp
+> **AUDIT STATUS (2026-08-24).** ✅ Audited against live sources and corrected: **§0** (email-accent
+> exception), **§1** (theme-aware palette rows), **§3** (routing — a deleted `trade-hub/`, three missing
+> dashboard children, and a tab-availability rule that was wrong in both directions), **§4** (the short-form
+> vocabulary listed a value the live CHECK rejects), **§5** (the 1000-row cap, the pg_cron census, and the
+> read-path budget), **§5a** (§12's ship condition was met), **§6** (checked, consistent, no change) and
+> **§7** (the Top-Shot-specific series remap rule was missing entirely). ⛔ **NOT audited: §2, §8, §9, §10,
+> §11, §12.** ⚠ A stamp
 > that reads as currency while the reference it was reconciled against has moved is this project's own
 > honesty defect applied to a doc — treat a §-level claim here as needing confirmation against
 > `CLAUDE.md` / `app/rpc-tokens.css`, not as settled. **Full reconciliation is OPEN and unassigned.**
 >
-> **Sync status (2026-05-12):** Re-committed to the repo for the first time. The 2026-05-09 baseline has been reconciled against `CLAUDE.md` and `app/rpc-tokens.css` and folded in: edition-dedup steady-state (Phase 0 hydrator-fix `81e85aa`), listing-divergence reconciliation (`listing_divergence_null_safe_price`), account-linking infrastructure (`linked_accounts` + `analytics_sales_resolved`), the EVM multichain scaffold (`evm_chains` / `wallet_links` + chain-parameterized `lib/evm-rpc.ts`), Pinnacle direct-ASK pipeline (`ask_source='pinnacle_direct'`), and the MCP Phase 1 DB surface applied via Supabase MCP today. §12 (MCP product surface) is intentionally NOT added yet — it will land when the `rpc-mcp-proxy` worker ships in Track D.
+> **Sync status (2026-05-12):** Re-committed to the repo for the first time. The 2026-05-09 baseline has been reconciled against `CLAUDE.md` and `app/rpc-tokens.css` and folded in: edition-dedup steady-state (Phase 0 hydrator-fix `81e85aa`), listing-divergence reconciliation (`listing_divergence_null_safe_price`), account-linking infrastructure (`linked_accounts` + `analytics_sales_resolved`), the EVM multichain scaffold (`evm_chains` / `wallet_links` + chain-parameterized `lib/evm-rpc.ts`), Pinnacle direct-ASK pipeline (`ask_source='pinnacle_direct'`), and the MCP Phase 1 DB surface applied via Supabase MCP today. ~~§12 (MCP product surface) is intentionally NOT added yet~~ — ⚠ **STALE: §12 IS PRESENT in this file and `workers/rpc-mcp-proxy/` exists in the tree (verified 2026-08-24).**
 
 ---
 
@@ -269,7 +274,11 @@ app/
     layout.tsx
     alerts/
     notifications/
-    trade-hub/
+    api-keys/
+    history/
+    packs/
+    # ⛔ trade-hub/ was DELETED from the tree 2026-08-01 (shelved, known-issues #3).
+    # Listed here until 2026-08-24; verified absent — `find app -path '*trade-hub*'` returns nothing.
 
   profile/[username]/page.tsx        ← public profile (top-level), served from /api/public/profile/[username]
   moment/[id]/page.tsx               ← top-level cross-collection moment page
@@ -286,7 +295,7 @@ app/
 - Any new page under `(collections)/[collection]/*` renders content only. Headers, nav rails, ticker bars come from the layout. Adding a second header anywhere in the subtree is a regression.
 - The `dashboard/` tree is flat. Do not introduce a `(dashboard)` route group without explicit refactor scope.
 - The `(collections)/` group has static overrides (`disney-pinnacle/`, `panini-blockchain/`) that match before the dynamic `[collection]` segment. Don't add a sibling override without thinking through the precedence.
-- Common collection tabs are `overview`, `collection`, `sniper`. Top Shot adds `packs`, `sets`, `market`, `fast-break`, `road-to-the-ring`. Pinnacle drops `sets`. Confirm tab availability against the `[collection]` value before linking.
+- **Tab availability — re-derived from `lib/collections.ts` 2026-08-24; the previous wording here was wrong in both directions.** Common to all 5 published: `overview`, `collection`, `sniper`, **`analytics`** (which the old line omitted). `market` + `packs`: **all except UFC**. `sets`: **all except Pinnacle**. `pack-sniper`: Top Shot + All Day. `play` + `challenges` + `hot-floors`: Top Shot only. ⚠ `fast-break` and `road-to-the-ring` are ROUTES but appear in **no** `pages:` array, so they are not tabs — do not infer one from the other. **Always confirm against the `pages:` array, never against this list.**
 
 ---
 
@@ -296,7 +305,9 @@ app/
 `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
 
 ### SHORT-form (use in: `flowty_transactions`, `flowty_loans`, `flowty_loan_events`, `analytics_sales` view output)
-`topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` / `other`
+`topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown`
+
+⛔ **`other` IS NOT A VALID VALUE — corrected 2026-08-24 against the live constraint.** `flowty_transactions_collection_check` whitelists exactly those **six** and nothing else (read from `pg_constraint` that day). ⚠ **And the CHECK exists on `flowty_transactions` ONLY** — `flowty_loans` and `flowty_loan_events` carry no `collection` CHECK, so a bad value (`'other'`, or a long-form `'ufc_strike'`) fails **loudly** on the first table and persists **silently** on the other two, where it simply never matches. Bridge long→short with the `analytics_sales` view's CASE.
 
 - `flowty_transactions` has CHECK constraint `flowty_transactions_collection_check` whitelisting short-form. Writing `'ufc_strike'` to a flowty_* table fails at INSERT. `lib/flowty-tx-classifier.ts` MUST emit `'ufc'` not `'ufc_strike'`.
 - The `analytics_sales` view translates LONG → SHORT via CASE.
@@ -312,7 +323,9 @@ app/
 
 ## §5 — DB Gotchas That Bite Frontend
 
-- **PostgREST 1000-row cap** — silent. Always `.limit(10000)` or wrap in RPC for large reads. Note: the cap applies to SETOF/TABLE returns but NOT to scalar `text[]` / `jsonb` returns — prefer scalars for >1000-element results.
+- 🚨 **PostgREST 1000-row cap — and `.limit(10000)` DOES NOT LIFT IT (corrected 2026-08-24).** The cap **CLAMPS an explicit `.limit()` above 1000**, so the old advice on this line handed back 1000 rows to a caller who believed they had 10,000 — a partial read rendering as a complete one, which is this project's single most productive defect class. **Wrap in an RPC, or paginate.** For a TOTAL, read the returned `count` (`head: true`), **never `rows.length`**. The cap applies to SETOF/TABLE returns but NOT to scalar `text[]` / `jsonb` returns — scalars remain the escape hatch for >1000-element results.
+- ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key** (added here 2026-08-24; it was missing). Without it the read returns the right *number* of rows and the wrong *rows*, and the duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a ban at zero in the guard suite.
+- ⚠ **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one** (added 2026-08-24). One duplicate fails the whole statement and writes **none** of the batch; on a cursored indexer that is permanent loss.
 - **`fmv_snapshots`** — partitioned by date. Delete-then-insert, never upsert. `collection_id NOT NULL` always. Daily duplicates are intentional history, not a bug.
 - **`fmv_confidence` enum** — UPPERCASE: `HIGH` / `MEDIUM` / `LOW` / `NO_DATA` / `ASK_ONLY` / `SALES_ONLY` / `STALE`. Two confidence vocabularies live in the DB — `nba_player_projections.confidence` uses 3-letter `MED` instead of `MEDIUM`. Don't cross-pollinate.
 - **`tier_type` enum** — UPPERCASE: `COMMON` / `FANDOM` / `RARE` / `LEGENDARY` / `ULTIMATE`. UFC Strike uses its own vocabulary: `CHALLENGER` / `CONTENDER` / `FANDOM`. Filter with `.eq()`, never `.ilike()`.
@@ -325,7 +338,7 @@ app/
 - **Edition-dedup migration — deferred.** Phase 0 hydrator-fix shipped 2026-05-08 (`81e85aa`). The actual dedup pass is paused pending 24h orphan-rate verification — do NOT run dedup until that signal is green.
 - **Listing-divergence reconciliation** — hardened 2026-05-11 via `listing_divergence_null_safe_price` migration. Cross-source ask compares now tolerate NULL asks on either side.
 - **Pinnacle direct-ASK pipeline** — Phase 2C shipped 2026-05-11. Reconcile RPC writes `ask_source='pinnacle_direct'` from on-chain events. `fmv_snapshots` remains empty for `disney_pinnacle` (sales-only path).
-- **`pg_cron` — INSTALLED and heavily used.** ⚠️ CORRECTED 2026-07-25: this line previously read "NOT installed. Schedule via cron-job.org", which was wrong and is a live footgun. Verified: extension present, **68 jobs, 68 active, 33 owned by `cron_heavy`**. cron-job.org is still a *second*, independent scheduler (plus GitHub Actions, Vercel crons, and Trevor's home box — five surfaces total), so "where is this scheduled?" always needs checking in all five.
+- **`pg_cron` — INSTALLED and heavily used.** ⚠️ CORRECTED 2026-07-25: this line previously read "NOT installed. Schedule via cron-job.org", which was wrong and is a live footgun. Verified **2026-08-24 against `cron.job`: 99 jobs, 99 active, 45 owned by `cron_heavy`** (was 68/68/33 on 07-25 — re-derive, never quote). ⚠ **No session-reachable role can reschedule a `cron_heavy`-owned job** — `postgres` may EXECUTE but does not own it, `cron_heavy` owns it but may not EXECUTE, and `postgres` cannot UPDATE `cron.job` (known-issues #19). So read `cron.job.username` **before** planning any `cron.alter_job`. cron-job.org is still a *second*, independent scheduler (plus GitHub Actions, Vercel crons, and Trevor's home box — five surfaces total), so "where is this scheduled?" always needs checking in all five.
   - **`statement_timeout` on the pg_cron path:** a function's `proconfig` and any in-command `SET statement_timeout` are **INERT** (disproven 3×). The only thing that works is owning the job as the **`cron_heavy`** role (600s session default) instead of `postgres` (120s cluster default). **`GRANT EXECUTE` on the target function to `cron_heavy` FIRST** — re-owning the job before the grant fails permission-denied.
   - A pg_cron **"job startup timeout"** means the background worker never launched, so the function body never ran and **nothing is written to `pipeline_runs`** — it is invisible to `detect_stalled_pipelines()`. The `pgcron_startup_timeout` arm in `get_pipeline_alerts()` covers this.
   - `cron.job_run_details` **cannot be indexed** (extension-owned) — bound reads by `runid`, not `start_time`.
@@ -335,7 +348,7 @@ app/
 - **`CREATE OR REPLACE VIEW` preserves GRANTs but WIPES `reloptions`** — so it silently drops `security_invoker = on`, turning a public anon-readable view into a **definer-rights** view that bypasses the caller's RLS (and a Supabase advisor ERROR). Capture `reloptions` before, and re-`ALTER VIEW ... SET (security_invoker = on)` in the SAME migration. Note this is the *opposite* of the function case, where a **changed signature** creates a new overload with default **PUBLIC EXECUTE** while the old overload keeps its grants. Easy to get backwards; check both.
 - **Health functions return a SINGLE jsonb row** where `[]` means clean — **never `count(*)` them** (`count(*)` on `check_secdef_anon_execute_violations()` returns `1` when the DB is *clean*). Exceptions: `check_public_security_invariants()` and `check_pgcron_recent_failures()` genuinely ARE set-returning, so 0 rows = clean for those two only.
 - **Ask liveness lives on a DIFFERENT table per collection AND per printing.** Verified 2026-07-25: `badge_editions` holds **zero** `::` parallel rows for Top Shot (all 8,589 rows are base `setID:playID`), while `edition_offers` holds **3,173** parallel rows. So a parallel's `badge_editions.low_ask` is *structurally* always NULL — it is **not** evidence the ask disappeared. Top Shot ask liveness → `edition_offers`; All Day / Golazos → `badge_editions`; UFC → neither exists. This exact gap produced a wrong "93% of prices have no backing ask" conclusion; the true figure was ~16%. **Before using an empty ask column as proof of absence, confirm that table covers that collection and that printing.**
-- **Read-path budget:** page/API reads run as `service_role` with a **30s** timeout (`authenticated` 8s, `anon` 3s). A view that exceeds it renders a **plausible empty state at HTTP 200** that no health check catches. Diagnose via `pg_stat_statements` joined to `pg_roles`, and read **`min`**, not `mean` — a high `min` is structurally heavy, a low `min` with a high `max` is starved by contention.
+- 🚨 **Read-path budget — THOSE `rolconfig` NUMBERS ARE DECLARED, NOT EFFECTIVE (corrected 2026-08-24).** `pg_roles` really does read `anon` 3s / `authenticated` 8s / `service_role` 30s — which is why this line looked verifiable — but **`rolconfig` applies at LOGIN, and PostgREST logs in as `authenticator` and only `SET LOCAL ROLE`s.** So `anon`'s 3s and `authenticated`'s 8s **never bind**: **`authenticator`'s 8s is the real ceiling for both**, and there is **NO 3s bound on unauthenticated compute**. Likewise **no Postgres timeout bounds a `supabaseAdmin` RPC — the bound is the CLIENT** (worst observed 352s), so `service_role`'s 30s is not the ceiling either. ⚠ A function-level `SET statement_timeout` is **INERT** (196 functions declare one). Numbers + the disproof: [docs/reference/database.md](docs/reference/database.md). A view that exceeds it renders a **plausible empty state at HTTP 200** that no health check catches. Diagnose via `pg_stat_statements` joined to `pg_roles`, and read **`min`**, not `mean` — a high `min` is structurally heavy, a low `min` with a high `max` is starved by contention.
 - **Repo drift** — every migration applied via Supabase MCP `apply_migration` must also be saved as a `.sql` file under `supabase/migrations/` in the same commit. Otherwise the repo's view of the schema diverges from the live DB and code-search-based tools (including Claude Code) will report functions / tables as "missing" when they exist at runtime.
 
 ### §5a — MCP Phase 1 surface (live in DB, no worker yet)
@@ -347,7 +360,7 @@ Applied via Supabase MCP on 2026-05-12 as version `20260512155009`. The migratio
 - View: `v_mcp_usage_today` — hourly rollup of `usage_events` where `feature_name LIKE 'mcp\_%'` over the last 24h.
 - `feature_quotas` rows (`feature_name='mcp_query'`): `free` 100/day · `pro` 5000/day · `founding` unlimited · `partner` unlimited.
 
-The Phase 1 surface is read-plane only. Agent execution / writes / on-chain transactions are deferred to Phase 2+. **§12 (product-level MCP doc) will be added in this file when the `rpc-mcp-proxy` Cloudflare Worker ships in Track D, not before.**
+The Phase 1 surface is read-plane only. Agent execution / writes / on-chain transactions are deferred to Phase 2+. ✅ **RESOLVED 2026-08-24: that condition was met and this sentence outlived it.** `workers/rpc-mcp-proxy/` exists in the tree and **§12 is present below** — so read §12, not this line. (The file header's *"§12 is intentionally NOT added yet"* is stale for the same reason.)
 
 ---
 
@@ -374,6 +387,8 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 - **Top Shot GQL** — `searchEditions` uses plural `bySetIDs` / `byPlayIDs`. `set { flowId }` lowercase, `play { flowID }` uppercase D. Requires `Origin: https://nbatopshot.com` + `Referer` headers; route through `topshot-proxy` worker (Cloudflare blocks Vercel IPs).
 - **`TopShot.getSetData(setID).tier`** — does NOT exist. `QuerySetData` only exposes `setID / name / series`. Tier comes via GQL or per-NFT MetadataViews / modal-set inference post-pass.
 - **Top Shot series map** (on-chain `UInt32` → display): `0="Series 1"`, `2="Series 2"`, `3="Summer 2021"`, `4="Series 3"`, `5="Series 4"`, `6="Series 2023-24"`, `7="Series 2024-25"`, `8="Series 2025-26"`. No series=1 on-chain, no "Beta".
+- 🚨 **THE 0↔1 COLLISION IS TOP-SHOT-SPECIFIC — NEVER BLANKET-REMAP `1 → 0` ACROSS COLLECTIONS** (added here 2026-08-24; this rule was missing from this file and its violation on 2026-08-05 silently dropped **385,734** Top Shot rows). `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately, and **`ufc_strike` has BOTH 0 and 1**. **Read `collection_series` before touching any series logic.**
+- ⚠ **FOUR LABEL CONVENTIONS LIVE AT ONCE — the map above is the REPO's, not the database's** (re-derived from live `collection_series` 2026-08-24). Top Shot's `display_label` is **offset by one against this list**: `6 → "Series 5"`, `7 → "Series 6"`, `8 → "Series 7"` (this list calls them 2023-24 / 2024-25 / 2025-26), and that label is what drives the Collection tab filter via `/api/collection-series`. All Day is identity (`1–10 → "Series 1–10"`). **UFC is identity INCLUDING a literal `"Series 0"`.** **Pinnacle does not use "Series" at all — its labels are YEARS** (`1–4 → "2023"–"2026"`). ⚠ Golazos has **exactly one** row (series 1), so any Golazos series-2/3 route is dead. `lib/collection/series-param.ts` resolves BOTH conventions (`fdf84ee4`); **which label WINS is still open** — check which one your surface parses.
 - **Listing cache** — all routes go through `flowty-proxy` Supabase edge function (Flowty blocks Vercel IPs). TS uses `onConflict:"flow_id"`. `get_collection_stats` TS `listing_count` reads `badge_editions.low_ask`, NOT `cached_listings`. Flowty Pinnacle floor is a uniform $1 (`upstream_floor_only=true`) — Pinnacle ASK should come from the direct pipeline (`ask_source='pinnacle_direct'`), not Flowty.
 
 ---
