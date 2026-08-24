@@ -395,3 +395,23 @@ honest test is not *"is the page OK now"* but **"does a COLD regeneration still 
 
 Filing (every number is a dated sample — re-run the six-sample distribution before quoting ~1.2 s):
 `docs/overnight/inbox/2026-08-24T1441Z-a-cold-isr-regeneration-can-bake-a-failed-read-into-15-minutes-of-cached-html.md`.
+
+## A THIRD supabase-js shape: a DISCARDED WRITE RESULT on a telemetry insert (2026-08-24)
+
+CLAUDE.md names two fabricated-number shapes — `?? 0` on a count and `|| 1` as a divide-guard — both powered by the same engine: **supabase-js RETURNS errors rather than throwing.** Here is the third, and it fabricates an ABSENCE rather than a number:
+
+```ts
+await supabase.from("pipeline_runs").insert({ … })   // result discarded
+```
+
+**Nothing throws, so `try/catch` is no defence and the function reports success.** On a **telemetry** write the consequence is specific and nasty:
+
+> insert fails → **no `pipeline_runs` row** → every arm keyed on `pipeline_runs` reports **`cron_silent`** → which reads as **"the scheduler stopped"**.
+
+⚠ **The pipeline becomes indistinguishable from one that never ran** — and this repo has arms that key on exactly that (`detect_stalled_pipelines`, `get_pipeline_alerts`), on a table already documented as a null-instrument in other ways (`rows_written = 0` has three incompatible meanings).
+
+**Swept 2026-08-24 across `supabase/functions/**/*.ts`: 5 INSERT sites, 3 discard the error** (`backfill-pack-opens-api`, `ingest-allday-pack-opens`, `ingest-topshot-pack-opens-history`) and **2 check and log it** (`hybrid-custody-backfill`, `hybrid-custody-events`). ⓘ **Those two are the positive control — the correct shape is already in this tree.** Held by `__tests__/edge-fn-pipeline-run-inserts-check-their-error.test.ts` as a **down-only ratchet at 3**, because the three cannot be fixed without an edge deploy and a ban at zero would sit permanently red.
+
+⛔ **AND A DISCIPLINE NOTE THAT COST ME AN HOUR: this defect is REAL and was NOT the cause of the outage I found it during.** I was chasing `allday-pack-opens-backfill`'s silence, found this, and it looked like the answer. It is not — **the identical call writes 46 `allday-pack-opens-forward` rows a day.** ➡ **A defect that is real and is not the cause of the thing you are investigating must be filed separately, never reported as the cause.** Reporting it would have closed a live investigation on a true statement about the wrong thing.
+
+⚠ **The detector for this was WRONG TWICE and its own fixtures caught both** — it walked vendored `node_modules` (1,756 files instead of ~40), and its statement-boundary heuristic cut at the last brace, **severing the `{ error }` destructuring it was looking for** so that every site classified as unchecked, including the CHECKED fixture. ➡ **Prove a detector in BOTH directions; a detector that never fires is as green as one that finds nothing.**
