@@ -20,7 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **Dated 24 h sample — re-derive before quoting.**
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the trap stays un-sprung, and the cadence gap gets measured before it gets explained.
+**Revert:** `git revert 0e1fd14f` (docs-only). **Target metric:** the trap stays un-sprung, and the cadence gap gets measured before it gets explained.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the series page's rollup FALLBACK now says it is a **floor, not the series total**; and #17's "Set B5 remaining" was fixed on **2026-07-17**
 
