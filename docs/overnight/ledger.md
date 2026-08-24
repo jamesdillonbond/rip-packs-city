@@ -8,6 +8,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — `main` had been RED for six commits and I did not check: the sixteen RECOVERED migrations trip the anon-exec guard, because a capture of history states no decision
+
+**Code (comments only). No DB, no SQL byte changed.**
+
+🚨 **The miss first.** I verified CI green through `df06dfaa`, then pushed six more commits without checking.
+`main` was red on all six (runs 3758-3763). ⚠ **The rule I broke is already in CLAUDE.md** — *a red run is
+not automatically yours: read the failing JOB first* — and I never read it. **Verify CI per push, not once.**
+
+**The cause, and it is a consequence of my own correction.** I retracted "do not reconstruct the fileless
+migrations" and pointed at `scripts/recover-fileless-migrations.mjs`; the other session ran it and committed
+the sixteen (`c9ae51f0`). ⭐ **That was right, and it broke CI anyway:**
+`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` requires every migration from its
+`20260817000000` CUTOFF forward to STATE an anon-execute decision per public function it creates — and a
+byte-exact capture of an already-applied migration states none. Ten files, five functions.
+
+⚠ **THE GENERAL LESSON, worth more than the fix: a RECOVERY tool can trip a guard that a hand-authored
+migration would satisfy.** The guard's own header justifies its CUTOFF on the grounds that *"an applied
+migration is history — editing it cannot change production"*. These sixteen ARE history; they simply arrived
+in the repo late. **Any future recovery run will hit this again** until the script writes the marker itself.
+
+**The fix, and what it deliberately is not.** ⛔ I did NOT raise the CUTOFF, exempt the files, or weaken the
+guard. I stated the decision, **measured rather than assumed** — verified live with `has_function_privilege`
+(never the acl text) for all five: `get_series_detail`, `get_series_editions`, `get_series_rollups`,
+`get_set_editions`, `refresh_series_detail_rollup` are **SECURITY DEFINER with anon = false,
+authenticated = false, service_role = true**. No exposure; the guard was asking for a statement, not reporting
+a hole. ⚠ **A REVOKE must NOT be added** — `CREATE OR REPLACE FUNCTION` does not reset an ACL, so one would
+CHANGE production while presenting itself as a no-op.
+
+⚠ **The cost, stated rather than hidden: these ten files no longer md5-match prod's stored `statements`.**
+Only a comment banner was added — not one SQL byte — so re-running any of them is still a no-op and the
+revert path each carries is intact. That is the deliberate price of satisfying the guard honestly instead of
+exempting it, and each file says so in its own header.
+
+**Verified:** the guard's 3 tests pass, `npx tsc --noEmit` clean, full vitest **1369 files / 14,925 tests**
+green.
+
+**Revert path:** `git revert` the code commit (find by message `fix(migrations): state the anon-exec decision`).
+No DB or production state was changed.
+
 ### 2026-08-23 · MEASURED (Claude Code, interactive) — ~1,000 editions are labelled LOW while their own row records them as the MOST-traded on the platform
 
 **Docs only. No code, no DB.** Follow-through on the bounded question left by the 22:05Z accuracy capture. It
