@@ -346,3 +346,52 @@ For `new-collectors` I first guarded the gateway panels' *"No data in this windo
 - **A NO-CHANGE CONTROL on every case**, or deleting the empty state entirely satisfies the guard.
 - **Wiring assertions**, because a component test cannot see the call site: `initialFailed={!ok}` **DERIVED, not a literal** — `initialFailed={false}` passes a presence check and reinstates the whole defect.
 - ⛔ **One test was DELETED rather than propped up.** "A failed seed that nonetheless has rows" needed a hand-built fixture for a state production cannot produce (the failure fallback IS `[]`), and the fixture was wrong, which is how it announced itself. **A test that needs an impossible fixture is testing the fixture.**
+
+---
+
+## The CACHING amplifier (2026-08-24) — ISR bakes a failed read into the whole `revalidate` window
+
+⭐ **Found BY a fix, not by a search.** Minutes after the fifth-layer honesty fix deployed (`34d8ff78`),
+`/insights/pack-drops` rendered **"Pack drops couldn't be loaded — refresh to try again."** in production.
+Before that deploy the same state rendered **"No live re-pack drops to score right now…"** — so the
+degradation was **already happening and was invisible, disguised as a quiet market.** ➡ **An honesty fix's
+first job is to make the real problem findable, and it did that within minutes.**
+
+⚠ **THE FIRST HYPOTHESIS WAS WRONG, OFF ONE SAMPLE.** The route reported `elapsed_ms: 11529` on the first
+call and **8 s is `BOARD_LIVE_TIMEOUT_MS`**, so the tidy conclusion was *"this page is permanently
+degraded."* Five more samples: **4,286 · 1,140 · 1,187 · 1,293 · 1,192 ms.** Warm, the read is ~1.2 s —
+**six times under budget**; the 11.5 s was the COLD path (`source: vaultopolis_public_api + rpc_fmv`, an
+EXTERNAL API, so the cold cost is upstream, not the DB). ➡ **A directional claim needs a distribution, not
+a snapshot** — the one-instant read would have sent someone to raise a timeout for a query that is fine
+5 times out of 6.
+
+**What is actually true, and why it is a member of this canon rather than a perf item:**
+
+1. A cold regeneration that exceeds the budget **fails the page's read**, and `export const revalidate = 900`
+   then **serves that failure for up to 15 minutes.** Observed live: `x-vercel-cache: HIT`, `age: 158`,
+   degraded copy, while the API answered in 1.2 s throughout.
+2. 🚨 **`pack-drops` HAS NO STALE SNAPSHOT.** `BOARD_LIVE_TIMEOUT_MS`'s own comment justifies the budget as
+   *"precisely when a stale-but-complete snapshot is the better answer"* — but this page calls
+   `fetchBoardForPage("Pack drops", [], …)`, i.e. **the fallback is `[]`.** The budget's stated rationale
+   does not hold for this caller. **Enumerate which other boards pass an empty fallback rather than a
+   snapshot before touching the constant.**
+3. **The blast radius is the page's whole purpose** — it exists to put the scored drops into the raw server
+   HTML so the unique content is crawlable. A cold-miss window serves a crawler a page with no drops on it.
+
+⚠ **IT SELF-HEALS ON THE FIRST WARM REVALIDATION, WHICH MAKES IT EASY TO DECLARE FIXED BY ACCIDENT.** The
+honest test is not *"is the page OK now"* but **"does a COLD regeneration still exceed the budget."**
+
+⛔ **NOT FIXED, and three of the obvious remedies are wrong in ways worth naming:**
+
+- ⛔ **"Raise `BOARD_LIVE_TIMEOUT_MS`"** — it is **shared by every insights board** and was created
+  deliberately (first-mint, 2026-08-12) so a throttled DB falls back rather than blocking a page or a build.
+  Raising it globally trades every board's worst case for this board's rare one.
+- ⛔ **"Just retry"** — the abandoned query **keeps running server-side** (supabase-js has no cancel; the
+  module says so). A retry adds load during the exact window the budget exists to protect.
+- ⛔ **"Lower `revalidate`"** — that increases how often the cold path is HIT, not how often it succeeds.
+- ✅ **The two plausible ones, both Trevor's call:** a **per-caller budget** (the precedent exists —
+  `SET_DETAIL_TIMEOUT_MS` on `/analytics/sets`), and/or **a real stale snapshot** so the fallback matches
+  the rationale the shared budget is written against.
+
+Filing (every number is a dated sample — re-run the six-sample distribution before quoting ~1.2 s):
+`docs/overnight/inbox/2026-08-24T1441Z-a-cold-isr-regeneration-can-bake-a-failed-read-into-15-minutes-of-cached-html.md`.

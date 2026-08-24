@@ -83,6 +83,10 @@ File: `app/api/sniper-feed/route.ts`
   - Events used: `Pinnacle.PinNFTMinted` (mint marker) · `Pinnacle.Deposit {id, to: Address?}` · `Pinnacle.Withdraw {id, from: Address?}`. ⚠ **`Pinnacle.NFTListed` DOES NOT EXIST** — listings come from the storefront (`A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable`); see `workers/pinnacle-events-proxy`. A peer-to-peer TRADE emits Withdraw+Deposit and NOTHING else: no storefront event, no mint event (see `docs/reference/database.md` → "Disney Pinnacle has THREE transaction types").
 - DapperStorageRent: `0xa08e88e23f332538` (reference only — no longer imported by any script since the storefront-cleanup machinery was removed, Known issues #9; the other 10 addresses above are all actively referenced in code, verified 2026-07-16)
 
+### Cadence service payer wallet (displaced VERBATIM from CLAUDE.md 2026-08-24 to pay for a new rule there)
+
+- Cadence service payer wallet: `0x73f55c4450b8d466` — gas payer for backend-submitted Cadence transactions, distinct from the hot wallet. Intentionally empty and its balance-check cron is paused while all Cadence-write features are shelved.
+
 ### Cadence purchase transaction rules
 
 - Must be Cadence 1.0 syntax: `auth(BorrowValue) &Account` — NOT `AuthAccount`.

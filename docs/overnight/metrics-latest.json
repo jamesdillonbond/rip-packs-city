@@ -13,18 +13,35 @@
     "secdef_anon_violations": "clean ([])"
   },
   "trust_precompute_max_age_hours": 5.27,
-  "trust_health_breaches": ["public_board_slow_count=3 (candy-mlb boards, known-structural)", "unmapped_resolution_backlog_max=361 (All Day ~47k actionable, ~1047d, known-structural)"],
+  "trust_health_breaches": [
+    "public_board_slow_count=3 (candy-mlb boards, known-structural)",
+    "unmapped_resolution_backlog_max=361 (All Day ~47k actionable, ~1047d, known-structural)"
+  ],
   "post_ship_watch_prev": {
     "20260823081000_reset_searchpath": "GREEN — reconcile-saved-wallet-stats committing (soft_deadline partial-sweep by-design; 2D000 gone; 02:44Z fully ok). 4-run silence since 03:44Z is saturation/pg_cron-startup class, not a regression.",
     "20260824033743_ufc_golazos_park": "GREEN — 1079/1079 parked (UFC 1070 + Golazos 9), All Day untouched. No prior ledger entry; recorded this pass.",
     "panini_squeeze_cutover": "STRONG POSITIVE — public_board_liveness_sweep 45/45 twice post-cutover (00:28 @34s, 06:28 @85s) vs 0/45 and 6/45 before. De-escalates board-watchdog durability fix to hygiene. No prior ledger entry; recorded this pass."
   },
   "db_size_mb": 13848,
-  "editions_by_collection": {"nba_top_shot": 19838, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "editions_by_collection": {
+    "nba_top_shot": 19838,
+    "nfl_all_day": 6190,
+    "laliga_golazos": 575,
+    "ufc_strike": 518,
+    "candy_mlb": 125
+  },
   "total_editions": 27246,
   "pipeline_health": {
     "dominant_error_class": "saturation-class (statement/lock/connection-pool timeout, upstream request timeout) — known R46 structural root, decided 08-23 no-capacity-change permanently.",
-    "high_sev_failure_rate_pipelines": ["allday-buyer-backfill 62.5%", "allday-pack-opens-backfill 78.3%", "compute-allday-pack-ev 58.2%", "fmv-recalc 52.9%", "populate-pinnacle-wmc-fmv 72.0%", "topshot-pack-pool-backfill 94.4%", "wallet-username-resolver 78.6%"],
+    "high_sev_failure_rate_pipelines": [
+      "allday-buyer-backfill 62.5%",
+      "allday-pack-opens-backfill 78.3%",
+      "compute-allday-pack-ev 58.2%",
+      "fmv-recalc 52.9%",
+      "populate-pinnacle-wmc-fmv 72.0%",
+      "topshot-pack-pool-backfill 94.4%",
+      "wallet-username-resolver 78.6%"
+    ],
     "note": "All saturation-class. topshot-active-listings-ingest no longer in the alert set this snapshot (only 2 fails/24h) but the residential arm is still ~7/8 red on the GET-targets DB timeout — see inbox 08-24T0430Z."
   },
   "vercel_runtime": "24h pull — 50 groups, all saturation-class (Vercel timeouts, connection-pool, candy-mlb board timeouts, edition/pack read-bound guards degrading gracefully). No new non-saturation class. DEP0169 url.parse deprecation warning is a benign long-standing node warning.",
@@ -37,5 +54,6 @@
     "sports-proxy 403 (ESPN slate-gated ~Oct)",
     "Sentry ingestion dark since 08-18"
   ],
-  "inbox_archiving_note": "NOT performed — NO-PUSH means archive moves cannot reach origin, and each pass re-clones from origin, so archiving churns without effect. ~200 un-archived files is the accrued cost of the long NO-PUSH streak; a desktop/Claude-Code pass that CAN push should archive resolved items."
+  "inbox_archiving_note": "⛔ REFUTED 2026-08-24 (3e2d90ac) — DO NOT ACT ON THIS ITEM, and do not re-file it. The original note read: \"~200 un-archived files is the accrued cost of the long NO-PUSH streak; a desktop/Claude-Code pass that CAN push should archive resolved items.\" A push-capable pass then TRIED it and `inbox-is-append-only-since-the-rule` stopped it within a minute: inbox/ filings are permanent citation targets for the ledger, handoffs, committed migrations and live source, so a `git mv` breaks live citations. The ~200 files are the INTENDED STEADY STATE, not debt, and INDEX.md is the remedy the rule prescribes. Retire a resolved filing by ANNOTATING it in place (add a ✅ RESOLVED section), never by moving it. See focus.md and docs/sessions/2026-08.md (08-24 day, item 6).",
+  "inbox_archiving_note_refresh": "Corrected 2026-08-24 by the memory-refresh pass; the rest of this file is the night pass's own 08-24T08:12Z capture and is unmodified."
 }

@@ -2,6 +2,16 @@
 
 Authoritative reference for every frontend, DB, and concierge change in `rip-packs-city`. Read top-to-bottom before any edit. The checklist at §0 is non-negotiable.
 
+> ⚠ **STALENESS STAMP (added 2026-08-24 by the memory-refresh pass).** The sync note below is dated
+> **2026-05-12** and is the last full reconciliation of this file against `CLAUDE.md`. **CLAUDE.md has
+> been restructured since (2026-08-17, ~713k → ~40k, bulk moved verbatim to `docs/reference/*.md`) and
+> refreshed again 2026-08-24, so a rule stated here has NOT been re-checked against it in three months.**
+> Three specific divergences were found and fixed in place today (the email-red exception in §0, the
+> theme-aware palette rows, and this banner); **the rest of the file has not been audited.** ⚠ A stamp
+> that reads as currency while the reference it was reconciled against has moved is this project's own
+> honesty defect applied to a doc — treat a §-level claim here as needing confirmation against
+> `CLAUDE.md` / `app/rpc-tokens.css`, not as settled. **Full reconciliation is OPEN and unassigned.**
+>
 > **Sync status (2026-05-12):** Re-committed to the repo for the first time. The 2026-05-09 baseline has been reconciled against `CLAUDE.md` and `app/rpc-tokens.css` and folded in: edition-dedup steady-state (Phase 0 hydrator-fix `81e85aa`), listing-divergence reconciliation (`listing_divergence_null_safe_price`), account-linking infrastructure (`linked_accounts` + `analytics_sales_resolved`), the EVM multichain scaffold (`evm_chains` / `wallet_links` + chain-parameterized `lib/evm-rpc.ts`), Pinnacle direct-ASK pipeline (`ask_source='pinnacle_direct'`), and the MCP Phase 1 DB surface applied via Supabase MCP today. §12 (MCP product surface) is intentionally NOT added yet — it will land when the `rpc-mcp-proxy` worker ships in Track D.
 
 ---
@@ -12,6 +22,7 @@ Run through this on **every** edit. If any box can't be checked, stop and re-rea
 
 ### Frontend file edits
 - [ ] No literal hex (`#E03A2F`, `#080808`, `#F1F1F1`, etc.) outside `app/rpc-tokens.css` — use `var(--rpc-*)` / `var(--tier-*)` / `var(--col-*)` tokens
+- [ ] ⚠ **EXCEPTION, verified 2026-08-24: EMAIL HTML.** The email accent `#E55A4C` is hardcoded **on purpose** (email clients have no CSS custom properties) and is NOT the web red. `scripts/check-brand-tokens.mjs` enforces both directions — `#E55A4C` in web UI is a violation, and so is `var(--rpc-red)` in email HTML. Detail: [docs/reference/brand-auth-proxy.md](docs/reference/brand-auth-proxy.md).
 - [ ] No literal font strings (`'Barlow Condensed'`, `'Share Tech Mono'`) — use `var(--font-display)` / `var(--font-mono)` / `var(--font-body)`
 - [ ] Sole exception: `ConsoleGreeting.tsx` `console %c` styling
 - [ ] If file is under `app/(collections)/[collection]/*`: NO header / nav / ticker in this file — the layout owns those
@@ -60,7 +71,7 @@ All tokens live in `app/rpc-tokens.css`, imported via `globals.css`. Every visua
 | `--rpc-red-bg` | `rgba(224,58,47,0.08)` | Red surface tint |
 | `--rpc-red-border` | `rgba(224,58,47,0.3)` | Red borders |
 | `--rpc-red-glow` | `rgba(224,58,47,0.25)` | Glow shadows |
-| `--rpc-black` | `#080808` | Page bg |
+| `--rpc-black` | `#080808` dark / **`#FFFFFF` light** | Page bg — ⚠ **THEME-AWARE**, see note below |
 | `--rpc-surface` | `#0D0D0D` | Card / header bg |
 | `--rpc-surface-raised` | `rgba(255,255,255,0.03)` | Elevated cards |
 | `--rpc-surface-hover` | `rgba(255,255,255,0.06)` | Hover surface |
@@ -70,10 +81,16 @@ All tokens live in `app/rpc-tokens.css`, imported via `globals.css`. Every visua
 | `--rpc-border-active` | `rgba(224,58,47,0.6)` | `:active` border state |
 | `--rpc-silver` | `#BFC0BF` | Secondary metallic accent |
 
+⚠ **THEME-AWARE TOKENS — the values in this table are the DARK defaults, not constants (verified against
+`app/rpc-tokens.css` 2026-08-24).** `[data-theme="light"]` on `<html>` redefines them: `--rpc-black`
+`#080808 → #FFFFFF` and `--rpc-text-primary` `#F1F1F1 → #141414`, among others. ➡ **So hardcoding a dark hex
+"to match the token" renders a black slab in light mode** — always reference `var(--rpc-*)`, never the value
+this table prints. The full light block lives at `app/rpc-tokens.css` under `[data-theme="light"]`.
+
 ### Text
 | Token | Use |
 |---|---|
-| `--rpc-text-primary` | `#F1F1F1` — body, headings |
+| `--rpc-text-primary` | `#F1F1F1` dark / **`#141414` light** — body, headings (⚠ THEME-AWARE) |
 | `--rpc-text-secondary` | `rgba(255,255,255,0.55)` — labels |
 | `--rpc-text-muted` | `rgba(255,255,255,0.42)` — meta |
 | `--rpc-text-ghost` | `rgba(255,255,255,0.2)` — placeholders |

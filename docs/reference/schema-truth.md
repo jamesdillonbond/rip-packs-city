@@ -81,9 +81,15 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
   read the LENGTH); `check_public_security_invariants()` **1 row — NOT clean**, the
   `series_detail_rollup` RLS-off entry described above.
 
-## Collections registry (live `public.collections`)
+## Collections registry (live `public.collections`) — ⭐ CANONICAL, re-verified 2026-08-24
 
-7 rows. The 5 published Flow collections' UUIDs (match CLAUDE.md):
+⚠ **CLAUDE.md no longer carries a prose copy of these UUIDs** (displaced 2026-08-24 to pay for a new
+honesty rule, exactly as this file's header prescribes) — **so this table is now the only in-repo copy
+a session will read, and a stale stamp here is a silent failure rather than a redundant one.**
+Re-verified against live `public.collections` 2026-08-24: **all 7 ids, chains and `is_active` flags
+identical to the table below — zero drift.**
+
+7 rows. The 5 published Flow collections' UUIDs:
 
 | slug | id | chain | is_active |
 |---|---|---|---|

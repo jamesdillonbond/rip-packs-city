@@ -2,7 +2,7 @@
 
 > **HOW THIS FILE WORKS (restructured 2026-08-17).** The memory-file limit is `max(40000, contextWindow × 0.05 × charsPerToken)` — **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at. This file carries only what a session needs *before* it knows its topic; the rest moved **verbatim** to `docs/reference/*.md`. Nothing was deleted — a rule that feels missing is in one of those files.
 >
-> **KEEPING IT UNDER: the limit is on CHARACTERS and `wc -c` counts BYTES.** ⚠ It runs several hundred bytes longer than it is characters (`⚠ — ·` are multi-byte) and lives inside that gap — `wc -c` once read **40,086 on a file whose true length was 39,610**. `wc -m` is platform-dependent. **The BINDING number is Node's `.length` — a JS harness enforces the limit, and CI now guards it — count with `node -e`, not `wc`** (4-instrument table: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.**
+> **KEEPING IT UNDER: the limit is on CHARACTERS; `wc -c` counts BYTES and this file lives inside that gap** (it once read 40,086 on a true 39,610). **Count with `node -e`, not `wc`** — `.length` is what the harness and CI's guard both measure (4 instruments: [tooling-gotchas.md](docs/reference/tooling-gotchas.md); the full case, incl. why size is ANTI-correlated with displaceability: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.**
 >
 > ⚠ **Two rules govern every number here and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life** (examples: [claude-md-condensed-originals.md](docs/reference/claude-md-condensed-originals.md)). **Re-derive; do not quote.**
 
@@ -39,7 +39,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 ⚠ **On a rebase conflict, do NOT hand-edit the markers** — re-splice into upstream's copy (`git show :2:…`) at the first `^### `. Three traps, each drawn blood: **anchor the marker check to line start**, **gate the `git add` on the resolver's exit code**, **measure a check's baseline before asserting on it**. Full recipe: [ledger-discipline.md](docs/reference/ledger-discipline.md).
 
-🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` + force-push rewrote every pre-purge sha. A missing sha does NOT mean the commit never existed: find it by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. 🚨 **The purge was DEFEATED and still is:** `origin/claude/todo-implementation-e4tib3` branches from the ROOT commit, was never rewritten, and carries the pre-purge blob on this PUBLIC repo (**present 2026-08-22 19:36 PT**). Operator-only: known-issues #22.
+🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` + force-push rewrote every pre-purge sha. A missing sha does NOT mean the commit never existed: find it by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. 🚨 **The purge was DEFEATED and still is:** `origin/claude/todo-implementation-e4tib3` branches from the ROOT commit, was never rewritten, and carries the pre-purge blob on this PUBLIC repo (**still present 2026-08-24**). Operator-only: known-issues #22.
 
 ---
 
@@ -78,7 +78,7 @@ Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles 
 
 Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
 
-**Repo map** (2026-08-22 — re-derive, never quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **301** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **97** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
+**Repo map** (2026-08-24 — re-derive, never quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **308** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **103** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
 **Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
 
@@ -86,7 +86,7 @@ Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase 
 
 ## Infrastructure IDs (required on every tool call)
 
-- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ The **22 MB/s** burst floor is the COMPUTE TIER's IO budget, NOT the disk — no disk change lifts it. Saturation is **IO-, not CPU-bound** — fix expensive queries, don't upgrade. ⚠ "same 2 cores" is Medium-only; **Large = 2 DEDICATED cores / 8 GB / 79 MB/s** (database.md).
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ The **22 MB/s** burst floor is the COMPUTE TIER's IO budget, NOT the disk. Saturation is **IO-, not CPU-bound** — fix expensive queries, don't upgrade (Medium/Large tier numbers: database.md).
 - Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
@@ -123,7 +123,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 
 ### Honesty — a failed read must not render as an answer
 
-**The single most productive defect class on this platform (~24 recorded instances).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
+**The single most productive defect class on this platform (~24 by 08-17, ≥13 more by 08-24 — a count, so already stale).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
 
 | layer | helper |
 |---|---|
@@ -132,9 +132,10 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 | client dashboard | `lib/analytics/fetch-json.ts` → `fetchJson()` (discriminate on `ok`, **never** on `json == null`) |
 | OG social card | `lib/og/board-empty-copy.ts` → `boardEmptyCopy(fetched, noun)` |
 
-- ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **FIXED #28.**
+- ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **FIXED #28** (prod-vs-DB set match, 08-24).
 - **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test.
 - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (7 by 08-24). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
+- ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** — a COLD regeneration over the 8 s `BOARD_LIVE_TIMEOUT_MS` served `/insights/pack-drops` degraded for **15 min** at `x-vercel-cache: HIT` while the API answered in 1.2 s. It self-heals warm, so it is **easy to declare fixed by accident**: the test is *"does a cold pass still exceed the budget"*, never *"is the page OK now"*.
 - **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page — instance six landed on a page a prior audit had already hardened.
 - **The worst sub-classes:** a false claim about the reader's **own account** (actionable — it makes them redo finished work); a page that **loads state and writes it back** (a failed read there is a *delete*, so WITHHOLD the form, don't annotate it); an **alert** (its output is silence, so the error is unfalsifiable); a **guard** (`?? 0` on a count makes a check fail *open*); and an empty state that **concludes** ("your moments are priced at or below market") rather than reports.
 - ⚠ **`?? 0` on a supabase count and `|| 1` as a divide-guard are the fabricated-number shapes.** supabase-js **RETURNS** errors rather than throwing, so a failed count resolves `{count: null, error}` — `Promise.all`/`allSettled`/`try-catch` do not help, and `?? 0` publishes a measured zero. `|| 1` on a $0 baseline rendered **"↑ 50000.0% / 30D"**. `no-fabricated-divisor-ratchet` is a **ban at population zero**.
@@ -223,7 +224,7 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 
 ### Collection UUIDs
 
-TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1ad-a83f763ac070` · Golazos `06248cc4-b85f-47cd-af67-1855d14acd75` · UFC `9b4824a8-736d-4a96-b450-8dcc0c46b023` · Pinnacle `7dd9dd11-e8b6-45c4-ac99-71331f959714` · Candy MLB `209ade70-32c5-4470-bc7c-4793d660f713` · Panini `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` (both unpublished, `is_active=false`; Candy is `solana`, Panini `ethereum`)
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — **re-verified against `public.collections` 2026-08-24, zero drift.** Candy MLB is `solana` and Panini `ethereum`; both are the `is_active=false` rows.
 
 ### Enums
 
@@ -239,7 +240,7 @@ TopShot `95f28a17-224a-4025-96ad-adf8a4c63bfd` · AllDay `dee28451-5d62-409e-a1a
 
 ### Cadence
 
-**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. MCP is development-time verification ONLY; production reads keep routing through the proxy layer (egress is blocked). Addresses + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training-data assumptions are frequently wrong for Cadence 1.0. MCP is development-time verification ONLY; production reads keep routing through the proxy layer (egress is blocked). Addresses (incl. the Cadence service payer wallet) + per-collection gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
 
 ---
 
@@ -266,7 +267,6 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 ## Hot wallet & secrets
 
 - Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 for months; tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
-- Cadence service payer wallet: `0x73f55c4450b8d466` — gas payer for backend-submitted Cadence transactions, distinct from the hot wallet. Intentionally empty and its balance-check cron is paused while all Cadence-write features are shelved.
 - Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`, `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
 
 ---
@@ -279,8 +279,8 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 
 - **The sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (ESPN 403s residentially too, re-measured 08-22; UA-refresh and 403-retry useless; the "no alert" gap is a MYTH — deliberately suppressed). Full bullet + the open discriminator: #8 in [known-issues.md](docs/reference/known-issues.md).
 - `fmv-recalc` — **RE-CHARACTERIZED 2026-08-17: wasteful, NOT broken** (72.7% wall-kills, 13,835 editions/day). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
-- 🚨 **Needs TREVOR, not code — three:** the **DEFEATED credential purge** (public branch `claude/todo-implementation-e4tib3` still carries the pre-purge blob, present 08-22 19:36 PT — triage `ee94c8a2a`, delete via the GitHub UI, GC, **rotate regardless**, #22) · the three board-MV cron jobs' 600 s timeout (#27) · `atlas-proxy` (#20) — ⚠ fixes only **9 of 40** recent `topshot-active-listings-ingest` fails; **29 die earlier, on a DB timeout** (#30).
-- **Two measured-but-unshipped DB fixes, blocked on a DECISION not a diagnosis** (filed in `docs/overnight/inbox/`, both re-verified unshipped 08-22): `drain_fmv_cold_tail`'s unscoped aggregate (re-measure at a quiet hour, compare **buffers**), and `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg (**18,766 vs 1,046,192 buffers**, but it re-seeds a pinned fixture — Trevor's call).
+- 🚨 **Needs TREVOR, not code — three:** the **DEFEATED credential purge** (public branch `claude/todo-implementation-e4tib3` still carries the pre-purge blob, re-verified 08-24 — triage `ee94c8a2a`, delete via the GitHub UI, GC, **rotate regardless**, #22) · the three board-MV cron jobs' 600 s timeout (#27) · `atlas-proxy` (#20) — ⚠ fixes only **9 of 40** recent `topshot-active-listings-ingest` fails; **29 die earlier, on a DB timeout** (#30).
+- **Two measured-but-unshipped DB fixes, blocked on a DECISION not a diagnosis** (filed in `docs/overnight/inbox/`, both re-verified unshipped 08-24 from live `prosrc`): `drain_fmv_cold_tail`'s unscoped aggregate (re-measure at a quiet hour, compare **buffers**), and `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg (**18,766 vs 1,046,192 buffers**, but it re-seeds a pinned fixture — Trevor's call).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
