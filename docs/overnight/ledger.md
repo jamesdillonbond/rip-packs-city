@@ -48,8 +48,8 @@ Docs + one guard-root widening. No migration, no DB write, no prod-state change.
   the banner says an audit is a dated sample too, because §5's `.limit(10000)` line looked authoritative for
   months.
 
-**Revert path:** `git revert <sha>` — docs plus one guard root. Reverting narrows the link guard back to 23
-files and restores eight wrong/missing design-doc rules; **revert only to undo a bad edit of mine, not to
+**Revert path (real sha):** `git revert ad4c6fde` — docs plus one guard root. Reverting narrows the link guard
+back to 23 files and restores the stale §8/§10/§11 text; **revert only to undo a bad edit of mine, not to
 "restore" the old text.**
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — biweekly context hygiene APPLIED from the cloud run's prepared patch; **its "repo-wide CI link guard" premise is FALSE** and one real link would have rotted silently
