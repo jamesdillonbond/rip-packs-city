@@ -29,7 +29,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ✅ **Verified GREEN, not assumed, while here:** #15's four fixture globs are all `0 tracked`; `check-brand-tokens.mjs` exits 0 over 399 + 69 surfaces (#11).
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the register's numbers describe the tree, and the monolith population is derived rather than remembered.
+**Revert:** `git revert 9ffce466` (docs-only). **Target metric:** the register's numbers describe the tree, and the monolith population is derived rather than remembered.
 
 ### 2026-08-24 · CORRECTED A STALE REGISTER ENTRY (Claude Code, Trevor's Windows box) — known-issues **#11**'s only named remaining item is a GHOST, and has been for ~3 months
 
