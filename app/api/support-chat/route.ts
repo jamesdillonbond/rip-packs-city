@@ -2348,12 +2348,27 @@ async function executeTool(
       // This block exists because the empty-state copy used to assert
       // "the feed refreshes every few hours; this is not an error" —
       // hard-coded reassurance that the feed is healthy, emitted regardless of
-      // whether it is. Measured 2026-08-16: `topshot-active-listings-ingest`
-      // fails `egress_blocked` most sweeps (the Atlas WAF blocks the GHA runner
-      // IP; `workers/atlas-proxy` is the fix and is still INERT), and on
-      // 2026-08-12 it wrote ZERO rows across all 5 runs of the day. On a day
-      // like that the tool told a collector nothing was listed below FMV AND
-      // told the model not to imply anything was wrong.
+      // whether it is. On 2026-08-12 the ingest wrote ZERO rows across all 5
+      // runs of the day; on a day like that the tool told a collector nothing
+      // was listed below FMV AND told the model not to imply anything was wrong.
+      //
+      // ⛔ ATTRIBUTION CORRECTED 2026-08-24 — THE BEHAVIOUR BELOW IS RIGHT AND
+      // MUST NOT CHANGE; ONLY THIS EXPLANATION WAS WRONG. It used to read "the
+      // Atlas WAF blocks the GHA runner IP; `workers/atlas-proxy` is the fix",
+      // which would send the next reader to chase `atlas-proxy` (known-issues
+      // #20) for a failure it cannot touch.
+      //
+      // `topshot-active-listings-ingest` has TWO callers, and the register named
+      // the wrong one as dominant. Re-measured over all 40 runs 2026-08-19 →
+      // 2026-08-24: the Atlas WAF class is 9/40 (22.5%), while 29/40 (72.5%) die
+      // EARLIER, on `GET targets failed: 500 canceling statement due to
+      // statement timeout` — a DB timeout that never reaches Atlas at all.
+      // ⚠ And the arm that actually FEEDS this table is not the GitHub runner:
+      // it is `RPC Deal Board Ingest`, a Windows Scheduled Task on Trevor's box
+      // (PT3H from 00:13 PT). Atlas WAF-blocks datacentre IPs but not a
+      // residential one, so the GHA arm was never going to succeed and the local
+      // arm is the one the DB timeout is throttling — from 8×/day to ~1×/day.
+      // ⓘ Read the age below as bounding a REAL, INTERMITTENT-BY-DESIGN feed.
       //
       // ⚠ THE AGE IS THE SIGNAL; THE FLAG IS DELIBERATELY CONSERVATIVE. Measured
       // over the ~73h pipeline_runs window there were only 5 successful sweeps —

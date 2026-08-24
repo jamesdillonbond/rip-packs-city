@@ -177,7 +177,12 @@ describe("fetchBoardCount", () => {
     // is the safe direction.
     mockFetch(() => new Response(JSON.stringify({ meta: { total_rows: 100 } }), { status: 200 }))
     const c = await fetchBoardCount(origin, "/x", 100)
-    expect(c).toEqual({ count: 100, truncated: true })
+    // ⚠ toMatchObject, not toEqual. This test is about the DERIVATION of
+    // `truncated`, and a whole-shape equality made it fail the day
+    // `fetchBoardCount` started handing back the rows it had already parsed
+    // (lib/og/board-freshness.ts needs them) — a red on an assertion that was
+    // never about the shape. Pin the property, not the spelling.
+    expect(c).toMatchObject({ count: 100, truncated: true })
   })
 
   it("returns null on a non-ok response — NOT a zero", async () => {

@@ -38,6 +38,21 @@ export type BoardCount = {
   count: number
   /** True when the count request filled its cap, so more rows exist. */
   truncated: boolean
+  /**
+   * The row objects this request read, unparsed and untyped.
+   *
+   * ⚠ Handed back because they were ALREADY FETCHED AND PARSED — this costs no
+   * extra request. It exists so a card can derive a second fact from the same
+   * read (today: lib/og/board-freshness.ts computes the spine age from
+   * `last_seen_at`) instead of firing a duplicate query or, worse, deriving it
+   * from the 3-row hero slice, which is a different and much smaller population.
+   * Callers that only want the count ignore it; nothing here reads it.
+   *
+   * ⚠ OPTIONAL, and the omission is SAFE BY DIRECTION: a `BoardCount` built by
+   * hand carries no rows, so an age derived from it comes back `null` — which
+   * boardLivenessLabel renders as NO liveness claim rather than a false one.
+   */
+  rows?: unknown[]
 }
 
 /**
@@ -63,7 +78,7 @@ export async function fetchBoardCount(
     // Older responses predate `truncated`. Deriving it from the cap is the safe
     // direction: it can only ADD a "+", never remove one.
     const truncated = typeof meta?.truncated === "boolean" ? meta.truncated : count >= maxLimit
-    return { count, truncated }
+    return { count, truncated, rows: Array.isArray(j?.rows) ? (j.rows as unknown[]) : [] }
   } catch {
     return null
   }

@@ -13,6 +13,7 @@ import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
+import { boardMaxAgeHours, boardLivenessLabel } from "@/lib/og/board-freshness"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -27,6 +28,9 @@ type Row = {
   serial_fmv_usd: number | null
   discount_pct: number | null
   estimate_quality: "tight" | "coarse"
+  // The spine timestamp. Present on every row of this board; the card bounds
+  // its liveness claim with it — see the liveness block in GET below.
+  last_seen_at: string | null
 }
 
 function tierColor(tier: string | null): string {
@@ -104,6 +108,19 @@ export async function GET(req: NextRequest) {
   } catch {
     /* generic card fallback */
   }
+
+  // ── LIVENESS: this card must not claim "Live deals" over a FROZEN board ────
+  // The board gates on `l.active`, which is cleared only by a SUCCESSFUL ingest,
+  // so a failing ingest leaves real-but-sold listings marked active. The count
+  // stays honest and the liveness claim stops being. See lib/og/board-freshness.ts.
+  //
+  // ⚠ Age comes from the COUNT request's rows (limit=100, the whole board), not
+  // from the 3 hero rows — those are a `quality=tight` slice and a much smaller
+  // population. The hero rows are appended only as a fallback for when the count
+  // request itself failed, since a bound from 3 rows beats no bound at all.
+  const ageHours = boardMaxAgeHours([...(count?.rows ?? []), ...rows], "last_seen_at")
+  // null => age unknown => NO liveness claim at all. Three states, not two.
+  const liveness = boardLivenessLabel(ageHours, "Live deals")
 
   return new ImageResponse(
     (
@@ -209,7 +226,7 @@ export async function GET(req: NextRequest) {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>Live deals · buy on Dapper</div>
+          <div style={{ display: "flex" }}>{liveness ? `${liveness} · buy on Dapper` : "buy on Dapper"}</div>
           <div style={{ display: "flex" }}>rippackscity.com/insights/underpriced-serials</div>
         </div>
       </div>
