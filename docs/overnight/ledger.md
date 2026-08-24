@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · CORRECTION TO MY OWN METHOD (Claude Code, Trevor's Windows box) — I was reading the WRONG CI instrument all day; it happened to be right seven times, which is what let it survive
+
+**Docs only. No code, no DB.** ⚠ **Self-correction, caught by the tenth check rather than the first.**
+
+🚨 **`repos/:o/:r/commits/:sha/status` returns `state: success` WHILE GITHUB ACTIONS IS STILL RUNNING.** It aggregates only **legacy commit statuses** — on this repo **`total: 1`** — and **Actions check-runs are not in it.** Measured on `78fef7be`: the status API said **`success`** while the CI run was **`in_progress`**, with **`Unit tests (vitest)` and `smoke` still going** (8 of 10 checks complete). **A watcher polling it declares victory mid-run.**
+
+⚠ **This is the day's own theme, committed by me against myself:** an instrument that answers a question you did not ask, **in the vocabulary of the one you did** — the same shape as the guard that passed having inspected nothing, and the drift census that reported a number while its authoritative arm had never run.
+
+✅ **THE SEVEN EARLIER TIPS I REPORTED GREEN WERE GENUINELY GREEN — re-verified against the workflow-run conclusion, not asserted:** `34d8ff78` · `4a97e55e` · `520d662a` · `09036d1a` · `fd1f9b2a` · `378e7ccb` · `7b8b0022`, all **`completed success`**. **So nothing I told Trevor was false.** ⚠ **But that is exactly what makes the trap durable: the wrong instrument AGREEING is not evidence it is the right one**, and I would have kept using it.
+
+✅ **The right views, recorded in [tooling-gotchas.md](../reference/tooling-gotchas.md):** `gh run list --workflow=CI --json headSha,status,conclusion` filtered on the sha, requiring **`completed success`** (⚠ `conclusion` is `null` until then, so a truthiness test on it reads as failure), or `gh api .../commits/:sha/check-runs` for the per-check breakdown.
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** a "CI green" claim in this repo comes from the workflow-run conclusion, never from the commit-status endpoint.
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — `refresh_wmc_fmv_changed` RE-PINNED; the pin check should go green because the pin was RE-READ, not overwritten
 
 **Repo only — a pin file and a PINS entry. No DB, no migration, no product code.** Completes the item I diagnosed and deliberately deferred two entries below, once I had done the part that made deferring right.
