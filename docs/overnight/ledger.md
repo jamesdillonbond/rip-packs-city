@@ -24,7 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **STILL OPEN, and correctly unmeasured: `execute_sql`-applied DDL is invisible to parity in the prod-ahead direction** — it writes no `schema_migrations` row, so there is nothing to compare against, and the repo files that exist for those are **authorship discipline, not something the guard forced.** ⓘ **Third instance of one shape today:** parity, the edge-fn drift census (#31) and the largest cron job's telemetry are all blind the same way — **they see only what politely reports itself.**
 
-**Revert:** `git revert <this commit>` (drops the two extra slots; the 07:40 daily is unchanged). **Target metric:** the interval between a fileless migration reaching prod and something naming it.
+**Revert:** `git revert 039527d8` (drops the two extra slots; the 07:40 daily is unchanged). **Target metric:** the interval between a fileless migration reaching prod and something naming it.
 
 ### 2026-08-24 · POST-SHIP WATCH + FILED (Claude Code, Trevor's Windows box) — the honesty fix CONFIRMED ITSELF IN PRODUCTION on a real failure within minutes, and the failure it exposed is a new filing
 
