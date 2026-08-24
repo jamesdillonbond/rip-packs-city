@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — memory refresh: CLAUDE.md re-derived against live sources, one new honesty rule added and PAID FOR by a displacement
+
+Docs/memory only — no code, no migration, no DB write, no prod-state change.
+
+- **CLAUDE.md 39,984 → 39,955 chars** (Node `.length`, the binding instrument; 45 of headroom). The addition
+  arrived **paired with its displacement**, as that file's own guard prescribes.
+- **ADDED — the caching member of the honesty canon:** ISR bakes a failed read into the whole `revalidate`
+  window. A COLD regeneration over the 8 s `BOARD_LIVE_TIMEOUT_MS` served `/insights/pack-drops` degraded for
+  **15 min** at `x-vercel-cache: HIT` while the API answered in **1.2 s**. It self-heals warm, so the honest
+  test is *"does a cold pass still exceed the budget"*, not *"is the page OK now"*. Full write-up promoted
+  **verbatim** into `docs/reference/key-files-and-honesty.md`, incl. the three wrong remedies.
+- **DISPLACED to pay for it, both DATA with a canonical home (never judgement):** the **collection UUIDs** →
+  `schema-truth.md` (re-verified against live `public.collections`, **all 7 ids/chains/`is_active` identical,
+  zero drift**); the **Cadence service payer wallet** → `apis-and-cadence.md` **verbatim**. Also compressed
+  the header's `wc -c` incident (it lives verbatim in the guard test that actually runs) and the Medium/Large
+  tier numbers (they live in `database.md`); the RULES in both stayed.
+- **RE-DERIVED, not re-quoted:** repo map `lib/` **301 → 308**, `scripts/` **97 → 103** (page.tsx 119,
+  `app/api` route.ts 454, components 161, workers 17, edge fns 39 all held); stamp 08-22 → 08-24.
+- **RE-VERIFIED against live sources:** #22's stale public branch is **STILL LIVE** (`e4tib3` @ `ee94c8a2a`;
+  values-free control **e4tib3 2 · main 0 · qi4350 0** — and `git cat-file -e <blob>` is NOT a per-branch
+  test, it answers `yes` for both once either is fetched); **both "measured-but-unshipped" DB fixes are still
+  unshipped**, read from live `prosrc` rather than from the filings.
+- **CORRECTED A STEER THAT WOULD HAVE MISDIRECTED THE NEXT PASS:** `metrics-latest.json`'s
+  `inbox_archiving_note` still told a push-capable pass to archive resolved inbox filings and called ~200
+  files "accrued cost". Refuted 08-24 (`3e2d90ac`) — inbox/ is append-only and that is the **intended steady
+  state**. Rewritten in place, original text preserved inside the correction. New 08-24 STEER block in
+  `focus.md` carries all of the above.
+- **Honesty tally made honest:** "~24 recorded instances" was a 2026-08-17 sample presented as a standing
+  number → "~24 by 08-17, ≥13 more by 08-24 — a count, so already stale".
+
+**Revert path:** `git revert <this sha>` (docs-only; nothing to undo in the DB or on Vercel). Reverting
+restores the prose UUID copy and the payer-wallet line in CLAUDE.md, and takes the file back to 39,984 —
+still under the limit, so the revert is safe on its own.
+
 ### 2026-08-24 · DIAGNOSED, NOT FIXED (Claude Code, Trevor's Windows box) — the DB-pin check is RED again, on a DIFFERENT pin, and the cause is a FIX LANDING rather than drift
 
 **Docs only. No code, no DB.** ⚠ **Checked a ✅ RESOLVED entry, which is the direction nobody checks** — and it had re-opened. #24 reads *"RESOLVED 2026-08-22 — all 6 closed"*; `db-pin-staleness` **failed again 08-24 08:07Z** (and 08-23 07:50Z).
