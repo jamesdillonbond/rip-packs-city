@@ -1,5 +1,20 @@
 -- audit_20260822_rwfc_temp_build_materialized_cte
 --
+-- ✅ APPLIED 2026-08-23 ~21:30Z from Cowork, inside the 20:00-00:00Z healthy window,
+--    at Trevor operator instruction. Recorded in schema_migrations as
+--    audit_20260822_rwfc_temp_build_materialized_cte.
+--    This file sat COMMITTED-BUT-UNAPPLIED from 08-22 with no marker in either
+--    direction, so it read as shipped to anyone browsing the directory. That is the
+--    defect this line closes.
+--    Verified after applying: live pg_proc.prosrc md5 (whitespace-normalised)
+--    = 28ec5ce4c94b886e1625ca381dfe5bf0, identical to this file body computed on disk
+--    BEFORE the apply, so no transcription drift. MATERIALIZED occurrences 1 -> 3,
+--    bare CREATE TEMP TABLE build gone, SECURITY DEFINER and search_path preserved,
+--    ACL unchanged (anon=false, authenticated=false, service_role=true).
+--    Positive control: refresh_wmc_fmv_changed ran 21:33:14Z ok=true, 217 rows,
+--    18,324 ms -- in the same 18-29 s band as the six runs before the change, which
+--    is the CORRECT result: the temp build was ~470 ms of a ~19 s run.
+--
 -- refresh_wmc_fmv_changed opens by building the _rwfc_recent temp table. That one
 -- statement reads ~8,400 buffers to return a few hundred rows, and its cost does not
 -- track its output at all -- a zero-row run costs the same as an 897-row run, because

@@ -8,6 +8,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, interactive) — the `rwfc` migration's APPLIED marker gets committed, closing the 🚨 "committed file that is NOT applied and says nothing about it" item above
+
+**No DB change. The apply already happened** — 2026-08-23 ~21:30Z from Cowork at Trevor's instruction, inside
+the healthy 20:00–00:00Z window. What was missing is that **the marker recording it lived only as an
+uncommitted working-tree edit on Trevor's Windows box**, so `main` still carried the file exactly as it read
+when the 🚨 item was raised: a `CREATE OR REPLACE FUNCTION` with no statement in either direction. Committed
+now, as `supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql`.
+
+⚠ **RE-VERIFIED AGAINST LIVE PROD BEFORE COMMITTING — I did not take the marker's word for it.** Every claim
+in it holds: `schema_migrations` carries `audit_20260822_rwfc_temp_build_materialized_cte` (1 row);
+`count(regexp_matches(prosrc,'MATERIALIZED','g'))` = **3**, up from the 1 the ledger recorded above; the
+`_rwfc_recent` build now reads `CREATE TEMP TABLE _rwfc_recent ON COMMIT DROP AS WITH recent AS MATERIALIZED
+(…)`; whitespace-normalised `prosrc` md5 = **28ec5ce4c94b886e1625ca381dfe5bf0**, the exact digest the marker
+claims it computed off the disk file *before* the apply, so there was no transcription drift; `prosecdef`
+still true and `has_function_privilege` reads anon=false / authenticated=false / service_role=true.
+
+⚠ **And I applied this ledger's own durable lesson to my own check.** The entry above warns that a substring
+probe cannot discriminate a change that ADDS an instance of a keyword the target already contains. I counted
+occurrences AND read the build statement text — but my first regex, `count(… 'CREATE TEMP TABLE' …)` = **1**,
+briefly read as contradicting the marker's *"bare CREATE TEMP TABLE build gone"*. It does not: the statement
+is still there, it is the **bare** form that is gone. **A count of the keyword cannot answer a question about
+the shape around it** — reading the 420 characters after it did.
+
+**Guards, run before the commit rather than after:** `migration-new-function-states-its-anon-exec-decision`,
+`migration-view-security-invoker-guard`, `check-migration-parity-logic` — 18 tests, 3 files, green. ⚠ The
+anon-exec guard is a `readdirSync` walk of `supabase/migrations/`, not a staged-file diff, and this file's
+`20260822213000` stamp is **after** its `20260817000000` cutoff — so it genuinely inspected the edit rather
+than passing over an empty population.
+
+**Also reconciled this turn:** local `main` was 1 behind and is now level with `origin/main` (0/0). The
+handoff's "8 ahead / 19 behind — rebase, do not push" applied to the **Cowork clone**, not this box; those
+eight commits are already on `origin/main` under rebased shas (`1cb732bd` panini, `e9b80352` promote,
+`30153369` the roadmap stamp). **Nothing outstanding there.** The stale `.git/rpc-stale-locks/` directories
+were removed — 4 dirs, all zero-byte lock files, no git process holding them.
+
+**Revert path:** `git revert` this commit (find by message `docs(migrations): commit the APPLIED marker`).
+**Nothing to revert in the database — this commit changes comment text only, not one byte of SQL.** ⚠ Which
+also means the file no longer md5-matches a byte-exact capture of prod's `prosrc`, and should not be asserted
+to; that equality was true at capture time only.
+
 ### 2026-08-23 · SHIPPED (Claude Code, interactive) — memory pass: the roadmap gets a 2026-08-23 status stamp, and four durable lessons land in the reference docs
 
 **Docs only. No code, no DB.** Closing the thread by putting this session's durable output where it will be
