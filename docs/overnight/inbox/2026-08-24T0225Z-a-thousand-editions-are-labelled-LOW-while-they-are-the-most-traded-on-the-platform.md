@@ -1,6 +1,8 @@
 # 🚨 ~1,000 editions are labelled **LOW confidence** while their own row records them as the **most-traded editions on the platform** — in every collection, the LOW cohort trades ~2× the MEDIUM cohort
 
-**Filed:** 2026-08-23 ~19:25 PT (2026-08-24 02:25Z) · **By:** Claude Code, interactive · **Status:** MEASURED, read-only. Nothing shipped — this is FMV route logic, off-limits to autonomous change, and one reading of it is a *display* bug rather than a pricing one. **⭐ UPDATE 02:40Z — RESOLVED at the bottom: reading (b) is refuted, the demotion is BY DESIGN via the MEDIUM dispersion ceiling, and the open question is whether that ceiling is calibrated for sub-dollar moments where one $0.25 tick is a 35–75% relative move. Read §RESOLVED before anything above it.**
+**Filed:** 2026-08-23 ~19:25 PT (2026-08-24 02:25Z) · **By:** Claude Code, interactive · **Status:** MEASURED, read-only. Nothing shipped — this is FMV route logic, off-limits to autonomous change, and one reading of it is a *display* bug rather than a pricing one. **🚨 READ THE FINAL SECTION (03:35Z) FIRST — the mechanism is CONFIRMED (dispersion) but the sub-dollar calibration story in the middle of this file is FALSIFIED, and its recommendation is WITHDRAWN. What stands is that `LOW` conflates "no data" with "the market disagrees".**
+
+**⭐ UPDATE 02:40Z — superseded by the final section: reading (b) is refuted, the demotion is BY DESIGN via the MEDIUM dispersion ceiling, and the open question is whether that ceiling is calibrated for sub-dollar moments where one $0.25 tick is a 35–75% relative move. Read §RESOLVED before anything above it.**
 
 This came out of the bounded question left by the [22:05Z accuracy capture](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md) §6.
 It is bigger than that question was.
@@ -161,3 +163,55 @@ globally would promote genuinely noisy prices everywhere to fix a floor-effect a
 dispersion measure at low price levels, or **surfacing the reason** — *"price is firm; the spread is one
 marketplace tick"* reads very differently to a user than a bare **LOW**. **Both are product decisions, and
 this filing deliberately stops at the measurement.**
+
+---
+
+## 🚨 FINAL, 03:35Z — the dispersion mechanism is CONFIRMED and my sub-dollar calibration story is FALSIFIED by its own prediction
+
+The measurement that timed out twice ran in a genuinely quiet window (**2 active / 1 IO waiter / 34 total**).
+Per-edition `stddev_pop(price)/avg(price)` over 30 days, Top Shot, current algo, count ≥7. LOW is the full
+population; MEDIUM/HIGH are 1-in-12 hash samples (`abs(hashtext(edition_id::text)) % 12 = 0`) rather than an
+unordered `LIMIT`:
+
+| confidence | editions | avg sales 30 d | avg price | **median price** | **avg CV** | under $1 | **CV > 0.35** |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **LOW** | 270 | **51.3** | $4.10 | $1.08 | **0.731** | 123 (46%) | **206 (76%)** |
+| MEDIUM | 91 | 31.6 | $6.07 | $0.64 | 0.660 | 55 (60%) | 42 (46%) |
+| **HIGH** | 170 | 16.9 | $3.53 | **$0.31** | **0.222** | **123 (72%)** | 17 (10%) |
+
+### ✅ CONFIRMED: dispersion is the mechanism
+
+It separates the classes cleanly and in the right direction — LOW averages a CV of **0.731** with **76%**
+above the 0.35 ceiling; HIGH averages **0.222** with only **10%** above. The `MEDIUM_MAX_DISPERSION` demotion
+is doing exactly what the code says, and it is what puts high-volume editions in LOW.
+
+### ❌ FALSIFIED: the sub-dollar tick story, by the prediction it makes
+
+I argued the ceiling misfires at the $0.25 tick floor, so cheap editions are unfairly demoted. **That
+predicts HIGH skews expensive and LOW skews cheap. The data says the opposite:** HIGH has the **lowest median
+price ($0.31)** and the **largest share under $1 (72%)**, while LOW's median is **$1.08** and only 46% are
+sub-dollar. **The cheapest cohort is the most confident one.** Price level does not drive the demotion —
+dispersion does, and dispersion is not a proxy for cheapness here.
+
+⛔ **So do NOT build a tick-aware dispersion measure on the strength of this filing.** That recommendation is
+withdrawn. It was a tidy mechanism that fit five hand-picked rows and did not survive its own population.
+
+### What actually stands, and it is smaller but real
+
+**The system is behaving correctly.** An edition with 643 trades whose prices vary with a CV of 0.73 genuinely
+*is* an uncertain price — volume does not buy confidence when the market disagrees with itself. LOW is the
+honest label.
+
+⭐ **The one durable, user-facing observation left: `LOW` is doing two opposite jobs.** It means both
+
+- *"we have almost no data"* — one sale, sixty days ago; and
+- *"we have 643 sales and they disagree"* — CV 0.73, trading anywhere from the $0.25 minimum upward.
+
+**To a collector those are opposite messages.** The first says *we don't know*; the second says *the market
+itself has no single price*. Merging them into one badge loses the distinction a user would most want — and
+it is this repo's own honesty canon applied to a **label** rather than to a failed read: three states
+collapsed into one word.
+
+⚠ **That is an observation, not a recommendation.** Splitting the label is a product decision with real cost
+(a new enum value touches every surface, the OG cards and the concierge). **The measurement is here so the
+decision can be made on it.** ⚠ Dated sample, 2026-08-24 03:35Z; the LOW population churns ±10% over hours.

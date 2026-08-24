@@ -75,6 +75,34 @@ numerically.**
 recorded instance of pinning a SPELLING rather than a property — **choose a marker that cannot straddle a
 wrap.**
 
+🚨 **FINAL 03:35Z — the mechanism is CONFIRMED and my own calibration story is FALSIFIED by its own
+prediction.** The measurement that had timed out twice ran in a genuinely quiet window (2 active / 1 IO
+waiter / 34 total). Per-edition CV over 30 d, Top Shot, current algo, count ≥7 — LOW is the full population,
+MEDIUM/HIGH are 1-in-12 **hash** samples rather than an unordered LIMIT:
+
+| confidence | editions | avg sales | median price | **avg CV** | **CV > 0.35** |
+|---|---:|---:|---:|---:|---:|
+| LOW | 270 | 51.3 | $1.08 | **0.731** | **206 (76%)** |
+| MEDIUM | 91 | 31.6 | $0.64 | 0.660 | 42 (46%) |
+| HIGH | 170 | 16.9 | **$0.31** | **0.222** | 17 (10%) |
+
+✅ **Dispersion IS the mechanism** — it separates the classes cleanly and in the right direction.
+❌ **The sub-dollar tick story is REFUTED.** It predicts HIGH skews expensive and LOW skews cheap; measured,
+**HIGH has the LOWEST median price ($0.31) and the LARGEST sub-dollar share (72%)** while LOW's median is
+$1.08. **The cheapest cohort is the most confident one.** ⛔ **The "tick-aware dispersion measure"
+recommendation is WITHDRAWN** — a tidy mechanism that fit five hand-picked rows and did not survive its own
+population. That is the fourth self-correction today and the same lesson each time: **a story that explains
+the examples must still be checked against the cohort.**
+
+✅ **The system is behaving correctly.** 643 trades with a CV of 0.73 genuinely is an uncertain price — volume
+does not buy confidence when the market disagrees with itself. LOW is the honest label.
+
+⭐ **What survives is one user-facing observation:** `LOW` is doing two opposite jobs — *"we have almost no
+data"* (one sale, sixty days ago) and *"we have 643 sales and they disagree"*. **To a collector those are
+opposite messages**, and merging them into one badge is this repo's own three-states canon applied to a
+LABEL rather than to a failed read. ⚠ **Observation, not recommendation** — splitting it is a product
+decision whose new enum value touches every surface, the OG cards and the concierge.
+
 **Revert path:** `git revert` the docs commit (find by message `docs(accuracy): ~1,000 editions publish LOW`).
 No DB or production state was changed.
 
