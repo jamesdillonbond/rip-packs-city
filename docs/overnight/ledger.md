@@ -22,7 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **And #24's headline stays ✅ RESOLVED for its six — annotated, not reversed.** The six ARE closed; a seventh went stale later for an unrelated and explained reason. **Collapsing those into one "still broken" would lose the distinction the entry was written to make.**
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the pin check goes green because the pin was re-read, not because it was overwritten.
+**Revert:** `git revert bab9cc16` (docs-only). **Target metric:** the pin check goes green because the pin was re-read, not because it was overwritten.
 
 ### 2026-08-24 · LANDED A CONCURRENT WRITER'S FILING (Claude Code, Trevor's Windows box) — the daytime monitor filed mid-session, **unindexed**, which RED the inbox guard; committed and indexed it
 
