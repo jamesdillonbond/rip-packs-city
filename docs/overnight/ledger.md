@@ -8,6 +8,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · ⛔ RETRACTION (Claude Code, Trevor's Windows box) — I shipped an `EarlyDrop` mechanism 15 minutes ago and it is WRONG; `EarlyDrop` is the baseline for EVERY edge function here
+
+**Docs only. No code, no DB.** ⚠ **Retracting my own claim from the entry two below, pushed as `eb732a94`.**
+
+**What I claimed:** *"185 of 186 boots end in `EarlyDrop` — the isolate is dropped before it finishes, and that is why no `pipeline_runs` row is written."*
+
+⛔ **THE CONTROL REFUTES IT, AND I SHOULD HAVE RUN IT FIRST:**
+
+| function | boots | EarlyDrop | writes `pipeline_runs`? |
+|---|---:|---:|---|
+| `flowty-proxy` | 3,109 | **3,119** | serves the live app |
+| `compute-topshot-pack-ev` | 242 | **240** | ✅ **415 rows / 24 h**, newest 15:49Z |
+| `pinnacle-nft-resolver` | 297 | **296** | ✅ **289 rows / 24 h**, newest 15:48Z |
+| `ingest-allday-pack-opens` | 186 | **185** | ✗ |
+
+**Functions that `EarlyDrop` at ~99% write their run rows perfectly well.** ➡ **`EarlyDrop` is how the isolate is recycled after a request — the project-wide baseline, not a fault.** It cannot explain why one function differs.
+
+⚠⚠ **THIS IS THE CONTROL CLAUDE.md NAMES — *"a POSITIVE needs a no-change control"* — AND THE FAILURE MODE IS INSTRUCTIVE: 185/186 is 99%, which FELT conclusive. 99% is exactly what a BASELINE looks like.** ➡ **A signal that extreme should TRIGGER the control, not substitute for it.** I did the equivalent check correctly twice today (rejecting four filter-claim boards; diffing the migration both directions) and skipped it on the finding I was most pleased with.
+
+ⓘ **The kill reasons that WOULD discriminate are `WallClockTime` / `CPUTime` / `Memory`, and `ingest-allday-pack-opens` has ZERO of all three** — it is **not** killed by the runtime. `compute-allday-pack-ev` shows **5 `WallClockTime`**, which is what a real kill looks like in this data. **That is the column to read next time, not `EarlyDrop`.**
+
+✅ **WHAT SURVIVES, UNAFFECTED:** the **`done:true` refutation** (25 rows, **zero** `done` keys, 18 failures, ~19.4M blocks from the floor) — **still do not suppress the arm** — and the **timing facts** (51× 200 at avg 12.7 s / max 124.4 s against a 90 s caller timeout; 76 `timed_out` in 3 h; ~54 invocations vs ~140 dispatches).
+
+⛔ **OPEN AGAIN, and sharper than before: 51 invocations returned HTTP 200 and still wrote no run row. A 200 IS NOT A KILL.** Something returns success without logging — an early exit, a lock, a nothing-to-do path, or a failing `log_pipeline_run`. ➡ **Next step is a CODE READ of the edge function, not another log query.** ⓘ The heartbeat recommendation stands on its own merits but **no longer rests on an EarlyDrop argument.**
+
+**Corrected in all three places it was claimed:** the filing (annotated in place), known-issues **#29**, and here.
+
+**Revert:** `git revert <this commit>` (docs-only) — ⚠ **but reverting this would restore a claim I have proven false.** **Target metric:** the register carries an honest open question instead of a confident wrong answer.
+
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit I said was open, plus a live trust-board and accuracy-gate re-derivation
 
 Docs/memory only — no code, no migration, no DB write, no prod-state change. Continuation of the memory

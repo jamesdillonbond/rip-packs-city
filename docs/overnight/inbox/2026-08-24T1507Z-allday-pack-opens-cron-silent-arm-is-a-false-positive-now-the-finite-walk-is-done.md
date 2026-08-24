@@ -112,3 +112,34 @@ CLAUDE.md, on fire-and-forget work: *"Any `after()` route needs an **invocation 
 **That is exactly this failure, in an edge function instead of a Vercel route.** A heartbeat row written *before* the scan would make a killed tick visible as `heartbeat present, terminal row absent` — the correlation the rule prescribes — instead of the indistinguishable silence the `cron_silent` arm is currently reporting.
 
 ➡ **So the fix is NOT to teach the arm about `done:true`** (a state this pipeline has never emitted — see the refutation above). **It is to give the pipeline a heartbeat, per a rule this repo wrote for precisely this class**, and separately to decide whether a walk that needs >90 s per tick should be chunked to fit its caller's timeout.
+
+---
+
+## ⛔⛔ I RETRACT THE SECTION ABOVE — 2026-08-24 ~16:00Z, ~15 minutes after writing it. **`EarlyDrop` is the NORMAL shutdown reason for every edge function here and has ZERO discriminating power.**
+
+**The claim I made and pushed:** *"185 of 186 boots end in `EarlyDrop` — the isolate is dropped before it finishes, and that is why no `pipeline_runs` row is written."* **That is wrong.**
+
+### The control I should have run first
+
+I found a striking positive and did not check whether it was universal. It is:
+
+| function | boots | EarlyDrop | writes `pipeline_runs`? |
+|---|---:|---:|---|
+| `flowty-proxy` | 3,109 | **3,119** | serves the live app |
+| `compute-topshot-pack-ev` | 242 | **240** | ✅ **415 rows in 24 h**, newest 15:49Z |
+| `pinnacle-nft-resolver` | 297 | **296** | ✅ **289 rows in 24 h**, newest 15:48Z |
+| `ingest-allday-pack-opens` | 186 | **185** | ✗ |
+
+**Functions that `EarlyDrop` at ~99% write their run rows perfectly well.** ➡ **`EarlyDrop` is how the isolate is recycled after a request, not a fault.** It is the baseline for the entire project, so it cannot explain why one function differs.
+
+⚠ **This is exactly the control CLAUDE.md demands and I skipped: *"a POSITIVE needs a no-change control."*** The signal was 99%, which felt conclusive — **and 99% is precisely what a baseline looks like.** A number that extreme should have prompted the control, not replaced it.
+
+ⓘ **The runtime kill reasons that WOULD be meaningful are `WallClockTime`, `CPUTime` and `Memory`.** `ingest-allday-pack-opens` has **zero of all three** — so it is **not** being killed by the runtime. `compute-allday-pack-ev` does show **5 `WallClockTime`** kills, which is what a real kill looks like in this data.
+
+### What still stands, and what is open again
+
+✅ **STANDS — the `done:true` refutation** in the section above it. That rests on `pipeline_runs` content (25 rows, zero `done` keys, 18 failures, ~19.4M blocks from the floor) and is untouched by this retraction. **Do not suppress the arm.**
+✅ **STANDS — the timing facts:** 51× 200 at avg 12.7 s / max 124.4 s against a **90 s** caller timeout; **76 `timed_out`** in a 3 h window; **~54 logged invocations against ~140 dispatches.**
+⛔ **OPEN AGAIN — why no run row.** ⚠ And the sharper form of the question, which the control surfaced: **51 invocations returned HTTP 200 and still produced no `pipeline_runs` row.** A 200 is not a kill. **Something in the function returns success without logging** — an early exit, a lock, a nothing-to-do path, or a failing `log_pipeline_run`. **That is where the next session should look, and it is a code read, not a log query.**
+
+⚠ **Corrected in the same place it was claimed**, and in known-issues #29. **The heartbeat recommendation is NOT withdrawn** — it remains the right instrument for distinguishing a killed tick from a cron that never fired — **but it is no longer supported by an EarlyDrop argument, and the actual cause here is still unknown.**
