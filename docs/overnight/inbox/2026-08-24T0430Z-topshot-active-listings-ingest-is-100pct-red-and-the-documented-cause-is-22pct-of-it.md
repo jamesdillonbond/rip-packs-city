@@ -203,3 +203,37 @@ The failing runs log the header and `[listings-ingest] start …` and then **not
 ### What still stands from the sections above
 
 The plan finding is untouched and is now *more* important, not less: the `DISTINCT ON` scanning 857,293 rows to return 13,230 is what kills the residential arm 7 times in 8. R52's second consumer is real. `serial_fmv_estimate` is still unattributed and `pg_stat_statements.track = 'top'` still cannot split it.
+
+---
+
+## ✅ RESOLVED 2026-08-24 00:05 PT — **both consumers are HONEST. Not escalating.** One residual, precisely bounded.
+
+The correction above left one question open and explicitly refused to escalate it: *do the two consuming surfaces bound their liveness claim by `last_seen_at`?* Both were read. **They do.** Recording the negative result, because "I checked and it was fine" is the finding that never gets written down and therefore gets re-derived.
+
+### The view gates on `active`, not on age — so the question was real
+
+`topshot_underpriced_serials_board` filters `WHERE l.active AND …`. It **selects** `l.last_seen_at` and passes it through, but **never filters on it**. And `active` is only cleared by `deactivate_stale_topshot_active_listings`, which runs *only on a successful ingest* — so when the ingest fails, `active` is **frozen** and a sold or delisted moment stays on the board. The DB layer alone would publish a stale listing as live.
+
+### ✅ The page bounds it
+
+`UnderpricedSerialsBoardClient.tsx` computes `listingsAgeHours` from `max(last_seen_at)` across the rows and renders, at **≥4 h**:
+
+> `Listings last refreshed {N}h ago`
+
+At tonight's 7.1 h that caption is live on the page right now. ⓘ Its own comment already knew the shape I spent the evening rediscovering: *"the ingest runs ~every 3h from a residential runner and can skip overnight."* **The knowledge existed in a component comment and in no reference doc** — which is precisely why CLAUDE.md says a fact left in one file stops being read.
+
+### ✅ The concierge bounds it, and unusually well
+
+`app/api/support-chat/route.ts` reads `max(last_seen_at)` where `active`, computes `feedAgeHours`, **tells the model the age on every call**, and sets a deliberately conservative `feed_stale` at **36 h**. Its comment records why the obvious 24 h ceiling was rejected — measured gaps of min 3 h / median 6 h / **p90 22 h / max 26.7 h** — and names the cry-wolf precedent (`ufc_fmv_stale_hours`) it was avoiding. **This is the honesty canon applied correctly, including the part about not making the flag the primary output.**
+
+### ⚠ The residual: the OG card asserts "live deals" with no age at all
+
+`app/api/og/insights/underpriced-serials/route.tsx` handles a **failed** read (`boardEmptyCopy(fetched, "board")`) but has **no staleness path**. It renders `boardCountLabel(count, 'live deals')` and a footer `Live deals · buy on Dapper`. Grepped for any age signal: the only matches are substrings of *message*, *Image*, *page*. **There is none.**
+
+- **This is the documented shape, not a new one:** *fix per PANEL, not per page.* The OG card is its own layer in the four-layer honesty table, with its own helper — and it was hardened for the failed-read case while the stale-read case went to the page only.
+- **Severity: LOW–MEDIUM, and stated carefully.** The count is a real count of `active` rows, so this is **not** a fabricated number. The defect is an **unbounded liveness claim**: "live deals" on the surface with the widest reach (Twitter / iMessage / Slack previews) at a moment when the spine can be ~24 h old and `active` is frozen.
+- **Not shipped.** The page's own ≥4 h threshold is the obvious precedent to copy, and `lib/og/board-count.ts` is shared by other boards — so this needs the blast radius checked before editing, per the rule about grepping the guards and callers of a shared helper first.
+
+### ⚠ One stale COMMENT worth correcting when someone is next in that file
+
+The concierge block attributes the failures to the Atlas WAF: *"fails `egress_blocked` most sweeps (the Atlas WAF blocks the GHA runner IP)"*. **Its behaviour is right and should not change** — report the age, every time. **Its diagnosis is superseded by tonight's measurement:** the dominant failure is the `GET targets` DB timeout, and the residential arm is the one that works. A future reader who trusts that comment will chase `atlas-proxy` again.
