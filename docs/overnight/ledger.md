@@ -38,7 +38,7 @@ Executed the `rpc-context-hygiene` pass the 2026-08-24 cloud run prepared but co
 
 **Defect in the prepared script itself, caught by its author and worth keeping:** its first version was **not idempotent** — re-running appended a second pointer line and grew the file while reporting success, and its log line reported a byte change that never happened. Both fixed before this run (`move.length === 0` short-circuits). The generalisable rule: *a verification run that happens to execute against already-transformed output is not a verification of the transform.*
 
-**Revert path:** `git revert <sha of this commit>` restores `ledger.md`, deletes `ledger-archive-2026-H2.md`, and returns all 117 handoffs to `docs/` (renames, so history is intact either way). No DB half — this pass touched no production or DB state. Real sha recorded in the follow-up commit.
+**Revert path:** `git revert bd4b5263` restores `ledger.md`, deletes `ledger-archive-2026-H2.md`, and returns all 117 handoffs to `docs/` (renames, so history is intact either way). No DB half — this pass touched no production or DB state.
 
 
 ### 2026-08-24 · RE-DERIVED + POST-SHIP VERIFIED (Claude Code, Trevor's Windows box) — **#25's three detector streaks have all moved, one of its claims is now FALSE**, and today's parity cadence change is confirmed firing in production
