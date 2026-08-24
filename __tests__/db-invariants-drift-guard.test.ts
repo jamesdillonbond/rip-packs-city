@@ -1063,8 +1063,13 @@ const PINS = [
     // micro-optimisation.
     fn: "refresh_wmc_fmv_changed",
     test: "supabase/tests/refresh_wmc_fmv_changed.sql",
+    // ⚠ RE-POINTED 2026-08-24 from the 08-13 migration. db-pin-staleness compares
+    // THIS migration's DDL against live prosrc, and prod gained
+    // audit_20260822_rwfc_temp_build_materialized_cte, so the old target described a
+    // body that no longer runs. The pin's ASSERTIONS were re-read against the live
+    // body before this was moved — see the header of the .sql for the clause counts.
     migration:
-      "supabase/migrations/20260813143704_audit_20260813_wmc_changed_chunk_is_not_budget_scaled.sql",
+      "supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the

@@ -12,9 +12,27 @@
 -- churn-avoidance clause is an IO-budget property, not a micro-optimisation.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260813143704_audit_20260813_wmc_changed_chunk_is_not_budget_scaled.sql),
--- whose body was verified byte-identical to live prod via prosrc md5 on
--- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- (supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql),
+-- whose body is byte-identical to live prod: prosrc 3,648 chars,
+-- md5(pg_get_functiondef(...)) = 7094783150faf1b39148dc3c213d1e18, read from the
+-- database on 2026-08-24. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+--
+-- ⚠ RE-PINNED 2026-08-24, and the ASSERTIONS BELOW WERE RE-READ FIRST — that is the
+-- whole job, not the DDL paste. `db-pin-staleness` went red on 08-23/08-24 because
+-- `audit_20260822_rwfc_temp_build_materialized_cte` was applied to prod, changing the
+-- live body; the previous pin named the 08-13 migration. The check's own warning is
+-- "a stale pin usually means the assertions describe old behaviour", so every property
+-- this file asserts was re-counted against the LIVE body before re-pointing:
+--   fmv_usd IS NOT NULL      x3   (the "appears THREE times" note below still holds)
+--   IS DISTINCT FROM         x1   (the churn guard)
+--   edition_key IS NOT NULL  x1
+--   rwfc_state               x2   (cursor read + write)
+--   DISTINCT ON              x2
+-- All intact: the change is a planner-level CTE materialisation, so it moves no
+-- behaviour any assertion here depends on. MATERIALIZED went 1 -> 3.
+-- ⚠ A substring probe CANNOT check that last one — a June migration already put one
+-- MATERIALIZED in the LOOP body, so `position('MATERIALIZED' in prosrc) > 0` was
+-- already TRUE before this change. Count occurrences and read the build statement.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -46,14 +64,11 @@ CREATE TABLE public.rwfc_state (
 );
 
 -- >>> BEGIN verbatim refresh_wmc_fmv_changed (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(
-  p_since_minutes integer DEFAULT 30,
-  p_limit integer DEFAULT 50000
-)
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
+CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(p_since_minutes integer DEFAULT 30, p_limit integer DEFAULT 50000)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_total      integer := 0;
@@ -83,12 +98,25 @@ BEGIN
   END IF;
 
   DROP TABLE IF EXISTS _rwfc_recent;
+  -- The filter is wrapped in a MATERIALIZED CTE so the planner cannot use
+  -- fmv_snapshots_2026_edition_id_computed_at_idx to supply DISTINCT ON's ordering
+  -- for free. That index leads on edition_id while the predicate is on computed_at,
+  -- so there is no range to seek and the whole 2026 index is walked -- on a 418x row
+  -- overestimate. Materialising first removes the ordering incentive; the planner
+  -- then seeks idx_fmv_snapshots_2026_computed_at_desc and pays a tiny quicksort.
+  -- Measured 2026-08-22, warm-vs-warm, same 563 output rows: 8,402 buffers / 471 ms
+  -- as written vs 29 buffers / 0.98 ms wrapped. Output diffed with EXCEPT in BOTH
+  -- directions: 0 rows only-in-incumbent, 0 rows only-in-candidate.
   CREATE TEMP TABLE _rwfc_recent ON COMMIT DROP AS
-  SELECT DISTINCT ON (fs.edition_id) fs.edition_id, fs.computed_at
-  FROM public.fmv_snapshots fs
-  WHERE fs.computed_at > v_cutoff
-    AND fs.fmv_usd IS NOT NULL
-  ORDER BY fs.edition_id, fs.computed_at DESC;
+  WITH recent AS MATERIALIZED (
+    SELECT fs.edition_id, fs.computed_at
+    FROM public.fmv_snapshots fs
+    WHERE fs.computed_at > v_cutoff
+      AND fs.fmv_usd IS NOT NULL
+  )
+  SELECT DISTINCT ON (r.edition_id) r.edition_id, r.computed_at
+  FROM recent r
+  ORDER BY r.edition_id, r.computed_at DESC;
   CREATE INDEX ON _rwfc_recent (computed_at);
   ANALYZE _rwfc_recent;
 

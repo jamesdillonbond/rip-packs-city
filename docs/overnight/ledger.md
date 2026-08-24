@@ -8,6 +8,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — `refresh_wmc_fmv_changed` RE-PINNED; the pin check should go green because the pin was RE-READ, not overwritten
+
+**Repo only — a pin file and a PINS entry. No DB, no migration, no product code.** Completes the item I diagnosed and deliberately deferred two entries below, once I had done the part that made deferring right.
+
+⚠ **THE ASSERTIONS WERE RE-READ FIRST. That was the job; the DDL paste was the easy half.** The check's own warning is *"a stale pin usually means the assertions describe old behaviour"*, so every property this pin depends on was **re-counted against the LIVE body** before anything moved:
+
+| property | live count | asserted by |
+|---|---:|---|
+| `fmv_usd IS NOT NULL` | **3** | NULL-price-never-blanks (and the pin's *"appears THREE times"* note) |
+| `IS DISTINCT FROM` | **1** | the churn guard — an IO-budget property on the #2 disk reader |
+| `edition_key IS NOT NULL` | **1** | unkeyed rows never written |
+| `rwfc_state` | **2** | cursor persists + advances |
+| `DISTINCT ON` | **2** | newest snapshot wins |
+
+**All intact** — the change is a planner-level **CTE materialisation**, which moves no behaviour any assertion here depends on. `MATERIALIZED` went **1 → 3**.
+
+✅ **Then** the PINS entry was re-pointed (**08-13 → `20260822213000_audit_20260822_rwfc_temp_build_materialized_cte`**) and the pin's embedded DDL replaced **verbatim** from that migration.
+
+⭐ **VERIFIED BY REPRODUCING THE CHECKER'S OWN COMPARISON, not by running it** — this box has no service-role key, and re-deriving the comparison beats asserting the fix. The migration body matches live `prosrc` under **BOTH** normalisations the script accepts: collapsed **`md5 e110b33f50747333f362699129ff3904`** (3,238 chars) and stripped+collapsed **`md5 ee96aade4d4f4db360ed70322a1088b5`** (2,443) — **identical on both sides**. ➡ **So `db-pin-staleness` will report this pin CLEAN on its next 07:20Z run.** ⚠ **That is a PREDICTION with a named falsifier: if it is still red tomorrow, this re-pin is wrong and the cause is NOT what I diagnosed.**
+
+ⓘ **Two traps the migration file itself set, both handled:** it carries **TWO** `CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed` lines — the forward DDL at line 40 and a **COMMENTED revert block** at line 149 — so any extractor must skip commented occurrences (both the shipped checkers do; my splice does too). And the two guards compare **different things**: `db-pin-staleness` compares the **migration** to live, while `db-invariants-drift-guard` compares the **pin file** to the migration byte-for-byte under whitespace-collapse. **Re-pointing one without updating the other trades a red check for a different red check.**
+
+**Verified:** `db-invariants-drift-guard` **194 green**, `tsc` clean, full suite **1372/1372 · 14,961/14,961**.
+
+**Revert:** `git revert <this commit>` (repo-only; restores the 08-13 pin target, which would red the staleness check again). **Target metric:** the pin describes the function that actually runs.
+
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — memory refresh: CLAUDE.md re-derived against live sources, one new honesty rule added and PAID FOR by a displacement
 
 Docs/memory only — no code, no migration, no DB write, no prod-state change.
