@@ -181,6 +181,19 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   // Top 25 = first 25 (RPC pre-sorts by FMV desc).
   const top25 = editions.slice(0, 25)
 
+  // Rendered above the Sets / Top Players grids when `cardsPartial`. Deliberately
+  // states the BOUND ("first N editions") rather than a vague "may be incomplete":
+  // a reader can act on the first and cannot on the second.
+  const partialNote = (
+    <div
+      className="rpc-mono"
+      style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.4 }}
+    >
+      Counted from the first {fmtCount(PAGE_SIZE)} editions only — the whole-series totals
+      couldn&apos;t be loaded, so these are a floor, not the series total.
+    </div>
+  )
+
   // Set / player cards: whole-series aggregates from get_series_rollups.
   // If the RPC fails, fall back to grouping the fetched page of editions —
   // partial (pre-B5 behavior) but better than hiding the sections.
@@ -229,6 +242,19 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   // collapse in its quietest form. When neither the rollups nor the editions
   // came back we have no basis at all, so say so instead of showing nothing.
   const cardsUnavailable = rollups === null && !editionsOk
+
+  // ⚠ THE THIRD STATE, which this page had the vocabulary for but not the flag.
+  // `cardsUnavailable` covers "both bases failed". This covers the middle one:
+  // the whole-series RPC failed but the editions page survived, so the cards
+  // below are grouped from AT MOST PAGE_SIZE editions and are a FLOOR, not the
+  // series total — the pre-B5 behaviour the header comment describes.
+  //
+  // The fallback itself is a deliberate product call ("partial … but better than
+  // hiding the sections") and is NOT being reverted. What was missing is that the
+  // partial was SUBSTITUTED SILENTLY: a card reading "12 editions · $4,300" is
+  // indistinguishable from the real aggregate, on a page whose own stat strip
+  // may say the series has hundreds. Label it; do not hide it.
+  const cardsPartial = rollups === null && editionsOk
 
   return (
     <div>
@@ -299,6 +325,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
           {/* ── Sets in this Series ──────────────────────────────────────── */}
           {setCards.length > 0 && (
             <Section title="Sets in this Series">
+              {cardsPartial && partialNote}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
                 {setCards.map(s => (
                   <Link
@@ -326,6 +353,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
           {/* ── Top Players in this Series ───────────────────────────────── */}
           {topPlayers.length > 0 && (
             <Section title="Top Players in this Series">
+              {cardsPartial && partialNote}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
                 {topPlayers.map(p => (
                   <Link

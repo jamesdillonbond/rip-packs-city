@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the series page's rollup FALLBACK now says it is a **floor, not the series total**; and #17's "Set B5 remaining" was fixed on **2026-07-17**
+
+**Code + one guard. No DB, no migration.** Found while re-deriving #17's *Remaining* list — **the seventh stale register entry today.**
+
+✅ **#17 CORRECTION: "Set B5 (series rollups derived from only the first 100 editions — needs an aggregate RPC)" was FIXED over a month ago.** The page's own header says so by name: *"Set B5 fix (2026-07-17): the cards come from `get_series_rollups`, which aggregates over ALL editions in the series server-side."* ⓘ **It was greppable the whole time** — the file labels the fix with the audit's own ID.
+
+🚨 **BUT THE FALLBACK IT LEFT BEHIND WAS A LIVE INSTANCE OF TODAY'S CLASS.** When `get_series_rollups` fails and the editions page survives, the page **silently regroups AT MOST `PAGE_SIZE` (100) editions** and renders per-set counts and FMV totals. **A card reading "12 editions · $4,300" is indistinguishable from the true series aggregate**, on a page whose own stat strip may say the series holds hundreds.
+
+⚠ **THE FALLBACK IS A DELIBERATE PRODUCT CALL AND IS NOT REVERTED.** Its comment states it plainly — *"partial … but better than hiding the sections"* — **and that is defensible.** ➡ **The canon's answer to a partial is to CARRY its partialness: not to hide the section, and not to publish it as complete.** So the fix is a label, not a removal.
+
+✅ **The page already had the three-state vocabulary and used two of them** — `cardsUnavailable` (both bases failed) → `<SectionUnavailable/>`, and the healthy aggregate. **This was a missing FLAG, not a missing concept**, which is why the fix is four lines: `cardsPartial = rollups === null && editionsOk`, plus a note above BOTH grids.
+
+⚠ **The note states the BOUND and the DIRECTION** — *"Counted from the first 100 editions only … these are a floor, not the series total"* — because **"may be incomplete" is not actionable and "a floor" is.** It names `PAGE_SIZE` rather than a hardcoded 100.
+
+**Guarded** by `series-partial-rollup-says-it-is-partial.test.ts` (5 assertions): the flag is derived from **BOTH** conditions (`rollups === null` alone is the *both-failed* case and must not print "counted from the first 100" over zero cards); the pre-existing `cardsUnavailable` branch **still survives** as the no-change control; the note names the bound and the direction; and it appears on **BOTH** panels. ✅ **Mutation-proven: removing the note from Top Players only — the "fix per page, not per panel" shape — reds exactly that assertion.**
+
+**Verified:** `tsc` clean, full suite **1374/1374 · 14,970/14,970**.
+
+**Revert:** `git revert <this commit>`. **Target metric:** a partial aggregate on a public entity page is never rendered as a total.
+
 ### 2026-08-24 · NEGATIVE RESULT, RECORDED ON PURPOSE (Claude Code, Trevor's Windows box) — the `count ?? 0` shape has **62 occurrences and no user-facing defect** in the four surfaces that could carry one
 
 **Read-only. No code, no DB.** ⚠ **"I checked and it was fine" is the finding nobody writes down, so it gets re-derived** — and 62 occurrences is exactly the kind of number that invites a re-sweep every few weeks.
