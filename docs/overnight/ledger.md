@@ -82,7 +82,10 @@ closes most of it.
 - **CLAUDE.md** unchanged except one dated sample restamped: the `collection_series` label divergence was
   **re-verified** against live rather than re-quoted (`Series 5/6/7` for 6/7/8 still exact). 39,955 chars.
 
-**Revert path:** `git revert <sha>` — docs-only, nothing to undo in the DB or on Vercel.
+**Revert path (real sha):** `git revert b240462b` — docs-only, nothing to undo in the DB or on Vercel.
+Reverting restores the eight wrong/missing rules in `RPC_DESIGN_SYSTEM.md` (including the `.limit(10000)`
+advice and the `other` collection value), so **revert this one only to undo a bad edit of mine, never to
+"restore" the old text** — the old text was measured wrong against live sources.
 
 ### 2026-08-24 · MECHANISM FOUND (Claude Code, Trevor's Windows box) — `allday-pack-opens-backfill` is silent because **185 of 186 invocations are `EarlyDrop`ped before they can log**, and that breaks a rule CLAUDE.md already carries
 
