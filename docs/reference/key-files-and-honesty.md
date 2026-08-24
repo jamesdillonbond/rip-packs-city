@@ -303,3 +303,46 @@ converted, and the error string is **synthesized** rather than copied from a var
    control that closed it: identical work, v31 `ok=true` → v32 `ok=false`. **An instrument that has never
    been shown to report a failure has not been tested** — and a brand-new one agreeing with your hopes is
    the least tested of all.
+
+## The FIFTH LAYER, swept properly (2026-08-24) — five public boards, and the SWEEP PREDICATE is the durable part
+
+CLAUDE.md's honesty table has four layers and one helper each. **A SERVER-SEEDED PROP is a fifth it does not cover:** `initial={rows}` arrives as the empty fallback on a failed read **carrying no provenance**, so a component that correctly distinguishes failure for its OWN fetch still concludes on the seed. Two were found 2026-08-23. **Five more were found on 2026-08-24 — and the first attempt at the sweep nearly stopped at two.**
+
+### ⚠ THE PREDICATE, because the first one was scoped to the wrong side
+
+The first pass looked for boards with **no `initialDegraded` prop** — a property of the **CLIENT**. That missed every board whose **PAGE** has an `ok` and simply drops it on the floor. The population that matters:
+
+> **Server pages that KNOW `ok` and seed a client component without passing it.**
+
+Derived from the tree with that predicate: **9 candidates, 5 real, 4 correctly rejected.** Re-run it, do not quote the five.
+
+### The five, and why each is a claim rather than a filter
+
+| board | the sentence | note |
+|---|---|---|
+| `pack-drops` | "No live re-pack drops to score right now. **Check back when the next Vaultopolis drop lists.**" | claim about the MARKET; page exists to put drops in the **raw server HTML for crawlers** |
+| `new-collectors` | "The board is refreshing — check back shortly." | ⚠ the **impossible-claim** shape already fixed at the OG layer — nothing is refreshing, **there is no refetch at all**, and it promises a recovery the component cannot deliver |
+| `set-completers` | "No completion data available yet." | **no client refetch** ⇒ permanent for that viewer |
+| `underpriced-serials` | "No underpriced headline serials right now — **the board is empty when nothing's listed below value.**" | the worst sub-class: an empty state that **CONCLUDES and then explains itself** |
+| `serial-premiums` | "No qualifying #1 sales in this window." | |
+
+⚠ **A DEGRADED BANNER ABOVE THE BOARD IS NOT A FIX, AND ALL FIVE ALREADY HAD ONE.** Each page rendered `<DegradedDataNotice summary={summarizeDegraded([boardStatus(…, ok)])} />` from the very `ok` it then discarded — **so a notice saying the data is degraded sat directly above a board stating confidently that there is none.** This is the sharpest example yet of *fix per PANEL, not per page*. ⓘ **`underpriced-serials` proves it three times on ONE surface:** its OG card's liveness claim, its page's staleness caption, and its page's empty state were three separate panels, fixed in three separate passes.
+
+⚠ **NONE of the five refetches its data on mount** — measured, not assumed; two say so in their own comments (*"only refetch on explicit refresh"*, *"no refetch"*). **So the false sentence does not self-correct.** I had assumed the opposite for `pack-drops`.
+
+### ⛔ THE FOUR REJECTIONS ARE THE POINT
+
+`pack-sniper`, `parallel-premiums`, `rookie-board`, `top-sales` all say **"… match those filters"** — a claim about the **FILTER the reader just set**, not about what the platform knows. `market-pulse` renders **nothing** when empty and so makes no claim at all. ➡ **Widening a guard until every candidate passes is how a correct surface gets made incorrect.** The rejections and their reasons live in the test file, not just here.
+
+### ⛔ AND THE RENDERED HTML REFUTED ONE OF MY OWN FIXES
+
+For `new-collectors` I first guarded the gateway panels' *"No data in this window."* — **unreachable**: on a failed read the page hands over `EMPTY_BOARD`, so `hasData` is false and the **whole board collapses before those panels render**. `renderToString` showed it immediately. ➡ **Read the rendered output, not the source, before believing a branch is the one a failure reaches.**
+
+### The guard shape
+
+**SSR (`renderToString`), per the `FmvHistoryChart` precedent** — a client-only assertion cannot see the sentence the reader reads first, and on an ISR route that markup is cached for the whole revalidate window. Mutation there had shown that **both `useState(false)` and the mirror image `useState(true)` left every jsdom test passing.**
+
+- **Assert the ABSENCE of the false claim** (`not.toMatch(/No live re-pack drops/)`) — asserting the degraded sentence's PRESENCE would pass a board printing **both**.
+- **A NO-CHANGE CONTROL on every case**, or deleting the empty state entirely satisfies the guard.
+- **Wiring assertions**, because a component test cannot see the call site: `initialFailed={!ok}` **DERIVED, not a literal** — `initialFailed={false}` passes a presence check and reinstates the whole defect.
+- ⛔ **One test was DELETED rather than propped up.** "A failed seed that nonetheless has rows" needed a hand-built fixture for a state production cannot produce (the failure fallback IS `[]`), and the fixture was wrong, which is how it announced itself. **A test that needs an impossible fixture is testing the fixture.**
