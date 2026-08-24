@@ -42,7 +42,17 @@ const ROOT = rootFlag !== -1 ? process.argv[rootFlag + 1] : ".";
 const IS_LIVE = rootFlag === -1;
 
 const REFERENCE_DIR = join(ROOT, "docs/reference");
-const EXTRA_FILES = [join(ROOT, "CLAUDE.md")];
+// RPC_DESIGN_SYSTEM.md added 2026-08-24. It met this guard's own stated criterion
+// from the start — it calls itself the authoritative reference for every
+// frontend, DB and concierge change and says "read top-to-bottom before any
+// edit", so its pointers are load-bearing — but it sat OUTSIDE the gate by
+// CONSTRUCTION, because the tree walk only covers docs/reference/ and this list
+// named exactly one file. That is the shape this repo keeps re-finding: a
+// guard whose ROOT, not whose logic, fixes its blast radius. It is NOT frozen
+// history, so the policy exclusion above does not cover it.
+// Measured before adding: 3 relative links, all resolving — so this extends the
+// ban-at-population-zero rather than importing a backlog.
+const EXTRA_FILES = [join(ROOT, "CLAUDE.md"), join(ROOT, "RPC_DESIGN_SYSTEM.md")];
 
 // Derived by a TREE WALK, never a curated list — a curated list drifts, and a
 // new docs/reference/*.md would otherwise be outside the guard by construction.

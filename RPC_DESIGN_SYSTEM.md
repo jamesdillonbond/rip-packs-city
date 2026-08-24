@@ -11,8 +11,14 @@ Authoritative reference for every frontend, DB, and concierge change in `rip-pac
 > dashboard children, and a tab-availability rule that was wrong in both directions), **§4** (the short-form
 > vocabulary listed a value the live CHECK rejects), **§5** (the 1000-row cap, the pg_cron census, and the
 > read-path budget), **§5a** (§12's ship condition was met), **§6** (checked, consistent, no change) and
-> **§7** (the Top-Shot-specific series remap rule was missing entirely). ⛔ **NOT audited: §2, §8, §9, §10,
-> §11, §12.** ⚠ A stamp
+> **§7** (the Top-Shot-specific series remap rule was missing entirely), **§8** (its "currently red" Cadence
+> claim had been false for ~3 months), **§10** (no entry existed for Cowork or the two autonomous passes) and
+> **§11** (the worker list was 10 of 17, omitting the one where `wrangler deploy` is destructive).
+> ✅ **Verified against live sources and CORRECT, no change needed: §2** (all 57 documented class names exist),
+> **§9** (`.rpc-tap44` and `e2e/mobile-layout.spec.ts` both present), **§12** (quota table matches live
+> `feature_quotas` exactly) and **§6**. ➡ **Every section has now been audited at least once.** ⚠ That is not
+> the same as "this file is correct" — an audit is a dated sample too, and §5's `.limit(10000)` line looked
+> authoritative for months. ⚠ A stamp
 > that reads as currency while the reference it was reconciled against has moved is this project's own
 > honesty defect applied to a doc — treat a §-level claim here as needing confirmation against
 > `CLAUDE.md` / `app/rpc-tokens.css`, not as settled. **Full reconciliation is OPEN and unassigned.**
@@ -400,7 +406,10 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 - UInt64 / numeric Cadence args must be `String(v)` in Flow REST calls, not raw numbers
 - Response: `atob(raw.trim().replace(/^"|"$/g,''))` → `JSON.parse`
 - `access(all)` required (not `pub`)
-- Cadence test harness: `npm run test:cadence` is the regression net (currently red on purchase-moment C1+C2 audit; flips green when audit fixes land). Type-check via `flow cadence lint`, no emulator.
+- Cadence test harness: `npm run test:cadence` is the regression net. Type-check via `flow cadence lint`, no emulator.
+- ⛔ **"CURRENTLY RED ON THE PURCHASE-MOMENT C1+C2 AUDIT" WAS FALSE FOR ~3 MONTHS — corrected 2026-08-24.** `.github/workflows/ci.yml`'s own comment records the C1/C2 errors as **fixed** (FungibleToken imported; `self.listing` borrowed before its price is read), green locally **2026-05-30**, and the `cadence-lint` job had `continue-on-error` REMOVED — it is a **blocking gate**. ⚠ **The cost of the stale line is specific: it tells a reader to dismiss a genuine red as "the known audit thing."** CI is the authority on this, not this file.
+- 🚨 **`npm run test:cadence` CANNOT RUN in the web/cloud sandbox, and its failure looks like a test failure.** There is no Flow CLI here: the extract step succeeds, then `flow: not found` → **exit 127**. ⚠ **Do NOT read that non-zero exit as "still red on C1+C2"** — read the error string. CI's own comment documents this exact masquerade (a silent install failure once produced a confusing downstream `flow: command not found`), which is why the workflow now verifies `flow` is on PATH and fails at the install step instead.
+- ⚠ **MEASURED 2026-08-24, recorded as a fact and NOT as a recommendation:** `PURCHASE_MOMENT_CADENCE`, `GIFT_MOMENT_CADENCE` and `GIFT_MOMENT_GAS_LIMIT` have **exactly one importer between them — `__tests__/cadence-transaction-templates.test.ts`** — and `PURCHASE_MOMENT_FLOW_WALLET_CADENCE` has **zero references anywhere outside its own file**. `cadence/contracts/RPCTradeEscrow.cdc` likewise has no reference in `app/`, `lib/` or `components/`. So on a **read-only** product (Cart, Trade Hub and gifting all deleted) CI runs **two blocking Cadence gates** over templates nothing in the product calls. ⛔ **This is NOT a delete recommendation** — the shelves are deliberate (known-issues #1, #3) and CLAUDE.md's rule is to name the caller across all sources before touching anything. It is recorded so the next person costing out CI knows what these gates are protecting.
 
 ---
 
@@ -440,6 +449,8 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 
 - **Claude (Claude.ai chat)** — DB/migrations/diagnosis via Supabase MCP, Vercel MCP for deploy monitoring, architecture decisions, skill/doc drafting. **Must hand the SQL of any applied migration over as a file artifact so Claude Code can save it under `supabase/migrations/` in the same commit.** Project-knowledge artifacts (skills, design docs) only exist in the chat context — they must be explicitly committed to the repo before Claude Code can rely on them.
 - **Claude Code** — file-level repo work. Always complete-replacement files, never diffs or snippets. Prompts are plain prose read on **desktop** (corrected 2026-07-25 — handoffs are no longer written for iPhone copy-paste; normal markdown is fine). Must push back when a prompt references infrastructure the repo doesn't contain rather than inventing it.
+- **Cowork** (cloud + desktop) — **added 2026-08-24; this section had no entry for it at all.** Has Supabase MCP (read+write), Vercel/Sentry, Chrome, scheduled-task and artifact tools, and *sometimes* a push-capable clone. ⚠ **Push capability is the variable that decides what it can ship** — a NO-PUSH session lands DB migrations and artifacts but not code, and its ledger writes never reach origin, so a later push-capable pass must reconcile. **If it can do the task, it does it in the same turn and reports it done** — narrating a "handoff" for work it could execute is explicitly not wanted.
+- **Two scheduled autonomous passes** — `rpc-daytime-monitor` (READ-ONLY, ~3h, files candidates to `docs/overnight/inbox/`, ships nothing) and `rpc-nightly-autonomous-pass` (1am local, drains the inbox, ships ≤4 low-risk changes to `main`, collision- and CI-gated). ⛔ **Off-limits to both, queued not shipped:** hot/payer wallet, secrets/env, auth & lockdown (`proxy.ts`), destructive SQL, FMV/ingest/pricing/pack-EV/concierge/sniper route logic, and anything gated. **`docs/FREEZE.md` halts autonomous shipping.** They share state only through `docs/overnight/` — skim `ledger.md` before acting. Detail: [docs/reference/autonomous-tasks.md](docs/reference/autonomous-tasks.md).
 - **Trevor** — direct commits to `main`, no PRs, no feature branches.
 
 ---
@@ -469,6 +480,11 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 - `base-proxy` — Base EVM JSON-RPC (chain 8453), built but not deployed
 
 Plus `flowty-proxy` as a Supabase edge function (Flowty blocks Vercel IPs).
+
+🚨 **THE LIST ABOVE IS 10 OF 17 — re-derived from `workers/` on 2026-08-24 — AND ONE OMISSION IS DESTRUCTIVE.** Missing: **`atlas-proxy`** · **`topshot-moments-hydrator`** · `dune-proxy` · `helius-proxy` · `rpc-mcp-proxy` · `pack-events-ingest` · `sales-counterparty-backfill` (14 `*-proxy` egress + 3 ingest/backfill), plus `infrastructure/spork-proxy-worker`.
+- 🚨 **`topshot-moments-hydrator`'s cron is declared in NO file in this repo, and a `wrangler deploy` would DELETE it** (known-issues #21). **This is the section a person reads before running `wrangler deploy`, and the worker where that command is destructive was not in it.** Check the deployed schedule before deploying it.
+- ⚠ **`atlas-proxy` is an OPEN operator blocker** (known-issues #20) — it needs a `wrangler deploy` plus a Cloudflare-egress probe, and it fixes only part of the `topshot-active-listings-ingest` failures.
+- ⚠ **A missing worker here is not a dormant one.** Re-derive from `workers/` rather than trusting this list, and read [docs/reference/routes-and-surfaces.md](docs/reference/routes-and-surfaces.md) for what each does.
 
 ### Three independent worker auth-rotation surfaces — DO NOT conflate
 

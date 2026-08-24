@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the design-system audit finished, and the memory-doc link guard was blind to the file it most needed to cover
+
+Docs + one guard-root widening. No migration, no DB write, no prod-state change.
+
+- ⭐ **THE GUARD FINDING IS THE DURABLE ONE: `scripts/check-memory-doc-links.mjs` did not cover
+  `RPC_DESIGN_SYSTEM.md`.** Its gated set is `CLAUDE.md` + a TREE WALK of `docs/reference/`, and the extra-files
+  list named exactly one file — so a root-level memory doc that says *"read top-to-bottom before any edit"* sat
+  outside the gate **by CONSTRUCTION, not by policy** (the frozen-history exclusion explicitly does not cover
+  it). **This is the shape this repo keeps re-finding: a guard whose ROOT, not whose logic, fixes its blast
+  radius.** Widened; **97 links / 23 files → 102 / 24**, all resolving. ✅ **Proven able to see a FAILURE**, not
+  merely to stay green: a planted broken link reds the guard and it NAMES `RPC_DESIGN_SYSTEM.md`; restored, it
+  returns to 0. Measured before adding: 3 relative links, all resolving — so this **extends** the
+  ban-at-population-zero rather than importing a backlog.
+- ⛔ **§8's "currently red on the purchase-moment C1+C2 audit" was FALSE for ~3 months.** `ci.yml`'s own comment
+  records C1/C2 fixed, green locally 2026-05-30, and `continue-on-error` REMOVED — `cadence-lint` is a
+  **blocking gate**. ⚠ **The cost of that stale line is specific: it tells a reader to dismiss a genuine red as
+  "the known audit thing."**
+- 🚨 **`npm run test:cadence` CANNOT RUN in this sandbox and its failure looks like a test failure** — no Flow
+  CLI, so the extract step succeeds and then `flow: not found` → **exit 127**. Recorded in §8 with the
+  instruction to read the error string; CI's own comment documents the same masquerade.
+- **Measured, and deliberately NOT acted on:** `PURCHASE_MOMENT_CADENCE` / `GIFT_MOMENT_CADENCE` /
+  `GIFT_MOMENT_GAS_LIMIT` have exactly **one** importer between them (a test file);
+  `PURCHASE_MOMENT_FLOW_WALLET_CADENCE` has **zero** references outside its own file; `RPCTradeEscrow.cdc` has
+  none in `app/`, `lib/` or `components/`. So a read-only product runs **two blocking Cadence CI gates** over
+  templates nothing calls. ⛔ **Not a delete recommendation** — the shelves are deliberate (#1, #3) and the
+  name-the-caller rule binds; recorded so the next CI cost review knows what it is looking at.
+- 🚨 **§11 listed 10 of 17 workers, and the omission that matters is `topshot-moments-hydrator` — the worker
+  where `wrangler deploy` DELETES its cron** (#21). **That is the section a person reads before running
+  `wrangler deploy`.** `atlas-proxy` (open blocker #20) was missing too. All 7 named, with a re-derive-from-
+  `workers/` instruction.
+- **§10 had no entry for Cowork or the two autonomous passes at all** — added, including the push-capability
+  variable, the off-limits list and `docs/FREEZE.md`.
+- ✅ **Verified CORRECT against live sources, no change: §2** (all **57** documented class names exist),
+  **§9** (`.rpc-tap44` + `e2e/mobile-layout.spec.ts` present), **§12** (quota table matches live
+  `feature_quotas` exactly), **§6**. ➡ **Every section of that file has now been audited at least once** — and
+  the banner says an audit is a dated sample too, because §5's `.limit(10000)` line looked authoritative for
+  months.
+
+**Revert path:** `git revert <sha>` — docs plus one guard root. Reverting narrows the link guard back to 23
+files and restores eight wrong/missing design-doc rules; **revert only to undo a bad edit of mine, not to
+"restore" the old text.**
+
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — biweekly context hygiene APPLIED from the cloud run's prepared patch; **its "repo-wide CI link guard" premise is FALSE** and one real link would have rotted silently
 
 Executed the `rpc-context-hygiene` pass the 2026-08-24 cloud run prepared but could not push (that run was report-only: repo-authorization refusal, correctly diagnosed, correctly did NOT re-embed a PAT). This box has push. Re-derived every number against the live repo before running — all matched the report exactly.
