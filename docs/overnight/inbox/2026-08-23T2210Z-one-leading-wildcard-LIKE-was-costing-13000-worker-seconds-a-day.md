@@ -147,3 +147,77 @@ confirmed rather than assumed).
 ⚠ Row count moved 4,684 → 4,685 and rookies 1,092 → 1,093 during the window. That is `panini-ingest`
 doing its job, and it is the direct evidence for the earlier point that **cutting this job's cadence
 would have staled a live board** — the content genuinely moves.
+
+---
+
+## FINAL — 2026-08-24 23:30Z: the full-day re-derivation the section above demanded
+
+The exit condition was explicit: *"NOT yet tested in a genuinely loaded hour"* and *"re-derive over a
+full day before quoting it."* Both are now satisfiable, so this is a re-TEST of the stated condition,
+not a re-read of it.
+
+**Window: a complete 24 h, 08-23 23:00Z -> 08-24 22:59Z, 48/48 ticks.** (The 08-24 23:00Z hour is
+partial and is excluded rather than annualised.)
+
+### The headline number MOVED, and downward
+
+| | pre-cutover (08-22 23:00Z -> 08-23 21:59Z, 46 ticks / 23 h) | post-cutover (24 h, 48 ticks) |
+|---|---|---|
+| job-seconds | **12,959.6** (= **13,523/day** scaled to 48 ticks) | **800.7** |
+| mean per tick | 281.7 s | **16.7 s** |
+| statement-timeout wall-kills | **6** | **0** |
+
+**-> 94.1% reclaimed, ~12,700 worker-seconds/day returned.** The 4-hour projection said **491 s/day
+/ 96%** and the 7.75-hour one said **538 s/day / 95.9%**; the true full-day figure is **800.7 s/day /
+94.1%**. Both short samples were optimistic, because both **missed the 12:00Z and 13:00Z hours**
+(127.9 s and 100.9 s — together 29% of the entire day's cost). The direction of the error is the
+point: **a short window under-counts the expensive hours, so it flatters the fix.**
+
+### The loaded-hour test, which is what was actually blocked
+
+08-24 18:00Z ran at **11,590.1 instance busy-s** — the day's peak, and **92% of 08-23's 12,575.6**.
+That gives a near-matched load pair against the pre-ship peak:
+
+| hour | instance busy_s | panini job-s |
+|---|---|---|
+| 08-23 18:00Z (pre) | 12,575.6 | **530.4** |
+| 08-24 18:00Z (post) | 11,590.1 | **20.5** |
+
+**25.9x cheaper at 92% of the load.** The claim now holds at the daily peak, which is the exact
+condition the previous section flagged as untested.
+
+### The one post-cutover "failure" is NOT panini's, and the control says so
+
+08-24 09:48Z, `job startup timeout`, 21.9 s. That is a pg_cron **launcher** failure -- the function
+body never ran. Instance-wide over the same window:
+
+| era | `job startup timeout` | distinct jobs | of which panini |
+|---|---|---|---|
+| pre-cutover | 217 | 40 | 3 |
+| post-cutover | 110 | 32 | **1** |
+
+Panini is 1 of 110 across 32 jobs -- a bystander in a shared, **already-characterised** condition
+(see `2026-08-17T0410Z-the-pgcron-startup-timeout-is-not-a-worker-slot-cap-it-is-the-saturation.md`,
+whose worker-slot hypothesis is REFUTED there; do not re-file this as new).
+
+The failure class that was actually panini's -- `canceling statement due to statement timeout`, the
+600 s wall -- went **6 -> 0**. That is the honest statement of the reliability change.
+
+### Correctness, re-measured at 23:30Z (not carried over)
+
+`mv_panini_squeeze` **4,694 rows** = `panini_squeeze_board` **4,694** · `is_rookie` **1,095** ·
+`check_public_security_invariants()` **0 rows** · board `security_invoker=on` ·
+MV acl `{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}`, `has_table_privilege('anon',…)`
+= **false**. The 08-23 anon leak has NOT reappeared across ~50 live refreshes.
+
+⚠ **I nearly published that ACL line off a null instrument.** The first query read
+`information_schema.role_table_grants` and returned **NULL** -- which I was one step from reporting as
+"clean". It is not clean, it is **blind**: that view returns **zero rows for a materialized view**.
+The correct source is `pg_class.relacl` / `has_table_privilege`. That near-miss is what turned up the
+missing invariant filed as `2026-08-24T2345Z-…-materialized-views.md`, and it is why the standing
+monitor was green through the 08-23 leak.
+
+### Status
+
+✅ **CLOSED.** The exit condition is met and the number is final at **94.1% / ~12,700 s/day**.
+Quote **800.7 s/day**, not 491 or 538.
