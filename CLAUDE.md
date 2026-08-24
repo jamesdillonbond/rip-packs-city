@@ -68,7 +68,7 @@ Two scheduled Cowork tasks run here — coordinate via the shared ledger so work
 - **`rpc-daytime-monitor`** — READ-ONLY, every ~3h. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
 - **`rpc-nightly-autonomous-pass`** — 1am local. Drains the inbox, ships ≤4 low-risk changes to `main` (collision- and CI-gated, each verified by a fresh subagent), writes a handoff + digest. Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth & lockdown (`proxy.ts`), destructive SQL, FMV/ingest/pricing/pack-EV/concierge/sniper route logic, gated work.
 
-Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-suggest"** heading is Trevor's), `inbox/` (⚠ `INDEX.md` is CI-guarded: every filing listed, no dangling link — **archiving one deletes its entry too**), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` before a session**; the night pass will not edit files committed in the last 24–48h. To halt autonomous shipping, create `docs/FREEZE.md`. Detail: [autonomous-tasks.md](docs/reference/autonomous-tasks.md).
+Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-suggest"** heading is Trevor's), `inbox/` (⚠ `INDEX.md` has **4 CI assertions, TWO of them COUNTS** — **archiving one deletes its entry too**), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` before a session**; the night pass will not edit files committed in the last 24–48h. To halt autonomous shipping, create `docs/FREEZE.md`. Detail: [autonomous-tasks.md](docs/reference/autonomous-tasks.md).
 
 ---
 

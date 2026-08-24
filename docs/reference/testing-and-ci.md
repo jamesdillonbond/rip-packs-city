@@ -859,3 +859,24 @@ Moved here to pay for two new standing rules; nothing deleted. CLAUDE.md keeps t
    with the log's `extra` emptied, because the next line is
    `return NextResponse.json({ ok:false, skipped:"throttle_error" })` — the same string. **The HTTP body is not the
    record; `pipeline_runs` is.**
+
+### ⚠ A DOC'S SUMMARY OF A GUARD CAN BE SILENT ABOUT HALF ITS ASSERTIONS — and running the documented checks is then not enough (2026-08-23, reddened `main`)
+
+**Instance.** Adding one entry to `docs/overnight/inbox/INDEX.md` reddened `Unit tests (vitest)` on two commits (`6d816200`, `e85c7103`). `__tests__/inbox-index-lists-every-filing.test.ts` has **five** `it(` blocks — a population floor, plus four substantive assertions:
+
+| # | assertion | did the CLAUDE.md summary name it? |
+|---|---|---|
+| 1 | *lists every filing on disk — zero omissions* | ✅ "every filing listed" |
+| 2 | *links no filing that does not exist* | ✅ "no dangling link" |
+| 3 | *states a heading count equal to the number of filings* (`# Inbox index — N live filings`) | ❌ |
+| 4 | *states per-day counts equal to the entries under each day* (`## YYYY-MM-DD — N filings`) | ❌ |
+
+🚨 **The failure mode is precise and worth naming: I ran checks 1 and 2, both passed, and both are exactly what the prose described.** CLAUDE.md read *"`INDEX.md` is CI-guarded: every filing listed, no dangling link"* — a true statement that is **half the contract**, and a half-description of a guard reads as a whole one. The two counts I did not know about are the two that failed.
+
+➡ **RULE: enumerate a guard's assertions from the test file — `grep -nE '^\s*it\(' <test>` — never from a doc's summary of it, including this repo's own.** A prose summary is a *pointer* to a guard, never a specification of it. The same applies to `npm run` script names and CI job names: the authority is the file, and the doc is a hint.
+
+⚠ **Corollary, since the fix is not "write longer summaries":** CLAUDE.md is at its size equilibrium, so the clause was *shortened* to `**4 CI assertions, TWO of them COUNTS**` (net −9 chars). **A summary that states the SHAPE and the COUNT of a guard's assertions is more useful than one that lists some of them**, because it tells the reader when they have not finished reading.
+
+ⓘ **The two counts to bump when adding an INDEX entry:** the header total on line 1, and the dated `## YYYY-MM-DD — N filings` heading for the section the entry lands in. ⚠ **Sections are keyed by PACIFIC date, while filenames carry a `Z` stamp** — a `2026-08-24T0430Z` filing belongs under `## 2026-08-23` (21:30 PT). Getting that wrong moves the failure from check 4 to check 4 in a different section, and reads identically.
+
+⚠ **It was fixed by somebody else's commit, incidentally** (`ad4606ed` bumped 222→224 and 21→23 while covering its own filing), which is the recorded hazard about a concurrent session absorbing your breakage — the red would otherwise still be open, and the tip going green is NOT evidence your commit was clean. **Check CI per commit, not at the tip.**

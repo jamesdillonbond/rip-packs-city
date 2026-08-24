@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, Trevor's Windows box) — **I reddened `main` on two commits** by editing a CI-guarded index whose guard has FOUR assertions where CLAUDE.md described two; fixed the description rather than only the counts
+
+**Docs only. No code, no DB.** Recording a self-inflicted CI red because the tip going green was somebody else's commit, not a fix of mine.
+
+**What happened.** Adding one entry to `docs/overnight/inbox/INDEX.md` (the listings-ingest filing, entry above) failed `Unit tests (vitest)` on **`6d816200` and `e85c7103`**: `expected 222 to be 223` and `2026-08-23: heading says 21, section holds 22`. `__tests__/inbox-index-lists-every-filing.test.ts` asserts **four** things — every filing listed · no dangling link · **the line-1 header total** · **each `## YYYY-MM-DD — N filings` heading**. I updated neither count.
+
+🚨 **THE ROOT CAUSE IS A DOC, AND THE FAILURE MODE IS PRECISE: I ran the checks CLAUDE.md described, both passed, and both were exactly the two it named.** The clause read *"`INDEX.md` is CI-guarded: every filing listed, no dangling link"* — **true, and half the contract.** The two assertions it omitted are the two that failed. **A half-description of a guard is indistinguishable from a complete one at read time.**
+
+➡ **DURABLE RULE PROMOTED:** *enumerate a guard's assertions from the test file — `grep -nE '^\s*it\(' <test>` — never from a doc's summary of it, including this repo's own.* A prose summary is a **pointer** to a guard, never a specification. ⚠ Distinct from the existing *"grep for the guards that READ a file before you EDIT it"* — I **did** identify the guard; the gap was trusting prose about **what it asserts**.
+
+⚠ **The fix is NOT "write longer summaries."** CLAUDE.md is at its size equilibrium, so the clause was **shortened** to `**4 CI assertions, TWO of them COUNTS**` — **net −9 chars, file now 39,974** (Node `.length`, not `wc`). **A summary stating the COUNT and SHAPE of a guard's assertions beats one listing a subset, because it tells the reader when they have not finished reading.** Full four-row table + the PT-vs-Z section trap in [testing-and-ci.md](../reference/testing-and-ci.md).
+
+⚠ **`INDEX.md` sections are keyed by PACIFIC date while filenames carry a `Z` stamp** — a `2026-08-24T0430Z` filing belongs under `## 2026-08-23` (21:30 PT). My placement was right; only the counts were wrong.
+
+⚠ **CHECK CI PER COMMIT, NOT AT THE TIP.** `ad4606ed` (a concurrent session) bumped 222→224 and 21→23 while covering its own filing, so `CI` is green at the tip and **red on both of my commits**. A concurrent session absorbing your breakage makes the tip a useless instrument for "was my commit clean".
+
+**Verified before this push, the way the new rule prescribes:** enumerated the guards that read the edited files (`grep -rln` over `__tests__/`), then ran all five — `claude-md-stays-under-the-memory-file-limit`, `memory-doc-links-guard`, `find-future-dated-ledger-headings`, `find-swallowed-ledger-headings`, `inbox-index-lists-every-filing` — **47 tests, all passing**.
+
+**Written to:** CLAUDE.md (clause corrected, net −9) · [testing-and-ci.md](../reference/testing-and-ci.md) (new section with the four-assertion table) · two Cowork memories. **Revert:** `git revert <sha>` (docs-only). **Target metric:** no future session reddens `main` on a count in a guarded index it did not know it had to bump.
+
+
 ### 2026-08-23 · SHIPPED (Claude Code, VSCode on Trevor's box) — `backfill-topshot-pack-supply` v30 → v31: the biggest un-instrumented job on the box now writes `pipeline_runs`, and its silent-failure path now reports
 
 **Edge function only. No DB write, no migration, no Vercel deploy.** jobid 16 `rpc-backfill-pack-pool`
