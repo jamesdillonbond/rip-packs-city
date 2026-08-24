@@ -45,8 +45,9 @@ guarded that the two COPIES of each skill agree; this one asks whether what they
   on 2026-08-22** (a guard doc naming SOME of its assertions reads as naming all). Retitled.
 - ✅ Both bundles re-packed deterministically; `npm run skills:bundles:check` green at 9/9.
 
-**Revert path:** `git revert <sha>` — docs + two deterministic bundle re-packs. ⚠ Reverting restores the
-CLAUDE.md-session-log instruction; revert only to undo a bad edit of mine.
+**Revert path (real sha):** `git revert 36550b6a` — docs + two deterministic bundle re-packs. ⚠ Reverting
+**restores the `CLAUDE.md` session-log instruction**, i.e. re-arms the edit that can push the memory file
+over its ceiling; revert only to undo a bad edit of mine, never to "restore" the old text.
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the Cowork skills were an entirely unguarded memory surface, and BOTH copies had drifted, in opposite directions
 
