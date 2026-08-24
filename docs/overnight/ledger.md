@@ -18,7 +18,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **Not acted on** — the suggested remedy is a watchlist/telemetry migration and the filing says so; it wants the `done:true` payload confirmed first.
 
-**Revert:** `git revert <this commit>` (docs-only; the filing is the monitor's and stays regardless). **Target metric:** a concurrent writer's filing reaches origin and the inbox guard stays green.
+**Revert:** `git revert e1f16387` (docs-only; the filing is the monitor's and stays regardless). **Target metric:** a concurrent writer's filing reaches origin and the inbox guard stays green.
 
 ### 2026-08-24 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — **TWO client `Sentry.init()` calls**, and which one wins depends on the BUNDLER; under production's turbopack the richer config is INERT
 
