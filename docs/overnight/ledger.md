@@ -20,7 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **RESULT — `npm test`: 1371/1371 files, 14,945/14,945 tests, GREEN on this box for the first time** (from 54 failed / 10 files this morning). `tsc` clean. **Primary coverage gate passes with headroom on all four thresholds** — statements 92.22 (≥91.8) · branches 79.88 (≥79.4) · functions 93.95 (≥93.6) · lines 94.23 (≥93.85); workers gate 88.34 / 76.32 / 89.81 / 91.28.
 
-**Revert:** `git revert <this commit's successor>` — `vitest.setup.ts`, both vitest configs, one guard. No product behaviour. **Target metric:** a full-suite run on the machine where the work happens is a signal rather than noise — the precondition for CLAUDE.md's own "run the full suite before pushing" rule to mean anything.
+**Revert:** `git revert e8cbbfe8` — `vitest.setup.ts`, both vitest configs, one guard. No product behaviour. **Target metric:** a full-suite run on the machine where the work happens is a signal rather than noise — the precondition for CLAUDE.md's own "run the full suite before pushing" rule to mean anything.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the guard family was NOT PORTABLE, so `npm test` on the box where the work happens was an untrustworthy instrument: 10 red files → 4, one guard was running ZERO tests, and CI could not see any of it
 
