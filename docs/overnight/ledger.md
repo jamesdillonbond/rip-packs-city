@@ -20,7 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **Why not fixed in this turn.** The real fix is parsing eszip v2.3 — a binary format with per-module compression — and **it cannot be tested from this box without `SUPABASE_ACCESS_TOKEN`. Shipping an untested parser straight into a CI guard would replace a loudly-broken instrument with a quietly-wrong one**, which is the trade this repo keeps paying for. The cheap alternative (`ezbr_sha256` from the LIST endpoint) is a change detector, **not a census** — the bundle build is not reproducible locally, so it cannot compare deployed against REPO. Both recorded in #31 with that reasoning attached. ⚠ Also recorded: **reading the body at all is a secret surface** — a deployed function can carry a gate key and this output goes to a CI log; the script prints messages only, never bodies, and must stay that way.
 
-**Revert:** `git revert <this commit>` (docs-only). **Target metric:** nobody reads the drift count as a repair trend again, and whoever fixes Tier 2 starts from the cause rather than rediscovering it.
+**Revert:** `git revert 7c0393b5` (docs-only). **Target metric:** nobody reads the drift count as a repair trend again, and whoever fixes Tier 2 starts from the cause rather than rediscovering it.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — the last 4 red files diagnosed to TWO environment leaks, both fixed: **`npm test` is now 1371/1371 GREEN on this box, from 54 failures**
 
