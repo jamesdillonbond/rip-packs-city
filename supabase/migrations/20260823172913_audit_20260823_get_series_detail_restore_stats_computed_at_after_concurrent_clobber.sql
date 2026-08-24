@@ -1,3 +1,25 @@
+-- ── APPENDED 2026-08-24 AFTER RECOVERY — comment only, SQL untouched ─────────
+-- ⚠ THIS FILE IS A RECOVERED CAPTURE, not a hand-authored migration. It was
+-- applied to production via MCP and its .sql was reconstructed byte-exactly from
+-- `supabase_migrations.schema_migrations.statements` by
+-- `scripts/recover-fileless-migrations.mjs`. Committing it turned CI RED, because
+-- `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` requires
+-- every migration from its 20260817000000 CUTOFF forward to STATE an anon-execute
+-- decision per public function it creates — and a capture of history states none.
+--
+-- The decision is stated here rather than by weakening that guard, and it was
+-- MEASURED rather than assumed. Verified live 2026-08-24 with
+-- `has_function_privilege` (never the acl text):
+--   anon = false · authenticated = false · service_role = true · SECURITY DEFINER
+--
+-- ⚠ ONLY THIS COMMENT WAS ADDED. Not one SQL byte changed, so re-running the file
+-- against production is still a no-op and the revert path it carries is intact.
+-- It does mean the file no longer md5-matches prod's stored `statements`; that is
+-- the deliberate cost of satisfying the guard honestly instead of exempting it.
+-- ⚠ A REVOKE must NOT be added: `CREATE OR REPLACE FUNCTION` does not reset an
+-- ACL, so one here would CHANGE production while presenting itself as a no-op.
+-- anon-exec: unchanged — public.get_series_detail is SECURITY DEFINER and already revoked from PUBLIC, anon and authenticated (verified live 2026-08-24 by has_function_privilege).
+--
 -- ⛔ REPAIRING A CLOBBER I CAUSED. Read this before touching get_series_detail.
 --
 -- Two sessions fixed the same function the same night, and I overwrote the other
