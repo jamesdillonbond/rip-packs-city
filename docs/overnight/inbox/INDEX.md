@@ -1,4 +1,4 @@
-# Inbox index — 222 live filings
+# Inbox index — 224 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 21 filings
+## 2026-08-23 — 23 filings
 
+- [⛔ The FMV haircut's Top Shot leg is **800,545 buffers / 101 s to find 14 rows** — and the obvious `edition_fmv_current` fix **silently loses 71% of them**](2026-08-24T0455Z-the-fmv-haircut-topshot-leg-costs-800k-buffers-and-the-obvious-fix-loses-71pct-of-it.md) — the scan runs **twice** per leg (~200 s vs a ~120 s **gateway** cap, NOT `statement_timeout` — the route comment names the wrong bound). ⚠ Column projection is **not** the lever (narrowed still 101.4 s). ⛔ **Refuted before shipping** by a one-statement same-snapshot set difference: `old 14 / new 4 / in_old_not_new 10 / in_new_not_old 0`. A lagging materialisation is unsafe as a **filter for a predicate over the columns it lags on**. Severity **MEDIUM** — `/api/fmv-recalc` applies the haircut inline; `topshot_fmv_stale_hours` 0.1 of 6
 - [🔴 `topshot-active-listings-ingest` is 100% red for 5+ days, and the documented cause is 22% of it](2026-08-24T0430Z-topshot-active-listings-ingest-is-100pct-red-and-the-documented-cause-is-22pct-of-it.md) — **40/40 runs failed** 08-19→08-24, classified by reading every log: **29 die on a DB statement timeout at `?phase=targets` before Atlas is reached**, 9 on the Atlas WAF, 2 on a 504. ⚠ **Refutes the register's "~60% `egress_blocked`" (it is 22.5%) and means #20's `wrangler deploy` cannot un-red this workflow.** `topshot_serial_board_targets` mean **13,163 ms** / max **29,949 ms** against `service_role`'s 30 s ceiling — marginal at rest, an R46 symptom not a cause (#30)
 - [⛔ The largest job on the instance writes NO telemetry — and a second, cheaper caller wears its name in `pipeline_runs`](2026-08-24T0400Z-the-biggest-job-on-the-instance-has-no-telemetry-and-another-caller-wears-its-name.md)
 - [⭐ SHIPPED — the UFC and Golazos promote legs are parked, using the function's own recheck mechanism rather than a new gate](2026-08-24T0345Z-ufc-and-golazos-promote-legs-parked-using-the-functions-own-mechanism.md)

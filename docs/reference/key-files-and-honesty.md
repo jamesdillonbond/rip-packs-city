@@ -266,3 +266,40 @@ unobservable downstream.
 ⚠ **Its monitor is silent by construction too** — the four entity-smoke arms fed by sitemap segment 3
 fail-soft to SKIP when they cannot discover a URL, and a skipped arm is a green job. The first evidence
 anyone saw was four skips inside a passing run.
+
+## Two more instances (2026-08-23), both in `backfill-topshot-pack-supply`, and one of them was mine
+
+**Instance A — a bare `return` that rendered a failed read as a 200 with no counts.**
+`backfillPool`'s targets-read error path was `{ console.error(...); return }`. The caller does
+`{ done: true, mode, sync: true, ...result }` — spreading `undefined` contributes nothing, so a failed
+read produced **`{"done":true,"mode":"pool","sync":true}` at HTTP 200**: indistinguishable from a
+completed batch that happened to have no counts. Fixed: logs `ok=false` with `rows_* = NULL` (a `0`
+would be indistinguishable from a genuinely empty queue) and the surface returns **500**.
+⚠ **The shape to grep for is a bare `return` inside an error branch of a function whose result is
+SPREAD by its caller.** Nothing about it reads as an error path at the call site.
+
+**Instance B — a failure counter incremented without setting the error variable.**
+`if (!okPages || eds.length === 0) { fail++; return }`. When the GQL walk SUCCEEDS and returns zero
+editions, `fail` rises and `lastErr` stays `null`, so the tick returns
+`{"done":true,…,"ok":0,"fail":3,"lastErr":null}` — **a clean success reporting its own total failure.**
+This ran 288×/day; `net._http_response` shows **67 of 70 ticks in 6 h converting zero dists**.
+⚠ **Generalised: whenever a `fail++` and an error-message assignment are separate statements, some path
+does one without the other.** The tell is a `fail`/`error` pair that are not written together.
+
+🚨 **Instance C — the instrument I built to expose B reproduced B.**
+The new `log_pipeline_run` call logged `ok: !lastErr`. Its **first live row** read **`ok=true`** on a tick
+that spent **29,189 ms**, found 3 dists and converted **0** — because `lastErr` is exactly the variable
+instance B leaves null. Fixed one deploy later: `ok` is false when targets were found and **none**
+converted, and the error string is **synthesized** rather than copied from a variable that may be null
+(`"0/3 dists converted; 3 returned no editions"`), so the condition can never be unfalsifiable.
+
+**Two durable rules from C, which is the one worth remembering:**
+
+1. ⚠ **Deriving `ok` from an error VARIABLE inherits every path that forgets to set it.** Derive it from
+   the WORK — did this run accomplish anything? — and synthesize the message when no upstream error exists.
+   `ok: !err` is the same family as `?? 0` on a count: it publishes an absence as a positive fact.
+2. ⚠ **Check a new instrument's FIRST reading against something you already know is true.** Mine
+   disagreed with a measurement taken ten minutes earlier and the **instrument** was wrong. The positive
+   control that closed it: identical work, v31 `ok=true` → v32 `ok=false`. **An instrument that has never
+   been shown to report a failure has not been tested** — and a brand-new one agreeing with your hopes is
+   the least tested of all.

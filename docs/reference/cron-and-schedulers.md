@@ -401,3 +401,45 @@ when a cron command carries `SET statement_timeout = 'Ns'`, **N is a ceiling on 
 rolled-back refresh at the ceiling delivers nothing and still spends the IO. Size it just above the healthy
 run, not at the pain threshold; the 600 s first chosen for the three board MVs let one job burn the full ten
 minutes for zero rows during a spell.
+
+## `backfill-topshot-pack-supply` / jobid 16 — instrumented 2026-08-23, and what it immediately showed
+
+**Read the caller before designing the instrument.** The filing that prompted this work assumed
+`mode=pool` runs on the background `EdgeRuntime.waitUntil` path and therefore prescribed an invocation
+heartbeat plus kill-correlation. `cron.job` says otherwise: **jobid 16 sends `sync=1&limit=3&conc=1`** —
+the INLINE path, which awaits `backfillPool` and returns real counts at 200. A single terminal
+`log_pipeline_run` row is a complete instrument for it, and the heartbeat machinery would have been
+unused code maintained forever. The background path keeps its documented residual (a killed worker
+writes nothing, so absence means killed) and **nothing schedules it**.
+
+| | |
+|---|---|
+| pg_cron job | **16** `rpc-backfill-pack-pool`, `3,8,13,…,58 * * * *` (**288 ticks/day**) |
+| sibling | **15** `rpc-backfill-pack-supply`, `15 8 * * *`, `limit=400&conc=2`, `mode=supply` |
+| pipelines | `topshot-pack-pool-backfill` · `topshot-pack-supply-backfill` (both new 2026-08-23) |
+| deployed | v30 → **v32** (v31 was wrong — see below) |
+
+⭐ **The telemetry was not the finding, and the function was already reporting it — to nobody.**
+`net._http_response` retains the edge function's own JSON response body. Six hours of it, 2026-08-23:
+**70 pool ticks, 67 of them `"ok":0` — 95.7% convert ZERO dists**, while
+`pack_drop_pool.pool_source='gql_historical'` (this job's only output) last grew **12.4 h earlier**.
+The work-per-outcome question that a filing called unanswerable was answerable from an instrument that
+already existed. ⚠ **Before concluding a pipeline has no instrument, check `net._http_response` for its
+response body** — for any `net.http_get`-driven edge function it is a free, retained, per-tick record of
+what the function itself said.
+
+**Why it looked healthy:** `if (!okPages || eds.length === 0) { fail++; return }` increments `fail`
+**without setting `lastErr`**. A GQL walk that succeeds and returns zero editions is therefore a
+failure with no error, and the tick returns `{"done":true,…,"ok":0,"fail":3,"lastErr":null}` — a clean
+success. Now counted separately as `empty_eds`.
+
+🚨 **v31 → v32: the instrument reproduced, in its own `ok` predicate, the defect it was built to expose.**
+v31 logged `ok: !lastErr`. Its **first live row** read `ok=true` on a tick that spent **29,189 ms**, found
+3 dists and converted **0**. v32: `ok` is false when targets were found and **none** converted, and the
+error text is synthesized (`"0/3 dists converted; 3 returned no editions"`) so the condition is never
+unfalsifiable. **Positive control on identical work — v31 `ok=true`, v32 `ok=false`** — which is the
+proof the guidance in this file demands: show the instrument can see a FAILURE, not merely that it is green.
+
+⚠ **Durable: check a new instrument's FIRST reading against something you already know is true.** Mine
+disagreed with a measurement taken ten minutes earlier from `net._http_response`, and the **instrument**
+was wrong, not the measurement. A new instrument that immediately agrees with your hopes has not been tested.

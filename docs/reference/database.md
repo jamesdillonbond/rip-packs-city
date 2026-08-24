@@ -439,3 +439,54 @@ recorded so nobody re-derives it and believes it.
 ⛔ **DECIDED 2026-08-23 20:48 PT — Trevor: stay on Small. No spend, permanently, not "for now".** $96/mo (Large) declined = **$1,152/yr**. 🚨 **The operational consequence is the part to carry into other work: the IO budget is now at 100% BY CHOICE, so every new cron job, refresh, or index build spends headroom that does not exist — state its steady-state IO cost and what it displaces before proposing it.** ⛔ Do not re-suggest the upgrade except on a production build failing on a board read · first revenue or 50+ WAU · a public page serving degraded copy to anon visitors for a sustained window · the hot set passing ~8 GB. **E declined the SPEND, not the free work** — a zero-extra-IO piggyback is still on the table.
 
 Full analysis, the numbered cost of declining, and the standing-rule collision: `docs/overnight/inbox/2026-08-23T1610Z-R46-…md`.
+
+## ⛔ A lagging materialisation is unsafe as a FILTER for a predicate over the columns it lags on (2026-08-23)
+
+Measured on `fmv_apply_thin_sale_haircut`'s Top Shot leg, in a genuinely quiet window
+(`io_wait 8 / active 9 / total 47`). Full write-up:
+`docs/overnight/inbox/2026-08-24T0455Z-the-fmv-haircut-topshot-leg-costs-800k-buffers-and-the-obvious-fix-loses-71pct-of-it.md`.
+
+**The cost.** The read half alone, columns already narrowed to the eight the function uses:
+
+```
+Execution Time: 101,425 ms
+Buffers: shared hit=780218 read=20327     (800,545 ≈ 6.25 GB)
+Index Scan  fmv_snapshots_2026_collection_id_edition_id_computed_at_idx
+  850,490 rows  →  Unique 19,667 editions  →  filter passes 14
+```
+
+**101 s and ~6.25 GB to locate 14 rows**, and the function runs that `DISTINCT ON` **twice** (measurement
+CTE + `UPDATE ... FROM latest`), so the leg is ~200 s against a ~120 s cap. ⚠ **Column projection is NOT
+the lever** — the unnarrowed `SELECT DISTINCT ON (edition_id) *` timed out at 110 s and the narrowed
+eight-column version still took **101.4 s**. The cost is walking 850,490 index entries. This is R46
+reproduced at function scope.
+
+⚠ **The failure is the GATEWAY, not `statement_timeout`.** `1/7 legs failed: nba_top_shot: upstream
+request timeout` is the Supabase gateway's ~120 s cap. The route's own comment block attributes it to the
+global 120 s `statement_timeout` — the two bounds are within seconds of each other, which is exactly the
+confusion this file warns about. It matters practically: on the gateway path **the statement is not
+cancelled when the client gives up**, so a failed nightly run leaves ~100 s of scan still burning after
+the failure has already been recorded.
+
+**⛔ The obvious fix, and why it is wrong.** `edition_fmv_current` (13 MB, 27,075 rows, 5 collections)
+materialises exactly the latest-per-edition this scan recomputes, and as a candidate source it is
+**771× cheaper**: 1,038 buffers / 363 ms vs 800,545 / 101,425 ms. It also **loses 71% of the rows.**
+Both shapes in ONE statement sharing ONE MVCC snapshot, diffing the SET rather than the count:
+
+```
+old_rows 14 · new_rows 4 · in_old_not_new 10 · in_new_not_old 0
+```
+
+**Mechanism:** `edition_fmv_current` stores its own copies of `fmv_usd`, `floor_price_usd` and
+`confidence` as of the last refresh. The haircut predicate `abs(fmv_usd - floor_price_usd) < 0.01` is
+evaluated at step 1 against those **stale** copies, so an edition whose TRUE latest snapshot qualifies is
+dropped before step 2 can re-derive it. Safe as a display source; **unsafe as a filter for a predicate
+over the columns it lags on.** Zero false positives is what makes it dangerous — both versions return a
+small plausible number and no error.
+
+⚠ **This nearly shipped on a moving target.** The first two readings were **1** row and then **4**, taken
+13 minutes apart; the eligible population moved 1 → 14 within the hour because `/api/fmv-recalc` rewrites
+it continuously. Comparing those two counts would have called the cheap shape "close enough". **Only the
+same-snapshot set difference exposed it** — which is this file's own "diff the SET, not the count" rule
+and its "a DB A/B must be warm-vs-warm" rule combining into a stronger one: **for a volatile population,
+an A/B must share a snapshot, not merely a warm cache.**
