@@ -1,4 +1,4 @@
-# Inbox index — 217 live filings
+# Inbox index — 218 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-23 — 16 filings
+## 2026-08-23 — 17 filings
 
+- [⛔ The public-board watchdog discards ALL completed probes when any single board times out — and a "succeeded" tick covered 6 of 45](2026-08-24T0225Z-the-board-watchdog-loses-every-probe-it-completed-when-any-one-times-out.md)
 - [⭐ SHIPPED — one leading-wildcard `LIKE` was seq-scanning 88,086 rows 4,684 times per refresh, and it cost 13,000 worker-seconds a day](2026-08-23T2210Z-one-leading-wildcard-LIKE-was-costing-13000-worker-seconds-a-day.md)
 - [🚨 ~1,000 editions are labelled LOW confidence while their own row records them as the MOST-traded on the platform — in every collection the LOW cohort trades ~2× the MEDIUM cohort](2026-08-24T0225Z-a-thousand-editions-are-labelled-LOW-while-they-are-the-most-traded-on-the-platform.md) — ⭐ **RESOLVED in-file, then SELF-FALSIFIED**: the demotion is BY DESIGN (dispersion — LOW avg CV **0.731** vs HIGH **0.222**, measured), but my sub-dollar-tick story is **REFUTED by its own prediction** (HIGH has the LOWEST median price, $0.31, and 72% under $1). ⛔ Recommendation withdrawn. ⭐ What stands: **`LOW` conflates "no data" with "643 sales that disagree"**
 - [⭐ PRIORITY 1 CAPTURED, first time since 2026-07-26: signed-in WAU is 0, and the accuracy gate stands at 30.1% HIGH/MEDIUM — with three denominator caveats](2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md) — ⚠ **§5 RETRACTS its own "Golazos is the target"** (follow-up in-file): Golazos is market thinness (max 3 sales/edition/month), the confidence model is VALIDATED against volume, and the one bounded question is **167 LOW editions with ≥5 sales/30d**
