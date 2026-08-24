@@ -139,7 +139,14 @@ describe("worker test-completeness rot-guard", () => {
         `-routing / -proxy) or add the worker to KNOWN_ENTRY_UNDRIVEN with a reason:\n  ` +
         `${missing.join("\n  ")}`,
     ).toEqual([])
-  })
+    // ⚠ EXPLICIT TIMEOUT. This arm greps every worker test for a drive of each
+    // worker's entry handler — ~3.3s of I/O standalone, which crosses vitest's 5s
+    // DEFAULT under the full parallel run's load. Measured 2026-08-24: it failed at
+    // 5236ms in one full run and passed the next, i.e. WHICH tree-scanning guard
+    // reds is luck. A guard that reds for being SLOW is indistinguishable at a
+    // glance from one that found something, and it trains the same skimming — the
+    // lesson recorded in docs/reference/testing-and-ci.md the same day.
+  }, 60_000)
 
   it("KNOWN_ENTRY_UNDRIVEN has no stale entries (allowlisted worker must still exist and lack an entry-drive)", () => {
     const stale: string[] = []

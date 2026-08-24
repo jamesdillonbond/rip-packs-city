@@ -16,6 +16,11 @@
 // mismatch can miss an edition — both flagged, never papered over.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+// ⓘ Lives under lib/entity/ but is deliberately NOT entity-scoped: its own header
+// calls it "a fifth ENTRY POINT rather than a fifth POLICY … so the next section
+// cannot invent its own phrasing." Reused here rather than duplicated, per
+// CLAUDE.md's "pick the one for your layer, do not invent a fifth".
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { ScoredDrop, ScoredEdition } from "@/lib/pack-drops-board"
@@ -243,13 +248,26 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
 type Props = {
   initialDrops: ScoredDrop[]
   initialFetchedAt: string | null
+  /**
+   * Did the SERVER-SIDE read fail? An empty `initialDrops` cannot answer that on
+   * its own — the page's fallback for a failed read is `[]`, which is
+   * indistinguishable from a genuinely quiet drop calendar.
+   *
+   * ⚠ Defaults to `false` so an omitted prop keeps the old wording, but a caller
+   * that HAS an `ok` and does not pass it is the defect: see page.tsx.
+   */
+  initialFailed?: boolean
 }
 
-export default function PackDropsBoardClient({ initialDrops, initialFetchedAt }: Props) {
+export default function PackDropsBoardClient({ initialDrops, initialFetchedAt, initialFailed = false }: Props) {
   const [drops, setDrops] = useState<ScoredDrop[]>(initialDrops)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // Tracks the SEED only. Cleared by a successful refresh, because after that the
+  // rows on screen are the client's own read and the seed's provenance is spent —
+  // a genuinely empty board must be allowed to say so.
+  const [seedFailed, setSeedFailed] = useState(initialFailed)
 
   // Referral attribution on copy-link for signed-in sharers (same loop as the
   // other public boards). /api/profile/me returns { user: null } for anon.
@@ -277,6 +295,7 @@ export default function PackDropsBoardClient({ initialDrops, initialFetchedAt }:
       const j = (await r.json()) as ApiResponse
       setDrops(j.drops ?? [])
       setFetchedAt(j.meta?.fetched_at ?? null)
+      setSeedFailed(false)
     } catch (e: unknown) {
       if ((e as { name?: string })?.name === "AbortError") return
       setError(e instanceof Error ? e.message : "Failed to load")
@@ -362,7 +381,12 @@ export default function PackDropsBoardClient({ initialDrops, initialFetchedAt }:
           <div className="rpc-pd-state">Loading…</div>
         ) : drops.length === 0 ? (
           <div className="rpc-pd-state">
-            No live re-pack drops to score right now. Check back when the next Vaultopolis drop lists.
+            {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+            {sectionEmptyCopy(
+              !seedFailed,
+              "Pack drops",
+              "No live re-pack drops to score right now. Check back when the next Vaultopolis drop lists.",
+            )}
           </div>
         ) : (
           drops.map((d) => <DropCard key={d.drop_id} drop={d} />)

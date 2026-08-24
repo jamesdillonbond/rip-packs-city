@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { slugifyName } from "@/lib/entity-labels"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import type {
   NewCollectorsBoard,
   NCWindow,
@@ -92,10 +93,16 @@ const SPEND_BUCKETS: { key: keyof NCSpendRow; label: string }[] = [
 
 type Props = {
   initialBoard: NewCollectorsBoard
+  /**
+   * Did the SERVER-SIDE read fail? `EMPTY_BOARD` is the fallback, so an empty
+   * board cannot answer that on its own. There is no client refetch here, so a
+   * wrong answer is permanent for that viewer.
+   */
+  initialFailed?: boolean
   initialFetchedAt: string | null
 }
 
-export default function NewCollectorsBoardClient({ initialBoard, initialFetchedAt }: Props) {
+export default function NewCollectorsBoardClient({ initialBoard, initialFetchedAt, initialFailed = false }: Props) {
   const board = initialBoard
   const [window, setWindow] = useState<NCWindow>("30d")
   const [showAllCohorts, setShowAllCohorts] = useState(false)
@@ -182,9 +189,26 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
         </div>
       </section>
 
+      {/*
+        ⚠ THIS is the branch a failed read reaches — not the gateway panels below.
+        The page hands over EMPTY_BOARD on failure, so `hasData` is false and the
+        whole board collapses to this one line.
+
+        "The board is refreshing — check back shortly" is the impossible-claim
+        shape this repo already fixed at the OG layer ("Loading the live board…"):
+        nothing is refreshing, there is no refetch on this page at all, and
+        "check back shortly" promises a recovery the component cannot deliver.
+        On a FAILED read it is also simply untrue.
+
+        ⚠ The empty wording is UNCHANGED; only the degraded case is new. Whether
+        the genuinely-empty copy should also stop promising a refresh is a
+        separate COPY decision, deliberately not made here.
+      */}
       {!hasData ? (
         <section className="rpc-nc-wrap">
-          <div className="rpc-nc-state">The board is refreshing — check back shortly.</div>
+          <div className="rpc-nc-state">
+            {sectionEmptyCopy(!initialFailed, "New collectors", "The board is refreshing — check back shortly.")}
+          </div>
         </section>
       ) : (
         <>

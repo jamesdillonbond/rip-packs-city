@@ -34,7 +34,14 @@ export default async function NewCollectorsPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("New collectors", ok)])} />
-      <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+      {/*
+        ⚠ Same fifth-layer gap as pack-drops, and worse here: this client has NO
+        refetch at all ("the already-loaded window locally — no refetch"), so on a
+        failed read the gateway panels state "No data in this window." to every
+        viewer, permanently, with no way back. EMPTY_BOARD is the fallback and it
+        carries no provenance.
+      */}
+      <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

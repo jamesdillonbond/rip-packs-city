@@ -36,6 +36,31 @@ export default defineConfig({
   test: {
     include: ["__tests__/**/*.test.ts", "__tests__/**/*.test.tsx"],
     environment: "node",
+    // ── testTimeout: 30s, raised from vitest's 5s DEFAULT (2026-08-24) ────────
+    // ⚠ NOT to paper over slow tests. This repo has DOZENS of guards whose job is
+    // to walk the whole tree and read every file — the honesty ratchets, the
+    // completeness sweeps, the leak guards. Several sit at 1–3.5s standalone and
+    // cross 5s under the FULL PARALLEL RUN's load, so WHICH ONE reds is luck:
+    // measured 2026-08-24, three separate full runs each failed a DIFFERENT file
+    // (worker-test-completeness at 5236ms, then no-constant-foldable-joined-
+    // templates, then api-allday-listings-indexer) and every one passed in
+    // isolation.
+    //
+    // ⚠ A guard that reds for being SLOW is indistinguishable at a glance from one
+    // that FOUND something, and it trains exactly the skimming that let a real
+    // failure hide in a red suite earlier the same day.
+    //
+    // 🚨 AND THE 5s DEFAULT WAS ACTIVELY MISLEADING, which is the stronger reason.
+    // The three worker suites fixed on 2026-08-24 reported "Test timed out in
+    // 5000ms" — so they read as flaky scheduling. At --testTimeout=60000 the mask
+    // came off and they were ORDINARY ASSERTION FAILURES underneath, from a real
+    // defect (a nested node_modules defeating vi.mock). The timeout was hiding the
+    // error, not reporting one.
+    //
+    // The cost is stated: a genuinely HUNG test now takes 30s to fail instead of 5.
+    // That is the right trade — "timeout" should mean "actually stuck", not
+    // "unlucky scheduling". Full case: docs/reference/testing-and-ci.md.
+    testTimeout: 30_000,
     setupFiles: ["./vitest.setup.ts"],
     coverage: {
       provider: "v8",

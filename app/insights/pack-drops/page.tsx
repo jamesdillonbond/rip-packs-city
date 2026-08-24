@@ -29,7 +29,18 @@ export default async function PackDropsPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack drops", ok)])} />
-      <PackDropsBoardClient initialDrops={drops} initialFetchedAt={fetchedAt} />
+      {/*
+        ⚠ `initialFailed` is the FIFTH honesty layer, and the banner above is not a
+        substitute for it. On a failed read `fetchBoardForPage` returns the `[]`
+        fallback, which arrives here carrying NO PROVENANCE — so without this prop
+        the board below states "No live re-pack drops to score right now" as a fact
+        about the market, directly under a notice saying the data is degraded.
+        This client does NOT refetch on mount ("only refetch on explicit refresh"),
+        so that sentence stands until someone presses Refresh. And this page's whole
+        purpose is putting the scored drops into the raw server HTML for crawlers,
+        which is exactly the copy a crawler would take away.
+      */}
+      <PackDropsBoardClient initialDrops={drops} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }
