@@ -27,7 +27,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **4 FILES STILL RED, DIFFERENT CAUSE, NOT FIXED HERE** — `api-ingest-backfill`, `worker-moments-hydrator-{deep,handler}`, `worker-pack-events-ingest`. **First cause identified and it is a hygiene finding in its own right: `INGEST_SECRET_TOKEN` from `.env.local` is LIVE IN THE VITEST PROCESS (64 chars).** `vitest.setup.ts` stubs `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` with `||=`, but nothing stubs this one, so the route's auth gate compares against the REAL token while the test sends a stub → **401 where CI (token unset) takes another branch entirely.** The worker failures are `TypeError: fetch failed` — a real network attempt at the stub host — and are **not yet diagnosed.** Queued, not guessed at.
 
-**Revert:** `git revert <this commit's successor>` — tests + one guard script only; no product behaviour. **Target metric:** `npm test` on Trevor's box becomes a signal a reader can trust, and a guard can no longer pass by inspecting nothing.
+**Revert:** `git revert b36c942f` — tests + one guard script only; no product behaviour. **Target metric:** `npm test` on Trevor's box becomes a signal a reader can trust, and a guard can no longer pass by inspecting nothing.
 
 ### 2026-08-24 · SHIPPED (Claude Code, Trevor's Windows box) — #28 CLOSED by measurement, the OG card's unbounded liveness claim FIXED, the concierge's misdiagnostic comment corrected — and `main` is RED for reasons that predate this work
 
