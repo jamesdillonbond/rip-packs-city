@@ -8,6 +8,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-23 · SHIPPED (Claude Code, VSCode on Trevor's box) — `backfill-topshot-pack-supply` v30 → v31: the biggest un-instrumented job on the box now writes `pipeline_runs`, and its silent-failure path now reports
+
+**Edge function only. No DB write, no migration, no Vercel deploy.** jobid 16 `rpc-backfill-pack-pool`
+(`3,8,13,…,58 * * * *` — 288 ticks/day) drives `get_topshot_pool_backfill_targets`, which
+`pg_stat_statements` ranks at **6.1 h of execution over 11.4 days at ~1,657 buffers/call**. The function
+wrote **no `pipeline_runs` row at all**, so its work-per-outcome was unreadable from the pipeline board.
+Added `log_pipeline_run` to BOTH modes (`topshot-pack-pool-backfill`, `topshot-pack-supply-backfill`).
+
+⚠ **A premise in the filing that prompted this was wrong, and the correction changed the design.** The
+filing assumed the background (`EdgeRuntime.waitUntil`) path and therefore prescribed a heartbeat +
+kill-correlation. Read from `cron.job` instead of inferred: jobid 16 sends **`sync=1&limit=3&conc=1`** —
+the INLINE path, which returns real counts at 200. A single terminal row is a complete instrument for it.
+The background path keeps its documented residual (a killed worker writes nothing) and **nothing schedules
+it**; that is stated in the source comment rather than fixed with unused machinery.
+
+⭐ **The telemetry was not the finding — the response body already carried it, and it is worse than "no
+instrument".** `net._http_response` retains the function's own JSON. Last 6 h: **70 pool ticks, 67 of them
+`"ok":0` — 95.7% convert ZERO dists**, and `pack_drop_pool.pool_source='gql_historical'` last grew
+**2026-08-23 09:18 PT, ~12.4 h before this entry**. The tell in the code: `if (!okPages || eds.length === 0)
+{ fail++; return }` increments `fail` **without setting `lastErr`**, so a tick that converts nothing returns
+`{"done":true,…,"ok":0,"fail":3,"lastErr":null}` — a clean success. Two honesty fixes shipped with the
+telemetry: the `backfillPool` targets-read failure was a **bare `return`** whose `undefined` spread into the
+sync response and rendered as a **200 with no counts**; it now logs `ok=false` with `rows_* = NULL` (never
+0) and the sync surface returns **500**.
+
+**Verified, not assumed:** `deno check --config supabase/functions/deno.json` clean (it is a BLOCKING CI
+gate and there is no local Deno — installed one rather than pushing blind) · deployed **v31** with
+`deno.json` + `import_map_path` (omitting them boot-fails a bare-specifier function) and `verify_jwt:false` ·
+`import_map:true` confirmed on the deploy response · unauthenticated boot probe returns the function's OWN
+gate rejection `403 {"error":"forbidden"}`, proving the module loaded and every import resolved · repo was
+**0 commits ahead of the deployed v30**, so this deploy shipped only this change · no 403s in
+`net._http_response` in 24 h, so the gate secret is live and the deploy is auth-neutral.
+
+**Revert:** redeploy the previous body — `git show <this sha>~1:supabase/functions/backfill-topshot-pack-supply/index.ts`
+via `mcp__supabase__deploy_edge_function` with `files=[index.ts, deno.json]`, `import_map_path="deno.json"`,
+`verify_jwt=false`. Reverting the repo file alone deploys NOTHING.
+
+**Owed, deliberately not done here:** the 95.7%-zero-conversion rate is now measured, so the cadence
+question the earlier filing declined for lack of evidence is decidable — but the decision is Trevor's, and
+cutting the cadence of a backfill is the mirror of the `skipped_permanent` error. One week of the new rows
+settles it.
+
 ### 2026-08-23 · FILED, NOT FIXED (Claude Code, Trevor's Windows box) — `topshot-active-listings-ingest` is **40/40 red for 5 days**, and the register's documented cause (`egress_blocked`, "~60%") is **22.5%** of it; the other 72.5% is a DB statement timeout that never reaches Atlas
 
 **Docs only. No code, no DB, no schedule change.** Found by checking whether a red run after tonight's R46 push was mine. It was not — and reading the streak refuted the register.
