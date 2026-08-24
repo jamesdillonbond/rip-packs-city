@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a dated `###` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-24 · DIAGNOSED, NOT FIXED (Claude Code, Trevor's Windows box) — the DB-pin check is RED again, on a DIFFERENT pin, and the cause is a FIX LANDING rather than drift
+
+**Docs only. No code, no DB.** ⚠ **Checked a ✅ RESOLVED entry, which is the direction nobody checks** — and it had re-opened. #24 reads *"RESOLVED 2026-08-22 — all 6 closed"*; `db-pin-staleness` **failed again 08-24 08:07Z** (and 08-23 07:50Z).
+
+✅ **It is NOT the original six.** `checked 189 pins — 188 clean, 1 needing attention`: **`refresh_wmc_fmv_changed`**, which was not among them.
+
+✅ **CAUSE DIAGNOSED, and it is benign — a migration landing, not drift.** `audit_20260822_rwfc_temp_build_materialized_cte` is the one the 08-23 migrations filing called **"UNAPPLIED, and silent about it"**; it has since been applied. **Measured live with the exact method that filing prescribed** (and warned about): **`MATERIALIZED` occurrences 1 → 3**, and the bare `CREATE TEMP TABLE _rwfc_recent … DISTINCT ON` build now **absent**. ⓘ **That filing's lesson holds in reverse today** — it recorded that `position('MATERIALIZED' in prosrc) > 0` returns TRUE and is *wrong*, because a June migration already put one in the LOOP body; the **occurrence COUNT plus reading the build statement** is what answers it, and that is what I used. **A good instrument giving the opposite answer than last week is it working.**
+
+⛔ **NOT RE-PINNED, deliberately, and the reason is the check's own warning:** *"a stale pin usually means the assertions describe old behaviour."* **A re-pin is not a paste** — the pin's ASSERTIONS must be re-read against the new body before its DDL is replaced. The rewrite is a performance change so they probably still hold, but ⚠ **"probably" is not a verification, and a wrong re-pin is worse than an honest red: it makes the guard GREEN over a definition nobody checked.** That is the failure this pin class exists to prevent.
+
+**Handed off with the method rather than a promise:** capture byte-exactly and verify against **`md5(pg_get_functiondef(...))` = `7094783150faf1b39148dc3c213d1e18`** (`prosrc` 3,648 chars), never by eye.
+
+⚠ **And #24's headline stays ✅ RESOLVED for its six — annotated, not reversed.** The six ARE closed; a seventh went stale later for an unrelated and explained reason. **Collapsing those into one "still broken" would lose the distinction the entry was written to make.**
+
+**Revert:** `git revert <this commit>` (docs-only). **Target metric:** the pin check goes green because the pin was re-read, not because it was overwritten.
+
 ### 2026-08-24 · LANDED A CONCURRENT WRITER'S FILING (Claude Code, Trevor's Windows box) — the daytime monitor filed mid-session, **unindexed**, which RED the inbox guard; committed and indexed it
 
 **Docs only. No code, no DB.** `rpc-daytime-monitor` wrote `inbox/2026-08-24T1507Z-…` into the working tree while I was mid-task on an unrelated item. ⚠ **It added the FILE without adding its `INDEX.md` entry**, so `inbox-index-lists-every-filing` went red on **both** of its count assertions (*"filings on disk but absent from INDEX.md"* and *"expected 226 to be 227"*). Indexed under the 08-24 section (2 → **3 filings**, header 226 → **227**); both guards green, 227 on disk / 227 listed.
