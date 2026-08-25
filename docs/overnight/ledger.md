@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** annotated the 08-23 filing IN PLACE per the append-only rule (`inbox-index-lists-every-filing` + `inbox-is-append-only-since-the-rule` both green, 8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the annotation. No code, no DB half.
+**Revert:** `git revert 63ee896a` — removes the annotation. No code, no DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the IPFS media proxy fails ~76% of uncached loads and returned every one of them SILENTLY; also a coercion trap where the right outcome rests on wrong reasoning
