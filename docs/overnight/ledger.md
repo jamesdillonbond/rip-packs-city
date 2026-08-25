@@ -51,6 +51,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **NOT FIXED, and deliberately: the underlying gateway flakiness.** A second gateway, a retry, or self-hosting the art are all real options with cost and CSP consequences, and **I have no basis to pick one** — the instrumentation shipped here is the prerequisite for choosing with a number instead of a story. Trevor's call.
 
+⛔⛔ **CORRECTION, 40 MINUTES LATER — THE INSTRUMENT IMMEDIATELY CONTRADICTED THE ATTRIBUTION I WROTE ABOVE, AND THAT IS THE POINT OF IT.** This entry says *"the dominant failure is genuinely upstream and our 502 is correct"*, reasoned from residential `curl` seeing ipfs.io return **504**. The first twenty minutes of production data say otherwise:
+
+```
+[ipfs-media] upstream fetch failed cid=QmcupM2G4… reason=abort_timeout name=TimeoutError elapsedMs=7998
+[ipfs-media] upstream fetch failed cid=QmNWHKppq… reason=abort_timeout name=TimeoutError elapsedMs=7999
+[ipfs-media] upstream fetch failed cid=QmRHt3Sui… reason=abort_timeout name=TimeoutError elapsedMs=8008
+[ipfs-media] upstream fetch failed cid=QmNXMXcFJ… reason=abort_timeout name=TimeoutError elapsedMs=7995
+```
+
+**Every logged failure is `reason=abort_timeout` at ~7,995–8,008 ms. ZERO `upstream not ok`.** From Vercel's egress ipfs.io does not return HEADERS within 8 s, so **the proximate cause is OUR abort** — we never see whatever the gateway would eventually have said. ⚠ **The two readings share a root (the gateway is slow) and differ in the only way that matters for action:** *"ipfs.io answers 5xx"* means the timeout is not a lever; *"ipfs.io does not answer in 8 s"* means it is the lever. **I had the second and wrote the first, from a different network.** ⓘ This is CLAUDE.md's rule arriving as a correction of my own entry: *a control must use the PRODUCTION CALLER* — residential `curl` is a different egress and cannot attribute a Vercel-side abort.
+
+✅ **The size ceiling was caught working in the same window** — `[ipfs-media] oversize redirect … bytes=31861148 elapsedMs=4389`, a **31.8 MB** object redirected rather than proxied, exactly as the SIZE CEILING note intends. Previously invisible.
+
+⛔ **AND I AM STILL NOT CHANGING `UPSTREAM_TIMEOUT_MS` ON FOUR SAMPLES.** The tempting move is to raise it toward the platform's ~25 s initial-response cutoff. Three reasons to wait: (1) **four events from one 20-minute window classify, they do not rate** — the repo's own rule; (2) residentially these same CIDs **504 at ~28 s**, so a higher timeout may simply buy a slower failure for this cohort, and the population that would be *rescued* by an 8→20 s window is **unmeasured**; (3) the route's header records that a 25 s timeout made the whole 502 fallback **dead code**, so this constant has already caused one silent outage. **Let the split accumulate, then choose with a distribution.**
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,040 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
 **Revert:** `git revert d128e413` — removes the logging and the raw-header read; the size-ceiling behaviour is unchanged either way. No DB half.
