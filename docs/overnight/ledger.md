@@ -34,7 +34,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** inbox guards green (`inbox-index-lists-every-filing`, `inbox-is-append-only-since-the-rule`) · ledger instruments re-read after writing: `^### ` count +1, `find-swallowed-ledger-headings.awk` still **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the annotation from the 08-21 filing and this entry. No code, no DB half.
+**Revert:** `git revert 31ecf696` — removes the annotation from the 08-21 filing and this entry. No code, no DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the cross-document fact guard, and grepping for the EXPRESSIONS found two facts I had "fixed" yesterday still live
