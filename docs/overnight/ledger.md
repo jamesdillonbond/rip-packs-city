@@ -40,7 +40,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1376 files, 14,990 cases, the only red being the pre-existing INDEX.md one above, now fixed** · ledger instruments re-read after writing: `^### ` count +1, `find-swallowed-ledger-headings.awk` still prints **3**, `find-future-dated-ledger-headings.mjs` prints **0**.
 
-**Revert:** `git revert <sha>` — restores the swallow in all five reads, the `.single()`, and drops `priceHistoryUnavailable`. No DB half.
+**Revert:** `git revert c1c35780` — restores the swallow in all five reads, the `.single()`, and drops `priceHistoryUnavailable`. No DB half. (Ledger + INDEX.md half: `1d1962d7`.)
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — my own guard was LAUNDERING real drift into a pass, and I proved it by experiment rather than by reading
