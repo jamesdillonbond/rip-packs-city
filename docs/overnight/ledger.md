@@ -34,7 +34,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,040 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the logging and the raw-header read; the size-ceiling behaviour is unchanged either way. No DB half.
+**Revert:** `git revert d128e413` — removes the logging and the raw-header read; the size-ceiling behaviour is unchanged either way. No DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, guard) — the "only one spelling" defect generalised: I checked every other regex guard for it, and closed the one latent hole while REFUSING the one that would have made a number worse
