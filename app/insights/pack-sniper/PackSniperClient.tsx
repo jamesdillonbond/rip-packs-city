@@ -231,15 +231,36 @@ type Props = {
   initialDeals: Deal[]
   initialFetchedAt: string | null
   lockedCollection?: Collection
+  /**
+   * The SERVER-SEEDED read failed. Without this the seed arrives as `[]` with
+   * NO PROVENANCE and the empty state below CONCLUDES — see the state block.
+   */
+  initialFailed?: boolean
 }
 
-export default function PackSniperClient({ initialDeals, initialFetchedAt, lockedCollection }: Props) {
+export default function PackSniperClient({ initialDeals, initialFetchedAt, lockedCollection, initialFailed }: Props) {
   const [collection, setCollection] = useState<Collection>(lockedCollection ?? "nba-top-shot")
   const [showHighVariance, setShowHighVariance] = useState(true)
   const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // ⚠ FIFTH HONESTY LAYER — a server-seeded prop. On a failed seed `deals` is
+  // `[]`, `loading` is false and `error` is null (that one is only ever set by
+  // this component's OWN fetch), so the empty branch below used to render "No
+  // sealed packs match your filters … Check back as new packs get listed." —
+  // a claim about the MARKET, manufactured from our outage.
+  //
+  // ⚠ THE PAGE-LEVEL BANNER IS NOT A FIX FOR THIS, and /insights/pack-sniper
+  // already had one: it rendered <DegradedDataNotice> directly above a board
+  // stating confidently that no packs matched. "Fix per PANEL, not per page."
+  //
+  // ⚠ AND IT IS AN SSR-ONLY DIFFERENCE, which is why it survived: this client
+  // DOES refetch on mount (showHighVariance defaults true, so the first-run
+  // skip does not apply), so a human sees it corrected almost immediately. The
+  // sentence lives in the RAW SERVER HTML — which is the whole reason the board
+  // is seeded at all (crawlability) and is ISR-cached for the revalidate window.
+  const [seedFailed, setSeedFailed] = useState(!!initialFailed)
 
   // Sniper-style controls.
   const [sortBy, setSortBy] = useState<SortKey>("recent")
@@ -288,6 +309,10 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
       if (myId !== reqIdRef.current) return
       setDeals(j.deals ?? [])
       setFetchedAt(j.meta?.fetched_at ?? null)
+      // Our own read answered, so the seed's failure is no longer what the
+      // reader is looking at. Cleared here and NOT in the catch — a failed
+      // refetch is reported by `error` and must not erase the seed's state.
+      setSeedFailed(false)
     } catch (e: unknown) {
       if (myId !== reqIdRef.current) return
       setError(e instanceof Error ? e.message : "Failed to load")
@@ -571,6 +596,13 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
       <section className="rpc-ps-table-wrap" aria-label="Pack deals">
         {error ? (
           <div className="rpc-ps-state">Failed to load: {error}</div>
+        ) : seedFailed && deals.length === 0 ? (
+          // Ordered ABOVE the empty branch on purpose: both are reachable with
+          // zero rows, and "we could not load" is the true one.
+          <div className="rpc-ps-state">
+            Pack deals couldn&apos;t be loaded right now — this is our problem, not an
+            empty market. Try refreshing in a moment.
+          </div>
         ) : loading ? (
           <div className="rpc-ps-state">Loading…</div>
         ) : processed.length === 0 ? (

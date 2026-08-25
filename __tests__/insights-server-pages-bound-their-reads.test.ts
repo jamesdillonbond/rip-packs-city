@@ -31,6 +31,26 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // This test is the shape-level fix.
 
 const INSIGHTS_DIR = join(process.cwd(), "app", "insights")
+
+/**
+ * ⚠ SECOND ROOT, added 2026-08-24 — because this guard's ROOT, not its logic,
+ * was fixing its blast radius.
+ *
+ * The header above says "every PRERENDERED /insights server page", and the walk
+ * honoured that literally. But a board page is not defined by its URL: the
+ * collection tabs render the SAME boards from the SAME helpers under
+ * `app/(collections)`. `app/(collections)/[collection]/pack-sniper/page.tsx`
+ * renders the very same `PackSniperClient` from the very same `getPackDeals()`
+ * as `/insights/pack-sniper` — and it was the ONLY unbounded board read left
+ * anywhere in `app/` (measured: 24 of 25 such pages bounded), precisely because
+ * it sat one directory outside this file's reach. It also shipped without the
+ * degradation notice its sibling has, so a 503 rendered as "no +EV packs".
+ *
+ * That is the repo's recorded pattern — a guard whose scope is a CLAIM about
+ * files the author never walked — and this is the FOURTH instance of the
+ * unbounded-read class, after two board pages and the /insights hub.
+ */
+const COLLECTIONS_DIR = join(process.cwd(), "app", "(collections)")
 const USE_CLIENT = /^\s*["']use client["']/
 
 /** Any of the sanctioned bounded paths.
@@ -99,9 +119,25 @@ const DIRECT_QUERY = /\.from\s*\(|\.rpc\s*(?:as any\))?\s*\(/
  * `pack-dist-contents-not-streamed`: the guard was pinning WHERE the primitive
  * appears, when the property is that the read is bounded.
  */
+/**
+ * ⚠ THE NAMESPACE WAS WIDENED 2026-08-24, and the DIRECTION is the safeguard.
+ *
+ * This followed `@/lib/insights/*` only. `app/(collections)/[collection]/pack/
+ * dist/[distId]/page.tsx` delegates its reads to `@/lib/pack-dist/fetchers`,
+ * which bounds them with `withBoardBudget` — so under the old namespace the new
+ * second root below would have reported a CORRECTLY BOUNDED page as an offender.
+ *
+ * The property this guard exists for is "the read is bounded", not "the
+ * primitive lives under lib/insights" — the same repointing the comment above
+ * already describes for the page-vs-lib tension. ⚠ This is an INCLUSION list,
+ * not a suppression list, so a namespace missing from it makes the guard
+ * STRICTER (a false red someone must come and justify), never blinder. That
+ * asymmetry is why a curated list is acceptable here where a curated EXEMPTION
+ * list would not be.
+ */
 function importedInsightsLibs(src: string): string[] {
   const out: string[] = []
-  const re = /from\s+["']@\/(lib\/insights\/[A-Za-z0-9._/-]+)["']/g
+  const re = /from\s+["']@\/(lib\/(?:insights|pack-dist|packs)\/[A-Za-z0-9._/-]+)["']/g
   for (const m of src.matchAll(re)) {
     for (const ext of [".ts", ".tsx"]) {
       const file = join(process.cwd(), m[1] + ext)
@@ -158,6 +194,45 @@ function asyncServerPages(): string[] {
     // (`account-value` is one). `export default async function` is the tell.
     if (!/export default async function/.test(src)) continue
     out.push(entry)
+  }
+  return out.sort()
+}
+
+/**
+ * Board pages that live OUTSIDE `app/insights` — today, the collection tabs.
+ *
+ * ⚠ Scoped on evidence of a READ rather than on "is an async server page",
+ * because the collections tree is full of async shells that render client
+ * components and have nothing to bound. Demanding a budget primitive from those
+ * would be a guard that punishes correct code.
+ *
+ * ⚠ A read-signal predicate is itself somewhere a page could hide — add a read
+ * through a helper this regex does not name and you drop out of scope. That is
+ * why the describe below ASSERTS THE COUNT THIS WALK INSPECTED and names the
+ * pages: a predicate that silently stops matching becomes a failing test rather
+ * than a quiet pass. (CLAIM: `@/lib/insights` is listed here because importing a
+ * board module is itself evidence a board read happens somewhere below.)
+ */
+const READ_SIGNAL = /supabaseAdmin|fetchAllPaged|getPackDeals|from\s+["']@\/lib\/(?:insights|pack-dist|packs)\//
+
+function boardPagesOutsideInsights(): string[] {
+  const out: string[] = []
+  const stack = [COLLECTIONS_DIR]
+  while (stack.length) {
+    const dir = stack.pop()!
+    for (const entry of readdirSync(dir)) {
+      const p = join(dir, entry)
+      if (statSync(p).isDirectory()) {
+        stack.push(p)
+        continue
+      }
+      if (entry !== "page.tsx") continue
+      const src = readFileSync(p, "utf8")
+      if (USE_CLIENT.test(src.split("\n").slice(0, 3).join("\n"))) continue
+      if (!/export default async function/.test(src)) continue
+      if (!READ_SIGNAL.test(stripComments(src))) continue
+      out.push(p)
+    }
   }
   return out.sort()
 }
@@ -271,5 +346,63 @@ describe("/insights server pages bound their reads", () => {
       return !isBounded(src)
     })
     expect(unbounded, `unbounded: ${unbounded.join(", ")}`).toEqual([])
+  })
+})
+
+// ── SECOND ROOT: board pages outside app/insights ──────────────────────────
+// A board page is not defined by its URL. See COLLECTIONS_DIR above for why
+// this exists and which page it was written for.
+describe("board pages outside /insights bound their reads too", () => {
+  const outside = boardPagesOutsideInsights()
+
+  it("is not vacuous: the walk inspected the collection board pages it claims to", () => {
+    // ⚠ ASSERTING THE INSPECTED COUNT, not just the verdict. A read-signal
+    // predicate that quietly stops matching produces an EMPTY set, and an empty
+    // set passes every `every()` below it — the exact shape of a guard that
+    // "passes" while inspecting nothing.
+    expect(outside.length).toBeGreaterThanOrEqual(2)
+
+    // Named so a rename or a move cannot silently drop either out of scope.
+    // pack-sniper is the page this root was written for; pack/dist is the
+    // control that proved the delegation namespace had to widen with it.
+    const rel = outside.map((p) => p.slice(p.indexOf("app")).split("\\").join("/"))
+    expect(rel.some((p) => p.includes("[collection]/pack-sniper/page.tsx"))).toBe(true)
+    expect(rel.some((p) => p.includes("[collection]/pack/dist/[distId]/page.tsx"))).toBe(true)
+  })
+
+  it.each(boardPagesOutsideInsights())("%s bounds its read", (file) => {
+    expect(
+      isBounded(readFileSync(file, "utf8")),
+      `${file} reads board data during a server render without a budget.\n` +
+        `This is the same build-integrity defect the /insights ban exists for —\n` +
+        `it simply lives outside app/insights. Use withBoardBudget(...) or route\n` +
+        `the read through a bounded lib/{insights,pack-dist,packs} module.`,
+    ).toBe(true)
+  })
+
+  it("the delegation widening did not weaken the page-level rule", () => {
+    // A page under the NEW namespaces that still does its own query must still
+    // bound it. Pinned because widening a concession is exactly where a ban
+    // quietly becomes decoration.
+    const ownQuery = [
+      `import { getPackDeals } from "@/lib/packs/pack-deals"`,
+      `import { supabaseAdmin } from "@/lib/supabase"`,
+      `export default async function P() {`,
+      `  await supabaseAdmin.from("v_thing").select("*")`,
+      `  return null`,
+      `}`,
+    ].join("\n")
+    expect(isBounded(ownQuery)).toBe(false)
+
+    // And a page delegating to a module that bounds nothing is still rejected —
+    // the widening added namespaces, not a free pass for them.
+    expect(
+      isBounded(
+        [
+          `import { boardStatus } from "@/lib/insights/board-status"`,
+          `export default async function P() { return null }`,
+        ].join("\n"),
+      ),
+    ).toBe(false)
   })
 })

@@ -12,6 +12,9 @@
 
 import { notFound } from "next/navigation"
 import { getPackDeals, type PackDeal } from "@/lib/packs/pack-deals"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { isSupportedPackCollection } from "@/lib/packs/live-pack-listings"
 import { getCollection } from "@/lib/collections"
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient"
@@ -34,24 +37,51 @@ export default async function CollectionPackSniperPage(
     notFound()
   }
 
+  // ⚠ HONESTY CANON — this page is the collection-scoped twin of
+  // /insights/pack-sniper, renders the SAME PackSniperClient from the SAME
+  // getPackDeals() helper, and was missing BOTH of the things its sibling does.
+  //
+  // 1. NO PROVENANCE. The catch left `deals = []` and passed it on with a
+  //    `fetchedAt` minted from the clock BEFORE the fetch, so the client could
+  //    not tell a 503 from a genuinely quiet market and rendered "no +EV packs"
+  //    — the literal opening example in CLAUDE.md's honesty canon — under
+  //    `revalidate = 300`, i.e. cached for five minutes.
+  // 2. NO BUDGET. The read was unbounded. Measured across the whole `app/`
+  //    tree, 24 of 25 server pages that do a board read bound it; this was the
+  //    one that did not, because `insights-server-pages-bound-their-reads`
+  //    walks `app/insights` ONLY and this page lives under `app/(collections)`.
+  //    Same class as the 2026-08-15 incident where an unbounded board read
+  //    ERRORed a whole production deploy — and that guard's root, not its
+  //    logic, is what had been fixing its blast radius. The guard now walks the
+  //    whole tree, so this page is inside it.
   let deals: PackDeal[] = []
-  let fetchedAt = new Date().toISOString()
+  let ok = true
   try {
-    const res = await getPackDeals(collection, { limit: 200, includeHighVariance: true })
+    const res = await withBoardBudget(
+      getPackDeals(collection, { limit: 200, includeHighVariance: true }),
+      "pack-sniper",
+    )
     deals = res.deals
-    fetchedAt = new Date().toISOString()
   } catch (e) {
     console.error(
       "[collection/pack-sniper] initial fetch",
       e instanceof Error ? e.message : e,
     )
+    ok = false
   }
+  // Stamped AFTER the read, and only meaningful when the read succeeded — a
+  // "fetched at" minted before the work says "now" even when nothing was read.
+  const fetchedAt = new Date().toISOString()
 
   return (
-    <PackSniperClient
-      lockedCollection={collection as "nba-top-shot" | "nfl-all-day"}
-      initialDeals={deals}
-      initialFetchedAt={fetchedAt}
-    />
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack sniper", ok)])} />
+      <PackSniperClient
+        lockedCollection={collection as "nba-top-shot" | "nfl-all-day"}
+        initialDeals={deals}
+        initialFetchedAt={fetchedAt}
+        initialFailed={!ok}
+      />
+    </>
   )
 }

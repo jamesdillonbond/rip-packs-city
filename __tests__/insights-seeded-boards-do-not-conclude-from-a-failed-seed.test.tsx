@@ -255,3 +255,116 @@ describe("the WIRING, which a component test cannot see", () => {
     }
   })
 })
+
+// ── pack-sniper: the SAME class, on TWO pages, one of which already had the
+// page-level banner this file's header says is not a fix ────────────────────
+//
+// Found 2026-08-24 by sweeping SEEDED PROPS for a provenance companion across
+// all of `app/` rather than just `app/insights` — 25 pages seed a board, and
+// two lacked provenance entirely.
+//
+// `PackSniperClient` seeds `deals` from `initialDeals`, starts `loading` false
+// and `error` null (that one is ONLY ever set by its own fetch), so a failed
+// seed fell straight through to:
+//
+//   "No sealed packs match your filters … Check back as new packs get listed."
+//
+// — a claim about the MARKET. ⚠ `/insights/pack-sniper` ALREADY rendered
+// `<DegradedDataNotice>` above it, so on a failed read the page showed a notice
+// saying the data is degraded directly above a board confidently reporting an
+// empty market. Exactly the shape the header above describes for pack-drops and
+// new-collectors, on a page a previous pass had already "hardened".
+//
+// ⚠ WHY THIS SURVIVED, and why the assertion has to be SSR: this client DOES
+// refetch on mount (`showHighVariance` defaults true, so the first-run skip does
+// not apply), so a human sees the sentence corrected almost immediately. It
+// lives in the RAW SERVER HTML — which is the entire reason the board is seeded
+// (crawlability) and is ISR-cached for `revalidate = 300`. A jsdom test would
+// have shown it self-correcting and reported no defect.
+const readPage = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8")
+
+/** Minimal VALID Deal — the row renderer dereferences camelCase fields. */
+const seedDeal = {
+  distId: "5048",
+  title: "Test Pack",
+  tier: "common",
+  imageUrl: "",
+  slots: 3,
+  lowestAsk: 10,
+  grossEV: 20,
+  liveValueRatio: 2,
+  discountPct: 50,
+  fmvCoveragePct: 100,
+  evSnapshottedAt: null,
+  editionCount: 3,
+  depletionPct: null,
+  highVariance: false,
+  highVarianceReasons: [],
+  buyUrl: "https://example.test/buy",
+  dapperUrl: "https://example.test/dapper",
+  detailHref: "/nba-top-shot/pack/dist/5048",
+  simulatorHref: "/nba-top-shot/packs/simulator/5048",
+  askChangedAt: null,
+}
+
+describe("pack-sniper does not conclude about the market from a failed seed", () => {
+  it("SSR: a failed seed says it couldn't load, NOT that no packs match", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const PackSniperClient = (await import("@/app/insights/pack-sniper/PackSniperClient")).default
+    const html = renderToString(
+      <PackSniperClient initialDeals={[]} initialFetchedAt={null} initialFailed />,
+    )
+    // Assert the ABSENCE of the false claim — asserting only that the degraded
+    // sentence appears would pass a board printing BOTH.
+    expect(html).not.toMatch(/No sealed packs match your filters/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded right now/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty board still says no packs match", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const PackSniperClient = (await import("@/app/insights/pack-sniper/PackSniperClient")).default
+    const html = renderToString(
+      <PackSniperClient
+        initialDeals={[]}
+        initialFetchedAt="2026-08-24T00:00:00Z"
+        initialFailed={false}
+      />,
+    )
+    // Without this, deleting the empty state entirely would satisfy the case
+    // above — and a guard passable by removing the feature is not a guard.
+    expect(html).toMatch(/No sealed packs match your filters/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded right now/i)
+  })
+
+  it("SSR: a failed seed does not suppress rows it DID manage to seed", async () => {
+    // The degraded branch is gated on `deals.length === 0`, so a partial seed
+    // still renders. Pinned because "show the error instead" is the tempting
+    // over-correction, and it would hide real data.
+    const { renderToString } = await import("react-dom/server")
+    const PackSniperClient = (await import("@/app/insights/pack-sniper/PackSniperClient")).default
+    const html = renderToString(
+      <PackSniperClient
+        initialDeals={[seedDeal as never]}
+        initialFetchedAt={null}
+        initialFailed
+      />,
+    )
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded right now/i)
+  })
+
+  it("BOTH pack-sniper pages pass initialFailed derived from the read's ok", () => {
+    // The collection twin renders the same client from the same helper and had
+    // NEITHER the flag nor a budget — it sat outside app/insights, which is
+    // where every sweep of this class had stopped.
+    for (const page of [
+      ["app", "insights", "pack-sniper", "page.tsx"],
+      ["app", "(collections)", "[collection]", "pack-sniper", "page.tsx"],
+    ]) {
+      const src = readPage(...page)
+      expect(src, `${page.join("/")} must tell the board whether the seed failed`).toMatch(
+        /initialFailed=\{!ok\}/,
+      )
+      expect(src, `${page.join("/")} must derive ok from its own read`).toMatch(/\bok\b/)
+    }
+  })
+})
