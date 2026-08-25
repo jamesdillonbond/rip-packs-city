@@ -37,13 +37,26 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Resolve external_id to internal UUID
-  const { data: editionRow } = await (supabase as any)
+  // Resolve external_id to internal UUID.
+  //
+  // ⚠ HONESTY CANON, and the same instance already fixed in
+  // `app/api/edition-stats/route.ts`. This read used to swallow its `error` and
+  // branch on `!editionRow?.id`, so a FAILED read rendered 404 "Edition not
+  // found" — a claim about our own catalogue, on a public entity surface.
+  // `.maybeSingle()` rather than `.single()` for the same reason it was chosen
+  // there: `.single()` errors on zero rows (PGRST116), which puts "absent" and
+  // "unreadable" into the SAME `error` channel and makes them impossible to
+  // separate without special-casing a driver code. With `maybeSingle` the two
+  // states have their own branch each.
+  const { data: editionRow, error: editionErr } = await (supabase as any)
     .from("editions")
     .select("id")
     .eq("external_id", edition)
-    .single()
+    .maybeSingle()
 
+  if (editionErr) {
+    return apiErrorResponse(editionErr, "api/edition-history")
+  }
   if (!editionRow?.id) {
     return NextResponse.json({ error: "Edition not found", edition }, { status: 404 })
   }

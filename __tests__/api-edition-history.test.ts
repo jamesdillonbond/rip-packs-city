@@ -17,6 +17,10 @@ vi.mock("@supabase/supabase-js", () => {
       gte: () => b,
       order: () => b,
       single: async () => payload(),
+      // The route resolves the edition with .maybeSingle() so that "no such
+      // edition" and "the read failed" land in different channels — .single()
+      // raises PGRST116 on zero rows and merges them. The mock has to offer it.
+      maybeSingle: async () => payload(),
       then: (resolve: any) => resolve(payload()),
     }
     return b
@@ -49,6 +53,21 @@ describe("GET /api/edition-history", () => {
     const res = await GET(req("https://t/api/edition-history?edition=218:8217"))
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("Edition not found")
+  })
+
+  // HONESTY CANON — the same instance already fixed in /api/edition-stats and
+  // /api/collection-series. The edition resolve used to swallow its `error` and
+  // branch on `!editionRow?.id`, so a FAILED read rendered 404 "Edition not
+  // found" — a claim about our own catalogue, on a public entity surface. The
+  // 404 case directly above is the positive control: absent must still 404.
+  it("does not 404 'Edition not found' when the edition read errored", async () => {
+    tables.editions = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    const res = await GET(req("https://t/api/edition-history?edition=218:8217"))
+    expect(res.status).not.toBe(404)
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(JSON.stringify(body)).not.toContain("Edition not found")
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
   })
 
   it("returns empty history when there are no snapshots", async () => {

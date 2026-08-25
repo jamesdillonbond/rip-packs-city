@@ -51,11 +51,24 @@ export async function GET() {
   // Resolve internal IDs → external edition keys (confirmed columns: id, external_id)
   const internalIds = [...new Set(fmvRows.map((r: { edition_id: string }) => r.edition_id))];
   const edT0 = Date.now();
-  const { data: editionRows } = await supabase
+  // ⚠ HONESTY CANON — the `error` here is load-bearing. This read builds the
+  // id→external_id map that every sample is keyed on, so if it fails silently
+  // `idToExt` is empty, the loop below `continue`s past every row, and the
+  // route answers `sampleCount: 0, samples: []` alongside the note "Real FMV
+  // data from our LiveToken-powered ingest pipeline" — at HTTP 200, cached for
+  // an HOUR, on the surface whose entire purpose is to show a developer what
+  // the API does. The read above already reports its failure honestly; this
+  // one has to as well.
+  const { data: editionRows, error: edErr } = await supabase
     .from("editions")
     .select("id, external_id")
     .in("id", internalIds);
   console.log(`[fmv/demo] editions query elapsedMs=${Date.now() - edT0} rows=${editionRows?.length ?? 0}`);
+
+  if (edErr) {
+    console.log(`[fmv/demo] editions error elapsedMs=${Date.now() - startedAt} message=${edErr.message}`);
+    return apiErrorResponse(edErr, "api/fmv/demo");
+  }
 
   const idToExt = new Map<string, string>();
   for (const ed of (editionRows ?? [])) idToExt.set(ed.id as string, ed.external_id as string);

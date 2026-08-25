@@ -74,10 +74,22 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
   const FMV_CHUNK = 500;
   for (let i = 0; i < internalIds.length; i += FMV_CHUNK) {
     const chunk = internalIds.slice(i, i + FMV_CHUNK);
-    const { data: fmvRows } = await supabase
+    // ⚠ HONESTY CANON — this `error` is load-bearing, do not drop it again.
+    // supabase-js RETURNS errors rather than throwing, so a swallowed `error`
+    // leaves `fmvRows` null and every edition in the chunk falls through to the
+    // `if (!fmv)` branch below, which publishes `fmv: 0` and
+    // `error: "No FMV data yet"` at HTTP 200 under `max-age=300`. That is the
+    // exact false claim about our own coverage the comment above documents —
+    // manufactured from a FAILED READ instead of a row cap, on the documented
+    // public product API, and then cached for five minutes. Step 1 already
+    // throws on `edErr`; step 2 must too, so a read failure reaches
+    // `apiErrorResponse` and is reported as a failure rather than as an answer.
+    const { data: fmvRows, error: fmvErr } = await supabase
       .from("fmv_current")
       .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd")
       .in("edition_id", chunk);
+
+    if (fmvErr) throw new Error(`fmv_current lookup: ${fmvErr.message}`);
 
     for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
       if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
@@ -158,14 +170,27 @@ export async function GET(req: Request) {
     if (includeHistory && editionKeys.length === 1) {
       const internalId = extToId.get(editionKeys[0]);
       if (internalId) {
-        const { data: historyRows } = await supabase
+        const { data: historyRows, error: historyErr } = await supabase
           .from("fmv_snapshots")
           .select("fmv_usd, computed_at, sales_count_30d")
           .eq("edition_id", internalId)
           .order("computed_at", { ascending: false })
           .limit(21);
+        // A failed history read must not render as "this edition has no price
+        // history". Unlike the FMV read above it is NOT fatal — the FMV value
+        // itself is already resolved and correct — so the honest shape is the
+        // third state: say the series could not be read, rather than omitting
+        // `priceHistory` (which is indistinguishable from a genuinely empty
+        // series) or emitting an empty array (which claims one).
+        if (historyErr) {
+          console.log(`[api/fmv] priceHistory read failed for ${editionKeys[0]}: ${historyErr.message}`);
+          if (results.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (results[0] as any).priceHistoryUnavailable = true;
+          }
+        }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (historyRows && historyRows.length > 0) {
+        if (!historyErr && historyRows && historyRows.length > 0) {
           const priceHistory = historyRows.reverse().map((row: any) => ({
             date: typeof row.computed_at === "string" ? row.computed_at.slice(0, 10) : null,
             fmv: r2(row.fmv_usd),
@@ -251,7 +276,16 @@ export async function POST(req: Request) {
         );
       }
       const fmvResults = await Promise.all(fmvChunks);
-      for (const { data: fmvRows } of fmvResults) {
+      // ⚠ HONESTY CANON, and the batch path is the WORSE half of it. A chunk is
+      // 50 editions of up to 100, so one failed chunk does not fail the request
+      // — it silently reports `fmv: 0` / "No FMV data yet" for those editions,
+      // counts them into `errorCount` as if they had no data, and serves the
+      // mix at HTTP 200 under `max-age=300`. A caller cannot distinguish the
+      // half we could not read from the half that is genuinely uncovered.
+      // `Promise.all` does not help here: supabase-js RESOLVES on a query
+      // error, so every chunk "succeeds" and the error rides in `.error`.
+      for (const { data: fmvRows, error: fmvErr } of fmvResults) {
+        if (fmvErr) throw new Error(`fmv_current lookup: ${fmvErr.message}`);
         for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
           if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
         }

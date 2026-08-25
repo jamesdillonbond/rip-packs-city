@@ -59,6 +59,27 @@ describe("GET /api/fmv/demo", () => {
     expect(s.exampleAdjustments.serial23.adjustedFmv).toBe(280) // 100 * 2.8
   })
 
+  // HONESTY CANON. The `editions` read builds the id→external_id map every
+  // sample is keyed on. It used to destructure only `data`, so a failed read
+  // left the map empty, the sample loop `continue`d past every row, and the
+  // route answered `sampleCount: 0, samples: []` next to the note "Real FMV
+  // data from our LiveToken-powered ingest pipeline" — at HTTP 200, cached
+  // `public, max-age=3600`, on the surface whose whole job is to show a
+  // developer what the API returns. Pinned as the ABSENCE of the claim.
+  it("does not publish an empty sample set when the editions read errored", async () => {
+    tables.fmv_snapshots = {
+      data: [{ edition_id: "u1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" }],
+    }
+    tables.editions = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.sampleCount).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("Real FMV data")
+    // and the driver message stays server-side
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
   it("dedupes samples by external edition id", async () => {
     tables.fmv_snapshots = {
       data: [

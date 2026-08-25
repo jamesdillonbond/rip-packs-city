@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,12 +15,21 @@ export async function GET(req: NextRequest) {
   }
 
   const since = new Date(Date.now() - 7 * 86400000).toISOString();
-  const { data } = await supabase
+  // ⚠ HONESTY CANON. This read used to destructure only `data`. supabase-js
+  // RESOLVES on a query error, so a failed read left `data` null, the `if
+  // (data)` below did nothing, and the route answered `{ sparklines: {} }` at
+  // HTTP 200 under `s-maxage=300` — every caller then draws a flat/absent
+  // 7-day line, which is a claim that these editions did not move, cached at
+  // the CDN for five minutes. "Read failed" and "no snapshots in 7 days" are
+  // different answers and must not share one.
+  const { data, error } = await supabase
     .from("fmv_snapshots")
     .select("edition_id, fmv_usd, computed_at")
     .in("edition_id", editionIds)
     .gte("computed_at", since)
     .order("computed_at", { ascending: true });
+
+  if (error) return apiErrorResponse(error, "api/market-sparklines");
 
   const sparklines: Record<string, number[]> = {};
   if (data) {
