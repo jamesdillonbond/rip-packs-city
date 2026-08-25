@@ -28,7 +28,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** answer appended IN PLACE to the 08-25T0312Z filing per the append-only rule; inbox guards green (8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the answer. No code, no DB half.
+**Revert:** `git revert a39a42ea` — removes the answer. No code, no DB half.
 
 
 ### 2026-08-25 · DOCS (Claude Code, interactive) — the Cowork push problem: the two failure modes are being CONFLATED, the gh helper is already configured, and for cloud there is still nothing to fix
