@@ -81,7 +81,28 @@ function walk(dir: string, out: string[] = []): string[] {
 // The backreference is what makes this precise: it matches `.then((r) => r.json())`
 // only when the parameter and the receiver are the SAME identifier, so a genuine
 // `.then((res) => other.json())` is not swept up.
-const RAW_JSON_RX = /\.then\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\.json\(\)\s*\)/
+//
+// ⚠ AND THE SAME LESSON APPLIED A THIRD TIME, 2026-08-24 — this pattern still
+// knew only ARROW syntax. `.then(function (r) { return r.json() })` is the
+// identical defect and was invisible to it, exactly as `r => r.json()` was
+// before the parens were made optional.
+//
+// This is NOT hypothetical syntax in this repo: a whole family of client
+// components is written `function (x) { return … }`, and the sibling ratchet
+// `client-failure-collapses-to-empty-ratchet` was found the same day to be
+// missing 26 sites for precisely this reason. ⓘ Measured here before changing
+// anything: the function spelling of THIS pattern is currently at **zero**, so
+// widening is purely preventive and cannot red the ban today. It is worth doing
+// anyway, because a ban at zero is the shape where a blind spot is invisible —
+// there is no population whose absence would look surprising.
+const RAW_JSON_RX = new RegExp(
+  [
+    // .then((r) => r.json())   /   .then(r => r.json())
+    String.raw`\.then\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\.json\(\)\s*\)`,
+    // .then(function (r) { return r.json() })
+    String.raw`\.then\(\s*function\s*\(\s*(\w+)\s*\)\s*\{\s*return\s+\2\.json\(\)\s*;?\s*\}\s*\)`,
+  ].join("|"),
+)
 
 function clientFiles(): string[] {
   return [...walk(join(process.cwd(), "components")), ...walk(join(process.cwd(), "app"))].filter(
@@ -89,15 +110,32 @@ function clientFiles(): string[] {
   )
 }
 
+/**
+ * ⚠ SCANS THE WHOLE FILE, NOT LINE BY LINE — changed 2026-08-24 together with
+ * the function-expression alternation, because the two only work as a pair.
+ *
+ * A `.then(function (r) { return r.json() })` is routinely written wrapped:
+ *
+ *     .then(function (r) {
+ *       return r.json()
+ *     })
+ *
+ * A per-line test cannot match that no matter how good the pattern is, so
+ * widening the regex while keeping the line loop would have closed the blind
+ * spot only for authors who happen not to wrap — the half-fix that reads as a
+ * full one. Line numbers are recovered from the match offset, so the reported
+ * `file:line` is unchanged in shape.
+ */
 function offenders(): string[] {
   const hits: string[] = []
   for (const f of clientFiles()) {
     const rel = f.slice(process.cwd().length + 1).replace(/\\/g, "/")
-    stripComments(readFileSync(f, "utf8"))
-      .split("\n")
-      .forEach((line, i) => {
-        if (RAW_JSON_RX.test(line)) hits.push(`${rel}:${i + 1}`)
-      })
+    const src = stripComments(readFileSync(f, "utf8"))
+    const rx = new RegExp(RAW_JSON_RX.source, "g")
+    let m: RegExpExecArray | null
+    while ((m = rx.exec(src)) !== null) {
+      hits.push(`${rel}:${src.slice(0, m.index).split("\n").length}`)
+    }
   }
   return hits
 }
@@ -125,11 +163,32 @@ describe("client code never parses a response body without checking the status",
     expect(RAW_JSON_RX.test("  .then((res) => res.json())")).toBe(true)
     // The form the shipped ban missed.
     expect(RAW_JSON_RX.test(".then(r => r.json())")).toBe(true)
+    // ⚠ The FUNCTION-EXPRESSION form, added 2026-08-24. A specimen that only
+    // ever feeds a detector the spelling its author had in mind shares the
+    // detector's blind spot and proves nothing — which is exactly how the
+    // sibling collapse ratchet stayed green while missing 26 sites.
+    expect(RAW_JSON_RX.test(".then(function (r) { return r.json() })")).toBe(true)
+    expect(RAW_JSON_RX.test(".then(function(res) { return res.json(); })")).toBe(true)
     // ...and it must not fire on the correct shapes.
     expect(RAW_JSON_RX.test("fetchJson<T>(url)")).toBe(false)
     expect(RAW_JSON_RX.test(".then((r) => (r.ok ? r.json() : null))")).toBe(false)
     // A different receiver is somebody else's json(), not an unchecked parse.
     expect(RAW_JSON_RX.test(".then((res) => other.json())")).toBe(false)
+    // ...and the backreference must hold for the function spelling too, or the
+    // new alternation is looser than the one it mirrors.
+    expect(RAW_JSON_RX.test(".then(function (res) { return other.json() })")).toBe(false)
+    expect(RAW_JSON_RX.test(".then(function (r) { return r.ok ? r.json() : null })")).toBe(false)
+  })
+
+  it("the scan is not line-bound — a WRAPPED offender is still found", () => {
+    // ⚠ The pair that makes the widening real. Feeding the regex a one-line
+    // specimen proves the pattern; this proves the WALK can deliver a wrapped
+    // one to it. Without this, `offenders()` could quietly go back to a
+    // per-line loop and every specimen above would still pass.
+    const wrapped = ['.then(function (r) {', "  return r.json()", "})"].join("\n")
+    expect(new RegExp(RAW_JSON_RX.source, "g").test(wrapped)).toBe(true)
+    // ...and the same text is NOT matchable line-by-line, which is the point.
+    expect(wrapped.split("\n").some((l) => RAW_JSON_RX.test(l))).toBe(false)
   })
 
   it("actually walks a non-trivial number of client files", () => {
