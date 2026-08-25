@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — a failed COUNT could re-seed a user's saved wallets, resetting their accent colour and restoring a wallet they had deleted
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Third and last finding from the `?? 0`-on-a-count sweep, and the only one where the failed read causes a **WRITE** rather than a wrong reading.
+
+🚨 **`maybeAutoAttachAllowListWallet` in `app/api/profile/saved-wallets/route.ts` GUARDS AN UPSERT WITH A COUNT, AND `?? 0` MADE THAT GUARD FAIL OPEN INTO THE WRITE.**
+
+```js
+const { count: totalRows } = await supabase.from("saved_wallets").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+if ((totalRows ?? 0) > 0) return [];      // "user already has wallets — do nothing"
+```
+
+supabase-js RESOLVES on a query error, so a failed count is `{ count: null, error }` → `0 > 0` is **false** → the guard reads *"this user has no wallets"* → execution falls through to an `upsert` of allow-list rows. **A database hiccup could re-seed saved wallets for a user who already has them**, and because the upsert carries `username` and `accent_color: "#E03A2F"` on `onConflict`, it would **reset a user's chosen accent colour** and **restore a wallet they had deliberately deleted**.
+
+⚠ **THE GUARD'S OWN COMMENT IS WHAT MAKES THIS SHARP.** It calls itself the *"Authoritative zero-rows-EVER guard"* and explicitly accepts re-seeding a deliberate deletion as *"an acceptable re-seed at current scale"*. **That acceptance was reasoned about a GENUINE zero.** It was never a decision about a read that failed — and the code could not tell the two apart. CLAUDE.md's worst-shape note points at this exact direction: a surface that loads state and writes it back, where a failed read becomes a mutation.
+
+✅ **The fix is the cheapest possible one: the self-heal is best-effort, so "we could not tell" means DO NOTHING.** `typeof count !== "number" || error` → log and return `[]`. It can only ever prevent a write.
+
+⚠ **PROVEN — 2 cases red on the pre-fix route, then green, and PINNED ON THE WRITE rather than the response body.** The body is `{ wallets: [] }` either way, so asserting the response would have passed against the defect entirely. The assertions read `state.writes["saved_wallets"]` for an `upsert`. ⚠ **A no-change control ships with them** — a user who genuinely already has three wallets is still left alone — because *"never upsert"* would satisfy both regressions and leave the self-heal dead rather than careful.
+
+✅ **TRIAGED AND DELIBERATELY NOT CHANGED — `app/api/profile/verify-challenge/route.ts:172`, the fourth candidate.** `if (!wmcCount)` treats a failed count as a COLD wallet, so a hiccup answers *"We're indexing your collection — give it a few minutes and try again."* rather than *"no verifiable moments"*. **Left alone on purpose:** that message's ADVICE is correct for a transient database failure, the backfill it kicks is idempotent and lock-guarded, and the alternative — a third response `reason` — is a contract change on a security-adjacent verification flow for a cosmetic gain. ⓘ Worth noting that this same file already reasons correctly about null-as-transient forty lines later (*"a transient failure (null) falls through to the GQL-only path so a Flow hiccup can't dead-end verification"*), so the standard exists here; this is the one read that does not meet it.
+
+⭐ **THE SWEEP IS NOW CLOSED, and its shape is the takeaway.** 18 supabase count reads drop `error` (against a 42-read control). **Reading all 18 rather than the three that matched a regex found: one guard gating a destructive sweep, one guard on the operator's own dashboard, one guard gating a write to user data — and 15 that are fine.** ⛔ **A bulk "add `error` everywhere" pass would have touched 18 files, changed the behaviour of 15 correct ones, and buried the three that mattered.** The value was entirely in the triage, not in the detector.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,049 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores `(totalRows ?? 0) > 0` as the sole guard on the upsert. No DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the SENTINEL had an arm that reported a measured PASS from a failed read, and its own try/catch could never have caught it
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Second finding from the same `?? 0`-on-a-count sweep as the candy-offers guard, and the worse of the two by location: **this one is on `/api/sentinel` — the report Trevor actually reads.**
