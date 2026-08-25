@@ -57,18 +57,30 @@ describe("GET /api/profile/cost-basis-summary — guards / empty", () => {
     expect((await res.json()).meta.no_wallets).toBe(true)
   })
 
-  it("returns meta.saved_wallets_unavailable when the wallet RPC errors", async () => {
+  // INVERTED, not deleted. This PINNED the defect. The empty payload is
+  // `totalSpent: 0, totalPurchases: 0, totalFmv: 0, netPL: 0` — a FABRICATED
+  // FINANCIAL NUMBER about the reader's own money, served at HTTP 200.
+  // `CostBasisCard` has an errored state and it was UNREACHABLE through this
+  // route: it triggers on `typeof d.totalSpent !== "number"`, and 0 is a number.
+  it("does not publish a $0 portfolio when the wallet RPC errors", async () => {
     state.user = { id: "u1" }
     state.savedWallets = { data: null, error: { message: "db", code: "500" } }
-    expect((await GET().then((r) => r.json())).meta.saved_wallets_unavailable).toBe(true)
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.totalSpent).toBeUndefined()
+    expect(body.netPL).toBeUndefined()
   })
 
-  it("returns meta.unexpected_error when the RPC throws", async () => {
+  // INVERTED, same reason.
+  it("does not publish a $0 portfolio when the RPC throws", async () => {
     state.user = { id: "u1" }
     rpc.mockImplementationOnce(async () => {
       throw new Error("boom")
     })
-    expect((await GET().then((r) => r.json())).meta.unexpected_error).toBe(true)
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).netPL).toBeUndefined()
   })
 })
 
@@ -99,22 +111,53 @@ describe("GET /api/profile/cost-basis-summary — aggregation", () => {
     expect(cbCalls().map((c) => c[1].p_wallet).sort()).toEqual(["0xabc", "0xdef"])
   })
 
-  it("skips empty / '0x' addresses and rows whose cost-basis RPC errors (fmv still counts)", async () => {
+  // 🚨 INVERTED, and its OLD TITLE IS THE SHARPEST "the title is the tell" case
+  // in this file: "rows whose cost-basis RPC errors (fmv still counts)" states
+  // the profit-fabricating asymmetry AS THE CONTRACT. `totalFmv` accumulates
+  // for every wallet row BEFORE the cost-basis call, so skipping an errored
+  // wallet drops only the SPEND side — the two halves of `netPL = totalFmv -
+  // totalSpent` then cover DIFFERENT wallet sets and the result is biased in
+  // one direction. The old assertions encode it exactly: totalFmv 10, spend 0.
+  // A timeout on one wallet showed the reader a profit they had not made.
+  it("does not publish a netPL whose two halves cover different wallets", async () => {
     state.user = { id: "u1" }
     state.savedWallets = {
       data: [
-        { wallet_addr: "", cached_fmv_usd: 1 }, // empty addr → skipped for cost basis
-        { wallet_addr: "0x", cached_fmv_usd: 2 }, // "0x" alone → skipped
-        { wallet_addr: "0xghi", cached_fmv_usd: 7 }, // cost-basis errors → skipped
+        { wallet_addr: "", cached_fmv_usd: 1 },
+        { wallet_addr: "0x", cached_fmv_usd: 2 },
+        { wallet_addr: "0xghi", cached_fmv_usd: 7 }, // cost-basis errors
       ],
       error: null,
     }
     state.costBasis = { "0xghi": { data: null, error: { message: "cb fail", code: "x" } } }
-    const body = await GET().then((r) => r.json())
-    expect(body.totalFmv).toBe(10) // 1 + 2 + 7, all rows counted
+    const res = await GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.totalFmv).toBeUndefined()
+    expect(body.netPL).toBeUndefined()
+  })
+
+  it("still skips unusable addresses without failing — positive control", async () => {
+    // The address filter is NOT an error path: an empty or bare "0x" address is
+    // legitimately not cost-basis-able, and its fmv genuinely does still count.
+    // Without this control the case above is satisfiable by a route that errors
+    // on any unusable address, which would break every multi-collection wallet.
+    state.user = { id: "u1" }
+    state.savedWallets = {
+      data: [
+        { wallet_addr: "", cached_fmv_usd: 1 },
+        { wallet_addr: "0x", cached_fmv_usd: 2 },
+      ],
+      error: null,
+    }
+    state.costBasis = {}
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.totalFmv).toBe(3)
     expect(body.totalSpent).toBe(0)
-    expect(body.plPercent).toBeNull() // no spend → null
-    expect(cbCalls()).toHaveLength(1) // only 0xghi was eligible
+    expect(body.plPercent).toBeNull()
+    expect(cbCalls()).toHaveLength(0)
   })
 
   it("plPercent is null when there is fmv but zero qualifying spend", async () => {
