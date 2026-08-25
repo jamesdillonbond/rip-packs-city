@@ -35,7 +35,7 @@ supabase-js RESOLVES on a query error, so a failed count is `{ count: null, erro
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,049 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores `(totalRows ?? 0) > 0` as the sole guard on the upsert. No DB half.
+**Revert:** `git revert d8962ae1` — restores `(totalRows ?? 0) > 0` as the sole guard on the upsert. No DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the SENTINEL had an arm that reported a measured PASS from a failed read, and its own try/catch could never have caught it
