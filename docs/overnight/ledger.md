@@ -44,7 +44,7 @@ A failed read gives `count: null`, `|| 0` makes `n = 0`, `0 < 250` — **ok**, w
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,046 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores `inertUuid || 0` and the measured-pass-from-a-failed-read. No DB half.
+**Revert:** `git revert 024bafaf` — restores `inertUuid || 0` and the measured-pass-from-a-failed-read. No DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the candy-offers ratio guard failed OPEN through its own input, re-enabling the incident it was written to prevent
