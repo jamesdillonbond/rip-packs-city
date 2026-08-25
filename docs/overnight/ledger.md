@@ -38,7 +38,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test` GREEN: 1,376 files, 15,002 cases, 0 failures** · ledger instruments re-read after writing: `^### ` count +1, `find-swallowed-ledger-headings.awk` still **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores the swallow in all six routes, the session fallback on a failed ownerKey read, the always-200 contracts, and drops the card's failure branch. No DB half.
+**Revert:** `git revert 58c9f77f` — restores the swallow in all six routes, the session fallback on a failed ownerKey read, the always-200 contracts, and drops the card's failure branch. No DB half. (Ledger + INDEX.md half: `9b00216c`.)
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the DOCUMENTED PUBLIC FMV API answered "No FMV data yet" out of a failed read, and cached it
