@@ -139,6 +139,16 @@ async function runListingCache() {
     upsertErrors: 0,
     editionsMapped: 0,
     fmvRpcCalled: false,
+    // ⚠ COMPLETENESS, not a row count — and on THIS route it guards a wipe, not
+    // a scoped purge. The walk below `break`s identically on a legitimate
+    // end-of-book and on an upstream failure, and the delete that follows
+    // removes EVERY UFC row before the upsert runs. So a single failed page-0
+    // fetch used to empty the whole UFC slice of `cached_listings` and still
+    // report `ok: true`. CLAUDE.md: "a PAGED read that `break`s on error returns
+    // a PARTIAL list no caller can distinguish from a complete one."
+    sweepComplete: false,
+    pageErrors: 0,
+    sweepError: null as string | null,
   }
 
   try {
@@ -177,7 +187,11 @@ async function runListingCache() {
       console.log(`[ufc-listing-cache] Page offset=${offset} failed: ${String(err)}`)
       return null
     })
-    if (!page) break
+    if (!page) {
+      stats.pageErrors++
+      stats.sweepError = `offset ${offset} fetch failed`
+      break
+    }
     const nfts = Array.isArray(page.nfts) ? page.nfts : []
     stats.totalFetched += nfts.length
     const reportedTotal = typeof page.total === "number" ? page.total : null
@@ -255,10 +269,23 @@ async function runListingCache() {
       })
     }
 
-    if (nfts.length < PAGE_LIMIT) break
-    if (seenFlowIds.size === prevSeenSize) break
+    // ── The three LEGITIMATE ends of the book. Each means "there is nothing
+    //    further to read", so `rows` is the whole book and the replace below is
+    //    safe. Leaving this loop WITHOUT setting the flag is a truncation, and a
+    //    truncated set must never drive a delete.
+    if (nfts.length < PAGE_LIMIT) {
+      stats.sweepComplete = true
+      break
+    }
+    if (seenFlowIds.size === prevSeenSize) {
+      stats.sweepComplete = true
+      break
+    }
     offset += PAGE_LIMIT
-    if (reportedTotal !== null && offset >= reportedTotal) break
+    if (reportedTotal !== null && offset >= reportedTotal) {
+      stats.sweepComplete = true
+      break
+    }
     await delay(INTER_PAGE_DELAY_MS)
   }
 
@@ -319,14 +346,31 @@ async function runListingCache() {
     if (ed.series != null) r.series_name = `Series ${ed.series}`
   }
 
-  // Wipe existing UFC cached listings.
-  const { error: delErr } = await supabaseAdmin
-    .from("cached_listings")
-    .delete()
-    .eq("collection_id", UFC_COLLECTION_ID)
-  if (delErr) {
-    console.log(`[ufc-listing-cache] Delete failed: ${delErr.message}`)
-    throw new Error(`delete failed: ${delErr.message}`)
+  // Wipe existing UFC cached listings — ONLY on a sweep that actually reached
+  // the end of the book. This route replaces its whole slice rather than
+  // purging by `cached_at` like its three siblings, so the cost of getting the
+  // condition wrong is the entire UFC cache rather than a window of it: a
+  // first-page fetch failure used to delete every row and then upsert none,
+  // leaving 0 rows and logging `ok: true`.
+  //
+  // ⚠ NOT gated on `rows.length > 0` as well, on purpose — a complete sweep
+  // that genuinely finds no active UFC listings SHOULD empty the slice. The
+  // question this guard answers is "did we read the whole book", never "did the
+  // book have anything in it"; conflating the two is what made an outage look
+  // like an empty marketplace.
+  if (stats.sweepComplete) {
+    const { error: delErr } = await supabaseAdmin
+      .from("cached_listings")
+      .delete()
+      .eq("collection_id", UFC_COLLECTION_ID)
+    if (delErr) {
+      console.log(`[ufc-listing-cache] Delete failed: ${delErr.message}`)
+      throw new Error(`delete failed: ${delErr.message}`)
+    }
+  } else {
+    console.log(
+      `[ufc-listing-cache] sweep incomplete (${stats.sweepError ?? "unknown truncation"}) — replace skipped, prior cache preserved`
+    )
   }
 
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
@@ -363,6 +407,18 @@ async function runListingCache() {
     stats.errorMsg = err instanceof Error ? err.message : String(err)
     console.log(`[ufc-listing-cache] fatal: ${stats.errorMsg}`)
   } finally {
+    // A truncated sweep is a DEGRADED run, not a clean one — the replace above
+    // is skipped, so the UFC slice silently drifts toward holding delisted rows.
+    // Report it as a failure (the `ingest/candy-offers` `degradedSweep`
+    // precedent) instead of hiding it behind a healthy-looking `upserted`.
+    // A real fatal error keeps precedence over the degradation message.
+    const degradedSweep = !stats.sweepComplete
+    const okFinal = stats.ok && !degradedSweep
+    const errorFinal =
+      stats.errorMsg ??
+      (degradedSweep
+        ? `sweep incomplete: ${stats.sweepError ?? "unknown truncation"} — cache replace skipped, cache may hold delisted rows`
+        : null)
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -370,8 +426,8 @@ async function runListingCache() {
         p_rows_found: stats.totalListed,
         p_rows_written: stats.upserted,
         p_rows_skipped: stats.upsertErrors,
-        p_ok: stats.ok,
-        p_error: stats.errorMsg,
+        p_ok: okFinal,
+        p_error: errorFinal,
         p_collection_slug: COLLECTION_SLUG,
         p_cursor_before: null,
         p_cursor_after: null,
@@ -379,6 +435,10 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
+          // The field an observer keys on, so the incidence of a truncated
+          // sweep is countable rather than only inferable from a log line.
+          sweep_complete: stats.sweepComplete,
+          page_errors: stats.pageErrors,
           duration_ms: Date.now() - startedAt,
         },
       })

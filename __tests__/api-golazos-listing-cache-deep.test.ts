@@ -93,7 +93,7 @@ function gzNft(opts: {
  *  fixed 10-offset walk skips its 200ms inter-page delays. */
 function proxyStub(
   pages: { asc?: unknown[]; desc?: unknown[] },
-  opts: { allFail?: boolean } = {},
+  opts: { allFail?: boolean; pageErrorAtOffset?: number } = {},
 ): FetchStub {
   return {
     match: (url) => url.includes("flowty-proxy"),
@@ -102,7 +102,17 @@ function proxyStub(
       const parsed = JSON.parse(String(init?.body))
       const dir = parsed?.payload?.sort?.direction as "asc" | "desc"
       const offset = parsed?.payload?.offset as number
-      if (offset !== 0) return { status: 500, text: "end of fixture" }
+      // ⚠ Past the fixture this used to answer HTTP 500 ("end of fixture"),
+      // which is exactly the conflation the route no longer makes: an upstream
+      // ERROR is not an end-of-book. Flowty answers a past-the-end offset with
+      // a 200 and an empty list, so the stub does too — otherwise every ordinary
+      // sweep here would register 18 page errors and skip its purge.
+      // `pageErrorAtOffset` below is the deliberate way to inject a real one.
+      if (offset !== 0) {
+        return offset === opts.pageErrorAtOffset
+          ? { status: 500, text: "flowty down" }
+          : { json: { nfts: [] } }
+      }
       return { json: { nfts: pages[dir] ?? [] } }
     },
   }
@@ -244,7 +254,7 @@ describe("golazos-listing-cache — mapping + write contract", () => {
 })
 
 describe("golazos-listing-cache — degradation + fatal honesty", () => {
-  it("a full Flowty outage writes nothing and PRESERVES the prior cache (no purge), still logging ok", async () => {
+  it("a full Flowty outage writes nothing, PRESERVES the prior cache (no purge), and logs the run as FAILED — not ok", async () => {
     fetchMock = installFetchMock([proxyStub({}, { allFail: true })])
     const spy = install({
       "rpc:fmv_from_cached_listings": { data: null, error: null },
@@ -258,7 +268,42 @@ describe("golazos-listing-cache — degradation + fatal honesty", () => {
     expect(fetchMock.calls).toHaveLength(20)
     expect(spy.writes.cached_listings ?? []).toHaveLength(0)
     expect(spy.deletes).toHaveLength(0)
-    expect(terminalLog(spy)).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+    // INVERTED 2026-08-25: this used to pin `p_ok: true`. A run that could not
+    // read a single page of the book is not a healthy run — it is a degraded one
+    // whose purge was suppressed, and `pipeline_runs` is the only place that
+    // fact can be counted from.
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 20 })
+  })
+
+  it("REGRESSION: a sweep whose FIRST page lands and a LATER page 500s skips the purge — a partial book never drives a delete", async () => {
+    fetchMock = installFetchMock([
+      proxyStub(
+        { asc: [gzNft({ flowId: "700", lrid: "G1", salePrice: "3", title: "Jude" })] },
+        { pageErrorAtOffset: 150 },
+      ),
+    ])
+    const spy = install({
+      editions: { data: [], error: null },
+      cached_listings: { data: null, error: null, count: 1 },
+      "rpc:fmv_from_cached_listings": { data: null, error: null },
+      "rpc:update_badge_low_ask_from_cached_listings": { data: 0, error: null },
+    })
+
+    await GET(req("GET"))
+    await runDeferred()
+
+    // The run DID write — which is exactly why `upserted > 0` alone could not
+    // protect it. The rows that lived on the page that 500'd are absent from
+    // this run, and the old purge deleted precisely those.
+    expect((spy.writes.cached_listings ?? []).length).toBeGreaterThan(0)
+    expect(spy.deletes).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 2 })
   })
 
   it("an upsert batch error counts rows as skipped and never purges", async () => {

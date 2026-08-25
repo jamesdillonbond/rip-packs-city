@@ -300,7 +300,7 @@ describe("allday-listing-cache — dual-sort sweep + row contract", () => {
 })
 
 describe("allday-listing-cache — degradation + fatal honesty", () => {
-  it("a full Flowty outage (every page 500s) walks all 20 pages, writes nothing, PRESERVES the prior cache (no purge), still logs ok", async () => {
+  it("a full Flowty outage (every page 500s) walks all 20 pages, writes nothing, PRESERVES the prior cache (no purge), and logs the run as FAILED — not ok", async () => {
     fetchMock = installFetchMock([proxyStub({}, { status: 500 })])
     const spy = install({
       cached_listings: { data: null, error: null },
@@ -316,7 +316,50 @@ describe("allday-listing-cache — degradation + fatal honesty", () => {
     expect(spy.deletes).toHaveLength(0) // outage never wipes the cache
     // The FMV regen still runs off whatever the cache already holds.
     expect(spy.rpcCalls.map((c) => c.name)).toContain("fmv_from_cached_listings")
-    expect(terminalLog(spy)).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+    // INVERTED 2026-08-25: this used to pin `p_ok: true`. A run that could not
+    // read a single page of the book is not a healthy run — it is a degraded one
+    // whose purge was suppressed, and `pipeline_runs` is the only place that
+    // fact can be counted from.
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 20 })
+  })
+
+  it("REGRESSION: a sweep whose FIRST page lands and a LATER page 500s skips the purge — a partial book never drives a delete", async () => {
+    let call = 0
+    fetchMock = installFetchMock([
+      {
+        match: (url: string) => url.includes("flowty-proxy"),
+        respond: (_url: string, init?: RequestInit) => {
+          // Page 0 of the asc sweep lands; the very next page fails. The run
+          // therefore holds a real, non-empty, INCOMPLETE book — the shape
+          // `upserted > 0` could never distinguish from a complete one.
+          call++
+          if (call === 1) {
+            return { json: { nfts: [adNft({ flowId: "100", lrid: "L1", ask: 10 })] } }
+          }
+          return call === 2
+            ? { status: 500, text: "flowty down" }
+            : { json: { nfts: [] } }
+        },
+      } as never,
+    ])
+    const spy = install({
+      editions: { data: [], error: null },
+      cached_listings: { data: null, error: null, count: 1 },
+      "rpc:fmv_from_cached_listings": { data: null, error: null },
+      "rpc:clear_badge_low_ask_stale": { data: 0, error: null },
+    })
+
+    await POST(req("POST"))
+
+    expect((spy.writes.cached_listings ?? []).length).toBeGreaterThan(0)
+    expect(spy.deletes).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 1 })
   })
 
   it("an upsert batch error counts every row as an upsertError, skips the purge, and reports p_rows_skipped", async () => {

@@ -115,7 +115,17 @@ function parseCollectionFilter(filter: string): { contractAddress: string; contr
     : { contractAddress: "", contractName: "" };
 }
 
-async function fetchFlowtyPage(offset: number, config: CollectionConfig): Promise<any[]> {
+// ⚠ RETURNS `failed`, and every caller must read it. This used to answer a bare
+// `any[]` and collapse an HTTP error, a timeout and a thrown fetch into the SAME
+// empty array a genuinely empty page returns. With the pages fetched in parallel
+// and flattened, four failed pages out of five then produced a one-page book
+// that `inserted > 0` accepted — and the stale purge below deleted every listing
+// the failed pages would have refreshed. CLAUDE.md: "a PAGED read that breaks on
+// error returns a PARTIAL list no caller can distinguish from a complete one."
+async function fetchFlowtyPage(
+  offset: number,
+  config: CollectionConfig
+): Promise<{ nfts: any[]; failed: boolean }> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(function() { controller.abort(); }, 12000);
@@ -136,14 +146,14 @@ async function fetchFlowtyPage(offset: number, config: CollectionConfig): Promis
     clearTimeout(timeout);
     if (!res.ok) {
       console.log("[listing-cache] flowty-proxy offset " + offset + " HTTP " + res.status);
-      return [];
+      return { nfts: [], failed: true };
     }
     const json = await res.json();
     const items = json.nfts || json.data || [];
-    return Array.isArray(items) ? items : [];
+    return { nfts: Array.isArray(items) ? items : [], failed: false };
   } catch (e: any) {
     console.log("[listing-cache] flowty-proxy offset " + offset + " error: " + (e.message || "unknown"));
-    return [];
+    return { nfts: [], failed: true };
   }
 }
 
@@ -323,27 +333,48 @@ export async function POST(req: NextRequest) {
     const pageOffsets: number[] = [];
     for (let i = 0; i < config.pagesToFetch; i++) pageOffsets.push(i * PAGE_SIZE);
     const pageResults = await Promise.all(pageOffsets.map(function(off) { return fetchFlowtyPage(off, config); }));
-    const allNfts = pageResults.flat();
-    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + config.pagesToFetch + " pages)");
+    const allNfts = pageResults.flatMap(function(p) { return p.nfts; });
+    // Completeness, tracked separately from the row count. A page that failed
+    // contributes zero rows exactly like a page that was legitimately empty, so
+    // `allNfts.length` cannot tell the two apart — only this can.
+    const pageErrors = pageResults.filter(function(p) { return p.failed; }).length;
+    const sweepComplete = pageErrors === 0;
+    console.log("[listing-cache] Fetched " + allNfts.length + " raw NFTs from Flowty (" + config.pagesToFetch + " pages, " + pageErrors + " page errors)");
 
     if (allNfts.length === 0) {
+      // ⚠ THREE STATES, NOT TWO. "Flowty returned nothing" and "we could not
+      // read Flowty" produce the identical empty array, and reporting the second
+      // as `reason: "flowty_empty", ok: true` publishes a failed read as a fact
+      // about the marketplace. Only the page-error count separates them.
       await writePipelineRun({
         pipeline: pipelineName,
         collectionSlug: config.slug,
         startedAt: startedAtIso,
         rowsFound: 0,
         rowsWritten: 0,
-        ok: true,
-        error: null,
-        extra: { reason: "flowty_empty", pages: config.pagesToFetch },
+        ok: sweepComplete,
+        error: sweepComplete
+          ? null
+          : "sweep incomplete: " + pageErrors + " of " + config.pagesToFetch + " pages failed — 0 rows is a failed read, not an empty marketplace",
+        extra: {
+          reason: sweepComplete ? "flowty_empty" : "flowty_unreadable",
+          pages: config.pagesToFetch,
+          page_errors: pageErrors,
+          sweep_complete: sweepComplete,
+        },
       });
       // Chain to next collection even on empty result
       if (config.chainNext && chain) {
         await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
       }
       return NextResponse.json({
-        ok: true, message: "Flowty returned 0 - preserving existing cache",
+        ok: sweepComplete,
+        message: sweepComplete
+          ? "Flowty returned 0 - preserving existing cache"
+          : "Flowty was unreadable (" + pageErrors + "/" + config.pagesToFetch + " pages failed) - preserving existing cache",
         collection: config.slug,
+        sweepComplete: sweepComplete,
+        pageErrors: pageErrors,
         cached: 0, elapsed: Date.now() - startTime,
       });
     }
@@ -362,16 +393,27 @@ export async function POST(req: NextRequest) {
         startedAt: startedAtIso,
         rowsFound: allNfts.length,
         rowsWritten: 0,
-        ok: true,
-        error: null,
-        extra: { reason: "all_filtered", fetched: allNfts.length },
+        // "Everything we read was filtered out" is only an honest conclusion
+        // when we read the whole book; with pages missing it is a claim about
+        // rows the run never saw.
+        ok: sweepComplete,
+        error: sweepComplete
+          ? null
+          : "sweep incomplete: " + pageErrors + " of " + config.pagesToFetch + " pages failed — the mapping filter saw a partial book",
+        extra: {
+          reason: "all_filtered",
+          fetched: allNfts.length,
+          page_errors: pageErrors,
+          sweep_complete: sweepComplete,
+        },
       });
       if (config.chainNext && chain) {
         await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
       }
       return NextResponse.json({
-        ok: true, message: "All listings filtered out during mapping",
+        ok: sweepComplete, message: "All listings filtered out during mapping",
         collection: config.slug,
+        sweepComplete: sweepComplete, pageErrors: pageErrors,
         fetched: allNfts.length, cached: 0, elapsed: Date.now() - startTime,
       });
     }
@@ -407,10 +449,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Only purge stale rows if at least one new row was successfully upserted.
-    // This preserves the previous snapshot when the entire Flowty fetch fails
-    // to materialize any valid listings (e.g., schema drift, transient API error).
-    if (inserted > 0) {
+    // Only purge stale rows if at least one new row was successfully upserted
+    // AND every page of the sweep came back. This preserves the previous
+    // snapshot when the entire Flowty fetch fails to materialize any valid
+    // listings (e.g., schema drift, transient API error).
+    // ⚠ `inserted > 0` alone was NOT enough: the pages are fetched in parallel
+    // and flattened, so one surviving page out of five satisfies it while the
+    // run holds a book missing four pages — and the purge then deletes exactly
+    // the listings those four pages would have refreshed.
+    if (inserted > 0 && sweepComplete) {
       const delResult = await supabase.from("cached_listings").delete()
         .eq("source", "flowty")
         .eq("collection_id", config.collectionId)
@@ -419,7 +466,14 @@ export async function POST(req: NextRequest) {
         console.log("[listing-cache] Stale purge error: " + delResult.error.message);
       }
     } else {
-      console.log("[listing-cache] 0 rows upserted — skipping stale purge to preserve existing cache");
+      // Name the ACTUAL reason — the old single message reported every skip as
+      // "0 rows upserted", which would now misreport a partial sweep as an empty
+      // one, the same conflation this change exists to remove.
+      console.log(
+        inserted > 0
+          ? "[listing-cache] " + pageErrors + " page fetch error(s) — sweep is partial, skipping stale purge to preserve existing cache"
+          : "[listing-cache] 0 rows upserted — skipping stale purge to preserve existing cache"
+      );
     }
 
     console.log("[listing-cache] Done: " + inserted + " upserted, " + insertErrors + " chunk errors");
@@ -448,11 +502,22 @@ export async function POST(req: NextRequest) {
       startedAt: startedAtIso,
       rowsFound: allNfts.length,
       rowsWritten: inserted,
-      ok: insertErrors === 0,
-      error: insertErrors > 0 ? insertErrors + " insert chunk error(s)" : null,
+      // A partial sweep is a DEGRADED run, not a clean one — the purge above is
+      // skipped, so the cache silently drifts toward holding delisted rows.
+      // An insert error keeps precedence over the degradation message.
+      ok: insertErrors === 0 && sweepComplete,
+      error: insertErrors > 0
+        ? insertErrors + " insert chunk error(s)"
+        : sweepComplete
+          ? null
+          : "sweep incomplete: " + pageErrors + " of " + config.pagesToFetch + " pages failed — stale purge skipped, cache may hold delisted rows",
       extra: {
         mapped: listings.length,
         insert_errors: insertErrors,
+        // The field an observer keys on, so the incidence of a partial sweep is
+        // countable rather than only inferable from a log line.
+        sweep_complete: sweepComplete,
+        page_errors: pageErrors,
       },
     });
 
@@ -461,9 +526,14 @@ export async function POST(req: NextRequest) {
       await fireNextPipelineStep("/api/listing-cache?collection=" + config.chainNext, chain);
     }
 
+    // ⓘ Only `sweepComplete` moves this flag. The HTTP body has always reported
+    // `ok: true` alongside a `pipeline_runs` row of `ok: false` when an insert
+    // chunk errors — a real inconsistency, but a pre-existing and separate one
+    // that this completeness change deliberately does not fold in.
     return NextResponse.json({
-      ok: true, collection: config.slug,
+      ok: sweepComplete, collection: config.slug,
       fetched: allNfts.length, mapped: listings.length,
+      sweepComplete: sweepComplete, pageErrors: pageErrors,
       cached: inserted, errors: insertErrors,
       elapsed: Date.now() - startTime,
     });

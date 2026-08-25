@@ -151,6 +151,14 @@ async function runListingCache() {
     editionsMapped: 0,
     fmvRpcCalled: false,
     badge_low_ask_updated: 0,
+    // ⚠ COMPLETENESS, not a row count. The dual-sort sweep below `continue`s
+    // past a failed page, so a Flowty error silently removes a whole 50-listing
+    // window from the run — and the stale purge that follows deletes every row
+    // this run did not re-write. Without this counter a partial book is
+    // indistinguishable from a complete one and the purge turns a transient
+    // upstream error into a DELETE of live listings.
+    pageErrors: 0,
+    sweepError: null as string | null,
   }
 
   try {
@@ -201,7 +209,11 @@ async function runListingCache() {
         )
         return null
       })
-      if (!page) continue
+      if (!page) {
+        stats.pageErrors++
+        stats.sweepError = `sweep=${sweep.label} offset=${offset} fetch failed`
+        continue
+      }
       const nfts = Array.isArray(page.nfts) ? page.nfts : []
       stats.totalFetched += nfts.length
 
@@ -344,7 +356,10 @@ async function runListingCache() {
     }
   }
 
-  if (stats.upserted > 0) {
+  // ⚠ `upserted > 0` alone was NOT enough: one failed page out of twenty still
+  // satisfies it while the run holds a book with a 50-listing hole in it, and
+  // the purge then deletes exactly the listings that lived in that hole.
+  if (stats.upserted > 0 && stats.pageErrors === 0) {
     const runStartedAt = new Date(startedAt).toISOString()
     const { error: delErr } = await supabaseAdmin
       .from("cached_listings")
@@ -356,7 +371,14 @@ async function runListingCache() {
       console.log(`[golazos-listing-cache] stale purge error: ${delErr.message}`)
     }
   } else {
-    console.log("[golazos-listing-cache] 0 rows upserted — preserving prior cache")
+    // Name the ACTUAL reason. The old single message said "0 rows upserted" for
+    // every skip, which would now misreport the partial-sweep case as an empty
+    // one — the same conflation this change exists to remove.
+    console.log(
+      stats.pageErrors > 0
+        ? `[golazos-listing-cache] ${stats.pageErrors} page fetch error(s) — sweep is partial, preserving prior cache`
+        : "[golazos-listing-cache] 0 rows upserted — preserving prior cache"
+    )
   }
 
   // Regenerate ASK_ONLY FMV snapshots for Golazos, then refresh sales-based
@@ -411,6 +433,18 @@ async function runListingCache() {
     stats.errorMsg = err instanceof Error ? err.message : String(err)
     console.log(`[golazos-listing-cache] fatal: ${stats.errorMsg}`)
   } finally {
+    // A partial sweep is a DEGRADED run, not a clean one — the purge above is
+    // skipped, so `cached_listings` silently drifts toward holding delisted
+    // rows. Report it as a failure (the `ingest/candy-offers` `degradedSweep`
+    // precedent) instead of hiding it behind a healthy-looking `upserted`.
+    // A real fatal error keeps precedence over the degradation message.
+    const degradedSweep = stats.pageErrors > 0
+    const okFinal = stats.ok && !degradedSweep
+    const errorFinal =
+      stats.errorMsg ??
+      (degradedSweep
+        ? `sweep incomplete: ${stats.pageErrors} page fetch error(s), last ${stats.sweepError ?? "unknown"} — stale purge skipped, cache may hold delisted rows`
+        : null)
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -418,8 +452,8 @@ async function runListingCache() {
         p_rows_found: stats.totalListed,
         p_rows_written: stats.upserted,
         p_rows_skipped: stats.upsertErrors,
-        p_ok: stats.ok,
-        p_error: stats.errorMsg,
+        p_ok: okFinal,
+        p_error: errorFinal,
         p_collection_slug: COLLECTION_SLUG,
         p_cursor_before: null,
         p_cursor_after: null,
@@ -428,6 +462,10 @@ async function runListingCache() {
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
           badge_low_ask_updated: stats.badge_low_ask_updated,
+          // The field an observer keys on, so the incidence of a partial sweep
+          // is countable rather than only inferable from a log line.
+          sweep_complete: !degradedSweep,
+          page_errors: stats.pageErrors,
           duration_ms: Date.now() - startedAt,
         },
       })

@@ -351,7 +351,15 @@ describe("ufc-listing-cache — failure paths + auth", () => {
     expect(String(log?.p_error)).toContain("delete failed: table locked")
   })
 
-  it("a total Flowty outage still wipes the UFC slice (unconditional replace — pinned divergence from the preserve-on-outage siblings)", async () => {
+  // INVERTED 2026-08-25. This test used to READ: "a total Flowty outage still
+  // wipes the UFC slice (unconditional replace — pinned divergence from the
+  // preserve-on-outage siblings)". That divergence was a defect, not a design:
+  // this route replaces its WHOLE slice rather than purging by `cached_at`, so
+  // one failed page-0 fetch deleted every UFC listing, upserted none, and logged
+  // `ok: true`. Per CLAUDE.md a test pinning the defect it was named to prevent
+  // gets INVERTED, never deleted — the assertions below are the same three
+  // observations with the opposite expectation.
+  it("a total Flowty outage PRESERVES the UFC slice (the replace is gated on a complete sweep) and logs the run as FAILED", async () => {
     fetchMock = installFetchMock([flowtyStub({}, { status: 500 })])
     const spy = install({
       cached_listings: { data: null, error: null },
@@ -362,9 +370,49 @@ describe("ufc-listing-cache — failure paths + auth", () => {
     await runDeferred()
 
     expect(fetchMock.calls).toHaveLength(1) // first page fails -> loop breaks
-    expect(spy.deletes).toHaveLength(1) // wipe runs even with 0 fetched rows
+    expect(spy.deletes).toHaveLength(0) // the wipe NO LONGER runs on 0 fetched rows
     expect(spy.writes.cached_listings ?? []).toHaveLength(0)
-    expect(terminalLog(spy)).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 1 })
+  })
+
+  it("REGRESSION: a full page 0 followed by a failing page 1 upserts its rows but SKIPS the wipe", async () => {
+    // A full page forces the walk on; page 1 then fails. The run holds a real,
+    // non-empty, INCOMPLETE book — and on THIS route the un-gated replace would
+    // have deleted the whole slice and written back only the part it had read.
+    const page0: Record<string, unknown> = {}
+    page0[0] = Array.from({ length: 24 }, (_, i) =>
+      ufcNft({ flowId: String(500 + i), lrid: `U${500 + i}`, name: `F${i}`, max: 10, salePrice: 1 }),
+    )
+    let call = 0
+    fetchMock = installFetchMock([
+      {
+        match: (url: string) => url.includes("api2.flowty.io"),
+        respond: () => {
+          call++
+          return call === 1
+            ? { json: { nfts: (page0 as Record<number, unknown[]>)[0] } }
+            : { status: 500, text: "flowty down" }
+        },
+      } as never,
+    ])
+    const spy = install({
+      editions: { data: [], error: null },
+      cached_listings: { data: null, error: null, count: 24 },
+      "rpc:fmv_from_cached_listings": { data: null, error: null },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    expect((spy.writes.cached_listings ?? []).length).toBeGreaterThan(0)
+    expect(spy.deletes).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({ sweep_complete: false, page_errors: 1 })
   })
 
   it("401s without the token and defers nothing", async () => {

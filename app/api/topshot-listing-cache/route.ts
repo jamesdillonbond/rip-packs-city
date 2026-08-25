@@ -147,6 +147,16 @@ async function runListingCache() {
     purgedRows: 0,
     purgeSkipped: false,
     headCountAfterPurge: null as number | null,
+    // ⚠ COMPLETENESS, not row counts. The loop below `break`s identically on a
+    // legitimate end-of-book and on an upstream failure, and the stale purge
+    // that follows deletes every row this run did not re-write. Without this
+    // flag a truncated sweep is indistinguishable from a complete one and the
+    // purge turns a transient Flowty error into a DELETE of live listings.
+    // CLAUDE.md: "a PAGED read that `break`s on error returns a PARTIAL list no
+    // caller can distinguish from a complete one" — carry `complete`.
+    sweepComplete: false,
+    pageErrors: 0,
+    sweepError: null as string | null,
   }
 
   try {
@@ -188,12 +198,18 @@ async function runListingCache() {
       console.log(`[topshot-listing-cache] Page offset=${offset} failed: ${String(err)}`)
       return null
     })
-    if (!pageResp) break
+    if (!pageResp) {
+      stats.pageErrors++
+      stats.sweepError = `page ${page} (offset ${offset}) fetch threw`
+      break
+    }
     const rawRows = pageResp.nfts
     if (pageResp.status >= 400) {
       console.log(
         `[topshot-listing-cache] non_ok_status status=${pageResp.status} errorText=${pageResp.errorText ?? ""}`
       )
+      stats.pageErrors++
+      stats.sweepError = `page ${page} (offset ${offset}) returned HTTP ${pageResp.status}`
       break
     }
     const nfts = Array.isArray(rawRows) ? rawRows : []
@@ -204,7 +220,10 @@ async function runListingCache() {
         typeof pageResp.total === "number" ? pageResp.total : "null"
       }`
     )
-    if (nfts.length === 0) break
+    if (nfts.length === 0) {
+      stats.sweepComplete = true
+      break
+    }
     const reportedTotal = typeof pageResp.total === "number" ? pageResp.total : null
     const prevSeenSize = seenFlowIds.size
     const beforeRowsCount = rows.length
@@ -317,15 +336,32 @@ async function runListingCache() {
     console.log(
       `[topshot-listing-cache] stage=parsed page=${page} pageRowsAdded=${pageRowsAdded} runRowsTotal=${rows.length} seenFlowIds=${seenFlowIds.size}`
     )
-    if (nfts.length < PAGE_LIMIT) break
+    // ── The three LEGITIMATE ends of the book. Each one means "there is
+    //    nothing further to read", so the set in `rows` is complete and the
+    //    stale purge below is safe. Anything that leaves this loop WITHOUT
+    //    setting the flag (a fetch error above, or exhausting MAX_PAGES) is a
+    //    truncation, and a truncated set must never drive a delete.
+    if (nfts.length < PAGE_LIMIT) {
+      stats.sweepComplete = true
+      break
+    }
     if (seenFlowIds.size === prevSeenSize) {
       consecutiveStaleSeenPages++
-      if (consecutiveStaleSeenPages >= 2) break
+      if (consecutiveStaleSeenPages >= 2) {
+        stats.sweepComplete = true
+        break
+      }
     } else {
       consecutiveStaleSeenPages = 0
     }
-    if (reportedTotal !== null && offset + PAGE_LIMIT >= reportedTotal) break
+    if (reportedTotal !== null && offset + PAGE_LIMIT >= reportedTotal) {
+      stats.sweepComplete = true
+      break
+    }
     await delay(INTER_PAGE_DELAY_MS)
+  }
+  if (!stats.sweepComplete && stats.sweepError === null) {
+    stats.sweepError = `walked all ${MAX_PAGES} pages without reaching the end of the book`
   }
 
   stats.totalListed = rows.length
@@ -374,9 +410,13 @@ async function runListingCache() {
     `[topshot-listing-cache] stage=written upserted=${stats.upserted} upsertErrors=${stats.upsertErrors}`
   )
 
-  // Only purge stale rows if at least one new row was successfully upserted,
-  // so a failed Flowty fetch doesn't wipe the existing cache.
-  if (stats.upserted > 0) {
+  // Only purge stale rows if at least one new row was successfully upserted
+  // AND the sweep actually reached the end of the book, so neither a failed
+  // Flowty fetch nor a truncated one wipes listings this run simply never saw.
+  // ⚠ `upserted > 0` alone was NOT enough: a sweep that reads page 0 and then
+  // errors on page 1 satisfies it while holding a partial book, and the purge
+  // then deletes every listing that lived on the pages it never reached.
+  if (stats.upserted > 0 && stats.sweepComplete) {
     const { error: delErr, count: delCount } = await supabaseAdmin
       .from("cached_listings")
       .delete({ count: "exact" })
@@ -398,7 +438,7 @@ async function runListingCache() {
     .eq("collection_id", TS_COLLECTION_ID)
   stats.headCountAfterPurge = postPurgeCount ?? null
   console.log(
-    `[topshot-listing-cache] stage=purged purgedRows=${stats.purgedRows} purgeSkipped=${stats.purgeSkipped} postPurgeRows=${postPurgeCount ?? "?"} runStartedAt=${runStartedAt}`
+    `[topshot-listing-cache] stage=purged purgedRows=${stats.purgedRows} purgeSkipped=${stats.purgeSkipped} sweepComplete=${stats.sweepComplete} pageErrors=${stats.pageErrors} postPurgeRows=${postPurgeCount ?? "?"} runStartedAt=${runStartedAt}`
   )
 
   try {
@@ -453,6 +493,18 @@ async function runListingCache() {
     stats.errorMsg = err instanceof Error ? err.message : String(err)
     console.log(`[topshot-listing-cache] fatal: ${stats.errorMsg}`)
   } finally {
+    // A truncated sweep is a DEGRADED run, not a clean one — the purge above is
+    // skipped, so `cached_listings` silently drifts toward holding delisted
+    // rows. Report it as a failure (the `ingest/candy-offers` `degradedSweep`
+    // precedent) instead of hiding it behind a healthy-looking `upserted`.
+    // A real fatal error keeps precedence over the degradation message.
+    const degradedSweep = !stats.sweepComplete
+    const okFinal = stats.ok && !degradedSweep
+    const errorFinal =
+      stats.errorMsg ??
+      (degradedSweep
+        ? `sweep incomplete: ${stats.sweepError ?? "unknown truncation"} — stale purge skipped, cache may hold delisted rows`
+        : null)
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -460,8 +512,8 @@ async function runListingCache() {
         p_rows_found: stats.totalListed,
         p_rows_written: stats.upserted,
         p_rows_skipped: stats.upsertErrors,
-        p_ok: stats.ok,
-        p_error: stats.errorMsg,
+        p_ok: okFinal,
+        p_error: errorFinal,
         p_collection_slug: COLLECTION_SLUG,
         p_cursor_before: null,
         p_cursor_after: null,
@@ -476,6 +528,11 @@ async function runListingCache() {
           purged: stats.purgedRows,
           purge_skipped: stats.purgeSkipped,
           head_count_after_purge: stats.headCountAfterPurge,
+          // The field an observer keys on. `purge_skipped` alone conflates
+          // "nothing was written" with "the book was truncated"; these two
+          // separate them, so the incidence of a truncated sweep is countable.
+          sweep_complete: stats.sweepComplete,
+          page_errors: stats.pageErrors,
           pages_fetched: stats.pagesFetched,
           skip_no_listed_order: stats.skipNoListedOrder,
           skip_missing_id: stats.skipMissingId,

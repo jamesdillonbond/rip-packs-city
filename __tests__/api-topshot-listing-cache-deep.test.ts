@@ -278,7 +278,7 @@ describe("topshot-listing-cache — row building + skip accounting", () => {
 })
 
 describe("topshot-listing-cache — degradation + fatal paths", () => {
-  it("a Flowty 500 yields zero rows, SKIPS the stale purge (cache never wiped), tolerates a failed fmv-recalc, still logs ok", async () => {
+  it("a Flowty 500 yields zero rows, SKIPS the stale purge (cache never wiped), tolerates a failed fmv-recalc, and logs the run as FAILED — not ok", async () => {
     fetchMock = installFetchMock([
       flowtyStub([{ status: 500 }]),
       jsonRoute("/api/fmv-recalc", { error: "down" }, { status: 500 }),
@@ -293,16 +293,96 @@ describe("topshot-listing-cache — degradation + fatal paths", () => {
     // No upsert, no delete — the only cached_listings touch is the head count.
     expect(spy.writes.cached_listings ?? []).toHaveLength(0)
 
+    // INVERTED 2026-08-25: this used to pin `p_ok: true`. A run that could not
+    // read a single page of the book is not a healthy run — it is a degraded one
+    // whose purge was suppressed, and `pipeline_runs` is the only place that
+    // fact can be counted from.
     const log = terminalLog(spy.rpcCalls)
-    expect(log).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 0, p_rows_written: 0 })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
     const extra = log?.p_extra as Record<string, unknown>
     expect(extra).toMatchObject({
       pages_fetched: 0,
       purged: 0,
       purge_skipped: true,
+      sweep_complete: false,
+      page_errors: 1,
       head_count_after_purge: 7,
       fmv_recalc_called: false,
     })
+  })
+
+  it("REGRESSION: a full page 0 followed by a 500 on page 1 writes rows but SKIPS the purge — a partial book never drives a delete", async () => {
+    // Page 0 is FULL (100), so the loop must ask for page 1; page 1 errors.
+    // The run therefore holds a real, non-empty, INCOMPLETE book — precisely the
+    // shape `upserted > 0` could not distinguish from a complete one, and the
+    // old purge deleted every listing that lived beyond offset 100.
+    const page0 = Array.from({ length: 100 }, (_, i) => makeNft(3000 + i))
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: page0 }, { status: 500 }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [
+        { error: null, count: 50 } as never,
+        { error: null, count: 50 } as never,
+        { count: 100, error: null } as never, // head count — NO purge in between
+      ],
+      "rpc:resolve_wallet_verification_challenges": { data: [], error: null },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    const upserts = (spy.writes.cached_listings ?? []).filter((w) => w.method === "upsert")
+    expect(upserts.flatMap((w) => w.rows)).toHaveLength(100)
+
+    // The fixture queue is the discriminator, and it is not vacuous: only three
+    // `cached_listings` responses are staged (two upsert chunks + the head
+    // count). A purge would consume the third as its delete, so `purged` could
+    // not read 0 and `head_count_after_purge` could not read 100.
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_written: 100 })
+    expect(String(log?.p_error)).toContain("sweep incomplete")
+    expect(log?.p_extra).toMatchObject({
+      sweep_complete: false,
+      page_errors: 1,
+      purge_skipped: true,
+      purged: 0,
+      head_count_after_purge: 100,
+    })
+  })
+
+  it("NO-CHANGE CONTROL: a complete sweep still purges — the guard suppresses a delete only on truncation", async () => {
+    // Same shape as the regression above except page 1 answers 200 with a SHORT
+    // page (a legitimate end of book). Without this control, a route that simply
+    // never purged again would satisfy every assertion above.
+    const page0 = Array.from({ length: 100 }, (_, i) => makeNft(4000 + i))
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: page0 }, { nfts: [makeNft(4999)] }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [
+        { error: null, count: 50 } as never,
+        { error: null, count: 50 } as never,
+        { error: null, count: 1 } as never,
+        { error: null, count: 4 } as never, // purge
+        { count: 101, error: null } as never, // head
+      ],
+      "rpc:resolve_wallet_verification_challenges": { data: [], error: null },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    // ⓘ Asserts ONLY properties that hold both before and after this change, on
+    // purpose: a control that goes red against the pre-fix route is testing the
+    // fix, not controlling it. Its job is to stay green forever and go red if
+    // someone ever "fixes" a truncation report by suppressing the purge outright.
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_error: null })
+    expect(log?.p_extra).toMatchObject({ purge_skipped: false, purged: 4 })
   })
 
   it("an upsert failure trips the fatal catch -> ok=false log with the error message", async () => {

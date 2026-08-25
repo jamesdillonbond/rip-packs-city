@@ -285,6 +285,98 @@ describe("listing-cache — upsert error degradation", () => {
     })
   })
 
+  it("REGRESSION: one page of the parallel fan-out failing skips the purge — a partial book never drives a delete", async () => {
+    // Offset 0 lands with real rows; a LATER page 500s. The pages are fetched
+    // in parallel and flattened, so a failed page contributes zero rows exactly
+    // like a legitimately empty one — `inserted > 0` is satisfied while the run
+    // holds a book missing a page, and the old purge deleted precisely the
+    // listings that page would have refreshed.
+    fetchMock = installFetchMock([
+      {
+        match: (url: string) => url.includes("flowty-proxy"),
+        respond: (_url: string, init?: RequestInit) => {
+          const parsed = JSON.parse(String(init?.body))
+          const offset = parsed?.payload?.offset as number
+          if (offset === 0) return { json: { nfts: [lillardNft, simonsNft] } }
+          return offset === 100
+            ? { status: 500, text: "flowty down" }
+            : { json: { nfts: [] } }
+        },
+      } as never,
+    ])
+    const spy = install({
+      cached_listings: { data: null, error: null },
+      pipeline_runs: { data: null, error: null },
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+    // The run DID write — which is exactly why `inserted > 0` alone could not
+    // protect it.
+    expect(body).toMatchObject({ ok: false, sweepComplete: false, pageErrors: 1 })
+    expect(body.cached).toBeGreaterThan(0)
+    expect(spy.deletes).toHaveLength(0)
+
+    const run = pipelineRow(spy)
+    expect(run).toMatchObject({ ok: false, extra: { sweep_complete: false, page_errors: 1 } })
+    expect(String((run as Record<string, unknown>)?.error)).toContain("sweep incomplete")
+  })
+
+  it("NO-CHANGE CONTROL: an all-pages-succeed sweep still purges — the guard suppresses a delete only on truncation", async () => {
+    // Without this, a route that simply never purged again would satisfy the
+    // regression above.
+    fetchMock = installFetchMock([proxyStub([lillardNft, simonsNft])])
+    const spy = install({
+      cached_listings: { data: null, error: null },
+      pipeline_runs: { data: null, error: null },
+    })
+
+    // ⓘ Asserts ONLY properties that hold both before and after this change, on
+    // purpose: a control that goes red against the pre-fix route is testing the
+    // fix, not controlling it. Its job is to stay green forever and go red if
+    // someone ever "fixes" a truncation report by suppressing the purge outright.
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true })
+    expect(spy.deletes).toHaveLength(1)
+    expect(pipelineRow(spy)).toMatchObject({ ok: true, error: null })
+  })
+
+  it("REGRESSION: a total Flowty outage is logged as UNREADABLE, not as an empty marketplace", async () => {
+    // Zero rows from a failed read and zero rows from an empty book are the same
+    // array. Reporting the first as `reason: "flowty_empty", ok: true` publishes
+    // a failed read as a fact about the market.
+    fetchMock = installFetchMock([
+      {
+        match: (url: string) => url.includes("flowty-proxy"),
+        respond: () => ({ status: 503, text: "flowty down" }),
+      } as never,
+    ])
+    const spy = install({ pipeline_runs: { data: null, error: null } })
+
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: false, sweepComplete: false })
+    expect(spy.deletes).toHaveLength(0)
+    const run = pipelineRow(spy)
+    expect(run).toMatchObject({ ok: false, extra: { reason: "flowty_unreadable" } })
+    expect(String((run as Record<string, unknown>)?.error)).toContain("not an empty marketplace")
+  })
+
+  it("NO-CHANGE CONTROL: a genuinely empty book is still reported as flowty_empty and ok", async () => {
+    // The other direction. Without it, "never call an empty result empty" would
+    // satisfy the outage regression above.
+    fetchMock = installFetchMock([proxyStub([])])
+    const spy = install({ pipeline_runs: { data: null, error: null } })
+
+    // Green in both worlds by design — see the note on the control above.
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true })
+    expect(pipelineRow(spy)).toMatchObject({
+      ok: true,
+      error: null,
+      extra: { reason: "flowty_empty" },
+    })
+  })
+
   it("skips the stale purge entirely when zero rows upserted — a failed sweep preserves the prior cache", async () => {
     fetchMock = installFetchMock([proxyStub([lillardNft, simonsNft])])
     const spy = install({
