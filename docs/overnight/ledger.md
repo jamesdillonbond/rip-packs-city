@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, guard) — the "only one spelling" defect generalised: I checked every other regex guard for it, and closed the one latent hole while REFUSING the one that would have made a number worse
+
+**GUARD ONLY. No product code, no DB, no migration, no prod-state change.** Follow-up to the collapse-ratchet widening in the previous entry. Having found that a guard's pattern knew only ARROW syntax, **the obvious next question is whether any OTHER guard has the same assumption** — so I swept the estate rather than fixing the one I tripped over.
+
+✅ **THE SWEEP, and it is mostly good news.** Grepping every `__tests__` and `scripts` regex for embedded arrow syntax returns **six** sites across four files. Four are **PINS, not populations** — `client-pages-failed-vs-empty-guard` and `collection-analytics-failed-vs-empty-guard` assert that a specific FIXED spelling is still present. ⚠ **A pin on an exact spelling is brittle in the SAFE direction:** rewrite the code as a function expression and the pin goes RED and a human looks. That is the opposite of a blind spot, and they were correctly left alone.
+
+✅ **`client-raw-json-parse-ratchet` HAD the hole, and closing it was free.** Its `RAW_JSON_RX` matched `.then((r) => r.json())` and `.then(r => r.json())` but not `.then(function (r) { return r.json() })`. ⓘ **Measured BEFORE changing anything: the function spelling is currently at ZERO**, so this is purely preventive and could not red the ban today. ⚠ **A ban at zero is exactly the shape where a blind spot is invisible** — there is no population whose absence would look surprising. ⓘ This guard's own header already records being blind once to `r => r.json()` (parens not optional) and concludes *"a guard's own derivation decides what it can observe"*; this is that same sentence coming true a third time, in the same file.
+
+⚠ **AND THE REGEX ALONE WOULD HAVE BEEN A HALF-FIX THAT READS AS A FULL ONE.** `offenders()` scanned **line by line**, and the function spelling is routinely written wrapped across three lines — so a widened pattern under a per-line loop closes the hole only for authors who happen not to wrap. **The two only work as a pair**, so the scan is now whole-file with line numbers recovered from the match offset. A new case pins exactly that: the wrapped specimen matches whole-file and **provably does NOT match line-by-line**, so the loop cannot quietly return.
+
+✅ **PROVEN AGAINST A REAL KNOWN OFFENDER, not just a string specimen.** Planted a wrapped `.then(function (r) { return r.json() })` in a temporary client component: the ban went RED and named `components/profile/_tmp_offender_probe.tsx:3` — right file, right line. Probe removed; `git status` clean before commit. ⚠ **A specimen proves the PATTERN; only a planted file proves the WALK delivers to it.**
+
+⛔ **AND ONE WIDENING I DELIBERATELY DID NOT DO — this is the part worth keeping.** The collapse ratchet's SECOND alternation, `.json().catch(() => null)`, has the same arrow-only shape, and the function spelling **does exist**: exactly one site, `app/(collections)/[collection]/collection/CollectionTabClient.tsx:537`. **I read it before counting it, and it is NOT a defect:**
+
+```js
+if (!res.ok) {
+  const j = await res.json().catch(function() { return {} })
+  throw new Error(j.error || "Failed to load moments")
+}
+```
+
+**It parses an error body defensively and then THROWS** — the failure propagates rather than being funnelled into a success value. Adding it would have moved that ratchet 68 → 69 on a benign site. ⚠ **That ratchet's own header already refuses a bare `.catch(() => {})` for the same reason** — *"including them would bury the signal under ~27 false positives and make the number meaningless as a debt measure"* — so counting this one would have contradicted its stated design. **"The pattern generalises" is a hypothesis about each instance, not a licence to widen everywhere; the measurement here was reading one file.**
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,032 cases, 0 failures** · the ban still reports ZERO after widening, and reports ONE when a wrapped offender is planted · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — narrows `RAW_JSON_RX` back to arrow-only and returns `offenders()` to a per-line scan. No product code, no DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, guard+code+test) — a ratchet had been measuring 43 of a true 69, because it only knew ONE SPELLING of the shape it counts
 
 **GUARD + CODE + TEST. No DB, no migration, no prod-state change.** `client-failure-collapses-to-empty-ratchet` counts client sites that funnel a failed read into the success-with-nothing value. **Its budget was 43. The real number is 69.**
