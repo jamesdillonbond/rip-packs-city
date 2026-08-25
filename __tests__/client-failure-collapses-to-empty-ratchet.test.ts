@@ -111,7 +111,30 @@ const ROOTS = ["app", "components"]
  * `.then((r) => (r.ok ? r.json() : null))` SHAPE, which is unchanged by any of
  * this; what a fix alters is the branch after it, which the regex cannot see.
  */
-const BUDGET = 43
+/**
+ * ⚠⚠ 43 → 68 on 2026-08-24, AND THAT IS A TIGHTENING, NOT A LICENSE. Read this
+ * before treating the rise as permission to add sites.
+ *
+ * The number did not grow because code got worse. The DETECTOR got sharper: it
+ * matched only the ARROW spelling of its first pattern, so 26 existing sites
+ * written `.then(function (r) { return r.ok ? r.json() : null })` were invisible
+ * to it — a whole family of this repo's client components is written that way.
+ * The old 43 was never the population; it was the arrow-shaped slice of it.
+ *
+ * ⚠ REAL PROTECTION WENT UP, not down. Before, a new site in the function
+ * spelling could be added freely and this ratchet stayed green at 43. Now every
+ * new site in EITHER spelling reds it.
+ *
+ * ⚠ The tell that something was wrong was available and I nearly missed it:
+ * converting `TierBreakdownCard` earlier the same day removed a genuine collapse
+ * site and the count did not move. **A ratchet that does not fall when you
+ * convert a site is measuring something other than what you fixed.**
+ *
+ * 68 and not 69 because `PortfolioSparkline` was converted in the same commit —
+ * which is also what proves the new alternation is wired to the count rather
+ * than merely present.
+ */
+const BUDGET = 68
 
 /**
  * A failure funnelled into the success-with-nothing value.
@@ -129,6 +152,25 @@ const COLLAPSE_SITE = new RegExp(
     String.raw`\.json\(\)\s*\.catch\(\s*\(\s*\)\s*=>\s*(?:null|\[\]|\{\})\s*\)`,
     // if (!res.ok) { setRows([]); return }
     String.raw`if\s*\(\s*!\s*\w*[Rr]es\w*\.ok\s*\)\s*\{[^}]{0,80}set\w+\(\s*\[\]\s*\)`,
+    // ⚠ THE SAME SHAPE AS THE FIRST ALTERNATION, WRITTEN AS A FUNCTION
+    // EXPRESSION — added 2026-08-24, and it was worth 26 hidden sites:
+    //
+    //     .then(function (r) { return r.ok ? r.json() : null })
+    //
+    // The arrow pattern above cannot match that, and a whole FAMILY of this
+    // repo's client components is written in the `function (x) { return … }`
+    // style — CollectionTabClient (10), CollectionProfileClient (7),
+    // ProfileClient (4), and five more. So this ratchet reported a debt number
+    // ~45% short of the real one WHILE its own guards-the-guard test passed,
+    // because that specimen only ever contained the arrow spelling: the check
+    // shared the detector's blind spot.
+    //
+    // ⚠ Second time this exact failure mode has surfaced in an honesty sweep —
+    // the 08-21 filing's own detector read 32 for a true 259 because `[^\n;]`
+    // could not cross a newline. **A population derived from a pattern that
+    // cannot match a common spelling is not a population.** The tell was the
+    // same both times: the number barely moves when sites are converted.
+    String.raw`\.then\(\s*function\s*\(\s*\w+\s*\)\s*\{\s*return\s+\w+\.ok\s*\?\s*\w+\.json\(\)\s*:\s*(?:null|\[\]|\{\})\s*;?\s*\}\s*\)`,
   ].join("|"),
   "g",
 )
@@ -217,14 +259,21 @@ describe("client failure-collapses-to-empty ratchet", () => {
       const a = await fetch(u).then((r) => (r.ok ? r.json() : null))
       const b = await res.json().catch(() => null)
       if (!res.ok) { setRows([]); return }
+      const d = await fetch(u).then(function (r) { return r.ok ? r.json() : null })
     `
-    expect((specimen.match(COLLAPSE_SITE) ?? []).length).toBe(3)
+    // ⚠ FOUR, not three. The fourth line is the function-expression spelling.
+    // Feeding this specimen arrows ONLY is exactly how the blind spot survived:
+    // a guards-the-guard that shares the detector's blind spot proves nothing.
+    expect((specimen.match(COLLAPSE_SITE) ?? []).length).toBe(4)
     // ...and does NOT match the benign shapes, or the number is noise.
     const benign = `
       videoRef.current.play().catch(() => {})
       fetch("/api/track", { method: "POST" }).catch(() => {})
       const c = res.ok ? await res.json() : { rows: [], ok: false }
+      const e = await fetch(u).then(function (r) { return r.json() })
     `
+    // The last line is the function spelling WITHOUT the `.ok` collapse. It must
+    // NOT match, or the new alternation is merely counting `.then(function`.
     expect((benign.match(COLLAPSE_SITE) ?? []).length).toBe(0)
   })
 

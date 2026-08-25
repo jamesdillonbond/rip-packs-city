@@ -2,18 +2,37 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { monoFont, condensedFont, fmtDollars, fmtDate, PortfolioSnapshot } from "./_shared";
+import { fetchJson } from "@/lib/analytics/fetch-json";
 
 export default function PortfolioSparkline(props: { ownerKey: string; currentFmv: number; onChange?: (pct: number | null) => void; lineColor?: string }) {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
+  // ⚠ HONESTY CANON, and the ACTIONABLE sub-class. A failed read left
+  // `snapshots` empty, so `points` held only the synthetic live-today entry,
+  // `isEmpty` went true, and the card told the collector:
+  //
+  //   "Sparkline builds as you load wallets. Load any saved wallet to record
+  //    today's data point."
+  //
+  // — instructing them to redo work they may already have done, because OUR
+  // read failed. `.then(function (r) { return r.ok ? r.json() : null })` is the
+  // very shape `client-failure-collapses-to-empty-ratchet` counts, and it could
+  // not see this one: until 2026-08-24 that ratchet matched only the ARROW
+  // spelling, and this whole component family is written with `function (x)`.
+  const [failed, setFailed] = useState(false);
 
   useEffect(function() {
     if (!props.ownerKey) return;
     setLoading(true);
-    fetch("/api/profile/portfolio-history?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=30")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (d?.snapshots) setSnapshots(d.snapshots); })
-      .catch(function() {})
+    setFailed(false);
+    fetchJson<{ snapshots?: PortfolioSnapshot[] }>(
+      "/api/profile/portfolio-history?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=30",
+    )
+      .then(function(res) {
+        setFailed(!res.ok);
+        if (res.ok && res.json?.snapshots) setSnapshots(res.json.snapshots);
+      })
+      .catch(function() { setFailed(true); })
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
 
@@ -24,7 +43,9 @@ export default function PortfolioSparkline(props: { ownerKey: string; currentFmv
     return [...historical, liveToday].filter(function(s) { return s.total_fmv > 0; });
   }, [snapshots, props.currentFmv]);
 
-  const isEmpty = !loading && points.length < 2;
+  // `failed` takes precedence: both states have fewer than two points, and
+  // "we could not read" is the true one.
+  const isEmpty = !loading && !failed && points.length < 2;
   const minVal = points.length ? Math.min(...points.map(function(p) { return p.total_fmv; })) : 0;
   const maxVal = points.length ? Math.max(...points.map(function(p) { return p.total_fmv; })) : 0;
   const range = maxVal - minVal || 1;
@@ -66,6 +87,13 @@ export default function PortfolioSparkline(props: { ownerKey: string; currentFmv
       {loading ? (
         <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.2)" }}>Loading…</span>
+        </div>
+      ) : failed ? (
+        <div style={{ height: 60, display: "flex", alignItems: "center" }}>
+          <div style={{ flex: 1, fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
+            Couldn&apos;t load your portfolio history right now — this is our problem, not a
+            missing wallet.
+          </div>
         </div>
       ) : isEmpty ? (
         <div style={{ height: 60, display: "flex", alignItems: "center", gap: 12 }}>
