@@ -1,4 +1,4 @@
-# Inbox index — 231 live filings
+# Inbox index — 232 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-08-25 — 1 filing
+
+- [🚨 `rpc-ccm-step2` is NOT saturation collateral — it nested-loops 220 whale wallets holding **72% of the Top Shot partition**](2026-08-25T1535Z-ccm-step2-is-not-saturation-collateral-it-nested-loops-72pct-of-wmc.md) — **SUPERSEDES the 00:11Z filing's root-cause attribution.** That candidate called the timeout "a disk-IO saturation symptom" and cited a PRIORITY 3 bar on re-investigating it — but the job is **8-for-8 failed since 08-18 across two different clock windows**, the durations are **bimodal (9.2/9.7/13.1 s vs 300.0 s exactly)**, and the filing's own control read `io_wait=0`. Measured cause: the 220 cohort wallets hold **1,363,128 of 1,888,824 TS rows = 72.2 % of the partition**, and the planner estimates **664,888 (2.05× under)**, so it picks a nested loop where one sequential pass is right. ⛔ **NOT shipped — the A/B is unmeasured**: three probes died at 60–90 s while **9 of 9 backends waited on IO**, so they timed the spell, not the query. Re-run at a quiet hour and **compare BUFFERS, not seconds**. Proposed fix is one `SET LOCAL enable_nestloop = off` in the function, zero behaviour change
 
 ## 2026-08-24 — 7 filings
 
