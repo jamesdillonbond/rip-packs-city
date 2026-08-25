@@ -84,3 +84,66 @@ describe("the whale map shows when its data was COMPUTED, not when it was read",
     expect(container.textContent).not.toContain("2026-08-21")
   })
 })
+
+// ── The SECOND instant on this page, found 2026-08-25 ────────────────────────
+//
+// The cases above fixed the page-level stamp. They did not notice that the board
+// draws from TWO materialised tables refreshed by DIFFERENT jobs:
+//
+//   cross_collection_cohort_stats / _cohort_mat  ← rpc-ccm-step1
+//   cross_collection_ts_set_overlap_mat          ← rpc-ccm-step2
+//
+// step2 fails on its own (statement timeout), so the two drift apart. Measured
+// live 2026-08-25: cohort **15.7 h** old, set overlap **66.2 h** old — under one
+// shared "Cohort data computed …" line. A reader seeing "15.7 hours ago" above the
+// set-overlap table was being understated by **50 hours**.
+//
+// ⚠ And the client could not have known: the page's select was
+// `set_id, set_name, cohort_holders, moments_in_cohort` — `computed_at` was never
+// fetched. So this is the "fix per PANEL, not per page" shape: the freshness stamp
+// was fixed for the page and one panel silently rode along on someone else's age.
+const OVERLAP_COMPUTED = "2026-08-22T20:43:22.000Z"
+const overlapRow = (computed_at: string | null) => ({
+  set_id: "s1",
+  set_name: "Base Set",
+  cohort_holders: 42,
+  moments_in_cohort: 100,
+  ...(computed_at === null ? {} : { computed_at }),
+})
+
+describe("the set-overlap table carries its OWN age, not the cohort's", () => {
+  it("stamps the overlap mat's computed_at separately from the cohort's", () => {
+    const payload: ApiResponse = {
+      ...initial(),
+      ts_set_overlap: [overlapRow(OVERLAP_COMPUTED)] as never,
+    }
+    const { container } = render(<CrossCollectionBoardClient initial={payload} />)
+    const stamps = [...container.querySelectorAll("time")].map((t) => t.getAttribute("dateTime"))
+    // BOTH instants must be present — the cohort's and the overlap's.
+    expect(stamps).toContain(COMPUTED)
+    expect(stamps).toContain(OVERLAP_COMPUTED)
+    // ...and they must be DIFFERENT, which is the whole point.
+    expect(COMPUTED).not.toBe(OVERLAP_COMPUTED)
+  })
+
+  it("renders NO overlap stamp rather than borrowing the cohort's when the column is absent", () => {
+    // An older cached payload has no `computed_at` on these rows. Falling back to
+    // the cohort stamp there would re-create the exact 50-hour understatement this
+    // exists to stop — so the honest output is nothing.
+    const payload: ApiResponse = {
+      ...initial(),
+      ts_set_overlap: [overlapRow(null)] as never,
+    }
+    const { container } = render(<CrossCollectionBoardClient initial={payload} />)
+    const stamps = [...container.querySelectorAll("time")].map((t) => t.getAttribute("dateTime"))
+    expect(stamps).toEqual([COMPUTED]) // the cohort's only
+    expect(container.textContent).not.toMatch(/Set overlap computed/i)
+  })
+
+  it("NO-CHANGE CONTROL: an empty overlap table still shows the cohort stamp", () => {
+    // Without this, "never render the overlap stamp" satisfies the case above and
+    // the feature would be dead rather than careful.
+    const { container } = render(<CrossCollectionBoardClient initial={initial()} />)
+    expect(container.querySelector("time")!.getAttribute("dateTime")).toBe(COMPUTED)
+  })
+})

@@ -50,6 +50,16 @@ type SetOverlapRow = {
   set_name: string | null
   cohort_holders: number | null
   moments_in_cohort: number | null
+  /**
+   * ⚠ This table's OWN rebuild instant, and it is NOT the cohort stamp.
+   *
+   * The overlap mat is refreshed by `rpc-ccm-step2`; the cohort stats by
+   * `rpc-ccm-step1`. step2 fails on its own (statement timeout), so the two
+   * drift. Measured 2026-08-25: cohort 15.7 h old, overlap **66.2 h** old,
+   * under one shared "Cohort data computed …" line. One stamp covering two
+   * datasets of different ages understates the older one silently.
+   */
+  computed_at?: string | null
 }
 
 export type ApiResponse = {
@@ -138,6 +148,12 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
   const stats = data?.stats
   const wallets = data?.wallets ?? []
   const overlap = data?.ts_set_overlap ?? []
+  // ⚠ Per-TABLE freshness, not per-page. Every row of a mat carries the same
+  // rebuild instant, so row 0 is the table's stamp — but read defensively: the
+  // column is optional on the type because an older cached payload will not
+  // carry it, and in that case we render NO stamp rather than falling back to
+  // the cohort one, which is the 50-hour lie this exists to stop.
+  const overlapComputedAt = overlap.find((o) => o.computed_at)?.computed_at ?? null
 
   const tweetIntent = useMemo(() => {
     const text = `143 wallets hold 3+ Flow collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. The cross-collection cohort, no signup:`
@@ -297,6 +313,11 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
         <p className="rpc-cc-sub">
           Top {Math.min(overlap.length, 30)} TS sets ranked by cohort-holder count.
           What multi-collection collectors actually own.
+          {overlapComputedAt ? (
+            <>
+              {" "}Set overlap computed <FreshnessStamp iso={overlapComputedAt} />.
+            </>
+          ) : null}
         </p>
         {overlap.length === 0 ? (
           <div className="rpc-cc-state">{loading ? "Loading…" : "No overlap data."}</div>

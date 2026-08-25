@@ -84,7 +84,10 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from("cross_collection_ts_set_overlap_mat")
-      .select("set_id, set_name, cohort_holders, moments_in_cohort")
+      // computed_at ships so a consumer can age THIS table independently of the
+      // cohort stats — they are refreshed by different jobs (ccm step1 vs step2)
+      // and step2 has been failing alone. See the page's note.
+      .select("set_id, set_name, cohort_holders, moments_in_cohort, computed_at")
       .order("cohort_holders", { ascending: false })
       .limit(30),
   ]);

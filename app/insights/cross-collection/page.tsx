@@ -45,7 +45,13 @@ async function fetchInitial(): Promise<{ initial: ApiResponse; ok: boolean }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabaseAdmin as any)
       .from("cross_collection_ts_set_overlap_mat")
-      .select("set_id, set_name, cohort_holders, moments_in_cohort")
+      // ⚠ `computed_at` is load-bearing and was NOT selected. This table comes
+      // from a DIFFERENT mat than the cohort stats — step2, not step1 — and the
+      // two drift apart when step2 fails on its own. Measured 2026-08-25: the
+      // page said "Cohort data computed 15.7 hours ago" (step1's stamp) above
+      // this table, which was **66.2 hours** old. Without this column the client
+      // cannot know, so it silently inherited a stamp that was 50 hours wrong.
+      .select("set_id, set_name, cohort_holders, moments_in_cohort, computed_at")
       .order("cohort_holders", { ascending: false })
       .limit(30),
       ]),
