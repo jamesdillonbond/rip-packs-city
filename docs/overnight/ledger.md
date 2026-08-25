@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test+docs) — five zero-violation guards coerced ANY non-array payload into "0 violations" and passed; now they fail closed on shape
+
+**CODE + TEST + DOCS. No DB, no migration, no prod-state change.** Closing the crack named in the 08-25 handoff, plus the two doc items it left open.
+
+⛔ **`app/api/smoke-test/route.ts` read `const violations = Array.isArray(data) ? data : []` and then `passed = violations.length === 0`.** Every non-array payload — a jsonb object, a scalar, a NULL jsonb — collapsed to an empty list and the guard **PASSED**. This is the `?? 0`-on-a-count shape applied to a security check: the coercion publishes a measured-clean verdict the guard never earned, permanently, with nothing going red.
+
+⚠ **THE HANDOFF NAMED ONE SITE; THERE WERE FIVE.** Per CLAUDE.md's rule — *grep for the EXPRESSION, not the file* — the same line appears at four `check_*` guards plus `detect_stalled_pipelines`:
+
+| guard | pg_proc return shape | payload PostgREST delivers |
+|---|---|---|
+| `check_public_security_invariants` | `TABLE(kind, object_name)` | JSON array |
+| `check_anon_write_surface` | `TABLE(object_name, policyname, cmd)` | JSON array |
+| `check_secdef_anon_execute_violations` | scalar `jsonb` | whatever the jsonb is |
+| `check_cursor_stall_threshold_drift` | scalar `jsonb` | whatever the jsonb is |
+| `detect_stalled_pipelines` | scalar `jsonb` | whatever the jsonb is |
+
+⭐ **THE MEASUREMENT MATTERS MORE THAN THE FIX, AND IT CUTS AGAINST THE ALARM.** I did not take the handoff's premise on trust. Read live from `pg_proc` + `jsonb_typeof` 2026-08-25: **all five return a JSON array today, and each COALESCEs its own NULL** — so **nothing was mis-reporting and no guard was silently green.** ✅ **This is PROSPECTIVE hardening, not a live-P0 repair, and it is recorded that way on purpose.** ⚠ What makes it worth shipping anyway is that **both shapes are already live inside this one route**, so the triggering mutation is not hypothetical: converting any scalar-jsonb guard to the `{"violations": […]}` object shape a sibling uses, or letting one return SQL NULL, would silence it with no test going red.
+
+✅ **The fix mirrors the handling `error` already had:** `if (!Array.isArray(data)) return shapeCouldNotRun(meta, data)` → `couldNotRun: true, passed: false`. **Never `soft`** — a shape change is not transient and a retry cannot fix it. ⚠ **Only the TYPE is reported, never the payload:** these guards read privilege catalogues (`pg_proc` ACLs, RLS policies), and echoing a body would put catalogue rows into a Sentry title on the one path nobody rehearses. One shared helper, so the next copy-paste inherits the fix rather than the defect.
+
+⚠ **THE TESTS WERE PROVEN AGAINST THE KNOWN OFFENDER, NOT JUST OBSERVED GREEN.** Four new cases pinned to the PROPERTY (*a non-array never yields a pass*), not the spelling — they cover **both** return shapes and **three** payloads (object / null / scalar), so a fix handling only one is red. Reverted the route to the offending line: **4 red**; restored: **19 green**. ⚠ **Plus a both-directions control** — *an EMPTY ARRAY is an honest zero-violations pass, NOT `couldNotRun`* — which stays **green in both worlds** by design: without it, a guard that flagged *every* result unreadable would satisfy the three regressions. **A test that only goes red for the defect is half an instrument.**
+
+📄 **Two doc items closed in the same turn, both re-measured rather than transcribed:**
+
+- **`docs/reference/schema-truth.md` RLS section was stale-in-a-good-way.** It described `series_detail_rollup` as a standing 🔴 RLS-off instrument. Live 2026-08-25: **RLS is ON, 0 of 372 base tables RLS-off, and all five security checks clean** (`check_public_security_invariants` 0 rows · `check_anon_write_surface` 0 rows · the three scalar-jsonb ones array-length 0). Section rewritten with a shape-vs-count table, because **this file mixes both return shapes and the 0-rows-clean / 1-row-clean distinction has to be re-derived per function.** ⚠ **Stamped as an RLS-SECTION-ONLY refresh, deliberately NOT as a whole-file regeneration** — the file's authority is its stamp, and bumping the global one for a partial re-read is the exact conflation its own header warns about. ⓘ Also recorded: the sweep read **367** base tables and the live DB **372** the same day — two dated samples of a moving count, so re-measure and quote neither.
+- **`docs/overnight/inbox/INDEX.md` was one filing behind** (232 listed / 233 on disk) — the untracked `compute-golazos-pack-ev` cadence filing. All **three** CI-asserted values bumped together: header total, the `2026-08-25` day count, and the entry itself.
+
+⚠ **The 🔓 root cause behind the sixth invariant arm is still OPEN and is Trevor's call:** the arm DETECTS an anon-readable materialized view but does not PREVENT one — `ALTER DEFAULT PRIVILEGES` grants `postgres`-created MVs `anon=rxm`, so **every new MV is born exposed and relies on a monitor.** Stripping that default is the fix. Re-stated in `schema-truth.md` so it is not carried only in a handoff.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · full `npm test` **1377 files / 15070 passed, 0 failed** · negative control run and restored · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` on the code commit (route + test) and on the docs commit; no DB half.
+
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — a failed state read could UN-COMPLETE a finished backfill, permanently, and reset its cursor to the start of Top Shot sales history
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Third and last finding from the 14-candidate sweep that the `collection-snapshot` fix opened. **Closing the sweep honestly is the point of this entry** — the other eleven are triaged below rather than left implied.

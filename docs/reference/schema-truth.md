@@ -67,19 +67,52 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 - `nba_player_projections.confidence` is a **different** CHECK (not this enum): it allows
   3-letter `HIGH | MED | LOW`. Don't conflate with `fmv_confidence`'s `MEDIUM`.
 
-## RLS posture
+## RLS posture — ⭐ re-measured 2026-08-25 (RLS SECTION ONLY)
 
-- Public tables: **372** (2026-08-22; was 340 on 2026-07-28, 290 on 2026-07-16, 245 on 2026-06-30, 88 in older CLAUDE.md
-  prose — the count drifts upward as tables are added; treat the exact number as
-  informational, the invariant below is the fact that matters). Public views: **136** (was 122).
-- 🔴 **Tables with `rowsecurity=false`: 1 as of 2026-08-22 — the invariant no longer holds as stated.** It was 0 through 2026-07-28. The table is **`series_detail_rollup`**, created hours earlier the same day by the series-precompute work. ⚠ **This is an INSTRUMENT problem, not a measured exposure:** its migration ran `REVOKE ALL … FROM PUBLIC, anon, authenticated`, and `has_table_privilege` confirms **anon SELECT false, authenticated SELECT false**, while its only reader `get_series_detail` is SECURITY DEFINER (which bypasses RLS anyway). **No anon-reachable path exists.** What IS true is that `check_public_security_invariants()` now returns **1 row** (`rls_off_base_table`) — and a SETOF check is **0-rows-clean**, so the repo's own security invariant is RED and will stay red until someone either enables RLS on the table (one statement, no behaviour change given the grants) or teaches the check that a base table with zero anon/authenticated privileges is compliant. **A standing red instrument trains people to skim past it, which is the documented failure class.** Filed 2026-08-22.
+⚠ **This section carries its own stamp, and it is NEWER than the file-level "Last generated" above.**
+Only the RLS/security figures below were re-read from the live DB on 2026-08-25; the rest of this file
+still dates from its 2026-08-22 regeneration. **Do not read this stamp as a whole-file refresh** — that
+conflation is exactly what this file's header warns about.
+
+- Public base tables: **372** (2026-08-25; was 340 on 2026-07-28, 290 on 2026-07-16, 245 on 2026-06-30,
+  88 in older CLAUDE.md prose — the count drifts upward as tables are added; treat the exact number as
+  informational, the invariant below is the fact that matters). Public views: **136**. Public
+  materialized views: **34**.
+  ⚠ The 2026-08-25 data-quality sweep reported **367** base tables; a live read the same day returns
+  **372**. Neither is wrong — they are two dated samples of a moving count. **Re-measure; quote neither.**
+- ✅ **Tables with `rowsecurity=false`: 0 as of 2026-08-25 — the invariant holds again.** The 08-22 red
+  entry was **`series_detail_rollup`**, and it is **RESOLVED**: RLS is now enabled on the table
+  (`relrowsecurity = true`, verified live). ⚠ **The 08-22 assessment was correct and is worth preserving:**
+  that red was an **INSTRUMENT** problem, not a measured exposure — the table's migration had already
+  revoked all anon/authenticated privileges, and its only reader `get_series_detail` is SECURITY DEFINER
+  (which bypasses RLS anyway), so no anon-reachable path ever existed. The fix closed the instrument, not
+  a hole. **A standing red instrument trains people to skim past it, which is the documented failure
+  class** — that is why closing it mattered even though nothing was exposed.
 - **RLS-on is NOT the whole posture** (the 2026-07-19 Panini/Candy lesson): Supabase's
   default per-role `anon`/`authenticated` grant survives `REVOKE … FROM PUBLIC`, so a
   table can be RLS-on and still readable at `/rest/v1/<table>`. The live checks that cover
-  that class, re-run 2026-08-22: `check_anon_write_surface()` **0 rows — clean**;
-  `check_secdef_anon_exec_drift()` **array length 0 — clean** (⚠ its `count(*)` is 1 when clean;
-  read the LENGTH); `check_public_security_invariants()` **1 row — NOT clean**, the
-  `series_detail_rollup` RLS-off entry described above.
+  that class, all re-run 2026-08-25 — **all five clean**:
+
+  | check | return shape | clean reading | 2026-08-25 |
+  |---|---|---|---|
+  | `check_public_security_invariants()` | SETOF | **0 rows** | ✅ 0 |
+  | `check_anon_write_surface()` | SETOF | **0 rows** | ✅ 0 |
+  | `check_secdef_anon_exec_drift()` | scalar jsonb | **array length 0** | ✅ 0 |
+  | `check_secdef_anon_execute_violations()` | scalar jsonb | **array length 0** | ✅ 0 |
+  | `check_cursor_stall_threshold_drift()` | scalar jsonb | **array length 0** | ✅ 0 |
+
+  ⚠ **Read the RETURN SHAPE before interpreting the count.** A SETOF check is 0-rows-clean; a
+  scalar-jsonb check returns **`count(*) = 1` when clean** — read the array LENGTH, never the row count.
+  Both shapes are mixed inside this one table, which is why the distinction has to be re-derived per
+  function rather than remembered per file.
+- ⚠ **`check_public_security_invariants()` now has SIX arms**, not the five it shipped with: RLS-off /
+  anon-write base tables · updatable+writable views · unexpected-definer views · anon-EXECUTE secdef
+  trigger fns · and (added `20260824233704`) **anon-readable materialized views**. That sixth arm exists
+  because `ALTER DEFAULT PRIVILEGES` grants `postgres`-created MVs `anon=rxm`, so **every new
+  materialized view is born anon-readable**. 🔓 **Still open:** the arm DETECTS an exposed MV, it does not
+  PREVENT one — stripping `anon=rxm` from the schema default privileges is the root fix and is Trevor's
+  call. ⛔ `information_schema.role_table_grants` returns **0 rows for all 34 MVs** while they demonstrably
+  hold grants, so any guard reading MV grants through it passes **vacuously**.
 
 ## Collections registry (live `public.collections`) — ⭐ CANONICAL, re-verified 2026-08-24
 
