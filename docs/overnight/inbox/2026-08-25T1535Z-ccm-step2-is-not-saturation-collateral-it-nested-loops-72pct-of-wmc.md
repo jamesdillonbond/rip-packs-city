@@ -215,3 +215,16 @@ Set overlap computed  <time dateTime="2026-08-25T16:07:52.023Z">
 together: the earlier commit (`7c45b4ef`) gave the set-overlap table its OWN stamp instead of borrowing the
 cohort's, and this DB fix made that stamp fresh. Before today the page rendered **one** line — step1's — above a
 table the reader had no way to know was **66.5 hours** old.
+
+### ✅ THE ONE REMAINING GAP IS CLOSED — CI ran the SQL invariant test on the new body
+
+The section above listed *"the SQL invariant test runs only in CI — there is no `psql` on this box … its
+assertions have not been executed against the new body"* as an open item. **CI's `DB invariants (SQL)` job is
+green on the migration commit `aac89b76`** (run 32871367456, alongside TypeScript, Unit tests, Component/Worker
+coverage, Edge functions, Cadence lint and the escrow tests). So every assertion in
+`supabase/tests/refresh_cross_collection_cohort_step2.sql` — the cohort join, both collection scopes, holders-are-
+DISTINCT-wallets, the null-set exclusion, one `computed_at` per rebuild, the step1 coupling and the
+non-re-entrancy — **has now actually been executed against the `SET LOCAL enable_nestloop = off` body**, rather
+than argued about.
+
+⚠ **`rpc-ccm-step2` at 23:25Z tonight is still the falsifier**, and is still open.
