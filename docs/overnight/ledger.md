@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — /insights/cross-collection stamped ONE age over TWO materialised tables, understating the set-overlap panel by ~50 hours
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Found while investigating the night pass's queued item **#B** (an additive `cross_collection_overlap_stale_hours` arm on `v_rpc_trust_health`). Applying *name the caller* to the mat first — before touching the trust view — turned up a live honesty defect on the public board instead, which is a better use of the same hour.
+
+🚨 **THE BOARD DRAWS FROM TWO MATS REFRESHED BY DIFFERENT JOBS, AND RENDERED ONE STAMP FOR BOTH.** `cross_collection_cohort_stats` / `_cohort_mat` come from `rpc-ccm-step1`; `cross_collection_ts_set_overlap_mat` comes from `rpc-ccm-step2`. Step2 fails independently (statement timeout), so they drift. Measured live 2026-08-25: **cohort 15.7 h old, set overlap 66.2 h old** — and the single line `Cohort data computed <FreshnessStamp iso={stats?.computed_at} />` sat directly above the *"What the cohort collects on Top Shot"* table sourced from the 66.2 h mat. **A reader was being understated by ~50 hours on a public board.**
+
+⚠ **AND THE CLIENT COULD NOT HAVE KNOWN — `computed_at` WAS NEVER SELECTED.** Both the server page and `/api/public/insights/cross-collection` selected `set_id, set_name, cohort_holders, moments_in_cohort`. The column exists on the mat; nothing fetched it. So no amount of care in the component could have produced an honest number — **the omission was upstream of the render, which is why a component-level audit would never have found it.**
+
+⭐ **THIS IS EXACTLY THE "FIX PER PANEL, NOT PER PAGE" SHAPE, ON A PAGE THAT ALREADY LEARNED IT.** The 2026-08-21 entry for this same board fixed the stamp for the *other* leg and its test file's own header says the whale map *"was 4 days 19 hours old and the page rendered no age at all"*. That fix was correct and complete **for the page**. One panel then rode along on someone else's age for four more days. **A page with one honest freshness stamp is not a page with honest freshness.**
+
+✅ **The fix, three files:** `computed_at` added to both selects (server page + public API), `SetOverlapRow` typed for it, and a per-table stamp — `Set overlap computed <FreshnessStamp iso={overlapComputedAt} />` — derived from the rows themselves (`overlap.find((o) => o.computed_at)?.computed_at ?? null`), rendered **only** in the overlap section.
+
+⚠ **PROVEN, INCLUDING THE FALLBACK THAT MATTERS MOST.** 3 new cases, and the negative control ran: reverting the client alone turns the separation case red (1 failed / 5 passed), restore → 6 pass. The three: **(1)** both instants present and distinct; **(2)** ⭐ a row with **no** `computed_at` renders **no overlap stamp at all** rather than borrowing the cohort's — *the fallback IS the 50-hour lie*, so the honest output is nothing, exactly as the page-level case already pins for `meta.fetched_at`; **(3)** a no-change control that an empty overlap table still shows the cohort stamp, so *"never render it"* cannot satisfy (2) and leave the feature dead.
+
+ⓘ **What this does NOT fix:** step2's timeout. The mat is still 66 h stale and that needs a schedule-or-query decision. **The board now says so** — which is the point, and is also the honest prerequisite for queued item #B: an alert arm is worth adding once the surface itself stops disagreeing with it.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,047 passed, 0 failures** ⚠ *(one earlier run of the same tree reported 1 file failed with no failure printed in the tail; two subsequent full runs were clean and the file did not repeat — logged as an unreproduced flake, not a pass)* · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores the single shared stamp and drops `computed_at` from both selects. No DB half.
+
 ### 2026-08-25 · ANSWERED, NOT SHIPPED (Claude Code, interactive) — the pack-pool backfill is a WEDGED HEAD, not an exhausted walk, and BOTH queued dispositions were harmful
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Settles queued item **#A** from this morning's night-pass handoff, which asked for a decision between *"benign / exhausted finite backfill — retire the row or re-map its terminal outcome"* and *"a real conversion regression"*. **Measured: neither.**
