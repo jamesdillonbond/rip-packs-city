@@ -53,8 +53,19 @@ SKILL.md` — **33 files / 6,313 lines**, green at population zero with **8 docu
 **12 test arms**; full suite **1377 files / 15,002 tests** green, and `git status --porcelain` byte-identical
 before and after `npm test`.
 
-**Revert path:** `git revert <sha>` — docs, one guard, one bundle re-pack. ⚠ Reverting restores the
-`.limit(10000)` checklist line and the retired iPhone rule in CLAUDE.md; revert only to undo a bad edit.
+**Revert path (real sha):** `git revert 9214385c` — docs, one guard, one bundle re-pack. ⚠ Reverting restores
+the `.limit(10000)` checklist line and the retired iPhone rule in CLAUDE.md; revert only to undo a bad edit.
+
+⚠ **ONE MORE LESSON, FROM RESOLVING THIS COMMIT'S OWN REBASE — and it nearly cost another session's work.**
+My ledger resolver assumed *every block in the delta between upstream and mine is mine*. **False here:**
+upstream had EDITED its own 08-24 entry to record a real revert sha (`c1c35780`) while my copy still held the
+`<sha>` placeholder — so **their block appeared in the delta too**, and splicing the delta wholesale would
+have written my stale copy over their newer one: **a silent revert of another session's commit, inside a
+conflict resolution.** ✅ It was caught only because the resolver asserted every spliced block starts with MY
+heading prefix and refused to proceed. **Ours are now identified by an EXPLICIT heading list; anything else
+in the delta is left to upstream and printed.** ➡ **In a concurrently-written append-at-top file, "new to me"
+and "mine" are different sets, and an EDIT upstream makes an old block look new.**
+
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — six profile surfaces answered a failed read with a claim about the reader's OWN account, and an always-200 contract made the clients' correct failure branches unreachable
 
