@@ -389,6 +389,49 @@ describe("sentinel — confidence / coverage / leak arms", () => {
     const critR = await run({ editions: { count: 2500, error: null } as never })
     expect(chk(critR, "TS Edition Writer Leak (48h)").status).toBe("critical")
   })
+
+  // ⚠ THIS TRIPWIRE USED TO REPORT "ok" FROM A FAILED READ, on the sentinel —
+  // the report Trevor actually reads.
+  //
+  // The count was destructured without `error`, and `inertUuid || 0` made a
+  // failed read n = 0, which is below warn_at, so the arm published a measured
+  // PASS. ⚠ The surrounding try/catch looks like it covers this and does not:
+  // supabase-js RESOLVES on a query error rather than throwing, so the exception
+  // branch only ever fires for a genuine throw.
+  //
+  // Asserted as "not ok" rather than "== warn" so the pin survives someone
+  // deciding this deserves critical; and `value` must be ABSENT, because a
+  // fabricated 0 is precisely what made the failure invisible.
+  it("does NOT report ok when the inert-UUID count read errors", async () => {
+    const r = await run({
+      editions: { count: null, error: { message: "canceling statement due to statement timeout" } } as never,
+    })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).not.toBe("ok")
+    expect(arm.detail).toMatch(/INCONCLUSIVE/i)
+    expect(arm.value).toBeUndefined()
+    // The driver message may be shown here — this is the operator-only sentinel,
+    // not an anon surface — but the arm must not claim a measured zero.
+    expect(arm.detail).not.toMatch(/0 inert/)
+  })
+
+  it("does NOT report ok when the count comes back absent without an error", async () => {
+    const r = await run({ editions: { count: null, error: null } as never })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).not.toBe("ok")
+    expect(arm.detail).toMatch(/INCONCLUSIVE/i)
+  })
+
+  it("NO-CHANGE CONTROL: a genuine zero still reports ok, with the value", async () => {
+    // Without this, "never report ok" would satisfy both cases above and the
+    // tripwire would sit permanently warn — which CLAUDE.md records as
+    // indistinguishable from a broken instrument.
+    const r = await run({ editions: { count: 0, error: null } as never })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).toBe("ok")
+    expect(arm.value).toBe(0)
+    expect(arm.detail).toMatch(/0 inert UUID-keyed/)
+  })
 })
 
 describe("sentinel — pipeline / trust / totals arms", () => {

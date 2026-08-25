@@ -725,21 +725,52 @@ export async function POST(req: NextRequest) {
     const since48h = new Date(
       now.getTime() - 48 * 60 * 60 * 1000,
     ).toISOString();
-    const { count: inertUuid } = await supabase
+    // ⚠ THIS TRIPWIRE USED TO REPORT "ok" FROM A FAILED READ, and the `catch`
+    // below looks like it covers that and does not.
+    //
+    // The count was destructured WITHOUT `error`, then `inertUuid || 0` made a
+    // failed read `n = 0`, which is `< warn_at` — so the arm published **ok**.
+    // supabase-js RESOLVES on a query error rather than throwing, so the
+    // surrounding `try/catch` never sees it: the exception branch only fires for
+    // a genuine throw. That is the shape CLAUDE.md names — "a guard (`?? 0` on a
+    // count makes a check fail OPEN)" — sitting on the sentinel itself, which is
+    // the report Trevor actually reads.
+    //
+    // ⚠ Swept the whole file before changing this one: 13 reads DO destructure
+    // `error` (the control), and the other three unchecked ones are safe by
+    // design — the threshold-config read falls back to hardcoded defaults *"so a
+    // config gap can never silently disable a check"*, the ownership-rollup read
+    // only enriches a detail STRING whose default is already the conservative
+    // sentence, and a failed suppressions read yields an EMPTY suppression set,
+    // which makes MORE arms fire, not fewer. This was the only one that failed
+    // open.
+    const { count: inertUuid, error: inertErr } = await supabase
       .from("editions")
       .select("id", { count: "exact", head: true })
       .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd")
       .like("external_id", "%-%")
       .gte("created_at", since48h);
-    const n = inertUuid || 0;
-    const leakWarn = thr("TS Edition Writer Leak (48h)", "warn_at", 250);
-    const leakCrit = thr("TS Edition Writer Leak (48h)", "crit_at", 2000);
-    checks.push({
-      name: "TS Edition Writer Leak (48h)",
-      status: n < leakWarn ? "ok" : n < leakCrit ? "warn" : "critical",
-      detail: `${n} inert UUID-keyed TS edition rows created in last 48h (integer-pair "set:play" is canonical; these get nulled by the dupe trigger). High count = ingest GQL writer hitting the UUID fallback.`,
-      value: n,
-    });
+    if (inertErr || typeof inertUuid !== "number") {
+      // Matches the "Pipeline Success Coverage" convention already in this file:
+      // an arm that could not be EVALUATED says so, and is never reported as a
+      // measured pass. `value` is omitted rather than zeroed — a fabricated 0
+      // here is exactly what made the failure invisible.
+      checks.push({
+        name: "TS Edition Writer Leak (48h)",
+        status: "warn",
+        detail: `INCONCLUSIVE — the inert-UUID edition count could not be read (${inertErr?.message ?? "count was not a number"}), so the tripwire was not evaluated.`,
+      });
+    } else {
+      const n = inertUuid;
+      const leakWarn = thr("TS Edition Writer Leak (48h)", "warn_at", 250);
+      const leakCrit = thr("TS Edition Writer Leak (48h)", "crit_at", 2000);
+      checks.push({
+        name: "TS Edition Writer Leak (48h)",
+        status: n < leakWarn ? "ok" : n < leakCrit ? "warn" : "critical",
+        detail: `${n} inert UUID-keyed TS edition rows created in last 48h (integer-pair "set:play" is canonical; these get nulled by the dupe trigger). High count = ingest GQL writer hitting the UUID fallback.`,
+        value: n,
+      });
+    }
   } catch (e: any) {
     checks.push({
       name: "TS Edition Writer Leak (48h)",
