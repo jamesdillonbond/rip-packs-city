@@ -216,6 +216,13 @@ describe("candy-offers — sweep ladder", () => {
     const spy = install({
       candy_offers: [
         { data: [], error: null }, // active-buyer union
+        // ⚠ The active-book COUNT read was MISSING from this queue, so `count`
+        // came back `undefined` — a state production never produces, since a
+        // successful count read always returns a number. The route now treats
+        // "not a number" as an unreadable book and suppresses deactivation, so
+        // the gap surfaced as a spurious ok=false. A fixture that cannot express
+        // the real response shape cannot pin behaviour that depends on it.
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
         { data: [], error: null }, // expiry deactivate (the ONLY update expected)
       ],
     })
@@ -279,7 +286,12 @@ describe("candy-offers-indexer — truncation is a degraded run", () => {
     const buyers = Array.from({ length: 60 }, (_, i) => ({ buyer: `bidder${i}` }))
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
     const spy = install({
-      candy_offers: [{ data: buyers, error: null }, { data: [] }, { data: [] }],
+      candy_offers: [
+        { data: buyers, error: null }, // active-buyer union
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
+        { data: [] }, // stale deactivate
+        { data: [] }, // expiry deactivate
+      ],
     })
 
     await POST(req())
@@ -307,7 +319,12 @@ describe("candy-offers-indexer — pack bids are counted, not silently dropped",
       ]),
     ])
     const spy = install({
-      candy_offers: [{ data: [{ buyer: "bidder1" }], error: null }, { data: [] }, { data: [] }],
+      candy_offers: [
+        { data: [{ buyer: "bidder1" }], error: null }, // active-buyer union
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
+        { data: [] }, // stale deactivate
+        { data: [] }, // expiry deactivate
+      ],
       wallet_moments_cache: { data: [], error: null }, // not a card
       candy_packs: { data: [{ token_mint: "mintPack" }], error: null }, // it IS a pack
     })
@@ -565,5 +582,122 @@ describe("candy-offers-indexer — degraded-sweep ratio guard", () => {
     expect(extra.degraded_sweep).toBe(true)
     expect(extra.active_offers_before).toBe(80)
     expect(extra.deactivated).toBe(0)
+  })
+})
+
+// ⚠ THE RATIO GUARD'S ONLY INPUT IS A COUNT, AND A FAILED COUNT USED TO OPEN IT.
+//
+// supabase-js RESOLVES rather than throws, so a failed count comes back
+// `{ count: null, error }`. `activeOffersBefore ?? 0` made `offersBefore = 0`,
+// which fails `offersBefore >= SWEEP_GUARD_MIN_BOOK` — so `degradedSweep` was
+// FALSE and the mass deactivation directly below it RAN. The guard written to
+// stop the 2026-07-27 incident (7 listings against a 426-ask book, 419 standing
+// asks killed in one tick) was reachable again through its own input.
+//
+// CLAUDE.md names this shape: "a guard (`?? 0` on a count makes a check fail
+// OPEN)". Every sibling condition here already suppresses deactivation on
+// uncertainty, so "we could not size the book" belongs with them.
+//
+// ⚠ Pinned as BEHAVIOUR — no stale deactivation happens — rather than on the
+// wording of the message, and paired with a no-change control so "suppress
+// everything always" cannot satisfy it.
+describe("candy-offers-indexer — the ratio guard fails CLOSED on an unreadable book", () => {
+  const oneOffer = () =>
+    installFetchMock([
+      jsonRoute("magiceden.dev", [
+        { pdaAddress: "pdaO", tokenMint: "mintA", price: 0.2, buyer: "bidder1", expiry: 0 },
+      ]),
+    ])
+  const resolvable = {
+    wallet_moments_cache: { data: [{ moment_id: "mintA", edition_key: "candy-mlb:trout" }], error: null },
+    editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
+  }
+
+  it("suppresses the stale sweep when the active-book COUNT read errors", async () => {
+    fetchMock = oneOffer()
+    const spy = install({
+      candy_offers: [
+        { data: [{ buyer: "bidder1" }], error: null }, // active-buyer union
+        { error: null },
+        { data: null, count: null, error: { message: "canceling statement due to statement timeout" } },
+        { data: [] }, // expiry deactivate — still allowed, expiry is absolute
+      ],
+      ...resolvable,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const updates = (spy.writes.candy_offers ?? []).filter((w) => w.method === "update")
+    // The EXPIRY pass may still run (an expired offer is dead regardless), but
+    // the unbounded stale pass must not. One update, not two.
+    expect(updates).toHaveLength(1)
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.book_size_unknown).toBe(true)
+    expect(extra.deactivated).toBe(0)
+    // ⚠ NULL, not 0. A fabricated zero here is indistinguishable from a
+    // genuinely empty book — the one reading that makes this suppression look
+    // unnecessary to whoever reads the telemetry later.
+    expect(extra.active_offers_before).toBeNull()
+    // The message must name the real cause, not report "against 0 active".
+    expect(String(log?.p_error)).toMatch(/count could not be read/i)
+    expect(String(log?.p_error)).not.toMatch(/against 0 active/)
+  })
+
+  it("suppresses it when the count is absent without an error", async () => {
+    // supabase can answer without the count when the query was not a count
+    // query; "not a number" is the honest test, not "error is set".
+    fetchMock = oneOffer()
+    const spy = install({
+      candy_offers: [
+        { data: [{ buyer: "bidder1" }], error: null },
+        { error: null },
+        { data: null, error: null }, // no `count` key at all
+        { data: [] },
+      ],
+      ...resolvable,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect((spy.writes.candy_offers ?? []).filter((w) => w.method === "update")).toHaveLength(1)
+    expect(((logRun(spy.rpcCalls)?.p_extra) as Record<string, unknown>).book_size_unknown).toBe(true)
+  })
+
+  it("NO-CHANGE CONTROL: a readable book with a healthy ratio still deactivates", async () => {
+    // Without this, "always suppress" would satisfy both cases above and the
+    // sweep would silently stop deactivating anything, forever.
+    //
+    // ⚠ Honest note on what this case proves: it goes red against the pre-fix
+    // route only because it asserts the NEW `book_size_unknown` field — its
+    // `toHaveLength(2)` half passed before. So it is a FORWARD pin guarding the
+    // next change, not a third regression test. The two cases above are the
+    // regressions.
+    fetchMock = oneOffer()
+    const spy = install({
+      candy_offers: [
+        { data: [{ buyer: "bidder1" }], error: null },
+        { error: null },
+        { data: null, error: null, count: 1 }, // book of 1, sweep found 1 → healthy
+        { data: [] }, // stale deactivate
+        { data: [] }, // expiry deactivate
+      ],
+      ...resolvable,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.book_size_unknown).toBe(false)
+    expect(extra.active_offers_before).toBe(1)
+    expect(log?.p_ok).toBe(true)
+    // BOTH updates ran — stale and expiry.
+    expect((spy.writes.candy_offers ?? []).filter((w) => w.method === "update")).toHaveLength(2)
   })
 })

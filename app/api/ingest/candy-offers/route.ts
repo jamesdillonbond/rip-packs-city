@@ -609,13 +609,37 @@ async function handleSweep(req: NextRequest) {
       //    short answer — so a sweep that returns far less than the book we
       //    already hold does not get to kill it.
       phase = "deactivate"
-      const { count: activeOffersBefore } = await (supabaseAdmin as any)
+      // ⚠ THIS COUNT IS THE GUARD'S ONLY INPUT, SO A FAILED READ USED TO OPEN
+      // THE GUARD. supabase-js RESOLVES rather than throws, so a failed count
+      // comes back `{ count: null, error }` — and `activeOffersBefore ?? 0` made
+      // `offersBefore = 0`, which fails `offersBefore >= SWEEP_GUARD_MIN_BOOK`,
+      // so `degradedSweep` was FALSE and the mass deactivation below ran.
+      //
+      // That is exactly the incident the comment above describes: a short answer
+      // against a large book killing standing rows. **A guard whose input failed
+      // must fail CLOSED**, and CLAUDE.md names this shape directly — "a guard
+      // (`?? 0` on a count makes a check fail OPEN)".
+      //
+      // Every sibling condition in this block already suppresses deactivation on
+      // uncertainty (`bidderFetchErrors`, `biddersTruncated`, `deadlineHit`,
+      // `rawCapped`); "we could not size the book" belongs with them. The change
+      // can only ever PREVENT a deactivation, never cause one.
+      const { count: activeOffersBefore, error: activeOffersErr } = await (supabaseAdmin as any)
         .from("candy_offers")
         .select("pda_address", { count: "exact", head: true })
         .eq("is_active", true)
+      const bookSizeUnknown = Boolean(activeOffersErr) || typeof activeOffersBefore !== "number"
+      if (bookSizeUnknown) {
+        console.log(
+          `[candy-offers] active-offer count unavailable (deactivation suppressed): ${
+            activeOffersErr?.message ?? "count was not a number"
+          }`,
+        )
+      }
       const offersBefore = activeOffersBefore ?? 0
       const degradedSweep =
-        offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO
+        bookSizeUnknown ||
+        (offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO)
 
       const nowIso = new Date().toISOString()
       if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
@@ -646,9 +670,15 @@ async function handleSweep(req: NextRequest) {
         ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
         : deadlineHit
           ? `sweep hit the ${SWEEP_DEADLINE_MS / 1000}s deadline after ${biddersSwept}/${sweepBidders.length} bidders — deactivation skipped, is_active is stale; least-recently-verified bidders are swept first so the tail is covered next tick`
-          : degradedSweep
-            ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
-            : null
+          : bookSizeUnknown
+            ? // Ordered ABOVE the ratio message on purpose: with the count
+              // unreadable, `offersBefore` is a placeholder 0 and the ratio
+              // sentence would report "against 0 active" — a fabricated number
+              // in the very message an operator reads to decide what happened.
+              `active-offer count could not be read (${activeOffersErr?.message ?? "count was not a number"}) — book size unknown, deactivation suppressed`
+            : degradedSweep
+              ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
+              : null
 
       await reportOnce(truncErr === null, truncErr, {
         phase: "complete",
@@ -664,7 +694,13 @@ async function handleSweep(req: NextRequest) {
         deadline_hit: deadlineHit,
         bidder_fetch_errors: bidderFetchErrors,
         pack_offers_seen: packOffersSeen,
-        active_offers_before: offersBefore,
+        // NULL, not 0, when the count could not be read. CLAUDE.md: fixing a
+        // guard without fixing the field an observer keys on leaves the
+        // incidence unmeasurable — a fabricated `0` here is indistinguishable
+        // from a genuinely empty book, which is the one reading that would make
+        // this suppression look unnecessary.
+        active_offers_before: bookSizeUnknown ? null : offersBefore,
+        book_size_unknown: bookSizeUnknown,
         degraded_sweep: degradedSweep,
         offers_upserted: written,
         deactivated,
