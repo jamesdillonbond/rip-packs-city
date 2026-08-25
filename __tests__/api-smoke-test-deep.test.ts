@@ -607,6 +607,94 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     ])
   })
 
+  // ── FAIL CLOSED ON SHAPE ──────────────────────────────────────────────────
+  //
+  // Each zero-violation guard used to read `Array.isArray(data) ? data : []`,
+  // so ANY non-array payload became an EMPTY violation list and `passed` was
+  // `violations.length === 0` — an unrecognised shape PASSED the guard instead
+  // of failing it. Permanently, and with nothing going red.
+  //
+  // ⚠ The mutation that triggers it is already available in this codebase: the
+  // five guarded RPCs use BOTH PostgREST shapes (pg_proc, 2026-08-25) —
+  // check_public_security_invariants / check_anon_write_surface are SETOF TABLE
+  // (JSON array), while check_secdef_anon_execute_violations /
+  // check_cursor_stall_threshold_drift / detect_stalled_pipelines return scalar
+  // `jsonb`. A scalar-jsonb function that returns SQL NULL arrives as `null`,
+  // and rewriting one to the object shape a sibling uses would silence it.
+  //
+  // ⚠ Asserted as the PROPERTY (a non-array never yields a pass), not the
+  // spelling — these cover both the SETOF and the scalar-jsonb guard, and both
+  // the object and the null payload, so a fix that only handles one is red.
+
+  it.each([
+    ["object payload, SETOF-shaped guard", "check_public_security_invariants", { violations: [] }, "public base tables: RLS on + no anon write"],
+    ["null payload, scalar-jsonb guard", "check_secdef_anon_execute_violations", null, "anon has no EXECUTE on destructive SECDEF functions"],
+    ["scalar payload, scalar-jsonb guard", "check_secdef_anon_execute_violations", 0, "anon has no EXECUTE on destructive SECDEF functions"],
+  ])(
+    "a non-array guard payload (%s) is couldNotRun, NEVER a pass",
+    async (_label, rpc, payload, checkName) => {
+      const f = greenFixtures()
+      f[`rpc:${rpc}`] = { data: payload, error: null }
+      install(f)
+      installSmokeFetch(greenStubs())
+
+      const env = await run()
+      const guard = findResult(env, checkName as string)
+
+      // The whole point: an unrecognised shape must not read as zero violations.
+      expect(guard.passed).toBe(false)
+      expect(guard.couldNotRun).toBe(true)
+      // A shape change is not transient — a retry cannot fix it, so never soft.
+      expect(guard.soft).toBeFalsy()
+      expect(guard.detail).toContain("unexpected payload shape")
+      // The guard did NOT evaluate, so its title must not restate its assertion.
+      expect(state.sentryMessages).toContain(`smoke check could not run: ${checkName}`)
+      expect(state.sentryMessages).not.toContain(`smoke test failed: ${checkName}`)
+    },
+  )
+
+  // Positive control for the three cases above. The states are read failed /
+  // read ok + genuinely empty / read ok + violations, and ONLY the first two are
+  // couldNotRun. Without this, the shape tests would also pass against a guard
+  // that flagged EVERY result unreadable — which is green-by-breaking-it.
+  it("an EMPTY ARRAY is an honest zero-violations pass, NOT couldNotRun", async () => {
+    const f = greenFixtures()
+    f["rpc:check_public_security_invariants"] = { data: [], error: null }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "public base tables: RLS on + no anon write")
+
+    expect(guard.passed).toBe(true)
+    expect(guard.couldNotRun).toBeFalsy()
+    expect(state.sentryMessages).not.toContain(
+      "smoke check could not run: public base tables: RLS on + no anon write",
+    )
+  })
+
+  // ⚠ These guards read privilege catalogues (pg_proc ACLs, RLS policies). An
+  // unexpected payload must be reported by TYPE only — echoing the body would
+  // put catalogue rows into a Sentry title on the one path nobody rehearses.
+  it("an unexpected payload is described by type and never echoed", async () => {
+    const f = greenFixtures()
+    f["rpc:check_public_security_invariants"] = {
+      data: { leaked_grant: "anon=rxm ON public.some_secret_mv" },
+      error: null,
+    }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "public base tables: RLS on + no anon write")
+
+    expect(guard.detail).toContain("object")
+    expect(guard.detail).not.toContain("anon=rxm")
+    expect(guard.detail).not.toContain("some_secret_mv")
+    expect(JSON.stringify(guard.notes ?? null)).not.toContain("some_secret_mv")
+    expect(state.sentryMessages.join(" ")).not.toContain("some_secret_mv")
+  })
+
   it("a stalled *-sales-indexer HARD-fails with the pipeline named; non-sales stalls are filtered out of the check", async () => {
     const f = greenFixtures()
     f["rpc:detect_stalled_pipelines"] = {

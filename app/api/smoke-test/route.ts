@@ -339,6 +339,48 @@ function softIfTransientRpc(
   };
 }
 
+// ⚠ FAIL CLOSED ON SHAPE — the guard-fails-open trap, closed 2026-08-25.
+//
+// Every zero-violation guard below read `Array.isArray(data) ? data : []`,
+// which coerces ANY non-array payload — a jsonb object, a scalar, or a NULL
+// jsonb — into an EMPTY violation list. `passed` is then `length === 0`, so an
+// unrecognised shape does not FAIL the guard: it PASSES it, permanently and
+// silently. Same class as `?? 0` on a supabase count — the coercion publishes a
+// measured-clean verdict the check never earned.
+//
+// ⚠ Not hypothetical here, because these guards already use BOTH PostgREST
+// shapes (verified against pg_proc 2026-08-25):
+//   check_public_security_invariants     → TABLE(kind, object_name) → JSON array
+//   check_anon_write_surface             → TABLE(...)               → JSON array
+//   check_secdef_anon_execute_violations → scalar jsonb
+//   check_cursor_stall_threshold_drift   → scalar jsonb
+//   detect_stalled_pipelines             → scalar jsonb
+// All five return a JSON array TODAY (measured 2026-08-25 via jsonb_typeof, and
+// each COALESCEs its own NULL), so nothing is currently mis-reporting. The
+// exposure is PROSPECTIVE and cheap to close: a scalar-jsonb function returning
+// SQL NULL arrives as `null`, and rewriting any of them to the object shape a
+// sibling uses would silence the guard with no test going red.
+//
+// So an unexpected shape is handled exactly as an `error` already is:
+// couldNotRun + hard fail, never soft — a shape change is not transient and a
+// retry cannot fix it. ⚠ Only the TYPE is reported, never the payload: these
+// guards read privilege catalogs and their rows must not reach Sentry.
+function shapeCouldNotRun(
+  meta: { name: string; endpoint: string; expected: string },
+  data: unknown,
+): TestSeed {
+  const shape = data === null ? "null" : Array.isArray(data) ? "array" : typeof data;
+  return {
+    ...meta,
+    passed: false,
+    couldNotRun: true,
+    detail: `rpc returned an unexpected payload shape (${shape}, expected array) — the guard never evaluated`,
+    statusCode: null,
+    bodyExcerpt: null,
+    notes: null,
+  };
+}
+
 // HTML-contains probe for the public entity pages (edition / pack dist). These
 // render a lot server-side (FMV, asks, sales, parallels, packs) — ~2.5s anon
 // normally, but >8s under DB saturation. A raw 10s fetch with no retry made
@@ -710,7 +752,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       if (error) {
         return softIfTransientRpc(meta, error);
       }
-      const stalled: any[] = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return shapeCouldNotRun(meta, data);
+      const stalled: any[] = data;
       const salesStalled = stalled.filter((s) => typeof s?.pipeline === "string" && s.pipeline.includes("sales-indexer"));
       const passed = salesStalled.length === 0;
       return {
@@ -1056,7 +1099,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         // restate its assertion. Still hard-fails (these guards must page).
         return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-      const violations = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return shapeCouldNotRun(meta, data);
+      const violations = data;
       const passed = violations.length === 0;
       return {
         ...meta,
@@ -1095,7 +1139,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         // restate its assertion. Still hard-fails (these guards must page).
         return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-      const violations = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return shapeCouldNotRun(meta, data);
+      const violations = data;
       const passed = violations.length === 0;
       return {
         ...meta,
@@ -1249,7 +1294,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         // restate its assertion. Still hard-fails (these guards must page).
         return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-      const violations = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return shapeCouldNotRun(meta, data);
+      const violations = data;
       const passed = violations.length === 0;
       return {
         ...meta,
@@ -1292,7 +1338,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         // restate its assertion. Still hard-fails (these guards must page).
         return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
-      const violations = Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return shapeCouldNotRun(meta, data);
+      const violations = data;
       const passed = violations.length === 0;
       return {
         ...meta,
