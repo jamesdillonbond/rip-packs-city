@@ -1,7 +1,8 @@
 # `rpc-ccm-step2` is NOT saturation collateral — it nested-loops 220 whale wallets holding **72% of the Top Shot partition**, and the planner underestimates that join by 2.05×
 
 **Filed 2026-08-25 ~08:35 PT (15:35Z), Claude Code interactive on Trevor's Windows box.
-MEASURED against the live DB. The A/B is NOT yet run — see §6. This SUPERSEDES the root-cause attribution in
+MEASURED against the live DB. ✅ **RESOLVED AND SHIPPED THE SAME DAY — see the closing section; §6's deferral is
+history, not the current state.** This SUPERSEDES the root-cause attribution in
 [the 00:11Z filing](2026-08-25T0011Z-cross-collection-overlap-mat-is-51h-stale-and-no-standing-metric-watches-it.md).**
 
 ---
@@ -149,3 +150,54 @@ and is unaffected by any of this.** Two notes for whoever takes it:
    was rendering ONE freshness stamp — step1's, **15.7 h** — above a table sourced from this mat at **66.2 h**,
    understating a public board by ~50 hours, with `computed_at` **not even selected**. The board now carries a
    per-table stamp. **A monitor is easier to justify once the surface itself has stopped disagreeing with it.**
+
+---
+
+## ✅ RESOLVED SAME DAY — the A/B ran at a quiet hour and the fix is SHIPPED (2026-08-25 ~09:10 PT / 16:10Z)
+
+§6 deferred the A/B because the instance was saturated (9 of 9, later **32 of 33**, active backends on
+`IO / DataFileRead`). The spell cleared to `io_waiters 2, active 3` and both halves were run.
+
+### The measurement, in buffers as §6 demanded
+
+| plan | cache state | shared buffers | actual rows | wall |
+|---|---|---:|---:|---:|
+| **hash join** (`enable_nestloop = off`) | **COLD** (`read=115,961`) | **122,524** (hit 6,563 + read 115,961) | 1,364,074 | **28,399 ms** |
+| nested loop (as shipped) | **WARM** (the run above had just paged the table in) | — | — | **did not complete; still running at 140 s** |
+
+⭐ **THE PREDICTION HELD TO 0.07 %.** §3 derived **1,363,128** join rows from `cohort_mat.ts_moments` without
+touching `wallet_moments_cache`; the real plan produced **1,364,074**. The planner's estimate for that node was
+**384,129** — a **3.55×** underestimate at the top join, and **2.05×** at the wmc join, exactly as §3 said.
+
+⚠ **WHAT THE TABLE DOES NOT SAY.** The nested loop's cost is still **UNMEASURED** — it never completes, and
+contention arrived *during* that run, so its 140 s is not cleanly attributable. **The half that decides this is
+the other one:** the hash plan finishes **COLD in 28 s**, an order of magnitude inside the job's 300 s budget,
+and the nested loop has not finished inside 300 s in eight nightly attempts. ⓘ Also new and worth knowing: the
+hash plan spills **76 MB to temp** (`external merge`, temp read 19,024 / written 19,048) for the
+`COUNT(DISTINCT wallet_address)` sort. That is real IO and a pre-aggregation rewrite could remove it — a
+separate, larger change, not this one.
+
+### Shipped
+
+`SET LOCAL enable_nestloop = off;` added to the function body, migration
+`20260825170000_audit_20260825_ccm_step2_hash_join_the_cohort_that_is_72pct_of_wmc.sql`.
+
+- ✅ **The mat is FRESH for the first time since 2026-08-17.** The function was then invoked for real:
+  `computed_at 2026-08-25 16:07:52Z`, **260 rows, 1,364,074 join rows** — down from **66.5 hours** stale. ⚠ It
+  completed **under active contention** (a `refresh_wmc_fmv_changed` was running alongside at 184 s), which is
+  the harder test, not the easier one.
+- ✅ **`npm run db:pins:check` — 189 pins, 189 clean, 0 needing attention**, so the repo's verbatim copy
+  byte-matches production (`md5 8322bb56b8153b69c94f5d9335d11dc4`).
+- ⚠ **The PINS entry was re-pointed in the SAME commit**, because the note attached to it records the exact trap
+  of not doing so: the 08-22 rewrite shipped its own pin file but left the entry on the old migration, so the
+  live sweep went red the next morning while the in-CI guard stayed green.
+
+### ⛔ Still not established
+
+- The SQL invariant test (`supabase/tests/refresh_cross_collection_cohort_step2.sql`) runs only in CI — there is
+  no `psql` on this box. Its verbatim block and md5 are updated and the drift guard passes (194 cases), but the
+  **assertions themselves have not been executed against the new body locally.** A planner GUC cannot change
+  results, and no semantic construct was touched — but that is an argument, not a run.
+- **Whether the nightly cron now succeeds.** ➡ **The falsifier is named in advance: `rpc-ccm-step2` at
+  `25 23 * * *` (2026-08-25 23:25Z / 16:25 PT).** If it fails again at 300 s, this diagnosis is wrong and the
+  `SET LOCAL` should be reverted rather than defended.
