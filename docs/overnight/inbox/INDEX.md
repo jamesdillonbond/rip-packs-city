@@ -1,4 +1,4 @@
-# Inbox index — 229 live filings
+# Inbox index — 230 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-24 — 5 filings
+## 2026-08-24 — 6 filings
+
+- [`topshot-pack-pool-backfill`'s last error shifted from the ledger's documented 403 to a 200-level "no editions"](2026-08-25T0312Z-pack-pool-backfill-error-shifted-from-403-to-a-200-level-no-editions.md) — jobid 16, **224/225 runs failed (99.6%) over 2 days / 259 fails in 24h**, the single largest failing pipeline on the board. ⚠ **The ledger's "403-dead historical lane" belief for this job is now STALE** — the sync path reaches the endpoint at 200 and finds nothing to convert. Two readings the monitor cannot discriminate read-only: **exhausted finite backfill** (a mis-classified done-state dominating the fail board) or a **real conversion regression**. Spell positive control `io_wait=0, active=0` — not saturation collateral. A decision, not a diagnosis
 
 - [`cross_collection_ts_set_overlap_mat` is ~51h stale and NO standing instrument watches it](2026-08-25T0011Z-cross-collection-overlap-mat-is-51h-stale-and-no-standing-metric-watches-it.md) — step1 fresh (~1h) + step2 stale (~51h) is the signature of `rpc-ccm-step2` specifically failing (`canceling statement due to statement timeout` on its `CREATE TEMP TABLE`). ⛔ **The timeout root cause is ALREADY FILED and PRIORITY 3 bars re-opening it.** The NEW part is a MONITORING gap: this MV is absent from `v_rpc_trust_health` / `rpc_ops_snapshot()`, so between ~8am first-tick verifies the overlap surface can serve multi-day-stale data invisibly. Proposed: an additive `cross_collection_overlap_stale_hours` arm — a decision, not a diagnosis
 
