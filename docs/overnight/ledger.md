@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — `/api/collection-snapshot` answered a THROWN read with **200 and zeros**, defeating the honesty fix in all FIVE of its consumers at once
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Found by sweeping the fourth honesty layer (OG cards). The 16 insights cards all use `boardEmptyCopy` and the 13 non-insights OG routes turned out to take their data from `searchParams`, not the DB — so the sweep's *negative* result is what pointed at the one that does fetch.
+
+🚨 **THE PRODUCER'S `catch` RETURNED `{ totalMoments: 0, totalFmv: 0, badgeCount: 0, …, error }` WITH NO STATUS — i.e. 200 — UNDER `Cache-Control: public, s-maxage=60`.** A failed read, held at the CDN and served to everyone for a minute. Its `error` branch was already correct (500); only the throw path was not, and `supabase.rpc` throws on a transport failure or abort.
+
+⭐ **THE SHAPE IS THE FINDING: FIVE CONSUMERS EACH CARRY A CAREFUL `res.ok` CHECK, EACH WITH A COMMENT EXPLAINING WHY — AND `res.ok` IS TRUE FOR A 200.** Every one of them was written correctly for the layer it lives in, and none could fire for the failure that actually happens:
+
+- **`/api/og/share`** — `fetched = true` → publishes **"$0.00 / 0 moments"** about a NAMED wallet, baked into an edge-cached PNG and posted to social. ⚠ **Its own header says that exact false financial claim is what it was fixed to stop on 2026-08-13.**
+- **`/share/<wallet>`** — renders *"We haven't indexed this wallet yet"*, a claim about OUR INDEX manufactured from a transient failure, **and that empty state QUEUES the wallet for indexing and polls**, so an outage spends real ingest work re-indexing wallets that were already fine. ⚠ **Also documented in-file as the incident it was fixed for.**
+- **`ShareEmptyState`** — polls its entire budget then falls to "retry"; never learns the read failed.
+- **`SniperClient`** — `topMoments: []` is **truthy**, so `owned = []` and the suggestions panel *concludes* instead of reporting; its `"read-failed"` state exists and is unreachable.
+- **`support-chat`** — `!res.ok` never throws, so the concierge answers *"Your collection: 0 moments, total FMV $0.00"*. ⚠ **That breaks the concierge's own non-negotiable: an errored tool is NOT an empty result.**
+
+✅ **Fixing the PRODUCER repairs all five without touching any of them** — `apiErrorResponse` on both failure paths. The `error` branch gains it too, which is not cosmetic: it classifies a statement timeout as a retryable **503** instead of a hard 500, and adds `no-store` so a blip is not pinned at the CDN for the route's 300 s TTL. **The rule worth carrying: when several consumers each guard carefully on `res.ok`, the thing to audit is whether the PRODUCER can ever answer not-ok.**
+
+⚠ **THE TEST FILE HAD THE SAME BLIND SPOT AND ITS HEADER READ AS COVERAGE** — *"Pins the required-param guard, the RPC field mapping, and the error fallback shape."* It pinned the `error` branch (500 ✓) and never entered the `catch`. 5 cases added; **4 go red on the pre-fix route** (negative control run, then restored). ⭐ **They pin the STATUS and the ABSENCE of the fabricated figures, never the presence of an error string** — the shipped body carried `error` *and* `totalFmv: 0`, so "has an error field" passes against the defect. ⚠ **A no-change control ships with them**: a genuinely empty wallet still answers **200 with zeros**, because that is a true statement and "never return zeros" would have satisfied every other case by breaking the real one.
+
+✅ **CHECKED, NOT ASSUMED, AND FOUND SOUND:** the `data && typeof data === "object" ? … : {}` fallback looked like a second instance. It is not — `get_wallet_collection_snapshot` ends in a `jsonb_build_object` whose every field is `COALESCE`d, so it cannot return NULL and the `{}` branch is unreachable in production. Read from live `prosrc` rather than inferred.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,052 passed, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores the 200-with-zeros catch and the hand-rolled 500. No DB half.
+
 ### 2026-08-25 · MEASURED, FILED, NOT SHIPPED (Claude Code, interactive) — `rpc-ccm-step2` is NOT saturation collateral, and the filing that said so carried a bar on checking
 
 **DOCS ONLY (an inbox filing + INDEX entry). No code, no DB, no prod-state change — deliberately; §6 of the filing says why.** Followed on from the cross-collection stamp fix shipped an hour earlier: having made the board tell the truth about the mat's age, the next question was why the mat is old.
