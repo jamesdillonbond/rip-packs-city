@@ -21,27 +21,48 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
-async function resolveUserId(ownerKey: string | null): Promise<string | null> {
+// ⚠ HONESTY CANON, and this is the sub-class CLAUDE.md names as WORST: a false
+// claim about the reader's own account. Both lookups below used to destructure
+// only `data`. supabase-js RESOLVES on a query error, so a FAILED read of an
+// explicitly-requested `ownerKey` fell straight through to `getCurrentUser()` —
+// and the route answered with THE VIEWER'S OWN moments under someone else's
+// ownerKey. That is not an empty answer, it is a DIFFERENT one, the same shape
+// as the `/api/cost-basis` collection-filter defect. The other branch is no
+// better: an anonymous caller got 401 "Authentication required" out of a
+// database timeout, which sends a signed-out reader to sign in for nothing and
+// a signed-in one nowhere at all.
+//
+// The documented resolution order is preserved exactly — an ownerKey that
+// genuinely resolves to nobody still falls back to the session, because that is
+// the contract in this file's header. What is no longer allowed is for a read
+// FAILURE to be spelled the same way as "no such owner".
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown };
+
+async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> {
   if (ownerKey) {
     const key = ownerKey.trim();
     if (key.startsWith("0x")) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saved_wallets")
         .select("user_id")
         .eq("wallet_addr", key.toLowerCase())
         .limit(1)
         .maybeSingle();
-      if (data?.user_id) return data.user_id as string;
+      if (error) return { ok: false, error };
+      if (data?.user_id) return { ok: true, userId: data.user_id as string };
     }
-    const { data: bio } = await supabase
+    const { data: bio, error: bioErr } = await supabase
       .from("profile_bio")
       .select("user_id")
       .eq("username", key)
       .maybeSingle();
-    if (bio?.user_id) return bio.user_id as string;
+    if (bioErr) return { ok: false, error: bioErr };
+    if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
   }
   const user = await getCurrentUser();
-  return user?.id ?? null;
+  return { ok: true, userId: user?.id ?? null };
 }
 
 export async function GET(req: NextRequest) {
@@ -55,7 +76,12 @@ export async function GET(req: NextRequest) {
   const collectionSlug = req.nextUrl.searchParams.get("collection");
   const collectionUuid = collectionSlug ? COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null : null;
 
-  const userId = await resolveUserId(ownerKey);
+  const owner = await resolveUserId(ownerKey);
+  if (!owner.ok) {
+    console.error("[profile/top-moments] owner resolve failed", (owner.error as { message?: string })?.message);
+    return apiErrorResponse(owner.error, "api/profile/top-moments");
+  }
+  const userId = owner.userId;
   if (!userId) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }

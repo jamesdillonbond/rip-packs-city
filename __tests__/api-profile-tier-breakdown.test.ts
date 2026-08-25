@@ -76,11 +76,19 @@ describe("GET /api/profile/tier-breakdown — resolution guards", () => {
     expect(body.meta.owner_not_found).toBe(true)
   })
 
-  it("returns saved_wallets_unavailable when the SECDEF helper errors", async () => {
+  // INVERTED, not deleted. This PINNED the defect: an empty shape at HTTP 200
+  // with a meta hint nothing reads. TierBreakdownCard renders total === 0 as
+  // "Load a saved wallet to see your tier mix." — a claim about the reader's own
+  // account of the ACTIONABLE kind, telling a collector to redo work already
+  // done. The no_wallets case directly below is the genuine-empty control.
+  it("does not answer 200 with an empty tier shape when the SECDEF helper errors", async () => {
     state.single = { data: { user_id: "u1" }, error: null }
     state.rpc = { data: null, error: { message: "rls", code: "42501" } }
-    const body = await (await GET(req("https://t/api/profile/tier-breakdown?ownerKey=trevor"))).json()
-    expect(body.meta.saved_wallets_unavailable).toBe(true)
+    const res = await GET(req("https://t/api/profile/tier-breakdown?ownerKey=trevor"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.total).toBeUndefined()
+    expect(body.tiers).toBeUndefined()
   })
 
   it("returns no_wallets meta when the resolved user has no saved wallets", async () => {
@@ -126,22 +134,53 @@ describe("GET /api/profile/tier-breakdown — aggregation core", () => {
     expect(state.calls.filter((c) => c.name === "get_wallet_tier_counts").map((c) => c.args.p_wallet)).toEqual(["0xbbb"])
   })
 
-  it("tolerates a per-wallet RPC error and still aggregates the rest", async () => {
+  // INVERTED. The old title states the PARTIAL-READ defect as the contract:
+  // "tolerates … and still aggregates the rest" published one wallet's tier mix
+  // as the collector's whole tier mix. The title is the tell — a name carrying a
+  // transformation is a promise, and this one promised the wrong thing.
+  it("does not publish a partial tier mix when one wallet's RPC errors", async () => {
     state.rpc = { data: [wallet("0xaaa"), wallet("0xbbb")], error: null }
     state.tierCounts["0xaaa"] = { data: null, error: { message: "row fail", code: "XX" } }
     state.tierCounts["0xbbb"] = { data: { Ultimate: 2 }, error: null }
-    const body = await (await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))).json()
-    expect(body.tiers).toEqual([{ tier: "Ultimate", count: 2 }])
-    expect(body.total).toBe(2)
+    const res = await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).total).toBeUndefined()
   })
 
-  it("all wallets zero/errored → coverage_zero with attempt counts", async () => {
+  it("still aggregates across every wallet when they all succeed — positive control", async () => {
+    state.rpc = { data: [wallet("0xaaa"), wallet("0xbbb")], error: null }
+    state.tierCounts["0xaaa"] = { data: { Ultimate: 1 }, error: null }
+    state.tierCounts["0xbbb"] = { data: { Ultimate: 2 }, error: null }
+    const res = await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.total).toBe(3)
+  })
+
+  // NARROWED, deliberately. coverage_zero is a REAL state and keeps its honest
+  // 200 — but it now means what its name says: every wallet was READ and every
+  // one came back empty. The old fixture mixed an errored wallet into it, which
+  // is why `wallets_with_rpc_error: 1` could appear beside a published total.
+  // That combination is no longer reachable, so the assertion on it is 0 rather
+  // than removed — the field is part of the published shape.
+  it("every wallet read OK and empty → coverage_zero with attempt counts", async () => {
+    state.rpc = { data: [wallet("0xaaa"), wallet("0xbbb")], error: null }
+    state.tierCounts["0xaaa"] = { data: {}, error: null }
+    state.tierCounts["0xbbb"] = { data: {}, error: null }
+    const res = await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.coverage_zero).toBe(true)
+    expect(body.meta.wallets_attempted).toBe(2)
+    expect(body.meta.wallets_with_rpc_error).toBe(0)
+  })
+
+  it("a wallet that ERRORED can no longer be laundered into coverage_zero", async () => {
     state.rpc = { data: [wallet("0xaaa"), wallet("0xbbb")], error: null }
     state.tierCounts["0xaaa"] = { data: {}, error: null }
     state.tierCounts["0xbbb"] = { data: null, error: { message: "e", code: "X" } }
-    const body = await (await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))).json()
-    expect(body.meta.coverage_zero).toBe(true)
-    expect(body.meta.wallets_attempted).toBe(2)
-    expect(body.meta.wallets_with_rpc_error).toBe(1)
+    const res = await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(JSON.stringify(await res.json())).not.toContain("coverage_zero")
   })
 })

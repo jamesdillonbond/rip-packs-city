@@ -21,10 +21,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
-async function resolveUserId(ownerKey: string): Promise<string | null> {
+// ⚠ HONESTY CANON, same shape as its tier-breakdown / collection-breakdown
+// siblings: the resolver LOGGED its error and then collapsed it onto `null`,
+// which the caller spells `owner_not_found: true` at HTTP 200 -- a claim that
+// the collector does not exist, manufactured from a database timeout.
+// `TopMoversCard` discriminates on `res.ok`, an HTTP test a route that always
+// answers 200 can never fail, so its (correct) failure branch was unreachable.
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown };
+
+async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await (supabase as any)
     .from("profile_bio")
     .select("user_id")
@@ -32,9 +43,9 @@ async function resolveUserId(ownerKey: string): Promise<string | null> {
     .maybeSingle();
   if (error) {
     console.log("[top-movers] resolveUserId failed:", error.message);
-    return null;
+    return { ok: false, error };
   }
-  return (data as any)?.user_id ?? null;
+  return { ok: true, userId: (data as any)?.user_id ?? null };
 }
 
 interface Mover {
@@ -70,7 +81,11 @@ export async function GET(req: NextRequest) {
   const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim();
   let userId: string | null = null;
   if (ownerKey) {
-    userId = await resolveUserId(ownerKey);
+    const owner = await resolveUserId(ownerKey);
+    if (!owner.ok) {
+      return apiErrorResponse(owner.error, "api/profile/top-movers");
+    }
+    userId = owner.userId;
     if (!userId) {
       return emptyResponse({ owner_not_found: true });
     }
@@ -95,7 +110,7 @@ export async function GET(req: NextRequest) {
         "code:",
         (walletsError as { code?: string }).code ?? "unknown"
       );
-      return emptyResponse({ saved_wallets_unavailable: true });
+      return apiErrorResponse(walletsError, "api/profile/top-movers");
     }
 
     const wallets = (walletsRaw ?? []) as SavedWallet[];
@@ -132,7 +147,12 @@ export async function GET(req: NextRequest) {
           "code:",
           error.code ?? "unknown"
         );
-        continue;
+        // Was `continue`. This card's empty copy does not say "nothing moved" --
+        // it explains the blank as PIPELINE PROGRESS and tells the reader to
+        // wait days (the component's own comment says so). Dropping one wallet
+        // and publishing the rest as the whole movers list invents that product
+        // state out of a timeout, for the reader's own holdings.
+        return apiErrorResponse(error, "api/profile/top-movers");
       }
       const payload = (data ?? {}) as { gainers?: Mover[]; losers?: Mover[] };
       if (Array.isArray(payload.gainers)) allGainers.push(...payload.gainers);
@@ -165,6 +185,6 @@ export async function GET(req: NextRequest) {
       "code:",
       err?.code ?? "unknown"
     );
-    return emptyResponse({ unexpected_error: true });
+    return apiErrorResponse(err, "api/profile/top-movers");
   }
 }

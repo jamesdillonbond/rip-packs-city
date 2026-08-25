@@ -56,10 +56,17 @@ describe("GET /api/profile/top-movers", () => {
     const body = await (await GET(get())).json()
     expect(body.meta.unauthenticated).toBe(true)
   })
-  it("saved-wallets rpc error → saved_wallets_unavailable", async () => {
+  // INVERTED, not deleted. This PINNED the defect: a read failure answered 200
+  // with an empty movers shape and a meta hint nothing reads. `TopMoversCard`
+  // discriminates on `res.ok` — an HTTP test an always-200 route can never fail
+  // — so its correct failure branch was unreachable and the card fell through to
+  // copy that explains the blank as PIPELINE PROGRESS and tells the reader to
+  // wait days. The no_wallets case directly below is the genuine-empty control.
+  it("saved-wallets rpc error does NOT answer 200 with an empty movers shape", async () => {
     st.wallets = { data: null, error: { message: "rpc down" } }
-    const body = await (await GET(get())).json()
-    expect(body.meta.saved_wallets_unavailable).toBe(true)
+    const res = await GET(get())
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).gainers).toBeUndefined()
   })
   it("no wallets → no_wallets", async () => {
     st.wallets = { data: [], error: null }
@@ -78,14 +85,19 @@ describe("GET /api/profile/top-movers", () => {
     // losers sorted by delta asc → e5(-80), e3(-30)
     expect(body.losers.map((l: any) => l.edition_id)).toEqual(["e5", "e3"])
   })
-  it("a per-wallet get_top_movers error is skipped (continue), others still merge", async () => {
+  // INVERTED. The old title states the PARTIAL-READ defect as the contract —
+  // "is skipped (continue), others still merge" — i.e. one wallet's movers were
+  // published as the collector's whole movers list. The merge/dedupe case
+  // directly above is the all-wallets-succeed positive control.
+  it("a per-wallet get_top_movers error does NOT yield a partial movers list", async () => {
     st.wallets = { data: [{ wallet_addr: "0xa" }, { wallet_addr: "0xb" }], error: null }
     st.moversByAddr = {
       "0xa": { data: null, error: { message: "wallet a failed" } },
       "0xb": { data: { gainers: [mover("e9", 5)], losers: [] }, error: null },
     }
-    const body = await (await GET(get())).json()
-    expect(body.gainers.map((g: any) => g.edition_id)).toEqual(["e9"])
+    const res = await GET(get())
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).gainers).toBeUndefined()
   })
   it("normalizes a bare (non-0x) wallet address before querying", async () => {
     st.wallets = { data: [{ wallet_addr: "abc0000000000001" }], error: null }
@@ -93,10 +105,13 @@ describe("GET /api/profile/top-movers", () => {
     const body = await (await GET(get())).json()
     expect(body.gainers).toHaveLength(1)
   })
-  it("an unexpected throw → unexpected_error empty shape", async () => {
+  // INVERTED, same reason: an unexpected throw is a read failure, and a 200
+  // empty shape is how the card learns "nothing moved for this collector".
+  it("an unexpected throw does NOT answer 200 with an empty shape", async () => {
     st.wallets = { data: [{ wallet_addr: "0xa" }], error: null }
     st.moversThrow = true
-    const body = await (await GET(get())).json()
-    expect(body.meta.unexpected_error).toBe(true)
+    const res = await GET(get())
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).gainers).toBeUndefined()
   })
 })

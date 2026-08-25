@@ -18,7 +18,22 @@ import { awardPoints } from "@/lib/rewards";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 
-async function resolveUserId(ownerKey: string): Promise<string | null> {
+// ⚠ HONESTY CANON. This resolver DID look at its `error` and log it — and then
+// collapsed the failure onto `null`, which the GET below spells `{ teams: [] }`.
+// CLAUDE.md names that exact rendering as an instance of the class: *"Follow a
+// team to build your hub" to someone who follows six.* Catching an error is not
+// the same as reporting it; the three states (read failed · no such owner ·
+// owner with no teams) had two spellings between them.
+//
+// ⚠ The POST leg's `null` was SAFE — it fails closed to a 404 before the
+// `resolvedId !== sessionUser.id` ownership check — so this change makes its
+// copy honest without changing what it permits. Stated because "fix every
+// caller" and "every caller was equally broken" are different claims.
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown };
+
+async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await supabase
     .from("profile_bio")
     .select("user_id")
@@ -26,9 +41,9 @@ async function resolveUserId(ownerKey: string): Promise<string | null> {
     .maybeSingle();
   if (error) {
     console.error("[profile/teams resolveUserId]", error);
-    return null;
+    return { ok: false, error };
   }
-  return (data as any)?.user_id ?? null;
+  return { ok: true, userId: (data as any)?.user_id ?? null };
 }
 
 export async function GET(req: NextRequest) {
@@ -37,10 +52,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
   }
 
-  const userId = await resolveUserId(ownerKey);
-  if (!userId) {
+  const owner = await resolveUserId(ownerKey);
+  if (!owner.ok) {
+    return apiErrorResponse(owner.error, "api/profile/teams");
+  }
+  if (!owner.userId) {
     return NextResponse.json({ teams: [] });
   }
+  const userId = owner.userId;
 
   // Inner-join teams_master so we drop any orphaned rows whose team_slug has
   // since been removed from the master catalog. Composite FK is on
@@ -138,7 +157,15 @@ export async function POST(req: NextRequest) {
 
   // ownerKey is retained for backward compat with the client, but it MUST
   // resolve to the caller — reject any attempt to write another user's set.
-  const resolvedId = await resolveUserId(ownerKey);
+  // ⚠ This leg already failed CLOSED on a swallowed error (null → 404, before
+  // the ownership check below), so the fix here is honesty, not authorization:
+  // a read failure stops being reported as "user not found". The 403 branch is
+  // untouched and still the only thing that permits the write.
+  const resolved = await resolveUserId(ownerKey);
+  if (!resolved.ok) {
+    return apiErrorResponse(resolved.error, "api/profile/teams");
+  }
+  const resolvedId = resolved.userId;
   if (!resolvedId) {
     return NextResponse.json({ error: "user not found" }, { status: 404 });
   }

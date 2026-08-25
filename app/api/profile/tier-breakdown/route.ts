@@ -13,14 +13,27 @@
 // gap was the actual root cause of the dashboard showing empty data. The
 // SECDEF helper sidesteps that entirely.
 //
-// Failure modes:
-//   - ownerKey not found                  → empty shape, meta.owner_not_found
-//   - not signed in / cookie missing      → empty shape, meta.unauthenticated
-//   - SECDEF helper RPC errors            → empty shape, meta.saved_wallets_unavailable
-//   - user has zero saved_wallets         → empty shape, meta.no_wallets
-//   - every wallet returns zero counts    → empty shape, meta.coverage_zero (consumer
-//                                            renders explanatory empty state, not a
-//                                            broken chart)
+// ⚠ THE "empty shape + meta hint at 200" CONTRACT WAS THE DEFECT, not the
+// documentation of it. `TierBreakdownCard` renders `total === 0` as **"Load a
+// saved wallet to see your tier mix."** — a claim about the reader's own
+// account, and the actionable kind: it tells a collector to redo work they have
+// already done. Nothing reads `meta`, and the card had no failure branch at
+// all, so a database timeout and an empty wallet rendered identically.
+//
+// States now, and which HTTP code carries each:
+//   - ownerKey read FAILED                → apiErrorResponse (was: owner_not_found)
+//   - SECDEF helper RPC errored           → apiErrorResponse (was: saved_wallets_unavailable)
+//   - a per-wallet tier RPC errored       → apiErrorResponse (was: silently partial)
+//   - an unexpected throw                 → apiErrorResponse (was: unexpected_error)
+//   - ownerKey genuinely not found        → 200, empty shape, meta.owner_not_found
+//   - not signed in / cookie missing      → 200, empty shape, meta.unauthenticated
+//   - user has zero saved_wallets         → 200, empty shape, meta.no_wallets
+//   - every wallet returns zero counts    → 200, empty shape, meta.coverage_zero
+//
+// ⚠ `wallets_with_rpc_error` is now structurally 0 in the coverage_zero branch,
+// because any such error returns before it. It is KEPT rather than removed: it
+// is part of the published shape, and a reader who sees it non-zero would be
+// looking at a build older than this comment.
 //
 // Logs include error.message + error.code in plain console.log lines so
 // Vercel log search can pick them up.
@@ -28,6 +41,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"];
 
@@ -37,7 +51,11 @@ function emptyResponse(meta?: Record<string, unknown>) {
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
-async function resolveUserId(ownerKey: string): Promise<string | null> {
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown };
+
+async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await (supabase as any)
     .from("profile_bio")
     .select("user_id")
@@ -45,9 +63,11 @@ async function resolveUserId(ownerKey: string): Promise<string | null> {
     .maybeSingle();
   if (error) {
     console.log("[tier-breakdown] resolveUserId failed:", error.message);
-    return null;
+    // Was `return null`, which the caller spells `owner_not_found: true` -- a
+    // claim that the collector does not exist, out of a database timeout.
+    return { ok: false, error };
   }
-  return (data as any)?.user_id ?? null;
+  return { ok: true, userId: (data as any)?.user_id ?? null };
 }
 
 interface SavedWallet {
@@ -64,7 +84,11 @@ export async function GET(req: NextRequest) {
   const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim();
   let userId: string | null = null;
   if (ownerKey) {
-    userId = await resolveUserId(ownerKey);
+    const owner = await resolveUserId(ownerKey);
+    if (!owner.ok) {
+      return apiErrorResponse(owner.error, "api/profile/tier-breakdown");
+    }
+    userId = owner.userId;
     if (!userId) {
       return emptyResponse({ owner_not_found: true });
     }
@@ -89,7 +113,7 @@ export async function GET(req: NextRequest) {
         "code:",
         (walletsError as { code?: string }).code ?? "unknown"
       );
-      return emptyResponse({ saved_wallets_unavailable: true });
+      return apiErrorResponse(walletsError, "api/profile/tier-breakdown");
     }
 
     const wallets = (walletsRaw ?? []) as SavedWallet[];
@@ -128,7 +152,12 @@ export async function GET(req: NextRequest) {
           "code:",
           error.code ?? "unknown"
         );
-        continue;
+        // Was `continue`, the PARTIAL-READ shape: one wallet dropped and the
+        // rest summed and published as if whole -- an understated tier mix for
+        // the reader's own holdings, with nothing marking it partial. The only
+        // consumer discriminates on HTTP ok and reads no meta, so `throw` is
+        // the available half of the canon's "throw, or carry complete:false".
+        return apiErrorResponse(error, "api/profile/tier-breakdown");
       }
       const counts: Record<string, number> = data ?? {};
       for (const [tier, n] of Object.entries(counts)) {
@@ -161,6 +190,6 @@ export async function GET(req: NextRequest) {
       "code:",
       err?.code ?? "unknown"
     );
-    return emptyResponse({ unexpected_error: true });
+    return apiErrorResponse(err, "api/profile/tier-breakdown");
   }
 }

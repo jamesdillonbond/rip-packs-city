@@ -91,6 +91,20 @@ describe("/api/profile/teams", () => {
     expect((await res.json()).teams).toEqual([])
   })
 
+  // HONESTY CANON, and CLAUDE.md names this exact rendering as an instance of
+  // the class: *"Follow a team to build your hub" to someone who follows six.*
+  // `resolveUserId` DID look at its error and log it, then collapsed it onto
+  // `null` — which this GET spells `{ teams: [] }` at 200. Catching an error is
+  // not reporting it. The case directly above is the genuine-absence control.
+  it("GET does not answer an empty team set when the owner lookup errored", async () => {
+    state.single = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    const res = await GET(req("https://t/api/profile/teams?ownerKey=trevor"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.teams).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
   it("POST 400s on invalid JSON body", async () => {
     const res = await POST(req("https://t/api/profile/teams", undefined, true))
     expect(res.status).toBe(400)

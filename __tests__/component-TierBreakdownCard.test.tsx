@@ -49,6 +49,38 @@ describe("TierBreakdownCard", () => {
     expect(container.querySelector('[title="Common · 75"]')).not.toBeNull()
   })
 
+  // HONESTY CANON. This card had NO failure state: `r.ok ? r.json() : null`
+  // then `if (d && ...)` left `data` null on a 5xx, on a network error AND on a
+  // genuine empty, and `total === 0` renders "Load a saved wallet to see your
+  // tier mix." — a claim about the reader's own account, of the ACTIONABLE kind
+  // that tells a collector to redo work already done. The first case in this
+  // file is the genuine-empty positive control; these two are the failures it
+  // must no longer be confused with.
+  it("does not tell the reader to load a wallet when the read 5xx'd", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) } as Response)
+    )
+    const { container } = render(<TierBreakdownCard ownerKey="0xabc" />)
+    await waitFor(() => expect(container.textContent).toContain("Couldn't load your tier mix right now."))
+    expect(container.textContent).not.toContain("Load a saved wallet")
+  })
+
+  it("does not tell the reader to load a wallet when the fetch rejected", async () => {
+    fetchMock.mockReturnValue(Promise.reject(new Error("network down")))
+    const { container } = render(<TierBreakdownCard ownerKey="0xabc" />)
+    await waitFor(() => expect(container.textContent).toContain("Couldn't load your tier mix right now."))
+    expect(container.textContent).not.toContain("Load a saved wallet")
+  })
+
+  it("does not publish a moment count it could not read", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) } as Response)
+    )
+    const { container } = render(<TierBreakdownCard ownerKey="0xabc" />)
+    await waitFor(() => expect(container.textContent).toContain("Couldn't load"))
+    expect(container.textContent).not.toContain("moments")
+  })
+
   it("does not fetch when ownerKey is empty", () => {
     render(<TierBreakdownCard ownerKey="" />)
     expect(fetchMock).not.toHaveBeenCalled()

@@ -11,15 +11,35 @@
 // wallet list — bypasses the JWT-forwarding gap that was making the
 // post-R3 endpoints return empty.
 //
-// Failure modes return { collections: [] } with a meta hint.
+// ⚠ FAILURE MODES USED TO RETURN `{ collections: [] }` AT HTTP 200 WITH A META
+// HINT, AND THAT DEFEATED THE CLIENT THAT WAS WRITTEN TO CATCH THEM.
+// `CollectionBreakdownCard` reads the response through `fetchJson` and
+// discriminates on `res.ok` — an HTTP-level test that a route which always
+// answers 200 can never fail. Nothing anywhere reads `meta`. So every one of
+// those "handled" failures rendered "No collection data yet." beside a moment
+// count of 0 to a collector who owns thousands, which is exactly the copy the
+// component's own comment says was fixed. Two layers each looked right and the
+// pair published the claim.
+//
+// Now: a genuine READ FAILURE (owner lookup, saved-wallets RPC, an unexpected
+// throw, or a per-wallet breakdown that would silently understate the total)
+// answers with `apiErrorResponse`, which the card already renders as
+// "Couldn't load your collection breakdown right now." The genuinely-empty
+// states — no such owner, unauthenticated, no saved wallets — keep their honest
+// 200 and their meta hint.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
-async function resolveUserId(ownerKey: string): Promise<string | null> {
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown }
+
+async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await (supabase as any)
     .from("profile_bio")
     .select("user_id")
@@ -27,9 +47,13 @@ async function resolveUserId(ownerKey: string): Promise<string | null> {
     .maybeSingle()
   if (error) {
     console.log("[collection-breakdown] resolveUserId failed:", error.message)
-    return null
+    // ⚠ This used to `return null`, which the caller spells
+    // `owner_not_found: true` — a claim that the collector does not exist,
+    // manufactured from a database timeout. Logging an error is not reporting
+    // it; the caller still could not tell the two apart.
+    return { ok: false, error }
   }
-  return (data as any)?.user_id ?? null
+  return { ok: true, userId: (data as any)?.user_id ?? null }
 }
 
 // Collection color palette. Keyed by collections.slug, which is the
@@ -70,7 +94,11 @@ export async function GET(req: NextRequest) {
   const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim()
   let userId: string | null = null
   if (ownerKey) {
-    userId = await resolveUserId(ownerKey)
+    const owner = await resolveUserId(ownerKey)
+    if (!owner.ok) {
+      return apiErrorResponse(owner.error, "api/profile/collection-breakdown")
+    }
+    userId = owner.userId
     if (!userId) {
       return emptyResponse({ owner_not_found: true })
     }
@@ -95,7 +123,7 @@ export async function GET(req: NextRequest) {
         "code:",
         (walletsError as { code?: string }).code ?? "unknown"
       )
-      return emptyResponse({ saved_wallets_unavailable: true })
+      return apiErrorResponse(walletsError, "api/profile/collection-breakdown")
     }
 
     const wallets = (walletsRaw ?? []) as SavedWallet[]
@@ -135,7 +163,19 @@ export async function GET(req: NextRequest) {
           "code:",
           error.code ?? "unknown"
         )
-        continue
+        // ⚠ This used to `continue`, which is the PARTIAL-READ shape CLAUDE.md
+        // names: the loop drops one wallet's holdings and publishes the sum of
+        // the rest as if it were the whole. A collector with three saved
+        // wallets, one of which timed out, saw an understated moment count and
+        // FMV total FOR THEIR OWN MONEY, with nothing in the response marking
+        // it partial. The canon's two options are "throw, or carry
+        // complete:false" — and `complete:false` is not available here, because
+        // the only consumer discriminates on HTTP ok and reads no meta at all.
+        // ⚠ TRADE-OFF, stated: under the standing IO-saturation band this will
+        // surface the card's error state where it previously showed a quietly
+        // wrong number. That is the intended direction — a wrong total about
+        // the reader's own holdings is the worse of the two.
+        return apiErrorResponse(error, "api/profile/collection-breakdown")
       }
       const rows: Row[] = Array.isArray(data) ? (data as Row[]) : []
       for (const r of rows) {
@@ -184,6 +224,6 @@ export async function GET(req: NextRequest) {
       "code:",
       err?.code ?? "unknown"
     )
-    return emptyResponse({ unexpected_error: true })
+    return apiErrorResponse(err, "api/profile/collection-breakdown")
   }
 }

@@ -114,6 +114,41 @@ describe("GET /api/profile/hero-moment", () => {
     expect((await res.json()).hero.momentId).toBe("mn")
   })
 
+  // HONESTY CANON — CLAUDE.md's worst sub-class (a false claim about the
+  // reader's own account), and a byte-for-byte COPY of the same defect in
+  // /api/profile/top-moments. `resolveUserId` swallowed both lookup errors, so
+  // a FAILED read of an explicitly-requested ownerKey fell through to
+  // `getCurrentUser()` and this route answered with THE VIEWER'S hero moment
+  // under someone else's key. The two ownerKey cases directly above are the
+  // positive controls: a successful resolve must still win over the session.
+  it("does not substitute the viewer's own hero when the wallet lookup errored", async () => {
+    state.user = { id: "viewer-1" }
+    state.tables.saved_wallets = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    state.rpc = { data: [pricedRow({ moment_id: "viewer-hero" })], error: null }
+    const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=0xABCDEF0000000000"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(JSON.stringify(body)).not.toContain("viewer-hero")
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
+  it("does not publish reason 'no_user' out of a failed username lookup", async () => {
+    state.user = null
+    state.tables.profile_bio = { data: null, error: { message: "db down" } }
+    const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=trevor"))
+    expect(res.status).not.toBe(401)
+    expect(JSON.stringify(await res.json())).not.toContain("no_user")
+  })
+
+  it("an ownerKey that resolves to nobody still falls back to the session — positive control", async () => {
+    state.user = { id: "viewer-1" }
+    state.tables.profile_bio = { data: null, error: null } // read OK, no such owner
+    state.rpc = { data: [pricedRow({ moment_id: "viewer-hero" })], error: null }
+    const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=nobody"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).hero.momentId).toBe("viewer-hero")
+  })
+
   it("500s when the hero RPC errors", async () => {
     state.user = { id: "u1" }
     state.rpc = { data: null, error: { message: "rpc down" } }

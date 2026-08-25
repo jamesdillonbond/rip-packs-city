@@ -95,11 +95,20 @@ describe("GET /api/profile/collection-breakdown", () => {
     expect(body.meta.no_wallets).toBe(true)
   })
 
-  it("returns meta.saved_wallets_unavailable when the wallet RPC errors", async () => {
+  // INVERTED, not deleted. This case used to assert
+  // `meta.saved_wallets_unavailable === true` at HTTP 200 — i.e. it PINNED the
+  // defect. `CollectionBreakdownCard` reads the response through `fetchJson`
+  // and discriminates on `res.ok`, an HTTP-level test that a route which always
+  // answers 200 can never fail, and nothing anywhere reads `meta`. So this
+  // "handled" failure rendered "No collection data yet." beside 0 moments to a
+  // collector who owns thousands. A passing test asserting a promise is what
+  // holds that promise in place, and the promise here was the wrong one.
+  it("does not answer 200 with an empty list when the wallet RPC errors", async () => {
     state.bio = { data: { user_id: "u1" }, error: null }
     state.savedWallets = { data: null, error: { message: "db", code: "500" } }
     const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
-    expect((await res.json()).meta.saved_wallets_unavailable).toBe(true)
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).collections).toBeUndefined()
   })
 
   it("merges per-wallet breakdowns (deduped per distinct address), color-codes, and sorts by fmv", async () => {
@@ -138,7 +147,13 @@ describe("GET /api/profile/collection-breakdown", () => {
     expect(typeof collections[0].color).toBe("string")
   })
 
-  it("skips a wallet whose breakdown RPC errors and still returns the rest", async () => {
+  // INVERTED. The old title — "skips a wallet … and still returns the rest" —
+  // states the PARTIAL-READ defect as if it were the contract: the surviving
+  // wallets' moment_count and FMV total were published as though they were the
+  // whole, understating the reader's OWN holdings with nothing marking it
+  // partial. The canon allows "throw, or carry complete:false"; complete:false
+  // is unavailable because the only consumer reads no meta.
+  it("does not publish a partial total when one wallet's breakdown RPC errors", async () => {
     state.bio = { data: { user_id: "u1" }, error: null }
     state.savedWallets = { data: [{ wallet_addr: "0xa" }, { wallet_addr: "0xbad" }], error: null }
     state.breakdown = {
@@ -146,9 +161,24 @@ describe("GET /api/profile/collection-breakdown", () => {
       "0xbad": { data: null, error: { message: "boom", code: "x" } },
     }
     const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).collections).toBeUndefined()
+  })
+
+  it("still merges every wallet when they all succeed — positive control", async () => {
+    // Without this, the case above is satisfiable by a route that errors on any
+    // multi-wallet request at all, which would be a different defect.
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.savedWallets = { data: [{ wallet_addr: "0xa" }, { wallet_addr: "0xb" }], error: null }
+    state.breakdown = {
+      "0xa": { data: [{ collection_id: "c1", collection_name: "TS", moment_count: 1, total_fmv: 5 }], error: null },
+      "0xb": { data: [{ collection_id: "c1", collection_name: "TS", moment_count: 2, total_fmv: 7 }], error: null },
+    }
+    const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    expect(res.status).toBe(200)
     const { collections } = await res.json()
     expect(collections).toHaveLength(1)
-    expect(collections[0].collection_id).toBe("c1")
+    expect(collections[0].moment_count).toBe(3)
   })
 
   it("falls back to getCurrentUser when no ownerKey is supplied", async () => {
@@ -161,21 +191,24 @@ describe("GET /api/profile/collection-breakdown", () => {
     expect((await res.json()).collections[0].collection_id).toBe("c1")
   })
 
-  it("returns owner_not_found when the profile_bio lookup errors (resolveUserId error branch)", async () => {
+  // INVERTED. `owner_not_found` is a claim that the collector does not exist;
+  // publishing it out of a failed profile_bio read makes that claim from a
+  // database timeout. The genuine-absence control is the case directly above.
+  it("does not claim owner_not_found when the profile_bio lookup errors", async () => {
     state.bio = { data: null, error: { message: "bio read failed" } }
     const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
-    expect(res.status).toBe(200)
-    expect((await res.json()).meta.owner_not_found).toBe(true)
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(JSON.stringify(await res.json())).not.toContain("owner_not_found")
   })
 
-  it("returns meta.unexpected_error when a downstream RPC throws", async () => {
+  // INVERTED. Same reason: a thrown downstream RPC is a read failure, and a
+  // 200 with an empty list is how the card learns "this collector owns nothing".
+  it("does not answer 200 with an empty list when a downstream RPC throws", async () => {
     state.bio = { data: { user_id: "u1" }, error: null }
     state.throwOnSavedWallets = true
     const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.collections).toEqual([])
-    expect(body.meta.unexpected_error).toBe(true)
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).collections).toBeUndefined()
   })
 
   it("uses DEFAULT_COLOR for an unknown slug and for the 'unknown' collection_id bucket", async () => {

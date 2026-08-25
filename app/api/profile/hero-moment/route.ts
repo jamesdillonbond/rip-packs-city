@@ -56,32 +56,56 @@ const SMOKE_TEST_HERO = {
   },
 } as const;
 
-async function resolveUserId(ownerKey: string | null): Promise<string | null> {
+// ⚠ HONESTY CANON — a byte-for-byte COPY of the resolver in
+// `app/api/profile/top-moments/route.ts`, carrying the same defect, which is
+// exactly why the canon says to grep for the EXPRESSION rather than the file.
+// Both reads swallowed `error`; supabase-js RESOLVES on a query error, so a
+// FAILED read of an explicitly-requested `ownerKey` fell through to
+// `getCurrentUser()` and this route answered with THE VIEWER'S OWN hero moment
+// under someone else's key — a different answer, not an empty one, about the
+// reader's own account. Anonymously it instead published `reason: "no_user"`
+// at 401 out of a database timeout.
+//
+// The documented resolution order is unchanged: an ownerKey that genuinely
+// resolves to nobody still falls back to the session. Only a read FAILURE stops
+// being spelled like "no such owner".
+type OwnerResolution =
+  | { ok: true; userId: string | null }
+  | { ok: false; error: unknown };
+
+async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> {
   if (ownerKey) {
     const key = ownerKey.trim();
     if (key.startsWith("0x")) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("saved_wallets")
         .select("user_id")
         .eq("wallet_addr", key.toLowerCase())
         .limit(1)
         .maybeSingle();
-      if (data?.user_id) return data.user_id as string;
+      if (error) return { ok: false, error };
+      if (data?.user_id) return { ok: true, userId: data.user_id as string };
     }
-    const { data: bio } = await supabase
+    const { data: bio, error: bioErr } = await supabase
       .from("profile_bio")
       .select("user_id")
       .eq("username", key)
       .maybeSingle();
-    if (bio?.user_id) return bio.user_id as string;
+    if (bioErr) return { ok: false, error: bioErr };
+    if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
   }
   const user = await getCurrentUser();
-  return user?.id ?? null;
+  return { ok: true, userId: user?.id ?? null };
 }
 
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
-  const userId = await resolveUserId(ownerKey);
+  const owner = await resolveUserId(ownerKey);
+  if (!owner.ok) {
+    console.error("[profile/hero-moment] owner resolve failed", (owner.error as { message?: string })?.message);
+    return apiErrorResponse(owner.error, "api/profile/hero-moment");
+  }
+  const userId = owner.userId;
   if (!userId) {
     if (isSmokeTestRequest(req)) {
       return NextResponse.json(SMOKE_TEST_HERO);
