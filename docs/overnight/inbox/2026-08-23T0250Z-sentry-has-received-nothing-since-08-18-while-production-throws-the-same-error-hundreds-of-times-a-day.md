@@ -174,3 +174,24 @@ The two readings above cost one page-load each and settle it; guessing costs the
 ⚠ **The recovery test is unchanged and still the point:** after any fix, emit one uniquely-tagged error
 and confirm it lands. *"Events started arriving again"* and *"this reporter can see a failure"* are
 different claims, and only the second is worth relying on.
+
+---
+
+## ⏳ RE-DERIVED 2026-08-24 ~22:15 PT (2026-08-25 05:15Z) — STILL DARK, and the boundary has not moved by one second
+
+**Checked independently through the Sentry API rather than re-read from this filing.** Newest event of any level, whole project:
+
+**`2026-08-18T13:21:59+00:00`** — byte-identical to the timestamp above. The outage now stands at **6 days 15 hours**.
+
+- `search_issues` over a 90-day window returns **6 unresolved issues, every one with `lastSeen` 6 days ago**; a 48-hour window returns **nothing at all**.
+- The six are the same entity-page RPC-timeout family (`get_edition_detail` 2,898 events, `get_team_detail` 1,039, `get_player_editions` 134, `get_set_detail` 99, `get_player_detail` 260, `get_team_players` 9) — i.e. **the last thing Sentry saw is unchanged too**, not merely the last time it saw something.
+
+⚠ **THE POINT OF RE-DERIVING: "it has probably resolved by now" is the default assumption about an outage nobody is watching, and it is false here.** Nothing self-healed. The two one-page-load readings this filing asks for (Stats/Usage, Client Keys) are **still the open action** and still cost the same.
+
+⛔ **I could not run them.** The Sentry MCP surface available in this session exposes issue/event search but **no organization stats or DSN/key tooling**, so the quota-vs-rate-limit discriminator remains operator-only. Searched the tool catalogue explicitly rather than assuming.
+
+✅ **The app-side elimination is now STRONGER, not weaker.** The 08-24 double-init filing established that production runs turbopack, so the live client init is the one with a **hardcoded DSN** — `NEXT_PUBLIC_SENTRY_DSN` is inert and no env change can silence any runtime. Nothing shipped on 08-24 (five honesty fixes across `/api/fmv`, `/api/profile/**`, pack-sniper) touched Sentry configuration.
+
+⚠ **AND THE CONSEQUENCE IS CONCRETE, not abstract: every fix shipped on 08-24 had to be verified through VERCEL RUNTIME LOGS, because the error reporter cannot see them.** Two of them were caught working in production that way (`/api/fmv/demo` returning 503 instead of a fabricated `sampleCount: 0`; `/api/profile/tier-breakdown` returning 503 on a `57014`). **That worked — but it is a manual read of a log stream, not an instrument, and it does not scale past a session that goes looking.**
+
+🚨 **The structural gap this exposes is the one #25 already names, one level out: nothing watches the WATCHER.** A detector going red is surfaced by nobody (#25); an error reporter going *silent* is worse, because silence is its healthy state's appearance. **Six days is how long that takes to notice by accident.** ⛔ A sentinel arm for "Sentry accepted zero events in N hours" would close it and is blocked on the same secrets decision as #25's GitHub arm — a Sentry token in Vercel env.

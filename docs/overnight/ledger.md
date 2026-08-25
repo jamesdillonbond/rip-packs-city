@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · DOCS (Claude Code, interactive) — Sentry is STILL dark, the boundary has not moved by one second, and every fix I shipped today was verified without it
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Re-derived the 08-23 Sentry-ingest outage **through the Sentry API rather than by re-reading the filing**, because *"it has probably resolved by now"* is the default assumption about an outage nobody watches.
+
+🚨 **IT HAS NOT.** Newest event of any level, whole project: **`2026-08-18T13:21:59+00:00`** — **byte-identical** to the timestamp the 08-23 filing recorded. The outage stands at **6 days 15 hours**. A 90-day issue search returns six unresolved issues **all with `lastSeen` 6 days ago**; a 48-hour search returns **nothing**. ⚠ **The last thing Sentry saw is unchanged too**, not merely the last time it saw something — the same entity-page RPC-timeout family (`get_edition_detail` 2,898 events, `get_team_detail` 1,039, and four more). **Nothing self-healed.**
+
+⛔ **I could NOT run the two readings that would settle it.** The filing's own open action is Stats/Usage + Client Keys (quota vs rate-limit). The Sentry MCP surface in this session exposes issue/event search and **no organization-stats or DSN/key tooling** — I searched the tool catalogue explicitly rather than concluding it from the top-level list. **Still operator-only.** ⚠ And the filing's own reason for not guessing stands: `update_dsn` exists, and firing it blind would mutate the production error reporter *and destroy the evidence that attributes the outage*.
+
+✅ **The app-side elimination is now STRONGER.** The 08-24 double-init filing established production runs turbopack, so the live client init is the **hardcoded-DSN** one — `NEXT_PUBLIC_SENTRY_DSN` is inert and **no env change can silence any runtime**. Nothing shipped today touched Sentry config.
+
+⚠ **THE CONSEQUENCE IS CONCRETE AND I LIVED IT ALL DAY: every fix shipped on 08-24 had to be verified through VERCEL RUNTIME LOGS, because the error reporter cannot see them.** Two were caught working in production that way — `/api/fmv/demo` returning 503 instead of a fabricated `sampleCount: 0`, and `/api/profile/tier-breakdown` returning 503 on a `57014`. **That worked, and it is not an instrument.** It is a manual read of a log stream that only happens when someone goes looking.
+
+🚨 **The structural gap is #25's, one level further out: nothing watches the WATCHER — and a silent reporter is worse than a red detector, because silence is what healthy looks like.** Six days is how long that takes to notice by accident. A sentinel arm on *"Sentry accepted zero events in N hours"* would close it and is blocked on the **same secrets decision** as #25's GitHub arm.
+
+**Verified:** annotated the 08-23 filing IN PLACE per the append-only rule (`inbox-index-lists-every-filing` + `inbox-is-append-only-since-the-rule` both green, 8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the annotation. No code, no DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the IPFS media proxy fails ~76% of uncached loads and returned every one of them SILENTLY; also a coercion trap where the right outcome rests on wrong reasoning
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Found by sweeping production 5xx after the saturation spell cleared — four distinct `/api/public/ipfs-media/<cid>` 502s in 45 minutes, with **no log line from the route at all**.
