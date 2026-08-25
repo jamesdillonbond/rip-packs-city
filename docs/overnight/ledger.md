@@ -42,8 +42,8 @@ is correct. **This entry is the half that survived it.**
 ordinary determinism check — and only a planted-offender experiment against the live tree exposed it. **Ask
 what a passing guard is structurally silent about, then go and make it fail.** 9 arms, all green.
 
-**Revert path:** `git revert <sha>` — test-only. ⚠ Reverting re-arms the laundering; revert only to undo a bad
-edit of mine.
+**Revert path (real sha):** `git revert b3230e36` — test-only. ⚠ Reverting **re-arms the laundering** (the
+determinism arm goes back to packing against the live tree); revert only to undo a bad edit of mine.
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive) — nothing ever checked whether a materialized view is anon-readable, and `npm test` was DELETING a tracked repo file
 
