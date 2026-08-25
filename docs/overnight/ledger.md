@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — my own guard was LAUNDERING real drift into a pass, and I proved it by experiment rather than by reading
+
+Test-only change. No migration, no DB write, no prod-state change.
+
+⭐ **Context: a concurrent session had already fixed the WORSE half of this defect** (`47860381`) — the packer's
+delete-then-recreate destroyed a tracked `.skill` when `zip` was absent, so a plain `npm test` deleted
+`rpc-handoff.skill` on Trevor's Windows box. That fix (preflight `zip`/`touch` before mutating) is theirs and
+is correct. **This entry is the half that survived it.**
+
+- 🚨 **The determinism arm ran the packer against the REAL working tree, which made the guard SELF-DEFEATING.**
+  Measured, not reasoned: planted drift in `docs/cowork-skills/rpc-handoff/SKILL.md` →
+  **checker RED (correct)** → ran `vitest` on that one file → **the tracked bundle's md5 changed
+  `e76c6b55…` → `200b5bd6…`** → **checker GREEN.** ➡ **`npm test` had repaired the exact condition the guard
+  exists to report, and left an unexplained binary diff in the tree.** A guard that fixes what it watches
+  cannot watch it.
+- ⚠ **The `zip` preflight did NOT cover this.** With `zip` PRESENT — CI, and this sandbox — the packer works
+  fine and rewrites the tracked file every single run. **The destructive case was the loud one; the laundering
+  case is silent and is the one that would have let a genuinely stale bundle ship green.**
+- ✅ **Fixed by moving the property to a TEMP tree** (the packer takes its root from `cwd`, so the arm packs a
+  throwaway fixture twice and compares bytes). Nothing under `docs/cowork-skills/` is touched.
+- ✅ **Added a regression arm phrased as a property of the SUITE, not of one test:** bundle digests are
+  snapshotted at import, before any arm runs, and asserted unchanged at the end — so **any future arm that
+  packs against the live tree is caught wherever it is added**, not just this one.
+- ⭐ **Positive control, both directions.** Re-ran the same planted-drift experiment after the fix: guard **red
+  before → red after**, suite **fails** on the drift instead of repairing it, tracked bundle md5
+  **byte-identical**. And across the whole suite, `git status --porcelain` is byte-identical before and after
+  `npm test` — the tree-mutation property now holds globally, not just for this file.
+
+⚠ **The lesson is about how it was found.** The defect was invisible in review — the arm looked like an
+ordinary determinism check — and only a planted-offender experiment against the live tree exposed it. **Ask
+what a passing guard is structurally silent about, then go and make it fail.** 9 arms, all green.
+
+**Revert path:** `git revert <sha>` — test-only. ⚠ Reverting re-arms the laundering; revert only to undo a bad
+edit of mine.
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive) — nothing ever checked whether a materialized view is anon-readable, and `npm test` was DELETING a tracked repo file
 
 **1. Sixth arm on `check_public_security_invariants()` — `mv_anon_readable`.** Migration `20260824233704`. Answers the question the 08-23 panini filing left open: the standing monitor was green through that `anon` SELECT leak because it was **never looking at materialized views**. All five existing arms are scoped by construction to `relkind IN ('r','p')` / `'v'` / pg_proc — a **MISSING invariant, not a broken check**. ⛔ And `information_schema.role_table_grants` **returns 0 rows for all 34 MVs** while they demonstrably hold grants, so any guard reading MV grants through it passes **vacuously**; the arm reads `has_table_privilege` on `pg_class`. ⛔ Root mechanism: `ALTER DEFAULT PRIVILEGES` gives `postgres`-created MVs `anon=rxm` (**r = SELECT**) — every new MV is **born anon-readable** and PostgREST serves it. Live exposure **0 of 34** (latent, not a P0). Ban at zero. Proven by a rolled-back positive control (`rows=1 names=mv_panini_squeeze`) plus a no-change control. Callers named across all six sources first; all consume BY COUNT, none switches on `kind`. Consumer copy in `data-integrity` + `smoke-test` also fixed — it named **2 of 6 arms**, misattributing any other arm's violation. **Revert:** `git revert 47860381` for the route copy; the DB half is re-applying the previous body minus the `mv_anon_readable` branch (no data touched). Migration file landed in `88fff821`.

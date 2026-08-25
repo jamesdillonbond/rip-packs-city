@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -55,6 +56,20 @@ function writeSkill(skills: string, name: string, source: string, packed: string
 }
 
 const BODY = "---\nname: x\ndescription: y\n---\n\n# Body\n\n- a rule\n"
+
+// Digests of the REAL bundles, captured at import BEFORE any arm runs, so the
+// "suite does not mutate the working tree" arm compares against pre-test truth
+// rather than against whatever an earlier arm may have written.
+function realBundleDigests(): Record<string, string> {
+  const dir = path.join(process.cwd(), "docs/cowork-skills")
+  const out: Record<string, string> = {}
+  for (const n of readdirSync(dir).sort()) {
+    if (!n.endsWith(".skill")) continue
+    out[n] = createHash("sha256").update(readFileSync(path.join(dir, n))).digest("hex")
+  }
+  return out
+}
+const BUNDLES_AT_IMPORT = realBundleDigests()
 
 // ⚠ The fixture arms below BUILD zip archives, so they need `zip` on PATH.
 // ubuntu-latest ships it; Git Bash on Windows does NOT, and on 2026-08-24 their
@@ -158,13 +173,43 @@ describe("Cowork skill bundles match the SKILL.md they were packed from", () => 
   it.skipIf(!HAS_ZIP)("the packer is DETERMINISTIC — re-packing unchanged content is a no-op diff", () => {
     // The stale bundle survived from 2026-05-30 to 2026-08-24 partly because a
     // binary diff on every re-pack trains reviewers to skip it.
-    const before = execFileSync("md5sum", ["docs/cowork-skills/rpc-handoff.skill"], {
-      encoding: "utf8",
-    }).split(" ")[0]
-    execFileSync("node", ["scripts/pack-cowork-skill.mjs", "rpc-handoff"], { stdio: "ignore" })
-    const after = execFileSync("md5sum", ["docs/cowork-skills/rpc-handoff.skill"], {
-      encoding: "utf8",
-    }).split(" ")[0]
-    expect(after).toBe(before)
+    //
+    // 🚨 THIS ARM USED TO RUN THE PACKER AGAINST THE REAL WORKING TREE, AND THAT
+    // MADE THE GUARD SELF-DEFEATING. Measured 2026-08-24 by planting drift in
+    // docs/cowork-skills/rpc-handoff/SKILL.md: the checker went RED (correct),
+    // then `vitest run` on THIS FILE rewrote the tracked bundle (md5 e76c6b55 ->
+    // 200b5bd6) and the checker went GREEN — `npm test` had LAUNDERED real drift
+    // into a passing guard and left an unexplained binary diff behind. A guard
+    // that repairs the condition it exists to report cannot report it.
+    //
+    // The property is still worth asserting, so it is asserted in a TEMP tree.
+    // Nothing under docs/cowork-skills/ is touched.
+    const root = mkdtempSync(path.join(tmpdir(), "cowork-skill-pack-"))
+    const skills = path.join(root, "docs/cowork-skills")
+    mkdirSync(path.join(skills, "determinism-fixture"), { recursive: true })
+    writeFileSync(path.join(skills, "determinism-fixture/SKILL.md"), BODY)
+
+    const pack = () =>
+      execFileSync("node", [path.join(process.cwd(), "scripts/pack-cowork-skill.mjs"), "determinism-fixture"], {
+        cwd: root,
+        stdio: "ignore",
+      })
+    pack()
+    const first = readFileSync(path.join(skills, "determinism-fixture.skill"))
+    pack()
+    const second = readFileSync(path.join(skills, "determinism-fixture.skill"))
+
+    expect(second.equals(first)).toBe(true)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it("does NOT mutate the real docs/cowork-skills/ — a guard that repairs drift cannot report it", () => {
+    // Regression arm for the defect above, and the reason it is phrased as a
+    // property of the SUITE rather than of one test: any future arm that packs
+    // against the live tree reintroduces the laundering, and this catches it
+    // wherever it is added. BUNDLES_AT_IMPORT is snapshotted before any arm runs.
+    const now = realBundleDigests()
+    expect(now).toEqual(BUNDLES_AT_IMPORT)
+    expect(Object.keys(now).length).toBeGreaterThanOrEqual(5)
   })
 })
