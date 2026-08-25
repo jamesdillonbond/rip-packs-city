@@ -201,3 +201,17 @@ separate, larger change, not this one.
 - **Whether the nightly cron now succeeds.** ➡ **The falsifier is named in advance: `rpc-ccm-step2` at
   `25 23 * * *` (2026-08-25 23:25Z / 16:25 PT).** If it fails again at 300 s, this diagnosis is wrong and the
   `SET LOCAL` should be reverted rather than defended.
+
+### ✅ END-TO-END, VERIFIED BY RENDERED DOM (not HTTP 200) — 2026-08-25 ~09:35 PT
+
+`https://www.rippackscity.com/insights/cross-collection`, served HTML:
+
+```
+Cohort data computed  <time dateTime="2026-08-24T23:10:00.167Z">
+Set overlap computed  <time dateTime="2026-08-25T16:07:52.023Z">
+```
+
+**Two distinct instants, each on its own panel.** That is both of the day's cross-collection changes closing
+together: the earlier commit (`7c45b4ef`) gave the set-overlap table its OWN stamp instead of borrowing the
+cohort's, and this DB fix made that stamp fresh. Before today the page rendered **one** line — step1's — above a
+table the reader had no way to know was **66.5 hours** old.
