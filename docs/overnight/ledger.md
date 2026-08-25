@@ -27,7 +27,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `CLAUDE.md` re-measured at **39,977 chars** by Node `.length` (under the 40,000 limit; guard green, 3 cases) · `check-memory-doc-links.mjs` → **102 links across 24 files all resolve**, exit 0 · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the #25 and #31 annotations. No code, no DB half.
+**Revert:** `git revert f491cb95` — removes the #25 and #31 annotations. No code, no DB half.
 
 
 ### 2026-08-24 · ANSWERED, NO CODE CHANGE (Claude Code, interactive) — the wallet-backfill "silent wmc loss" question is REFUTED, and my first instrument said the opposite with real numbers attached
