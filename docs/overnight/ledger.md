@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the SENTINEL had an arm that reported a measured PASS from a failed read, and its own try/catch could never have caught it
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Second finding from the same `?? 0`-on-a-count sweep as the candy-offers guard, and the worse of the two by location: **this one is on `/api/sentinel` — the report Trevor actually reads.**
+
+🚨 **THE `TS Edition Writer Leak (48h)` TRIPWIRE PUBLISHED `status: "ok"` OUT OF A FAILED COUNT.**
+
+```js
+const { count: inertUuid } = await supabase.from("editions").select("id", { count: "exact", head: true })…
+const n = inertUuid || 0;
+status: n < leakWarn ? "ok" : …
+```
+
+A failed read gives `count: null`, `|| 0` makes `n = 0`, `0 < 250` — **ok**, with `value: 0` attached. The arm exists to catch the ingest GQL writer falling back to UUID keys; a database hiccup made it say *"clean, 0 rows"* with a number beside it.
+
+⚠ **AND THE `try/catch` WRAPPED AROUND IT LOOKS LIKE IT COVERS THIS. IT CANNOT.** There is an exception branch that pushes `status: "warn", detail: "Exception: …"` — but **supabase-js RESOLVES on a query error rather than throwing**, so that branch only ever fires for a genuine throw. **The author had already thought about failure and written a handler for it; the handler was unreachable for the failure that actually happens.** That is the sharpest form of this class — not an oversight, a mis-modelled failure mode.
+
+✅ **SWEPT THE WHOLE FILE BEFORE TOUCHING ONE LINE, and the control is what makes the finding meaningful.** `app/api/sentinel/route.ts` has **13 reads that DO destructure `error`** against **4 that do not** — and I read all four rather than fixing the pattern:
+- **threshold config (line 153)** — a failed read falls back to hardcoded defaults, and the code says why: *"a config gap can never silently disable a check"*. **Safe by design.**
+- **ownership rollup (line 531)** — enriches a detail STRING only; its default is already the conservative sentence. **Safe.**
+- **alert suppressions (line 925)** — a failed read yields an EMPTY suppression set, so MORE arms fire, not fewer. **Fails loud, which is the safe direction.**
+- **the leak tripwire (line 728)** — the only one that failed **open**.
+
+➡ **One defect in four, three deliberate. A sweep that had "fixed" all four would have made the config read fail closed and taken the sentinel down on a config blip.**
+
+✅ **THE FIX MATCHES A CONVENTION THIS FILE ALREADY HAS.** `Pipeline Success Coverage` already reports `status: "warn"` with *"INCONCLUSIVE — … was not evaluated"* when its input is missing. The leak arm now does the same, and ⚠ **omits `value` entirely rather than zeroing it** — the fabricated `0` is precisely what made the failure invisible.
+
+⚠ **PROVEN — 2 cases red on the pre-fix arm, then green**, one for an errored count and one for a count that is simply absent (`typeof !== "number"` is the honest test, not "error is set"). ⚠ **The third is a NO-CHANGE CONTROL and it passed pre-fix, deliberately:** a genuine `0` must still report **ok** with `value: 0`. **Without it, "never report ok" satisfies both regressions and leaves the tripwire permanently warn — which this repo records as indistinguishable from a broken instrument.**
+
+⚠ **Assertion shape, stated because it was a choice:** the regressions assert `status).not.toBe("ok")` rather than `=== "warn"`, so the pin survives someone later deciding an unreadable tripwire deserves `critical`. **Pin the property, not the spelling.**
+
+⛔ **Severity: LATENT, same as the candy-offers fix.** I did not go looking for evidence that this count has actually failed in production. What is established is that it is one statement timeout away on an instance with a documented ~20 h/day IO-saturation band, that the outcome is a green tick on the operator's own dashboard, and that nothing else watches this writer.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,046 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores `inertUuid || 0` and the measured-pass-from-a-failed-read. No DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the candy-offers ratio guard failed OPEN through its own input, re-enabling the incident it was written to prevent
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Found by sweeping the fabricated-number shape CLAUDE.md names — `?? 0` on a supabase count — with a detector that separates it from the ~150 benign `?? 0`s on ordinary object fields.
