@@ -70,19 +70,52 @@ export async function GET(
   }
 
   const upstreamUrl = `${UPSTREAM}${cid}`;
+  const startedMs = Date.now();
 
+  // ⚠ OBSERVABILITY, added 2026-08-24. This route returned its 502 SILENTLY, and
+  // that made its dominant outcome unattributable: measured over 72 h of
+  // cache-MISS invocations, **99 × 502 against 26 × 200 and 5 × 302** — i.e.
+  // ~76% of uncached media loads fail — with nothing in the logs to say WHY.
+  // "Our 8 s abort fired" and "ipfs.io answered 5xx" are different problems with
+  // different fixes and they were spelled identically.
+  //
+  // ⚠ This route has ALREADY been bitten by exactly that blindness: its header
+  // records that the 502 path was unreachable DEAD CODE for the slow-gateway
+  // case it exists for, because the old 25 s timeout lost the race to the
+  // platform's own 25 s cutoff. That went unnoticed until someone counted 504s
+  // by hand. A soft-fail nobody can see is indistinguishable from one that works.
+  //
+  // ⓘ Measured against ipfs.io from a residential box the same day, so the
+  // instrumentation has a baseline to be read against: three sampled CIDs
+  // returned **HTTP 504 from the gateway itself after ~28 s** on a full-object
+  // GET, and one was a 36 MB object with a 0.07 s TTFB that was still streaming
+  // at 40 s. ⛔ A promising "ranged requests succeed where full GETs 504" reading
+  // did NOT reproduce on re-test and is deliberately not recorded as a lever.
   let upstream: Response;
   try {
     upstream = await fetch(upstreamUrl, {
       headers: { "User-Agent": "rip-packs-city/ipfs-media" },
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
     // Gateway timeout/fault — 502 so the <img> onError can advance to the next
     // candidate / placeholder.
+    //
+    // `AbortSignal.timeout` rejects with a DOMException named "TimeoutError";
+    // anything else is a genuine transport fault. Naming which one is the whole
+    // point — raising UPSTREAM_TIMEOUT_MS only helps the first kind.
+    const name = err instanceof Error ? err.name : "unknown";
+    console.log(
+      `[ipfs-media] upstream fetch failed cid=${cid} reason=${name === "TimeoutError" ? "abort_timeout" : "transport"} name=${name} elapsedMs=${Date.now() - startedMs}`,
+    );
     return new NextResponse(null, { status: 502 });
   }
   if (!upstream.ok || !upstream.body) {
+    // Distinct from the branch above: the gateway ANSWERED and said no. A 504
+    // here is ipfs.io's own, not ours, and no timeout change can move it.
+    console.log(
+      `[ipfs-media] upstream not ok cid=${cid} upstreamStatus=${upstream.status} hasBody=${!!upstream.body} elapsedMs=${Date.now() - startedMs}`,
+    );
     return new NextResponse(null, { status: upstream.status || 502 });
   }
 
@@ -90,13 +123,40 @@ export async function GET(
   // the bytes are never pulled through this function. A missing/unparseable
   // content-length (chunked upstream) falls through to the streaming path —
   // the old behaviour — rather than guessing.
-  const declaredLength = Number(upstream.headers.get("content-length") ?? "");
+  // ⚠ A COERCION TRAP WORTH NAMING, found 2026-08-24 while instrumenting this.
+  // The comment above says a missing content-length "falls through to the
+  // streaming path", and it DOES — but not by the mechanism it sounds like.
+  // `headers.get()` returns `null` when absent, and `Number(null ?? "")` is
+  // **0**, for which `Number.isFinite` is **TRUE**. So the missing case is not
+  // detected as missing; it becomes a finite ZERO that simply fails the `>`
+  // comparison. The outcome is correct today and the reasoning is not, which is
+  // exactly the shape that breaks when someone later inverts the condition —
+  // `if (!Number.isFinite(...))` would classify a chunked upstream as a parsed
+  // length of nothing. `rawLength` below tests PRESENCE, so the two questions
+  // stay separate.
+  const rawLength = upstream.headers.get("content-length");
+  const declaredLength = Number(rawLength ?? "");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_PROXY_BYTES) {
     upstream.body.cancel().catch(() => {});
+    console.log(
+      `[ipfs-media] oversize redirect cid=${cid} bytes=${declaredLength} elapsedMs=${Date.now() - startedMs}`,
+    );
     return NextResponse.redirect(upstreamUrl, 302);
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+  // The SUCCESS leg is logged too, deliberately. Volume is trivial (26 in 72 h)
+  // and it makes one log query answer "what happened to this route" instead of
+  // requiring a status-code aggregate alongside a message search.
+  //
+  // ⚠ `hasLength=false` is the case worth watching: a chunked upstream has no
+  // `content-length`, so the oversize check above cannot fire and a multi-MB
+  // object streams through uncacheable — the exact Fast Data Transfer shape this
+  // file's SIZE CEILING note was written for. It was previously indistinguishable
+  // from a small cached image.
+  console.log(
+    `[ipfs-media] ok cid=${cid} type=${contentType} hasLength=${rawLength != null} bytes=${rawLength ?? "unknown"} elapsedMs=${Date.now() - startedMs}`,
+  );
   return new NextResponse(upstream.body, {
     headers: {
       "Content-Type": contentType,
