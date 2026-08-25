@@ -37,7 +37,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,028 cases, 0 failures** (net +8) · both negative controls run: reverting the PAGE reds the bounded-read guard by name, reverting the CLIENT reds the SSR honesty case · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores the unbounded read, the pre-minted stamp, the missing `initialFailed`, and both guards' narrow roots. No DB half.
+**Revert:** `git revert 61cfe589` — restores the unbounded read, the pre-minted stamp, the missing `initialFailed`, and both guards' narrow roots. No DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — a timeout on ONE saved wallet showed a collector a PROFIT they had not made, and a test asserted that behaviour in its title
