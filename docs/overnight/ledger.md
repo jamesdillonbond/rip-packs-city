@@ -42,7 +42,7 @@ supabase-js **RESOLVES** on a query error, so a failed count returns `{ count: n
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,043 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores `offersBefore = count ?? 0` as the guard's sole input, the fabricated `active_offers_before: 0`, and the "against 0 active" message. No DB half.
+**Revert:** `git revert 02b2e849` — restores `offersBefore = count ?? 0` as the guard's sole input, the fabricated `active_offers_before: 0`, and the "against 0 active" message. No DB half.
 
 
 ### 2026-08-24 · CORRECTION (Claude Code, interactive) — two of today's "user-facing" honesty fixes were to PRODUCTION-DEAD components, and the register already said so
