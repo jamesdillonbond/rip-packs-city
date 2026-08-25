@@ -14,6 +14,7 @@ import { NextRequest } from "next/server"
 
 const cfg: any = vi.hoisted(() => ({
   state: null as any, // backfill_state row (single())
+  stateErr: null as any, // ⚠ the ERROR half — a failed read is not "no state"
   edSelect: [{ data: [] as any[], error: null }] as any[], // editions existence/retry selects, sequenced
   edSelectI: 0,
   edInsert: { data: { id: "ed-new" }, error: null } as any, // editions insert().select().single()
@@ -34,7 +35,7 @@ vi.mock("@supabase/supabase-js", () => ({
         },
         update: () => b,
         single: async () => {
-          if (table === "backfill_state") return { data: cfg.state, error: null }
+          if (table === "backfill_state") return { data: cfg.state, error: cfg.stateErr }
           if (table === "editions" && isInsert) return cfg.edInsert
           return { data: null, error: null }
         },
@@ -125,6 +126,7 @@ function stubFetch(pages: Array<{ txs?: any[]; rightCursor?: string | null; ok?:
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   cfg.state = null
+  cfg.stateErr = null
   cfg.edSelect = [{ data: [], error: null }]
   cfg.edSelectI = 0
   cfg.edInsert = { data: { id: "ed-new" }, error: null }
@@ -300,5 +302,81 @@ describe("POST /api/backfill — early-exit + walk outcomes", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
+  })
+})
+
+// ── A failed state read must not be mistaken for "no state" (2026-08-25) ─────
+//
+// The route dropped `error` on its `backfill_state` read. supabase-js RESOLVES a
+// query error, so a failed read left `state = null` and every use of it below
+// then meant the OPPOSITE of the truth:
+//
+//   state?.status === "complete"   → false  ⇒ a FINISHED backfill re-walks
+//   state?.cursor ?? null          → null   ⇒ the cursor RESETS to the beginning
+//   (state?.total_ingested ?? 0)   → 0      ⇒ the cumulative counter is destroyed
+//
+// ...and then it WRITES that back. `topshot_sales` is `status: "complete"` live,
+// so one transient read failure could un-complete a finished backfill
+// PERSISTENTLY — the write lands, the next run reads the new status, and the
+// early exit never fires again.
+//
+// These pin the WRITE and the STATUS, not the response text: the old body was
+// `{ ok: true, message: "Backfill complete" }` or a normal walk result, neither
+// of which mentions an error, so asserting on copy would pass against the defect.
+describe("POST /api/backfill — a failed backfill_state read", () => {
+  it("does not answer 200 when the state read fails", async () => {
+    cfg.stateErr = { message: "boom" }
+    const res = await POST(req(`Bearer ${TOKEN}`))
+    expect(res.status).not.toBe(200)
+    expect(res.status).toBeGreaterThanOrEqual(500)
+  })
+
+  it("does NOT walk — the cursor must never be reset from a read that failed", async () => {
+    cfg.stateErr = { message: "boom" }
+    const seen: string[] = []
+    globalThis.fetch = vi.fn(async (u: any) => {
+      seen.push(String(u))
+      return { ok: true, json: async () => ({}), text: async () => "" } as any
+    }) as unknown as typeof fetch
+    await POST(req(`Bearer ${TOKEN}`))
+    // The TopShot GQL walk is the expensive, cursor-destroying part. It must not
+    // start at all: doing nothing costs one cron interval, doing it wrong costs
+    // the cursor.
+    expect(seen).toEqual([])
+  })
+
+  it("classifies a statement timeout as a retryable 503", async () => {
+    cfg.stateErr = { code: "57014", message: "canceling statement due to statement timeout" }
+    const res = await POST(req(`Bearer ${TOKEN}`))
+    expect(res.status).toBe(503)
+    expect((await res.json()).retryable).toBe(true)
+  })
+
+  it("NO-CHANGE CONTROL: a genuinely absent state row still walks", async () => {
+    // `single()` on a missing row is a real, expected state for a first run, and
+    // the walk MUST still start — otherwise "never walk on null state" would
+    // satisfy the cases above by disabling the backfill entirely.
+    cfg.state = null
+    cfg.stateErr = null
+    stubFetch([{ txs: [], rightCursor: null }])
+    const res = await POST(req(`Bearer ${TOKEN}`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+  })
+
+  it("NO-CHANGE CONTROL: a complete backfill still early-exits without walking", async () => {
+    cfg.state = { status: "complete", total_ingested: 4321, cursor: "c1" }
+    cfg.stateErr = null
+    const seen: string[] = []
+    globalThis.fetch = vi.fn(async (u: any) => {
+      seen.push(String(u))
+      return { ok: true, json: async () => ({}), text: async () => "" } as any
+    }) as unknown as typeof fetch
+    const res = await POST(req(`Bearer ${TOKEN}`))
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.message).toMatch(/already complete/i)
+    expect(body.totalIngested).toBe(4321)
+    expect(seen).toEqual([])
   })
 })

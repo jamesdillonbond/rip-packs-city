@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
@@ -192,11 +193,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data: state } = await supabase
+  // 🚨 THE ERROR IS READ, AND A FAILURE MUST NOT BE MISTAKEN FOR "no state".
+  //
+  // supabase-js RESOLVES a query error rather than throwing, so dropping `error`
+  // left `state = null` on a failed read — and EVERY use of `state` below then
+  // silently means the opposite of the truth:
+  //
+  //   state?.status === "complete"  → false, so a FINISHED backfill re-walks
+  //   state?.cursor ?? null         → the cursor RESETS and the walk restarts
+  //                                   from the beginning of the sales history
+  //   (state?.total_ingested ?? 0)  → the cumulative counter is OVERWRITTEN with
+  //                                   just this run, destroying the running total
+  //
+  // ...and then it WRITES that back. This is CLAUDE.md's worst sub-class — a
+  // surface that loads state and writes it back, where a failed read becomes a
+  // mutation. `topshot_sales` is `status: "complete"` today, so one transient
+  // read failure could un-complete a finished backfill PERSISTENTLY: the write
+  // lands, the next run reads the new status, and it never early-exits again.
+  const { data: state, error: stateErr } = await supabase
     .from("backfill_state")
     .select("*")
     .eq("id", "topshot_sales")
     .single();
+
+  if (stateErr) {
+    // Doing nothing is always safe here: the walk is resumable by design, so a
+    // skipped tick costs one cron interval and a wrong one costs the cursor.
+    return apiErrorResponse(stateErr, "api/backfill", "Could not read backfill state.");
+  }
 
   if (state?.status === "complete") {
     return NextResponse.json({
