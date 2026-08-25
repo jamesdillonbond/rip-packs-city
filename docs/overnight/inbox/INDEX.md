@@ -1,4 +1,4 @@
-# Inbox index — 230 live filings
+# Inbox index — 231 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-24 — 6 filings
+## 2026-08-24 — 7 filings
+
+- [🚨 All three Flowty listing caches hold EXACTLY 100 rows, because `offset` does not paginate — at least 5,000 are obtainable in ONE request](2026-08-25T0620Z-every-flowty-listing-cache-holds-exactly-100-rows-because-offset-does-not-paginate.md) — Top Shot / All Day / Golazos each sit on **exactly 100** cached rows; three markets do not independently produce 100, a `PAGE_LIMIT` does. Offsets 0–400 at limit 100 = **500 fetched, 103 unique**. ⚠ `reportedTotal=10000` is a PLACEHOLDER (**identical with and without the filter**), so the loop's own completeness test can never fire and no instrument could see the gap. 🚨 **The tell is written in the routes' own comments TWICE** — "`PAGE_LIMIT=50` runs at ~56 listings/run", "`PAGE_LIMIT=24` … capping runs at ~48" — the book size tracked the page arithmetic and both times the fix was to raise the limit. ⛔ **NOT shipped: `cached_listings` feeds the deals board, alerts and the ASK side of FMV, and 100→5,000 rows × 72 ticks/day is ~360k upserts/day against R46's IO ceiling.** A cadence+volume decision, not a constant
 
 - [`topshot-pack-pool-backfill`'s last error shifted from the ledger's documented 403 to a 200-level "no editions"](2026-08-25T0312Z-pack-pool-backfill-error-shifted-from-403-to-a-200-level-no-editions.md) — jobid 16, **224/225 runs failed (99.6%) over 2 days / 259 fails in 24h**, the single largest failing pipeline on the board. ⚠ **The ledger's "403-dead historical lane" belief for this job is now STALE** — the sync path reaches the endpoint at 200 and finds nothing to convert. Two readings the monitor cannot discriminate read-only: **exhausted finite backfill** (a mis-classified done-state dominating the fail board) or a **real conversion regression**. Spell positive control `io_wait=0, active=0` — not saturation collateral. A decision, not a diagnosis
 
