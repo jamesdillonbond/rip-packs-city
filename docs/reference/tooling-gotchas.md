@@ -64,6 +64,72 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 - **What restores push:** (a) **`/web-setup` in a REAL TERMINAL `claude` session** — syncs the local gh token to claude.ai; ⚠ a built-in CLI command, so it does **not** fire in a VSCode-extension session (it arrives as plain text), and it authorizes **at session creation** — it fixes future sessions, not a running one. (b) **Create the session with the repo as its source** — `claude --cloud` from inside the repo, or claude.ai/code with the repo selected; the desktop Cowork project picker does not authorize, and the repo is not addable mid-session. (c) **Run the task on the computer** (desktop → "Run this task") — guaranteed while #76248 is open. (d) **`git format-patch`** — the sandbox clone works, so it can do the whole job and emit a patch to `git am`; needs nothing from Anthropic, proven end-to-end.
 - Bash-green does NOT imply push-green. Never commit from the mount itself; always a fresh clone (deploy-split rule).
 - ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed.** *(Moved verbatim out of CLAUDE.md 2026-08-20 when that bullet was compressed; nothing was deleted.)* CLAUDE.md's text was: "⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `! [rejected] main -> main (non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure; that misread made the 08-18 night pass file a standing "git push is dead" escalation."
+
+#### ⭐ 2026-08-25 re-derivation — THE TWO MODES ARE BEING CONFLATED, and the tell is the error string
+
+⚠ **The 2026-08-25 night-pass handoff calls itself "cloud Cowork" and quotes the DESKTOP error.** It reported
+`remote.origin.pushurl` EMPTY and `git push --dry-run` refused with **`could not read Username for 'https://github.com'`**.
+That is **not** the cloud failure. The two are distinguishable in one line, and they have *different* remedies:
+
+| | error string | what it means | remedy |
+|---|---|---|---|
+| **CLOUD** | `access denied by the git proxy: … is not in this session's authorized repository set` → **403** | refused **before any credential is evaluated** | attach the repo at session **creation** — nothing local helps |
+| **DESKTOP / device bridge** | `could not read Username for 'https://github.com'` | git found **no credential at all** and fell back to an interactive prompt | a credential path that shell can actually reach |
+
+**Reading the second as the first (or vice versa) sends you looking for the wrong fix** — which is CLAUDE.md's
+own *diagnose from the ERROR STRING* rule, met again.
+
+#### Upstream status, checked 2026-08-25 via `gh issue view 76248 --repo anthropics/claude-code`
+
+**Still OPEN**, last updated 2026-08-24. An Anthropic maintainer has confirmed the 403 is **intended isolation
+behaviour**, and the stated workaround is **starting the session with the repo already attached**; a
+self-service "attach a repo mid-session" is acknowledged as wanted, with **no timing given**. Reporters confirm
+**reads succeed and writes are refused**, and that `gh` and the REST API are refused separately for the same
+repo, so **there is no API fallback**. ➡ **For the CLOUD mode there is still nothing to fix locally. Stop
+looking.**
+
+⚠ **One upstream detail worth carrying:** the bundle/patch handoff has its own failure mode — *"bundles are
+incremental, so if a bundle is built from the agent's local HEAD rather than from the last commit the user
+actually pushed, the fetch fails with a missing-prerequisite error."* Build the bundle against `origin/main`,
+not local HEAD.
+
+#### 🚨 A CORRECTION THAT WILL SAVE THE NEXT SESSION AN HOUR: `git config --get-all credential.helper` MISSES THE gh HELPER
+
+Tonight I ran `git config --show-origin --get-all credential.helper` on Trevor's box, saw only `manager`, and
+concluded the gh helper was not configured. **That was wrong.** The gh helper is registered under a
+**host-scoped** key, which that query does not match:
+
+    credential.https://github.com.helper = !'C:Program FilesGitHub CLIgh.exe' auth git-credential
+    credential.https://gist.github.com.helper = …
+
+**It was ALREADY set globally, and `gh auth setup-git` is a NO-OP here** (config byte-identical before and
+after — verified). ⚠ **Use `git config --get-regexp 'credential.'`, never `--get-all credential.helper`.**
+
+#### ✅ TESTED 2026-08-25: `gh` ALONE can authenticate a push on Trevor's box
+
+Proven by excluding GCM and leaving only the gh helper, which is the control that makes it mean anything:
+
+    git -c credential.helper=         -c credential.https://github.com.helper='!gh auth git-credential'         push --dry-run origin main     # → "Everything up-to-date", exit 0
+
+`gh auth git-credential get` also answers **non-interactively** (exit 0, returns `username`+`password`; token
+scopes `gist, read:org, repo, workflow`). ⚠ **Never print that output** — pipe it through something that
+reports only whether a `password=` line exists.
+
+➡ **So "the desktop shell has no credential helper" is NOT the explanation, and configuring one is NOT the
+fix — it is already there and it works.** The remaining hypotheses for the bridge shell are: it runs as a
+**different OS user** (different `~/.gitconfig`, different keyring), it **cannot execute `gh`**, or it operates
+on a **clone that does not inherit global config**.
+
+#### The four-command diagnostic to run INSIDE a failing session (do this before theorising)
+
+    git push --dry-run origin main 2>&1 | tail -3   # the ERROR STRING decides which mode you are in
+    git config --get-regexp 'credential.'          # NOT --get-all credential.helper
+    gh auth status 2>&1 | head -3                   # is gh present AND authenticated in THIS shell?
+    whoami                                          # same OS user as the keyring owner?
+
+**Report those four verbatim.** Every wrong turn recorded on this page — the dead pushurl harvest, the
+re-embedded PAT, tonight's helper misreading, the night pass's mode conflation — was avoidable by one of them.
+
 - ⚠ **Deleting a REMOTE branch 403s from the sandbox even when pushing works** — the proxy allows push-to-ref and denies delete-ref. *(Moved verbatim out of CLAUDE.md 2026-08-20 when that bullet was compressed to a pointer; nothing was deleted.)* CLAUDE.md's text was: "the proxy allows push-to-ref, denies delete-ref — so confirm it is safe to drop (`git rev-list --count origin/main..<branch>` = 0) and hand the **GitHub UI** deletion to Trevor."
 
 ---

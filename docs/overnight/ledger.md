@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · DOCS (Claude Code, interactive) — the Cowork push problem: the two failure modes are being CONFLATED, the gh helper is already configured, and for cloud there is still nothing to fix
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Trevor asked whether anything can be done to restore push from the Cowork sandbox. Answer, measured rather than reasoned: **for the CLOUD mode, no — and the repo already says so correctly. For the DESKTOP/bridge mode the recorded diagnosis is now WRONG in a way that would have sent the next session down a dead end, so that is the part I fixed.**
+
+🚨 **THE NIGHT PASS IS MISLABELLING ITSELF, AND THE TELL IS THE ERROR STRING.** Its 08-25 handoff says *"cloud Cowork"* and then quotes **`could not read Username for 'https://github.com'`** — which is the **DESKTOP** failure, not the cloud one. The cloud failure is `access denied by the git proxy: … not in this session's authorized repository set` → **403**. **Different causes, different remedies:** the 403 is refused *before any credential is evaluated* (nothing local helps); `could not read Username` means git found **no credential at all** and fell back to an interactive prompt (a local credential path could help). This is CLAUDE.md's own *diagnose from the ERROR STRING* rule, met again — and the table is now in `tooling-gotchas.md` so the two stop being merged.
+
+✅ **UPSTREAM, CHECKED TODAY rather than quoted from the file.** `gh issue view 76248 --repo anthropics/claude-code` → **still OPEN**, updated 2026-08-24. An Anthropic maintainer has confirmed the 403 is **intended isolation behaviour**; the stated workaround is **starting the session with the repo already attached**; self-service mid-session attach is acknowledged as wanted with **no timing**. Reporters confirm reads succeed, writes are refused, and **`gh` + the REST API are refused separately for the same repo, so there is no API fallback**. ➡ **For cloud, "stop looking" is the correct standing advice and it is now dated.**
+
+🚨 **AND A CORRECTION TO MY OWN DIAGNOSIS, MADE 20 MINUTES APART — `git config --get-all credential.helper` MISSES THE gh HELPER.** I ran it, saw only `manager`, and wrote that the box has no gh helper configured. **Wrong.** The gh helper is registered under a **host-scoped** key (`credential.https://github.com.helper`) that the generic query does not match. **It was already set globally, and `gh auth setup-git` turned out to be a NO-OP** — I diffed the config before and after and it is byte-identical. ⚠ **The right query is `git config --get-regexp 'credential\.'`.** Recorded prominently, because the wrong one returns a plausible answer rather than an error.
+
+✅ **TESTED, WITH THE CONTROL THAT MAKES IT MEAN SOMETHING: `gh` ALONE authenticates a push here.** Excluding GCM entirely and leaving only the gh helper — `git -c credential.helper= -c credential.https://github.com.helper='!gh auth git-credential' push --dry-run origin main` → **`Everything up-to-date`, exit 0.** `gh auth git-credential get` also answers **non-interactively** (exit 0; scopes `gist, read:org, repo, workflow`). ⚠ Its output carries a live token — piped through a checker that reports only whether a `password=` line exists, never the value.
+
+➡ **THEREFORE the desktop/bridge failure is NOT a missing helper, and "configure one" is not the fix.** It is already configured and it works from this shell. The remaining hypotheses — **different OS user** (different `~/.gitconfig`, different keyring), **`gh` not executable in that shell**, or **a clone that does not inherit global config** — are not distinguishable from Trevor's box, so I did not guess between them. ⚠ **A four-command diagnostic to run INSIDE a failing session** is now in `tooling-gotchas.md` (`push --dry-run` for the error string · `config --get-regexp` · `gh auth status` · `whoami`). **Every wrong turn on that page — the dead pushurl harvest, the re-embedded PAT, tonight's helper misreading, the night pass's mode conflation — was avoidable by one of those four.**
+
+⚠ **Carried from upstream because it is a real trap in the fallback everyone uses:** *"bundles are incremental, so if a bundle is built from the agent's local HEAD rather than from the last commit the user actually pushed, the fetch fails with a missing-prerequisite error."* **Build the bundle against `origin/main`, not local HEAD.**
+
+⛔ **What I did NOT do:** re-embed a PAT (banned — it burned a real one on 08-16, and gh carries the `workflow` scope a PAT lacks); change any credential configuration (the one command I ran was a verified no-op); or claim a fix for the bridge shell I cannot test from here.
+
+**Verified:** `gh auth status` intact after the no-op (`✓ Logged in … (keyring)`, scopes unchanged) · `git push --dry-run origin main` → exit 0 · `check-memory-doc-links.mjs` 102 links / 24 files, exit 0 · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the runbook. No code, no DB half, no machine config to undo.
+
+
 ### 2026-08-25 · DOCS (Claude Code, interactive) — the db-pin prediction HELD, and I read the log rather than the badge to say so
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Closes the named falsifier recorded in known-issues #25 on 08-24, now that the run it named has fired.
