@@ -129,3 +129,59 @@ everything older than `runStartedAt`.** ⓘ Blast radius today is small precisel
 the book is 100 rows and the next tick is 20 minutes away — **but it grows with any fix to §5.** They should
 be fixed together: a `sweep_complete` flag gating the purge, exactly as `ingest/candy-offers` already does
 with `degradedSweep`.
+
+---
+
+## ⛔⛔ CORRECTION — 2026-08-24 ~23:35 PT, ~20 minutes after filing. **§6's IMPACT list is WRONG in two places. The mechanism stands; the blast radius is much smaller.**
+
+I named the consumers of `cached_listings` from a `grep -l` for the table name and did not check what each hit actually does. **Two of the three surfaces I named do not read this table.**
+
+### ⛔ WRONG: "feeds the flagship sniper/deals board (`SniperClient`)"
+
+- **`/api/sniper-feed` reads `ts_listings`**, not `cached_listings`.
+- **`SniperClient` never queries it** — its only occurrence is inside a COMMENT (`// … cached_listings, which corresponds to deal.momentId …`). **A bare-name grep counted a comment as a consumer**, which is the same mistake this repo's guards keep having to strip comments to avoid.
+
+### ⛔ WRONG: "and the ASK side of FMV (ask-corroboration + the ASK clamp)"
+
+`app/api/fmv-recalc/route.ts` says so in its own words:
+
+> *"The former Step 2b (Flowty LiveToken FMV blend) and Step 2c (floor-ask proxy) read from `cached_listings`, which now holds only ~24 frozen multi-week-stale rows. FMV is now purely sales-based (outlier-filtered WAP + trimmed-median fallback). **Both code paths were removed 2026-05-24.**"*
+
+**`fmv-recalc` does not read `cached_listings` anywhere.** FMV is not downstream of this bug.
+
+### ✅ WHAT ACTUALLY READS IT — verified per file, `from("cached_listings")` only
+
+`/api/market` (as the **legacy fallback**), `/api/golazos-sniper-feed`, `/api/profile/market-pulse`,
+`/api/wallet-search`, `/api/fast-break/optimize`, `/api/support-chat/context`.
+
+⚠ **AND THERE IS A `cached_listings_v2` HOLDING 186,300 ROWS THAT I HAD NOT NOTICED.** `/api/market`'s own
+header states the split:
+
+> *"The legacy `cached_listings` table the route below reads from is post-Flowty-teardown dead for TS (0 rows)
+> and stale for AllDay (~2 weeks). Modern data lives in `badge_editions` (TS) and `cached_listings_v2`
+> (AllDay/Golazos/UFC) … Other collections fall through to the legacy `cached_listings` query below."*
+
+**So Top Shot and All Day — the two collections whose under-collection I measured at 50× — have already been
+migrated off this table for the Market surface.** ⓘ That header is itself now partly stale in the other
+direction: it says TS has **0 rows**, and TS has **100** today, because the 2026-07-07 re-scope found Flowty's
+API alive and the listing-cache pipelines were revived.
+
+### ➡ WHAT THIS CHANGES
+
+- **The MECHANISM is untouched** — `offset` does not paginate (500 fetched → 103 unique), the cache is pinned
+  at exactly 100 per collection, ≥5,000 are obtainable in one request, and the page-size tell in §4 stands.
+- **The SEVERITY drops from "the flagship board sees 2% of the market" to "a LEGACY table, still written every
+  20 minutes by three live pipelines, is capped at 2% — and its remaining consumers are the Market tab's
+  non-TS/AllDay fallback plus five smaller surfaces."**
+- ⚠ **AND IT STRENGTHENS §6's CONCLUSION RATHER THAN WEAKENING IT.** Raising the limit would add ~360,000
+  upserts/day to a table the product has been **migrating away from**. **The real question is no longer "what
+  limit?" — it is whether `topshot/allday/golazos-listing-cache` should still be writing `cached_listings` at
+  all, or whether the remaining six consumers should move to `cached_listings_v2` / the sniper RPCs like TS and
+  AllDay already did.** That is a bigger and better question than the constant.
+
+### ⚠ THE LESSON, and it is the THIRD time today
+
+**Name the caller before you claim the impact.** I applied that rule to COMPONENTS earlier tonight — and had
+to retract a user-impact claim when two turned out to be production-dead — then failed to apply it to a TABLE
+within the hour. ⚠ **A `grep -l` for a table name is a list of files that MENTION it, not a list of consumers.**
+The check that settles it is `grep -n 'from("<table>")'` per file, plus reading what the hit does.

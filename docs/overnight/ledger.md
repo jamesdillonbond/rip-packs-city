@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · CORRECTION (Claude Code, interactive) — the Flowty filing's IMPACT list was wrong in two places, twenty minutes after I pushed it
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Correcting the filing shipped in the previous entry. **The mechanism is untouched; the blast radius is much smaller.**
+
+⛔ **I NAMED THE CONSUMERS FROM A `grep -l` FOR THE TABLE NAME AND DID NOT CHECK WHAT EACH HIT DOES. Two of the three surfaces I named do not read it.**
+- **"the flagship sniper/deals board (`SniperClient`)"** — `/api/sniper-feed` reads **`ts_listings`**, and `SniperClient`'s only occurrence of `cached_listings` is **inside a COMMENT**. ⚠ **A bare-name grep counted a comment as a consumer** — the very thing this repo's guards strip comments to avoid, committed by me while writing about instrument blindness.
+- **"the ASK side of FMV (ask-corroboration + the ASK clamp)"** — `fmv-recalc` does not read the table at all, and says so in its own words: *"The former Step 2b (Flowty LiveToken FMV blend) and Step 2c (floor-ask proxy) read from `cached_listings` … **Both code paths were removed 2026-05-24.** FMV is now purely sales-based."* **FMV is not downstream of this bug.**
+
+⚠ **AND I HAD MISSED A `cached_listings_v2` HOLDING 186,300 ROWS.** `/api/market`'s own header states the split: *"The legacy `cached_listings` table … is post-Flowty-teardown dead for TS (0 rows) and stale for AllDay. Modern data lives in `badge_editions` (TS) and `cached_listings_v2` (AllDay/Golazos/UFC) … Other collections fall through to the legacy `cached_listings` query below."* ➡ **Top Shot and All Day — the two collections whose 50× under-collection I measured — have already been migrated off this table for the Market surface.** ⓘ That header is itself now stale the other way: it says TS holds **0 rows** and TS holds **100**, because the 2026-07-07 re-scope found Flowty's API alive and revived the pipelines.
+
+✅ **VERIFIED CONSUMER LIST, per file, `from("cached_listings")` only:** `/api/market` (legacy fallback), `/api/golazos-sniper-feed`, `/api/profile/market-pulse`, `/api/wallet-search`, `/api/fast-break/optimize`, `/api/support-chat/context`.
+
+➡ **WHAT SURVIVES AND WHAT MOVES.** The mechanism is fully intact — `offset` does not paginate (500 fetched → **103 unique**), all three caches are pinned at **exactly 100**, ≥**5,000** are obtainable in one request, `reportedTotal=10000` is a proven placeholder, and the page-size tell appears **twice** in the routes' own comments. **Severity drops** from *"the flagship board sees 2% of the market"* to *"a LEGACY table, still written every 20 minutes by three live pipelines, is capped at 2%, and its remaining consumers are the Market tab's non-TS/AllDay fallback plus five smaller surfaces."*
+
+⭐ **AND THE CORRECTION STRENGTHENS THE FILING'S CONCLUSION RATHER THAN WEAKENING IT.** Raising the limit would add ~360,000 upserts/day to a table the product has been **migrating away from**. **The real question is no longer "what limit?" — it is whether the three `*-listing-cache` routes should still be writing `cached_listings` at all, or whether its six remaining consumers should move to `cached_listings_v2` / the sniper RPCs as TS and AllDay already have.** That is a better question than the constant, and I would not have reached it without being wrong first.
+
+⚠ **THE LESSON, AND IT IS THE THIRD TIME TODAY: name the caller before you claim the impact.** I applied it to COMPONENTS earlier tonight — and retracted a user-impact claim when two turned out production-dead — then failed to apply it to a TABLE **within the hour**. ⚠ **`grep -l <table>` lists files that MENTION it, not consumers.** The check that settles it is `grep -n 'from("<table>")'` per file, then reading what the hit does. **Measured mechanism, asserted impact — that asymmetry is the recurring shape of my errors today, and all three were caught by continuing to look rather than by review.**
+
+**Verified:** correction appended IN PLACE to the filing per the append-only rule; inbox guards green (8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the correction. No code, no DB half.
+
+
 ### 2026-08-24 · MEASURED, FILED, NOT SHIPPED (Claude Code, interactive) — all three Flowty listing caches hold EXACTLY 100 rows, and at least 5,000 are obtainable in one request
 
 **DOCS ONLY (an inbox filing + INDEX entry). No code, no DB, no prod-state change — deliberately; see the cost section.** Found by following the "guards first" heuristic from the count sweep into the `.delete()` call sites, which led to the listing-cache family and then somewhere better.
