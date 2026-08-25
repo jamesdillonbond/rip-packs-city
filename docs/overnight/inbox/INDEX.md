@@ -1,4 +1,4 @@
-# Inbox index — 228 live filings
+# Inbox index — 229 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-08-24 — 4 filings
+## 2026-08-24 — 5 filings
+
+- [`cross_collection_ts_set_overlap_mat` is ~51h stale and NO standing instrument watches it](2026-08-25T0011Z-cross-collection-overlap-mat-is-51h-stale-and-no-standing-metric-watches-it.md) — step1 fresh (~1h) + step2 stale (~51h) is the signature of `rpc-ccm-step2` specifically failing (`canceling statement due to statement timeout` on its `CREATE TEMP TABLE`). ⛔ **The timeout root cause is ALREADY FILED and PRIORITY 3 bars re-opening it.** The NEW part is a MONITORING gap: this MV is absent from `v_rpc_trust_health` / `rpc_ops_snapshot()`, so between ~8am first-tick verifies the overlap surface can serve multi-day-stale data invisibly. Proposed: an additive `cross_collection_overlap_stale_hours` arm — a decision, not a diagnosis
 
 - [⭐ SHIPPED — nothing ever checked whether a materialized view is anon-readable, and every new one is born that way](2026-08-24T2345Z-nothing-ever-checked-whether-a-materialized-view-is-anon-readable.md) — `check_public_security_invariants()` had **5 arms, all scoped to `relkind IN ('r','p')`/`'v'`/pg_proc**: a MISSING invariant, not a broken check. ⛔ `information_schema.role_table_grants` returns **0 rows for all 34 MVs** while they demonstrably hold grants — any guard reading MV grants through it passes **vacuously**. ⛔ `ALTER DEFAULT PRIVILEGES` gives `postgres`-created MVs `anon=rxm` (**r = SELECT**), so every new MV is **born anon-readable** and PostgREST serves it. Live exposure **0 of 34** (latent, not a P0). Sixth arm shipped `20260824233704`, **ban at zero**, proven by a rolled-back positive control (`rows=1 names=mv_panini_squeeze`)
 - [There are TWO client `Sentry.init()` calls, and which one wins depends on the BUNDLER — under production's turbopack the richer config is INERT](2026-08-24T1510Z-there-are-two-client-sentry-inits-and-which-one-wins-depends-on-the-bundler.md)
