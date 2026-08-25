@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · ANSWERED, NOT SHIPPED (Claude Code, interactive) — the pack-pool backfill is a WEDGED HEAD, not an exhausted walk, and BOTH queued dispositions were harmful
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Settles queued item **#A** from this morning's night-pass handoff, which asked for a decision between *"benign / exhausted finite backfill — retire the row or re-map its terminal outcome"* and *"a real conversion regression"*. **Measured: neither.**
+
+🚨 **THREE UNCONVERTIBLE DISTRIBUTIONS PERMANENTLY OCCUPY THE HEAD OF THE CANDIDATE LIST AND BLOCK EVERYTHING BEHIND THEM.** `get_topshot_pool_backfill_targets` selects `WHERE NOT EXISTS (pool row for this dist)` with a **deterministic** `ORDER BY has_rips DESC, first_seen_at DESC` and the cron calls it at **`limit=3`**. **A candidate leaves the set ONLY by acquiring a `pack_drop_pool` row** — so a distribution whose GQL walk returns no editions writes nothing and **can never leave**. Same three, every tick, **12/hour · 288/day**. ✅ **Verified stable rather than inferred: three consecutive RPC calls returned the identical head in identical order — `6923, 6218, 6215`.**
+
+✅ **THE NUMBER THAT DECIDES THE DISPOSITION: 2,082 eligible TS distributions · 1,372 converted · 710 blocked · and 351 of the blocked ones HAVE REAL `pack_rips`.** ⚠ **The ORDER BY sorts has-rips FIRST, so the blocked candidates are precisely the highest-value ones.** `pack_drop_pool` is read by **18 functions**, including `get_pack_detail_bundle`, `get_pack_contents`, `get_pack_for_simulator`, `get_pack_ev_contributors`, `refresh_challenge_costs`, and all three `compute_pack_ev_*`.
+
+⛔ **BOTH QUEUED OPTIONS WOULD HAVE DONE HARM, which is the part worth keeping.** *"Exhausted → retire the row / `DELETE FROM pipeline_cadence_watchlist`"* would have **hidden 710 unconverted distributions (351 with rips) behind a green board** — the alarm was correct all along and only its interpretation was missing. *"Conversion regression"* would have sent someone hunting a change to blame when nothing changed. ⚠ **This is CLAUDE.md's *"a filed DECISION NOT TO ACT is the one nobody re-checks"* with the polarity reversed: a filed decision TO act, on a mis-framed choice, where the tidier option was the destructive one.**
+
+➡ **NOT SHIPPED — `pack_drop_pool` feeds pack-EV, which is on the off-limits list, and the fix is a schema/selection change rather than a constant.** Filed with three ranked options (record the attempt and exclude on it · order by `last_attempted_at ASC NULLS FIRST` so the head rotates · park proven-unconvertible dists). ⚠ **Explicitly recorded: do NOT simply raise `limit=3`** — that widens the window past the blockers while still re-fetching them every tick and leaves the exit condition untouched, so the wedge returns as soon as three more unconvertible distributions reach the head.
+
+⚠⚠ **AND A MEASUREMENT TRAP INSIDE THIS ONE — THE SAME LESSON I WROTE TO MEMORY LAST NIGHT, MET AGAIN IN TWELVE HOURS, IN AN UNRELATED SUBSYSTEM.** My first candidate count came from `get_topshot_pool_backfill_targets(100000, false)` → **400**. That is not the population: **the function's own `LIMIT LEAST(…, 400)` capped it.** Querying the underlying predicate directly gives **710**. **When the number you measure equals a limit inside the thing you measured with, you have measured the limit.** I caught it only because I had written that rule down against Flowty's `PAGE_LIMIT` hours earlier — the note paid for itself the same day.
+
+⚠ **Stated because the headline invites over-reading:** I did **not** establish that the other 710 would convert successfully — the head 3 prove some genuinely cannot — nor the per-page user-visible effect. What is established is that **351 rip-bearing distributions are never ATTEMPTED**, and that the retry burns 288 ticks a day to re-fail on the same three rows.
+
+**Verified:** answer appended IN PLACE to the 08-25T0312Z filing per the append-only rule; inbox guards green (8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the answer. No code, no DB half.
+
+
 ### 2026-08-25 · DOCS (Claude Code, interactive) — the Cowork push problem: the two failure modes are being CONFLATED, the gh helper is already configured, and for cloud there is still nothing to fix
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Trevor asked whether anything can be done to restore push from the Cowork sandbox. Answer, measured rather than reasoned: **for the CLOUD mode, no — and the repo already says so correctly. For the DESKTOP/bridge mode the recorded diagnosis is now WRONG in a way that would have sent the next session down a dead end, so that is the part I fixed.**
