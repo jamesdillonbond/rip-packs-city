@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · QUIET NIGHT / NO-PUSH (nightly autonomous pass) — shipped nothing; health is the known saturation/structural set; two low-risk candidates queued
+
+**NO-PUSH (cloud Cowork; `remote.origin.pushurl` EMPTY on the mount, clone fell back to the credential-less URL, `git push --dry-run` refused: "could not read Username for github.com"). NOTHING shipped to prod state** — no DB migration, no code deploy, no data mutation, no edge-fn, no artifact change. Docs written to the mounted tree, flagged uncommitted. Clock verified un-skewed (shell 08:02:37Z vs DB now() 08:02:48Z; sales/fmv rows bound real time from below → real local ~01:04 PT, genuine overnight). Prior lock RELEASED; took over as `night-20260825T080419Z`, released at end.
+
+**Health (Section 2):** security ALL CLEAN (invariants `[]`, RLS-off base `[]`, anon write-holes `[]`). One stalled pipeline — `weekly-db-maintenance` (info, log-purge housekeeping, jobid 198) missed its 08-24 09:40Z daily tick (~46.5h silent), self-heals 09:40Z 08-25; **watch for a second miss.** Pipeline fails all known saturation/structural: `topshot-pack-pool-backfill` 100% (cause shifted 403→200 "no editions"), `reconcile-saved-wallet-stats` 90.9% (by-design `soft_deadline_reached_partial_sweep_committed`, `oldest_cache_h` climbing 379→386h = saturation), `sync-nba-projections` 8/8 (ESPN dark). `rpc_ops_snapshot()` timed out on its FMV-confidence leg (saturation) — FMV HIGH/MED counts deliberately not force-computed. Trust breaches `public_board_slow_count=4` + `unmapped_backlog=350`, both structural. Sentry 0 new (dark-since-08-18 caveat). **Deltas vs 08-24:** editions 27,246→27,249 (+3 TS); db_size 13,848→13,918 MB (+70).
+
+**Post-ship watch:** CLEAN. The 08-24 Claude Code ships (`d8962ae1` saved-wallets guard, `024bafaf` sentinel leak arm, `02b2e849` candy-offers guard) are fail-safe honesty guards; no regression signal (TS editions +3 « 250 leak-warn; no new failure class; security clean).
+
+**QUEUED (decisions, not diagnoses):**
+- **#A** `topshot-pack-pool-backfill` 99.6% fail, error now a 200-level "0/3 dists converted; 3 returned no editions" (was 403). Decide exhausted-finite vs regression, then re-map terminal outcome or `DELETE FROM pipeline_cadence_watchlist WHERE pipeline='topshot-pack-pool-backfill'`. Ledger's "403-dead jobid-16 lane" belief is now stale. (inbox 2026-08-25T0312Z)
+- **#B** `cross_collection_ts_set_overlap_mat` ~51h stale (rpc-ccm-step2 statement-timeout, saturation — off-limits to fix here) and unwatched by any standing instrument. Additive fix: a `cross_collection_overlap_stale_hours` arm on `v_rpc_trust_health` (breach ~30h, preserve `security_invoker=on`). QUEUED not shipped — modifies a widely-read instrument I could not fully round-trip verify tonight (snapshot FMV leg timing out). (inbox 2026-08-25T0011Z)
+
+**Revert:** none (nothing shipped). Handoff: docs/handoff-2026-08-25-overnight-pass.md.
+
 ### 2026-08-24 · CORRECTION (Claude Code, interactive) — the Flowty filing's IMPACT list was wrong in two places, twenty minutes after I pushed it
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Correcting the filing shipped in the previous entry. **The mechanism is untouched; the blast radius is much smaller.**
