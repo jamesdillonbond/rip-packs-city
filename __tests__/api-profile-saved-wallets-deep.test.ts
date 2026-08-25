@@ -105,6 +105,68 @@ describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
     expect(up?.rows.every((r) => r.wallet_addr === "0xabc")).toBe(true) // lowercased from allow_list
     expect(up?.rows.every((r) => r.accent_color === "#E03A2F")).toBe(true)
   })
+
+  // ⚠ THIS GUARD PROTECTS A WRITE, AND `?? 0` MADE IT FAIL OPEN INTO ONE.
+  //
+  // The zero-rows-EVER guard was `if ((totalRows ?? 0) > 0) return []`.
+  // supabase-js RESOLVES on a query error, so a failed count is
+  // `{ count: null, error }` -> `0 > 0` is false -> the guard reads "this user
+  // has no wallets" and falls through to the upsert. A database hiccup could
+  // therefore RE-SEED wallets for a user who already has them, resetting
+  // `username` and `accent_color` on the conflicting rows and restoring a
+  // wallet the user may have deleted deliberately.
+  //
+  // ⚠ The guard's own comment accepts re-seeding a deliberate deletion as
+  // "acceptable at current scale" — but that was reasoned about a GENUINE zero,
+  // not about a read that failed. The self-heal is best-effort, so "we could not
+  // tell" must mean DO NOTHING.
+  //
+  // Pinned on the WRITE, not on the response body: the body is `[]` either way,
+  // so asserting it would pass against the defect.
+  it("does NOT upsert when the zero-rows-EVER count read errors", async () => {
+    state.user = { id: "u1", email: "Me@X.com" }
+    install({
+      saved_wallets: [
+        { data: [], error: null }, // main list query -> empty -> trigger self-heal
+        { count: null, error: { message: "canceling statement due to statement timeout" } },
+      ],
+      allow_list: { data: { wallet_addr: "0xABC", username: "u" }, error: null },
+    })
+
+    const res = await GET(req("https://t/api/profile/saved-wallets"))
+    expect(res.status).toBe(200)
+    expect(state.writes["saved_wallets"]?.some((w) => w.method === "upsert")).toBeFalsy()
+  })
+
+  it("does NOT upsert when the count is absent without an error", async () => {
+    state.user = { id: "u1", email: "Me@X.com" }
+    install({
+      saved_wallets: [
+        { data: [], error: null },
+        { data: null, error: null }, // no `count` key at all
+      ],
+      allow_list: { data: { wallet_addr: "0xABC", username: "u" }, error: null },
+    })
+
+    await GET(req("https://t/api/profile/saved-wallets"))
+    expect(state.writes["saved_wallets"]?.some((w) => w.method === "upsert")).toBeFalsy()
+  })
+
+  it("NO-CHANGE CONTROL: a user who genuinely already has wallets is still left alone", async () => {
+    // The other half of the guard. Without this, "never upsert" would satisfy
+    // both cases above and the self-heal would be dead rather than careful.
+    state.user = { id: "u1", email: "Me@X.com" }
+    install({
+      saved_wallets: [
+        { data: [], error: null }, // no rows for THIS collection filter
+        { count: 3, error: null }, // ...but three EVER -> do not re-seed
+      ],
+      allow_list: { data: { wallet_addr: "0xABC", username: "u" }, error: null },
+    })
+
+    await GET(req("https://t/api/profile/saved-wallets"))
+    expect(state.writes["saved_wallets"]?.some((w) => w.method === "upsert")).toBeFalsy()
+  })
 })
 
 describe("POST /api/profile/saved-wallets — cap + write shape", () => {

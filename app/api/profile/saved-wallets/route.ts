@@ -47,11 +47,37 @@ async function maybeAutoAttachAllowListWallet(user: {
   // Authoritative zero-rows-EVER guard — independent of any collectionId
   // filter the caller applied, so we don't re-seed a user who simply has no
   // wallet under one specific collection.
-  const { count: totalRows } = await supabase
+  // ⚠ THIS GUARD PROTECTS A WRITE, AND `?? 0` MADE IT FAIL OPEN INTO ONE.
+  //
+  // supabase-js RESOLVES on a query error, so a failed count comes back
+  // `{ count: null, error }`. `(totalRows ?? 0) > 0` is then `false` — the guard
+  // reads "this user has no wallets" — and the function falls through to the
+  // `upsert` below. So a database hiccup could RE-SEED saved wallets for a user
+  // who already has them, resetting `username` and `accent_color` on the
+  // conflicting rows and restoring a wallet the user may have deleted on
+  // purpose.
+  //
+  // ⚠ The comment above calls this the "authoritative zero-rows-EVER guard",
+  // and it accepts re-seeding a deliberate deletion as "acceptable at current
+  // scale" — but that acceptance was reasoned about a GENUINE zero, not about a
+  // read that failed. CLAUDE.md's worst-shape note is about exactly this
+  // direction: a surface that loads state and writes it back, where a failed
+  // read becomes a mutation.
+  //
+  // The self-heal is best-effort, so "we could not tell" must mean DO NOTHING.
+  const { count: totalRows, error: totalErr } = await supabase
     .from("saved_wallets")
     .select("id", { count: "exact", head: true })
     .eq("user_id", user.id);
-  if ((totalRows ?? 0) > 0) return [];
+  if (totalErr || typeof totalRows !== "number") {
+    console.log(
+      `[saved-wallets] auto-attach skipped — could not count existing wallets: ${
+        totalErr?.message ?? "count was not a number"
+      }`,
+    );
+    return [];
+  }
+  if (totalRows > 0) return [];
 
   // Service-role read of the allow_list row (this client IS supabaseAdmin).
   const { data: alRow, error: alErr } = await supabase
