@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — a failed state read could UN-COMPLETE a finished backfill, permanently, and reset its cursor to the start of Top Shot sales history
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Third and last finding from the 14-candidate sweep that the `collection-snapshot` fix opened. **Closing the sweep honestly is the point of this entry** — the other eleven are triaged below rather than left implied.
+
+🚨 **`app/api/backfill/route.ts` DROPPED `error` ON ITS `backfill_state` READ, AND EVERY USE OF THE RESULT THEN MEANT THE OPPOSITE OF THE TRUTH.** supabase-js resolves a query error, so a failed read leaves `state = null`, and:
+
+| expression | on a failed read | consequence |
+|---|---|---|
+| `state?.status === "complete"` | `false` | **a FINISHED backfill re-walks** |
+| `state?.cursor ?? null` | `null` | **the cursor RESETS to the start of Top Shot sales history** |
+| `(state?.total_ingested ?? 0) + n` | `n` | **the cumulative counter is overwritten with one run's count** |
+
+⚠ **AND IT WRITES THAT BACK.** This is CLAUDE.md's named worst sub-class — *a surface that loads state and writes it back, where a failed read becomes a mutation*. ⚠ **The damage is PERSISTENT, not transient:** `topshot_sales` is live at `status: "complete"`, so one hiccup writes a non-complete status, the next run reads the new status, and **the early exit never fires again.** A momentary read failure becomes a permanent re-walk.
+
+✅ **The fix is the cheapest one available and can only ever prevent work:** read `error`, and on failure `apiErrorResponse` and do nothing. The walk is resumable by design — **a skipped tick costs one cron interval; a wrong one costs the cursor.**
+
+⚠ **PINNED ON THE WALK AND THE STATUS, NOT ON COPY.** The pre-fix body was either `{ ok: true, message: "Backfill complete" }` or an ordinary walk result — neither mentions an error, so asserting on the response text would have passed against the defect entirely. One case asserts the **TopShot GQL fetch list is EMPTY**, because the walk is the expensive, cursor-destroying part. **3 cases red on the pre-fix route**, negative control run and restored. ⚠ **TWO no-change controls ship with them**: a genuinely absent row (a real first-run state) still walks, and a `complete` backfill still early-exits with its real `totalIngested` — otherwise *"never walk on null state"* would satisfy the regressions by disabling the backfill.
+
+⭐ **THE SWEEP, CLOSED: 14 candidates across 499 API routes, all read, 3 defects.** The detector looked for `catch` blocks that return a body with an `error` key or zeroed fields and **no 4xx/5xx status**.
+
+- **Fixed (3):** `collection-snapshot` (200 + zeros, defeating five consumers' `res.ok` checks), `pro-status` (`is_pro: false` about a paying member), and this one.
+- ⛔ **False positives of my own detector (2):** `/api/sets` and `/api/sets-db` pass `statusForSafeError(safe)` — a **variable**, so the literal `status: 4xx|5xx` check could not see it. Both were already correct. **A detector that cannot see the correct form over-reports exactly where the repo has already done the work.**
+- ✅ **Correct by design (6):** the two sales-history crons return `{ ok: false, error: "bisect_failed" }` at 200 **and** call `logRun(..., false, ...)` — the 200 is a cron-caller convention and `ok` carries the signal; `smoke-test` ×2 return `allPassed: false` with a failing result row; `alerts/suggest` returns `{ suggestions: [] }`, which is field degradation on a typeahead and asserts nothing; `wallet-packs` documents its degradation and publishes fixed copy rather than upstream text.
+- ⓘ **Real but NOT shipped (2), stated rather than dropped — `/api/wallet-cache`.** Its POST `catch` returns `{ ok: true, written: 0 }` and its chunk loop swallows every `upsert_wmc_batch` error while still reporting `ok: true`, so a fully- or partially-failed cache write is indistinguishable from "nothing to write"; its GET returns `ok: moments.length > 0` on a **mid-pagination** error, which is a partial list no caller can tell from a complete one. ⚠ **Left alone because I named the callers: the GET has NO in-repo consumer at all, and the POST's single caller is fire-and-forget with `.catch(() => {})` and never reads the body.** ⛔ **And my first reason for holding it back was WRONG** — I wrote that its `console.warn` diagnostics were invisible in Vercel; they are not, as the correction two entries above establishes. **The surviving reason is the caller check, not the logging one.**
+
+⚠ **AND A SEPARATE SELF-INFLICTED RED, RECORDED BECAUSE THE RULE I FOLLOWED WAS NOT ENOUGH.** The scheduled **Migration parity** job failed at `264663ad` with `[MISSING] 20260825160743 audit_20260825_ccm_step2_hash_join_…` — *"Production is ahead of supabase/migrations/"*. CLAUDE.md says to **write** the repo file in the same turn as an MCP `apply_migration`, and I did — but I **committed** it three commits later, and a scheduled parity run fired into the **13-minute gap** (applied 16:07Z, checked 16:20Z, committed in `aac89b76`). ⭐ **The rule needs the stronger form: COMMIT the migration file in the same turn, not merely write it — a scheduled check reads git, not the working tree.** ⓘ The check compares by NAME presence only, so the file's extra comment header is irrelevant to it; content is covered by `db:pins:check`, which is **189/189 green** against live.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · full `npm test` green · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores the swallowed `error` on the `backfill_state` read. No DB half.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, DB migration + pins) — `rpc-ccm-step2` had failed EIGHT nights running; it nested-loops a cohort that is 72% of the table, and one `SET LOCAL` fixed it
 
 **DB MIGRATION + REPO PIN + DATA REFRESH. This changes production DB state.** Closes the filing made six hours earlier the same day, whose §6 deferred the A/B because the instance was saturated. It cleared; the A/B ran; the fix shipped.
