@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, guard+code+test) — a ratchet had been measuring 43 of a true 69, because it only knew ONE SPELLING of the shape it counts
+
+**GUARD + CODE + TEST. No DB, no migration, no prod-state change.** `client-failure-collapses-to-empty-ratchet` counts client sites that funnel a failed read into the success-with-nothing value. **Its budget was 43. The real number is 69.**
+
+🚨 **THE 26 MISSING SITES ARE THE SAME SHAPE, WRITTEN AS A FUNCTION EXPRESSION.** The first alternation matched only the ARROW spelling — `.then((r) => (r.ok ? r.json() : null))` — while a whole FAMILY of this repo's client components is written `function (x) { return … }`: `CollectionTabClient` (10), `CollectionProfileClient` (7), `ProfileClient` (4), and five more. **The old 43 was never the population; it was the arrow-shaped slice of it.**
+
+⚠ **AND THE GUARDS-THE-GUARD TEST PASSED THROUGHOUT, because its specimen shared the detector's blind spot.** That check exists precisely so "a typo in the regex reports zero forever" cannot happen — but it only ever fed the pattern arrows. **A guard-the-guard built from the same assumption as the guard proves nothing.** The specimen now carries the function spelling too (3 → **4** expected matches), and the benign specimen gained `.then(function (r) { return r.json() })` — the function spelling WITHOUT the `.ok` collapse — so the new alternation cannot pass by merely counting `.then(function`.
+
+🚨 **THE TELL WAS IN MY OWN WORK EARLIER THE SAME DAY AND I NEARLY MISSED IT.** Converting `TierBreakdownCard` removed a genuine collapse site — and this ratchet did not move. I assumed the site simply was not counted; it was not counted **because of the spelling**. **A ratchet that does not fall when you convert a site is measuring something other than what you fixed.** ⚠ Second time this exact failure mode has surfaced in an honesty sweep: the 08-21 filing's own detector read **32** for a true **259** because `[^\n;]` could not cross a newline. **A population derived from a pattern that cannot match a common spelling is not a population** — and both times the symptom was a number that barely moved.
+
+⚠⚠ **43 → 68 IS A TIGHTENING, NOT A LICENSE, and the constant now says so in fifteen lines.** Real protection went UP: before, a new site in the function spelling could be added freely and the ratchet stayed green at 43; now a new site in EITHER spelling reds it. **The risk with raising a ratchet is that a later reader sees only the direction** — hence the note lives on the constant, not in a commit message.
+
+✅ **68 AND NOT 69, DELIBERATELY — because a number I cannot move is a number I have not verified.** `components/profile/PortfolioSparkline.tsx` was converted in the same commit, and **watching the count go 69 → 68 is what proves the new alternation is wired to the total rather than merely present in the source.**
+
+🚨 **That conversion is a live instance of the ACTIONABLE sub-class.** On a failed read `snapshots` stayed empty, `points` held only the synthetic live-today entry, `isEmpty` went true, and the card rendered **"Sparkline builds as you load wallets. Load any saved wallet to record today's data point."** — instructing a collector to redo work they may already have done, because our read failed. Now `fetchJson` + a `failed` branch ordered ABOVE `isEmpty` (both states have <2 points; "we could not read" is the true one).
+
+⚠ **PROVEN — 2 of 3 new cases red on the reverted component, then green.** ⚠ **The third is labelled IN THE TEST as a FORWARD PIN, because it passes pre-fix**: `onChange(null)` was already correct on an empty list. It guards the tempting NEXT change — routing a failed read to `0%` on the parent hero's "↑ x% / 30D" badge, which is the fabricated-number shape. **Counting it among the regressions would overstate this suite by 50%.** The file's existing genuine-empty case is the positive control: a successful read with zero snapshots must STILL show the load-a-wallet prompt, or deleting the empty state would satisfy everything.
+
+⚠ **What this does NOT claim:** the remaining 68 are a SHAPE debt, not 68 defects. This ratchet's own header says it counts the shape and that "what a fix alters is the branch after it, which the regex cannot see" — `CostBasisCard` matches the shape while already handling the failure. **The newly-visible 26 are now measurable, not triaged**, and the biggest clusters (`CollectionTabClient` 10, `CollectionProfileClient` 7, `ProfileClient` 4) are where a later pass should look.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,031 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — narrows the ratchet back to the arrow spelling (dropping 26 sites from view), restores BUDGET 43, and restores the sparkline's collapse. No DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — a board page is not defined by its URL: the collection pack-sniper sat outside BOTH guards written for it, and the sibling I copied was itself only half-honest
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Swept the **FIFTH** honesty layer — a **server-seeded prop** — across all of `app/` rather than `app/insights`, which is where every prior sweep of this class stopped. **25 pages seed a board; 23 pass provenance; 2 did not.**
