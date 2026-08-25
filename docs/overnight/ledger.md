@@ -35,7 +35,7 @@ if (!res.ok) {
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,032 cases, 0 failures** · the ban still reports ZERO after widening, and reports ONE when a wrapped offender is planted · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — narrows `RAW_JSON_RX` back to arrow-only and returns `offenders()` to a per-line scan. No product code, no DB half.
+**Revert:** `git revert 8397dc8a` — narrows `RAW_JSON_RX` back to arrow-only and returns `offenders()` to a per-line scan. No product code, no DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, guard+code+test) — a ratchet had been measuring 43 of a true 69, because it only knew ONE SPELLING of the shape it counts
