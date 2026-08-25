@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — all FIVE Flowty listing-cache routes purged on a book they had only partly read; one of them WIPED its whole collection on a single failed fetch
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Ships §8 of the 08-24 filing [`every-flowty-listing-cache-holds-exactly-100-rows`](inbox/2026-08-25T0620Z-every-flowty-listing-cache-holds-exactly-100-rows-because-offset-does-not-paginate.md), which named the defect, recommended the fix shape (*"a `sweep_complete` flag gating the purge, exactly as `ingest/candy-offers` already does"*) and left it unshipped. ⛔ **§5 — the `limit: 1000` volume change — is deliberately NOT shipped here.** That one is a cadence-and-volume decision on a saturated instance and stays Trevor's call; this is only the guard that has to exist before it.
+
+🚨 **THE DEFECT: `break` MEANT TWO OPPOSITE THINGS AND THE DELETE COULD NOT TELL.** Every route walks Flowty, upserts what it read, then deletes every row it did not re-write. The walk leaves its loop identically on a legitimate end-of-book and on an upstream error, so a truncated read reached a delete as if it were a complete one. The purge was gated on `upserted > 0`, which **cannot see this**: a sweep that reads page 0 and errors on page 1 satisfies it while holding a partial book, and the purge then removes exactly the listings that lived on the pages it never reached. This is CLAUDE.md's named class — *a PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one* — with a DELETE on the end of it.
+
+⚠ **THE FILING NAMED ONE ROUTE FAMILY; THERE WERE FIVE SITES IN THREE DIFFERENT SHAPES.** Per *grep for the EXPRESSION, not the file*:
+
+| route | how a failed page reaches the delete | live? |
+|---|---|---|
+| `topshot-listing-cache` | `break` on throw / `status >= 400` | **live, 224 runs/73h** |
+| `allday-listing-cache` | `continue` — the page silently vanishes from the run | **live, 219 runs/73h** |
+| `golazos-listing-cache` | `continue` — same | **live, 220 runs/73h** |
+| `ufc-listing-cache` | `break`, then an **UNCONDITIONAL** wipe of the whole collection | dormant |
+| `listing-cache` (shared) | `fetchFlowtyPage` swallowed every failure into `[]`, fetched in **parallel** and flattened | dormant |
+
+🚨 **`ufc-listing-cache` IS THE WORST AND IT WAS PINNED AS INTENTIONAL.** It replaces its whole slice rather than purging by `cached_at`, and its delete had no condition at all: **a single failed page-0 fetch deleted every UFC row, upserted none, and logged `ok: true`.** ⚠ A test existed and asserted exactly that — *"a total Flowty outage still wipes the UFC slice (unconditional replace — **pinned divergence from the preserve-on-outage siblings**)"*. Per CLAUDE.md a test pinning the defect it was named to prevent gets **INVERTED, never deleted**; it now asserts the same three observations with the opposite expectation.
+
+⭐ **THE MEASUREMENT, AND IT CUTS AGAINST THE ALARM — this is PROSPECTIVE hardening, not a live-P0 repair, and it is recorded that way on purpose.** I did not take the filing's premise on trust. Live `pipeline_runs`, 73 h window: **663 runs across the three live routes, 663 `ok`, `min(rows_found) = 100` on all three** — so **no run in the window was truncated by a page error**, and no purge has fired on a partial book that I can evidence. ⓘ Two of the three dormant routes have **never logged a single run** in the entire history of `pipeline_runs_daily` (`ufc-listing-cache`, and every `*-listing-cache-v2` name the shared route emits). ⚠ **What makes it worth shipping anyway is that the triggering condition is not hypothetical**: the same filing measured Flowty's `offset` returning overlapping windows and its `total` as a placeholder `10000`, and §5's own recommendation — one request at `limit: 1000` — **grows the blast radius of a truncated sweep by 10×**. The guard has to exist first.
+
+✅ **THE FIX, THREE PARTS, EACH THE CHEAPEST AVAILABLE AND EACH ABLE ONLY TO *PREVENT* A DELETE:**
+
+1. **Carry completeness.** Each route now sets `sweepComplete` at the three LEGITIMATE ends of the book (empty page · short page · `reportedTotal` reached — plus Top Shot's stale-seen exhaustion) and counts `pageErrors` on a throw or a `>= 400`. Leaving the loop any other way — including exhausting `MAX_PAGES` — is a truncation.
+2. **Gate the delete on it**, not on `upserted > 0`.
+3. **Report the degradation** as `ok: false` with a message naming the truncation, plus `sweep_complete` / `page_errors` in `pipeline_runs.extra` — the `ingest/candy-offers` `degradedSweep` precedent, and CLAUDE.md's rule that fixing a guard without fixing the field an observer keys on leaves the incidence unmeasurable. A real fatal error keeps precedence over the degradation message.
+
+⚠ **A DELIBERATE NON-GATE ON UFC, stated because it looks like an omission:** its replace is gated on `sweepComplete` **only**, never additionally on `rows.length > 0`. A complete sweep that genuinely finds no active UFC listings *should* empty the slice. The question the guard answers is *"did we read the whole book"*, never *"did the book have anything in it"* — conflating those is what made an outage look like an empty marketplace in the first place.
+
+⭐ **AND THE SHARED ROUTE CARRIED THE SAME LIE IN ITS *REPORTING*, not just its purge.** With every page failing it wrote `reason: "flowty_empty", ok: true` — a failed read published as a fact about the market, the honesty canon's exact shape. It now writes `reason: "flowty_unreadable"`, `ok: false`. Same for its `all_filtered` branch: *"everything we read was filtered out"* is only honest when we read the whole book.
+
+⚠ **SCOPE HELD DELIBERATELY IN ONE PLACE.** The shared route's HTTP body has always returned `ok: true` beside a `pipeline_runs` row of `ok: false` when an insert chunk errors. That is a real inconsistency and it is **left alone** — it is pre-existing and separate, and folding it in would have made this diff a behaviour change to a second thing. Its `ok` moves on `sweepComplete` only, with a comment saying so.
+
+⚠ **A TEST FIXTURE WAS COMMITTING THE VERY CONFLATION.** `api-golazos-listing-cache-deep`'s proxy stub answered **HTTP 500** for any offset past its fixture, as an "end of fixture" sentinel — so an ordinary sweep there registered **18 page errors**. Flowty answers a past-the-end offset with a 200 and an empty list, so the stub now does too, and injects a real error only where a test asks for one. ⓘ **This is the sharper half of the lesson: a stub that spells "no more data" as an ERROR trains the code under it to treat the two as the same, and it did.**
+
+⚠ **PROVEN AGAINST THE OFFENDER, NOT MERELY OBSERVED GREEN.** Six new cases pinned to the PROPERTY (*a partial book never drives a delete; a failed read is never reported as an empty market*), covering **all three failure shapes** — `break`-on-error, `continue`-past-error, and parallel-fan-out — and the case that matters most is the **PARTIAL** one, not the total outage: a total outage was already safe via `upserted > 0`, so a fix tested only against it would have looked complete while leaving the real hole open. Routes reverted with the tests kept: **10 red**; restored: **38 green**. ⚠ **Plus three no-change controls** (a complete sweep still purges ×2, a genuinely empty book is still reported empty) which assert **only properties that hold in BOTH worlds, on purpose** — a control that goes red against the pre-fix route is testing the fix, not controlling it. Without them, a route that simply never purged again, or one that called every result unreadable, would satisfy every regression above.
+
+⛔ **WHAT I DID NOT ESTABLISH:** whether a partial sweep has EVER purged in production. `pipeline_runs` retains ~73 h and carried no page-error field until this commit, so the incidence before today is **unmeasurable, not zero** — which is the reason `page_errors` is now written. I also did not touch `offset`, `limit`, cadence, or the FMV RPCs these routes chain.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · full `npm test` **1377 files / 15084 passed, 0 failed** · negative control run and restored · ledger instruments re-read after writing: `^### ` +1 (1048 → 1049), `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` on the code+test commit — restores the ungated purges, the UFC unconditional wipe and the `flowty_empty`-on-outage report. No DB half.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test+docs) — five zero-violation guards coerced ANY non-array payload into "0 violations" and passed; now they fail closed on shape
 
 **CODE + TEST + DOCS. No DB, no migration, no prod-state change.** Closing the crack named in the 08-25 handoff, plus the two doc items it left open.

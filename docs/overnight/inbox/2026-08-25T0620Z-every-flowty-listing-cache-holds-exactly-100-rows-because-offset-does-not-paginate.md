@@ -185,3 +185,19 @@ API alive and the listing-cache pipelines were revived.
 to retract a user-impact claim when two turned out to be production-dead — then failed to apply it to a TABLE
 within the hour. ⚠ **A `grep -l` for a table name is a list of files that MENTION it, not a list of consumers.**
 The check that settles it is `grep -n 'from("<table>")'` per file, plus reading what the hit does.
+
+---
+
+## ✅ §8 SHIPPED 2026-08-25 ~15:00 PT (Claude Code, interactive). §5 remains Trevor's call and is NOT shipped.
+
+**§8's smaller defect — the loop breaking identically on a legitimate end and on an error, with the purge gated only on `stats.upserted > 0` — is fixed in all FIVE listing-cache routes**, using the `sweep_complete` shape this filing recommended. Each route now carries completeness explicitly, gates its delete on it (not on `upserted > 0`), and reports a truncated sweep as `ok: false` with `sweep_complete` / `page_errors` in `pipeline_runs.extra`.
+
+⚠ **This filing named the Top Shot route; there were five sites in three shapes** — `break`-on-error (topshot, ufc), `continue`-past-error (allday, golazos), and a **parallel fan-out that swallowed every failure into `[]`** (the shared `/api/listing-cache`).
+
+🚨 **And one was worse than §8 described: `ufc-listing-cache`'s delete had NO condition at all.** It replaces its whole slice rather than purging by `cached_at`, so a single failed page-0 fetch deleted every UFC row, upserted none, and logged `ok: true`. A test asserted that as a *"pinned divergence from the preserve-on-outage siblings"*; it has been inverted.
+
+⭐ **Re-measured rather than assumed: this is PROSPECTIVE hardening, not a live-P0 repair.** 663 runs / 73 h across the three live routes, **663 `ok`, `min(rows_found) = 100` on all three** — no run in the window was truncated by a page error. `ufc-listing-cache` and every `*-listing-cache-v2` name have **never logged a run** in the whole history of `pipeline_runs_daily`. ⚠ **The reason to ship it anyway is §5**: one request at `limit: 1000` grows the blast radius of a truncated sweep by 10×, so the guard has to exist before that decision, not after it.
+
+⛔ **Unmeasurable, not zero:** whether a partial sweep ever purged in production. `pipeline_runs` retains ~73 h and carried no page-error field until this commit — which is why `page_errors` is now written.
+
+➡ **Still open and unchanged by this:** §5 (the `limit`/cadence decision), §6's corrected question — *should `topshot/allday/golazos-listing-cache` still write the legacy `cached_listings` at all, or should its six remaining consumers move to `cached_listings_v2` / the sniper RPCs* — and §7's four unestablished items.
