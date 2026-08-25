@@ -14,6 +14,36 @@ Two scheduled Cowork tasks run autonomously against this repo. Any Claude Code o
 Shared state lives in `docs/overnight/`:
 - `ledger.md` — rolling record of queued / shipped / declined items, each shipped item with its revert path. The **"Declined — do not re-suggest"** heading is Trevor's: add an item there to stop the pass proposing it.
 - `inbox/` — monitor → night-pass handoff (archived to `inbox/archive/` after draining).
+
+### ⚠ When the night pass CANNOT push (added 2026-08-25) — leave a COMMIT, not loose files
+
+The pass has run NO-PUSH on consecutive nights. Its artifacts (`ledger.md` entry, `metrics-latest.json`,
+`docs/handoff-<date>-overnight-pass.md`) are written to the mounted tree and flagged *uncommitted*, which
+means **they are invisible to `git log` and survive only until a human happens to notice them.** On
+2026-08-25 a Claude Code session found the previous night's artifacts sitting unstaged and committed them by
+hand; nothing in the repo would have surfaced them otherwise.
+
+**Contract when push is refused:**
+
+1. ⚠ **Record the ERROR STRING verbatim, and classify the mode from it** — `access denied by the git proxy …
+   authorized repository set` (**CLOUD**, nothing local helps) vs `could not read Username for
+   'https://github.com'` (**DESKTOP/bridge**). The 2026-08-25 handoff labelled itself "cloud" while quoting
+   the desktop string. Full table + a four-command diagnostic:
+   [tooling-gotchas.md](tooling-gotchas.md) → *Pushing from a sandbox*.
+2. **Say plainly, in the handoff's first line, that a push-capable session must commit the artifacts** — and
+   name them. "Flagged uncommitted" reads as bookkeeping; "these three files are unpushed work" reads as an
+   action.
+3. ⚠ **If you build a bundle or patch, build it against `origin/main`, NOT local `HEAD`.** Bundles are
+   incremental, and one built from local HEAD fails on the recipient with a missing-prerequisite error.
+4. ⛔ **Never re-embed a PAT to get around it** — it burned a real token on 2026-08-16, and `gh` carries the
+   `workflow` scope a PAT lacks.
+
+ⓘ **The standing fix is not credential-side.** Upstream `anthropics/claude-code#76248` (still OPEN, re-checked
+2026-08-25) confirms the cloud 403 is *intended isolation*; the only remedy is **creating the session with the
+repo attached as a source**. So a scheduled task created without the repo attached will refuse every night
+until it is re-created with it — **that is an operator action, not something the pass can fix from inside.**
+
+
 - `metrics-latest.json` — health baseline for overnight deltas + the post-ship regression watch.
 - `focus.md` — optional; write a line here to steer the next night's priorities (e.g. "prioritize FMV throughput", "leave the pack pipeline alone").
 - `.lock` — concurrency guard so two runs never commit at once.
