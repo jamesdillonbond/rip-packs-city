@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the candy-offers ratio guard failed OPEN through its own input, re-enabling the incident it was written to prevent
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Found by sweeping the fabricated-number shape CLAUDE.md names — `?? 0` on a supabase count — with a detector that separates it from the ~150 benign `?? 0`s on ordinary object fields.
+
+✅ **THE EXACT NAMED SHAPE IS AT ZERO, and the sweep says so with a control.** Reads that destructure a supabase `count`: **42 WITH `error` (control) · 18 WITHOUT · 0 that both drop `error` AND coerce with `?? 0` / `|| 0` nearby.** So *"`?? 0` on a supabase count"* as a literal spelling is closed. ⚠ **But `?? 0` is only one way to publish a null count**, so I read all 18 rather than stopping at the clean headline — and the finding was in a coercion that sits four lines away from its `??`.
+
+🚨 **`app/api/ingest/candy-offers/route.ts` — A GUARD WHOSE ONLY INPUT IS A COUNT, FAILING OPEN WHEN THAT COUNT FAILS.**
+
+```js
+const { count: activeOffersBefore } = await …select("pda_address", { count: "exact", head: true })…
+const offersBefore = activeOffersBefore ?? 0
+const degradedSweep = offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO
+```
+
+supabase-js **RESOLVES** on a query error, so a failed count returns `{ count: null, error }`. `?? 0` makes `offersBefore = 0`, which **fails** `offersBefore >= 20` — so `degradedSweep` is **FALSE**, and the mass `is_active = false` sweep directly below it **RUNS**.
+
+⚠ **The comment immediately above that guard describes the incident it exists to prevent, in its own words:** *"the ratio guard the listings sweep learned the hard way on 2026-07-27: Magic Eden served 7 listings against a 426-ask book and the card sweep deactivated 419 standing asks in one tick. The same shape is reachable here … so a sweep that returns far less than the book we already hold does not get to kill it."* **A failed count made it reachable again, through the guard's own input.** CLAUDE.md names this exactly — *"a **guard** (`?? 0` on a count makes a check fail **open**)"*.
+
+✅ **THE FIX IS CONSISTENCY, NOT INVENTION — and it can only ever PREVENT a deactivation.** Every sibling condition in the same block already suppresses deactivation on uncertainty (`bidderFetchErrors`, `biddersTruncated`, `deadlineHit`, `rawCapped`); *"we could not size the book"* belongs with them. `bookSizeUnknown` is now `Boolean(error) || typeof count !== "number"` and forces `degradedSweep`. ⚠ **The expiry pass is deliberately left running** — an expired offer is dead regardless of sweep completeness, which is the file's own existing distinction.
+
+⚠ **AND THE RECORD WAS FIXED WITH THE GUARD, because fixing one without the other leaves the incidence unmeasurable.** Two places published a fabricated zero: the telemetry field `active_offers_before` (now **`null`** when unreadable, plus a new `book_size_unknown`), and the failure message itself, which would have read *"offer sweep returned N offers against **0 active**"* — a fabricated number in the one sentence an operator reads to decide what happened. It now names the real cause.
+
+✅ **TRIAGED AND DELIBERATELY NOT CHANGED — the sibling that looks identical.** `app/api/candy-listings-indexer/route.ts:406` has the same `activeBefore ?? 0`, but there `before` feeds only `feedLooksTruncated`, which is **reported as a metric and gates nothing** (its own comment: *"a short listings answer is no longer dangerous … reported as a metric, not a failure"*), and that route's deactivation is evidence-based (`endedMints` + expiry). **Same expression, opposite correctness** — the split the 08-21 filing warns about, met in the wild.
+
+⚠ **THREE EXISTING TESTS WENT RED, AND THEY WERE FIXTURE GAPS, NOT A BEHAVIOUR CHANGE — I checked before "fixing" them.** Their sequential per-table queues had **no entry for the active-book count read**, so `count` came back `undefined` — a state production never produces, since a successful count read always returns a number. The queues now carry it, commented with the read order. **A fixture that cannot express the real response shape cannot pin behaviour that depends on it** — the third time that lesson has landed today.
+
+⚠ **PROVEN — the 2 regression cases red on the pre-fix route, then green.** ⚠ **The third case is labelled IN THE TEST as a FORWARD PIN, not a third regression:** it goes red pre-fix only because it asserts the new `book_size_unknown` field; its `toHaveLength(2)` half passed before. **Counting it as a regression would overstate the suite by 50%.** It exists so *"always suppress"* cannot satisfy the two above and silently stop the sweep deactivating anything, forever.
+
+⛔ **Severity, stated honestly: this is a LATENT fix, not an incident report.** I did not find evidence the count has actually failed in production — the route is ingest logic and I did not go looking through its history for a firing. What is established is that the path exists, that it is one statement timeout away on an instance with a documented ~20 h/day IO-saturation band, and that the outcome would be silent.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,043 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — restores `offersBefore = count ?? 0` as the guard's sole input, the fabricated `active_offers_before: 0`, and the "against 0 active" message. No DB half.
+
+
 ### 2026-08-24 · CORRECTION (Claude Code, interactive) — two of today's "user-facing" honesty fixes were to PRODUCTION-DEAD components, and the register already said so
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Retracting an impact claim I made twice today. **The fixes are correct and stay; the claims about who saw them were wrong.**
