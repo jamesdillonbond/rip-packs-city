@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · DOCS (Claude Code, interactive) — the db-pin prediction HELD, and I read the log rather than the badge to say so
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Closes the named falsifier recorded in known-issues #25 on 08-24, now that the run it named has fired.
+
+✅✅ **`db-pin-staleness` scheduled run 2026-08-25T08:02:29Z → SUCCESS**, log line **`checked 189 pins — 189 clean, 0 needing attention`**. **First green scheduled run after a 13-run red streak**, confirming the `fb533970` re-pin of `refresh_wmc_fmv_changed`. ⓘ **The falsifier was named in advance and the run that would have falsified it is the one that fired** — which is the only reason this is evidence rather than a coincidence noticed afterwards. ⚠ Read from the run LOG, not the badge, per this repo's standing rule; a green badge and a green *verdict* are different claims.
+
+⚠ **THE OTHER TWO, SAME MORNING, so the numbers move in BOTH directions.** `migration-parity`: **four consecutive scheduled greens** (08-24T08:22Z · 08-24T16:16Z · 08-25T00:24Z · 08-25T08:20Z) — the 3×/day cadence now verified across two full daily cycles rather than the single slot #25 had recorded. `edge-fn-drift`: **RED again at 08-25T07:27Z — 17 consecutive scheduled failures**, unbroken since 08-09. ➡ **Two of the three detectors this item was written about are now green; the third is still loudly correct**, and #31 explains why it is loudly correct about only half its question.
+
+⚠ **A CORRECTION TO MY OWN 08-24 NOTE, small but it is the kind that rots:** I wrote that the falsifying run would be at **"~07:20Z"**. It fired at **08:02Z**. The schedule I quoted came from the item's prose rather than from the workflow, and a reader checking at 07:30Z would have found nothing and could reasonably have concluded the run was skipped. **Quote a schedule from the workflow file or from `gh`, never from a doc describing it.**
+
+**Verified:** `check-memory-doc-links.mjs` → 102 links across 24 files all resolve, exit 0 · `known-issues.md` re-measured at 150,738 chars (not a gated file; CLAUDE.md itself untouched) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the #25 annotation. No code, no DB half.
+
+
 ### 2026-08-25 · QUIET NIGHT / NO-PUSH (nightly autonomous pass) — shipped nothing; health is the known saturation/structural set; two low-risk candidates queued
 
 **NO-PUSH (cloud Cowork; `remote.origin.pushurl` EMPTY on the mount, clone fell back to the credential-less URL, `git push --dry-run` refused: "could not read Username for github.com"). NOTHING shipped to prod state** — no DB migration, no code deploy, no data mutation, no edge-fn, no artifact change. Docs written to the mounted tree, flagged uncommitted. Clock verified un-skewed (shell 08:02:37Z vs DB now() 08:02:48Z; sales/fmv rows bound real time from below → real local ~01:04 PT, genuine overnight). Prior lock RELEASED; took over as `night-20260825T080419Z`, released at end.
