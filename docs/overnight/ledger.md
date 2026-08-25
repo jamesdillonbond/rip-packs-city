@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — the IPFS media proxy fails ~76% of uncached loads and returned every one of them SILENTLY; also a coercion trap where the right outcome rests on wrong reasoning
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Found by sweeping production 5xx after the saturation spell cleared — four distinct `/api/public/ipfs-media/<cid>` 502s in 45 minutes, with **no log line from the route at all**.
+
+🚨 **THE RATE, measured over 72 h of cache-MISS invocations: `502 × 99 · 200 × 26 · 302 × 5`.** ⚠ **These are MISSES only** — an edge-cache HIT never reaches the function — so the honest statement is *"~76% of uncached media loads fail"*, **not** "76% of image views fail". It is a standing condition across three days and multiple deploys, not a spike.
+
+🚨 **AND EVERY ONE OF THEM WAS UNATTRIBUTABLE.** The route returned `502` from a bare `catch {}` with no logging, so **"our 8 s abort fired"** and **"ipfs.io answered 5xx"** were spelled identically — two different problems, with different fixes, that nobody could tell apart or count. ⚠ **This route has ALREADY been bitten by exactly that blindness:** its own header records that the 502 path was unreachable **DEAD CODE** for the slow-gateway case it exists for (the old 25 s timeout lost the race to the platform's own 25 s cutoff), and it took a hand count of 504s to notice. **A soft-fail nobody can see is indistinguishable from one that works.** Both failure branches now name themselves, and the success + redirect legs log too so one query answers the whole question.
+
+✅ **MEASURED AGAINST THE UPSTREAM DIRECTLY, so the instrumentation has a baseline rather than a guess.** From this box: three sampled CIDs return **HTTP 504 from ipfs.io itself after ~28 s** on a full-object GET; a fourth is a **36.7 MB** object with a **0.07 s TTFB** still streaming at 40 s. ➡ **So the dominant failure is genuinely upstream and our 502 is correct behaviour — there is no bug in this route to fix.** The value here is that the split is now countable.
+
+⛔ **AND I DROPPED MY OWN BEST LEAD RATHER THAN FILE IT.** A ranged request to two of the failing CIDs returned **206 in 0.2 s** while the full GET **504s** — a tidy story with an obvious lever ("pass the client's Range through"). ⚠ **It did not reproduce**: re-tested minutes later, the same ranged requests returned curl `000`. **A plausible mechanism is not a measurement**, and this one would have been a code change to a user-facing path built on a single non-repeating sample. Recorded in the route as explicitly NOT a lever so the next reader does not re-derive it.
+
+🚨 **A SEPARATE FIND ON THE WAY: the size ceiling's right outcome rests on wrong reasoning.** The route's comment says a missing `content-length` *"falls through to the streaming path rather than guessing"*. It does — but not by that mechanism. **`headers.get()` returns `null`, `Number(null ?? "")` is `0`, and `Number.isFinite(0)` is `TRUE`.** So the absent case is never detected as absent; it becomes a finite **zero** that happens to fail the `>` comparison. ⚠ **That breaks the moment someone inverts the condition** — `if (!Number.isFinite(…))` would classify a chunked upstream as a parsed length of nothing. The route now reads the raw header for PRESENCE separately, and four cases pin the behaviour (absent → streams, unparseable → streams, declared-oversize → **302 no-change control**, and the coercion itself documented through a real `Headers` object).
+
+⚠ **I FOUND THAT BUG BY WRITING A TEST THAT FAILED FOR THE WRONG REASON.** My first `hasLength=false` case used `new Response("body")` — which **auto-sets `content-length`** — so it asserted the opposite of its name and went red. Chasing why is what exposed the coercion. **A fixture that quietly contradicts its test's title is the same defect as the code it was hunting**, and the case now carries a comment saying it must be a stream.
+
+⚠ **`npm test` WAS GREEN WHILE `tsc` WAS RED, and running both is the only reason it was caught.** My documentation assertion wrote `Number(null ?? "")` literally; TypeScript folds that and rejects it as *"always nullish"* (TS2871). Routing it through a real `Headers` object is both type-honest and a **stronger** claim — it asserts what `headers.get()` actually returns for an absent header, which is the thing the route depends on.
+
+⚠ **PROVEN — 5 of the new cases red on the un-instrumented route, then green.** The three failure-mode cases assert the modes are **DISTINGUISHABLE** (an abort must not carry `upstreamStatus=`, a gateway answer must not carry `reason=abort_timeout`), not merely that something is logged — **a single generic message would satisfy "it logs" and re-create the exact ambiguity being fixed.**
+
+⛔ **NOT FIXED, and deliberately: the underlying gateway flakiness.** A second gateway, a retry, or self-hosting the art are all real options with cost and CSP consequences, and **I have no basis to pick one** — the instrumentation shipped here is the prerequisite for choosing with a number instead of a story. Trevor's call.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,040 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` — removes the logging and the raw-header read; the size-ceiling behaviour is unchanged either way. No DB half.
+
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, guard) — the "only one spelling" defect generalised: I checked every other regex guard for it, and closed the one latent hole while REFUSING the one that would have made a number worse
 
 **GUARD ONLY. No product code, no DB, no migration, no prod-state change.** Follow-up to the collapse-ratchet widening in the previous entry. Having found that a guard's pattern knew only ARROW syntax, **the obvious next question is whether any OTHER guard has the same assumption** — so I swept the estate rather than fixing the one I tripped over.
