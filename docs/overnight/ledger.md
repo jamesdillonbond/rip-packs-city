@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · CORRECTION (Claude Code, interactive) — two of today's "user-facing" honesty fixes were to PRODUCTION-DEAD components, and the register already said so
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Retracting an impact claim I made twice today. **The fixes are correct and stay; the claims about who saw them were wrong.**
+
+🚨 **`components/profile/TierBreakdownCard.tsx` and `components/profile/PortfolioSparkline.tsx` HAVE NO IMPORTER ANYWHERE IN THE PRODUCT TREE.** Measured: `grep -rn "from ['\"].*\(TierBreakdownCard\|PortfolioSparkline\)" app components lib` returns **zero**, and `app/profile/[username]/ProfileClient.tsx` — the page they would live on — imports `CostBasisCard`, `TopMoversCard`, `CollectionBreakdownCard`, `PublicAchievements`, and **neither of these**. ⚠ **Deep-audit register item D30 has said exactly this since 2026-08-09** (*"3 production-dead components (test-only importers)"*, naming both), re-verified in run 3. **I did not read it before writing the impact sentences.**
+
+⛔ **WHAT I RETRACT, precisely:**
+- **"Tier 2: `/api/profile/tier-breakdown` … pre-fix that tick would have rendered an understated tier mix, or 'Load a saved wallet to see your tier mix.', to TREVOR on his own profile."** Wrong twice over. **(a)** That 503 was **my own probe**, fired minutes earlier from this box — not organic traffic. **(b)** The route's ONLY consumer is `TierBreakdownCard`, which nothing renders. **Nobody was going to see that sentence.**
+- **"`PortfolioSparkline` … instructing a collector to redo work they may already have done."** Same: the component is unreachable, so it instructs nobody.
+
+✅ **WHAT STANDS, checked route by route rather than asserted.** Product references outside the route's own directory and outside `__tests__`:
+
+| route | consumer | live? |
+|---|---|---|
+| `/api/fmv`, `/api/fmv/demo` | 18 references; documented public API | ✅ |
+| `/api/edition-history` | 2 | ✅ |
+| `/api/profile/cost-basis-summary` | `CostBasisCard` ×2 + `ProfileClient` | ✅ |
+| `/api/profile/collection-breakdown` | `CollectionBreakdownCard` → `ProfileClient` | ✅ |
+| `/api/profile/top-movers` | `TopMoversCard` → `ProfileClient` | ✅ |
+| `/api/profile/top-moments` | `DashboardClient`, `TrophyPickerModal`, `AvatarMomentPicker` | ✅ |
+| `/api/profile/hero-moment` | `DashboardClient` (+ smoke test) | ✅ |
+| `/api/profile/teams` | 4 | ✅ |
+| `/api/profile/portfolio-history` | `CollectionProfileClient` + `ProfileClient` | ✅ (the ROUTE is live; only the `PortfolioSparkline` wrapper is dead) |
+| both `pack-sniper` pages | routed pages | ✅ |
+| `/api/profile/tier-breakdown` | `TierBreakdownCard` **only** | ⛔ **dead consumer** |
+| `/api/market-sparklines` | **0** | ⛔ **already flagged** in the 08-22 entry |
+
+➡ **So eleven of thirteen are genuinely user-facing and two are not.** ⚠ **The tier-1 "caught working in production" observation is UNAFFECTED and I re-checked it rather than assuming:** the `/api/fmv/demo` failure at 03:35:54Z arrived in a **smoke-test window**, not from a probe of mine, and that route is the documented public API.
+
+⚠ **THE LESSON IS THE ONE I APPLIED ALL DAY AND SKIPPED HERE: name the caller before you claim the impact.** CLAUDE.md states it for functions (*"an expensive-looking function is not a cost until you have"*); it is identical for a COMPONENT. **I enumerated consumers carefully for `market-sparklines` — and then did not do it for the next two components I touched**, because a file under `components/profile/` with a plausible name and a live-looking test file reads as shipped. ⚠ **A component's test suite is not evidence that anything renders it** — that is precisely what "test-only importer" means, and D30 is a list of them.
+
+⛔ **NOT DELETING THEM.** D30 has carried these for two weeks without a disposition, and delete-vs-revive is a product call. **A dead component that is now honest is strictly better than a dead component that is not**, and if either is revived the defect would have shipped with it.
+
+⚠ **ONE REAL FIND FALLS OUT OF THIS: `app/api/profile/portfolio-history/route.ts:7` documents its consumer as *"the /profile/[username] card (components/profile/PortfolioSparkline.tsx)"* — and that is FALSE.** `ProfileClient` does not import it. The route is live via two other consumers, so this is doc drift pointing a reader at dead code, in the file's own header. Left in place and recorded rather than edited, because the same header is the thing D30's disposition will have to resolve.
+
+✅ **AND IT STAMPS D30 AS STILL-CORRECT, which is worth something on its own** — the register's whole purpose is *"never re-derive a settled question"*, and this is the third of its rows I have now confirmed rather than re-litigated.
+
+**Verified:** liveness measured by `grep -rn "from ['\"]…"` for import statements specifically, not bare name mentions — the bare-name grep returns the route files and `_shared.ts`, all of which are COMMENTS, one of them written by me today.
+
+**Revert:** `git revert <sha>` — removes this correction. No code, no DB half.
+
+
 ### 2026-08-24 · DOCS (Claude Code, interactive) — Sentry is STILL dark, the boundary has not moved by one second, and every fix I shipped today was verified without it
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Re-derived the 08-23 Sentry-ingest outage **through the Sentry API rather than by re-reading the filing**, because *"it has probably resolved by now"* is the default assumption about an outage nobody watches.
