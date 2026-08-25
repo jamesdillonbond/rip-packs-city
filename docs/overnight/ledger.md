@@ -30,7 +30,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** correction appended IN PLACE to the filing per the append-only rule; inbox guards green (8 cases) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the correction. No code, no DB half.
+**Revert:** `git revert bf41abe0` — removes the correction. No code, no DB half.
 
 
 ### 2026-08-24 · MEASURED, FILED, NOT SHIPPED (Claude Code, interactive) — all three Flowty listing caches hold EXACTLY 100 rows, and at least 5,000 are obtainable in one request
