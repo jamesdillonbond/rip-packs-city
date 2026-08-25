@@ -32,7 +32,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · **full `npm test`: 1,377 files, 15,031 cases, 0 failures** · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — narrows the ratchet back to the arrow spelling (dropping 26 sites from view), restores BUDGET 43, and restores the sparkline's collapse. No DB half.
+**Revert:** `git revert 6294a943` — narrows the ratchet back to the arrow spelling (dropping 26 sites from view), restores BUDGET 43, and restores the sparkline's collapse. No DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — a board page is not defined by its URL: the collection pack-sniper sat outside BOTH guards written for it, and the sibling I copied was itself only half-honest
