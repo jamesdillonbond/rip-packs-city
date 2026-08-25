@@ -1443,8 +1443,13 @@ const PINS = [
     // exact repo-vs-live split the staleness checker exists to catch. Six other
     // pins had been closed hours earlier the same day; this pair is not part of
     // that batch.
+    // ⚠ RE-POINTED 2026-08-25 IN THE SAME COMMIT as the enable_nestloop fix. The
+    // trap described just above — a rewrite that shipped its own pin file but
+    // left this entry on the old migration, so the live db:pins:check went red
+    // the next morning while the in-CI guard stayed green — is exactly why this
+    // line is edited here rather than left for later.
     migration:
-      "supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql",
+      "supabase/migrations/20260825170000_audit_20260825_ccm_step2_hash_join_the_cohort_that_is_72pct_of_wmc.sql",
   },
   {
     // pg_cron `45 9 * * *`. Refreshes the five "new collectors" MVs.

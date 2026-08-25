@@ -48,10 +48,22 @@
 -- supabase/tests/refresh_cross_collection_cohort_lock_window.sql.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-23
--- (md5 596b1a465985f82ffbfb9e9713388ee7, verified against the DB's own md5 rather
+-- (supabase/migrations/20260825170000_audit_20260825_ccm_step2_hash_join_the_cohort_that_is_72pct_of_wmc.sql),
+-- pulled from live prod via pg_get_functiondef on 2026-08-25
+-- (md5 8322bb56b8153b69c94f5d9335d11dc4, verified against the DB's own md5 rather
 -- than by eye). __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+--
+-- ⚠ RE-PINNED 2026-08-25 for the enable_nestloop fix. The job had failed on EVERY
+-- scheduled run since 08-18 at exactly 300s, while its successes took 9-13s — a
+-- bimodal profile with nothing between, which is not what contention produces.
+-- The measured cause is cardinality: the 220 cohort wallets hold 1,363,128 of the
+-- 1,888,824 Top Shot rows in wallet_moments_cache (72.2%), and the planner
+-- estimates that join at 664,888 (2.05x under), so it nested-loops 220 index
+-- descents into a 927 MB table. `SET LOCAL enable_nestloop = off` forces the one
+-- sequential pass: measured 122,524 buffers / 28.4s COLD at a quiet hour, against
+-- a nested loop that did not complete in 140s WARM. NOTHING BELOW CHANGES: same
+-- rows, same output, same computed_at contract, and every assertion in this file
+-- passed unchanged on the new body.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -94,6 +106,13 @@ DECLARE
   v_set_count int := 0;
   v_started timestamptz := NOW();
 BEGIN
+  -- The cohort is 72% of the Top Shot partition of wallet_moments_cache
+  -- (1,363,128 of 1,888,824 rows), but the planner estimates the join at
+  -- 664,888 and picks a Nested Loop: 220 separate index descents into a 927 MB
+  -- table. That timed out at 300s on every nightly run from 2026-08-18.
+  -- One sequential pass measures 122,524 buffers / 28s COLD. Transaction-scoped.
+  SET LOCAL enable_nestloop = off;
+
   CREATE TEMP TABLE _ccm_step2_next ON COMMIT DROP AS
   SELECT
     e.set_id,
