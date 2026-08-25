@@ -2,6 +2,51 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+
+## Retired rules must not survive in live memory (`npm run memory:retired:check`, added 2026-08-24)
+
+⭐ **Built because every fact corrected during the 2026-08-24 memory refresh was wrong on MORE THAN ONE
+surface, and two were still being found AFTER the pass that "fixed" them.** Nothing had decayed — the
+corrections had never PROPAGATED:
+
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
+- **`.limit(10000)`** was corrected in `RPC_DESIGN_SYSTEM.md` §5 and left intact in the **§0 CHECKLIST of the
+  same file** — the section headed *"run through this on every edit"*. **A file contradicting itself.**
+- **The retired iPhone-copy-paste handoff rule** was corrected in §10 and in the `rpc-handoff` skill on
+  **2026-07-25** and was still sitting in **CLAUDE.md**, the highest-authority memory file, on 2026-08-24.
+- A third copy sat in `claude-md-condensed-originals.md`. ⚠ **That file is verbatim history — but CLAUDE.md's
+  index points readers at it with *"check here first if a detail seems missing"*, which makes it a LIVE lookup
+  surface.** An unmarked retired rule there is handed out as a live answer, so it got a correction note rather
+  than a bare suppression. **"It's only history" is a claim about how a file is READ, not about where it sits.**
+
+**Scope: a TREE WALK over `CLAUDE.md` + `RPC_DESIGN_SYSTEM.md` + `docs/reference/**.md` +
+`docs/cowork-skills/*/SKILL.md`** — 33 files / 6,268 lines as of 2026-08-24. ⛔ **Frozen history
+(`docs/sessions`, `docs/archive`, `docs/overnight`) is excluded on a stated POLICY**, not on a claim that
+another instrument covers it: recording retired text is what a ledger is FOR, and a tree-wide ban would be
+**permanently red**, which this file already says reads identically to a broken instrument.
+⛔ **The `.skill` bundles are deliberately NOT scanned** — the bundle-parity guard binds every bundle to its
+`SKILL.md`, which IS scanned, so a retired rule cannot reach a bundle without passing this guard first. **That
+is a claim about a specific sibling instrument: if bundle parity is ever removed, re-scope this one.**
+
+⚠ **Each pattern matches the RETIRED SPELLING, never the topic.** A topic-matcher reds on the correction
+itself, and the suppression list then swallows whole files — this repo has had at least six guards fire on the
+comment documenting the fix.
+
+**Suppression IS the curated list**, as CLAUDE.md prescribes. A doc that must QUOTE a retired rule marks that
+line, or the line immediately above, with `<!-- retired-rule:allow <id> -->`. ⚠ **The marker is deliberately
+adjacent-only** — a wider lookback would let one marker launder every later violation in the file, and there
+is a test arm for exactly that. Suppressions are **counted and printed** (7 today), so sprinkling them is
+visible rather than silent.
+
+⚠ **The live 15-file floor was UNTESTABLE at first** — it is skipped under `--root` because a fixture is
+deliberately small, so its logic could never be observed failing. Added `--min-files <n>`, which a fixture may
+pass but **live ignores by construction** (`IS_LIVE ? LIVE_MIN_FILES : …`), with an arm asserting that
+structure so the flag cannot become a hole.
+
+**12 test arms**: three planted offenders, a no-change control, an inspected-nothing arm, a floor arm, the
+adjacent-only-suppression arm, and a wrong-id-does-not-suppress arm. Proven to red on a planted violation in a
+file the author never touched, which is what shows the tree walk reaches new files.
+
 ## Testing & CI coverage (added 2026-07-12)
 
 The repo has a real automated test suite. Run it before shipping non-trivial code changes.

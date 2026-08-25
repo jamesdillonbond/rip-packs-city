@@ -25,7 +25,8 @@
     "db:migrations:check": "node scripts/check-migration-parity.mjs",
     "db:migrations:recover": "node scripts/recover-fileless-migrations.mjs",
     "skills:bundles:check": "node scripts/check-cowork-skill-bundles.mjs",
-    "skills:pack": "node scripts/pack-cowork-skill.mjs"
+    "skills:pack": "node scripts/pack-cowork-skill.mjs",
+    "memory:retired:check": "node scripts/check-retired-rules.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",

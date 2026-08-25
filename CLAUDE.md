@@ -255,7 +255,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 
 ## Code patterns and conventions
 
-- Full file replacements only — never snippets or diffs. Claude Code prompts: plain text, no code blocks (iPhone copy-paste).
+- Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read (the iPhone rule was RETIRED 07-25).
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
 - `useSearchParams` requires a Suspense wrapper.

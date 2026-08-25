@@ -7,6 +7,7 @@ description: Rip Packs City data-warehouse context — load when querying or ana
 
 Postgres on Supabase, project `bxcqstmqfzmuolpuynti`. Read via `execute_sql` (one statement per call). Pair with the `data` plugin's analyze / write-query skills. Always confirm columns with `information_schema.columns` before a non-trivial query.
 
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
 🚨 **THE 1000-ROW CAP IS NOT LIFTED BY A BIGGER `LIMIT` (corrected 2026-08-24; this line used to say "use `LIMIT`").** PostgREST caps reads at 1000 rows and **CLAMPS an explicit `.limit()` above that** — so a `.limit(10000)` hands back 1000 rows to a caller who believes they have 10,000, which is a partial read rendering as a complete one. **For a TOTAL, read the returned `count` (`head: true`), never `rows.length`.** Aggregate in SQL, or paginate. ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key**, or it reads the right *number* of rows and the wrong *rows* — the duplicates and omissions CANCEL, so every count-based check passes and only a DISTINCT count or a set comparison sees it.
 
 ## Collections — two vocabularies (critical)

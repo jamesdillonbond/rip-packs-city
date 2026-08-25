@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-24 · SHIPPED (Claude Code, web sandbox) — the cross-document fact guard, and grepping for the EXPRESSIONS found two facts I had "fixed" yesterday still live
+
+Docs + one new guard + one skill re-pack. No migration, no DB write, no prod-state change.
+
+⭐ **The argument for this guard produced two findings before a line of it was written.** Every fact corrected
+during the 2026-08-24 refresh was wrong on MORE THAN ONE surface. Grepping for the EXPRESSIONS — CLAUDE.md's
+own prescribed move — turned up two that had outlived the pass that fixed them:
+
+- 🚨 **`RPC_DESIGN_SYSTEM.md` §0's CHECKLIST still said *"Reading >1000 rows: explicit `.limit(10000)` or
+  RPC"*** — the retired remedy, in the section headed *"run through this on every edit"*, while §5 of the SAME
+  FILE now says the opposite. **A file contradicting itself, and the wrong half is the one in the checklist.**
+- 🚨 **CLAUDE.md still carried the RETIRED iPhone rule** — *"Claude Code prompts: plain text, no code blocks
+  (iPhone copy-paste)"* — corrected in `RPC_DESIGN_SYSTEM.md` §10 and in the `rpc-handoff` skill on
+  **2026-07-25**, and still live in the **highest-authority memory file** a month later. Fixed (39,974 chars,
+  26 headroom).
+- ⚠ **A third copy sat in `claude-md-condensed-originals.md`.** That file is verbatim history — **but
+  CLAUDE.md's index points readers at it with *"check here first if a detail seems missing"*, which makes it a
+  LIVE lookup surface**, so it got a correction note rather than a bare suppression. ➡ **"It's only history"
+  is a claim about how a file is READ, not about where it sits.**
+
+✅ **NEW GUARD `scripts/check-retired-rules.mjs`** (`npm run memory:retired:check`): six retired rules banned
+across a **TREE WALK** of CLAUDE.md + RPC_DESIGN_SYSTEM.md + `docs/reference/**.md` + `docs/cowork-skills/*/
+SKILL.md` — **33 files / 6,313 lines**, green at population zero with **8 documented quotes**.
+
+- ⛔ **Frozen history is excluded on a stated POLICY**, not on a claim another instrument covers it: a
+  tree-wide ban would be **permanently red**, which this repo already knows reads identically to broken.
+- ⛔ **Bundles deliberately not scanned** — bundle parity binds each bundle to its scanned `SKILL.md`. **That
+  is a claim about a named sibling instrument; if parity is removed, re-scope this guard.**
+- ⚠ **Patterns match the RETIRED SPELLING, never the topic** — a topic-matcher reds on the correction itself.
+  **Suppression is the curated list** (`<!-- retired-rule:allow <id> -->`), deliberately **adjacent-only** so
+  one marker cannot launder later violations, with a test arm for exactly that.
+- ⚠ **The live 15-file floor was UNTESTABLE** (skipped under `--root`, since a fixture is small), so its logic
+  could never be observed failing. Added `--min-files`, which a fixture may pass but **live ignores by
+  construction**, plus an arm asserting that structure so the flag cannot become a hole.
+- ⭐ **It caught its OWN documentation within a minute** — the testing-and-ci.md write-up quotes
+  `.limit(10000)` to explain the finding and reddened the guard immediately. Marked. **Second time today an
+  instrument I wrote caught its author.**
+- ✅ Proven to red on a planted violation in `architecture-notes.md`, a file I never touched — which is what
+  shows the tree walk reaches new files rather than a remembered list.
+
+**12 test arms**; full suite **1377 files / 15,002 tests** green, and `git status --porcelain` byte-identical
+before and after `npm test`.
+
+**Revert path:** `git revert <sha>` — docs, one guard, one bundle re-pack. ⚠ Reverting restores the
+`.limit(10000)` checklist line and the retired iPhone rule in CLAUDE.md; revert only to undo a bad edit.
+
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — six profile surfaces answered a failed read with a claim about the reader's OWN account, and an always-200 contract made the clients' correct failure branches unreachable
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Tier 2 of the 08-21 honesty filing's triage order — *a reader's own account*, the sub-class CLAUDE.md names as WORST because it is actionable. Six routes and one component, each triaged individually, each proven by negative control. Follows the tier-1 pass shipped an hour earlier (`c1c35780`).

@@ -211,7 +211,13 @@ There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".
 ## Code patterns and conventions
 
 - Full file replacements only — never snippets or diffs.
-- Claude Code prompts: plain text, no markdown code blocks (optimized for iPhone copy-paste).
+- ⛔ **RETIRED 2026-07-25 — the verbatim line below is HISTORY, not a rule.** Handoffs and Claude Code
+  prompts are read and pasted on **desktop** (PowerShell / Git Bash); normal markdown including fenced
+  code blocks is fine. ⚠ **This file is verbatim history, but CLAUDE.md's index points readers here with
+  *"check here first if a detail seems missing"* — so an unmarked retired rule in it is handed out as a
+  live answer.** Superseded by `RPC_DESIGN_SYSTEM.md` §10 and the `rpc-handoff` skill.
+  <!-- retired-rule:allow handoffs-are-iphone-pasteable -->
+  - *(verbatim, superseded)* Claude Code prompts: plain text, no markdown code blocks (optimized for iPhone copy-paste).
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts).
 - Supabase client must be typed as `any` to avoid TypeScript errors in API routes.
 - `generateMetadata` cannot be exported from client components (`"use client"`) — belongs in server-component `layout.tsx`.

@@ -17,6 +17,7 @@ Authoritative reference for every frontend, DB, and concierge change in `rip-pac
 > ✅ **Verified against live sources and CORRECT, no change needed: §2** (all 57 documented class names exist),
 > **§9** (`.rpc-tap44` and `e2e/mobile-layout.spec.ts` both present), **§12** (quota table matches live
 > `feature_quotas` exactly) and **§6**. ➡ **Every section has now been audited at least once.** ⚠ That is not
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
 > the same as "this file is correct" — an audit is a dated sample too, and §5's `.limit(10000)` line looked
 > authoritative for months. ⚠ A stamp
 > that reads as currency while the reference it was reconciled against has moved is this project's own
@@ -47,7 +48,8 @@ Run through this on **every** edit. If any box can't be checked, stop and re-rea
 - [ ] LONG-form slug (`nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike`) for `sales` / `editions` / `collections.slug`
 - [ ] SHORT-form (`topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, `unknown`) for `flowty_transactions` / `flowty_loans` / `flowty_loan_events`
 - [ ] Tier filters use `.eq()` with UPPERCASE enum, NEVER `.ilike()`
-- [ ] Reading >1000 rows: explicit `.limit(10000)` or RPC (PostgREST caps silently at 1000)
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
+- [ ] Reading >1000 rows: aggregate in SQL, wrap in an RPC, or paginate — ⛔ **NOT `.limit(10000)`, which is CLAMPED to 1000** (corrected 2026-08-24; §5 has the full case). For a TOTAL read the returned `count` (`head: true`), never `rows.length`.
 - [ ] Mutating `fmv_snapshots`: delete-then-insert, never upsert; `collection_id NOT NULL`
 - [ ] Pinnacle FMV joins: triple `(character_name, set_name, variant_type)` — never `edition_key` alone
 - [ ] AllDay leaderboards: use `analytics_sales_resolved` (canonical-owner-resolved) not `analytics_sales` when parent/child wallets matter
@@ -329,6 +331,7 @@ app/
 
 ## §5 — DB Gotchas That Bite Frontend
 
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
 - 🚨 **PostgREST 1000-row cap — and `.limit(10000)` DOES NOT LIFT IT (corrected 2026-08-24).** The cap **CLAMPS an explicit `.limit()` above 1000**, so the old advice on this line handed back 1000 rows to a caller who believed they had 10,000 — a partial read rendering as a complete one, which is this project's single most productive defect class. **Wrap in an RPC, or paginate.** For a TOTAL, read the returned `count` (`head: true`), **never `rows.length`**. The cap applies to SETOF/TABLE returns but NOT to scalar `text[]` / `jsonb` returns — scalars remain the escape hatch for >1000-element results.
 - ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()` on a UNIQUE key** (added here 2026-08-24; it was missing). Without it the read returns the right *number* of rows and the wrong *rows*, and the duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a ban at zero in the guard suite.
 - ⚠ **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one** (added 2026-08-24). One duplicate fails the whole statement and writes **none** of the batch; on a cursored indexer that is permanent loss.
@@ -407,6 +410,7 @@ The Phase 1 surface is read-plane only. Agent execution / writes / on-chain tran
 - Response: `atob(raw.trim().replace(/^"|"$/g,''))` → `JSON.parse`
 - `access(all)` required (not `pub`)
 - Cadence test harness: `npm run test:cadence` is the regression net. Type-check via `flow cadence lint`, no emulator.
+<!-- retired-rule:allow cadence-harness-is-red-on-c1-c2 -->
 - ⛔ **"CURRENTLY RED ON THE PURCHASE-MOMENT C1+C2 AUDIT" WAS FALSE FOR ~3 MONTHS — corrected 2026-08-24.** `.github/workflows/ci.yml`'s own comment records the C1/C2 errors as **fixed** (FungibleToken imported; `self.listing` borrowed before its price is read), green locally **2026-05-30**, and the `cadence-lint` job had `continue-on-error` REMOVED — it is a **blocking gate**. ⚠ **The cost of the stale line is specific: it tells a reader to dismiss a genuine red as "the known audit thing."** CI is the authority on this, not this file.
 - 🚨 **`npm run test:cadence` CANNOT RUN in the web/cloud sandbox, and its failure looks like a test failure.** There is no Flow CLI here: the extract step succeeds, then `flow: not found` → **exit 127**. ⚠ **Do NOT read that non-zero exit as "still red on C1+C2"** — read the error string. CI's own comment documents this exact masquerade (a silent install failure once produced a confusing downstream `flow: command not found`), which is why the workflow now verifies `flow` is on PATH and fails at the install step instead.
 - ⚠ **MEASURED 2026-08-24, recorded as a fact and NOT as a recommendation:** `PURCHASE_MOMENT_CADENCE`, `GIFT_MOMENT_CADENCE` and `GIFT_MOMENT_GAS_LIMIT` have **exactly one importer between them — `__tests__/cadence-transaction-templates.test.ts`** — and `PURCHASE_MOMENT_FLOW_WALLET_CADENCE` has **zero references anywhere outside its own file**. `cadence/contracts/RPCTradeEscrow.cdc` likewise has no reference in `app/`, `lib/` or `components/`. So on a **read-only** product (Cart, Trade Hub and gifting all deleted) CI runs **two blocking Cadence gates** over templates nothing in the product calls. ⛔ **This is NOT a delete recommendation** — the shelves are deliberate (known-issues #1, #3) and CLAUDE.md's rule is to name the caller across all sources before touching anything. It is recorded so the next person costing out CI knows what these gates are protecting.
