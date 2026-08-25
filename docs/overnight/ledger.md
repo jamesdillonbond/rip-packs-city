@@ -34,7 +34,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** inbox guards green (`inbox-index-lists-every-filing`, `inbox-is-append-only-since-the-rule`, 8 cases); INDEX header 230 → 231, day section 6 → 7 · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — removes the filing and its INDEX entry. No code, no DB half.
+**Revert:** `git revert 2d9355be` — removes the filing and its INDEX entry. No code, no DB half.
 
 
 ### 2026-08-24 · SHIPPED (Claude Code, interactive, code+test) — a failed COUNT could re-seed a user's saved wallets, resetting their accent colour and restoring a wallet they had deleted
