@@ -26,7 +26,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** the genuinely-empty states keep their honest 200 and meta hint (`unauthenticated`, `no_wallets`) — only real read failures changed status. Ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
 
-**Revert:** `git revert <sha>` — restores the zero-valued 200s and the biased `continue`. No DB half.
+**Revert:** `git revert e525285e` — restores the zero-valued 200s and the biased `continue`. No DB half.
 
 
 ### 2026-08-24 · DOCS (Claude Code, interactive) — #31's blocker is a DEAD token rather than a missing one, and the three daily detectors re-derived: parity has RECOVERED, the pin prediction is PENDING not falsified
