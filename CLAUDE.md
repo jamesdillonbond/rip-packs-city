@@ -207,7 +207,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, aliases attached, `lambdaRuntimeStats` present; and **check deploy state PER COMMIT**, because an ERRORed deploy is superseded by the next push.
 - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** (prerendered `/insights` pages get 60 s each) — now a ban at zero, `insights-server-pages-bound-their-reads`; ⚠ twice the failing page was one the pushing commit never touched.
-- `get_runtime_logs`: `console.warn` is NOT indexed — use `console.log`. ⚠ `get_runtime_errors` `routes=`/`users=` are SMEARED — re-group on `requestPath`.
+- ⚠ Both log tools mislead: `level:["warning"]` reads ZERO (the value is `warn`; warn IS indexed), and `get_runtime_errors` attribution is SMEARED. Re-group on `requestPath`.
 
 ---
 

@@ -30,7 +30,7 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 - All env var writes: `POST https://api.vercel.com/v10/projects/{projectId}/env?teamId={teamId}` via PowerShell.
 - `get_runtime_logs` truncates at ~50 chars — use short time windows (1-2h), low limits (20-50), unfiltered.
 - `environment: "production"` required on `get_runtime_logs` or it returns nothing.
-- `console.warn` is NOT indexed by Vercel log search — always use `console.log` for diagnostics.
+- ⛔ **REFUTED 2026-08-25** — this said `console.warn` is NOT indexed. It IS (largest level bucket). The zero came from `level:["warning"]`, whose stored value is `warn`. See the CORRECTION section below.
 - ⚠ **`get_runtime_errors`'s `routes=` list is NOT the set of routes that produced the error, and neither is its `users=` count trustworthy** (measured 2026-08-21). `[panini-squeeze] backing view error` was reported as `count=395 users=340` across 26 routes including `/`, `/pricing`, `/moment/[id]` and `/profile/[username]` — but the string is emitted from ONE line (`lib/insights/panini-board.ts:43`) whose function has exactly TWO importers, neither of them any of those pages. Grouping the same string by `requestPath` gives **64 hits on the real emitter (`/api/cron/refresh-insights-cache`) and a 1–3 tail smeared across ~50 unrelated paths**; eight `[candy-mlb] candy_*_board` groups reproduce it exactly. **Confirm any route attribution two ways before acting: `get_runtime_logs` + `group_by: requestPath`, AND a repo grep for the literal log string to find its real emitter.** ⚠ The `after()` explanation is REFUTED — that cron is synchronous with `maxDuration = 60`; lambda instance reuse is an untested hypothesis, not a finding. ⚠ **The inverse is the dangerous half:** a genuine per-route failure on `/` is diluted into the same tail, so this makes real user-facing breakage HARDER to see. This matters because the nightly-pass runbook names Vercel runtime logs as *the* instrument for public-page health. Full measurement: `docs/overnight/inbox/2026-08-21T1730Z-vercel-runtime-error-route-attribution-is-smeared.md`.
 - `web_fetch_vercel_url` returns cached results; `tsCount: 0` in body = reliable proxy failure signal.
 - `web_fetch_vercel_url` only supports GET; preview URLs have SSO protection.
@@ -310,6 +310,51 @@ was the only reason it surfaced.
 
 ---
 
+## ⛔ CORRECTION 2026-08-25 — `console.warn` IS indexed. The rule that said otherwise was a BROKEN FILTER, and it nearly cost 158 edits
+
+CLAUDE.md carried `get_runtime_logs: console.warn is NOT indexed — use console.log` for months. **It is wrong**,
+and the 08-22 section immediately below always contradicted it (it says `source: ["serverless"]` *surfaced the
+warn lines*). The two coexisted because nobody re-measured.
+
+Measured 2026-08-25, production, `group_by: "level"` over a 3-hour window:
+
+| level | count |
+|---|---:|
+| **warn** | **1,796** |
+| error | 1,533 |
+| info | 1,393 |
+
+**`warn` is the LARGEST bucket in the index.**
+
+### 🚨 The actual trap, and it is a permanently-zero instrument
+
+```
+level: ["warning"]   →  "No logs found for the specified criteria."   (6h window, production)
+```
+
+**The tool schema's enum value is `warning`; the stored value is `warn`.** So the one filter a reader would
+reach for to find warn lines returns **zero, silently, forever** — which reads exactly like "warns are not
+indexed". That is almost certainly where the rule came from. ⚠ **This is CLAUDE.md's own "a permanently-zero
+instrument is indistinguishable from a broken one" — committed by a filter enum.**
+
+⚠ **The same mismatch appears on `source`.** The schema enum is `serverless | edge-function | edge-middleware |
+static`; `group_by: "source"` reports `middleware | function | cache | redirect | rewrite`. The 08-22 note
+records `source: ["serverless"]` working, so the filter is probably translated server-side — **but never read a
+zero from either filter as a fact about your logs.**
+
+### What to do
+
+- **Do NOT convert `console.warn` to `console.log` for indexing reasons.** There are **158 `console.warn` calls
+  across 43 route files** under `app/api`; that edit was on the table this morning purely on the strength of the
+  stale rule, against a premise that is false.
+- Use `group_by: "level"` (or no level filter at all) rather than `level: [...]`.
+- ⚠ **Full-text `query` timed out at every window tried on 08-25** (6h, 45m, 20m, and scoped to a single
+  `deploymentId`), while `group_by` aggregates returned instantly. So this correction establishes that
+  **warn-LEVEL entries are indexed**; it does NOT establish that an arbitrary `console.warn` string is
+  retrievable by full-text search today. Stated rather than glossed.
+
+---
+
 ## `get_runtime_logs` without `source` hides the lines that carry the cause (2026-08-22)
 
 Investigating four `/overview` pages that hung 30s, the default Vercel MCP `get_runtime_logs` view returned
@@ -323,9 +368,9 @@ Adding **`source: ["serverless"]`** surfaced the `warn` lines:
 ```
 
 ⚠ Pair it with `environment: "production"` and a SHORT window (`since`/`until` around the incident).
-`group_by: "requestPath"` first to find which paths were busy, then filter. Remember CLAUDE.md's existing
-notes: `console.warn` is not indexed by the plain log view, and `get_runtime_errors` route attribution is
-SMEARED — re-group on `requestPath`.
+`group_by: "requestPath"` first to find which paths were busy, then filter. ⛔ The `console.warn` half of CLAUDE.md's old note is REFUTED — see the CORRECTION
+section above; warn IS indexed and it was `level:["warning"]` that read zero. `get_runtime_errors` route
+attribution IS still SMEARED — re-group on `requestPath`.
 
 ---
 

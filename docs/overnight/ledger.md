@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · CORRECTION, SHIPPED (Claude Code, interactive, docs) — ⛔ `console.warn` IS indexed by Vercel. The rule saying otherwise came from a BROKEN FILTER, and it nearly bought 158 pointless edits
+
+**DOCS ONLY (CLAUDE.md + `tooling-gotchas.md`, three stale copies corrected). No code, no DB, no prod-state change.** Triggered by the previous entry's own caveat — I wrote that the `console.warn` note was *"a dated sample I have not re-measured"* rather than acting on it, then re-measured it.
+
+⛔ **CLAUDE.md said `get_runtime_logs: console.warn is NOT indexed — use console.log`. IT IS INDEXED, AND IT IS THE LARGEST BUCKET.** Measured 2026-08-25 against production with `group_by: "level"` over a 3-hour window: **warn 1,796 · error 1,533 · info 1,393.**
+
+🚨 **THE ACTUAL TRAP IS A FILTER ENUM THAT SILENTLY READS ZERO.** `level: ["warning"]` — the value the tool's own schema offers — returns *"No logs found for the specified criteria."* over a 6-hour production window. **The stored value is `warn`.** So the one filter a reader would reach for to find warn lines returns zero, silently, forever, and that reads exactly like *"warns are not indexed"*. ⚠ **This is CLAUDE.md's own rule — "a permanently-zero instrument is indistinguishable from a broken one at a glance" — committed by a filter enum, and then written into CLAUDE.md as a fact about the platform.** ⚠ The same mismatch appears on `source`: schema enum `serverless | edge-function | edge-middleware | static`, reported values `middleware | function | cache | redirect | rewrite`.
+
+⚠ **THE REPO HAD ALREADY CONTRADICTED ITSELF AND NOBODY NOTICED.** `tooling-gotchas.md`'s 2026-08-22 section says adding `source: ["serverless"]` *"surfaced the warn lines"* — and then, four lines later, tells the reader to *"remember CLAUDE.md's existing notes: `console.warn` is not indexed by the plain log view."* **Both statements sat in one section for three days.** ⭐ And the stale claim had **three** copies (CLAUDE.md line 210, `tooling-gotchas.md` line 33, and that cross-reference) — *grep for the EXPRESSION, not the file*, for the second time today.
+
+✅ **WHAT THIS PREVENTED, concretely:** an hour earlier I had counted **158 `console.warn` calls across 43 route files** under `app/api` and was weighing a mechanical conversion to `console.log` **purely on the strength of the stale rule**. That would have been 158 edits against a false premise — the exact "a plausible mechanism is not a measurement" failure, and a bulk sweep of the kind this repo has repeatedly found to be worse than triage.
+
+⛔ **WHAT I DID NOT ESTABLISH, stated because the headline invites over-reading:** full-text `query` **timed out at every window tried** — 6h, 45m, 20m, and scoped to a single `deploymentId` — while `group_by` aggregates returned instantly. So this establishes that **warn-LEVEL entries are in the index**; it does **NOT** establish that an arbitrary `console.warn` string is retrievable by full-text search today. The 08-22 note is the evidence that it was, and that is someone else's measurement, not mine.
+
+⚠ **CLAUDE.md IS NOW AT 39,996 OF 40,000 CHARS — FOUR CHARS OF SLACK.** It was at 23 before this (a pre-existing condition, not created here); the corrected line is 174 chars against the old 155. **The next durable rule added there MUST displace one properly — there is no room left to absorb even a short sentence.** The full case for this correction lives in `tooling-gotchas.md`, as the layout intends.
+
+**Verified:** `claude-md-stays-under-the-memory-file-limit` green (3 cases, measured with Node `.length` not `wc`) · full `npm test` green.
+
+**Revert:** `git revert <sha>` — restores the incorrect "NOT indexed" claim in all three places. No code, no DB half.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — a failed read took the PRO / FOUNDING badge away from 21 real paying members, and the client CACHED that for five minutes
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Second finding of the day from the same shape as the `collection-snapshot` fix, found by a detector built from it: **a producer that answers 200 on a failed read defeats every consumer's `res.ok` check.** 14 candidate `catch` blocks across **499** API routes; I read all 14.
