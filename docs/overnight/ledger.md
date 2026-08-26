@@ -458,6 +458,33 @@ is always the same — a rate computed from the two most recent readings rather 
 whole series.** CLAUDE.md already says *a directional claim needs a distribution, not a
 snapshot*; the gap is that an ETA feels like arithmetic rather than a claim, so the rule does
 not get applied to it.
+✅⚠ **OUTCOME AT 19:32Z — THE LAP COMPLETED ON SCHEDULE, AND IT OPENED A DIFFERENT QUESTION.**
+
+✅ **The lap model is CONFIRMED.** `topshot_pack_sales_cursor` reached **`done = true`**, having
+walked 2024-12-20 → **2023-10-06** (the table's true floor) across **101 runs** since the revert,
+monotonically. `cursor_updated_at` puts the completion at **18:38:30Z** — against the corrected
+ETA of ~19:20Z, computed from the whole-series rate. **A full lap at the restored 3-minute
+cadence is therefore ~4.2 h, and ~21 h under the 15-minute cut** — the freshness regression the
+falsifier caught is real and, if anything, was understated.
+
+⚠ **BUT HEAD ROWS HAVE NOT RESUMED, AND THE REASON IS NOT THE CADENCE.** Since the lap finished
+the walker has been **PARKED at `done = true`**: **21 further cron dispatches (18:31Z → 19:31Z,
+all `succeeded`, 0.05 s each — they are `net.http_get` fire-and-forget)** and the cursor has not
+moved, `total_seen` sits at 35, and `max(ingested_at)` is still **04:19Z**.
+
+⭐ **So the falsifier I wrote needs its own correction.** It said *a STALLED cursor falsifies the
+lap model*. The cursor IS stalled — but stalled **because the lap COMPLETED**, which is the model
+working, not failing. **A single observable ("cursor advancing") could not distinguish
+mid-walk-stuck from lap-finished, and those are opposite states.** The state to watch is
+`done`, not motion.
+
+👉 **The open question is what RESTARTS the walk**, and it cannot be read from here: both writers
+are edge functions with **no committed source** (deep-audit R21). The historical burst spacing
+(~09:1x / 15:3x / 21:1x / 03:4x UTC, roughly 6 h) is **consistent with** a ~4–5 h lap plus a park
+before reset — but that is an inference from the ingest histogram, **not a measurement of the
+reset mechanism.** ⚠ **Concrete next check: if no head rows land by ~00:30Z** (one historical
+burst interval past the lap), the parked-at-`done` state is a real second defect and is
+independent of the cadence question this entry closes.
 **Verification pending:** at 3-min cadence the walker should lap and land head rows within ~5 h of
 14:26 UTC. ⓘ `public._rpc_waste_baseline_20260825` is **retained**, not dropped as the handoff
 proposed — it holds the pre-change baseline this entry is measured against and the question is no
