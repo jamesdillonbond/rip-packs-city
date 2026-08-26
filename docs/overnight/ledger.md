@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — a healthy WEEKLY job was marked red ~6 days in 7, and the pipeline named "weekly" runs DAILY
+
+**CODE + TEST. No DB, no migration, no prod-state change.** Found by applying the dispatch/landing discriminator to the **live** `detect_stalled_pipelines()` alert set instead of to golazos alone — i.e. by acting on my own filing's recommendation rather than leaving it as one.
+
+🚨 **THE NIGHTLY PASS'S OWN FALSIFIER FIRED.** Its 08-25 handoff read *"weekly-db-maintenance … missed its 08-24 daily tick, self-heals 09:40Z — **watch for a second miss**"*. Nobody had. `cron.job_run_details` for **jobid 198** (`40 9 * * *`): 08-21 **failed** · 08-22 ok · 08-23 ok · 08-24 **failed** · 08-25 **failed** — every failure `job startup timeout`, the `max_worker_processes`=6 vs `cron.max_running_jobs`=32 starvation class. **A TRUE positive, ~60% failure rate.**
+
+⚠ **SHARPENS THE DISCRIMINATOR SHIPPED HOURS EARLIER:** worker starvation appears as **either** no `job_run_details` row at all (the jobid 288 case another session found) **or** a row with `status='failed'` / `return_message='job startup timeout'`. Both mean *never started*; only the second is greppable.
+
+⛔ **THE CONSEQUENCE I EXPECTED IS FALSE, AND I MEASURED INSTEAD OF ASSUMING.** `run_weekly_log_purges()` calls `purge_old_pipeline_runs()`, so the tidy inference is that `pipeline_runs` retention has been unenforced for two days. **It has not** — oldest row **74.0 h**, exactly the documented ~73 h. **`prune_pipeline_runs()` has its OWN cron** (`rpc-prune-pipeline-runs @ 41 */6 * * *`) and that is what holds retention; **three** functions delete from that table and only one is scheduled directly. The real residue is the other purges — ~**30 MB**, largest `smoke_test_results` 20 MB / 110k rows — **minor, not urgent.** *A plausible mechanism is not a measurement, including when it makes the finding sound worse.*
+
+⭐ **TWO INSTRUMENT BUGS, BOTH SHIPPED.**
+
+**(a) The name is vestigial — and its TWIN is the proof you must read the schedule.** `pipeline-health` carried `"weekly-db-maintenance": 60*24*7` beside `"weekly-wmc-prune": 60*24*8`. Identical shape, identical naming convention, **and only one was right**: jobid 198 is `40 9 * * *` (**DAILY**), jobid 199 is `20 10 * * 0` (**WEEKLY, Sunday**). Nothing but `cron.job.schedule` separates them. Corrected to `60 * 24`.
+
+**(b) 🚨 The `>24h → red` floor silently overrode EVERY long-cadence expectation.** It ran **before** the 2×/5× multiples, **unconditionally**. So for any `expectedMin >= 720` the **yellow branch was unreachable** (2× is already ≥24 h) and the declared cadence was **inert** — and a genuinely weekly pipeline read **RED from 24 h after each run until the next: ~6 days in every 7, BY CONSTRUCTION, while running perfectly.** ⚠ **Measured, not theorised:** `weekly-wmc-prune` ran exactly on schedule Sunday 08-23 10:20Z and reads **RED** ~65 h later. ⭐ **And for every entry with `expectedMin <= 288` the floor was already REDUNDANT** (5× is under 24 h, so the multiple fires first) — **it only ever changed the answer where it was wrong.** Now `if (expectedMin <= 24*60 && minutesSince > 24*60)`. **A permanently-red instrument is indistinguishable from a broken one at a glance** — this repo's own named class, and the reason a real outage gets skimmed past.
+
+⚠ **AND I HAD IT WRONG FIRST, WHICH IS THE PART WORTH KEEPING.** I concluded that `pipeline-health` *"reports it green while the cadence arm alerts — two instruments disagreeing, the lenient one wrong"*. **False.** The unconditional floor already reds it. **Reading `classify()` rather than publishing the tidy story is what caught it** — and the defect underneath turned out to be larger than the one I thought I had.
+
+⚠ **THE TESTS ARE A PAIR AND BOTH MUTATIONS WERE RUN.** Unconditional floor (the original) → **the weekly case reds**. Floor **deleted outright** (the naive over-fix) → **the daily control reds**, along with the pre-existing tier test. Correct scoping → **9/9**. **A fix that merely deletes the floor passes the first and fails the second**, which is the entire point of the control. ⓘ The pre-existing assertion (`weekly-db-maintenance` red at 2000 m) **still holds unchanged** — only its comment, which stated the wrong *reason*, was corrected. **The assertion was right for a reason the comment got wrong.**
+
+⛔ **NOT FIXED, and stated rather than implied:** the starvation itself. jobid 198 will keep failing ~60% of days until `max_worker_processes` / `cron.max_running_jobs` is addressed — **a platform-capacity decision, not a code fix.** ⓘ Also flagged, deliberately unshipped: `compute-golazos-pack-ev` and `compute-pinnacle-pack-ev` are **absent from `EXPECTED_INTERVAL_MIN` entirely**, so pipeline-health is silent about both; adding them would light up golazos while its cause is still unresolved.
+
+**Verified:** `npx tsc --noEmit` clean (exit 0, run bare) · full `npm test` green (exit code read UNPIPED — a `| tail` reports *tail's* status and nearly let a red tree through earlier tonight) · both negative controls run and restored · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` on the code commit; no DB half.
+
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — the fail-open sweep finished: an ALERT that went silent, a tripwire that fabricated a healthy claim, and a green check that inspected zero collections
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Continuation of the entry below, which fixed five sites in `smoke-test`. **Grepping the EXPRESSION rather than the file is what found these three** — the rule earned its keep twice in one day.
