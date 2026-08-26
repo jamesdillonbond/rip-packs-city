@@ -575,3 +575,41 @@ node scripts/pack-cowork-skill.mjs rpc-nightly-autonomous-pass   # -> 9/9
 file before you EDIT it.* The bundle is not a build artifact you can regenerate later — it is the thing the
 account installs, so a stale one ships stale instructions (see known-issues #32, which is exactly that
 failure in its un-guarded form).
+
+## ⛔ The v13 deployments POST does NOT force a build here — only a non-docs TIP commit does (measured 2026-08-26)
+
+CLAUDE.md said *"an empty or docs-only commit can never force a rebuild — use the v13 deployments POST, **or**
+touch a non-docs file."* **The first half is wrong for this project, measured twice in a row:**
+
+| attempt | result |
+|---|---|
+| `POST /v13/deployments` + `forceNew=1` on the head sha | **CANCELED**, `errorLink: …#ignored-build-step` |
+| the same POST + `projectSettings.commandForIgnoringBuildStep = "exit 1"` | **CANCELED**, identical errorLink |
+
+⭐ **Why: `ignoreCommand` is declared in `vercel.json`, which lives IN THE REPO.** A deployment built from the
+git source carries that file and runs the ignore step from it, so the per-deployment `projectSettings`
+override never gets a say. `forceNew` only guarantees a *new deployment*, not a *built* one.
+
+**The predicate itself:**
+
+```
+git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'
+```
+
+**It inspects `HEAD^..HEAD` — the LAST COMMIT ONLY.** Ten code commits under a docs-only tip deploy nothing.
+
+⚠⚠ **THE NEW HALF, AND IT IS THE PART THAT BITES: `git am` INVERTS THE SAFE ORDER FOR YOU.** The standing
+rule ("commit the ledger BEFORE the code") assumes you choose the order. **Applying a patch set does not work
+that way** — the code commits arrive first, from the patches, and the ledger entry describing them can only
+be written afterwards. **So landing ANY patch set produces a docs-only tip by construction.** That is how
+this trap bit a third time, on 2026-08-26, leaving a Sentry quota guard and a telemetry fix sitting on `main`
+with neither running.
+
+⭐ **The habit that actually prevents it is not an ordering rule — it is a CHECK: read `state` on the
+deployment after every push, and never infer a deploy from a green CI.** CI and Vercel are independent, and
+CI was **success** on the very push that shipped nothing. Corroborate on `ready > buildingAt`, attached
+production aliases and `lambdaRuntimeStats` — not on `state` alone, which lags.
+
+ⓘ **Prefer a REAL non-docs change over a no-op edit** when you need a tip: the fix used here added
+`Rip Packs City/` to `.gitignore` — the untracked `format-patch` drop directory that a `git add -A` would
+otherwise commit. A genuine fix that happens to be non-docs keeps the history honest about what changed.
