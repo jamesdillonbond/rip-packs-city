@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · FALSIFICATION TEST RUN (Claude Code, autonomous — read-only) — the re-stagger's first tick is CLEAN on all three, and the 10-day series refuted my own alarm about it
+
+**The check I promised, run at the first tick under the new schedules (09:54–09:56Z).** All three fired **at their new minutes** and **succeeded**:
+
+| job | fired | status | secs |
+|---|---|---|---|
+| 198 `rpc-weekly-log-purges` | **09:54:00Z** (was `:40`) | succeeded | 3.3 |
+| 331 `rpc-thp-leg-pinnacle-fmv-share` | **09:55:00Z** (was `:09`) | succeeded | 14.9 |
+| 249 `rpc-refresh-players-current-team` | **09:56:00Z** (was `:40`) | succeeded | 11.9 |
+
+**Verdict: NOT FALSIFIED.** The gate query reads `PENDING 1/3 · 1/3 · 1/11`, and its **positive control fires** (old-minute columns recover the known 38/4 · 23/4 · 39/8), so the zeros are real zeros and not a blind query. ⚠ **Read it as I said to read it: one clean tick each is `p ≈ 0.25` under the null** (198+249 are ONE correlated arm at 0.333, × 331 at 0.75) — **real evidence, not a clearance.** Gate still stands: **3 consecutive clean daily ticks** for the 198/249 arm (~08-28), **11 ticks** for 331.
+
+⭐ **Corroborating the MECHANISM, not just the outcome:** the jobs still starving cluster at **09:24–09:45Z** while the three re-staggered jobs ran at **09:54–09:56Z and all succeeded**. That is the quiet-minute hypothesis behaving as predicted rather than a coincidence of timing.
+
+⚠ **Trevor's stated check does now pass for the three — and that is NOT the whole picture.** `check_pgcron_recent_failures('24 hours')` no longer lists 198/249/331, exactly as expected. **But it returns 16 OTHER failing jobs**, 7 of them with `job startup timeout`. "The three have gone quiet" will be true and will sit inside a long list that is not.
+
+⛔ **AND HERE IS MY OWN ALARM, REFUTED BY THE SERIES BEFORE I PUBLISHED IT.** I measured **25 distinct jobs / 98 `job startup timeout` events in 24 h** against the re-stagger's premise that *"only THREE jobs actually fail that way"* — an 8× gap that reads like a regression, or like the premise having been wrong. **The 10-day daily series says neither:**
+
+| day | startup timeouts | distinct jobs |
+|---|---|---|
+| 08-26 *(partial, ~10 h)* | **28** | **15** |
+| 08-25 | 126 | 33 |
+| 08-24 | 110 | 32 |
+| 08-23 | 217 | 40 |
+| 08-21 | 224 | 36 |
+| 08-20 | 268 | 40 |
+| 08-18 | 332 | 40 |
+
+**`job startup timeout` across 24–40 distinct jobs is the NORMAL daily state and has been for at least 10 days.** Today is running **below** the recent average, not above it. ⭐ So the honest reading is that the re-stagger's *"only three"* was **scoped narrower than the whole class** (most plausibly to the jobs `detect_stalled_pipelines()` surfaces), and the fix is a **surgical win on 3 of a chronic 24–40/day class** — which is what its own entry already implied by rejecting a full re-stagger and by refusing to raise `max_worker_processes` on an IO-bound instance.
+
+⭐ **The rule that saved it is the one this session already paid for once tonight: compare against the series' OWN HISTORY before calling something a regression.** A 24-hour count with no baseline behind it read as an 8× blow-up; eleven rows of history turned it into "below average". **Two hours after writing that lesson into the docs, I needed it again.**
+
+**Revert path:** nothing to revert — read-only. **No DB half.**
+
+### 2026-08-26 · QUIET NO-PUSH NIGHT (rpc-nightly-autonomous-pass, cloud) — nothing shipped; last night's ccm-step2 fix VERIFIED working, Sentry dark ~8d confirmed, scratch table already secured
+
+**Cloud session, push UNAVAILABLE** (mount carried no `remote.origin.pushurl`; url fallback has no PAT → `git push --dry-run` = `could not read Username`). DB migrations + artifact repairs were the only shippable classes and none were clearly-safe-and-needed. ⚠ **This blocker is specific to this cloud session — Trevor's box and Claude Code push normally via the PAT in `remote.origin.pushurl`. Commit these files as usual.**
+
+**Post-ship watch on last night's ships: PASS (both).**
+- ✅ `refresh_cross_collection_cohort_step2()` `SET LOCAL enable_nestloop = off` (migration `20260825170000`, Claude Code) — pg_cron **jobid 4 succeeded 2026-08-25 23:25:09Z in 9.5s**, the FIRST success since 08-17 (prior 8 runs all died at the 300s timeout). The named falsifier passed in the good direction; diagnosis holds, do NOT revert.
+- ✅ pipeline-health 24h-floor fix (`4fb977b9`) is on origin/main; no regression. (Corrected the unconditional 24h red-floor that read healthy weekly/long-cadence jobs red ~6 days in 7.)
+
+**Health: security fully clean** (invariants / anon_write_holes / rls_off_base_tables / secdef_anon_violations all `[]`). Trust health 2 breaches, both known/noisy: `public_board_slow_count`=5 (candy-mlb boards timing out — corroborated by Vercel's 6 `candy_*_board` statement-timeout groups, the known IO-saturation class) and `unmapped_resolution_backlog_max`=348 (standing AllDay residual, net-draining). `trust_precompute_max_age_hours`=5.31 (fresh) → the breaches are real, not a stale-refresher rollback. Ingest fresh (sales seconds old, FMV 7 min old). No spell at read time (io_wait 0).
+
+**Sentry STILL DARK — ~8 days.** 0 unresolved issues in 48h/7d against **50 live Vercel error groups** (timestamps minutes old) → the dark-reporter discriminator fires; a zero here is not a clean bill. Operator-gated (Stats/Usage or an ingest-envelope probe from a box with egress). QUEUED.
+
+**Scratch table `_rpc_waste_baseline_20260825`** (08-25 "filed not fixed") — **already secured**: RLS on, `anon`/`authenticated` SELECT both false, still being written (21 rows, last 07:03Z). Owning session handled it; no action needed. Re-stat-before-acting paid off — a naive `ENABLE RLS` would have been a redundant no-op on a live table.
+
+Everything else in the drained inbox is already-shipped, operator-gated, or off-limits ingest/FMV/platform-capacity work (candy-listings-indexer 300s kills, compute-laliga-pack-ev PGRST002+budget, topshot-active-listings RPC blocker, worker-slot starvation) — all QUEUED in the handoff, none shippable by a cloud NO-PUSH DB-only pass.
+
+**Revert path:** nothing to revert — read-only pass, no writes to prod state.
+
 ### 2026-08-25 · AUDIT PASSED (Claude Code, autonomous — read-only) — the FOURTH honesty layer (OG social cards) is CLEAN, and the sweep needed two corrections to prove it
 
 **Layer 4 of the honesty table (`lib/og/board-empty-copy.ts` → `boardEmptyCopy`) had not been swept end-to-end.** Result: **44 OG route files · 22 render a NUMBER · 0 defects.** Every one of the 22 either uses the helper, carries a failure state, or **guards the zero so it can never display.**
