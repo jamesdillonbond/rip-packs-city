@@ -71,7 +71,12 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "editions-hydrate-at-insert": 30,
   "sync-nba-projections": 60,
   "sync-nba-odds": 60,
-  "weekly-db-maintenance": 60 * 24 * 7,
+  // ⚠ NAME IS VESTIGIAL — READ THE SCHEDULE, NOT THE NAME. These two look
+  // identical and only one was right. Verified against cron.job 2026-08-25:
+  //   weekly-db-maintenance -> jobid 198 `rpc-weekly-log-purges` @ `40 9 * * *`  = DAILY
+  //   weekly-wmc-prune      -> jobid 199 `rpc-weekly-wmc-prune`  @ `20 10 * * 0` = WEEKLY (Sun)
+  // The first was declared at 7 DAYS for a job that runs every 24h.
+  "weekly-db-maintenance": 60 * 24,
   "weekly-wmc-prune": 60 * 24 * 8,
   "allow-list-reconcile": 60 * 6,
   "listing-divergence-snapshot": 360,
@@ -163,7 +168,24 @@ export async function GET(req: NextRequest) {
         expectedButMissing: false,
       };
     }
-    if (minutesSince > 24 * 60) {
+    // ⚠ THE 24h FLOOR APPLIES ONLY TO PIPELINES EXPECTED TO RUN AT LEAST DAILY.
+    //
+    // It used to fire unconditionally, BEFORE the multiples below — which made it
+    // override every long-cadence expectation in the table. For any entry with
+    // expectedMin >= 720 the yellow branch could never be reached at all (2x is
+    // already >= 24h), so the declared cadence was inert and a genuinely WEEKLY
+    // pipeline was marked RED from 24h after each run until its next one:
+    // red ~6 days in every 7, BY CONSTRUCTION, while running perfectly.
+    //
+    // Measured 2026-08-25: `weekly-wmc-prune` (jobid 199, `20 10 * * 0`) ran
+    // exactly on schedule on Sunday 08-23 10:20Z and read RED ~65h later. A
+    // permanently-red instrument is indistinguishable from a broken one at a
+    // glance, which is how a real outage gets skimmed past.
+    //
+    // For every entry with expectedMin <= 288 the floor was already redundant —
+    // 5x is under 24h, so the multiple fires first. It only ever CHANGED the
+    // answer for the long-cadence entries, and there it was wrong.
+    if (expectedMin <= 24 * 60 && minutesSince > 24 * 60) {
       return { drift: "red", minutesSince, expectedButMissing: false };
     }
     if (minutesSince > expectedMin * 5) return { drift: "red", minutesSince, expectedButMissing: false };

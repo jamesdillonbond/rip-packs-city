@@ -98,7 +98,9 @@ describe("GET /api/admin/pipeline-health", () => {
       { pipeline: "allday-fmv-populate", last_run: ago(60), runs_6h: 3, fails_6h: 1 },
       // known cadence (expected 20m): 200m -> > 5x -> red
       { pipeline: "golazos-sales-indexer", last_run: ago(200), runs_6h: 1, fails_6h: 0 },
-      // known long cadence (weekly): 2000m -> hits the >24h red branch first
+      // ⚠ NOT a weekly pipeline despite the name — jobid 198 runs `40 9 * * *`,
+      // i.e. DAILY (expected 1440m). 2000m > the 24h floor, which applies here
+      // precisely BECAUSE it is expected at least daily -> red.
       { pipeline: "weekly-db-maintenance", last_run: ago(2000), runs_6h: 1, fails_6h: 0 },
       // unknown cadence, recent -> green (<= 24h)
       { pipeline: "unknown-pipe-fresh", last_run: ago(100), runs_6h: 2, fails_6h: 0 },
@@ -120,6 +122,8 @@ describe("GET /api/admin/pipeline-health", () => {
     expect(byName["allday-fmv-populate"].drift).toBe("yellow")
     expect(byName["golazos-sales-indexer"].drift).toBe("red")
     expect(byName["weekly-db-maintenance"].drift).toBe("red")
+    // ...and it carries the DAILY expectation now, not the 7-day one.
+    expect(byName["weekly-db-maintenance"].expected_min).toBe(60 * 24)
 
     // unknown cadence: expected_min null, never "expected_but_missing"
     expect(byName["unknown-pipe-fresh"].expected_min).toBeNull()
@@ -141,5 +145,48 @@ describe("GET /api/admin/pipeline-health", () => {
 
     // sort: red bucket floats to the top
     expect(body.rows[0].drift).toBe("red")
+  })
+
+  // ── THE 24h FLOOR MUST NOT OVERRIDE A LONGER DECLARED CADENCE ─────────────
+  //
+  // The floor used to fire unconditionally, before the 2x/5x multiples, so every
+  // long-cadence entry was inert: with expectedMin >= 720 the yellow branch is
+  // unreachable (2x >= 24h). A genuinely weekly pipeline therefore read RED from
+  // 24h after each run until the next — ~6 days in 7, while running perfectly.
+  //
+  // Measured 2026-08-25: weekly-wmc-prune (jobid 199, `20 10 * * 0`) ran exactly
+  // on schedule Sunday 08-23 10:20Z and read RED ~65h later.
+  //
+  // ⚠ Pinned as a PAIR. The weekly case proves the floor no longer over-fires;
+  // the daily control proves removing it did not make the check toothless — a
+  // fix that simply deleted the floor would pass the first and fail the second.
+  it("a genuinely WEEKLY pipeline silent 65h is NOT red — the 24h floor does not override its cadence", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    rpc.data = [
+      // weekly-wmc-prune: jobid 199 `20 10 * * 0`, expected 60*24*8 = 11520m.
+      // 3900m is well inside 2x (23040m) — a weekly job three days after its run.
+      { pipeline: "weekly-wmc-prune", last_run: ago(3900), runs_6h: 0, fails_6h: 0 },
+    ]
+    const res = await GET(req(`Bearer ${ADMIN}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const row = body.rows.find((r: any) => r.pipeline === "weekly-wmc-prune")
+    expect(row.drift).not.toBe("red")
+    expect(row.drift).toBe("green")
+  })
+
+  it("the daily CONTROL: a pipeline expected at least daily IS still red past 24h", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    rpc.data = [
+      // Same 3900m silence, but a pipeline whose expectation is <= 24h. The floor
+      // still applies here, so the fix above did not weaken the common case.
+      { pipeline: "weekly-db-maintenance", last_run: ago(3900), runs_6h: 0, fails_6h: 0 },
+      { pipeline: "fmv-recalc", last_run: ago(3900), runs_6h: 0, fails_6h: 0 },
+    ]
+    const res = await GET(req(`Bearer ${ADMIN}`))
+    const body = await res.json()
+    const byName: Record<string, any> = Object.fromEntries(body.rows.map((r: any) => [r.pipeline, r]))
+    expect(byName["weekly-db-maintenance"].drift).toBe("red")
+    expect(byName["fmv-recalc"].drift).toBe("red")
   })
 })
