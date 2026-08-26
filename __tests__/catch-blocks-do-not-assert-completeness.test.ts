@@ -40,7 +40,7 @@ const ROOTS = ["app", "components", "lib", "workers"]
 
 /** A catch block that sets a completeness/termination flag. */
 const CATCH_COMPLETE =
-  /catch\s*(?:\([^)]*\))?\s*\{[^}]{0,240}?\bset(?:Exhausted|Done|Complete|Completed|Finished|AllLoaded|EndReached|HasMore)\s*\(\s*(?:true|false)\s*\)/gs
+  /catch\s*(?:\([^)]*\))?\s*\{[^}]{0,240}?\bset(?:Exhausted|Done|Complete|Completed|Finished|AllLoaded|EndReached|HasMore)\s*\(\s*(?:true|false)\s*\)/g
 
 /**
  * A catch that ALSO records the failure is honest and exempt: the failure state
