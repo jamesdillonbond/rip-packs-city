@@ -184,6 +184,19 @@ function ProfilePageInner() {
   const [bio, setBio] = useState<Bio | null>(null);
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
   const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
+  // Did the TROPHY-SLABS read itself fail this pass? Same reasoning as
+  // `walletsFailed` below: an empty `slabs` is ambiguous — "has pinned none"
+  // or "we could not read them" — and only the first justifies an onboarding
+  // prompt. Without this, a failed read sends an owner with a full case to
+  // EmptyHeroState, i.e. "pick a hero Moment", which is a false claim about
+  // their own account AND tells them to redo finished work.
+  const [slabsFailed, setSlabsFailed] = useState(false);
+  // Same class again, one panel over. A failed `/api/profile/activity` read
+  // leaves `activity` empty, and the empty state tells a collector to "Follow
+  // other collectors" — the /my-teams "Follow a team to build your hub"
+  // incident verbatim, on a signed-in surface, about their own account, and
+  // ACTIONABLE: it sends someone who already follows people to go do it again.
+  const [activityFailed, setActivityFailed] = useState(false);
   const [hero, setHero] = useState<HeroMoment | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -439,6 +452,7 @@ function ProfilePageInner() {
         setWallets(walletList);
       }
       let slabList: TrophySlabData[] = [];
+      setSlabsFailed(!slabsRes.ok);
       if (slabsRes.ok) {
         const t = await slabsRes.json();
         slabList = Array.isArray(t?.slabs) ? t.slabs : [];
@@ -470,6 +484,7 @@ function ProfilePageInner() {
         const f = await favRes.json();
         setFavorites(f?.favorites ?? []);
       }
+      setActivityFailed(!actRes.ok);
       if (actRes.ok) {
         const a = await actRes.json();
         setActivity(a?.activity ?? []);
@@ -924,6 +939,30 @@ function ProfilePageInner() {
           />
         ) : filledSlabs.length > 0 ? (
           <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
+        ) : slabsFailed ? (
+          /* ⚠ THIRD STATE. `filledSlabs.length === 0` is reached BOTH by "has
+             pinned nothing" and by "the read failed", and only the first may
+             show onboarding. The refresh() comment above already gates the HERO
+             fetch on `slabsRes.ok` for this exact reason — but the fallback
+             still landed here, so the panel was only half fixed. On first load
+             (slabs still [null x6]) a failed read showed a collector with six
+             pinned trophies the "pick a hero Moment" prompt. */
+          <div
+            role="status"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
+              borderRadius: 10, padding: "14px 16px",
+            }}
+          >
+            <span style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
+              Couldn&apos;t load your trophy case. This is a loading problem, not an
+              empty case — nothing has been unpinned.
+            </span>
+            <button type="button" onClick={() => { refresh().catch(() => {}); }} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
+              Retry
+            </button>
+          </div>
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
@@ -1200,7 +1239,12 @@ function ProfilePageInner() {
         {/* ── Friend Activity ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Friend Activity</div>
-          {activity.length === 0 ? (
+          {activityFailed ? (
+            <div role="status" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+              Couldn&apos;t load friend activity. This is a loading problem, not an
+              empty feed — nobody has been unfollowed.
+            </div>
+          ) : activity.length === 0 ? (
             <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
               Follow other collectors to see their sales here.
               <br />

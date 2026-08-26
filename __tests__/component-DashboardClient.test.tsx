@@ -223,11 +223,38 @@ describe("DashboardClient — the trophy case", () => {
     // Empty slabs mean two things — "pinned nothing" and "the read failed" —
     // and the branch is gated on `slabsRes.ok` so an outage leaves the case as
     // it was rather than telling an owner their trophy case is gone.
+    //
+    // ⚠⚠ THIS TEST PASSED WHILE THE DEFECT WAS LIVE (found 2026-08-26). Its
+    // title promises the onboarding prompt is not RENDERED; every assertion it
+    // had only proved /api/profile/hero-moment was not FETCHED. Those are
+    // different claims: gating the hero FETCH on `slabsRes.ok` stops `hero`
+    // being set, but `filledSlabs.length === 0` then fell through to
+    // <EmptyHeroState> anyway, so on first load a failed read still showed a
+    // collector with six pinned trophies "Pin a moment to your trophy case".
+    // The repo records this exact shape: a test stating its contract in a
+    // comment and asserting something weaker, and the tell is the TITLE.
+    // ⭐ Assert the ABSENCE OF THE FALSE CLAIM, not the absence of a fetch.
     routes["/api/profile/trophy-slabs"] = () => json(503, {})
     render(<DashboardClient />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     await new Promise((r) => setTimeout(r, 30))
     expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/profile/hero-moment"))).toBe(false)
+    // The claim itself must not be on the page.
+    expect(screen.queryByText(/Pin a moment to your trophy case/i)).toBeNull()
+    expect(screen.queryByText(/build your six-slot showcase/i)).toBeNull()
+    // And the reader must be told the difference between empty and unreadable.
+    expect(screen.getByText(/loading problem, not an empty case/i)).toBeTruthy()
+  })
+
+  it("still shows the onboarding prompt when the slab read SUCCEEDS and the case is genuinely empty", async () => {
+    // NO-CHANGE CONTROL for the test above. Without this, hiding the prompt
+    // unconditionally would satisfy that assertion and silently break real
+    // onboarding — the guard would punish its own success.
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.queryByText(/loading problem, not an empty case/i)).toBeNull()
   })
 
   it("survives a slabs body whose slabs key is not an array", async () => {
@@ -685,6 +712,39 @@ describe("DashboardClient — adding a wallet", () => {
 })
 
 // ─── The hero card ───────────────────────────────────────────────────────────
+
+describe("DashboardClient — Friend Activity distinguishes empty from unreadable", () => {
+  // Found 2026-08-26 by sweeping the WHOLE of refresh() rather than the one
+  // panel that prompted the sweep — "fix per PANEL, not per page".
+  //
+  // A failed /api/profile/activity read leaves `activity` at [], and the empty
+  // state then says "Follow other collectors to see their sales here … hit
+  // + FOLLOW". That is the /my-teams "Follow a team to build your hub"
+  // incident verbatim: a false claim about the reader's OWN account on a
+  // signed-in surface, and ACTIONABLE — it tells someone who already follows
+  // people to go and do it again.
+
+  it("⚠ does NOT tell a collector to follow people when the activity read FAILED", async () => {
+    routes["/api/profile/activity"] = () => json(503, {})
+    render(<DashboardClient />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 30))
+    // Assert the ABSENCE OF THE FALSE CLAIM, not the presence of an error.
+    expect(screen.queryByText(/Follow other collectors/i)).toBeNull()
+    expect(screen.getByText(/loading problem, not an empty feed/i)).toBeTruthy()
+  })
+
+  it("still prompts to follow when the read SUCCEEDS and the feed is genuinely empty", async () => {
+    // NO-CHANGE CONTROL. Without it, deleting the prompt outright would satisfy
+    // the test above while breaking the real empty state.
+    routes["/api/profile/activity"] = () => json(200, { activity: [] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.getByText(/Follow other collectors/i)).toBeTruthy()
+    expect(screen.queryByText(/loading problem, not an empty feed/i)).toBeNull()
+  })
+})
 
 describe("DashboardClient — the hero card", () => {
   const HERO = {
