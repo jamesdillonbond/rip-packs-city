@@ -458,3 +458,40 @@ Every one of the five RPCs returns a JSON array **today**, and each COALESCEs it
 ### ⓘ And a different defect found while reading the same file — ZERO INSPECTED IS NOT A PASS
 
 Sentinel's `Sales Ingest by Collection` starts `worst = "ok"` and only moves on a breach, so an **empty** result fell through to `status: "ok"` with an **empty detail string** — a green check that examined nothing. **`value` already carried the cardinality; STATUS is what a reader and the alerting key on**, so the count now moves the status and the healthy branch states how many it inspected. *"0 breaches in 12 collections"* and *"0 breaches in 0 collections"* rendered identically before.
+
+---
+
+## The SEVENTH shape (2026-08-25): a PARTIAL SWEEP that PURGES — the honesty defect whose output is a DELETE
+
+The class this file catalogues is *a failed read rendered as a fact*. **The five listing-cache routes hold its
+most expensive variant: the "fact" is not rendered to a reader at all — it is written back as a deletion.**
+
+**The shape.** Each route sweeps a paged upstream (Flowty / the collection proxies) into `cached_listings`,
+then purges every row older than the function-top `startedAt` — i.e. *"anything I did not just see is gone
+from the market."* That statement is only true **if the sweep was complete.** Every one of the five had a
+page-level error branch (`break`, `continue`, or a caught fetch) that ended the sweep early **and then ran
+the purge anyway**, so an upstream outage mid-sweep did not degrade the cache — it **emptied** it.
+
+⚠ **The guards that existed were the wrong shape, in an instructive way.** Three of the five gated the purge
+on `stats.upserted > 0` — which reads like a safety check and is not one: a sweep that read page 1 and then
+died on page 2 has `upserted > 0` and is still partial. **`upserted > 0` answers "did I write anything",
+never "did I see everything".** `ufc-listing-cache` was the worst: it wiped unconditionally.
+
+**The fix, uniform across all five:** carry completeness explicitly — `pageErrors` counted at every error
+branch and `sweepComplete` set **only** at the three legitimate ends (empty page, past the last page,
+page-cap reached) — and gate the purge on it. ⚠ **`app/api/listing-cache/route.ts` needed a signature change
+to be able to express it at all:** `fetchFlowtyPage` returned a bare `any[]`, so *"the page was empty"* and
+*"the page failed"* arrived as the same value — the fetcher now returns `{ nfts, failed }`. Its
+degraded-response `reason` changed from `flowty_empty` (a claim about the market) to `flowty_unreadable`
+(a claim about the read), which is the same correction this file records everywhere else.
+
+⚠ **`ufc-listing-cache`'s gate is deliberately NOT also `rows.length > 0`.** A complete sweep that legitimately
+returns zero listings SHOULD purge — that is the cache doing its job. Conflating the two is how the
+`upserted > 0` misfire got written in the first place: **gate on COMPLETENESS, never on VOLUME.**
+
+⚠ **Four pinned tests asserted the old behaviour** and were **INVERTED, not deleted** (the standing rule), each
+paired with a no-change control proving the complete-sweep path still purges. One fixture bug surfaced doing
+it: the Golazos `proxyStub` returned **HTTP 500** for any offset past its fixture, so *every* test in that file
+was exercising the error path by accident and the "purge happens" arm was vacuous. Past-the-fixture offsets
+now return `200 {nfts: []}`, with `pageErrorAtOffset` for deliberate injection. **A stub whose default is an
+ERROR makes every happy-path assertion in the file a lie.**

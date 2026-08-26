@@ -592,3 +592,91 @@ Three instruments gave three rates for that one pipeline and **none was wrong ab
 🚨 **`pipeline_runs` was blind to the dominant failure by construction:** the route writes `log_pipeline_run` in its **POST** phase and the failure killed the run in the **GET** phase, so the table held only runs that had already survived the thing that stops the pipeline. Inside that filtered population `egress_blocked` genuinely is ~80%. ⓘ The tell was arithmetic: two callers × 8/day should leave ~48 runs in the 73 h retention window; it held **7**.
 
 ➡ **Before quoting a pipeline's failure rate, ask (a) which callers exist and (b) at what point in the run the telemetry is written.** A rate from the pipeline's self-report and a rate from its scheduler are not comparable, and neither is "the pipeline's rate". **`max(last_seen_at)` on the OUTCOME table is the only instrument that sees every arm** — it is what refuted a "100% red for 5 days" claim in one query.
+
+---
+
+## Scoping an aggregate is an EQUIVALENCE claim — the `drain_fmv_cold_tail` fix, and the two ways it could have been mis-shipped (2026-08-25)
+
+**The defect, and the cleanest instance of "a `LIMIT` bounds OUTPUT, not COST" this repo has.**
+`drain_fmv_cold_tail`'s candidate query opened with
+
+```sql
+WITH latest AS (
+  SELECT edition_id, MAX(computed_at) FROM fmv_snapshots GROUP BY edition_id   -- every row, every collection
+)
+```
+
+and only then LEFT JOINed it to `editions` filtered to one collection. Draining a **518-edition** collection
+therefore grouped **~1.28M** snapshot rows, and the `LIMIT p_limit` sat *above* the aggregate where it could
+not help. Fixed by one `WHERE collection_id = v_collection_id` inside the CTE.
+
+**Measured 2026-08-26 ~04:15Z, `ufc_strike`, `EXPLAIN (ANALYZE, BUFFERS)`, instance at io_wait 8 / active 11
+(deliberately not in a saturation spell — a spell confounds every timing in BOTH directions):**
+
+| | buffers | snapshot rows | time | result |
+|---|---:|---:|---:|---|
+| as-written (unscoped) | 66,499 | ~1,281,000 | 38,615 ms | 0 rows |
+| scoped (shipped) | 741 | 4,391 | 173 ms | 0 rows |
+| | **~90×** | ~292× | ~223× | **IDENTICAL** |
+
+Both plans report *"Rows Removed by Filter: 518"* — same editions examined, same zero candidates. Served by
+the **already-existing** `fmv_snapshots_2026_collection_id_edition_id_computed_at_idx` as an Index Only Scan,
+so **no index was built** — which matters on an instance whose IO budget is at 100% by choice (R46).
+
+### ⭐ The durable rule: PROVE the equivalence over the population, do not argue it from the plan
+
+Scoping an aggregate changes the *answer* whenever the scoping column can disagree with the grouping key's
+own row. Here: a snapshot's `collection_id` versus its edition's. **Measured across every row —
+1,281,003 snapshots joined to editions, 0 with a differing `collection_id`, 0 NULL.**
+
+⚠ **This is the step that made it shippable rather than merely plausible.** The A/B alone proves the new form
+is *faster*; it proves nothing about whether it is the *same query*. Two plans returning the same rows on one
+collection at one instant is a sample, not an equivalence. **Run the disagreement count before you ship a
+scope, and record it — it is the only artifact a reverter can check.**
+
+### ⚠ A `CREATE OR REPLACE FUNCTION` does NOT reset the function's ACL — so the migration carries a MARKER, not a REVOKE
+
+`drain_fmv_cold_tail` is already anon/authenticated-revoked in prod. Re-issuing the body leaves that intact
+(verified live before and after: `has_function_privilege` anon=false, authenticated=false, service_role=true).
+**A defensive `REVOKE` in the migration would therefore have been the one statement in it that actually
+changed production** — a scope widening disguised as caution. The migration records an `anon-exec:` decision
+line instead. ⓘ Post-flight on any function change: `prosecdef`, `proconfig`, the three
+`has_function_privilege` reads, `check_secdef_anon_exec_drift()` (**read its jsonb array's LENGTH, not
+`count(*)`**) and `check_public_security_invariants()` (**0 rows when clean**).
+
+### ⛔ The near-mis-claim: a scheduled tick is only a control if it ran on the NEW body
+
+A `drain-fmv-cold-tail` tick at **04:17:14Z** wrote **89 rows, ok=true** against 6 and 13 on the two prior
+ticks — and it was tempting to publish that as validation. **It was not: the migration applied as version
+`20260826041837` = 04:18:37Z, so that tick ran on the OLD body.** ➡ **Compare the tick's timestamp against
+the migration's VERSION STRING, which is a UTC stamp of the apply, not against your memory of when you ran
+it.** The same rule as the production-caller control above: a manual invocation proves the function works,
+never that the *scheduled* caller does.
+
+⚠ **And "fast at doing nothing" is not a fix.** The first post-apply run (`ufc_strike`) returned
+`processed: 0` — correct, and evidence of speed only. A **write control** was run separately
+(`nfl_all_day`, limit 3 → `processed: 3, ask_only: 2, stale: 1`) and the rows confirmed **from outside the
+function** in `fmv_snapshots` at the run's exact `computed_at`.
+
+### 🚨 The cost was never "slow" — it was THREE COLLECTIONS SKIPPED, under `ok: true`
+
+Measured only *after* shipping the fix, which is the wrong order and worth admitting: the route
+`drain-fmv-cold-tail` sweeps **four** collections in one tick against a **45,000 ms budget**, calling the
+function once per slug and recording `skipped` / `slugs_attempted` / `deadline_hit` in `extra`. The unscoped
+aggregate cost ~38.6 s **per call**, so a tick that ran it cold burned the entire budget on the FIRST
+collection and abandoned the other three.
+
+**Baseline over the whole 73 h `pipeline_runs` window, everything strictly before the migration
+(`started_at < 2026-08-26 04:18:37+00`): 134 ticks · 42 `deadline_hit` (31.3%) · 415 slugs attempted ·
+121 slugs SKIPPED (22.6% of the 536 collection-slots).**
+
+⚠ **Every one of those 134 ticks recorded `ok: true`.** The 04:17:14Z tick reads
+`ok: true, rows_written: 89` — and its `extra` says `slugs_attempted: 1`,
+`skipped: ["nfl_all_day","laliga_golazos","ufc_strike"]`. ➡ **Same family as the `rows_written = 0` null
+instrument: a multi-arm pipeline's `ok` flag describes the ROUTE, not the arms.** For any budgeted
+fan-out route, read `deadline_hit` and the length of `skipped`, and treat a rising `rows_written` on a tick
+that attempted one arm as evidence of *starvation*, not throughput.
+
+⚠ **It also explains an anomaly that looked like the fix working.** The 89-row tick stood out against 6 and
+13 — but it is the *deadline-hit* signature (one collection given the whole budget), not the fix; the fix
+applied 83 seconds later. **The number that moved was a symptom of the defect, not of its removal.**

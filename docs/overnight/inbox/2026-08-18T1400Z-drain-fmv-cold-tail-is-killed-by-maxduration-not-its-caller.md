@@ -129,3 +129,38 @@ per-edition probe against `fmv_snapshots_2026_edition_id_computed_at_idx`). It w
 because every timing available right now is confounded by the saturation spell, and rewriting a
 SECDEF FMV function on confounded numbers is how the last three `fmv-recalc` characterizations went
 wrong. **Re-measure at a quiet hour, compare BUFFERS, and keep the candidate ORDER BY identical.**
+
+---
+
+## ✅ RESOLVED 2026-08-25 (Claude Code, interactive) — the DB-side fix shipped, exactly as this note specified
+
+**This filing's own exit condition was met literally:** *"re-measure at a quiet hour, compare BUFFERS, and
+keep the candidate ORDER BY identical."* Done, in that order, at io_wait 8 / active 11.
+
+**The change:** one `WHERE collection_id = v_collection_id` inside the `latest` CTE. The `ORDER BY` is
+byte-identical, no pricing branch moved, no index was created (migration
+`20260826043000_audit_20260826_cold_tail_drain_scope_latest_cte_to_collection.sql`, applied as version
+`20260826041837`).
+
+| `ufc_strike`, EXPLAIN (ANALYZE, BUFFERS) | buffers | rows grouped | time | result |
+|---|---:|---:|---:|---|
+| as-written | 66,499 | ~1,281,000 | 38,615 ms | 0 rows |
+| scoped | 741 | 4,391 | 173 ms | 0 rows |
+
+Both plans remove the same 518 rows by filter. Served by the **existing**
+`fmv_snapshots_2026_collection_id_edition_id_computed_at_idx`.
+
+⭐ **Equivalence proven over the population before applying, not argued from the plan:** 1,281,003 snapshots
+joined to editions, **0** with a `collection_id` differing from their edition's, **0** NULL.
+
+🚨 **AND THIS NOTE UNDERSTATED THE COST — the defect's real output was SKIPPED COLLECTIONS, not slowness.**
+Measured across the whole retention window strictly before the migration: **134 ticks, 42 `deadline_hit`
+(31.3%), 121 of 536 collection-slots SKIPPED (22.6%)** — every one of them under `ok: true`. The note's own
+observation that *"one slug alone can"* exceed the budget was the whole story and was filed as an aside.
+➡ **When a note says a single arm can exhaust a fan-out's budget, go count how often it does before
+proposing anything else.**
+
+⛔ **The `maxDuration` question this note flagged for Trevor is UNCHANGED and now probably moot** — with the
+aggregate gone the per-slug cost is ~0.2 s, so the 45 s budget should stop binding at all. **That is a
+prediction, and its falsifier is the `deadline_hit` rate over the next day's ticks**, not the timing of any
+one manual run.

@@ -642,6 +642,19 @@ Correct on the runner, broken under `cmd.exe`, **in three ways and only one of t
 Both bullets below were condensed to their rule in CLAUDE.md on 2026-08-22 to make room for the LAYOUT
 instrument. The rules still stand; only the examples moved.
 
+⚠ **A THIRD displacement, 2026-08-25** — the LAYOUT and BUILT-BUNDLE clauses of the
+"exclusion justified by another instrument" bullet were themselves condensed to a pointer, to make room
+for the EQUIVALENCE-PROOF rule the `drain_fmv_cold_tail` scoping earned. **Their full cases already live in
+this file** (`## LAYOUT is a defect class no gate in this repo can see` and
+`## Nothing here sees the BUILT BUNDLE either`); the CLAUDE.md wording itself, verbatim as it stood:
+
+> ⚠ **NOTHING here measures LAYOUT** — jsdom returns a ZERO box for every element, so a band shipped
+> **350px** tall against the ~100px it specified for four weeks with every gate green.
+> `e2e/mobile-layout.spec.ts` (scheduled e2e monitor) is the only instrument; a layout claim needs a real
+> browser. ⚠ **Nor the BUILT BUNDLE** — turbopack constant-folded a `+`-joined template and DROPPED a
+> quasi, so production rendered a sentence the source does not contain while vitest and `tsc` read it
+> correctly.
+
 > - ⚠ **Ask what RUNS a guard, not only whether it passes** — `check-tree-corruption.mjs` had no CI job
 >   and one manual caller, and its default staged-only mode inspects **nothing** on a CI checkout
 >   (`0 file(s) checked`, exit 0). Wiring it naively ships the theatre: **assert the count it inspected**.

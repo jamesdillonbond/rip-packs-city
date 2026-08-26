@@ -497,3 +497,31 @@ drifted figures were refreshed. The rules stand; the detail is here.
 
 > - ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
 > - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Now a **ban at zero** (`insights-server-pages-bound-their-reads`); ⚠ twice the failing page was one the pushing commit never touched.
+
+---
+
+## Two sandbox mechanics that cost a turn each (2026-08-25)
+
+### ⚠ Running `npm test` twice in quick succession OOM-kills the worker (exit 137)
+
+The full vitest suite (**1,379 files / ~15,114 tests**) is already near this container's memory ceiling. A
+second run started before the first has fully released **kills the agent worker with exit 137**, which
+surfaces as a *worker restart*, not as a test failure — so it reads like an infrastructure blip rather than
+something you caused. ⓘ Uncommitted work survived the restart in the observed case, but that is not a
+guarantee to rely on. **Run the suite once, let it finish, and commit before re-running it.**
+
+### ⚠ Editing a Cowork `SKILL.md` REDS the bundle-parity guard until you repack
+
+`docs/cowork-skills/` keeps every skill twice: `<name>/SKILL.md` (the source) and `<name>.skill` (the zip
+that is actually uploaded and installed). `npm run skills:bundles:check` binds them, so editing the source
+alone turns the guard red — **2 of 9 arms**, in the observed case, after adding one bullet to
+`rpc-nightly-autonomous-pass/SKILL.md`. The repack is one command:
+
+```bash
+node scripts/pack-cowork-skill.mjs rpc-nightly-autonomous-pass   # -> 9/9
+```
+
+⭐ **The meta-lesson is the standing rule that would have prevented it:** *grep for the guards that READ a
+file before you EDIT it.* The bundle is not a build artifact you can regenerate later — it is the thing the
+account installs, so a stale one ships stale instructions (see known-issues #32, which is exactly that
+failure in its un-guarded form).

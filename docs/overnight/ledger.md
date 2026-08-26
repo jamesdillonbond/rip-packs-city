@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — thread close-out: four durable lessons promoted, and the cold-tail defect's REAL cost measured after the fact
+
+**Docs only. No migration, no DB write, no prod-state change.** The memory half of the turn that shipped the
+`drain_fmv_cold_tail` scoping (entry above).
+
+**What was promoted, and what it DISPLACED.** CLAUDE.md stood at **39,931 / 40,000** characters. Two edits it
+needed were corrections, not additions: the `LIMIT`-bounds-OUTPUT bullet still described
+`drain_fmv_cold_tail`'s unscoped aggregate as a **live defect** (it is now fixed), and *"two
+measured-but-unshipped DB fixes"* was down to **one**. ⚠ **A memory file that states a fixed defect as open is
+the same class of lie this session was spent removing**, so those were not optional. Paying for the new
+EQUIVALENCE-PROOF rule meant displacing the **LAYOUT** and **BUILT-BUNDLE** clauses — moved **verbatim** into
+`testing-and-ci.md` (whose sections already carry both cases in full) behind a one-line pointer.
+**Final: 39,980, measured with `node -e` `.length`.**
+
+**Four promotions:**
+1. **[key-files-and-honesty.md] the SEVENTH shape — a partial sweep that PURGES**, the honesty defect whose
+   output is a *delete*. ⭐ The durable half: **`upserted > 0` reads like a completeness guard and is not one**
+   — it answers *"did I write anything"*, never *"did I see everything"*. Plus: **a stub whose DEFAULT is an
+   error makes every happy-path assertion in its file vacuous** (the Golazos fixture, found while inverting).
+2. **[database.md] scoping an aggregate is an EQUIVALENCE claim — prove it over the population**, with the
+   A/B, the `CREATE OR REPLACE`-does-not-reset-an-ACL note (why that migration carries a MARKER, not a
+   REVOKE), and the near-mis-claim: **compare a tick against the migration's VERSION STRING**, not against
+   your memory of when you applied it.
+3. **[tooling-gotchas.md] two sandbox mechanics** — `npm test` twice in quick succession OOM-kills the worker
+   (**exit 137**, presents as an infra blip); editing a Cowork `SKILL.md` reds bundle-parity until
+   `node scripts/pack-cowork-skill.mjs <name>` repacks it.
+4. **[inbox 2026-08-18T1400Z] resolution appendix** — that filing's stated exit condition was met literally.
+
+🚨 **AND A MEASUREMENT TAKEN AFTER SHIPPING, WHICH IS THE WRONG ORDER AND IS RECORDED AS SUCH.** Reading
+`pipeline_runs.extra` to find the falsifier, the route turns out to sweep **four** collections per tick
+against a **45,000 ms budget**. At ~38.6 s per call the unscoped aggregate could exhaust the whole budget on
+the FIRST collection. **Baseline, everything strictly before the migration: 134 ticks · 42 `deadline_hit`
+(31.3%) · 121 of 536 collection-slots SKIPPED (22.6%) — every one under `ok: true`.** ➡ **The defect's output
+was never "slow", it was three collections silently not drained**, and the 89-row tick that looked like
+validation is in fact the *deadline-hit signature*. Same family as the `rows_written = 0` null instrument:
+**a multi-arm pipeline's `ok` describes the ROUTE, not the arms — read `deadline_hit` and `len(skipped)`.**
+
+**Verified:** full suite **1,379 files / 15,114 tests, 0 failures** · `check-memory-doc-links.mjs` 110 links /
+24 files · `check-retired-rules.mjs` 6 rules / 33 surfaces / 8 quotes · both memory-file tests green (15) ·
+ledger instruments after writing: `^### ` +1, swallowed **3**, future-dated **0**.
+
+**Revert:** docs-only and inert — `git revert` the commit (find it by message: `git log --grep="memory"`).
+⚠ A revert must restore the CLAUDE.md **displacement** and the `testing-and-ci.md` verbatim copy **together**,
+or the LAYOUT/BUILT-BUNDLE case exists twice or not at all. **No DB half.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, DB migration) — `drain_fmv_cold_tail` grouped 1.28M snapshot rows to answer a question about 518 editions; one WHERE clause, **90× fewer buffers**
 
 **DB MIGRATION + REPO FILE. This changes production DB state.** Closes one of the two "measured-but-unshipped DB fixes" on CLAUDE.md's own prioritized list. ⭐ **Its stated blocker was a MEASUREMENT, not a decision** — *"re-measure at a quiet hour, compare **buffers**"* — so it was cleared by doing exactly that. (The sibling item, `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg, **remains Trevor's** because it re-seeds a pinned fixture.)
