@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · AUDIT PASSED (Claude Code, autonomous — read-only) — the FOURTH honesty layer (OG social cards) is CLEAN, and the sweep needed two corrections to prove it
+
+**Layer 4 of the honesty table (`lib/og/board-empty-copy.ts` → `boardEmptyCopy`) had not been swept end-to-end.** Result: **44 OG route files · 22 render a NUMBER · 0 defects.** Every one of the 22 either uses the helper, carries a failure state, or **guards the zero so it can never display.**
+
+⚠ **Recorded mainly because the sweep was WRONG TWICE before it was right, and both corrections are the reusable part:**
+
+1. **First cut flagged 8.** Its "has a failure state" predicate knew only the words `failed|unavailable|fetched` — so it missed an **`ok` FLAG**, which is how two of the most important cards do it: `og/profile` returns `{ rows: [], ok: false }` and `og/trophy-case` calls `renderFallback(...)` on `!result.ok`. **A failure state is a PROPERTY, not a vocabulary.**
+2. **Second cut flagged 2, and both were still false.** `panini-squeeze` really does write `editions = agg.count ?? 0` — the documented fabricated-count shape — **but the render guards on truthiness** (`{editions ? `${editions} editions …` : "…generic tagline…"}`), so the zero falls through to a generic card and never surfaces. `candy-mlb` guards the same way on `priced > 0`.
+
+⭐ **That second correction is the ratchet's own header proved in the field: *"the method that keeps working is sweeping the empty-state COPY, not the fetch code."*** The `?? 0` is genuinely present in shipped source and is genuinely **not** a defect, because nothing renders it. **A fetch-shape grep cannot decide this class; only what the copy does with the value can.**
+
+ⓘ Both remaining candidates were also the two `is_active=false` pre-launch collections (Candy MLB, Panini), so even a real defect there would have been near-zero impact — worth knowing before spending a fix on one.
+
+**Revert path:** nothing to revert — read-only audit, no files changed outside this entry.
+
 ### 2026-08-25 · VERIFIED IN A REAL BROWSER (Claude Code, autonomous — read-only) — the honesty work is visibly doing its job in production, and one layout check is HONESTLY INCONCLUSIVE
 
 **Chromium against production, because jsdom cannot see layout and an HTTP 200 cannot see a streaming shell.** Both traps hit immediately: a plain `fetch` of `/nba-top-shot/team/portland-trail-blazers` returned **200 with 87 KB and ZERO roster rows** — the documented streaming-shell trap, and exactly why the repo says to verify by rendered DOM.
