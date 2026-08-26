@@ -1,5 +1,15 @@
 # compute-golazos-pack-ev has skipped ~2–3 scheduled ticks (cadence-silent ~17.5h) while the pipeline itself is healthy every time it runs
 
+> ⛔ **ROOT CAUSE SUPERSEDED 2026-08-26 02:10Z** by
+> [the-golazos-scheduler-skip-is-refuted…](2026-08-26T0210Z-the-golazos-scheduler-skip-is-refuted-22pct-of-all-pg-net-dispatches-time-out.md).
+> **The scheduler did NOT skip.** `cron.job_run_details` shows jobid 44 fired **8 of 8** ticks in 48 h,
+> all `succeeded`, including all three this filing lists as missing. The dispatch always happens; the
+> `pipeline_runs` row does not, so the failure is downstream of pg_cron. Measured mechanism: **~22% of
+> all `pg_net` dispatches time out and 10% consume their entire timeout inside DNS**, at a rate that is
+> **flat across a saturation spell and a quiet window** — i.e. NOT the IO root cause this filing points at.
+> ✅ **What still stands:** the pipeline is genuinely healthy when it runs, the board is fresh, golazos is
+> thin, this is not urgent, and the instruction to re-measure rather than conclude was the right call.
+
 - **When:** filed 2026-08-25 ~18:09Z by rpc-daytime-monitor.
 - **Source:** `rpc_ops_snapshot()` stalled_pipelines + `check_pgcron_recent_failures()`; corroborated from `pipeline_runs`.
 - **Risk read:** LOW, and NOT user-facing right now. `pack_ev_board_max_stale_days` = 0.62 (breach_at 2), `pack_ev_board_pct_depleted` = 0, `pack_ev_publish_shortfall_pct` = 0.8 — the golazos pack-EV board is fresh. Golazos is a very thin market (fmv_by_collection golazos: MEDIUM 2, LOW 87, rest STALE/NO_DATA/ASK_ONLY), so the pack-EV compute has little to move even when it does run.
