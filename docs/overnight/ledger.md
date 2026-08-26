@@ -31,7 +31,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **This also means the earlier ledger line "the guard deploys with this push" was WRONG when written** — it was true of the intent and false of the outcome. Corrected here rather than left standing.
 
-**Revert path:** nothing to revert — a deployment trigger, no repo or DB change beyond this entry.
+✅ **CLOSED — VERIFIED LIVE.** The non-docs tip built: `dpl_3pmEsYzsTzmVhq25Zu8aWcErCeJr`, sha `088f1ece`, **READY**, `buildingAt < ready`, `lambdaRuntimeStats {"nodejs":19}`, and **production aliases attached (`www.rippackscity.com`, `rippackscity.com`)** — corroborated on four signals, not on `state` alone. CI **success** on `5f0b126f` and `e062e505`. **The Sentry quota guard and the telemetry fix are now actually running**, which is what makes the operator step safe to take: raising the Sentry quota BEFORE the guard was live would have burned the new budget in ~2 days.
+
+⚠ **One residual, stated rather than glossed:** I verified the deploy, not the SERVED BUNDLE. This repo records a case where turbopack constant-folded a `+`-joined template and dropped a quasi, so production rendered a sentence the source does not contain while `tsc` and vitest read it correctly. **The guard's matching is function-based rather than a joined string literal, so it is not the shape that bug hits** — but "READY on the right sha" is a deploy verification, and a bundle verification would mean grepping the served chunk.
+
+**Revert path:** nothing to revert — a deployment trigger, plus a `.gitignore` line. No DB change beyond this entry.
 
 ### 2026-08-25 · SHIPPED (Cowork cloud, interactive — one GRANT/RLS pair) — closed the anon-readable scratch table I had created, which was reddening the smoke test, and swept the estate for siblings
 
