@@ -70,6 +70,35 @@ carries verbatim trigger definitions after its function, and `v_pack_pipeline_he
 a VIEW pin with no dollar-quote at all. The narrower lone-`$` rule catches the real defect
 with zero false positives across all 181 files.
 
+✅ **CONFIRMED GREEN — and it closes the one thing this session was carrying as unverified.**
+CI run `32989796368` on `d730da3d`: **all 10 jobs success**, and the `DB invariants (SQL)`
+job log reads
+
+```
+PASS  refresh_wmc_fmv_changed.sql
+       ✓ refresh_wmc_fmv_changed invariants pass
+```
+
+⭐ **So the pin's NEW assertions did not merely stop failing to parse — they RAN against a
+real Postgres and passed.** That block is the whole point of the freshness-guarded change:
+**0xF** (a cache row at least as fresh IS used, and its equal-timestamp fixture pins `>=`
+rather than `>`), **0xG** (a STALE cache row is REJECTED and the true latest wins — the
+assertion that reddens on the retracted bare `COALESCE`), and **0xH** (a fresh-but-NULL cache
+row falls through and never blanks a price). Until this run every one of those was a reading
+of fixture arithmetic, not a result. ⓘ The disclaimer above — *"CI's `db-tests` job is their
+first real run"* — is now discharged rather than left standing.
+
+⚠ **AND A THIRD DOLLAR-SIGN BUG, IN THE ACT OF WRITING THIS PARAGRAPH.** The first attempt
+to insert it used `String.replace(anchor, add + anchor)` where the anchor text contained a
+backticked `$`. **`String.replace` interprets `$` sequences in the REPLACEMENT even when the
+pattern is a plain string**, and "$" followed by a backtick means *"everything before the
+match"* — so it spliced the entire file prefix into the middle of the ledger: **80 insertions
+and a phantom `### ` heading, 1093 → 1094.** ⭐ **The mandated post-write heading count is what
+caught it**, exactly as the ledger discipline says it should; the file was never committed.
+Redone with an index-based splice on a dollar-free anchor. **Use a REPLACEMENT FUNCTION, or
+`slice()`, whenever the replacement text is not under your control — a literal string is not
+literal here.**
+
 **Revert path:** `git revert d730da3d` restores the stray `$` (do not); the guard commit can
 be reverted independently.
 
