@@ -39,7 +39,20 @@ sources less than 48 hours earlier** and was still wrong by the time anyone read
 become durable by being carefully measured — a STATUS claim about in-flight work has a shelf life measured in
 hours.** The fix is not more diligence at write time; it is that the bullet now names what would falsify it.
 
-**Revert path:** `git revert <sha>` — docs-only. CLAUDE.md 39,928 → 39,924 (headroom 76).
+⚠ **RESOLVED IN UPSTREAM'S FAVOUR, DELIBERATELY.** A concurrent session made the SAME correction
+independently and its line is BETTER memory than mine — it names the transferable lesson (*"its stated
+blocker was a MEASUREMENT, not a decision, so re-read a 'blocked' item's blocker before inheriting it"*) and
+carries the post-ship numbers (**66,499 buffers / 38.6 s → 741 / 0.17 s**) that I did not have. **Took theirs
+wholesale rather than merging my phrasing in** — my provenance point (*verified from live `prosrc`, not the
+committed file*) survives in this entry and the session log, and CLAUDE.md is the file under ceiling
+pressure. ➡ **On a conflict, the question is which text is better MEMORY, not whose it is.**
+
+⚠ **That resolution put CLAUDE.md back to 20 characters of headroom**, undoing the room freed hours earlier.
+Paid once more, honestly: dropped `(filed in docs/overnight/inbox/)` — **a pointer at a directory of ~230
+filings that never names the file, so it is not retrievable data and nothing is lost.** The rule in that
+sentence and the concurrent session's lesson are untouched. **39,977 → 39,942, headroom 58.**
+
+**Revert path:** `git revert <sha>` — docs-only.
 
 ### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — thread close-out: four durable lessons promoted, and the cold-tail defect's REAL cost measured after the fact
 
