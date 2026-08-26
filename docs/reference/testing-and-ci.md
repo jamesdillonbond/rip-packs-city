@@ -922,6 +922,20 @@ standing state.** What survived the retraction is the structural half (the sitem
 and its 72%-tie paging key — see `known-issues.md`), because that half is a property of the code rather than
 a sample.
 
+### ⚠ The sitemap's 503-on-incomplete fix SILENTLY UNWATCHES four entity arms (observed 2026-08-26)
+
+Known-issues #28 fixed the silent sitemap truncation the right way — `fetchAllByCollection` now throws
+`SitemapReadIncomplete` and `app/sitemap/[id]/route.ts` turns that into a **503** so a crawler keeps the
+sitemap it already has. **That fix has a downstream consequence on the monitor that nobody would see from a
+run summary:** `fetchSitemapLocs` treats a non-200 as `[]`, so while segment 3 is degraded, the `moment`,
+`set`, `player` and `team` arms **skip — and a skip is a green job**.
+
+Observed across three dispatched runs: **4 skipped → 0 skipped → 4 skipped**, all four being the segment-3
+types, every run reporting **success**. ⚠ **So "the DOM monitor is green" does not mean those four page
+types were checked**, and the fix that made the sitemap honest is what makes the monitor quieter. The
+per-arm lines are the only place this shows. **Asserting the COUNT of arms that resolved would close it**;
+nothing does today.
+
 ## Nothing here sees the BUILT BUNDLE either (2026-08-22)
 
 CLAUDE.md records that no gate in this repo measures LAYOUT. The same is true of the **build artifact**:

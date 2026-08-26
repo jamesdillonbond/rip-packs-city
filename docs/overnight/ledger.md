@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive) — the edition-page Dapper CTA is now VERIFIED rather than merely shipped, and the sitemap's own fix quietly unwatches four monitor arms
+
+✅ **The CTA that no gate could see is now pinned and confirmed.** `dapperMarketEditionUrl`'s wiring into
+the edition page was unverifiable by every instrument in this repo — the coverage gates include
+`app/**/route.ts` but **not `page.tsx`**, and jsdom renders no page at all. `ENTITY_SPEC` entries can now
+carry an optional `expectText`, and `edition_golazos` carries `/View edition on Dapper/i`.
+
+⚠ **How it was landed matters more than that it landed.** The rule "do not pin an unverified assertion"
+still holds; the sandbox has **no egress** (the proxy 403s CONNECT to every host **including our own
+production**), so the CTA could not be seen from here. It was pinned and **immediately dispatched via
+`e2e-smoke.yml` and watched, with a revert ready** — rather than pinned and left for a scheduled run to
+discover, which is the thing that makes a monitor indistinguishable from a broken one.
+
+✅ **And the confirmation was read the RIGHT way.** Run 32928760902 returned **success** — which proves
+nothing on its own, because **this suite fail-softs and a SKIP is a GREEN job**. The evidence is the
+per-arm line: `✓ 2 entity · edition_golazos detail page renders (7.9s)`, with the assertion live. **The
+arm RAN.**
+
+🚨 **NEW, and it is a consequence of a GOOD fix.** Known-issues #28 made the sitemap honest by throwing
+`SitemapReadIncomplete` and serving a **503** rather than a truncated 200. `fetchSitemapLocs` treats a
+non-200 as `[]`, so **while segment 3 is degraded the `moment` / `set` / `player` / `team` arms SKIP**, and
+every such run still reports success. Observed across three dispatched runs: **4 skipped → 0 skipped → 4
+skipped**. ⚠ **"The DOM monitor is green" therefore does not mean those four page types were checked.**
+Asserting the COUNT of arms that resolved would close it; nothing does today. Recorded in
+[testing-and-ci.md](../reference/testing-and-ci.md).
+
+📌 **Memory committed** (this thread is being archived): the outbound-link surface — moment grain vs
+edition grain, why Golazos is the only mapped collection, the two gates, and the ONE instrument that can
+see the CTA — is now in [routes-and-surfaces.md](../reference/routes-and-surfaces.md) rather than only in
+this ledger. ⚠ **The NFL All Day entry stays unmapped and that is a filed decision NOT to act** — the kind
+nobody re-checks — closed by **one** confirmed `/nfl/edition/<id>` page.
+
+⚠ **Still open, and all three need a BROWSER, nothing else:** the NFL edition URL above; whether LaLiga
+Golazos ever shipped Series 2/3 (two internal instruments say the 575-edition Series 1 catalogue is
+complete, but both read the same contract and would be blind to a second one — inbox
+`2026-08-23T0020Z-…`).
+
+**Revert path:** `git revert <sha of "test(e2e): pin the edition page's Dapper CTA">`. Test + docs only —
+no DB or prod-state change.
+
+
 ### 2026-08-25 · SHIPPED (Cowork, interactive — DB cron reschedule, no code/migration) — three pg_cron jobs that failed with "job startup timeout" moved out of the worker-pool pileup
 
 **DB STATE ONLY. No code, no migration, no `main` change.** Surgical execution of the 0320Z worker-starvation filing. Root cause: `max_worker_processes=6` is shared across pg_cron / parallel-query / logical-replication while `cron.max_running_jobs=32` is fiction; the pool is idle on average (**1.81 concurrent**) but spikes to **6–8 for ~15 min/day**, and any job firing into a spike fails `job startup timeout`. Measured that only **THREE** jobs actually fail that way — the rest fail `statement timeout` (= disk-IO saturation, Lever 2, deliberately NOT touched here). Moved the three into the verified-quietest minutes (`:54–:56`, avg ≤0.71 concurrent from a 89-job p90-occupancy simulation), preserving each job's cadence AND owner (331 kept `cron_heavy`'s 600s budget by using `cron.schedule` under `SET LOCAL ROLE cron_heavy`, since `cron_heavy` has EXECUTE on `schedule` but NOT on `alter_job`):
