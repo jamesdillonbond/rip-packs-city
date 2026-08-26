@@ -543,3 +543,59 @@ unconditionally, so a failed recompute still told the collector their achievemen
 **unfalsifiable by construction** — the re-read that follows succeeds either way and simply returns the OLD
 data, so the UI looks exactly the same whether the recompute worked or not. Derive the confirmation from the
 WORK (`setUpdated(recomputed)`), never from reaching the end of the chain.
+
+## Three RE-RUNNABLE sweeps for the eighth shape (2026-08-26), and exactly what each can and cannot see
+
+The eighth shape has no expression to grep, so the work was in building detectors. All three are cheap,
+were run over the live tree, and **their blast radii differ in ways worth writing down** — each is blind to
+what the others catch.
+
+### Sweep 1 — a guarded setter with no failure state, reaching an empty CLAIM
+
+Client components only. Flag a file that (a) guards a setter on a read's success or early-returns inside a
+`.then`, (b) has **no** failure state, and (c) renders a sentence about emptiness. Condition (c) is what
+keeps it useful: a file that omits its section understates, which is safe.
+
+**200 client components → 4 candidates → 1 real.** The three false positives are the calibration evidence:
+`DashboardAlertsClient` gates on `!err` (the filter looked for `setError` and missed `setErr`),
+`ProfileClient` throws on `!r.ok`, `FollowButton` documents the rule in a comment. **Three of four were
+already right**, which is what a healthy sweep looks like.
+
+The real one: **`PlayersGridPaginated`'s `catch { setExhausted(true) }`** — a failed page marking the list
+COMPLETE, so a truncated roster rendered identically to a full one. ⚠ **Its sibling
+`EditionsGridPaginated` had been fixed long before and still carries the comment *"THIS USED TO
+`setExhausted(true)`"***. One copy fixed, the other never grepped for. Now a **ban at population zero**:
+`__tests__/catch-blocks-do-not-assert-completeness.test.ts`.
+
+### Sweep 2 — a TEST that pins the defect
+
+Two variants, and **the first one I ran was too narrow, which is the lesson.**
+
+- **Numeric variant** (a failure mock + `getByText("…0…")`): **2,940 `it()` blocks / 247 files → clean**,
+  once narrowed to component renders and PRESENCE only. ⚠ A first cut read **41** because it could not tell
+  `getByText("0")` (the defect) from `queryByText("0").toBeNull()` (the fix), and flagged every ROUTE test
+  correctly asserting `ok:false`.
+- ⛔ **That numeric sweep is BLIND to the affordance variant, and I stated its result too broadly before
+  noticing.** An **affordance** sweep (failure mock + an absence assertion naming a button) flags **10**, of
+  which 8 are legitimate controls asserting an ERROR message is absent. The other two were real, and one was
+  **provably blind**: `component-EditionsGridPaginated`'s `it("marks exhausted on a fetch error…")` still
+  passed after re-introducing the defect — **11/11 green** — because the button's label changes to "Retry",
+  so `queryByRole(name: /Load 2 more/)` is null under the fix AND the defect.
+
+⭐ **Asserting that an affordance DISAPPEARED is almost always the wrong assertion.** Assert what the reader
+can now SEE and DO.
+
+### Sweep 3 — a file that KNOWS the idiom and applied it to one field only
+
+The highest-signal of the three. Flag a file using the honest `X.error ? null : …` on at least one field
+**and** `Y.data ?? []` on a sibling. Such a file demonstrably knows the trap.
+
+**1,152 files → 3 hits, 0 new defects.** `/api/rewards/summary` was the live one (fixed: `redemptions` was
+coerced while `referralCount` three lines below carried the honest idiom **and a comment explaining the exact
+trap**). `app/api/badges/route.ts` throws on `dataResult.error` first — a false positive. `lib/pinnacle/
+moment-detail.ts` is a **documented deliberate decision**: its own comment says the other reads degrade to an
+omitted section or an em-dash, "the safe direction — so this is the one that needed a flag."
+
+⭐ **The reusable form: search for INCONSISTENCY WITHIN A FILE, not for the bad expression.** Code that fixed
+the trap once and missed a sibling is both the likeliest defect and the cheapest to confirm — the evidence is
+already written in the file, usually a few lines away.
