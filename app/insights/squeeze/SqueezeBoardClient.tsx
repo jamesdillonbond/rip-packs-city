@@ -239,6 +239,28 @@ export default function SqueezeBoardClient({
     }
   }, [filtered])
 
+  // ⚠ COUNTED FROM THE ROWS IN HAND, never baked. The Methodology block used to
+  // read "this affects 10 of the 8,859 editions that carry a live ask" — two
+  // hardcoded population figures. Measured live 2026-08-26 the board's own view
+  // holds 2,944 rows with a live ask of which 12 are disconnected, so BOTH
+  // numbers had drifted and the denominator was ~3x too large.
+  //
+  // Deriving from `rows` rather than re-baking a fresher constant is what makes
+  // it stay true: the sentence now describes exactly the set the reader is
+  // looking at, and it says so ("the rows loaded here") rather than implying an
+  // estate-wide census the board never had. Renders nothing at all when no row
+  // carries an ask — a "0 of 0" sentence is noise, not information.
+  const askDisconnect = useMemo(() => {
+    let withAsk = 0
+    let disconnected = 0
+    for (const r of rows) {
+      if (r.low_ask == null) continue
+      withAsk++
+      if (r.low_ask_disconnected) disconnected++
+    }
+    return { withAsk, disconnected }
+  }, [rows])
+
   const tweetIntent = useMemo(() => {
     const text = `Top Shot displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
     const url = `${SITE_URL}/insights/squeeze`
@@ -509,8 +531,16 @@ export default function SqueezeBoardClient({
             <em> &mdash; &ldquo;ask &gg; FMV&rdquo;</em> rather than as a price:
             at that distance it is either a troll listing or a stale FMV, and
             either way it is not what the moment trades for. The row itself is
-            never removed &mdash; hover the flag to see the listed number. Today
-            this affects 10 of the 8,859 editions that carry a live ask.
+            never removed &mdash; hover the flag to see the listed number.
+            {askDisconnect.withAsk > 0 ? (
+              <>
+                {" "}
+                On the rows loaded here that affects{" "}
+                {askDisconnect.disconnected.toLocaleString("en-US")} of{" "}
+                {askDisconnect.withAsk.toLocaleString("en-US")} editions carrying
+                a live ask.
+              </>
+            ) : null}
           </p>
           <p>
             We start at 50% squeeze because below that, the marketplace UI

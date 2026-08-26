@@ -339,7 +339,13 @@ const CARDS: Card[] = [
           slug: "/insights/candy-mlb",
           eyebrow: "Chain Two · Live",
           title: "Candy MLB ICONs",
+          // The 2026 MLB Base Series ICONs is a CLOSED print run, not a growing
+          // population — verified against the live DB 2026-08-26 at exactly 125.
+          // Unlike a cohort or an ask book this cannot drift, so the literal is
+          // a fact rather than a decaying snapshot. Re-verify if Candy ever
+          // ships a second ICONs series.
           blurb:
+            // baked-count-ok: closed 125-edition print run, verified 2026-08-26
             "Our first non-Flow board. 2026 MLB Base Series ICONs on Solana — secondary FMV, best offers, pack EV, and holder concentration across all 125 editions and the Rainbow parallels. The market is days old, so this is an early read, not a census.",
           cta: "Open the Candy board",
           available: true,

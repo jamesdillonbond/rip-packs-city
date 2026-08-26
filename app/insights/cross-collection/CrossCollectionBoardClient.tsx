@@ -155,11 +155,28 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
   // the cohort one, which is the 50-hour lie this exists to stop.
   const overlapComputedAt = overlap.find((o) => o.computed_at)?.computed_at ?? null
 
+  // ⚠ The cohort size is READ, never baked. This string used to say "143
+  // wallets" while the lede three lines below rendered the live
+  // `stats.cohort_size` — so the page and the text the user broadcast disagreed,
+  // and the live number was 220 by 2026-08-26.
+  //
+  // This is the worst of the four sites the baked figure appeared in: the whole
+  // funnel purpose of the board is that a collector publishes it, so a wrong
+  // number here goes out under THEIR name. One step removed from the honesty
+  // canon's "a false claim about the reader's own account".
+  //
+  // A null count drops the number rather than substituting one. `?? 0` would
+  // hand the user "0 wallets hold 3+ Flow collections" to tweet.
   const tweetIntent = useMemo(() => {
-    const text = `143 wallets hold 3+ Flow collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. The cross-collection cohort, no signup:`
+    const cohort = typeof stats?.cohort_size === "number" ? stats.cohort_size : null
+    const lead =
+      cohort === null
+        ? "Wallets that hold"
+        : `${cohort.toLocaleString("en-US")} wallets hold`
+    const text = `${lead} 3+ Flow collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. The cross-collection cohort, no signup:`
     const url = `${SITE_URL}/insights/cross-collection`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [stats?.cohort_size])
 
   return (
     <main style={styles.page}>
