@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — the stale-`index.lock` git gotcha reaches the inbox, and the mount is reconciled with origin
+
+**What shipped:** the inbox candidate `2026-08-26T0411Z-git-gotcha-a-stale-index-lock-makes-merge-print-Updating-while-HEAD-never-moves.md`, plus its `INDEX.md` entry and the **two counts** that file asserts (total 239 → 240; the `2026-08-25` day heading 8 → 9). Both inbox guards run green (`inbox-index-lists-every-filing`, `inbox-is-append-only-since-the-rule` — 8/8).
+
+**The finding it carries (docs-only, NOT yet promoted):** a zero-byte `.git/index.lock`, 5 minutes old with **no git process alive**, silently ate a `git checkout --` and a `git merge` — and the merge still printed `Updating d347b101..45481fc1`, which reads as success **while HEAD never moved**. The suggested promotion is one paragraph into `docs/reference/tooling-gotchas.md`: **verify a merge/checkout by `git rev-parse HEAD` before and after, never by the printed `Updating X..Y` line.** Its second lesson (two identical-looking push rejections, unrelated causes) is a reinforcement of the existing error-string rule, not new.
+
+**Also this turn, and deliberately NOT a ship:** the mount carried a stale `M docs/overnight/ledger.md` whose content was already on origin. Resolved by fast-forward, not by a hand-edit — `git merge --ff-only origin/main` over the docs-only `3592f1d6`. ⚠ Per the very gotcha being filed, that was verified by the **sha** (`2f2736c5` → `3592f1d6`), not by the printed `Fast-forward` line; `.git/index.lock` was confirmed absent first.
+
+⭐ **The filing earned its keep inside the turn that filed it.** The first attempt to write THIS entry spread a JS **string** into `Array.splice`, which spreads its CHARACTERS: the ledger took **2,063 single-character lines** and the heading vanished. Nothing threw, and a diff-stat of `+2063` looks like a large but plausible append. **The only instrument that saw it was the mandated post-write `grep -c '^### '`, which stayed at 1063 instead of rising to 1064** — the count-must-rise rule is not ceremony, it is the detector. Repaired by `git checkout --` (verified by an empty diff, not by the command exiting 0) and re-applied with an array. ⓘ This entry was then re-spliced a second time into upstream `2b51a515` after a concurrent session pushed two commits mid-turn — resolved by the documented recipe (`git show :2:`, splice at the first `^### `), never by hand-editing the markers.
+
+**Revert path:** docs-only and inert — `git revert` the commit (find it by message: `git log --grep="stale-index-lock"`; ⚠ pre-2026-08-03 shas no longer resolve). A revert must restore **all three** edits together: deleting the filing without also dropping its `INDEX.md` entry and both counts reds `inbox-index-lists-every-filing` in either direction. **No DB half — nothing here touched production state.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, web sandbox) — thread close-out: memory-file headroom restored, the ISR decision promoted out of the inbox into the register, #32 re-verified
 
 Docs only. No migration, no DB write, no prod-state change. Closing pass on the multi-day memory refresh.
