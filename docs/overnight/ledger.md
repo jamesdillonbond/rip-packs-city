@@ -10,6 +10,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ⛔ I TURNED `main` RED FOR 35 MINUTES WITH ONE STRAY `$`, and the guard that should have caught it is structurally blind — fixed, plus a new guard proven against the offender
+
+**Repo only (one pin file + one new guard). No prod state.**
+
+`supabase/tests/refresh_wmc_fmv_changed.sql` ended its verbatim block with
+**`$function$;$`** — one extra dollar sign. psql failed the **whole file**:
+
+```
+psql: .../supabase/tests/refresh_wmc_fmv_changed.sql:213: ERROR:  syntax error at or near "$"
+LINE 1: $
+```
+
+**`DB invariants (SQL)` was red from `a2ab3bf2` (14:51Z) to the fix (16:26Z), and four
+commits rode on top of it.** ⓘ The commit before it, `95d48c1c`, is green — so this is
+mine, not an inherited red, and that was checked rather than assumed.
+
+**Cause:** I assembled the pin file with a script that ran `ddl.replace(/\s+\$/, '\$')` for
+no reason I can now defend. The regex is unanchored and mangled the terminator. Repaired by
+rebuilding the DDL block **from the migration verbatim** and diffing byte-for-byte:
+**4,973 vs 4,972 bytes, first divergence at offset 4,972** — exactly the stray character,
+and nothing else.
+
+⭐ **WHY EVERY LOCAL CHECK STAYED GREEN, which is the durable half.** `npm test` passes
+(nothing in vitest parses SQL) and — more interestingly — **the drift guard passes too, and
+is structurally incapable of catching this.** `extractSqlFn` ends its slice at
+`rest.indexOf(";", closeRel + tag.length)`, the first semicolon after the dollar-quote
+terminator. **Anything after that semicolon is outside the region it compares**, so the pin
+and the migration matched byte-for-byte on the extracted text while the file itself would
+not parse. ⚠ **A guard comparing two things can be perfectly correct about them and still
+be silent about the file that contains them** — the extraction boundary IS the blast radius,
+which is this repo's own recorded rule about a guard's derivation fixing what it can see.
+
+⚠ **And the honest note in the previous entry turned out to be load-bearing**: it said *"no
+Postgres or Docker on this box, so the pin's new assertions have never been executed — CI's
+`db-tests` job is their first real run."* It was, and it found this. **The note was right;
+what was missing was treating it as a reason to watch CI rather than a disclaimer.** ⭐ The
+rule that actually failed here is the one already in CLAUDE.md — *`npx vitest run <file>`
+proves the FILE, not the tree* — extended one step: **a green local suite proves the local
+suite, not the CI matrix, and `db-tests` is a job no local run reproduces.**
+
+**New guard shipped in `__tests__/db-invariants-drift-guard.test.ts`:** no
+`supabase/tests/*.sql` may contain a `$` outside a dollar-quote tag (`$$` / `$tag$`) or a
+positional parameter (`$1`), with line comments stripped first so prose prices like `$100`
+do not trip it.
+
+⭐ **PROVEN IN BOTH DIRECTIONS BEFORE COMMITTING**, per the repo's rule on scripted guards:
+**[A]** silent on the clean tree — **181 files, 0 hits**, so it is satisfiable at a
+population of zero and cannot punish its own success; **[B]** loud on the **known offender** —
+the exact `$function$;$` line, reconstructed in the test from the real failure, produces
+**1 hit**. [B] ships as a permanent negative control, so a future edit that quietly makes the
+matcher vacuous reds instead of passing. A third assertion pins that the sweep inspected a
+non-zero number of files, because a guard that silently inspects nothing has shipped green
+here before.
+
+⚠ **Deliberately NOT attempted: a "nothing after the DDL semicolon" rule.** It was measured
+first and it **false-positives on a legitimate file** — `rpc_guard_block_destructive.sql`
+carries verbatim trigger definitions after its function, and `v_pack_pipeline_health.sql` is
+a VIEW pin with no dollar-quote at all. The narrower lone-`$` rule catches the real defect
+with zero false positives across all 181 files.
+
+**Revert path:** `git revert d730da3d` restores the stray `$` (do not); the guard commit can
+be reverted independently.
+
 ### 2026-08-26 · SHIPPED (prod index, built CONCURRENTLY) — one INCLUDE column restores the Index Only Scan that `topshot_serial_board_candidates` lost; known-issues #30's hypothesis is now MEASURED
 
 **Prod state (one `CREATE INDEX CONCURRENTLY`, via the one-off pg_cron recipe) + a
