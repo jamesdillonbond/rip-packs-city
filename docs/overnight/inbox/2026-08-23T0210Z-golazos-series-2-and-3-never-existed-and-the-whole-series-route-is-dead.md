@@ -360,3 +360,41 @@ serve 253 KB / 228 KB in ~0.6 s with 0 "Couldn't load" markers.
 **18:59 tick**. A check is scheduled for 19:04 UTC. If it fails again the answer is to take the
 FMV rebuild off the critical path entirely and give it its own job — the coupling is the part I
 got wrong, not just the cost.
+
+---
+
+## ✅ THE 18:59 TICK FALSIFIER IS READ 2026-08-25 ~20:15 PT (2026-08-26 03:15Z, Claude Code interactive) — the fix HELD, and the one failure exposes that §2's isolation cannot work
+
+This filing closed on a named, unverified falsifier: *"the real 18:59 tick … If it fails again the answer is to take the FMV rebuild off the critical path entirely and give it its own job — the coupling is the part I got wrong."* **Three days of ticks now exist.**
+
+### 1. The fix held, by a wide margin
+
+`cron.job_run_details`, jobid **357** `rpc-series-detail-rollup` (`59 * * * *`, `cron_heavy`), 2026-08-23 03:59Z → 2026-08-26 02:59Z: **72 ticks, 71 succeeded, 1 failed.** Against the pre-fix state of *every* series page returning 500, that is the fix working. ✅ **The incremental-watermark rebuild is the durable half and it is doing its job.**
+
+### 2. ⚠ But the one failure is the coupling the filing predicted, and §2's guard against it CANNOT FIRE
+
+The failure is `57014 canceling statement due to statement timeout` at 600.0 s, and its context names **the protected line itself**:
+
+```
+PL/pgSQL function refresh_edition_fmv_current() line 8 at SQL statement
+PL/pgSQL function refresh_series_detail_rollup(integer) line 16 at assignment
+```
+
+Line 16 is `v_fmv := public.refresh_edition_fmv_current();` — **inside** the `BEGIN … EXCEPTION WHEN OTHERS` block this filing added, described as *"Isolated so it cannot take the job down: a stale edition_fmv_current still produces a correct-shaped rollup, one tick behind."*
+
+🚨 **`EXCEPTION WHEN OTHERS` does not catch `query_canceled`.** PostgreSQL excludes `QUERY_CANCELED` and `ASSERT_FAILURE` from `OTHERS`, and a `statement_timeout` raises exactly 57014. Re-verified on this instance 2026-08-26, both directions, on a scratch function dropped afterwards: `WHEN OTHERS` **escaped**; `WHEN query_canceled` **caught**. ⚠ **So the isolation protects against a logic error in the FMV rebuild — which has never happened — and not against the timeout, which is the only failure this job has ever had.**
+
+⛔ **This was already known and is why it matters.** It was established **2026-08-15** (the trust-precompute 999-sentinel filing) — *eight days before* this isolation shipped. It was recorded in `trust-board-and-safety.md` as a trust-board fact, so an author working on series precompute had no reason to find it. **Now promoted to [`database.md`](../../reference/database.md) as the PL/pgSQL fact it actually is.**
+
+### 3. ⛔ Do NOT fix it by widening the clause
+
+`WHEN query_canceled OR OTHERS` was applied and reverted on 2026-08-15. The decisive measurement: **after a cancel is caught the timer is not re-armed**, so everything after the handler runs **unbounded**, holding a pooled connection on the instance whose saturation caused the timeout. **A bounded failure traded for an unbounded one.**
+
+### 4. ➡ The remedy is the one this filing already named
+
+**Take the FMV rebuild off the critical path and give it its own pg_cron entry.** Its own top-level statement means a fresh budget, no reach into the rollup loop, and `cron.job_run_details` naming it directly. ⚠ **Not shipped here** — jobid 357 is **`cron_heavy`-owned**, so it cannot be rescheduled from a session-reachable role, and splitting the function is a migration plus a new schedule. ⓘ **Severity is low and stated so the decision is proportionate:** 1 failure in 72, costing the 26 series pages one hour of staleness, on aggregates that refresh hourly.
+
+### 5. What I did NOT establish
+
+- ⛔ **Why a FULL rebuild ran at all.** The failing statement is the unbounded `DISTINCT ON (edition_id) FROM fmv_snapshots` full-pass, which this filing says *"survives only for a cold start"*. What made the watermark path fall back was not investigated.
+- ⛔ **Whether the 1-in-72 rate is stable.** One failure is too few to separate a cold-start artifact from a recurring one.

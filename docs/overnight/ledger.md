@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — a rule filed under the subsystem where it was found was invisible to the next subsystem, so an isolation block that CANNOT catch a timeout shipped eight days later
+
+**DOCS ONLY (inbox appendix + `database.md`). No code, no DB change, no prod-state change.** Reading the named falsifier the 08-23 golazos/series filing left open.
+
+✅ **THE FALSIFIER RESOLVES TO "THE FIX HELD".** jobid **357** `rpc-series-detail-rollup`, 2026-08-23 03:59Z → 2026-08-26 02:59Z: **72 ticks, 71 succeeded, 1 failed.** Against a pre-fix state of *every* series page returning 500 with a 57014, the incremental-watermark rebuild is working. **That half is closed.**
+
+🚨 **THE ONE FAILURE IS THE INTERESTING PART: IT LANDED ON THE PROTECTED LINE.** The failure context names `refresh_edition_fmv_current() line 8` → `refresh_series_detail_rollup() line 16 at assignment` — **line 16 is inside** the `BEGIN … EXCEPTION WHEN OTHERS` block that filing added, described as *"Isolated so it cannot take the job down."* **`EXCEPTION WHEN OTHERS` does not catch `query_canceled`.** PostgreSQL excludes `QUERY_CANCELED` and `ASSERT_FAILURE` from `OTHERS`; a `statement_timeout` raises exactly 57014. ⚠ **So the isolation protects against a logic error that has never happened, and not against the timeout, which is the only failure this job has ever had.**
+
+⭐ **AND I RE-DERIVED A RULE THIS REPO ALREADY OWNED, WHICH IS THE FINDING.** This was established **2026-08-15** by the trust-precompute 999-sentinel work — **eight days BEFORE the isolation shipped** — and recorded in `trust-board-and-safety.md`. **It is not a trust-board fact; it is a PL/pgSQL fact.** An author working on series precompute had no reason to open the trust-board doc. ⭐ **A rule filed under the SUBSYSTEM where it was found is invisible to the next subsystem that needs it** — so it is now promoted to `database.md`, beside the `SET`-clause-vs-`COMMIT` trap added earlier today, which is its sibling (both are *the exception/transaction machinery does not do what the code assumes*).
+
+⚠ **VERIFIED ON THE INSTANCE, BOTH DIRECTIONS, RATHER THAN QUOTED.** A scratch function under `statement_timeout='300ms'` around a `pg_sleep(3)`: `WHEN OTHERS` **escaped the handler** (57014 propagated); the same block with `WHEN query_canceled` **caught it**. ⓘ Both probes dropped immediately and the absence confirmed — new `public` functions are anon-EXECUTABLE by default on this DB, so a forgotten probe is a small surface, not a no-op.
+
+⭐ **THE CLASS SWEEP FOUND A SECOND LIVE INSTANCE, AND A DECISIVE ZERO.** Of 432 plpgsql functions, **26** carry `WHEN OTHERS`, **exactly 1** names `query_canceled`, and **5** sit on a timeout-relevant path. Beyond the trust legs already documented: **`public_board_liveness_sweep`** comments *"A TIMEOUT is SLOW, not EMPTY"* and branches on `v_sqlst = '57014'`. **`public_board_liveness_history` holds 1,601 rows with ZERO `err` values ever, and zero beginning `57014`.** ⓘ **No outcome impact** — the sibling `elapsed_ms > max_ms` path still counts slow boards — **but it reads as a safety net that is not one**, which is the shape this repo keeps paying for. ⓘ Also re-ran the sentinel check the reference doc says to re-run rather than quote: `rpc_trust_health_precompute where value = 999` is **still 0**.
+
+⛔ **I DID NOT WIDEN THE CLAUSE, AND THAT IS DELIBERATE.** `WHEN query_canceled OR OTHERS` was applied and **reverted** on 2026-08-15 on three measurements, the decisive one being that **after a cancel is caught the timer is NOT re-armed** — everything after the handler then runs **unbounded**, holding a pooled connection on the instance whose saturation caused the timeout. **A bounded failure traded for an unbounded one.** The repo had already paid to learn this; re-applying it would have been the third time.
+
+➡ **The remedy is the one the filing itself named: give the FMV rebuild its own top-level pg_cron statement.** ⚠ **Not shipped** — jobid 357 is **`cron_heavy`-owned** (no session-reachable role can reschedule it) and splitting the function is a migration plus a new schedule. ⓘ **Severity stated so the decision stays proportionate: 1 failure in 72, costing 26 series pages one hour of staleness on hourly aggregates.** This is a queued structural change, not an incident.
+
+⛔ **NOT established:** why a FULL rebuild ran at all (the failing statement is the unbounded `DISTINCT ON (edition_id) FROM fmv_snapshots` full-pass that the filing says *"survives only for a cold start"* — what made the watermark path fall back was not investigated), and whether 1-in-72 is a stable rate or a cold-start artifact.
+
+**Verified:** `check-memory-doc-links.mjs` — 105 relative links across 24 files all resolve · full `npm test` green · scratch probe functions dropped and their absence confirmed · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` — removes the `database.md` section and the inbox appendix. No code, no DB half.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, code+test) — the board handed collectors a false number to publish under their own name, and the class sweep the filing asked for found a second board nobody had looked at
 
 **CODE + TEST. No DB, no migration, no prod-state change.** Ships the 08-22 filing *"the cross-collection board hardcodes 143 wallets in SEO and share text"*, whose last section — **"Sweep the class, do not fix the row … the class check has NOT been run"** — is the part that paid.

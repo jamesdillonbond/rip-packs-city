@@ -194,6 +194,50 @@ Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, p
 
   ⚠ **ALSO DISPLACED VERBATIM FROM that same rule (2026-08-23), to make room for the production-caller control below — two fragments, in full:** *"(8 artifact-only views; a sweep without it breaks 3 live boards)"* (i.e. when enumerating callers, the Cowork artifacts' HTML is a source outside BOTH the repo and the catalogue, and a sweep that omits it breaks three live boards) and, on the seventh source, *"; the 08-22 canary greps ZERO callers, runs every 30 min"* (an EDGE function invisible to all six sources *and* to `cron.job`, because cron-job.org drives it).
 
+## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
+
+**PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
+and `ASSERT_FAILURE`"*, and a `statement_timeout` raises exactly `query_canceled` (57014).**
+Re-verified on this instance 2026-08-26, both directions, on a scratch function dropped afterwards:
+
+| probe | result |
+|---|---|
+| `BEGIN … EXCEPTION WHEN OTHERS` around a cancelled `pg_sleep` | **escaped the handler** — 57014 propagated |
+| the same block with `WHEN query_canceled THEN` | **caught** |
+
+⚠ **THIS IS NOT NEW — it was established 2026-08-15 — AND IT RECURRED ANYWAY, WHICH IS WHY IT IS
+HERE.** The original analysis lives in
+[trust-board-and-safety.md](trust-board-and-safety.md) under the 999-sentinel bullet, filed as a
+**trust-board** fact. It is not a trust-board fact; it is a **PL/pgSQL** fact. Eight days later
+`refresh_series_detail_rollup` shipped a `BEGIN … EXCEPTION WHEN OTHERS` block whose stated purpose
+is *"Isolated so it cannot take the job down"* — and it is structurally incapable of catching the
+only error that job has ever had. ⭐ **A rule filed under the subsystem where it was found is
+invisible to the next subsystem that needs it.**
+
+**The two live instances, measured 2026-08-26:**
+
+- **`refresh_series_detail_rollup`** — 72 ticks over 3 days, **71 ok / 1 failed**, and the failure is
+  `57014` propagating **from the protected line itself** (`refresh_edition_fmv_current() line 8` →
+  `refresh_series_detail_rollup() line 16 at assignment`). The isolation is claimed to keep 26
+  indexable series pages served from the previous hour's copy; on a timeout it does not run.
+- **`public_board_liveness_sweep`** — its per-board handler comments *"A TIMEOUT is SLOW, not
+  EMPTY"* and branches on `v_sqlst = '57014'`. **`public_board_liveness_history` holds 1,601 rows
+  with ZERO `err` values ever recorded, and zero beginning `57014`.** That branch has never fired
+  and cannot. ⓘ **No outcome impact** — the sibling `elapsed_ms > max_ms` path still counts slow
+  boards — but it reads as a safety net that is not one.
+
+⛔ **DO NOT "FIX" IT BY WIDENING THE CLAUSE TO `WHEN query_canceled OR OTHERS`.** That was applied
+and reverted on 2026-08-15 on three measurements, the decisive one being that **after a cancel is
+caught the timer is NOT re-armed** (probe: first `pg_sleep(3)` cancelled and caught, second ran to
+completion unbounded). Catching the cancel buys a reachable handler at the price of running
+everything after it **with no bound at all**, holding a pooled connection on the instance whose
+saturation caused the timeout — **a bounded failure traded for an unbounded one.**
+
+➡ **The remedy is structural and it is the same one every time: give the fragile step its own
+TOP-LEVEL statement** (a separate pg_cron entry), so it gets a fresh budget, its timeout cannot
+reach its neighbours, and `cron.job_run_details` names it directly. ⚠ Check `cron.job.username`
+first — a `cron_heavy`-owned job cannot be rescheduled from any session-reachable role.
+
 ## 🚨 A ROUTINE WITH AN ATTACHED `SET` CLAUSE CANNOT `COMMIT` — and that makes SECURITY DEFINER and transaction control MUTUALLY EXCLUSIVE here (2026-08-23, re-confirmed 2026-08-26)
 
 **PostgreSQL refuses `COMMIT`/`ROLLBACK` inside any routine carrying an attached `SET` config clause**
