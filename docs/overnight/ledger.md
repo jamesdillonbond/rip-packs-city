@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · ATTRIBUTION (Claude Code, interactive) — Smoke Tests went red on THREE consecutive pushes and it was the saturation spell, not any of them
+
+**No change shipped. Recorded so the next reader does not mis-attribute a red run to a commit, and does not "fix" a docs-only change.**
+
+⚠ **CLAUDE.md: *a red run is not automatically yours — read the failing JOB first.* Three pushes in eleven minutes went red on `Smoke Tests` while `CI` passed on every one of them**, and the three commits come from **two different sessions** and are docs/guard-only.
+
+| time (UTC) | commit | Smoke |
+|---|---|---|
+| 03:18 | `b0bdaf88` | ✅ |
+| **03:39** | `6b58a545` (mine, ratchet) | ❌ |
+| **03:44** | `39f02286` (other session) | ❌ |
+| **03:50** | `bf70cba2` (mine, guard comment) | ❌ |
+| 03:55 | `d347b101` | ✅ |
+
+⭐ **THE CONTROL IS AN INDEPENDENT INSTRUMENT SAMPLED IN THE SAME MINUTES.** `pg_stat_activity`, read directly during the window: **io_wait 31 / active 34** at 03:40Z, **30 / 34** at 03:50Z, and **11 / 19** at 04:00Z. **The failure window and the spell window coincide, and the recovery coincides with the spell easing.**
+
+✅ **The instrument did its job, and the hard failure is a REAL production symptom, not noise:** `HARD FAIL: edition page has Activity section — HTTP 200, Activity=false`. That is a page serving **200 with a degraded panel** — the shape this repo records as invisible to any 5xx metric — caught by the one instrument that reads rendered DOM. Alongside it, **10 soft failures** all reading `The operation was aborted due to timeout` / `Timed out acquiring connection from connection pool` / `canceling statement due to statement timeout` / one `503`.
+
+⛔ **NOT a regression from any of the three commits, and the reasoning is stated rather than assumed:** all three are docs/comment/ratchet-constant changes that touch no route, no query and no render path; `CI` (typecheck, all six guards, both coverage gates, 15,114 unit tests) passed on each; and the middle failure is on a commit from a different session entirely. **A defect that spans two authors' unrelated docs commits and self-heals in five minutes is not in those commits.**
+
+⚠ **What this does NOT establish:** what caused the spell. It is the known SMALL-instance disk-IO class, and `focus.md` PRIORITY 3 bars opening a new investigation into it — so this is an **attribution**, not a diagnosis, and it is filed as one.
+
+ⓘ **It also cost this session two held items, recorded so the hold is legible rather than looking like an omission:** the `drain_fmv_cold_tail` unscoped-aggregate A/B and the `refresh_wmc_fmv_changed` telemetry migration both want a QUIET hour — CLAUDE.md's instruction on the first is literally *"re-measure at a quiet hour, compare buffers"*, and a migration additionally fires a ~10–20 s `PGRST002` burst. **At io_wait 30/34 a buffers A/B is confounded and a migration is antisocial. Held, twice, with the number.** ⓘ Even at 04:00Z the instance read **11 IO waiters** against the **2** the ccm-step2 A/B got earlier today — still not a quiet hour.
+
 ### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — every CI guard proven RED one by one; a CLEAN audit, recorded because clean audits are what nobody writes down
 
 **DOCS ONLY (`testing-and-ci.md`). No code, no DB, no prod-state change.** CLAUDE.md's rule — *"before relying on a watcher, prove it can see a FAILURE; an unreachable monitor and a green build look identical"* — had been applied to individual guards after individual incidents. **It had never been run across the estate.**
