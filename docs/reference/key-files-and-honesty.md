@@ -415,3 +415,46 @@ await supabase.from("pipeline_runs").insert({ … })   // result discarded
 ⛔ **AND A DISCIPLINE NOTE THAT COST ME AN HOUR: this defect is REAL and was NOT the cause of the outage I found it during.** I was chasing `allday-pack-opens-backfill`'s silence, found this, and it looked like the answer. It is not — **the identical call writes 46 `allday-pack-opens-forward` rows a day.** ➡ **A defect that is real and is not the cause of the thing you are investigating must be filed separately, never reported as the cause.** Reporting it would have closed a live investigation on a true statement about the wrong thing.
 
 ⚠ **The detector for this was WRONG TWICE and its own fixtures caught both** — it walked vendored `node_modules` (1,756 files instead of ~40), and its statement-boundary heuristic cut at the last brace, **severing the `{ error }` destructuring it was looking for** so that every site classified as unchecked, including the CHECKED fixture. ➡ **Prove a detector in BOTH directions; a detector that never fires is as green as one that finds nothing.**
+
+## The SIXTH shape (2026-08-25): `Array.isArray(data) ? data : []` — a coercion that turns an unreadable payload into a POSITIVE CLAIM
+
+⛔ **`const rows = Array.isArray(data) ? data : []` is this repo's `?? 0` for list-shaped RPC reads.** Any non-array payload — a jsonb object, a scalar, a NULL jsonb — becomes an EMPTY list, and the caller's next line decides whether that is harmless or a fabricated fact. **8 sites fixed across 3 routes on 2026-08-25** (`ddb452a8`, `a3c99bf1`).
+
+### ⭐ THE DISCRIMINATOR IS THE DURABLE PART — the expression is not the defect
+
+The tree carries ~20 instances of this exact expression and **most are fine.** Do not sweep them all. Ask one question:
+
+> **Does the coerced `[]` become a POSITIVE CLAIM, or just an empty render?**
+
+| the next line does… | severity | example |
+|---|---|---|
+| `passed = rows.length === 0` | 🚨 **guard FAILS OPEN** — a shape it cannot read *passes* the check | the 4 `check_*` guards in `smoke-test` |
+| `if (hot.length === 0) return` on an alert | 🚨 **worst — output is SILENCE**, and `p_ok` stays true | `check-alerts` / `get_pipeline_alerts` |
+| `status = rows.length ? "warn" : "ok"` | 🚨 **fabricates a health SENTENCE** about things it never read | sentinel `Pipeline Silence` |
+| renders an empty list / returns `{rows: []}` | ⓘ **usually fine** — an empty renders as empty and is visible | `market-pulse-board`, `pack-ev-history` |
+| drives a work queue (`for (const x of rows)`) | ⓘ **low** — the tick no-ops and the next one retries | `resolve-wallet-usernames` |
+
+### ⚠ STEP ONE IS `pg_proc`, NOT THE CALLER
+
+**PostgREST's payload depends on the function's return type, and this DB mixes both in a single route:**
+
+- `proretset = true` (`RETURNS TABLE …`) → PostgREST **always** sends a JSON array → the ternary is **dead code**, leave it alone.
+- `proretset = false` (`RETURNS jsonb`) → the payload is whatever the jsonb is → the ternary is **load-bearing**.
+
+`smoke-test` calls two SETOF guards (`check_public_security_invariants`, `check_anon_write_surface`) and three scalar-jsonb ones (`check_secdef_anon_execute_violations`, `check_cursor_stall_threshold_drift`, `detect_stalled_pipelines`). **Classify before editing.**
+
+### ⚠ MEASURE BEFORE YOU ALARM — all eight were PROSPECTIVE, and saying so is the point
+
+Every one of the five RPCs returns a JSON array **today**, and each COALESCEs its own NULL (`coalesce(jsonb_agg(…), '[]'::jsonb)`; `coalesce(core(),'[]') || coalesce(…,'[]')`). **Nothing was mis-reporting; no guard was silently green.** The fix is hardening, and the ledger and commits say so rather than claiming a save. What makes it worth shipping anyway: **both shapes are already live in one route**, so converting a scalar-jsonb guard to the object shape a sibling uses would silence it with no test going red.
+
+⭐ **The shapes were verified by READING `prosrc`, deliberately not by calling the functions** — `get_pipeline_alerts_core()` is precisely what times out during a disk-IO spell, and one was in progress. **Choose a measurement method that does not add load to the thing being measured.**
+
+### The fix, and the test that proves it
+
+`if (!Array.isArray(data)) return couldNotRun(meta, data)` — handled exactly as `error` already was. **Never `soft`**: a shape change is not transient and a retry cannot fix it. ⚠ **Report the TYPE only, never the payload** — these guards read privilege catalogues, and echoing a body puts catalogue rows in a Sentry title on the one path nobody rehearses.
+
+⚠ **Pin the PROPERTY across BOTH return shapes and at least three payloads (object / null / scalar)**, or a fix that handles one passes. ⚠ **Assert the ABSENCE of the false claim** (`not.toContain("All watchlisted pipelines running")`), not the presence of an error string — the pre-fix code produced **no error string at all**, so any assertion about wording passes against the defect. ⚠ **Ship a both-directions control** (*an empty array is an honest zero*), which stays green in both worlds by design; without it, "treat every payload as unreadable" satisfies every regression while permanently warning on a healthy platform.
+
+### ⓘ And a different defect found while reading the same file — ZERO INSPECTED IS NOT A PASS
+
+Sentinel's `Sales Ingest by Collection` starts `worst = "ok"` and only moves on a breach, so an **empty** result fell through to `status: "ok"` with an **empty detail string** — a green check that examined nothing. **`value` already carried the cardinality; STATUS is what a reader and the alerting key on**, so the count now moves the status and the healthy branch states how many it inspected. *"0 breaches in 12 collections"* and *"0 breaches in 0 collections"* rendered identically before.
