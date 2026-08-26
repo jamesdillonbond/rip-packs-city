@@ -10,6 +10,148 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Cowork cloud, interactive — one GRANT/RLS pair) — closed the anon-readable scratch table I had created, which was reddening the smoke test, and swept the estate for siblings
+
+**Prod state (privileges only). No code, no migration row.**
+
+A scratch table created through `execute_sql` to hold a measurement baseline,
+`public._rpc_waste_baseline_20260825`, was **`anon`-SELECTable with RLS off** twenty minutes
+later — nobody granted anything; the `ALTER DEFAULT PRIVILEGES` entry from known-issues **#11**
+did it. ⚠ **It was not theoretical: `/api/smoke-test` logged a HARD FAILURE**
+(`rls_off_base_table:_rpc_waste_baseline_20260825`) and a **concurrent Claude Code session found
+it and filed it before I did** ([inbox 2026-08-26T0650Z](inbox/2026-08-26T0650Z-a-scratch-baseline-table-is-anon-readable-and-is-reddening-the-smoke-test.md)).
+
+**Applied:** `REVOKE ALL … FROM public, anon, authenticated;` + `ENABLE ROW LEVEL SECURITY`.
+Re-verified `anon SELECT → false`, `relrowsecurity → true`, and
+`check_public_security_invariants()` → **zero rows** — read as clean only after confirming from
+the RETURN TYPE (`proretset = true`) that zero rows is this function's clean state, per the
+mixed-return-shape rule.
+
+⭐ **The other session's two reasons for NOT fixing it were both correct**, and that is the durable
+half: it was a live artifact whose owner had context a sweeper lacks (it holds the baseline for
+the #35 falsifier), and there was a measured saturation spell where any DDL costs a `PGRST002`
+burst. **Filing it and naming the one-statement fix beat applying it.**
+
+**Sweep, controls stated in both directions:** every `public` table `anon` can SELECT with RLS off
+→ **0**; every anon-readable view that is not `security_invoker=on` → **0**. ⚠ The TABLES sweep
+**has a positive control and passed it** (it returned the offending table before the revoke); the
+VIEWS sweep has **none**, so it is "found nothing", not "proved nothing is there".
+
+👉 **Free habit that prevents the whole class, and it does not wait on #11's root fix:** revoke and
+enable RLS **in the same turn** that creates a scratch object in `public`, or create it outside
+`public`. Unlike an MV — which got a loud invariant arm on 08-24 — nothing makes a plain TABLE's
+recurrence loud except this smoke invariant.
+
+**Revert path:** `GRANT SELECT ON public._rpc_waste_baseline_20260825 TO anon, authenticated;
+ALTER TABLE … DISABLE ROW LEVEL SECURITY;` — ⚠ there is no reason to; the correct end state is
+`DROP TABLE public._rpc_waste_baseline_20260825;` once the #35 falsifier reading is recorded.
+**No code half.**
+
+### 2026-08-25 · SHIPPED (Cowork cloud, interactive — DB only, NO git push) — the PG17-unreachable `fmv-recalc` index is repaired, and the "shape is not a selector" conclusion is replaced by a decidable rule
+
+**DB change, no code.** `idx_sales_2026_fmv_recalc_window` rebuilt without its redundant
+`edition_id IS NOT NULL` conjunct — the conjunct PostgreSQL 17 constant-folds out of the query
+before predicate proving, which is what made a 99 MB purpose-built index unusable for 75 days.
+
+- **Executed** via the one-off pg_cron `CREATE INDEX CONCURRENTLY` recipe: reset job armed FIRST,
+  `ALTER ROLE postgres SET statement_timeout='600s'`, CIC **05:34:01Z → 05:37:23Z (202 s)**,
+  `indisvalid = true`, `DROP INDEX CONCURRENTLY` the old one, `ALTER INDEX … RENAME` back to the
+  documented name. **Close-out verified, not assumed:** `rolconfig` back to `search_path` only,
+  active pg_cron jobs back to the 99 baseline, **zero `indisvalid = false` debris** on the table.
+- **Measured on the UNMODIFIED production query** (no function change, so no DB-invariant pin
+  moved): plan node **51,040.92 → 15,264.74**; `EXPLAIN (ANALYZE, BUFFERS)` **18,124 ms** against
+  the **50,471 ms** on record for the as-written form — **~2.8x**, reproducing the predicted 2.9x.
+- ⚠ **The buffer half of the prediction did NOT reproduce and the reason is named:**
+  `Heap Fetches: 82,082`, because `relallvisible/relpages` was **31,355/37,671 (83.2%)**. A
+  `VACUUM (INDEX_CLEANUP OFF, ANALYZE)` took it to **33,388/37,671 (88.6%)**. ⛔ Do not quote the
+  buffer figure as final until re-measured after a full autovacuum cycle.
+- ⓘ **n = 1 is not a rate.** The first post-fix production call read **2,874** disk blocks against
+  a **31,564** lifetime average. Directionally excellent, formally worthless — **the honest metric
+  is blocks-per-call over 24 h from `pg_stat_statements` deltas, and it has not been taken.**
+
+⭐ **The transferable half — the 08-26 re-measurement stopped one step short.** It concluded
+"reachability is per-index and only an EXPLAIN settles it." True, and there IS a decidable rule:
+such an index is reachable **iff the QUERY independently supplies something implying
+`col IS NOT NULL`** — a strict-operator clause (`=`, `<>`, `>`) or an inner join on that column.
+Proven both directions on a scratch table (with the conjunct: **Seq Scan even under
+`enable_seqscan = off`**; without it: `Index Only Scan`). All six sweep indexes classified: **5
+reachable, 1 not.** `idx_sales_2026_top_sales_board` is reachable **today**, so that filing's own
+worked example is refuted — and a **paired** `idx_scan` delta (one index moving, one flat, same
+4-minute window) does establish current reachability where a cumulative total cannot.
+
+🚨 **RETRACTION in the same turn: "`sales_2022`'s three indexes on an EMPTY partition" is FALSE.**
+`count(*)` = **750,702** rows spanning all of 2022, and its indexes carry **43,815,424** scans
+(`sales_2022_nft_id_idx` alone 35.0M). `n_live_tup` read 0 only because the partition has
+`n_tup_ins/upd/del = 0` and **`last_autoanalyze IS NULL`** — never analyzed, so the estimate was
+never set. ⭐ **`n_live_tup` is an ESTIMATE, and on a never-analyzed relation it is
+indistinguishable from empty.** Acting on that judgement would have dropped busy indexes.
+
+**Revert path (DB):** one statement as a one-off pg_cron job —
+`CREATE INDEX CONCURRENTLY idx_sales_2026_fmv_recalc_window_old ON public.sales_2026 USING btree (sold_at DESC) INCLUDE (edition_id, collection_id) WHERE (price_usd > 0 AND edition_id IS NOT NULL);`
+then drop + rename. ⚠ Reverting restores an index the planner cannot use; there is no scenario in
+which the old predicate is preferable. **No code half.** Record file:
+`supabase/migrations/20260826053400_audit_20260825_repair_pg17_unreachable_fmv_recalc_window_index.sql`
+(⚠ **uncommitted — this session has no git push**; see the entry below).
+
+### 2026-08-25 · SHIPPED (Cowork cloud, interactive — pg_cron only, NO git push) — two pack-sales backfills were 71.9 GB/day of disk reads and 4.55 GB/day of WAL to add ~165 rows a day; cadence cut 5x
+
+**pg_cron schedules only. No code, no function body, no migration row.**
+
+- jobid **25** `rpc-allday-pack-sales-backfill` `*/3 * * * *` → `0,15,30,45 * * * *`
+- jobid **29** `rpc-topshot-pack-sales-backfill` `1-58/3 * * * *` → `1,16,31,46 * * * *`
+
+480 dispatches/day each → 96, offset by a minute so the two cannot contend for the same pg_cron
+worker slot (`max_worker_processes = 6` vs `cron.max_running_jobs = 32` is a live starvation
+source here).
+
+**Why, measured** (`pg_stat_statements`, window **14.2027 d** from the 2026-08-12 01:34Z reset —
+⚠ a dated sample; `shared_blks_hit` reported separately and NOT summed in):
+
+| statement | calls/d | disk GB/d | dirtied/d | WAL MB/d |
+|---|---:|---:|---:|---:|
+| `INSERT … topshot_pack_sales_history … ON CONFLICT DO UPDATE` | 10,497 | 10.54 | 727,588 | 2,498 |
+| `INSERT … allday_pack_sales_history … ON CONFLICT DO UPDATE` | 7,012 | 4.91 | 401,312 | 1,251 |
+| `SELECT topshot_pack_sales_history … LIMIT $1 OFFSET $2` | 196 | **28.67** | 229,460 | 399 |
+| `SELECT allday_pack_sales_history … LIMIT $1 OFFSET $2` | 219 | **27.76** | 216,518 | 404 |
+
+**71.9 GB/day — ~9.2% of the instance's ~780 GB/day of disk reads — for ~165 new rows a day**
+(topshot 1,122 rows in 7 d, allday 35). The tables read **3,558 inserts against 14,903,768
+updates** and **106 against 9,956,771**: PostgREST's default `ON CONFLICT DO UPDATE SET <every
+column>` carries no change-detection predicate, so every re-walk of immutable history rewrites
+every row identically. ⭐ **The bigger half is the two `LIMIT/OFFSET` SELECTs** at **19,183** and
+**16,587** disk blocks *per call* — "OFFSET does not paginate", re-reading whole tables ~200x/day.
+
+**Not a freshness regression, measured at the moment of the change:** newest row was already
+**3.4 h old** (topshot) and **15.3 h old** (allday).
+
+⛔ **`suppress_redundant_updates_trigger()` — Postgres' built-in for exactly this shape — was
+considered and DELIBERATELY NOT shipped.** A suppressed row emits no `RETURNING`, so PostgREST's
+`page_total` falls; the writers are **edge functions with no committed source** (deep-audit R21),
+so a caller asserting on that count would break **silently**, and at 5 new rows/day on allday the
+breakage would be invisible for days. **The blocker is that the caller cannot be read** —
+committing those two functions unblocks the real fix.
+
+⚠ **FALSIFIER, to be RUN not assumed:** over 24 h, `n_tup_ins` should hold its prior rate
+(topshot ~160/day, allday ~5/day) while `n_tup_upd` falls ~5x. **If INSERTS fall too, the walk was
+covering ground and this cut is wrong.** Second prediction, testing attribution rather than
+effect: if those two `LIMIT/OFFSET` SELECTs are issued by these same jobs, their calls/day fall
+~5x too; if they do not, 56 GB/day is still unattributed.
+
+**Revert path (DB, one statement):** `SELECT cron.alter_job(25, schedule := '*/3 * * * *');` and
+`SELECT cron.alter_job(29, schedule := '1-58/3 * * * *');` **No code half.** Record file:
+`supabase/migrations/20260826063100_audit_20260825_pack_sales_backfill_cadence_5x_cut.sql`
+(uncommitted).
+
+⚠⚠ **THIS SESSION COULD NOT PUSH, SO PROD IS AHEAD OF THE REPO ON PURPOSE AND `migration-parity`
+WILL GO RED.** Three diagnostic `tmp_pg17_*` migrations plus the two record files above have no
+committed file. Record files were written for all of them under `supabase/migrations/`; they are
+in the handoff patch set and need one `git am` + `git push` from Trevor's box. ⭐ **The push
+failure is diagnosed to the layer and it is NOT a credential problem:** same session, same token,
+`GET /user` → **200 `{"login":"jamesdillonbond"}`** while `GET /repos/jamesdillonbond/rip-packs-city`
+→ **403**, as does an unrelated public repo. It is a per-repository allowlist decided at session
+creation; nothing inside a running session can change it. Full detail:
+[inbox 2026-08-26T0650Z](inbox/2026-08-26T0650Z-git-push-is-a-repo-AUTHORIZATION-problem-the-credential-is-present-and-valid.md).
+
 ### 2026-08-26 · SHIPPED (Claude Code, autonomous) — landed 3 of 7 patches from a Cowork session that could not push, and the SENTRY P0 IS DIAGNOSED
 
 **A Cowork cloud session left a `git format-patch` set in this shared working tree** (`Rip Packs City/cowork-2026-08-25/`, still untracked) with an explicit request to `git am` + push **from this box**, which can push. Its DB half was already live in production; only the code/doc half was stranded. **Landed the clean, urgent subset — 0001, 0002, 0003 — and deferred 0004–0007.**

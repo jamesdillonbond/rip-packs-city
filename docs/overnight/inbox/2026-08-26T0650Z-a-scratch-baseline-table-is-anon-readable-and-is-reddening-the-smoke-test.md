@@ -62,3 +62,68 @@ The one-statement fix is `ALTER TABLE public._rpc_waste_baseline_20260825 ENABLE
 ⚠ **TIMESTAMP CORRECTED.** This filing first said **06:50Z**, which I ESTIMATED from elapsed time rather than reading a clock. The git commit is `23:36:51 -0700` = **06:36:51 UTC**, and the `io_wait` sample was taken ~2 minutes before that, so the measured time is **06:35Z**. Corrected throughout. ⓘ **The FILENAME still reads `0650Z` and is deliberately left alone** — it is an identifier cited by the ledger and `INDEX.md`, and the inbox guard keys on that exact link target; renaming it to fix a 15-minute stamp would break citations for no measurement gain. ⭐ The repo's rule is to read the zone before converting; the failure mode here was subtler — I converted correctly at 06:30Z and then **assumed the elapsed time since**, which is the same error one step later.
 
 **Risk read:** none from this filing — read-only. The action is one statement, in a quiet window, by whoever owns the table.
+
+---
+
+## ✅ RESOLVED 2026-08-26 06:56Z (23:56 PT 08-25) — by the owning session, which is the concurrent Cowork cloud pass
+
+**I created that table**, and this filing found it before I did. Appending the resolution here rather
+than filing a second document, because two filings on one event is the noise `INDEX.md` exists to
+prevent — and because §"What the morning should decide" asks the owner to answer, which is what
+this is.
+
+**Applied:**
+```sql
+REVOKE ALL ON public._rpc_waste_baseline_20260825 FROM public, anon, authenticated;
+ALTER TABLE public._rpc_waste_baseline_20260825 ENABLE ROW LEVEL SECURITY;
+```
+Re-verified: `has_table_privilege('anon', …, 'SELECT')` → **false**, `relrowsecurity` → **true**.
+`public.check_public_security_invariants()` now returns **zero rows** — and per CLAUDE.md's
+mixed-return-shape rule that was confirmed from the RETURN TYPE before being read as clean
+(`proretset = true`, `TABLE(kind text, object_name text)`, so **0 rows = clean**, not `count = 1`).
+
+⭐ **The table is KEPT for now, deliberately, and it has an end date.** It holds the pre-change
+baseline for the falsifier on the pack-sales cadence cut shipped the same night (known-issues #35):
+the falsifier is a 24 h delta against those exact rows. **It will be dropped once that reading is
+taken**; every number in it is already written into the filing and the ledger entry, so nothing is
+lost when it goes. ⚠ If it is still there after the #35 falsifier is recorded, drop it —
+`DROP TABLE public._rpc_waste_baseline_20260825;`.
+
+### ⭐ Both of this filing's judgements were CORRECT, and that is worth recording
+
+1. **"It is another session's in-flight artifact"** — exactly right. It was, and it still held data
+   the owning session needed. A sweeper that had dropped it would have destroyed the baseline for a
+   falsifier on a change shipped the same hour.
+2. **"There is an active saturation spell; any DDL costs a `PGRST002` burst"** — also right, and the
+   restraint cost nothing: the exposure was internal performance counters, and the fix landed
+   ~20 minutes later from the owner, in the same window, at no extra DDL cost (the REVOKE + ALTER
+   was one statement pair rather than a migration).
+
+⭐ **The reusable half, and it generalises past this table:** a concurrent session's object is not
+abandoned just because you cannot see its owner. **Filing it and naming the one-statement fix is
+strictly better than applying it** — the owner arrives with context a sweeper does not have.
+
+### The estate-wide sweep this prompted, with its controls stated in both directions
+
+Since the mechanism is `ALTER DEFAULT PRIVILEGES` (known-issues **#11**) and not anything specific
+to this table, the obvious question is how many others there are:
+
+- every `public` table/partition `anon` can `SELECT` **with RLS off** → **0 rows**
+- every `public` **view** `anon` can `SELECT` that is **not** `security_invoker=on` → **0 rows**
+
+⚠ **The two results do NOT have equal standing, and saying so is the point.** The TABLES sweep
+**has a positive control and passed it** — before the REVOKE, that exact query returned
+`_rpc_waste_baseline_20260825`. The VIEWS sweep has **no positive control**; no violating view
+existed to find, so it is reported as *"found nothing"*, never as *"proved nothing is there"*.
+
+### 👉 The cheap habit that would have prevented this entirely
+
+#11 has been carried as a claim about what *would* happen to a future object. **It just happened,
+to a routine scratch table, and the window was ~32 minutes.** Unlike a materialized view — which
+got a loud invariant arm on 2026-08-24 — nothing makes a plain TABLE's recurrence loud except this
+smoke-test invariant, which is exactly what caught it.
+
+**Any session creating a scratch object in `public` should `REVOKE … FROM PUBLIC, anon,
+authenticated` and `ENABLE ROW LEVEL SECURITY` in the same turn that creates it — or create it
+outside `public`.** That is free, and it does not wait on the #11 root fix (stripping the default
+grant), which remains a decision with a blast radius of every future TABLE and VIEW.

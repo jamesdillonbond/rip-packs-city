@@ -699,3 +699,69 @@ spread by copy-paste five times. Swept `pg_proc.prosrc` for the same shape acros
 `drain_fmv_cold_tail` itself mentioned `collection_id` twice while its aggregate ignored it. The predicate
 that actually finds this defect is *"is the aggregate's own FROM clause scoped"*, which only a read of the
 body answers. **3 bodies were read; 76 were not.**
+
+
+## PG17 partial-index reachability — a DECIDABLE rule, and two null instruments found proving it
+
+*Added 2026-08-25 (PT). Supersedes the "reachability is per-index and only an EXPLAIN settles it"
+conclusion in `docs/overnight/inbox/2026-08-23T1910Z-…`, which was true but stopped one step short.*
+
+### The rule
+
+> A partial index whose predicate contains `<col> IS NOT NULL`, where `<col>` is declared
+> `NOT NULL`, is reachable **iff the QUERY independently supplies something the planner can prove
+> implies `<col> IS NOT NULL`** — a strict-operator clause on that column (`col = x`, `col <> x`,
+> `col > x`), or an **inner join** on it. It is unreachable when the ONLY source of that qual was
+> the query's own literal `col IS NOT NULL`, because PG17 constant-folds that away *before*
+> predicate proving.
+
+⭐ **Why the predicate SHAPE was never a usable selector:** the shape describes the INDEX, and
+reachability is a property of the **query/index pair**. The rule above makes it decidable by
+reading the query, without an EXPLAIN per index — though an EXPLAIN is still the confirmation.
+
+**Proven both directions on a scratch table (PG 17.6), 2026-08-25:**
+
+| index predicate | plan |
+|---|---|
+| `WHERE (price_usd > 0 AND edition_id IS NOT NULL)` | **Seq Scan even under `enable_seqscan = off`** |
+| `WHERE (price_usd > 0)` | `Index Only Scan`, chosen with seqscan enabled |
+
+The negative control is the strong one: the planner would rather do the thing it was explicitly
+told not to do than use the index.
+
+**All six `public` partial indexes of this shape, classified — 5 reachable, 1 not:**
+
+| index | what supplies the proof | verdict |
+|---|---|---|
+| `pack_drop_pool_edition_idx` | `WHERE edition_id = $1` | reachable |
+| `idx_sales_2026_top_sales_board` | `v_insights_top_sales` does `JOIN editions e ON e.id = s.edition_id` | reachable |
+| `unmapped_sales_resolver_targets_idx` | its own sibling conjunct `nft_id <> ''` is strict | reachable |
+| `unmapped_sales_sold_at_unresolved_idx` | same | reachable |
+| `idx_pinnacle_editions_set_name` | `WHERE set_name = $1` | reachable |
+| `idx_sales_2026_fmv_recalc_window` | **nothing** — `GROUP BY edition_id` is not a strict clause | **unreachable — REPAIRED 2026-08-25** |
+
+### ⚠ Two null instruments, both of which read as an answer
+
+1. **A cumulative `idx_scan` is a claim about the PAST.** But a **paired delta** does settle
+   current reachability: over one 4-minute window `pack_drop_pool_edition_idx` moved
+   420,894 → 420,898 while `idx_sales_2026_fmv_recalc_window` held flat at 3. Same instrument,
+   same window, opposite answers. That is the cheap test — one index alone tells you nothing.
+2. 🚨 **`n_live_tup` is an ESTIMATE, and on a never-analyzed relation it reads 0 — which is
+   indistinguishable from empty.** `sales_2022` reported `n_live_tup = 0` and was proposed for
+   index cleanup as "an empty partition"; `count(*)` returns **750,702** rows and its indexes carry
+   **43,815,424** scans. It reads 0 because `n_tup_ins/upd/del = 0` and `last_autoanalyze IS NULL`,
+   so the estimate was never set. **Any emptiness claim must come from `count(*)`** — or at minimum
+   be corroborated by `pg_relation_size` (one index there is 78 MB, which no empty table produces).
+
+### The repair, and its measured limit
+
+`idx_sales_2026_fmv_recalc_window` rebuilt without the redundant conjunct via the one-off pg_cron
+`CREATE INDEX CONCURRENTLY` recipe (202 s). On the **unmodified** production query the plan node
+went **51,040.92 → 15,264.74** and `EXPLAIN (ANALYZE, BUFFERS)` read **18,124 ms** against the
+**50,471 ms** on record — ~2.8x, reproducing the predicted 2.9x.
+
+⚠ **The BUFFER half of the prediction did not reproduce: 84,667 measured against ~48,494
+predicted, and `Heap Fetches: 82,082` is the entire gap.** An Index Only Scan falls back to the
+heap wherever the visibility map is unset; `relallvisible/relpages` was **83.2%**, and a
+`VACUUM (INDEX_CLEANUP OFF, ANALYZE)` took it to **88.6%**. ⭐ **Generalisable: when an
+Index-Only-Scan win under-delivers on buffers, read `Heap Fetches` before doubting the index.**

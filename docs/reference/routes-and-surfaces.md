@@ -155,3 +155,13 @@ curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
   -H "Authorization: Bearer $INGEST_SECRET_TOKEN" \
   -d '{"wallet":"0x..."}'
 ```
+
+## Repo map — displaced verbatim from CLAUDE.md 2026-08-25 (it was paying for the no-push-levers rule)
+
+⚠ **Every number below is a DATED SAMPLE taken 2026-08-24. Re-derive; never quote.**
+
+> **Repo map** (2026-08-24 — re-derive, never quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **308** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **103** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`.
+
+ⓘ Also displaced the same day, from `Frequently used commands`, so the shortened comment there does not lose its case:
+
+> `npm ci` — ⚠ RUN FIRST in a fresh web/cloud sandbox — there is NO `node_modules`. Without it `npx vitest`/`npx tsc` die on `MODULE_NOT_FOUND … vitest.config.ts`, **which reads like a broken config** and has sent more than one session looking for a config defect that does not exist.

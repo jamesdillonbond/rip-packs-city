@@ -55,10 +55,11 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 ### Pushing from a sandbox — test it, do not assume it
 
-- ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **One-command test: `git push --dry-run origin main`.**
+- ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **Two tests: `git push --dry-run origin main`, and `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`. A **200** there beside a **403** on `/repos/<o>/<r>` proves the credential is FINE; the block is the repo allowlist (08-25; a PUBLIC repo 403s too).**
 - ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
 - ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
 - **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.
+- ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests: a PINNED SQL function is PUSH-GATED** (its `supabase/tests/` copy reds `db-pin-staleness`), and **every `apply_migration` reds the ENFORCING `migration-parity`** until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects.** `execute_sql` for SCRATCH DDL — no version row, no parity debt.
 - Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ## Autonomous Cowork tasks
@@ -76,9 +77,9 @@ Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-su
 
 Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
 
-Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public) · LLC: Oregon, filed May 3 2026.
+Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
 
-**Repo map** (2026-08-24 — re-derive, never quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **308** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **103** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`. Detail: [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
+**Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
 **Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
 
@@ -98,9 +99,8 @@ Never omit `teamId` on a Vercel API/MCP call.
 ## Frequently used commands
 
 ```bash
-npm ci                   # ⚠ RUN FIRST in a fresh web/cloud sandbox — there is NO node_modules. Without
-                         #   it `npx vitest`/`npx tsc` die on `MODULE_NOT_FOUND … vitest.config.ts`,
-                         #   which reads like a broken config.
+npm ci                   # ⚠ RUN FIRST in a fresh sandbox (no node_modules); without it `npx vitest`/`npx
+                         #   tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config.
 npm run dev
 npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited
 npm test                 # vitest run — route + lib suites (single file: npx vitest run <path>)
@@ -280,7 +280,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 - **The sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (ESPN 403s residentially too, re-measured 08-22; UA-refresh and 403-retry useless; the "no alert" gap is a MYTH — deliberately suppressed). Full bullet + the open discriminator: #8 in [known-issues.md](docs/reference/known-issues.md).
 - `fmv-recalc` — **RE-CHARACTERIZED 2026-08-17: wasteful, NOT broken** (72.7% wall-kills, 13,835 editions/day). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - 🚨 **Needs TREVOR, not code — three:** the **DEFEATED credential purge** (public branch `claude/todo-implementation-e4tib3` still carries the pre-purge blob, re-verified 08-24 — triage `ee94c8a2a`, delete via the GitHub UI, GC, **rotate regardless**, #22) · the three board-MV cron jobs' 600 s timeout (#27) · `atlas-proxy` (#20) — ⚠ fixes only **9 of 40** recent `topshot-active-listings-ingest` fails; **29 die earlier, on a DB timeout** (#30).
-- **ONE measured-but-unshipped DB fix left, blocked on a DECISION not a diagnosis:** `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg (**18,766 vs 1,046,192 buffers**, but it re-seeds a pinned fixture — Trevor's call). ⭐ Its sibling `drain_fmv_cold_tail` **SHIPPED 08-25**: its stated blocker was a MEASUREMENT, not a decision, so re-read a "blocked" item's blocker before inheriting it.
+- **ONE measured-but-unshipped DB fix left, blocked on a DECISION not a diagnosis:** `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg (**18,766 vs 1,046,192 buffers**, but it re-seeds a pinned fixture — Trevor's call). ⭐ A sibling's stated blocker turned out to be a MEASUREMENT, not a decision — **re-read a "blocked" item's blocker before inheriting it.**
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
