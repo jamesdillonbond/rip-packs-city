@@ -164,3 +164,20 @@ proposing anything else.**
 aggregate gone the per-slug cost is ~0.2 s, so the 45 s budget should stop binding at all. **That is a
 prediction, and its falsifier is the `deadline_hit` rate over the next day's ticks**, not the timing of any
 one manual run.
+
+### ✅ First post-migration SCHEDULED tick — the falsifier ran and did not falsify (n=1, stated as such)
+
+**04:47:12Z, the first tick whose `started_at` is after the apply (`20260826041837` = 04:18:37Z):**
+`ok: true`, `error: null`, **`deadline_hit: false`, `slugs_attempted: 4`, `skipped: 0`**, duration
+**16,835 ms**, 14 rows. All four collections drained in one tick, under the production caller.
+
+⚠ **What this DOES establish:** the rewritten body runs correctly when pg_cron/Vercel calls it — not merely
+when invoked by hand — and returns the right shape with no error. That was the thing a manual run could not
+prove, and it is now proven.
+
+⛔ **What it does NOT establish, and must not be written up as if it did: n = 1 is not a rate.** The
+pre-migration baseline was **31.3%** deadline hits, so a single clean tick had a ~69% chance of occurring
+under the OLD body too. **The `deadline_hit` rate over the next day's ~48 ticks is the real reading**, and it
+should be taken then rather than inferred now. ⓘ Weak corroboration only: `pg_stat_activity` read
+**io_wait 18 / active 22** in the same window — elevated, not quiet — and it still finished all four slugs
+in 16.8 s.

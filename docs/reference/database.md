@@ -680,3 +680,22 @@ that attempted one arm as evidence of *starvation*, not throughput.
 ⚠ **It also explains an anomaly that looked like the fix working.** The 89-row tick stood out against 6 and
 13 — but it is the *deadline-hit* signature (one collection given the whole budget), not the fix; the fix
 applied 83 seconds later. **The number that moved was a symptom of the defect, not of its removal.**
+
+### ⓘ Negative control: the defect did NOT spread — population is ONE
+
+The standing rule after finding a defect is *grep for the EXPRESSION, not the file*, because this one has
+spread by copy-paste five times. Swept `pg_proc.prosrc` for the same shape across the whole schema:
+
+- **`FROM fmv_snapshots` + `GROUP BY edition_id` → 3 functions.** `detect_floor_drops` scopes both its
+  snapshot CTEs with `WHERE collection_id = v_collection_id` (its `GROUP BY edition_id` is on `sales`, also
+  scoped); `get_topshot_hot_floors` reads snapshots through a per-edition `LATERAL … ORDER BY computed_at
+  DESC LIMIT 1`. **Both already correct.**
+- **`FROM fmv_snapshots` at all → 76 functions**, of which only **3** never mention `collection_id`:
+  `analytics_pipeline_health` (every read is `ORDER BY … DESC LIMIT 1` behind a window predicate, with a
+  comment saying so), `analytics_fmv_pipeline_health` (bounded by `computed_at >= now() - 48h` and
+  collection-agnostic **by design** — it reports per-collection health) and `analytics_fmv_top_movers`.
+
+⚠ **The `mentions_collection_id` heuristic is COARSE and must not be quoted as a clean bill** —
+`drain_fmv_cold_tail` itself mentioned `collection_id` twice while its aggregate ignored it. The predicate
+that actually finds this defect is *"is the aggregate's own FROM clause scoped"*, which only a read of the
+body answers. **3 bodies were read; 76 were not.**
