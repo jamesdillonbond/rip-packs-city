@@ -599,3 +599,34 @@ omitted section or an em-dash, "the safe direction — so this is the one that n
 ⭐ **The reusable form: search for INCONSISTENCY WITHIN A FILE, not for the bad expression.** Code that fixed
 the trap once and missed a sibling is both the likeliest defect and the cheapest to confirm — the evidence is
 already written in the file, usually a few lines away.
+
+### Sweep 4 — the OG CARD layer (layer 4 of the honesty table), and it is CLEAN
+
+**44 OG route files · 22 render a NUMBER · 0 defects.** All 22 either use `boardEmptyCopy`, carry a failure
+state, or **guard the zero so it can never display.** Worth recording because a passing audit is the kind
+nobody writes down and someone later re-runs — and because the sweep was **wrong twice** before it was right.
+
+⚠ **Correction 1 — a failure state is a PROPERTY, not a VOCABULARY.** The first predicate looked for the
+words `failed|unavailable|fetched` and flagged **8**. It had missed the `ok` FLAG, which is how the two
+most-shared cards do it: `og/profile` returns `{ rows: [], ok: false }`, and `og/trophy-case` calls
+`renderFallback(...)` on `!result.ok`. Grepping for a house style finds the files written in that style.
+
+⚠⚠ **Correction 2 — a `?? 0` that NEVER RENDERS is not a defect.** The second cut flagged 2, and both were
+still false. `app/api/og/insights/panini-squeeze/route.tsx` genuinely contains `editions = agg.count ?? 0` —
+the documented fabricated-count shape, in shipped source — but the render is:
+
+```tsx
+{editions ? `${editions.toLocaleString("en-US")} editions · ${usd(sealed)} still sealed in packs`
+          : "2026 Prizm World Cup Soccer — still-in-packs supply + FMV"}
+```
+
+**Zero is falsy, so the failed read falls through to a generic tagline and the fabricated number never
+reaches a pixel.** `candy-mlb` guards identically on `priced > 0`.
+
+⭐ **This is the `client-failure-collapses-to-empty-ratchet` header proved in the field: *"the method that
+keeps working is sweeping the empty-state COPY, not the fetch code."*** A fetch-shape grep cannot decide this
+class in either direction — it misses defects whose shape is an absence (the eighth), and it accuses code
+whose shape is present but unrendered. **Follow the value to the pixel.**
+
+ⓘ Both surviving candidates were also the two `is_active=false` pre-launch collections (Candy MLB, Panini) —
+worth establishing *before* spending a fix, since even a real defect there reaches almost nobody.
