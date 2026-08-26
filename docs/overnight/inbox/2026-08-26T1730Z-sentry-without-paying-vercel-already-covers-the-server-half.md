@@ -105,3 +105,38 @@ old copy and two synonym rewordings all red it; the new copy and the sibling's c
   and timeouts are the saturation. Today's covering index (91% off the serial-board CTE) and
   the `rwfc` fast path are worth more to this error board than any amount of Sentry quota
   would be — **an error tracker that can see the fire is not a fire extinguisher.**
+
+---
+
+## 6. ⛔ The watchdog is blocked on a CREDENTIAL, not on money — and it was probed, not assumed
+
+The follow-up in §5 ("nothing watches whether Sentry STORED anything") needs Sentry's
+read API. Checked what exists rather than assuming:
+
+- **`.env.local` has no `SENTRY_AUTH_TOKEN`** — the variable is documented in
+  `.env.example` (alongside `SENTRY_ORG` / `SENTRY_PROJECT`) but is not set locally.
+- **`.env.sentry-build-plugin` DOES carry one**, and that file is correctly gitignored
+  (`.gitignore:95`).
+- ⚠ **But it is upload-scoped.** Probed with three real requests rather than a
+  `[ -n "$VAR" ]` presence check, per the repo's rule that *a credential can be present
+  and dead*:
+
+  ```
+  ERR 403  organizations/<org>/projects/
+  ERR 403  projects/<org>/<project>/
+  ERR 403  projects/<org>/<project>/issues/?statsPeriod=14d&limit=1
+  ```
+
+  It authenticates for source-map upload and **has no read scope**, which is correct
+  least-privilege for a build token and useless for monitoring.
+
+👉 **The watchdog needs a read-scoped Sentry token (`project:read` / `org:read`).** That
+is **free** — an auth token, not a plan change — and is the only thing standing between
+here and an arm that would have caught this on day one instead of day eight. Small
+operator step, deliberately not pursued further here since it is a credential decision.
+
+⛔ **And there is no client-side substitute, checked:** the condition "Sentry accepted and
+then dropped" is invisible from our side — the envelope endpoint returns **`200` with no
+rate-limit header** in exactly the state where nothing is stored, which is precisely why
+the earlier probe in this session read as success. **Only Sentry's own read API can
+distinguish stored from dropped**, so there is no way to build this arm without that token.
