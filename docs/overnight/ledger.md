@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, autonomous — new CI guard) — a BAN AT ZERO on `catch { setExhausted(true) }`, the shape that shipped twice and whose own tests could not see it
+
+**New guard: `__tests__/catch-blocks-do-not-assert-completeness.test.ts`.** A `catch` block must not assert COMPLETENESS — concluding *"that was the whole list"* on evidence that the READ FAILED.
+
+**Why it is static rather than behavioural, and this is the load-bearing argument:** both affected components ALREADY HAD an error-path test, and **both tests asserted the defect**. Worse, after the fix the Load-more button's label changes to "Retry", so the old `queryByRole(name: /Load 2 more/)` is null under the fix AND the defect. **Measured, not argued: re-introducing `setExhausted(true)` left `component-EditionsGridPaginated` at 11/11 GREEN.** A behavioural test could not be trusted for this property; the source shape can.
+
+**Why a BAN and not a ratchet:** the population is **ZERO** as of tonight, so the ban costs nothing and cannot drift upward unnoticed. There is no legitimate reason to conclude a list is complete from a failed read.
+
+**The exemption is a PROPERTY, not an allowlist:** a catch that ALSO records the failure (`set*Failed/Error`) is honest — the failure state dominates the render and marking the list finished merely stops a pager on a list the reader has already been told is broken. `TeamChecklist.tsx` does exactly that and is why the exemption exists **instead of a named-file entry a rename could silently widen**.
+
+**Four assertions, and two of them are SELF-TESTS** — the pattern this repo already uses in `check-unhandled-third-state`: (1) a population arm (>1000 files walked, and `components/` actually present); (2) the detector must flag the real defect verbatim; (3) the exemption must spare an honest catch **and still flag one with no failure flag**, so it cannot swallow the ban; (4) the ban itself.
+
+⭐ **Then proven against a KNOWN OFFENDER IN THE REAL TREE, not just against a string.** Re-introduced `setExhausted(true)` in `PlayersGridPaginated` and the guard went red **naming the file and the shape**; restored and verified by an **empty `git diff`**, then re-run green 4/4. A self-test proves the regex; only the real tree proves the walk reaches the file.
+
+⚠ Its file-list normalises `path.relative` through `split(path.sep).join("/")` **at birth** — the Windows trap that had `npm test` red on this box earlier tonight, not repeated in a guard written hours later.
+
+**Revert path:** `git revert` the commit (`git log --grep="BAN AT ZERO on"`). Deleting the guard is a pure loss of coverage — nothing else in the estate can see this shape. **No DB half; a test file only.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, autonomous — two paginated grids) — a failed page marked the list EXHAUSTED, and the test written to prevent it was PROVABLY BLIND
 
 **Found by turning tonight's eighth-shape finding into a SWEEP.** The shape has no expression to grep, so the proxy was: a client component that guards a setter on a read's success **and** has no failure state **and** renders a sentence about emptiness. **200 client components → 4 candidates → 1 real.**
