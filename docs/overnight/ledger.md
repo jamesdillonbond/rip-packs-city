@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · RETRACTION + DOCS (Claude Code, interactive) — I published a pg_net finding that my OWN memory store had already refuted, and found out only while writing memories
+
+**DOCS ONLY. No code, no DB, no prod-state change.** Correcting a claim I shipped earlier tonight, plus the session's memory writes.
+
+⛔⛔ **THE RETRACTION.** The 02:10Z filing claimed **"70 of 701 `pg_net` dispatches (10.0%) consumed their entire timeout inside DNS, so the request never left the box and the target function definitively never ran."** **That is WRONG.** ⭐ **pg_net attributes TOTAL ELAPSED to the resolution field when it times out**, so `DNS time == total time` is an **artifact of the timeout**, not a measurement of DNS.
+
+⚠ **The tell was inside my own quoted evidence and I read past it:** `Total time: 90002.632000 ms (DNS time: 90002.632000)` — identical **to the microsecond**. Real resolution latency never coincidentally equals the timeout exactly. **When two independently-derived figures agree to absurd precision, they are one figure wearing two labels.**
+
+⭐ **PROVEN LIVE, not merely conceded.** Same 6 h window (08-25 21:43Z → 08-26 03:43Z): `net._http_response` held **708 responses / 140 timed out**, while **jobid 84 dispatched ~180× (`*/2`) and its function logged 176 completed `pipeline_runs` rows — ~98%.** Timeouts and completions coexist at scale, so a timeout row is a statement about **pg_net's patience**, never about the callee.
+
+⚠ **AND IT BETTER EXPLAINS THE RESULT I FOUND MOST PERSUASIVE.** I leaned on the rate being **flat (20.0–24.3%) across a saturation spell and a quiet window** as proof of a *standing egress fault*. A rate dominated by jobs whose configured `timeout_milliseconds` is simply shorter than their function's runtime is stable **by construction** — an ordinary explanation that fits the flatness better than mine did.
+
+✅ **What survives:** §1 — `cron.job_run_details` shows jobid 44 fired **8/8**, so the "scheduler-skip" reading is still refuted; the **dispatch/landing discriminator**; and the pinnacle **12/12 vs golazos 5/12** sibling control. ⛔ **What does not:** any pg_net explanation of the golazos gap. **That gap is now simply UNEXPLAINED** — which ADDENDUM 3 had already reached on independent grounds, hours before I found the refutation.
+
+🚨 **THE EXPENSIVE PART IS THE PROCESS FAILURE, NOT THE FACT.** `pgnet-http-response-is-the-edge-fn-instrument` recorded this exact caution on **2026-08-08**, and I re-derived the refuted conclusion from the same table without reading it. ⭐ **Why it happened is worth more than the correction:** the finding felt *derived* rather than *recalled*, so nothing prompted a lookup — and it arrived with a clean number, an hourly stability check and a spell-vs-quiet control. **The rigour is what made it feel self-sufficient. A well-controlled wrong answer is more convincing than a sloppy one, not less.** New rule recorded: **grep the memory store for a named table/function BEFORE publishing a measurement about it — especially when the result feels novel.**
+
+ⓘ **And the memory that caught me was itself partly stale, which is its own lesson:** its illustration ("jobid 84 has no explicit timeout, inherits the 5000 ms default") is **no longer true** — all **14** active `net.http_get` jobs now set one — while its **mechanism claim was exactly right**. ⭐ **A memory whose EXAMPLE rots while its RULE stands reads as fully stale and gets skipped. Date the example separately from the rule.**
+
+📄 **Also closed tonight, and it splits a pair the repo had treated as one:** ✅ **`pinnacle-sync` has RECOVERED** — 2 clean completions (`phase: complete`, `errors: []`, 2,242–2,243 rows, 30–49 s), so the 08-20 "markers only, zero completions" note is **stale for it**. 🚨 **`compute-laliga-pack-ev` has not**, and now has a named cause: its single terminal row in 7 d is `ok:false` with **`Could not query the database for the schema cache`** — `PGRST002`, **23 `rpc_errors`, 0 rows written** — *and* `elapsed_ms 507,835` against `maxDuration = 300`. **Two independent failure modes; fixing the retry alone would not make it complete.**
+
+**Memory written this session** (Claude Code's own store, not the Cowork project store): 3 new — the three-cause `cron_silent` discriminator, `unmapped_sales` is a staging queue, and grep-memory-before-publishing; 4 updated — the pg_net instrument (re-verification + its stale example), the `after()` kill memory (the alerting predicate: **`hours_since_last_completion`, never kill count or streak** — `fmv-recalc` has a 38-kill streak while healthy), the docs-only-tip memory (scoped to same-push), and `health-check-fns-mixed-return-shapes` (its "do not fix the routes" line was wrong).
+
+**Verified:** ledger instruments re-read after writing — `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** docs only, no DB half.
+
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, guard docs) — a guard stated a rule three lines above an assertion that does not check it; the FALSE IMPRESSION is fixed and the proposed arm is a decided NON-BUILD
 
 **GUARD COMMENT + inbox appendix. No code path, no DB, no prod-state change.** Closing the 08-23 filing, whose two halves deserve **opposite** answers.

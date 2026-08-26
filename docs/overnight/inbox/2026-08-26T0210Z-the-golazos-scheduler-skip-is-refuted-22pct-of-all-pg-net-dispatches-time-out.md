@@ -1,5 +1,39 @@
 # ⛔ The golazos "scheduler-skip" is REFUTED — the cron fired 8/8. ~22% of ALL `pg_net` dispatches time out, and 10% never resolve DNS — a STANDING rate, independent of saturation
 
+> ⛔⛔ **§2 IS RETRACTED — 2026-08-26 ~04:50Z, BY A PRIOR MEASUREMENT THAT WAS ALREADY IN MY OWN MEMORY STORE.**
+>
+> This filing claimed **"70 of 701 (10.0%) consumed their entire timeout inside DNS, so the request never
+> left the box and the target function definitively never ran."** **That is WRONG.**
+>
+> ⭐ **pg_net attributes TOTAL ELAPSED to the resolution field when it times out.** So `DNS time == total
+> time` is an **artifact of the timeout itself**, not a measurement of DNS. ⚠ **The tell was in my own
+> quoted data and I read past it:** `Total time: 90002.632000 ms (DNS time: 90002.632000)` — identical
+> **to the microsecond**. Real resolution latency does not coincidentally equal the timeout exactly.
+>
+> ⭐ **And a pg_net timeout does NOT mean the function did not run.** Verified live in the same 6 h window
+> (2026-08-25 21:43Z → 08-26 03:43Z): `net._http_response` held **708 responses, 140 timed out**, while
+> **jobid 84 dispatched ~180× (`*/2`) and its function logged 176 completed runs — ~98%.** Timeouts and
+> completions coexist at scale. A timeout row is a statement about **pg_net's patience**, not about the
+> callee.
+>
+> ⚠ **This also better explains the "flat across the spell" result I found so persuasive.** A rate
+> dominated by jobs whose configured `timeout_milliseconds` is simply shorter than their function's
+> runtime is stable **by construction** — which is a far more ordinary reason for flatness than a
+> standing egress fault.
+>
+> ✅ **What still stands:** §1 (the cron fired 8/8 — the scheduler did NOT skip), the dispatch/landing
+> discriminator in the first ADDENDUM, and ADDENDUM 3's sibling control. ⛔ **What does not:** any claim
+> that pg_net failures explain the golazos gap. **That gap is now simply UNEXPLAINED**, which ADDENDUM 3
+> had already concluded on independent grounds.
+>
+> 🚨 **THE LESSON IS THE EXPENSIVE PART.** A memory file —
+> `pgnet-http-response-is-the-edge-fn-instrument` — already recorded, measured 2026-08-08:
+> *"A pg_net timeout row is NOT a failure, and `DNS time` is NOT evidence about DNS."* **I did not read
+> it before publishing, and I re-derived a refuted conclusion from the same table.** ⓘ One detail in that
+> memory IS now stale — all 14 `net.http_get` jobs set an explicit `timeout_milliseconds` today, so its
+> jobid-84-inherits-5000ms example no longer holds — **but its mechanism claim was right and mine was wrong.**
+
+
 - **When:** filed 2026-08-26 ~02:10Z (2026-08-25 19:10 PT) by Claude Code, interactive.
 - **Supersedes the root-cause attribution in** [2026-08-25T1809Z-compute-golazos-pack-ev-cadence-silent-17h…](2026-08-25T1809Z-compute-golazos-pack-ev-cadence-silent-17h-pipeline-healthy-when-it-runs.md). That filing was right that the pipeline is healthy when it runs, and right to file the cause as unresolved. Its **mechanism was wrong**, and the correction generalises far beyond golazos.
 - **Nothing shipped. Read-only. No DB write.** Measured in a genuinely quiet window (`io_wait=0, active=1, total=42`).
