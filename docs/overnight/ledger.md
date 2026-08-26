@@ -10,6 +10,86 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (prod index, built CONCURRENTLY) — one INCLUDE column restores the Index Only Scan that `topshot_serial_board_candidates` lost; known-issues #30's hypothesis is now MEASURED
+
+**Prod state (one `CREATE INDEX CONCURRENTLY`, via the one-off pg_cron recipe) + a
+RECORD-ONLY migration file. No function or route changed.**
+
+⭐ **This closes a diagnosis that had been open since 2026-08-23.** #30 recorded the cause
+as *"a well-supported hypothesis, not a measurement"* and named the instrument that could
+settle it — `EXPLAIN (ANALYZE, BUFFERS)` in a quiet window. **Run, warm-vs-warm: the
+unbounded latest-FMV `DISTINCT ON` plus its join is 841,312 of the call's 927,466 buffers —
+90.7% — so all 14,748 `serial_fmv_estimate` calls are under a tenth.** #30's *mechanism* is
+confirmed verbatim by the plan: an `Index Scan`, **not** Index Only, taking a heap fetch on
+every one of 871,797 entries because `confidence` is uncovered, which is exactly why the
+120 MB `INCLUDE (fmv_usd)` sibling was being declined.
+
+**Built** `fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx` — same keys, `INCLUDE (fmv_usd,
+confidence)`. **Result, measured after:**
+
+| | before | after | |
+|---|---:|---:|---|
+| plan node | `Index Scan` | **`Index Only Scan`** | Heap Fetches 26,152 |
+| CTE + join | 841,312 buffers | **56,859** | **14.8×** |
+| whole function (warm) | 927,466 buffers | **142,625** | **6.5×**, same 984 rows |
+
+Production distribution before the change (69 calls): **mean 13,513 ms, max 29,949 ms,
+11,224 DISK reads/call** — and disk reads are what binds on this IO-throttled instance, so
+the production gain should exceed the warm figure. ⓘ **No equivalence proof is offered
+because none is needed: an index cannot change a result, only a plan.**
+
+🚨 **A MEASUREMENT OF MINE, EARLIER THE SAME DAY, SAID THE OPPOSITE — AND THIS IS THE PART
+WORTH KEEPING.** I measured the CTE "in isolation" at **32,641 buffers**, subtracted it,
+and concluded `serial_fmv_estimate` was **~96%** of the cost. The isolate selected **only
+`edition_id`**, a column the index covers, so Postgres served an **Index Only Scan**. The
+function also selects `fmv_usd` and `confidence`, which forces an **Index Scan**. **The same
+CTE reads 32,641 buffers in my isolate and 818,698 in context — a 25× gap produced entirely
+by the projection.** ⭐ **Changing what a query SELECTs can change its PLAN, so an isolated
+measurement of a sub-expression is only valid if you isolate it with the real query's output
+columns.** I had a number, a control and a subtraction, and the whole structure was
+measuring a plan the code never runs — the shape that produces a confidently wrong answer
+with good arithmetic on top.
+
+⛔ **THREE CHEAPER-LOOKING FIXES FALSIFIED BY MEASUREMENT, recorded so nobody re-spends the
+afternoon.** (1) **Defer the second `serial_fmv_estimate`** behind the `$100` floor — only
+**984 of 7,374 (13.3%)** rows survive it, so 6,390 of 14,748 calls are computed and thrown
+away, which looks like 43%. Built as a candidate and **proven equivalent with `EXCEPT ALL`
+in BOTH directions at the production floor AND at `floor = 0`** (the boundary where
+`COALESCE(no1, perfect) IS NOT NULL` actually depends on the deferred value): `984 = 984,
+0/0` and `7,374 = 7,374, 0/0`. **And it saves 1.7%**, because the estimate calls were never
+the cost. (2) **Swap to `edition_fmv_current`** — 111× faster on an *identical row count*,
+and still wrong: **233 `fmv_usd` + 79 `confidence` disagreements** over the population,
+moving HIGH/MEDIUM membership **7,538 → 7,568**, i.e. it **admits 30 editions the board does
+not show**. ⭐ Second time in one day that this lagging materialisation matched on COUNT and
+diverged on VALUE — and unlike `refresh_wmc_fmv_changed` there is **no queueing timestamp to
+guard against**, so the trick that made that fix safe does not exist here. (3) A **LATERAL**
+loose-index-scan — exactly equivalent, 2.4× faster, **2.5× worse on buffers**.
+
+⚠ **The window was chosen and proven with a number, per the recipe** — the instance read
+**9 active / 8 IO-wait** at 15:10Z and the build was held until **4 / 3 / 0**. ⓘ Much of the
+earlier pressure was **mine**: this investigation repeatedly ran a 900k-buffer query, and a
+12.5-minute autovacuum on `wallet_moments_cache` was running alongside. **Do not read 15:10Z
+as the estate's baseline.**
+
+ⓘ **The CIC spent ~4 minutes in `Lock/virtualxid`** waiting out an open transaction — which
+turned out to be `refresh_wmc_fmv_changed`, the function changed earlier in this same
+session. That phase blocks nobody; it is the documented behaviour.
+
+**Cleanup verified rather than assumed:** job `succeeded :: CREATE INDEX`, `indisvalid =
+true`, 94 MB, **0 invalid index debris**, one-off job unscheduled, `postgres` rolconfig back
+to `search_path` only, active job count back to its **99** baseline.
+
+⏳ **Deliberately NOT done in the same change:** `fmv_snapshots_2026_coll_ed_ct_fmv_idx`
+(120 MB, `INCLUDE (fmv_usd)`) is now a strict SUBSET of the new index and is a drop
+candidate — worth 120 MB plus the write amplification of a 6th index on a hot table. It
+still shows **76,439 scans**, so it is live, and the new index can serve every one of them.
+**Drop it CONCURRENTLY once production has been observed using the new index, not before.**
+
+**Revert path:** the old index was not touched, so revert is a single
+`DROP INDEX CONCURRENTLY public.fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx;` via the same
+one-off pg_cron route. Record-only migration:
+`supabase/migrations/20260826153459_audit_20260826_fmv2026_covering_index_restores_index_only_scan.sql`.
+
 ### 2026-08-26 · SHIPPED (prod DDL + repo) — `refresh_wmc_fmv_changed` takes a FRESHNESS-GUARDED fast path; the instance's single biggest writer stops Appending across every FMV partition
 
 **Prod state (one `CREATE OR REPLACE`) + committed migration + re-pinned DB invariant.**
