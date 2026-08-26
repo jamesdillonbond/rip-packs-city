@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, autonomous — AchievementsCard) — a failed read published a MEASURED "0 / 7" about the reader's own account, and two tests PINNED it
+
+**Third and fourth instances of the honesty class tonight, found by continuing the sweep** from the collapse-site census (68 sites / 36 files) down to the files carrying **no failure state at all** — `AchievementsCard` was one of four.
+
+**The defect:** `load()` did `.then(r => r.ok ? r.json() : null)` then `if (!d?.achievements) return;` and `.catch(() => {})`, with `loading` cleared regardless. On a failed read `items` stayed `{}`, so the header printed **`unlockedCount + " / " + defKeys.length`** = **"0 / 7"** and **every badge rendered locked** — a fabricated number about the reader's OWN account, the exact `?? 0`-shaped defect CLAUDE.md names, reached by a different route.
+
+🚨 **THE FINDING THAT MATTERS: TWO EXISTING TESTS ASSERTED THE DEFECT.** `component-AchievementsCard.test.tsx` carried `it("swallows a non-ok status response without crashing (r.ok=false -> null)")` and `it("ignores a payload with no achievements field")`, **both asserting `getByText("0 / 7")` on a FAILED read**, with the comment *"0 unlocked -> the count badge still renders once loading settles"*. They did not miss the defect — **they held it in place.** Per the standing rule, both were **INVERTED, not deleted**, names kept close to the originals so the history stays greppable.
+
+**Fixes (two, same file — fix per PANEL):**
+1. **Three states, not two.** A `failed` state; the badge renders **UNAVAILABLE** instead of a measured zero, and the grid renders an honest line instead of an all-locked wall. ⭐ **A 200 whose body carries no `achievements` ARRAY is treated as a failure**, not as empty — the *read ok + unrenderable* third state, matching the call `/dashboard` already makes for "a 200 with no moments key".
+2. **The "✓ Updated" confirmation reported the passage of time, not the recompute.** The POST result was swallowed and `setUpdated(true)` ran unconditionally, so a failed recompute still told the collector their achievements had just refreshed — **unfalsifiable, because the re-read that follows succeeds either way and simply returns the OLD data.** Now `setUpdated(recomputed)`.
+
+⚠⚠ **MY FIRST TEST FOR FIX 2 WAS VACUOUS AND THE MUTATION RUN IS THE ONLY REASON I KNOW.** It asserted `queryByText(/updated/i)).toBeNull()` under fake timers — but the promise chain never reached `setUpdated` in that harness, so it passed **against the un-fixed component**. Restoring the original `setUpdated(true)` produced **10 passed**, i.e. the test proved nothing. Rewritten as a **PAIR with the positive control first** ("a successful recompute DOES claim Updated"), which forces the harness to demonstrate it can reach that label before the absence assertion is allowed to mean anything. Re-mutated: now reds correctly. ⭐ **A `toBeNull()` is green whenever the harness cannot reach the state at all — never ship one without a positive control that does reach it.**
+
+**Verification:** `npx tsc --noEmit` exit 0 (bare). **Both fixes mutation-proven by restoring the ORIGINAL code verbatim**, not by an approximation: reverting the discriminator reds exactly the two inverted tests; reverting `setUpdated` reds exactly its own. Each restored and checked **by content**. A **NO-CHANGE CONTROL** asserts a genuinely empty `achievements: []` still reads "0 / 7" — without it, suppressing the badge outright would satisfy both inverted tests and destroy the real empty state.
+
+⚠ **The file is CRLF while `DashboardClient.tsx` is LF** — multi-line Node string anchors failed to match until normalised in memory and written back as CRLF, so the diff stayed at 42 insertions rather than churning all 286 line endings. The documented trap, met live.
+
+✅ **Sibling CHECKED and deliberately NOT changed:** `PublicAchievements.tsx` shares the fetch shape but ends `if (items == null || items.length === 0) return null` — it degrades to an **omitted section**, which understates rather than claims, and is the right behaviour for a public profile.
+
+⭐ **THEN SWEPT THE WHOLE REPO FOR THE SAME SHAPE, AND IT PASSES.** A test that mocks a FAILED read and then asserts the PRESENCE of a rendered numeric claim is how a test stops guarding and starts pinning. Scanned **2,940 `it()` blocks across 247 component test files**: **1 flagged, and it is one of tonight’s own new tests matching on its control’s "0 / 7"**. ⚠ The first cut of that sweep read **41** and was useless — it could not tell `getByText("0")` (presence, the defect) from `queryByText("0").toBeNull()` (absence, the fix), and it flagged every ROUTE test correctly asserting a pipeline recorded `ok:false`. Narrowed to component renders and presence-only. ⓘ **A passing audit is worth recording precisely because nobody records one, and someone later re-runs it or assumes it.**
+
+**Revert path:** `git revert` the commit (`git log --grep="PINNED it"`). ⚠ A revert restores the fabricated "0 / 7" **and re-pins it in the test suite**; prefer a forward fix. **No DB half — client render only.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, autonomous — /dashboard client fix + tests) — a failed read told collectors to pin trophies they had already pinned, and to follow people they already follow
 
 **Two live instances of the repo's top defect class, on the most-read signed-in surface.** Both are the WORST sub-class: a false claim about the reader's OWN account, and **actionable** — each tells someone to redo finished work.
