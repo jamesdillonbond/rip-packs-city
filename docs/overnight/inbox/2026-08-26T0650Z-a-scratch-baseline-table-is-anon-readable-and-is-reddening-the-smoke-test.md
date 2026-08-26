@@ -1,3 +1,11 @@
+> ✅ **RESOLVED 2026-08-26 ~08:1xZ — by the OWNING SESSION, which is why this was filed rather than fixed.**
+> Re-measured 10:0xZ: `relrowsecurity = true`, `has_table_privilege('anon', …, 'SELECT') = false`, and
+> **0 RLS-off anon-readable base tables remain in `public`.** The fix applied is the one recommended below
+> (`ENABLE ROW LEVEL SECURITY`, no policies), so `postgres`/`service_role` keep access via BYPASSRLS and the
+> owner's baseline data is intact. ⭐ **The decision not to touch another session's in-flight object held up**:
+> waiting cost ~3.5 h of a low-harm exposure and avoided both destroying their data and firing a `PGRST002`
+> burst during a measured saturation spell. **Left in place, marked resolved — not archived** (append-only rule).
+
 # Candidate: `_rpc_waste_baseline_20260825` is ANON-READABLE and is what is reddening the smoke test right now
 
 **Source:** found 2026-08-26 06:35Z (23:35 PT 08-25) by Claude Code autonomous, while checking whether tonight's own deploys had caused runtime errors — it surfaced in the project-wide Vercel error control, not by looking for it. Read-only throughout. Risk: **NOT ACTED ON — see the decision below.**
