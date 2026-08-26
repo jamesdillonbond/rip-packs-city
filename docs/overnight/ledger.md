@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · VERIFIED (Claude Code, interactive — docs-only, no code/DB) — the cold-tail falsifier RAN and did not falsify, and the defect did not spread
+
+**Docs only.** Closes the open loop left by the migration entry below, which deliberately named a falsifier
+instead of claiming a result.
+
+✅ **The falsifier.** The first `drain-fmv-cold-tail` tick whose `started_at` is after the apply
+(`20260826041837` = 04:18:37Z) ran at **04:47:12Z**: `ok: true`, `error: null`, **`deadline_hit: false`,
+`slugs_attempted: 4`, `skipped: 0`**, **16,835 ms**, 14 rows. **All four collections drained in one tick,
+under the PRODUCTION caller** — which is the thing a manual invocation could not establish and the reason the
+earlier entry refused to call the 04:17:14Z tick validation.
+
+⛔ **AND THE LIMIT OF IT, WRITTEN DOWN RATHER THAN GLOSSED: n = 1 IS NOT A RATE.** The pre-migration baseline
+is **31.3% deadline hits (42 of 134 ticks)**, so one clean tick had a **~69%** chance of happening under the
+OLD body too. **The real reading is the `deadline_hit` rate over the next day's ~48 ticks**, and it should be
+TAKEN then, not inferred now. ⓘ Weak corroboration only, offered as such: `pg_stat_activity` read
+**io_wait 18 / active 22** in that window — elevated, not quiet — and it still finished all four slugs.
+
+ⓘ **Negative control on spread, because the standing rule is *grep for the EXPRESSION, not the file*.** Swept
+`pg_proc.prosrc` schema-wide: `FROM fmv_snapshots` + `GROUP BY edition_id` → **3** functions, of which
+`detect_floor_drops` and `get_topshot_hot_floors` are **already scoped**. **Population is ONE.** ⚠ Recorded
+with its own blind spot named: the coarse `mentions_collection_id` filter would have cleared
+`drain_fmv_cold_tail` itself, so of the **76** functions reading `fmv_snapshots`, **3 bodies were read and 73
+were not** — this is not a clean bill for the class, only for the copy-paste.
+
+**Verified:** tick read from `pipeline_runs` under the production caller · baseline recomputed over the whole
+retention window · CI green per commit (`b34a03ec` CI+Smoke success, `0e3c8a55` CI+Smoke success) · rebased
+onto two concurrent-session commits and **CLAUDE.md re-checked after the rebase** (39,945 chars, all four of
+this session's edits present).
+
+**Revert:** docs-only and inert — `git revert` the commit (`git log --grep="falsifier"`). **No DB half.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, web sandbox) — CLAUDE.md's "two unshipped DB fixes" went stale within hours of the refresh that verified it; corrected against live `prosrc`
 
 Docs only. No migration, no DB write, no prod-state change.
