@@ -90,19 +90,72 @@ describe("AchievementsCard", () => {
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled())
   })
 
-  it("swallows a non-ok status response without crashing (r.ok=false -> null)", async () => {
+  // ⚠⚠ THESE TWO TESTS WERE INVERTED ON 2026-08-26. They did not merely miss the
+  // defect — they PINNED it. Both asserted that a failed read renders the count
+  // badge "0 / 7", which is a MEASURED claim about the reader's own account
+  // produced by a read that never landed, while every badge rendered locked.
+  //
+  // The repo's rule is that a test pinning the defect it was named to prevent
+  // gets INVERTED, never deleted: the assertion is what holds the behaviour in
+  // place, so it has to keep existing and say the opposite. The names are kept
+  // close to the originals so the history stays greppable.
+
+  it("does NOT publish a measured 0 / 7 when the read returned a non-ok status", async () => {
     fetchMock.mockReturnValueOnce(
       Promise.resolve({ ok: false, json: () => Promise.resolve(null) } as Response),
     )
-    const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
-    // 0 unlocked -> the count badge still renders once loading settles.
-    await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+    const { queryByText, getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("UNAVAILABLE")).toBeTruthy())
+    // The fabricated number must be ABSENT — asserting the error copy is present
+    // is the weaker claim, and the weaker claim is what let this ship.
+    expect(queryByText("0 / 7")).toBeNull()
   })
 
-  it("ignores a payload with no achievements field", async () => {
+  it("treats a 200 with no achievements array as a failed read, not an empty one", async () => {
+    // read ok + unrenderable is the third state, and it is not zero.
     fetchMock.mockReturnValueOnce(okJson({ ok: true })) // no `achievements` key
+    const { queryByText, getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("UNAVAILABLE")).toBeTruthy())
+    expect(queryByText("0 / 7")).toBeNull()
+  })
+
+  it("NO-CHANGE CONTROL — a genuinely empty achievements array still reads 0 / 7", async () => {
+    // Without this, suppressing the badge unconditionally would satisfy both
+    // tests above and destroy the real empty state: a collector who has
+    // genuinely unlocked nothing must still see their count.
+    fetchMock.mockReturnValueOnce(okJson({ achievements: [] }))
+    const { queryByText, getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+    expect(queryByText("UNAVAILABLE")).toBeNull()
+  })
+
+  // ⚠ POSITIVE CONTROL FIRST. The pair below is deliberate: the first test
+  // proves this harness can actually reach the "✓ Updated" label, so the
+  // second one's `toBeNull()` means something. A first attempt at the second
+  // test alone PASSED against the un-fixed component — the promise chain never
+  // reached setUpdated under the harness, so the absence assertion was
+  // vacuous and the mutation run caught it.
+  it("POSITIVE CONTROL — a successful recompute DOES claim Updated", async () => {
+    fetchMock.mockReturnValue(okJson({ achievements: [] }))
     const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
     await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+    fireEvent.click(getByText(/Refresh/))
+    await waitFor(() => expect(getByText(/Updated/)).toBeTruthy(), { timeout: 4000 })
+  })
+
+  it("does NOT claim Updated when the recompute POST failed", async () => {
+    // The confirmation must report the RECOMPUTE, not the passage of time: the
+    // re-read that follows succeeds either way and simply returns the OLD data.
+    fetchMock
+      .mockReturnValueOnce(okJson({ achievements: [] }))                                                    // initial load
+      .mockReturnValueOnce(Promise.resolve({ ok: false, json: () => Promise.resolve(null) } as Response))    // POST fails
+      .mockReturnValue(okJson({ achievements: [] }))                                                        // re-load
+    const { getByText, queryByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+    fireEvent.click(getByText(/Refresh/))
+    // Wait for the chain to settle (the re-load lands ~2s later), then assert.
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3), { timeout: 4000 })
+    expect(queryByText(/Updated/)).toBeNull()
   })
 
   it("runs the full Refresh callback chain (POST → re-load → clear updated)", async () => {

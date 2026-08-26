@@ -43,6 +43,14 @@ export default function AchievementsCard(props: { ownerKey: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updated, setUpdated] = useState(false);
+  // THREE STATES, NOT TWO. `items` is {} both when the collector has unlocked
+  // nothing and when the read FAILED — and the header prints
+  // "unlockedCount / defKeys.length", so a failure published a MEASURED
+  // "0 / 7" about the reader's OWN account while every badge rendered locked.
+  // A 200 whose body carries no `achievements` ARRAY is the same defect's
+  // third face (read ok + unrenderable) and counts as a failure here — the
+  // same call /dashboard already makes for "a 200 with no moments key".
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(function () {
     if (!props.ownerKey) return;
@@ -51,7 +59,11 @@ export default function AchievementsCard(props: { ownerKey: string }) {
         return r.ok ? r.json() : null;
       })
       .then(function (d) {
-        if (!d?.achievements) return;
+        if (!d || !Array.isArray(d.achievements)) {
+          setFailed(true);
+          return;
+        }
+        setFailed(false);
         const map: AchievementMap = {};
         for (const a of d.achievements as ProfileAchievement[]) {
           map[a.achievement_key] = {
@@ -61,7 +73,9 @@ export default function AchievementsCard(props: { ownerKey: string }) {
         }
         setItems(map);
       })
-      .catch(function () {});
+      .catch(function () {
+        setFailed(true);
+      });
   }, [props.ownerKey]);
 
   useEffect(function () {
@@ -75,17 +89,26 @@ export default function AchievementsCard(props: { ownerKey: string }) {
     if (refreshing) return;
     setRefreshing(true);
     setUpdated(false);
+    // ⚠ The "UPDATED" confirmation must report the RECOMPUTE, not the passage
+    // of time. This chain swallowed the POST result and then claimed success
+    // unconditionally, so a failed recompute still told the collector their
+    // achievements had just been refreshed — an unfalsifiable claim, since the
+    // re-read that follows succeeds either way and simply returns the OLD data.
+    let recomputed = false;
     fetch("/api/profile/achievements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ownerKey: props.ownerKey }),
     })
+      .then(function (r) {
+        recomputed = r.ok;
+      })
       .catch(function () {})
       .finally(function () {
         window.setTimeout(function () {
           Promise.resolve(load()).finally(function () {
             setRefreshing(false);
-            setUpdated(true);
+            setUpdated(recomputed);
             window.setTimeout(function () {
               setUpdated(false);
             }, 2000);
@@ -117,7 +140,24 @@ export default function AchievementsCard(props: { ownerKey: string }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={labelStyle}>★ Achievements</span>
-          {!loading && (
+          {!loading && failed && (
+            <span
+              style={{
+                fontSize: 8,
+                fontFamily: monoFont,
+                background: "rgba(245,158,11,0.10)",
+                color: "var(--rpc-text-secondary)",
+                border: "1px solid rgba(245,158,11,0.25)",
+                padding: "2px 7px",
+                borderRadius: 999,
+                letterSpacing: "0.1em",
+                fontWeight: 700,
+              }}
+            >
+              UNAVAILABLE
+            </span>
+          )}
+          {!loading && !failed && (
             <span
               style={{
                 fontSize: 8,
@@ -159,6 +199,14 @@ export default function AchievementsCard(props: { ownerKey: string }) {
               />
             );
           })}
+        </div>
+      ) : failed ? (
+        <div
+          role="status"
+          style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}
+        >
+          Couldn&apos;t load your achievements. This is a loading problem, not an
+          empty case — nothing has been lost.
         </div>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
