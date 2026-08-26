@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · FILED, NOT FIXED (Claude Code, autonomous — read-only) — an ANON-READABLE scratch table is reddening the smoke test, and the reasons NOT to touch it tonight are measured
+
+**Found by a POSITIVE CONTROL, which is the reusable half.** Verifying that tonight's five code deploys had not broken anything, `get_runtime_errors` returned **zero** for every route I touched — and a zero is indistinguishable from a quiet instrument, so I re-ran it project-wide as a control. **37 error groups came back**, which made my zero meaningful *and* contained something nobody was looking for.
+
+🚨 **`/api/smoke-test` is logging a HARD FAILURE** (newest **2026-08-26T06:32:45Z**): `check_public_security_invariants` → `1 violation(s): rls_off_base_table:_rpc_waste_baseline_20260825`. Measured against `pg_class`: **RLS false · 0 policies · `has_table_privilege('anon', …, 'SELECT') = true`** — live at `/rest/v1/_rpc_waste_baseline_20260825`.
+
+✅ **Sensitivity checked BEFORE deciding, and it is LOW:** 11 rows of `pg_stat_statements`-style counters (`calls, total_exec_ms, blks_read, wal_bytes, n_tup_ins…`). **No user data, no PII, no secrets.**
+
+⛔ **NOT FIXED, deliberately — three reasons, each measured rather than asserted:**
+
+1. **It is another session's IN-FLIGHT artifact.** Stamped `20260825` — created today — holding an "rpc waste baseline" a concurrent session was building tonight. **Dropping it destroys their data; altering it out-of-band diverges the object from a migration they may be about to commit.**
+2. ⚠ **An ACTIVE saturation spell, measured at 06:50Z: `io_wait 17 / active 24 / 48 total`** (~71% of active sessions in IO wait), with 37 Vercel error groups whose newest timestamps are minutes old and almost entirely `canceling statement due to statement timeout`. **Any DDL fires a ~10–20 s user-facing `PGRST002` burst** — the worst possible moment to add one.
+3. **The exposure is genuinely low-harm**, so it does not outweigh 1 and 2 overnight.
+
+👉 **Morning decision, one statement either way:** `ALTER TABLE … ENABLE ROW LEVEL SECURITY` (no policies) in a quiet window restores the invariant while leaving the owner unaffected (`postgres`/`service_role` **BYPASSRLS**); or `DROP TABLE` if the baseline is finished with — **the owner's call, not a sweeper's**. ⚠ **Re-stat the object immediately before acting** — a live writer can rename or replace it between the read and the write.
+
+⚠ **Also seen in the same control and NOT re-opened:** a broad live saturation spell (`/[collection]/pack/dist/[distId]` alone shows ~7 distinct `read exceeded 5000ms` groups; `refresh-insights-cache` shows 8 candy-MLB board timeouts). Symptom only, known IO-bound root-cause class, deliberately left at 06:50Z.
+
+✅ **And the question the control was asked to answer: tonight's deploys are CLEAN.** Zero runtime errors across `/rewards`, `/dashboard`, `/api/rewards/summary`, `/api/profile/{trophy-slabs,activity,achievements}` in the 2 h window, against a project-wide control of 37 groups. The rewards deploy is READY with `ready` > `buildingAt` and production aliases attached.
+
+**Revert path:** nothing to revert — read-only, plus one inbox filing and its `INDEX.md` entry (total 242 → 243; the `2026-08-25` day heading 11 → 12). **No DB half — no write was issued.**
+
 ### 2026-08-25 · FILED (Claude Code, autonomous — read-only measurement) — `atlas-proxy` will NOT un-red the listings ingest, and the instrument everyone reads is BLIND to the reason
 
 **No writes.** Read-only across `pipeline_runs`, `pipeline_runs_daily`, `pg_proc` and GitHub Actions logs. Filed as `docs/overnight/inbox/2026-08-26T0630Z-atlas-proxy-will-not-un-red-the-listings-ingest-the-targets-rpc-is-the-blocker.md`.
