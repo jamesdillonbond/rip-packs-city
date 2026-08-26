@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ⛔ REVERTED (prod, pg_cron only) — the pack-sales cadence cut starved head freshness; the handoff's own falsifier caught it, and the mechanism is LAP TIME, not tick count
+
+**Prod state (two `cron.alter_job` schedule changes). No code, no migration row.**
+
+The 2026-08-25 Cowork pass cut jobids **25** (`rpc-allday-pack-sales-backfill`) and **29**
+(`rpc-topshot-pack-sales-backfill`) from a 3-minute to a 15-minute cadence to stop ~71.9 GB/day of
+redundant disk reads, and wrote down the abort condition itself: *"Over 24 h, `n_tup_ins` should
+hold while `n_tup_upd` falls ~5×. **If INSERTS fall too, the walk was covering ground and this cut
+is wrong.**"* **Read at 7.2 h rather than 24 h, and it had already tripped.**
+
+**The falsifier, on the same 07:03–14:16 UTC clock window so time-of-day is not a confound:**
+
+| day (UTC) | 08-17 | 08-18 | 08-19 | 08-20 | 08-21 | 08-22 | 08-23 | 08-24 | 08-25 | **08-26** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| topshot rows ingested | 116 | 117 | 131 | 122 | 108 | 132 | 131 | 131 | 100 | **0** |
+
+Nine consecutive pre-cut days in a band of 100–132; the post-cut day is **zero** — the row is
+absent from the grouped result entirely. ⓘ The allday arm is **uninformative, not clean**: its
+volume is 1–17 rows/day, so 7 h cannot separate a working walk from a stopped one. Reverted both to
+the documented pre-cut schedules (`*/3 * * * *` and `1-58/3 * * * *`).
+
+⭐ **THE MECHANISM, AND IT IS THE PART WORTH KEEPING — head freshness is LAP TIME, and cadence is a
+MULTIPLIER ON IT.** `public.topshot_pack_sales_cursor` holds a base64 GraphQL cursor that decodes
+to `SortDirection: DESC` at `block_time 2024-12-20`, `done:false`, `total_seen:302933`. **This
+walker is a single full DESC re-walk from the head to the oldest row, and it picks up new sales
+ONLY when it finishes and laps back to page 0.** So new rows do not trickle in — they arrive in
+**bursts at the lap boundary**, which the hourly histogram shows plainly (08-24 09:00 → 128 rows;
+15:00 → 26; 21:00 → 43; 08-25 13:00 → 100; 21:00 → 42; 08-26 03:00 → 44, then nothing). At ~4,000
+rows/run × 20 runs/h a lap over ~350 k rows takes **~5 h**; at 4 runs/h it takes **~22 h**.
+**Cutting the cadence 5× multiplied the freshness lag 5×.**
+
+⚠ **I ALSO GOT THIS WRONG ONCE MID-DIAGNOSIS, AND THE WRONG STEP IS THE INSTRUCTIVE ONE.** The last
+row landed **04:19 UTC** and the cut went in at **07:03 UTC**, so I briefly concluded the stop
+*preceded* the cut and therefore exonerated it. **That inference was invalid**: the stop was not an
+event at 04:19 — it was the **non-arrival of the next lap**, which the cut had pushed from ~09:00
+UTC out to the evening. ⭐ **A "last seen" timestamp dates the last SUCCESS, not the failure. For a
+process that delivers in bursts, absence is only measurable against the EXPECTED INTERVAL —
+comparing it to a change's wall-clock time attributes by coincidence.**
+
+⭐ **The cadence was never the right lever, and the saving was real but bought with freshness.**
+Measured against a **14.5-day** `pg_stat_statements` baseline (not the 39-minute window I first
+used, which was n=4 calls and would have been a snapshot posing as a rate): **70.9 GB/day →
+26.8 GB/day, a 2.65× cut — NOT the predicted 5×**, because with fewer ticks each tick does ~2.6×
+more work. **The actual defect is that the walker re-reads ~300 k rows to discover ~120 new ones**
+(19,194 and 16,590 disk blocks *per* `LIMIT/OFFSET` call). The fix is a cheap head-check that stops
+at the first already-seen row, run often, with the deep re-walk run rarely — **not a cadence
+number.** Filed rather than shipped: both writers are edge functions with no committed source
+(deep-audit R21), so their behaviour cannot be changed under review.
+
+**Revert path (to re-apply the cut):** `SELECT cron.alter_job(25, schedule := '0,15,30,45 * * * *');`
+and `SELECT cron.alter_job(29, schedule := '1,16,31,46 * * * *');` — **do not, until the head-check
+lands**; the freshness cost is now measured.
+
+**Verification pending:** at 3-min cadence the walker should lap and land head rows within ~5 h of
+14:26 UTC. ⓘ `public._rpc_waste_baseline_20260825` is **retained**, not dropped as the handoff
+proposed — it holds the pre-change baseline this entry is measured against and the question is no
+longer closed.
+
 ### 2026-08-26 · ⛔ CAUGHT AND FIXED — the docs-only-tip trap bit a THIRD time, and it was mine: the Sentry guard was on `main` but NOT in production
 
 **I landed the Cowork patch set, saw CI green, and nearly stopped there. The deploy check is what caught it:** BOTH production deployments read **`CANCELED`**, not READY.
