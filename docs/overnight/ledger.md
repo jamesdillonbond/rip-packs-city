@@ -35,6 +35,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **One residual, stated rather than glossed:** I verified the deploy, not the SERVED BUNDLE. This repo records a case where turbopack constant-folded a `+`-joined template and dropped a quasi, so production rendered a sentence the source does not contain while `tsc` and vitest read it correctly. **The guard's matching is function-based rather than a joined string literal, so it is not the shape that bug hits** — but "READY on the right sha" is a deploy verification, and a bundle verification would mean grepping the served chunk.
 
+✅ **POST-DEPLOY HEALTH CHECK — 0 of 4 sampled live pages broken** (`/`, `/insights/top-sales`, `/nba-top-shot/collection`, a team page), read as RENDERED DOM in Chromium rather than by HTTP status, since a streaming shell always returns 200. ⚠ **My first pass reported 2 of 4 BROKEN and it was my own detector, not the site:** the pattern included a bare `500`, which matched **`$2,500` and `$4,500`** — dollar amounts. Re-run against `Application error|Internal Server Error|client-side exception`: **zero real error boundaries.** ⭐ Third detector false-positive of this session caught the same way — **read WHAT MATCHED, never the count.**
+
 **Revert path:** nothing to revert — a deployment trigger, plus a `.gitignore` line. No DB change beyond this entry.
 
 ### 2026-08-25 · SHIPPED (Cowork cloud, interactive — one GRANT/RLS pair) — closed the anon-readable scratch table I had created, which was reddening the smoke test, and swept the estate for siblings
