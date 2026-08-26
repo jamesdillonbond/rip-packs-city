@@ -65,3 +65,25 @@ The obvious reading is that this is the known disk-IO spell. **Measured against 
 2. **The cheap durable fix is attribution, not repair:** nothing today can map a `pg_net` failure to the pipeline that issued it. Recording the `request_id` returned by `net.http_get` alongside the job would make every future occurrence attributable in one join. That is a small additive change and it is what turns this from circumstantial into measured.
 3. ⚠ **Re-read every `cron_silent` conclusion on a `net.http_get` pipeline.** If ~10% of dispatches never land, then "silent" arms across the platform have been carrying a baseline of false positives that look exactly like a stopped scheduler — the golazos filing is one instance, and it will not be the only one.
 4. Golazos itself remains **NOT urgent**: the board is fresh and the market is thin.
+
+---
+
+## ⭐ ADDENDUM — a two-way discriminator for `cron_silent`, from two independent findings the same night
+
+This filing and [the board-watchdog falsifier read](2026-08-24T0225Z-the-board-watchdog-loses-every-probe-it-completed-when-any-one-times-out.md) (`faf4c571`, filed ~18:20 PT by a concurrent session) landed within two hours of each other and found **opposite halves of the same symptom**. Neither is complete alone; together they discriminate.
+
+| what the record shows | what it means | evidence |
+|---|---|---|
+| **NO `cron.job_run_details` row for a scheduled slot** | the job **never STARTED** — pg_cron could not get a background worker (`job startup timeout`; the `max_worker_processes`=6 vs `cron.max_running_jobs`=32 starvation class) | jobid **288**, slot 08-24 ~12:28 (`faf4c571`) |
+| **`job_run_details` = `succeeded`, but NO `pipeline_runs` row** | the job **STARTED and dispatched**; the request **never LANDED** — the callee never ran, so it never logged | jobid **44**, 4 slots (this filing) |
+| `job_run_details` succeeded **and** a `pipeline_runs` row with `ok:false` | the callee ran and genuinely failed | the ordinary case |
+
+🚨 **All three render identically to a cadence arm.** `detect_stalled_pipelines` measures silence from `pipeline_runs` only, so it reports the same *"last run N minutes ago"* for a job that never started, a job whose request never resolved DNS, and a job that ran and failed. **Three different causes, three different fixes, one indistinguishable symptom** — which is why `cron_silent` conclusions on `net.http_get` pipelines have to name which of the three they mean, and today none of them can.
+
+👉 **The discriminator is free and needs no deploy:** join `cron.job_run_details` (did it start?) against `pipeline_runs` (did it land?) for the same slot. That is the first query to run on any future `cron_silent`, before any hypothesis.
+
+## ⚠ ADDENDUM 2 — the escalation channel for tonight's guard fixes is currently DARK
+
+Tonight's fail-closed work (`ddb452a8`, `a3c99bf1`) makes several guards report `couldNotRun` and **hard-fail**, on the reasoning that a hard fail pages. ⚠ **Sentry has received nothing since 2026-08-18 — ~7 d 11 h** ([filing](2026-08-26T0100Z-sentry-is-dark-on-day-seven-and-the-monitor-reads-the-silence-as-health.md)), so **the Sentry half of that escalation does not currently arrive.**
+
+✅ **Verified the signal survives anyway, rather than assuming it:** `.github/workflows/smoke-tests.yml` gates on `scripts/smoke-gate.py` reading `hardPassed`/`hardTotal` and `exit 1`s, so a `couldNotRun` turns the **GitHub Actions job red independently of Sentry**. The sentinel's arms likewise render into its own report and Telegram, not Sentry alone. **Only the Sentry escalation is degraded, not the detection.** Recorded so nobody reads "it hard-fails, so it pages" as true without qualification while the reporter is down.
