@@ -77,8 +77,12 @@ function walk(dir: string, out: string[] = []): string[] {
 type Hit = { file: string; line: number; text: string; exempt: boolean }
 
 function scan(): { files: string[]; hits: Hit[] } {
+  // ⚠ `path.relative` returns BACKSLASH separators on Windows, so every comparison
+  // against a forward-slash literal (`startsWith("app/insights/")`, the ROOTS above)
+  // silently misses. CI is Linux and never sees it; this box does. Normalise here so
+  // the guard is platform-independent rather than platform-lucky.
   const files = ROOTS.flatMap((r) => walk(path.join(process.cwd(), r))).map((p) =>
-    path.relative(process.cwd(), p),
+    path.relative(process.cwd(), p).split(path.sep).join("/"),
   )
   const hits: Hit[] = []
   for (const f of files) {
