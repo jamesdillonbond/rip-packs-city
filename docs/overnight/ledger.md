@@ -79,6 +79,10 @@ session. That phase blocks nobody; it is the documented behaviour.
 true`, 94 MB, **0 invalid index debris**, one-off job unscheduled, `postgres` rolconfig back
 to `search_path` only, active job count back to its **99** baseline.
 
+✅ **DONE 45 MINUTES LATER, once the precondition was actually met rather than assumed.** The stated gate was *"drop it once production is observed using the new index"*, and it was measured before acting: the new index had **15,058 scans in its first ~15 minutes** while the old one took **+48 in the same window** (76,439 → 76,487 lifetime), so traffic had already migrated. Dropped `CONCURRENTLY` via the same one-off pg_cron route — job `succeeded :: DROP INDEX`, **0 invalid index debris**, jobs unscheduled, role `statement_timeout` reset, job count back to **99**.
+
+⚠ **AND A CORRECTION TO MY OWN RATIONALE, because it was wrong in a checkable way.** I justified the drop partly as removing *"a hot table's 6th-index write amplification"*. **`fmv_snapshots_2026` carried 6 indexes before this pair of changes and carries 6 now** — one added, one dropped — so **write amplification is UNCHANGED**. The real gain is disk only: **497 MB → 471 MB, net −26 MB**. ⓘ The replacement is *smaller than the index it replaces* (94 MB vs 120 MB) **despite carrying an extra INCLUDE column**, because it was freshly built and the old one had accumulated bloat — which is a saving worth having but is not the saving I claimed. Record-only migration: `supabase/migrations/20260826155200_audit_20260826_drop_superseded_fmv_include_index.sql`.
+
 ⏳ **Deliberately NOT done in the same change:** `fmv_snapshots_2026_coll_ed_ct_fmv_idx`
 (120 MB, `INCLUDE (fmv_usd)`) is now a strict SUBSET of the new index and is a drop
 candidate — worth 120 MB plus the write amplification of a 6th index on a hot table. It
