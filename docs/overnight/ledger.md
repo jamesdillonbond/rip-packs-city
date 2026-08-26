@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · ⛔ CORRECTION (Claude Code, interactive — docs-only, read-only DB) — my own 74% is WITHDRAWN: it was 33%, and the gate I recommended was BACKWARDS
+
+**Corrects the entry filed ~40 minutes earlier in this same session.** No code, no DB write. The `l.status = 'failed'` finding stands; **the arithmetic built on top of it does not.**
+
+🚨 **I committed the error that filing warns about, one level up.** I replaced a snapshot with a distribution — correctly — but used a **POOLED** distribution spanning a **changepoint**, which describes neither regime. Per-day breakdown:
+
+- **198** `rpc-weekly-log-purges`: **0 failures / 15** (08-05 → 08-19), then **4 / 6** from **2026-08-20**.
+- **249** `rpc-refresh-players-current-team`: **identical — 0/15, then 4/6 from 08-20.**
+- **331** `rpc-thp-leg-pinnacle-fmv-share`: a 4/8 burst on 08-17→18, three clean days, then **4/16 = 25%** from 08-22.
+
+🚨 **198 and 249 fail on EXACTLY the same days** (08-20, 08-21, 08-24, 08-25; clean 08-22, 08-23). That perfect correlation is **direct positive evidence of the collision mechanism** — both sat on `40 9 * * *` — and it means **they are ONE arm, not two.** Multiplying them treats correlated failures as independent.
+
+**Corrected numbers:** `P(the stated check passes tomorrow | the reschedule did nothing)` = **33%**, not 74% (331 contributes 1.00, the 198/249 arm 0.333; the independent-arms answer of 11% is too *generous*). **So tomorrow's check is far more informative than I published** — a clean result carries p ≈ 0.33 under the null.
+
+**Corrected gate — the ranking INVERTS:** **198 + 249 as one arm need just 3 consecutive clean daily ticks (~3 days)**, the fastest and strongest signal available at a 66.7% failure rate; **331 needs 11 ticks (~2.75 days)**, or 14 on the all-retained rate, so **11–14 is robust to the era choice**. My earlier *"249 needs ~16 days and 198 ~27 days, so neither daily job can be the gate"* was a pure pooling artifact and is **withdrawn**.
+
+⭐ **What generalises, and it is a genuine refinement of a rule already in CLAUDE.md:** *"a directional claim needs a distribution, not a snapshot"* is **necessary and not sufficient — the distribution must be REGIME-AWARE.** A pooled rate across a changepoint is a **third** wrong answer, sitting between the snapshot and the truth, and it is **the most convincing of the three because its n is large**. ⭐ Second: **check whether your arms are CORRELATED before multiplying them** — two jobs sharing a schedule minute failed in lockstep.
+
+**Also shipped:** the verification gate is now a documented, controlled instrument in [cron-and-schedulers.md](../reference/cron-and-schedulers.md) — a query keyed on the NEW schedule minute (self-identifying, so no cutoff constant can go stale) that **carries its own positive control**: the OLD-minute columns must recover the known **38/4 · 23/4 · 39/8**. ⛔ **The control is load-bearing** — the new-minute columns read 0 for days by design, and a zero from a broken query is identical; **if the control ever reads 0 ticks the instrument is blind, not clean**, which retention guarantees eventually (~48 days on 08-26). Verified live at 05:18Z: control fires, verdict `PENDING 0/N` on all three.
+
+✅ **Unchanged and still standing:** the latest-run-status finding, `n = 0` (no tick has run under the new schedules), and the asymmetric reading — **silence is weak evidence; one `job startup timeout` falsifies outright.**
+
+**Revert path:** docs-only — `git revert` the commit (`git log --grep="my own 74% is WITHDRAWN"`). ⚠ Reverting restores a **known-wrong** number to the record, so prefer a further correction over a revert. **No DB half — no write was issued.**
+
 ### 2026-08-25 · FILED (Claude Code, interactive — read-only measurement, docs-only) — the re-stagger's stated exit condition passes ~74% of the time if the fix did nothing, because the check reads LATEST-RUN status
 
 **No code, no DB write.** Read-only against `cron.job`, `cron.job_run_details`, `pg_proc`, prompted by the plan to confirm the `2f2736c5` re-stagger via `check_pgcron_recent_failures()` on the next monitor tick. Filed as `docs/overnight/inbox/2026-08-26T0525Z-the-cron-reschedule-exit-condition-passes-74pct-of-the-time-if-the-fix-did-nothing.md`.

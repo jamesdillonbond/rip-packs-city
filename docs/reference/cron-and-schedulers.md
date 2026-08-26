@@ -190,6 +190,72 @@ concurrency-driven. **The band's lever remains cutting TOTAL daily IO.** Busy-se
 | 22 | **5,045** | **0** |
 | 23 | **3,683** | **0** |
 
+## ⚠ VERIFYING a re-stagger — the obvious check passes ~33% of the time on its own, and the baseline must be REGIME-AWARE (2026-08-26)
+
+After moving the three `job startup timeout` jobs off the pileup (`2f2736c5`), the natural check is
+`check_pgcron_recent_failures()` "going quiet". **It is not a test of the fix.** Three separate reasons,
+each measured:
+
+1. 🚨 **The function reports LATEST-RUN status, not failures-in-window.** It ends `where l.status = 'failed'`,
+   so a job is listed only if its *most recent* run failed. **Job 331 was already absent from the report
+   before any tick ran under the new schedule** — its 8 startup timeouts sat in the window unreported
+   because the newest run happened to succeed. `fails_in_window` is a column on rows that already cleared
+   that gate, so it never rescues you.
+2. ⚠ **A pooled failure rate across a CHANGEPOINT describes neither regime.** Per day, jobs 198 and 249 each
+   ran **0 failures / 15** through 2026-08-19 and **4 / 6** from **08-20** — the pooled 10.5% / 17.4% is a
+   blend of a clean era and a broken one. Using it put `P(check passes | fix did nothing)` at **74%**; the
+   regime-aware answer is **33%**. ⭐ **"Use a distribution, not a snapshot" is necessary and NOT
+   sufficient — a pooled rate is a third wrong answer, and the most convincing one, because its n is large.**
+3. ⚠ **Correlated arms must not be multiplied.** 198 and 249 fail on **exactly the same days** — they shared
+   `40 9 * * *` and were colliding with each other. They are **one arm**; multiplying their probabilities
+   reports 11% where the honest figure is 33%.
+
+⭐ **Read the check ASYMMETRICALLY: silence is weak evidence, but one `job startup timeout` falsifies the
+re-stagger outright.** Worth running daily for that reason alone.
+
+### The gate query — counts ticks on the NEW minute, and carries its own positive control
+
+A re-staggered job is self-identifying: a run at the old minute predates the change, so no cutoff constant
+is needed (and none can go stale).
+
+```sql
+WITH target(jobid, new_min, old_min, ticks_needed) AS (
+  VALUES (198, 54, 40, 3), (249, 56, 40, 3), (331, 55, 9, 11)   -- ticks_needed: regime-aware, p<0.05
+),
+runs AS (
+  SELECT d.jobid, extract(minute FROM d.start_time)::int AS min,
+         (d.status = 'failed' AND d.return_message ILIKE '%startup timeout%') AS st
+  FROM cron.job_run_details d
+  WHERE d.jobid IN (198,249,331) AND d.status IN ('failed','succeeded')
+)
+SELECT j.jobname, t.jobid, j.schedule, t.ticks_needed,
+       count(*) FILTER (WHERE r.min = t.new_min)                  AS new_ticks,
+       count(*) FILTER (WHERE r.min = t.new_min AND r.st)         AS new_startup_timeouts,
+       count(*) FILTER (WHERE r.min = t.old_min)                  AS old_ticks_control,
+       count(*) FILTER (WHERE r.min = t.old_min AND r.st)         AS old_st_control,
+       CASE
+         WHEN count(*) FILTER (WHERE r.min = t.new_min AND r.st) > 0 THEN 'FALSIFIED'
+         WHEN count(*) FILTER (WHERE r.min = t.new_min) >= t.ticks_needed THEN 'CLEARED p<0.05'
+         ELSE 'PENDING ' || count(*) FILTER (WHERE r.min = t.new_min) || '/' || t.ticks_needed
+       END AS verdict
+FROM target t
+JOIN cron.job j ON j.jobid = t.jobid
+LEFT JOIN runs r ON r.jobid = t.jobid
+GROUP BY j.jobname, t.jobid, j.schedule, t.ticks_needed, t.new_min, t.old_min
+ORDER BY t.jobid;
+```
+
+⛔ **`old_st_control` is load-bearing — READ IT EVERY TIME.** The new-minute columns are expected to read 0
+for days, and a zero from a broken query looks identical. The old-minute columns must recover the known
+**38/4 · 23/4 · 39/8**; if the control ever reads **0 ticks**, `cron.job_run_details` has aged the old era
+out and **the instrument is blind, not clean**. ⚠ That decay is guaranteed eventually — retention held
+~48 days on 2026-08-26 (oldest row 07-09, 171,128 rows), so the control expires before a slow gate does.
+
+⚠ **Baseline at first measurement (2026-08-26 05:18Z): `PENDING 0/N` on all three** — every retained run
+still fired on the OLD minute, and 331 did not also fire at 03:55Z, bracketing the change to after that.
+`cron.job` carried the new schedule with owner preserved and `active=true`, so **the config was right and
+only the evidence was missing.** First observations: **09:54 / 09:55 / 09:56Z**.
+
 ## ⛔ You probably CANNOT reschedule the job you need to — 42 of 93 are owned by `cron_heavy`
 
 Measured 2026-08-22, and it blocks a whole class of fixes from any session:

@@ -47,3 +47,34 @@ Count `status='failed' AND return_message ILIKE '%startup timeout%'` **per job o
 ⚠ **Stated honestly — the arithmetic assumes independent ticks and they are NOT independent.** Failures are driven by a shared `max_worker_processes=6` spike lasting ~15 min/day, so ticks cluster; the effective n is lower and these counts are **optimistic**. Treat them as order-of-magnitude, not exact. Baselines are also modest (23–39 runs each).
 
 **Risk read:** none — read-only. The action is a change to what we *conclude*, not to the DB.
+
+---
+
+## ⛔ CORRECTED 2026-08-26 05:45Z — the 74% figure is WITHDRAWN. It was **33%**, and the recommended gate was backwards.
+
+**I made the error this filing warns about, one level up.** I replaced a snapshot with a distribution — correctly — but used a **POOLED** distribution spanning a regime change, which describes neither regime. A per-day breakdown settles it:
+
+| job | before changepoint | after | changepoint |
+|---|---|---|---|
+| 198 `rpc-weekly-log-purges` | **0 / 15** (08-05 → 08-19) | **4 / 6** = 66.7% | **2026-08-20** |
+| 249 `rpc-refresh-players-current-team` | **0 / 15** (08-05 → 08-19) | **4 / 6** = 66.7% | **2026-08-20** |
+| 331 `rpc-thp-leg-pinnacle-fmv-share` | burst 4/8 on 08-17→18, then 3 clean days | **4 / 16** = 25.0% (08-22 →) | less distinct |
+
+🚨 **198 and 249 fail on EXACTLY the same days** (08-20, 08-21, 08-24, 08-25 — clean on 08-22, 08-23). That perfect correlation is **direct evidence of the collision mechanism**: both sat on `40 9 * * *` and were colliding with each other. It also means **they are ONE arm, not two** — multiplying their probabilities treats correlated failures as independent and overstates the evidence.
+
+### Corrected numbers
+
+- **`P(the stated check passes tomorrow | the reschedule did nothing) ≈ 33%`**, not 74%. (331 contributes 1.00 — still already absent from the report; the 198/249 arm contributes 0.333. Treating them as independent would give 11%, which is *too generous*, not too harsh.)
+- **The check is therefore MUCH more informative than I said.** A clean result tomorrow carries `p ≈ 0.33` under the null — not decisive, but real evidence rather than the near-no-op I published.
+
+### Corrected gate — the ranking INVERTS
+
+- **198 + 249 (one arm): 3 consecutive clean daily ticks ≈ 3 days.** At a 66.7% failure rate this is the *fastest and strongest* signal available. My earlier "~16 and ~27 days, so neither daily job can be the gate" was an artifact of the pooled baseline and is **withdrawn**.
+- **331: 11 clean ticks ≈ 2.75 days** (25% current) — and 14 ticks on the all-retained 20.5% rate, so **11–14 is robust to the era choice**. 331 was *not* the wrong gate, but it was never the only fast one.
+
+### What actually generalises
+
+⭐ **"Use a distribution, not a snapshot" is necessary and not sufficient — the distribution must be REGIME-AWARE.** A pooled rate across a changepoint is a third wrong answer, sitting between the snapshot and the truth, and it is the most convincing of the three because it is computed off a large n. **Plot the series per period and look for the changepoint before quoting any rate.**
+⭐ **Check whether your arms are correlated before multiplying them.** Here two "independent" jobs shared a schedule minute and failed in lockstep.
+
+⚠ **Unchanged and still standing:** the `where l.status = 'failed'` finding (the instrument reports latest-run status, so job 331 is already absent with 8 unreported timeouts); `n = 0` — no tick has yet run under the new schedules; and the asymmetric reading (silence is weak evidence, one `job startup timeout` falsifies outright).
