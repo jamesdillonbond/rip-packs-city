@@ -80,6 +80,43 @@ export const KNOWN_HIGH_VOLUME: ReadonlyArray<{
     match: (t) => t.includes("timed out after") && t.includes("with no response"),
     rate: 0.05,
   },
+  {
+    // Postgres 57014, thrown out of a page loader as "<thing> unavailable:
+    // canceling statement due to statement timeout".
+    //
+    // ── WHY THIS WAS ADDED, AND HOW IT WAS MEASURED (2026-08-26) ─────────────
+    // The original list was built from Sentry's own issue counts. Sentry has been
+    // storing nothing since 2026-08-18, so that instrument is unavailable — and
+    // the operator decision is NOT to buy more quota. The list therefore has to
+    // fit the EXISTING quota, which means it has to be built from a source that
+    // still works.
+    //
+    // ⭐ Vercel's runtime-error aggregation is that source: it is free, already
+    // running, and groups by signature with counts, affected users and routes.
+    // Measured there over 7 days, restricted to errors that are actually THROWN
+    // (a `console.error` line never becomes a Sentry event, so raw log counts
+    // would overstate this badly):
+    //
+    //   team detail unavailable: canceling statement … …… 2,460 events
+    //   set editions unavailable: canceling statement … … 1,358 events
+    //
+    // ≈3,818 in 7 days ≈ 16,400/month from this signature alone — on its own
+    // enough to exhaust a 5,000/month quota several times over, which is exactly
+    // how the last one went. It is the largest THROWN class the guard did not
+    // already cover.
+    //
+    // ⚠ COUNTS ONLY. `get_runtime_errors`' `users=` and `routes=` fields are
+    // documented in tooling-gotchas.md as NOT trustworthy — attribution is smeared
+    // across unrelated paths (measured 2026-08-21). The event counts are what this
+    // rule is sized on; no user-impact figure is claimed here, deliberately.
+    //
+    // ⚠ Sampled rather than dropped for the same reason as the deadline family:
+    // the incidence is measurable elsewhere (Vercel runtime errors, and
+    // `pipeline_runs` for the pipeline side), so Sentry does not need every copy.
+    signature: "pg-statement-timeout",
+    match: (t) => t.includes("canceling statement due to statement timeout"),
+    rate: 0.05,
+  },
 ]
 
 /** Everything Sentry will fingerprint on, flattened to one lowercase string. */

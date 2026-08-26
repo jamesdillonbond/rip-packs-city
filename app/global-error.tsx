@@ -33,8 +33,17 @@ export default function GlobalError({
           <h1 style={{ fontSize: "1.5rem", marginBottom: "0.5rem", color: "#E03A2F" }}>
             Something went wrong
           </h1>
+          {/* ⚠ Reports what we DID, never what a human will do about it. This used to
+              read "Our team has been notified." — a promise whose truth depended on
+              Sentry actually STORING the event, which it stopped doing on
+              2026-08-18 (org error quota exhausted; the decision is not to buy more).
+              The capture below still runs and is still worth running, but "we tried to
+              report it" and "a person has seen it" are different claims and only the
+              first is ours to make. Voice matches the sibling boundary at
+              app/(collections)/[collection]/error.tsx ("We logged it. Reloading often
+              works."), which already got this right. */}
           <p style={{ color: "#a1a1aa", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-            An unexpected error occurred. Our team has been notified.
+            An unexpected error occurred. We logged it — trying again often works.
           </p>
           <button
             onClick={reset}

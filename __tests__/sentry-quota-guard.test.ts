@@ -118,3 +118,65 @@ describe("sentry quota guard — every listed rule is a real bound", () => {
     expect(eventText(errEvent("boom", "RangeError"))).toContain("boom")
   })
 })
+
+describe("sentry quota guard — the Postgres statement-timeout signature", () => {
+  // Added 2026-08-26. WHY IT EXISTS AND WHERE THE NUMBER CAME FROM: Sentry has
+  // stored nothing since 2026-08-18 and the operator decision is NOT to buy more
+  // quota, so the sampling list has to be built from an instrument that still
+  // works. Vercel's runtime-error aggregation is free and already running;
+  // measured there over 7 days, restricted to THROWN errors (a console.error line
+  // never becomes a Sentry event), "canceling statement due to statement timeout"
+  // thrown out of page loaders is ~3,818 events in 7 days — the largest thrown
+  // class the guard did not already cover, and on its own more than a
+  // 5,000/month quota.
+  //
+  // ⚠ EVENT COUNTS ONLY, deliberately. `get_runtime_errors`' `users=` and
+  // `routes=` fields are documented as untrustworthy (attribution smeared across
+  // unrelated paths, measured 2026-08-21 — tooling-gotchas.md). No user-impact
+  // figure is claimed from that source here.
+  const PG_TIMEOUT = "team detail unavailable: canceling statement due to statement timeout"
+
+  it("classifies the page-loader wrapped form", () => {
+    // Keyed on the Postgres string, not on any one page's prefix — "team detail",
+    // "set editions" and every future wrapper interpolate the same 57014 text.
+    expect(classify(errEvent(PG_TIMEOUT))?.signature).toBe("pg-statement-timeout")
+    expect(classify(errEvent("set editions unavailable: canceling statement due to statement timeout"))?.signature)
+      .toBe("pg-statement-timeout")
+    expect(classify({ message: PG_TIMEOUT })?.signature).toBe("pg-statement-timeout")
+  })
+
+  it("keeps it below its rate and drops it at or above", () => {
+    const rule = KNOWN_HIGH_VOLUME.find((r) => r.signature === "pg-statement-timeout")
+    expect(rule).toBeDefined()
+    expect(makeBeforeSend(() => rule!.rate * 0.5)(errEvent(PG_TIMEOUT))).not.toBeNull()
+    expect(makeBeforeSend(() => rule!.rate)(errEvent(PG_TIMEOUT))).toBeNull()
+  })
+
+  it("stamps the kept event with its own signature and rate", () => {
+    const kept = makeBeforeSend(() => 0)(errEvent(PG_TIMEOUT))
+    expect(kept!.tags?.sentry_sampled_signature).toBe("pg-statement-timeout")
+    expect(kept!.tags?.sentry_sample_rate).toBe(0.05)
+  })
+
+  it("NEGATIVE CONTROL: does not swallow a DIFFERENT Postgres cancellation", () => {
+    // 57014 is specifically the statement_timeout cancel. A lock timeout, a
+    // user cancel, or a connection-pool timeout are different faults with
+    // different fixes, and collapsing them would hide a new failure mode behind
+    // an already-known one — the thing this whole module exists to avoid.
+    const beforeSend = makeBeforeSend(() => 0.999999)
+    expect(beforeSend(errEvent("canceling statement due to user request"))).not.toBeNull()
+    expect(beforeSend(errEvent("canceling statement due to lock timeout"))).not.toBeNull()
+    expect(beforeSend(errEvent("Timed out acquiring connection from connection pool."))).not.toBeNull()
+    expect(classify(errEvent("Timed out acquiring connection from connection pool."))).toBeNull()
+  })
+
+  it("the two signatures stay DISTINCT — a deadline is not a statement timeout", () => {
+    // They are different faults: one is the client giving up with no response at
+    // all (pool starvation), the other is Postgres killing a query it did run.
+    // If a future edit collapsed the matchers, an operator could no longer tell
+    // which of the two is happening from the tag alone.
+    expect(classify(errEvent(RPC_DEADLINE))?.signature).toBe("rpc-deadline")
+    expect(classify(errEvent(PG_TIMEOUT))?.signature).toBe("pg-statement-timeout")
+    expect(classify(errEvent(RPC_DEADLINE))?.signature).not.toBe(classify(errEvent(PG_TIMEOUT))?.signature)
+  })
+})
