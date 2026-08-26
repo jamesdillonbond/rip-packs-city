@@ -52,7 +52,7 @@ Paid once more, honestly: dropped `(filed in docs/overnight/inbox/)` — **a poi
 filings that never names the file, so it is not retrievable data and nothing is lost.** The rule in that
 sentence and the concurrent session's lesson are untouched. **39,977 → 39,942, headroom 58.**
 
-**Revert path:** `git revert <sha>` — docs-only.
+**Revert path (real sha):** `git revert 398b0c09` — docs-only. ⚠ Reverting returns CLAUDE.md to 20 characters of headroom.
 
 ### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — thread close-out: four durable lessons promoted, and the cold-tail defect's REAL cost measured after the fact
 
