@@ -50,3 +50,36 @@ Nothing watches heartbeat-without-terminal anywhere. **A single arm — *"invoca
 ## 6. ⓘ Sibling control (so this is not read as a Candy-wide outage)
 
 `candy-offers-indexer`: **11 terminal / 12 heartbeat** over the same 72 h — ~92% completion. `candy-sales-indexer`: 23 rows. **Candy ingest as a whole is healthy; this is one route's sweep outgrowing its budget.**
+
+---
+
+## ⛔ ADDENDUM (~04:20Z) — I SPECIFIED THE ARM IN §5, THEN MEASURED IT AND MY OWN PREDICATE FAILED
+
+§5 proposed *"an arm for invocations with a heartbeat and no terminal row"*. **Measured across every `-heartbeat` pipeline before recommending it further — the obvious forms are unusable.**
+
+| candidate predicate | why it FAILS |
+|---|---|
+| `killed > 0` | ⛔ **`fmv-recalc` fires 104×/day.** CLAUDE.md already records it as *"wasteful, NOT broken"* — 72.7% wall-kills **by design**, work committed incrementally. A `killed>0` arm is pure noise and would bury the real signal. |
+| `max_consecutive_kills > N` | ⛔ **Also fails: `fmv-recalc` has a 38-kill streak**, against `candy-listings-indexer`'s 5. The streak is *larger* on the healthy one. |
+
+⭐ **THE PREDICATE THAT WORKS IS `hours_since_last_completion`** — because a pipeline that commits incrementally still *completes* constantly, however often it is killed. Measured over 48 h:
+
+| pipeline | invocations | completed | max consec kills | **hrs since completion** |
+|---|---|---|---|---|
+| `fmv-recalc` | 343 | 142 | **38** | **0.1** ✅ |
+| `drain-fmv-cold-tail` | 96 | 87 | 2 | 0.2 ✅ |
+| `topshot-sales-indexer` | 202 | 196 | 2 | 0.2 ✅ |
+| *(all other healthy)* | — | — | ≤2 | **≤0.8** ✅ |
+| 🚨 `candy-listings-indexer` | 14 | 3 | 5 | **20.4** |
+| 🚨 `compute-laliga-pack-ev` | 2 | **0** | 2 | **never** |
+| ⚠ `pinnacle-sync` | 2 | 1 | 1 | **40.8** |
+
+**The healthy population is ≤0.8 h and the unhealthy one is ≥20 h — a clean separation with two orders of magnitude of margin**, which is what makes a threshold here safe rather than a cry-wolf risk. ⚠ It must be **per-pipeline relative to that pipeline's own cadence**, not one global constant: a 6-hourly job legitimately sits at 6 h.
+
+## ⓘ AND THE ARM'S OWN FINDING WAS ALREADY WRITTEN DOWN — 6 DAYS AGO, STILL TRUE
+
+`app/api/allday-pack-listings/route.ts` records, dated **2026-08-20**, that the marker used to be written under the pipeline's **own** name — which **defeated the alarm it was added to protect**, since `detect_stalled_pipelines()` takes `max(started_at)` with **no phase filter**, so a self-named marker refreshed `last_run` every tick and the arm could never fire. *"A monitor whose input set includes its own output."* It notes in passing: **"pinnacle-sync and compute-laliga-pack-ev had markers ONLY, zero completions."**
+
+⭐ **Both are STILL zero-completion on 2026-08-26** — six days later, unfixed, and nothing has surfaced them since, because the fix that made the three states *readable* was never paired with anything that *reads* them. **That is the argument for the arm, and it is stronger than the one I made in §5.**
+
+⚠ **Credit where due: my measurement re-derived a known result.** The genuinely new parts are `candy-listings-indexer` (not in that list, 300 s mechanism confirmed) and the **predicate design** above. ⓘ Note also that `compute-laliga-pack-ev` (Vercel cron `/api/cron/compute-laliga-pack-ev`) is a **different pipeline** from `compute-golazos-pack-ev` (pg_cron jobid 44 → edge fn) despite both concerning LaLiga Golazos pack EV — **do not conflate them; I nearly did.**
