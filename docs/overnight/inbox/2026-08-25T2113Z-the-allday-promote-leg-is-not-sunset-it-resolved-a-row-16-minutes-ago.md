@@ -40,3 +40,41 @@ That filing recorded its control as `io_wait=2 / active=2 / total=41` and conclu
 1. ⛔ **Do not retire the AllDay promote leg on the SUNSET label.** Reconciled above: the label is about the collection.
 2. If the **7,606 s/day** is the real concern, treat it as a **cost** question with its own levers, separate from liveness. A **0.6% hit rate** points at a candidate predicate that is too wide — the same shape the UFC/Golazos parking fixed by using the function's own `promote_recheck_after` skip rather than a new gate. ⚠ **Re-measure cost and hit rate in a quiet window and compare BUFFERS, not wall-clock** — every timing taken during a spell is confounded.
 3. Neither is urgent: the backlog is net-shrinking and `unmapped_resolution_backlog_max` (recent-30d, aged residual excluded by design) is the metric that actually pages.
+
+---
+
+## ⭐ ADDENDUM 2026-08-26 ~02:40Z — the open half is CLOSED, and it corrects MY number, not the sweep's
+
+The quiet window arrived (`io_wait=0, active=1`) and the `sold_at` split ran. ⛔ **The answer is not the one I expected, and the framing I published above — *"different clocks, so neither is wrong"* — was too generous to my own figure.**
+
+### The mechanism I had not read
+
+`promote_unmapped_sales` ends with:
+
+```sql
+DELETE FROM public.unmapped_sales
+WHERE resolved_at IS NOT NULL
+  AND resolved_at < now() - interval '7 days'
+```
+
+👉 **`unmapped_sales` is a STAGING QUEUE, not a log.** Resolved rows are archived out **7 days after resolution**; unresolved rows are **never** deleted (`purge_old_unmapped_resolution_failures` targets a *different* table, `unmapped_sales_resolution_failures`). Two independent point-samples confirm the shrink: total **106,604 → 106,539**, resolved **1,577 → 1,524**, in ~5.7 h.
+
+### What that does to each figure
+
+| figure | sound? | why |
+|---|---|---|
+| **unresolved by `sold_at`** — the sweep's metric (58 v 137; mine 49 v 135) | ✅ **SOUND** | unresolved rows are never purged, so the cohort is complete and permanent |
+| **all rows by `ingested_at`** — MY figure (611 v 177) | ⛔ **CONFOUNDED** | older windows have had their resolved members deleted, so the earlier bucket is **depleted by survivorship**, not smaller by inflow |
+| **all rows by `sold_at`** (594 v 135) | ⛔ **CONFOUNDED** | same reason |
+| **"net-draining ~966/week"** (1,577 − 611) | ⛔ **WITHDRAWN** | it subtracted a confounded count from a rolling one |
+
+⭐ **So the sweep's reading was RIGHT and mine was the broken one.** *"Inflow decreasing"* was measuring the **durable residual generated per week**, which is the thing that actually matters, and it is genuinely falling: the settled 8–14 d cohort leaves **135** permanently unresolved, while the still-settling 0–7 d cohort is already down to **49**.
+
+⚠ **And `resolved_ever == resolved_7d` is a RETENTION BOUNDARY, not a start date.** The oldest surviving resolution is exactly 7 days old **by construction of that DELETE**. I nearly published *"the resolver only started working 7 days ago"* — the same shape as this repo's `pipeline_runs` ~73 h rule, where a missing record is an artifact rather than an absence.
+
+### What now stands, and it is STRONGER than before
+
+- ✅ **105,027 unresolved is a complete, permanent residual** — unresolved rows never purge, so nothing is hidden behind the archive.
+- ✅ **~1,524 resolutions per week is a sound rolling rate** (the 7-day archive window makes the retained count ≈ the weekly rate), and it is a **floor**, since rows promoted and archived mid-window are not counted.
+- ✅ **~1,524/week of resolutions against ~135/week of new durable residual.** The leg is decisively net-draining, and **the reconciliation's conclusion is unchanged: this is not a dormant pipeline, and SUNSET describes the collection.**
+- ⛔ **Total AllDay sale inflow is NOT measurable from `unmapped_sales` at all** — by either clock. The promoted rows land in `sales`; **that is where an inflow question has to be asked.**
