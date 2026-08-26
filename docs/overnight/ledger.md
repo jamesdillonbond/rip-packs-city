@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive — test fix, no app code) — `npm test` was RED on this box from a Windows path-separator assumption, and the guard that caught it was doing its job
+
+**Found by running the full suite as an end-check, not by a report.** `__tests__/insights-copy-has-no-baked-population-counts.test.ts` failed its own vacuity assertion: `expect(files.some(f => f.startsWith("app/insights/"))).toBe(true)`.
+
+**Cause:** `path.relative()` returns **backslash** separators on Windows, so every comparison against a forward-slash literal misses. **CI is Linux and never sees it; this box does.** ⭐ The guard behaved correctly — its ban-at-population-zero check is exactly what turns a silent platform assumption into a red line. Fixed by normalising at the source: `path.relative(...).split(path.sep).join("/")`, which is **already the established pattern in this repo** — 8 of the 14 `path.relative` users do it.
+
+⭐ **Swept the other 13 `path.relative` users for the DANGEROUS variant** — not an assertion that fires, but a **filter** that silently empties and leaves the guard vacuous with no failure. **Result: none.** Eight already normalise; the remaining five (`insights-deals-surface-contract`, `invariants-confidence-enum`, `invariants-max-duration`, `invariants-no-confidence-chips`, `no-rewards-promises-while-unshipped`, `collection-layout-unknown-slug-noindex`, `server-pages-error-vs-absent-sweep`) use the relative path **only for offender messages or test names**, never for a forward-slash comparison, and `server-pages-error-vs-absent-sweep` carries **no allowlist at all** (checked, since a path-keyed exemption list is the shape that would go vacuous).
+
+**Verified:** full `npm test` **1379/1379 files, 15109 passed, 5 skipped, exit 0.** ⚠ Before the fix it read `2 failed | 1377 passed`, so this restores the property memory records as load-bearing — **`npm test` is green on this box, therefore a red file MEANS something.**
+
+**Revert path:** `git revert` the commit (`git log --grep="Windows path-separator assumption"`). Reverting re-reds the suite on Windows only; CI stays green either way, which is precisely why it went unnoticed. **No DB half, no app code — a test file only.**
+
 ### 2026-08-25 · ⛔ CORRECTION (Claude Code, interactive — docs-only, read-only DB) — my own 74% is WITHDRAWN: it was 33%, and the gate I recommended was BACKWARDS
 
 **Corrects the entry filed ~40 minutes earlier in this same session.** No code, no DB write. The `l.status = 'failed'` finding stands; **the arithmetic built on top of it does not.**
