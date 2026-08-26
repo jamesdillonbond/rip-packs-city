@@ -469,6 +469,30 @@ DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; 
 >   correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample**
 >   but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
 
+### 🚨 A FOURTH way a measurement lies: the PROJECTION can change the PLAN (2026-08-26)
+
+⚠ **Isolating a sub-expression to price it is only valid if you isolate it with the REAL query's output
+columns.** Measured while attributing the cost of `topshot_serial_board_candidates`:
+
+| what was measured | plan | buffers |
+|---|---|---:|
+| the CTE alone, selecting only `edition_id` | **Index Only Scan** | **32,641** |
+| the same CTE as the function runs it (also selects `fmv_usd`, `confidence`) | **Index Scan** | **818,698** |
+
+**A 25× difference produced entirely by the projection**, because `edition_id` is covered by the
+index and `confidence` is not — one uncovered column forces a heap fetch on every entry. The isolate
+was then subtracted from the whole call, which produced the confident and exactly wrong conclusion that
+the `serial_fmv_estimate` calls were ~96% of the cost when they are ~9%.
+
+⭐ **The shape to recognise: a number, a control, and a subtraction, all measuring a plan the code never
+runs.** The arithmetic is sound and the answer is inverted. **Price a sub-expression by REMOVING work from
+the real query** (here: run the CTE + its join with the function calls deleted, which gave the true 90.7%),
+never by re-writing it standalone. ⓘ This is the same family as the WARM-vs-WARM rule above — both are
+cases of the A and the B not being the same query.
+
+ⓘ Case, with the fix: ledger 2026-08-26 (the covering index), known-issues #30, and
+[inbox 2026-08-26T1500Z](../overnight/inbox/2026-08-26T1500Z-the-targets-rpc-is-50s-of-DISTINCT-ON-and-edition-fmv-current-is-NOT-a-drop-in.md).
+
 **Which `check_*` shape is which** (displaced from CLAUDE.md 2026-08-22, verbatim): a jsonb-array one
 (`check_secdef_anon_exec_drift`, `…_execute_violations`, `check_edge_fn_http_failures`) returns
 `count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one (`check_public_security_invariants`,
