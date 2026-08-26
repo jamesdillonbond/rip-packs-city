@@ -83,3 +83,28 @@ Nothing watches heartbeat-without-terminal anywhere. **A single arm — *"invoca
 ⭐ **Both are STILL zero-completion on 2026-08-26** — six days later, unfixed, and nothing has surfaced them since, because the fix that made the three states *readable* was never paired with anything that *reads* them. **That is the argument for the arm, and it is stronger than the one I made in §5.**
 
 ⚠ **Credit where due: my measurement re-derived a known result.** The genuinely new parts are `candy-listings-indexer` (not in that list, 300 s mechanism confirmed) and the **predicate design** above. ⓘ Note also that `compute-laliga-pack-ev` (Vercel cron `/api/cron/compute-laliga-pack-ev`) is a **different pipeline** from `compute-golazos-pack-ev` (pg_cron jobid 44 → edge fn) despite both concerning LaLiga Golazos pack EV — **do not conflate them; I nearly did.**
+
+---
+
+## ⭐ ADDENDUM 3 (~04:40Z) — the other two zero-completion pipelines, CLASSIFIED. One recovered, one has a named cause
+
+The 08-20 comment listed `pinnacle-sync` and `compute-laliga-pack-ev` together as *"markers ONLY, zero completions"*. **Six days on they are no longer the same case, and treating them as one pair would be wrong.**
+
+### ✅ `pinnacle-sync` — RECOVERED; the 08-20 note is STALE
+
+2 clean completions in 7 d (08-23 10:07, 08-24 10:07): `ok:true`, `extra.phase = "complete"`, `errors: []`, **2,243 / 2,242 rows written**, 30.4 s / 49.3 s. **It is healthy when it runs.** My "40.8 h since completion" was simply the gap since 08-24, not a stall. ⚠ Residual: only **3 heartbeats in 7 d** for a ~daily 10:07 job, so the *trigger* still misses ticks — a cadence question, not a completion one.
+
+### 🚨 `compute-laliga-pack-ev` — still broken, and the cause is now NAMED
+
+Vercel cron `30 5 * * *` (daily). In 7 d: **3 invocations of 7 expected** (4 never fired), **1 terminal row, and it is `ok:false`**. That row:
+
+```
+error : "pack_ev_history insert: Could not query the database for the schema cache. Retrying."
+extra : rpc_errors 23 · dists_processed 30 · ev_rows_written 0 · elapsed_ms 507835
+```
+
+⭐ **`Could not query the database for the schema cache` is `PGRST002`** — this repo's documented trap: *every `apply_migration` causes a ~10–20 s burst of user-facing PGRST002 500s while PostgREST re-introspects*. The run took **23 rpc_errors** and wrote **zero** rows. ⚠ And CLAUDE.md already says why the existing defence does not help: **`rpcWithRetry` retries for ~250 ms of a twenty-second outage.**
+
+⚠ **Second, independent problem in the same row: `elapsed_ms = 507,835` — 508 s against `export const maxDuration = 300`.** So even without PGRST002 this job is over its budget by ~70%. **Two distinct failure modes; fixing the retry alone would not make it complete.**
+
+👉 **This is the same family as the candy finding but NOT the same defect** — candy is a clean 300 s wall-kill, laliga is a budget overrun *plus* a schema-cache collision. ⛔ Both are pack-EV / ingest logic and stay **filed, not shipped**.
