@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — three filings closed against LIVE state, and a shape sweep that says the shape is not a safe selector
+
+**DOCS ONLY (four inbox appendices). No code, no DB change, no prod-state change.** A verification pass over filings the inbox still carried as open. ⚠ **Nothing was ARCHIVED** — that is Trevor's call per `focus.md`, and the refuted `inbox_archiving_note` is exactly the "queued CLEANUP reads as obviously safe" shape. **Banners record a measurement; the INDEX entries stay.**
+
+✅ **`check_public_security_invariants` RED (08-23) — CLOSED, measured.** `check_public_security_invariants()` **0 rows**, `check_anon_write_surface()` **0 rows**, `series_detail_rollup.relrowsecurity` **true**, `public` base tables with RLS off **0**. Option 1 was taken. ⚠ Its second half is deliberately NOT closed: the `schema-truth.md` precedence caution (no generator script, *"only as fresh as its stamp"*) is a standing rule, not a fixed defect.
+
+✅ **`/api/ready` 500ing for eight days (08-23) — CLOSED by R44, and the half that mattered got done.** That filing concluded **both** its own proposed fixes were wrong and the shape had to change. It did: the route no longer calls `health_check` (still correctly anon-EXECUTE **false**), it calls `readiness_collection_stats` (`prosecdef=false`, anon EXECUTE **true**), `sales_24h` is a bounded probe exact at ≤10 and NULL above, and a non-array payload fails loudly. ⭐ **The consumer half — the risk the filing flagged — was done too:** both clients read `thin_volume`, not `sales_24h`, each commenting *"`(sales_24h ?? 0) < 10` would coerce 'busy' to 0"*. **Residual stated rather than implied as zero:** 8 Vercel 10 s timeouts + 1 `57014` in 48 h, against a pre-fix state of every anon call failing deterministically.
+
+✅ **The 143-wallets filing — CLOSED by today's ship**, with its own final instruction (*"sweep the class, do not fix the row"*) recorded as the part that paid.
+
+⭐ **AND A CAUTION AGAINST OVER-GENERALISING THE PG-17 UNREACHABLE-INDEX FINDING, which is the new measurement.** `idx_sales_2026_fmv_recalc_window` is **still unrepaired at 99 MB** (its `idx_scan` has moved **0 → 3**, consistent with the filing's own manipulation — recorded rather than smoothed over). I then swept the whole shape: **six** `public` partial indexes carry `<col> IS NOT NULL` where that column is declared `NOT NULL` (all six confirmed `attnotnull`), and **four are heavily scanned** — `pack_drop_pool_edition_idx` at **419,587**, `unmapped_sales_resolver_targets_idx` at **28,126**. ⛔ **So the predicate SHAPE is not a usable selector for the defect; a sweep on it would touch four indexes that appear to be working.** ⚠ **And the scan column does not settle it either — the filing's own closing lesson applies to my own table**: *"a non-zero `idx_scan` is a claim about the PAST"*, and `idx_sales_2026_top_sales_board` is the worked example at **563 scans and unreachable today**. ⭐ **The conclusion is a METHOD: reachability is per-index and only an EXPLAIN on the real query settles it.** The other five are recorded as **unclassified**, deliberately, rather than implying a population.
+
+⛔ **The index repair is NOT shipped and the reason is proportionality, not doubt:** dropping the conjunct and rebuilding is a **99 MB index build on the instance whose binding constraint is disk IO** (R46), in service of a job CLAUDE.md calls *wasteful, not broken*, and `CREATE INDEX CONCURRENTLY` is reachable here only via a one-statement pg_cron job. **That is scheduled maintenance wanting a chosen quiet window, not an incidental fix.**
+
+**Verified:** `check-memory-doc-links.mjs` — 105 relative links across 24 files all resolve · full `npm test` green · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` — removes four inbox appendices. No code, no DB half.
+
 ### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — a rule filed under the subsystem where it was found was invisible to the next subsystem, so an isolation block that CANNOT catch a timeout shipped eight days later
 
 **DOCS ONLY (inbox appendix + `database.md`). No code, no DB change, no prod-state change.** Reading the named falsifier the 08-23 golazos/series filing left open.

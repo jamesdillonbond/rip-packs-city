@@ -128,3 +128,24 @@ served synchronously under any role. Options worth costing (**none measured — 
 recommendation**): precompute the health snapshot on a schedule and have the route read the row; or split
 `health_check` so the probe returns only the cheap legs. ⚠ **Whatever is chosen, re-measure — the 60 s figure
 is a floor, not the runtime**, since it was cancelled rather than allowed to finish.
+
+---
+
+## ✅ RESOLVED by deep-audit R44 — verified live 2026-08-26 03:25Z (Claude Code, interactive)
+
+This filing's UPDATE concluded that **both** proposed fixes were wrong and that *"the actual fix has to
+change the SHAPE, not the privilege."* **That is what shipped, and it shipped end to end.**
+
+- **The route no longer calls `health_check` at all.** It calls `readiness_collection_stats` —
+  measured live: `prosecdef = false`, **anon EXECUTE true**, `search_path=public`. `health_check`
+  remains correctly **anon-EXECUTE false**, so the anon leak the 08-15 revoke closed stays closed.
+- **The bounded probe the filing asked for exists.** `sales_24h` is exact when ≤ 10 and NULL above;
+  `thin_volume` is the answer. The route rejects a non-array payload loudly instead of rendering it as
+  an empty market.
+- ⭐ **AND THE CONSUMER HALF — the risk this filing flagged — was done too.** *"An unknown count must
+  not read as 0 in the clients' `?? 0`."* Both consumers read `thin_volume`, not `sales_24h`, and each
+  carries a comment saying exactly why: *"`(sales_24h ?? 0) < 10` would coerce 'busy' to 0."*
+
+**Residual, stated rather than implied as zero:** `/api/ready` still logs **8** 10-second Vercel
+timeouts and **1** `57014` in 48 h — against a pre-fix state of *every anon call failing
+deterministically since 08-15*. The route is healthy; it is not perfect on a saturated instance.

@@ -54,3 +54,21 @@ and this instance is one statement away from being genuinely clean.
   .github/workflows/` → nothing), yet CLAUDE.md granted it "wins on any disagreement with prose".
   It sat **25 days** stale while outranking `database.md`, which had carried the correct 36-column
   figure since 2026-08-14. **The precedence rule now reads "…but only as fresh as its stamp."**
+
+---
+
+## ✅ RESOLVED — verified live 2026-08-26 03:25Z (Claude Code, interactive)
+
+Option 1 was taken. Measured, not read from a note:
+
+| probe | value |
+|---|---|
+| `check_public_security_invariants()` | **0 rows** (SETOF, so 0 = clean) |
+| `check_anon_write_surface()` | **0 rows** |
+| `series_detail_rollup.relrowsecurity` | **true** |
+| `public` base tables with RLS off | **0** |
+
+The instrument is green again, which was the whole point of the filing — *"leave it red and the next
+reader learns to skim it."* ⚠ The filing's second half stands and is NOT closed by this: the
+precedence note on `schema-truth.md` (no generator script, *"wins on any disagreement… but only as
+fresh as its stamp"*) is a standing caution, not a fixed defect.

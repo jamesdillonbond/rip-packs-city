@@ -110,3 +110,53 @@ and I did not apply it.
 ⚠ **And one more general lesson from it:** `idx_sales_2026_top_sales_board` has **502 recorded scans** and is
 unreachable *today*. A non-zero `idx_scan` is a claim about the past. An unused-index sweep cannot see this
 defect class on exactly the indexes that used to work.
+
+---
+
+## ⏳ RE-MEASURED 2026-08-26 03:30Z (Claude Code, interactive) — STILL UNREPAIRED, and the class sweep says the SHAPE is not a safe selector
+
+**Not shipped. Re-measurement + a caution about generalising this filing, which is the part worth keeping.**
+
+### The index is unchanged
+
+`idx_sales_2026_fmv_recalc_window` is still **99 MB** with the original predicate
+(`price_usd > 0 AND edition_id IS NOT NULL`). ⓘ Its `idx_scan` has moved **0 → 3** since filing —
+consistent with this filing's own causal manipulation rather than with production traffic, but
+**stated rather than smoothed over**: the "never used" headline is now "used 3 times in 75 days".
+
+### ⚠ THE SHAPE SWEEP RETURNS SIX INDEXES, AND FOUR ARE HEAVILY SCANNED
+
+Every `public` partial index whose predicate carries `<col> IS NOT NULL` where that column is
+declared `NOT NULL` (all six columns confirmed `attnotnull = true`):
+
+| index | table | cumulative scans | size |
+|---|---|---:|---:|
+| `idx_sales_2026_fmv_recalc_window` | `sales_2026` | **3** | 99 MB |
+| `unmapped_sales_resolver_targets_idx` | `unmapped_sales` | **28,126** | 9.4 MB |
+| `unmapped_sales_sold_at_unresolved_idx` | `unmapped_sales` | 1 | 4.5 MB |
+| `pack_drop_pool_edition_idx` | `pack_drop_pool` | **419,587** | 2.5 MB |
+| `idx_sales_2026_top_sales_board` | `sales_2026` | **563** | 392 kB |
+| `idx_pinnacle_editions_set_name` | `pinnacle_editions` | 0 | 48 kB |
+
+⛔ **So "carries an `IS NOT NULL` predicate on a NOT NULL column" is NOT a usable selector for the
+defect.** A sweep that rewrote or dropped on the shape alone would touch four indexes that are, on
+the face of it, working — including one at 419,587 scans.
+
+⚠ **AND THE SCAN COLUMN DOES NOT SETTLE IT EITHER — this filing's own closing lesson applies to my
+table above.** *"A non-zero `idx_scan` is a claim about the past. An unused-index sweep cannot see
+this defect class on exactly the indexes that used to work."* `idx_sales_2026_top_sales_board` is the
+worked example: **563 scans and unreachable today.** So cumulative scans cannot establish CURRENT
+reachability any more than the predicate shape can establish unreachability.
+
+⭐ **The conclusion is a method, not a number: reachability is per-index and only an EXPLAIN on the
+real query settles it.** Neither grep nor `pg_stat_user_indexes` is a substitute. This filing did that
+work for one index; the other five are **unclassified**, and I am recording them as unclassified
+rather than implying a population.
+
+### Why the repair is still not shipped here
+
+The recommended fix — drop the `edition_id IS NOT NULL` conjunct and rebuild — is a **99 MB index
+build on the instance whose binding constraint is disk IO** (R46), in service of `fmv-recalc`, which
+CLAUDE.md characterises as *wasteful, not broken*. ⚠ `CREATE INDEX CONCURRENTLY` is reachable only
+via a one-statement pg_cron job on this setup, never `execute_sql`. **That is a scheduled maintenance
+action with a real IO cost, not an incidental fix**, and it wants a deliberately chosen quiet window.

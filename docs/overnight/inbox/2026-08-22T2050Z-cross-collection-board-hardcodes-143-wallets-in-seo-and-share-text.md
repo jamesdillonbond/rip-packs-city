@@ -39,3 +39,26 @@ A dynamic source already exists and these strings are dead code. **Checked: they
 ## Sweep the class, do not fix the row
 
 ⚠ **Grep the EXPRESSION, not the file.** Other `/insights/*` layouts may bake live population counts into metadata the same way. This filing covers only the cross-collection board because that is where it was found; the class check has **not** been run.
+
+---
+
+## ✅ SHIPPED 2026-08-25 (Claude Code, interactive) — option 1, plus the class sweep this filing asked for
+
+All four sites now READ the cohort size. `readCrossCollectionCohortSize()` returns `number | null`
+and every consumer **drops the number** when it is null — never `?? 0`, which would publish
+*"0 wallets hold 3+ Flow collections"* into an indexed description off a read that never happened.
+Live count at ship time: **220**.
+
+⭐ **The last section — *"Sweep the class, do not fix the row… the class check has NOT been run"* — is
+the part that paid.** Run through the SHARED `strip-comments` module over 246 files it found a **fifth
+site on an unrelated board**: `SqueezeBoardClient`'s Methodology read *"this affects 10 of the 8,859
+editions that carry a live ask"*. Live: **12 of 2,944** — both numbers wrong, **denominator ~3× too
+large**. It now counts the rows in hand and says so, and renders nothing when no row carries an ask.
+
+⚠ **Five of six raw grep hits were COMMENTS** (prose about a measurement is documentation, not a
+published claim), which is why the sweep strips first.
+
+✅ **And a ratchet so the class cannot regrow**, since this spread 1 site → 4 by copy-paste:
+`__tests__/insights-copy-has-no-baked-population-counts.test.ts` bans the shape at zero across
+`app/insights` + `components`, with **suppression as the curated list** — exactly one exemption,
+`/insights/page.tsx`'s *"all 125 editions"* of a **closed** print run, verified live at 125.
