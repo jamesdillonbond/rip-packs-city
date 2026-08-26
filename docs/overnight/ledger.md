@@ -10,6 +10,95 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (prod DDL + repo) — `refresh_wmc_fmv_changed` takes a FRESHNESS-GUARDED fast path; the instance's single biggest writer stops Appending across every FMV partition
+
+**Prod state (one `CREATE OR REPLACE`) + committed migration + re-pinned DB invariant.**
+
+Re-measured before touching anything, because the 08-25 handoff's figures are a dated
+sample: over a **14.5-day** `pg_stat_statements` window this function is **36.7% of every
+block the database dirties**, 33.9% of WAL, 8.9% of disk reads and **148 exec-hours**
+(~10.2 h/day). Same order as the handoff's 40.2/37.2/11.0 — confirmed, not quoted.
+
+⭐ **The cost is NOT the conspicuous `v_chunk constant integer := 5`** — that lever is
+commented, tempting, and falsified; the loop's working set is ~515 rows. **It is the
+correlated latest-FMV subquery, which carries no partition key and therefore `Append`s
+across every `fmv_snapshots` partition (707 MB) to read ~64 rows and return one, ~147,000
+times a day.** `public.edition_fmv_current` — a real 13 MB table keyed on `edition_id` —
+already holds exactly that answer.
+
+⛔ **THE OBVIOUS FIX IS WRONG, AND THIS IS THE PART WORTH KEEPING.** A bare `COALESCE`
+onto the cache is licensed by a random sample of 274 editions showing zero disagreement —
+**and that is the wrong population.** On the population the function actually serves,
+re-measured today at **4,028 editions with an FMV change in 6 h**, the cache **lags 28 of
+them**, by as much as **−59% / +39%**. Those values would have been written straight into
+`wallet_moments_cache.fmv_usd`, **a DISPLAYED PRICE** that ~34 functions sum for a
+collector's portfolio total — and the function's own `IS DISTINCT FROM` churn guard would
+**not** have caught one, because *stale* and *correct* are both distinct from what is
+already stored. ⭐ **Sampling a population that is easy to draw instead of the one the
+code touches is how a well-controlled measurement produces a confidently wrong answer.**
+
+**So the guard is on FRESHNESS, not on NULL.** `_rwfc_recent` already carries the
+`computed_at` of the snapshot that queued each edition, so `popped` now returns it and the
+join demands the cache be **at least that fresh**:
+
+```sql
+LEFT JOIN public.edition_fmv_current efc
+       ON efc.edition_id  = e.id
+      AND efc.computed_at >= p.computed_at   -- must not be BEHIND the queueing snapshot
+      AND efc.fmv_usd IS NOT NULL            -- the cache's DISTINCT ON does not filter nulls
+```
+
+**Measured equivalence over the population, not a plan comparison:** fast path taken
+**3,439 / 4,028 (85.4%)**, **fast-path disagreements with the incumbent: 0**, and **28
+stale rows the guard correctly REJECTS** — that last number is the positive control, and
+it is what makes this a proof rather than a green light. ⓘ **Sound by construction too:**
+`refresh_edition_fmv_current` builds the cache with `DISTINCT ON (edition_id) ORDER BY
+computed_at DESC` over the same `fmv_snapshots`, i.e. the identical selection rule; its
+DISTINCT ON does **not** filter nulls while the subquery does, which is precisely why the
+second join clause exists.
+
+⚠ **The pin gained a whole block, and each branch is made OBSERVABLE by a fixture whose
+cache value deliberately DISAGREES with its snapshot** (0xF cache 501 vs snapshot 500).
+Asserting only "the right price came out" would pass for all three branches **even with the
+LEFT JOIN deleted entirely**. 0xG (stale + wrong) is the assertion that reddens on the
+retracted bare-`COALESCE`. ⭐ 0xF also pins the **boundary**: its cache and snapshot
+timestamps are exactly equal (`now()` is transaction-constant), so tightening `>=` to `>`
+flips it — and equality is the COMMON case in production, so a strict `>` would silently
+disable the fast path for most editions **while every value stayed correct**, costing the
+entire saving with nothing to notice.
+⚠ Stated rather than implied: the `efc.fmv_usd IS NOT NULL` clause is **not** caught by its
+own assertion — removing it still falls through `COALESCE` to the subquery, so the value is
+unchanged. It is pinned as a behaviour, not as a claim to catch that mutation.
+
+⚠ **TWO GUARDS I SHOULD HAVE GREPPED FOR BEFORE EDITING, per this file's own rule.**
+`migration-new-function-states-its-anon-exec-decision` reddened the full suite: a migration
+must either REVOKE or carry an `anon-exec:` marker **on the same line as the function name**
+— my first marker put the name on the following line and still failed. The decision is
+*unchanged*: `CREATE OR REPLACE` does **not** reset a function ACL, so a REVOKE here would
+be a privilege change smuggled into a planner fix. **Verified live after applying rather
+than assumed:** anon=false, authenticated=false, service_role=true.
+
+⚠ **THE PREVIOUS PIN HEADER'S CLAUSE COUNTS WERE RAW AND THREE COUNTED PROSE.** Measured
+today, raw vs comment-stripped: `fmv_usd IS NOT NULL` **5 vs 4**, `DISTINCT ON` **3 vs 1**,
+`MATERIALIZED` **3 vs 2** — the body's own explanatory comments contain the phrases. So the
+old header's "DISTINCT ON x2" and "MATERIALIZED went 1 → 3" were counting the comment that
+documents the fix. **Strip comments before counting a clause in a function body** — the new
+header records stripped counts and says so.
+
+⏳ **NOT YET VERIFIED, and I would rather say so:** there is no Postgres or Docker on this
+box, so the pin's new assertions have **never been executed** — they are proven only against
+the drift guard (text) and my reading of the fixture arithmetic. **CI's `db-tests` job is
+their first real run.** A T0 for both callers is recorded in `_rpc_waste_baseline_20260825`
+(`rwfc_cron_POSTFIX_T0`, `rwfc_rest_POSTFIX_T0`); the honest post-ship metric is
+**dirtied-blocks-per-call over 24 h**, and the pre-fix lifetime figures to beat are
+**36,608 dirtied / 73,724 read / 297,370 ms per call** on the pg_cron caller (jobid 303)
+and **2,688 / 7,045 / 18,371** on the PostgREST one.
+
+**Revert path:** re-apply the previous body from
+`supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql`
+(a plain `CREATE OR REPLACE`; it preserves the ACL), and re-point the pin +
+`db-invariants-drift-guard` PINS entry back at that migration.
+
 ### 2026-08-26 · ⛔ REVERTED (prod, pg_cron only) — the pack-sales cadence cut starved head freshness; the handoff's own falsifier caught it, and the mechanism is LAP TIME, not tick count
 
 **Prod state (two `cron.alter_job` schedule changes). No code, no migration row.**
