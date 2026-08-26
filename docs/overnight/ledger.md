@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, autonomous — /dashboard client fix + tests) — a failed read told collectors to pin trophies they had already pinned, and to follow people they already follow
+
+**Two live instances of the repo's top defect class, on the most-read signed-in surface.** Both are the WORST sub-class: a false claim about the reader's OWN account, and **actionable** — each tells someone to redo finished work.
+
+1. 🚨 **Trophy case → the onboarding prompt.** `refresh()` set `slabs` only `if (slabsRes.ok)`, so a failed `/api/profile/trophy-slabs` left it `[null × 6]`; `filledSlabs.length === 0` then fell through to `<EmptyHeroState>` — **"Pin a moment to your trophy case"** to a collector with six pinned. ⚠ **The panel was HALF fixed already:** the code gates the HERO fetch on `slabsRes.ok` with a comment naming this exact incident, but the fallback still landed on the prompt. **Fix per PANEL, not per page**, met in the wild.
+2. 🚨 **Friend Activity → "Follow other collectors to see their sales here … hit + FOLLOW".** Found only by sweeping **the whole of `refresh()`** rather than the panel that prompted the sweep. It is the `/my-teams` *"Follow a team to build your hub"* incident **verbatim**, still shipping.
+
+**Fix:** `slabsFailed` / `activityFailed` state, set from `!res.ok`, rendering an honest third state (*"a loading problem, not an empty case — nothing has been unpinned"*) ahead of the empty branch — the pattern `walletsFailed` already established in this file, comment and all.
+
+⭐ **THE MORE VALUABLE FINDING IS THE TEST THAT PASSED THROUGHOUT.** `component-DashboardClient.test.ts` carried `it("⚠ does NOT replace the case with the onboarding prompt when the slab read FAILED")` — and every assertion it had only proved `/api/profile/hero-moment` **was not FETCHED**. The title promises a RENDER property; the assertion tested a fetch. **This is the documented shape — a test stating its contract in a comment and asserting something weaker, where the tell is the TITLE — and it is the first instance caught with the defect still live.** Proven empirically: with the fix disabled the old assertion still passes and only the new one reds. ⭐ **Assert the ABSENCE of the false claim, not the absence of a fetch.**
+
+**Verification, both fixes:** `npx tsc --noEmit` **exit 0, zero output** (run BARE — a first attempt read `TSC_EXIT=0` off `head` through a pipe, the trap CLAUDE.md names). Each fix **mutation-proven**: disabling `slabsFailed` reds exactly its test, disabling `activityFailed` reds exactly its own, each restored and re-verified **by content, not by `cp` exiting 0**. Each pinned test ships with a **NO-CHANGE CONTROL** asserting the genuine empty state still prompts — without which deleting the prompt outright would satisfy the guard and break real onboarding.
+
+⚠ **A broken regex nearly shipped a vacuous control:** `\s+` lost a backslash in transit and became `ans+empty`, so `queryByText(...).toBeNull()` passed **because it matched nothing**. Caught because the paired `getByText` assertion failed loudly. **A `toBeNull()` on a typo'd matcher is always green** — pair every absence assertion with a presence one over the same text.
+
+**The full panel swept — 6 reads in `refresh()`, and the two deliberate non-actions are stated, not skipped:** `me` → `meFailed` (pre-existing) · `bio` → OMITS the card, which understates and is the safe direction · `saved-wallets` → `walletsFailed` (pre-existing) · `trophy-slabs` → **FIXED** · `favorites` → **no action, by mechanism**: a failed read yields `isFav=false`, and since unfavouriting requires `currentlyFav===true` the worst case is a redundant POST, never an unintended DELETE · `activity` → **FIXED**.
+
+**Revert path:** `git revert` the commit (`git log --grep="already pinned"`). ⚠ Reverting restores BOTH false claims; prefer a forward fix. The tests would then red, which is the intended coupling. **No DB half, no migration — client render only.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive — test fix, no app code) — `npm test` was RED on this box from a Windows path-separator assumption, and the guard that caught it was doing its job
 
 **Found by running the full suite as an end-check, not by a report.** `__tests__/insights-copy-has-no-baked-population-counts.test.ts` failed its own vacuity assertion: `expect(files.some(f => f.startsWith("app/insights/"))).toBe(true)`.
