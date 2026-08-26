@@ -93,3 +93,48 @@ defect in this class remains `lib/sitemap-data.ts`, in the OTHER bucket, in the 
    with a stated reason — ⚠ and **`lib/sitemap-data.ts:186`, the one site measured to actually
    truncate in production, is in exactly that bucket**, so an exclusion written carelessly would
    exclude the known defect.
+
+---
+
+## ✅ RESOLVED 2026-08-26 (Claude Code, interactive) — the FALSE IMPRESSION is fixed; the uniqueness ARM is a decided NON-BUILD, with reasons
+
+This filing has two halves and they deserve opposite answers.
+
+### ✅ Half one — the vacuous-coverage complaint — is fixed, at zero churn
+
+The indictment is exact: the header states *"Choose the order column from a UNIQUE key"* three lines
+above an assertion that tests `.includes(".order(")`. **The rule is right; the impression that CI
+enforced it was not.** The guard's header now says so in as many words, so a reader takes the
+paragraph as guidance rather than as coverage. **That is the whole defect this filing names, and it
+cost one comment block.**
+
+### ⓘ Re-derived population (2026-08-26, dated sample)
+
+**41** supabase `.range()` sites across the five roots · **41** carry at least one `.order()` — the
+ban at zero is holding and is honest about what it sees · **7** carry a second `.order()` as a
+tiebreak.
+
+### ⛔ Half two — the uniqueness arm — is deliberately NOT built, on three measurements
+
+⚠ **The decisive one is that the proposed guard would be blind to the only member of this class ever
+measured to cause harm.** `lib/sitemap-data.ts` truncated a live sitemap — **24,000 of 27,246
+editions under an HTTP 200** — and it pages a **VIEW**, where uniqueness is undefined and no static
+index map applies. This filing already says as much (*"§5 … `lib/sitemap-data.ts:186`, the one site
+measured to actually truncate in production, is in exactly that bucket"*). ⭐ **A guard whose blast
+radius excludes the only known instance of its own class is coverage of the bucket that was already
+fine.**
+
+✅ **And that site is now FIXED — by hand, with an explicit tiebreak column** — and its own comments
+record working around this very limitation: the ratchet *"can see that a SECOND `.order()` is present
+but not what was passed to it — mutation proved [it]"*. It also now throws `SitemapReadIncomplete`
+rather than `break`ing, closing the partial-list half.
+
+The other two, from this filing's own text: **the not-proven bucket still has no member shown to be a
+real defect** (its `wallet-cache` worked example is unprovable on paper and deterministic in
+practice), and **a guard that over-reports where the repo has already done the work trains people to
+silence it** — which this filing warns about directly.
+
+➡ **If it is ever built**, the escape hatch must ship with it and the index map must be a DB-derived
+pin with a drift check, never a curated list in the test — that curation is the failure mode behind
+this guard's two 2026-08-23 widenings. **Recorded in the guard itself so the next reader inherits the
+decision, not the gap.**

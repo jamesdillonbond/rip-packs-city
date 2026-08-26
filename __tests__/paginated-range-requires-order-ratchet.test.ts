@@ -54,6 +54,47 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // `moment_acquisitions.nft_id` looks like the natural key and is not (the unique
 // constraint is (nft_id, wallet, transaction_hash)), so those sites order by the
 // PK `id` instead.
+//
+// 🚨 THE PARAGRAPH ABOVE IS GUIDANCE TO A HUMAN. THIS FILE DOES NOT CHECK IT,
+// AND SAYING SO IS THE POINT (2026-08-26).
+//
+// The assertion below tests `.includes(".order(")` — the PRESENCE of an order,
+// never the UNIQUENESS of its key. Stating the stronger rule in a comment three
+// lines above a weaker assertion is the exact shape CLAUDE.md names as the worst
+// kind of vacuous coverage — *"a test stating the contract in a comment and
+// asserting something weaker"* — and the one mutation testing cannot find,
+// because the weak assertion is genuinely load-bearing for the weak property.
+// The rule is right; the impression that CI enforces it was not.
+//
+// ⓘ Re-derived 2026-08-26 (dated sample — re-run, do not quote): **41** supabase
+// `.range()` sites across the five roots, **41** carry at least one `.order()`
+// (so the ban at zero is holding and honest), and **7** carry a second `.order()`
+// as a tiebreak.
+//
+// ⛔ A uniqueness ARM WAS DESIGNED AND DELIBERATELY NOT BUILT. The design
+// (2026-08-23 filing) is: some unique index of the table has every column either
+// equality-filtered or present in the order list, with the index map read from
+// the DATABASE rather than hand-listed. Three measurements argued against
+// building it, and they are recorded here so it is a decision rather than a gap:
+//
+//   1. **It would be blind to the only member of this class ever measured to
+//      cause harm.** `lib/sitemap-data.ts` truncated a live sitemap (24,000 of
+//      27,246 editions under a 200) and it pages a VIEW — where uniqueness is
+//      undefined and no static index map applies. That site is now fixed, and
+//      fixed BY HAND with an explicit tiebreak column, its own comments noting
+//      this ratchet "can see that a SECOND `.order()` is present but not what was
+//      passed to it".
+//   2. **The not-proven bucket has no member shown to be a real defect.** The
+//      filing's own worked example: `wallet-cache` is unprovable on paper
+//      (`collection_id` unpinned) and deterministic in practice, because two
+//      collections sharing a `moment_id` inside one wallet is not a real state.
+//   3. **A guard that over-reports where the repo has already done the work
+//      trains people to silence it** — the filing says this in as many words.
+//
+// ➡ If it is ever built, the escape hatch must come with it (`paginate-key: <col>
+// is unique here because <why>`), and the index map must be a DB-derived pin with
+// a drift check — never a curated list in this file, which is the failure mode
+// that produced the two widenings below.
 
 // ⚠ TWO WIDENINGS, 2026-08-23 (deep-audit R26). Both were BLIND SPOTS OF THIS
 // FILE'S OWN DERIVATION, which is the shape this repo keeps paying for: a

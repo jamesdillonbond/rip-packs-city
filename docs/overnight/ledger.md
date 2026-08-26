@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, guard docs) — a guard stated a rule three lines above an assertion that does not check it; the FALSE IMPRESSION is fixed and the proposed arm is a decided NON-BUILD
+
+**GUARD COMMENT + inbox appendix. No code path, no DB, no prod-state change.** Closing the 08-23 filing, whose two halves deserve **opposite** answers.
+
+✅ **HALF ONE — THE VACUOUS-COVERAGE COMPLAINT — IS REAL AND IS FIXED AT ZERO CHURN.** `paginated-range-requires-order-ratchet` carried *"⚠ Choose the order column from a UNIQUE key, not merely a selected one"* **three lines above** an assertion that tests `.includes(".order(")` — presence, never uniqueness. **This is CLAUDE.md's named worst vacuous shape** — *a test stating the contract in a comment and asserting something weaker* — and the one mutation testing cannot find, because the weak assertion is genuinely load-bearing for the weak property. **The rule is right; the impression that CI enforced it was not.** The header now says so explicitly, so the paragraph reads as guidance instead of as coverage.
+
+⛔ **HALF TWO — THE UNIQUENESS ARM — IS DELIBERATELY NOT BUILT, AND THE DECISIVE REASON IS THAT IT WOULD BE BLIND TO THE ONLY MEMBER OF ITS OWN CLASS EVER MEASURED TO CAUSE HARM.** `lib/sitemap-data.ts` truncated a live sitemap — **24,000 of 27,246 editions under an HTTP 200** — and it pages a **VIEW**, where uniqueness is undefined and no static index map applies. The filing says this itself in §5 and then recommends the arm anyway. ⭐ **A guard whose blast radius excludes the only known instance of its class is coverage of the bucket that was already fine.**
+
+✅ **And that site is FIXED, which I verified rather than assumed** — it now orders by an explicit **tiebreak column** and throws `SitemapReadIncomplete` instead of `break`ing (closing the partial-list half too). ⚠ **Its own comments record working around this very guard's limitation:** the ratchet *"can see that a SECOND `.order()` is present but not what was passed to it — mutation proved [it]"*. **The author who hit the defect already knew the guard could not check the fix.**
+
+⭐ **RE-DERIVED THE POPULATION RATHER THAN QUOTING THE FILING (whose own numbers moved twice, 9 → 7 + 11, in a self-correction):** **41** supabase `.range()` sites across the five roots, **41** carry at least one `.order()` — so the ban at zero is holding and is honest about what it sees — and **7** carry a second `.order()` as a tiebreak. Scanned with the SHARED comment stripper and a chain-anchored match (`.from("` … `.range(`), not a bare regex — the filing's own headline count came from a loose `/\.from\s*\(/` that counted `Array.from`.
+
+⚠ **The two remaining arguments are the filing's own, turned against its recommendation:** the not-proven bucket **still has no member shown to be a real defect** (its `wallet-cache` worked example is unprovable on paper and deterministic in practice — two collections sharing a `moment_id` inside one wallet is not a real state), and **a guard that over-reports where the repo has already done the work trains people to silence it**, which the filing warns about in as many words.
+
+➡ **The build conditions are recorded IN THE GUARD, not just here**, so the next reader inherits a decision rather than a gap: if it is ever built, the `paginate-key:` escape hatch ships with it, and the unique-index map must be a **DB-derived pin with a drift check** — never a curated list in the test, which is precisely the failure mode behind that guard's two 2026-08-23 widenings.
+
+**Verified:** `paginated-range-requires-order-ratchet` **15 passed** · `npx tsc --noEmit` clean · full `npm test` green · `check-memory-doc-links.mjs` 105/105 · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` — restores the unqualified rule paragraph and removes the inbox appendix. No DB half.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive, guard) — the unbounded-server-read ratchet reaches ZERO, and the last step was a READ because a count below the ceiling has two readings
 
 **GUARD + DOCS (`scripts/check-unbounded-server-reads.mjs` ceiling 1 → 0, inbox appendix). No route code, no DB, no prod-state change.** Closes the 08-22 filing's standing item — *"**STILL OPEN:** the remaining 17 … burn them down one at a time, lowering the ceiling in the same commit."* **They were.** Live: `182 page/layout file(s); 81 async server; 0 unbounded`.
