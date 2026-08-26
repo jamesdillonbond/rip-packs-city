@@ -233,3 +233,60 @@ contradicts your measurement is not automatically stale — test it before overr
 was right, the measurement that appeared to license overriding it was taken over the wrong
 population, and obeying it blindly would ALSO have been wrong (it would have discarded a real 20x
 read win). **The third option — measure what the decision was protecting — is the one that worked.**
+
+---
+
+## ⓘ Two candidates MEASURED AND DECLINED the same night — with numbers, because a decline without one is the shape this repo says nobody re-checks
+
+### 1. `panini_squeeze_board` — the 26.24 GB/day headline is HISTORY, not a target
+
+The `pg_stat_statements` sweep ranked it 5th at **26.24 GB/day of disk reads, 4,834 blocks per
+call**, and proposed a partial index on `mv_panini_squeeze (fmv_usd DESC) WHERE fmv_usd IS NOT NULL`.
+
+⛔ **Refuted by an `EXPLAIN (ANALYZE, BUFFERS)` on the live query — the current cost is 256 buffers
+per call, not 4,834:**
+
+```
+Limit  Buffers: shared hit=3 read=253
+  ->  Sort (top-N heapsort, 31kB)
+        ->  Seq Scan on mv_panini_squeeze m  (actual rows=4703)  Buffers: shared read=253
+Execution Time: 88.225 ms
+```
+
+The view was repointed onto an MV on 2026-08-22/23 — **mid-window** — while the statement text (and
+therefore the `queryid`) never changed, so the 14.2-day average blends the pre-MV live-view period
+with the post-MV one. **Current true cost ≈ 711 calls/day × 256 blocks = 1.4 GB/day**, already down
+~19× from the headline.
+
+⭐ **And the proposed index would not help even now:** the MV is 2.3 MB / 253 blocks, the scan
+returns 4,703 of 4,708 rows (`Rows Removed by Filter: 5`), and the projected columns are not in any
+candidate index — so an index scan would still visit the heap for nearly every row. **A seq scan of
+253 blocks is the right plan.** Declined; no index added.
+
+⭐ **The transferable half: a `pg_stat_statements` entry whose underlying OBJECT changed mid-window
+is a blended number wearing a stable `queryid`.** Nothing in `pg_stat_statements` marks it. Check
+`stats_since` against the migration log before treating any top-N entry as a live target.
+
+### 2. jobid 16 `rpc-backfill-pack-pool` — a 100%-no-op job, and cutting its cadence is still wrong
+
+Observed live tonight: **every tick returns `{"done":true,"mode":"pool","processed":3,"ok":0,
+"fail":3,"emptyEds":3,"poolRows":0}`** — the wedged-head defect, firing 288×/day and accomplishing
+nothing. The obvious lever is a cadence cut, which is a pg_cron change and therefore one of the few
+things a no-push session *can* ship.
+
+**Measured cost:** `get_topshot_pool_backfill_targets` at 178 calls/day, **2.26 GB/day of disk
+reads** (1,663 blocks/call, 1,969 s/day), plus the pool insert/delete pair at ~1,690 calls/day and
+0.28 GB/day. **Total ≈ 2.5 GB/day = 0.32% of the instance's ~780 GB/day.**
+
+⛔ **Declined, and the arithmetic is the reason rather than caution.** The head is wedged by 3
+unconvertible distributions; **710 rows are unconverted, 351 of them with real rips.** The moment
+the ordering defect is fixed — a function change, so push-gated, plausibly this week — that backlog
+drains at `limit=3` per tick: **864 items/day at the current cadence, 72/day at hourly.** So an
+hourly cut trades **0.32% of the read budget** for a **12× slower drain of a 710-item backlog the
+day it becomes drainable**. That is a bad trade, and it would look like a good one in a summary that
+quoted only the GB.
+
+⭐ **The pairing is the point: the same lever (a pg_cron cadence cut) was CORRECT for the pack-sales
+backfills — 71.9 GB/day for ~165 rows, no backlog — and WRONG here at 2.5 GB/day with a real
+backlog behind a wedge. "Cut the cadence of a wasteful job" is not a rule; the ratio of cost to
+blocked work is.**
