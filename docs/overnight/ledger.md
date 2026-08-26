@@ -340,6 +340,24 @@ number.** Filed rather than shipped: both writers are edge functions with no com
 and `SELECT cron.alter_job(29, schedule := '1,16,31,46 * * * *');` — **do not, until the head-check
 lands**; the freshness cost is now measured.
 
+⏳ **LAP STILL RUNNING at 16:53Z (2.5 h in), and one input figure of mine is CORRECTED.** The
+walker has gone 2024-12-20 → 2024-05-24 since the revert, monotonically, across 45+ runs, with
+**0 head rows so far — which is expected, because head rows only land AT the lap boundary.**
+
+⚠ **The correction:** I estimated the lap end from a floor of ~2024-04-10, taken from the
+`oldest_block_time_this_run` in a sibling response — **that response was the ALLDAY function, a
+different collection.** The real floor is this table's own oldest row, `min(block_time)` =
+**2023-09-28**, i.e. ~239 days further back than I assumed. **Borrowing a bound from the
+neighbouring pipeline is the same class as quoting a dated figure instead of re-deriving it.**
+
+⭐ **Re-derived, the lap model HOLDS and is now better supported than when it was written.**
+Head (2026-08-26) to floor (2023-09-28) is ~1,063 days; observed walk rate is 3.25–5.5 days/min
+at the restored 3-minute cadence, giving a **full lap of roughly 5.5 h** — which matches both
+this entry's original ~5 h estimate and the 6–8 h spacing of the historical head-row bursts.
+Under the 15-minute cut the same lap is **~27–40 h**, so the freshness regression the falsifier
+caught is, if anything, understated above. **Expect head rows around 17:40–18:10Z; their
+arrival is the confirmation, and continued zero past ~19:00Z would falsify the lap model and
+should reopen this.**
 **Verification pending:** at 3-min cadence the walker should lap and land head rows within ~5 h of
 14:26 UTC. ⓘ `public._rpc_waste_baseline_20260825` is **retained**, not dropped as the handoff
 proposed — it holds the pre-change baseline this entry is measured against and the question is no
