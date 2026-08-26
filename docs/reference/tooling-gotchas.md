@@ -302,6 +302,26 @@ property** — the third and fourth recorded instances of that class.
   `MARK in entry` BEFORE asserting `MARK in output`,** so a bad marker fails loudly instead of looking like a
   bad splice.
 
+- 🚨 **FIFTH INSTANCE, 2026-08-25 — the splice APPLIED and was catastrophically wrong, and the heading count
+  is what caught it.** The entry was built by joining its lines into a single **string**
+  rather than leaving them as an array, and was then spread:
+
+  ```js
+  lines.splice(i, 0, ...entry)   // spreads the STRING's CHARACTERS, one per array slot
+  ```
+
+  `ledger.md` became **2,063 single-character lines** and the `### ` heading ceased to exist. **Nothing
+  threw**, and `git diff --stat` read `+2063`, which for a ledger append is large but entirely plausible.
+  ⭐ **The ONLY instrument that saw it was CLAUDE.md's mandated post-write `grep -c '^### '` holding flat at
+  1063 instead of rising to 1064.** That rule is a **detector, not ceremony** — and **a plausible
+  `diff --stat` is not verification.**
+  ⭐ **Read together with the reused-scratch-filename trap above, the pair defines the count check's exact
+  blast radius: it catches SHAPE corruption and is blind to IDENTITY.** So both assertions are needed — the
+  count must RISE BY EXACTLY N, *and* a unique string from the content you meant to write must appear.
+  Neither subsumes the other.
+  ⭐ **Spread an ARRAY of lines, never a joined string**, and repair with `git checkout --` verified by an
+  **empty `git diff`** (see the stale-`index.lock` section below — checkout can silently no-op too).
+
 ## `git stash push <path>` on an already-COMMITTED path is a silent no-op — and it fakes a negative control (2026-08-22)
 
 To prove an assertion could actually fail, I reverted the fix with
@@ -443,6 +463,36 @@ git push origin main > "$SCRATCH/push.log" 2>&1; echo "PUSH_EXIT=$?"; tail -2 "$
 ⚠ **Diagnose from the ERROR STRING**: `(non-fast-forward)` means BEHIND ORIGIN even when `git status` says
 `ahead 2` — the local `origin/main` ref was stale and needed a `fetch` first.
 
+## ⚠ A stale `.git/index.lock` makes `git checkout --` and `git merge` SILENTLY no-op — and `merge` PRINTS a success line while doing nothing (2026-08-25)
+
+Same family as the `git push | tail` banner above, but **worse, because there is no pipe to blame** — the
+bare command itself reports success. A zero-byte `.git/index.lock`, minutes old with no git process alive,
+ate both a `git checkout --` and a `git merge`. The tell that makes it dangerous:
+
+```
+git merge …
+Updating d347b101..45481fc1        # ← reads as success. HEAD NEVER MOVED.
+```
+
+⭐ **"The merge said `Updating`" is NOT proof it happened. Verify by `git rev-parse HEAD` before and after,
+never by the printed line.** The same applies to `git checkout --` (verify by an empty `git diff`) and to
+`git commit` (verify the sha moved) — a git command's OUTPUT is not evidence it acted.
+
+⛔ **Do NOT bolt on an "if no git process is running, delete the lock" guard — that exact fix was measured
+and REJECTED on 2026-05-31**, and the reasoning still binds. Root cause (confirmed from the reflog, archived
+in `docs/archive/handoffs/handoff-2026-05-31-git-locks-and-followups.md`): the Cowork sandbox and this
+Windows box **share one `.git`**, and interleaved commits or a sandbox killed mid-rebase leave the lock
+behind. So:
+
+- **A "no git process alive" check is scoped to ONE SIDE of the mount** and cannot see a live git process on
+  the other. An age-based auto-clear therefore risks unlinking a lock a concurrent writer legitimately holds.
+- From the **sandbox** the unlink usually fails anyway (`Operation not permitted` — the mount denies it).
+- **Clearing it by hand from Windows is the repair Trevor performs** (`Remove-Item .gitindex.lock`), and it
+  is safe precisely because a human confirms nothing else is mid-commit. That is a manual step, not a rule to
+  automate. The durable fix remains giving the scheduled runner its **own clone**.
+
+⚠ **The detection half is the part that generalises and is safe to apply everywhere:** read HEAD before and
+after. That is what caught it, and it costs nothing.
 ## Sizing a drift is not reading it (2026-08-22)
 
 Cheap sizing (line/char deltas of live `prosrc` vs the pinned copy) is a good way to ORDER a queue of stale

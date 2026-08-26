@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive — docs-only, no code/DB) — promote the stale-index-lock filing into tooling-gotchas.md, with its removal step corrected against a fix that was already rejected
+
+**What shipped:** both halves of `2026-08-26T0411Z-git-gotcha-…` promoted into [tooling-gotchas.md](../reference/tooling-gotchas.md), closing the inbox→doc pipeline on it.
+
+- **Lesson 1 — its own section**, placed beside the `git push | tail` banner as **the same family**: a git command reporting success over a no-op. A zero-byte `.git/index.lock` ate a `git checkout --` and a `git merge`, and the merge printed `Updating d347b101..45481fc1` **while HEAD never moved**. ⭐ The durable half is the detector: **verify by `git rev-parse HEAD` before/after, never by the printed line** — extended in the doc to `checkout --` (empty `git diff`) and `commit` (sha moved).
+- **Lesson 2 — the FIFTH instance** in the existing ledger-splice section, and the stronger lesson of the night: spreading a joined **string** into `Array.splice` spreads its CHARACTERS, taking the ledger to **2,063 single-character lines** with **no throw** and a plausible-looking `+2063` diff-stat. ⭐ Only the mandated post-write `grep -c '^### '` holding flat at 1063 saw it. ⭐ **Paired with the reused-scratch-filename trap directly above it, the two now define the count check's blast radius: it catches SHAPE corruption and is BLIND to IDENTITY** — so the count-rises-by-N assert and a unique-content-string assert are both required; neither subsumes the other.
+
+⛔ **Two instructions were deliberately NOT followed, and this is the substantive half of the entry.**
+
+1. **The filing's own "then archive this inbox file" was refused.** It conflicts with the **append-only rule** (nothing filed on/after 2026-08-17 may move to `inbox/archive/`, enforced by `inbox-is-append-only-since-the-rule`). The filing stays in place and its `INDEX.md` entry is relabelled **⭐ PROMOTED** instead. ⚠ Worth naming because the inbox convention still SAYS filings are archived once drained — the same trap that archived two cited filings on 2026-08-23.
+2. 🚨 **The supplied removal step was CORRECTED rather than copied.** The turnkey paragraph ended *"confirm no git process is running, then remove the lock"* — **that is the exact fix measured and REJECTED on 2026-05-31** (`docs/archive/handoffs/handoff-2026-05-31-git-locks-and-followups.md`). Root cause from the reflog: the Cowork sandbox and this Windows box **share one `.git`**, so (a) a "no git process alive" check is scoped to ONE SIDE of the mount and cannot see a live git process on the other, making an age-based auto-clear able to unlink a lock a concurrent writer legitimately holds; (b) from the sandbox the unlink usually fails anyway (`Operation not permitted`). Manual clearing from Windows stays a **human** step; the durable fix is still giving the scheduled runner its own clone. **Only the detection half generalises, and that is what the doc now tells the next session.**
+
+⚠ **Contention was live throughout:** origin advanced **8 commits** mid-turn (`3170b6e6` → `843d4ce6`, the cold-tail drain work). Handled by fast-forward before editing, and re-checked `0 0` immediately before this write. **No CLAUDE.md edit was made** — a pointer to `tooling-gotchas.md` already exists, and CLAUDE.md was at 4 chars of headroom hours ago, so adding a line there would have been the wrong lever.
+
+**Revert path:** docs-only and inert — `git revert` the commit (find by message: `git log --grep="promote the stale-index-lock"`; ⚠ pre-2026-08-03 shas no longer resolve). No guard reads `tooling-gotchas.md` (verified by grep over `__tests__`, `scripts`, `.github/workflows`), so reverting it is safe in isolation; the `INDEX.md` relabel should revert with it to keep the record honest — the inbox guards key on the **link target**, which is unchanged. **No DB half.**
+
 ### 2026-08-25 · VERIFIED (Claude Code, interactive — docs-only, no code/DB) — the cold-tail falsifier RAN and did not falsify, and the defect did not spread
 
 **Docs only.** Closes the open loop left by the migration entry below, which deliberately named a falsifier
