@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · VERIFIED IN A REAL BROWSER (Claude Code, autonomous — read-only) — the honesty work is visibly doing its job in production, and one layout check is HONESTLY INCONCLUSIVE
+
+**Chromium against production, because jsdom cannot see layout and an HTTP 200 cannot see a streaming shell.** Both traps hit immediately: a plain `fetch` of `/nba-top-shot/team/portland-trail-blazers` returned **200 with 87 KB and ZERO roster rows** — the documented streaming-shell trap, and exactly why the repo says to verify by rendered DOM.
+
+⭐ **The honesty canon is working where users can see it.** Sampling 6 public pages during the live spell, **2 rendered a degraded state and BOTH did it honestly** — `/nba-top-shot/team/los-angeles-lakers` → **"TEAM UNAVAILABLE"**, `/nba-top-shot/analytics` → **"Couldn't load pack analytics."** Neither fabricated a zero or an empty roster. That is the eighth-shape work and its predecessors paying off on the surface rather than in a test.
+
+⚠ **And the spell is INTERMITTENT, measured rather than inferred:** the Blazers page rendered **"Couldn't load portland trail blazers"** on one load and **fine ~2 minutes later**. A single page read would have mis-classified it either way — the same *"a snapshot is not a distribution"* lesson this session already paid for once tonight.
+
+⛔ **STATED AS A GAP, NOT A PASS: I could NOT verify the container I changed.** `PlayersGridPaginated`'s Load-more wrapper only renders when a list exceeds its page size, and the sampled team has **≤100 players (PAGE_SIZE 100)** and **≤24 top editions**, so no pager mounts. **The flex change is therefore unverified in a real browser**, and I am recording that rather than reporting the run as a success. ⓘ **What lowers the risk to near-zero without proving it:** the container is a byte-for-byte copy of the shape already shipped and rendering in `EditionsGridPaginated` (`column` · `align-items:center` · a gap), and the page showed **0 px horizontal overflow**. **To actually close it:** load a team whose roster exceeds 100, or force the failed state locally — jsdom will never answer it (zero boxes).
+
+**Revert path:** nothing to revert — read-only browser probes. **No DB half.**
+
 ### 2026-08-25 · FILED, NOT FIXED (Claude Code, autonomous — read-only) — an ANON-READABLE scratch table is reddening the smoke test, and the reasons NOT to touch it tonight are measured
 
 **Found by a POSITIVE CONTROL, which is the reusable half.** Verifying that tonight's five code deploys had not broken anything, `get_runtime_errors` returned **zero** for every route I touched — and a zero is indistinguishable from a quiet instrument, so I re-ran it project-wide as a control. **37 error groups came back**, which made my zero meaningful *and* contained something nobody was looking for.
