@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, autonomous — two paginated grids) — a failed page marked the list EXHAUSTED, and the test written to prevent it was PROVABLY BLIND
+
+**Found by turning tonight's eighth-shape finding into a SWEEP.** The shape has no expression to grep, so the proxy was: a client component that guards a setter on a read's success **and** has no failure state **and** renders a sentence about emptiness. **200 client components → 4 candidates → 1 real.**
+
+**The three false positives show the sweep is calibrated rather than lucky:** `DashboardAlertsClient` gates its empty state on `!err` (with a comment recording that fix — my filter looked for `setError` and missed `setErr`); `ProfileClient` throws on `!r.ok` and is pinned by its own honesty test; `FollowButton` carries a comment saying *"a failed probe must not render as 'not following'"*. **Three of four were already right.**
+
+🚨 **The real one — `components/entity/PlayersGridPaginated.tsx`:** `loadMore()` ended `catch { setExhausted(true) }`, conflating *"the upstream said there are no more"* with *"we could not ask"*. A failed page **removed the Load-more button entirely**, leaving a TRUNCATED roster with no disclosure and no retry — the documented paged-read class, same as the sitemap that served **24,000 of 27,246** editions under a 200. Fixed with a separate `pageFailed`; `exhausted` now means only what the upstream said, and the button becomes **Try again**.
+
+⭐ **THE SIBLING WAS ALREADY FIXED, WHICH IS THE WHOLE LESSON.** `EditionsGridPaginated.tsx` — the same component pattern two files over — carries `setLoadFailed(true)` **and a comment that reads *"THIS USED TO `setExhausted(true)`"***. Someone fixed one copy and never grepped for the other. **"Grep for the EXPRESSION, not the file"**, demonstrated at a cost of ~4 months of a silently truncating roster.
+
+🚨 **A THIRD test tonight was PINNING its defect:** `it("exhausts (no crash) when Load more errors")` asserted `queryByText("Load 2 more")).toBeNull()` — **that the button disappears on failure**, the defect written down as the expected result. Inverted, not deleted.
+
+⚠⚠ **AND THE SIBLING'S TEST IS PROVABLY BLIND — MEASURED, NOT ARGUED.** `component-EditionsGridPaginated.test.tsx` still carried `it("marks exhausted on a fetch error so the pager can't spin forever")`, whose title states the OPPOSITE of what that component now does. It passes only because the button's LABEL becomes "Retry", so `queryByRole(name: /Load 2 more/)` is null under the fix AND the defect. **I re-introduced `setExhausted(true)` in its catch and the file stayed 11/11 GREEN** — the test written for this exact defect cannot see its regression. Rewritten to assert the disclosure and the surviving Retry, plus a no-change control; re-mutated, it now reds correctly. The file's HEADER comment carried the same stale claim and was corrected too.
+
+⭐ **The transferable rule: asserting that an affordance DISAPPEARED is almost always the wrong assertion** — it is satisfied by the fix and the defect for opposite reasons. **Assert what the reader can now SEE and DO.**
+
+⛔ **CORRECTION TO MY OWN AUDIT FROM EARLIER TONIGHT.** I reported *"2,940 `it()` blocks / 247 files, nothing else pins a rendered claim on a failed read"*. **That sweep could not have found either of these** — it matched only NUMERIC claims (`getByText("…0…")`, `$0`), and these pin a **disappearing affordance** with no number in it. **The audit's real blast radius is fabricated NUMBERS, not pinned tests in general**, and I stated it too broadly. A second, affordance-shaped sweep (failure mock + absence assertion naming a button) flags **10**, of which 8 are legitimate controls asserting an ERROR message is absent — these two were the real ones.
+
+**Verification:** `tsc --noEmit` exit 0 (bare). **Both grids mutation-proven** by restoring the original `setExhausted(true)` verbatim — each reds exactly its own test — then restored and checked by content. **Each ships with a NO-CHANGE CONTROL**: a genuinely short page must still exhaust and offer nothing more, without which "never exhaust" would satisfy the new tests and leave a pager on a finished list.
+
+✅ **Server side checked and already correct:** the team page fans out through `structuralSection` and gates the grid on `playersOk`, so the fifth layer was never the gap — only the clients' own pagination.
+
+**Revert path:** `git revert` the commit (`git log --grep="PROVABLY BLIND"`). ⚠ A revert restores the silent truncation in `PlayersGridPaginated` **and re-pins it in the suite**. **No DB half — client render only.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, autonomous — AchievementsCard) — a failed read published a MEASURED "0 / 7" about the reader's own account, and two tests PINNED it
 
 **Third and fourth instances of the honesty class tonight, found by continuing the sweep** from the collapse-site census (68 sites / 36 files) down to the files carrying **no failure state at all** — `AchievementsCard` was one of four.
