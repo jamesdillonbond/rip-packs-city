@@ -87,3 +87,36 @@ This filing and [the board-watchdog falsifier read](2026-08-24T0225Z-the-board-w
 Tonight's fail-closed work (`ddb452a8`, `a3c99bf1`) makes several guards report `couldNotRun` and **hard-fail**, on the reasoning that a hard fail pages. ⚠ **Sentry has received nothing since 2026-08-18 — ~7 d 11 h** ([filing](2026-08-26T0100Z-sentry-is-dark-on-day-seven-and-the-monitor-reads-the-silence-as-health.md)), so **the Sentry half of that escalation does not currently arrive.**
 
 ✅ **Verified the signal survives anyway, rather than assuming it:** `.github/workflows/smoke-tests.yml` gates on `scripts/smoke-gate.py` reading `hardPassed`/`hardTotal` and `exit 1`s, so a `couldNotRun` turns the **GitHub Actions job red independently of Sentry**. The sentinel's arms likewise render into its own report and Telegram, not Sentry alone. **Only the Sentry escalation is degraded, not the detection.** Recorded so nobody reads "it hard-fails, so it pages" as true without qualification while the reporter is down.
+
+---
+
+## ⛔ ADDENDUM 3 (~02:50Z) — I FOUND THE NO-CHANGE CONTROL AND IT CUTS AGAINST MY OWN ATTRIBUTION
+
+⚠ **Section 4 hedged the golazos link as "circumstantial". A sibling control now makes it weaker than that — it is in active TENSION with the platform-wide rate.**
+
+Applying the §ADDENDUM discriminator to **every** active `net.http_get` cron job (`command` filtered on, never selected — these carry gate keys), and keeping only rows where the `jobname → pipeline` name mapping actually resolves (a `name_matches` control, without which six jobs report thousand-dispatch "gaps" that are pure naming mismatches):
+
+| jobid | job | schedule | dispatched ok 48 h | `pipeline_runs` rows | gap |
+|---|---|---|---|---|---|
+| **42** | `compute-pinnacle-pack-ev` | `17 */6` | 8 | **8** | **0%** |
+| **44** | `compute-golazos-pack-ev` | `37 */6` | 8 | **4** | **50%** |
+| 20 | `allday-pack-opens-forward` | — | 92 | 90 | 2.2% |
+
+Widened to 72 h: **pinnacle 12 of 12 landed; golazos 5 of 12.**
+
+⭐ **jobid 42 is a near-perfect no-change control** — same job family, same edge-function dispatch pattern, same `*/6` cadence twenty minutes apart, same 120 s `timeout_milliseconds`. **It lost nothing.**
+
+⛔ **A uniform ~10% DNS-failure rate cannot produce 12/12 on one job and 5/12 on its twin.** Under p≈0.10 per dispatch, losing 4+ of 8 has probability ~0.5%, while losing 0 of 8 is unremarkable. 👉 **So the platform rate does NOT adequately explain golazos, and something golazos-SPECIFIC is the dominant term.**
+
+⚠ **Not a retention artifact, checked rather than assumed:** `pipeline_runs` retains ~73 h and pinnacle's own oldest retained row is 72 h old, so the 48 h and 72 h windows are both fully covered. The golazos rows are absent, not aged out.
+
+### What survives and what does not
+
+- ✅ **STANDS — the platform measurement.** 701 responses, **22.1% timed out, 10.0% consumed the whole timeout in DNS**, flat at 20.0–24.3% across a spell and a quiet window. That is measured on its own population and is unaffected by this.
+- ✅ **STANDS — §1 and the ADDENDUM discriminator.** The cron fired 8/8; the dispatch/landing split is real and is the right first query for any `cron_silent`.
+- ⛔ **WEAKENED — §2's implied causality for golazos specifically.** Retitle it in your head: *the platform has a standing pg_net failure rate, **and separately** golazos loses half its ticks for a reason not yet identified.*
+- ⛔ **AND THE SAME CAUTION APPLIES TO jobid 55** (`allday-pack-opens-backfill`, 282 dispatched / 13 rows). **Do not read that 95% as pg_net either** — there is [a standing filing](2026-08-24T1507Z-allday-pack-opens-cron-silent-arm-is-a-false-positive-now-the-finite-walk-is-done.md) that its finite walk is DONE, which is a completely different explanation for a missing run row.
+
+### 👉 The one measurement that would settle it
+
+`net._http_response` retains only ~6 h and **stores no URL**, so the failing golazos ticks are already gone. The next ticks are **06:37Z / 12:37Z / 18:37Z**. **Sample `net._http_response` within ~6 h of one of them** (e.g. any time before ~12:40Z for the 06:37Z tick) and look for a response in that minute: a **timeout** confirms egress; a **non-200** points at the function or its gate; a **200 with no `pipeline_runs` row** means the function ran and failed to log, which is a third and entirely different defect. ⚠ jobid 44 is on the **do-not-rotate** list — investigate, do not touch its key.
