@@ -1061,3 +1061,56 @@ Moved here to pay for two new standing rules; nothing deleted. CLAUDE.md keeps t
 ⓘ **The two counts to bump when adding an INDEX entry:** the header total on line 1, and the dated `## YYYY-MM-DD — N filings` heading for the section the entry lands in. ⚠ **Sections are keyed by PACIFIC date, while filenames carry a `Z` stamp** — a `2026-08-24T0430Z` filing belongs under `## 2026-08-23` (21:30 PT). Getting that wrong moves the failure from check 4 to check 4 in a different section, and reads identically.
 
 ⚠ **It was fixed by somebody else's commit, incidentally** (`ad4606ed` bumped 222→224 and 21→23 while covering its own filing), which is the recorded hazard about a concurrent session absorbing your breakage — the red would otherwise still be open, and the tip going green is NOT evidence your commit was clean. **Check CI per commit, not at the tip.**
+
+## A test can PIN a fabricated number, and a `toBeNull()` is green whenever the harness cannot reach the state (2026-08-26)
+
+Two test-side failures found while fixing the eighth honesty shape. Both are worse than a missing test,
+because both read as coverage.
+
+### 1. The assertion was WEAKER than the title, and the title was the tell
+
+`component-DashboardClient.test.tsx` carried:
+
+```ts
+it("⚠ does NOT replace the case with the onboarding prompt when the slab read FAILED", …)
+  // every assertion it had:
+  expect(calls.some(u => u.startsWith("/api/profile/hero-moment"))).toBe(false)
+```
+
+The title promises a **render** property; the assertion tests a **fetch**. Gating the hero fetch on
+`slabsRes.ok` stops `hero` being set — and the page then fell through to the onboarding prompt anyway. **It
+passed for the entire time the defect was live.** ⭐ Proven, not asserted: with the fix disabled the old
+assertion still passes and only the new one reds. **Assert the ABSENCE OF THE FALSE CLAIM, not the absence
+of a fetch.**
+
+### 2. Two tests did not miss the defect — they PINNED it
+
+`component-AchievementsCard.test.tsx` asserted `getByText("0 / 7")` on a **deliberately failed** read, with
+the comment *"0 unlocked -> the count badge still renders once loading settles"*. That is the fabricated
+number, written down as the expected result. Per the standing rule both were **INVERTED, never deleted** —
+the assertion is what holds the behaviour in place, so it has to keep existing and say the opposite.
+
+⭐ **Swept the repo for that exact shape afterwards and it PASSES: 2,940 `it()` blocks across 247 component
+test files, nothing else pins a rendered numeric claim on a failed read.** ⚠ The first cut of that sweep read
+**41** and was worthless — it could not distinguish `getByText("0")` (presence, the defect) from
+`queryByText("0").toBeNull()` (absence, the fix), and it flagged every ROUTE test correctly asserting a
+pipeline recorded `ok:false`. Narrow to component renders and presence-only. ⓘ A passing audit is worth
+recording precisely because nobody records one.
+
+### 3. ⚠⚠ A `toBeNull()` passes when the harness never reaches the state at all
+
+My own first test for the "✓ Updated" fix asserted `expect(queryByText(/updated/i)).toBeNull()` under fake
+timers. It passed — **against the UN-FIXED component.** The promise chain never reached `setUpdated` in that
+harness, so the absence assertion was vacuous, and only the mutation run exposed it (restoring the original
+`setUpdated(true)` still gave 10 passed).
+
+⭐ **Ship every absence assertion with a POSITIVE CONTROL THAT REACHES THE STATE, and put it first.** The
+pair now reads:
+
+```ts
+it("POSITIVE CONTROL — a successful recompute DOES claim Updated", …)   // proves the harness can get there
+it("does NOT claim Updated when the recompute POST failed", …)          // now means something
+```
+
+**This generalises past this file: `queryByText(...)`, `not.toBeInTheDocument()` and `toHaveLength(0)` are
+all green against a harness that renders nothing at all.**

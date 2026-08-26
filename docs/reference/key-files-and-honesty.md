@@ -495,3 +495,51 @@ it: the Golazos `proxyStub` returned **HTTP 500** for any offset past its fixtur
 was exercising the error path by accident and the "purge happens" arm was vacuous. Past-the-fixture offsets
 now return `200 {nfts: []}`, with `pageErrorAtOffset` for deliberate injection. **A stub whose default is an
 ERROR makes every happy-path assertion in the file a lie.**
+
+## The EIGHTH shape (2026-08-26): a GUARDED `setState` publishes the INITIALISER as a measurement
+
+Three live instances in one night, on `/dashboard` and the profile Achievements card. No coercion, no
+`?? 0`, no `|| 1` — nothing that any existing grep or ratchet matches. The shape is simply:
+
+```ts
+if (res.ok) { setRows(await res.json()) }        // /dashboard trophy slabs
+if (!d?.achievements) return                      // AchievementsCard, inside .then()
+```
+
+**On failure the setter never runs, so the state keeps the value it was declared with — and THAT value is
+what renders.** `useState([])` / `useState({})` / `useState([null,null,null,null,null,null])` were written as
+"nothing yet", and the render layer reads them as "nothing, measured". The declaration is a hundred lines
+away from the branch, which is why this reads as correct in review.
+
+⭐ **The tell is not an expression, it is an ABSENCE: a `set*` call inside a conditional or after an early
+return, with no `else`.** Grepping for the fixed shapes cannot find it. Ask instead: *if this read fails,
+what value does the component render — and who chose it?*
+
+**What made each one a defect rather than a harmless understatement was the COPY the initialiser reached:**
+
+| surface | initialiser | what it rendered on a failed read |
+|---|---|---|
+| `/dashboard` trophy case | `[null × 6]` | **"Pin a moment to your trophy case"** — to an owner with six pinned |
+| `/dashboard` Friend Activity | `[]` | **"Follow other collectors … hit + FOLLOW"** — the `/my-teams` incident verbatim |
+| `AchievementsCard` | `{}` | **"0 / 7"** and every badge locked — a fabricated number about their own account |
+
+⚠ **All three are the WORST sub-class**: a false claim about the reader's OWN account, and **actionable** —
+each tells someone to redo work they have already done.
+
+⚠ **THE TROPHY-CASE PANEL WAS ALREADY HALF FIXED, WHICH IS THE REUSABLE WARNING.** `refresh()` gates the
+HERO fetch on `slabsRes.ok` and carries a comment naming this exact incident — but the render fallback still
+landed on `<EmptyHeroState>`. **A panel with one honest branch is not an honest panel**; the fix has to
+follow the value all the way to what renders, not stop at the read that produced it.
+
+⚠ **The safe siblings are worth knowing so the sweep does not become noise.** In the same pass,
+`PublicAchievements`, `CollectionRecentSales` and the `TeamSets` parent all leave state at an empty
+initialiser too — and all three **omit their section** (`return null`, or `{x.length > 0 && …}`). An omission
+understates and is the safe direction. **The initialiser is only a defect when something renders a sentence
+about it.**
+
+⭐ **Also fixed in the same file, and it is a distinct member of the class: a CONFIRMATION that reports the
+passage of time.** `AchievementsCard`'s Refresh swallowed its POST result and ran `setUpdated(true)`
+unconditionally, so a failed recompute still told the collector their achievements had just refreshed. It is
+**unfalsifiable by construction** — the re-read that follows succeeds either way and simply returns the OLD
+data, so the UI looks exactly the same whether the recompute worked or not. Derive the confirmation from the
+WORK (`setUpdated(recomputed)`), never from reaching the end of the chain.
