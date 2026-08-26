@@ -40,6 +40,12 @@ git push origin main
 | 2 | `fix(telemetry): logRun swallowed its pipeline_runs insert error…` | + one comment that named the wrong timeout |
 | 3 | `docs(migrations): record the DB changes applied from a session that could not push` | **this one un-reds `migration-parity`** |
 | 4 | `docs: five filings, three ledger entries, three register items…` | ledger, inbox, known-issues 34/35/36, CLAUDE.md, database.md |
+| 5 | `docs: handoff for the 2026-08-25 overnight Cowork cloud pass` | this document |
+| 6 | `docs(inbox): two candidates measured and declined, with the numbers` | see §7 |
+
+✅ **Verification actually run, not asserted:** `npm test` → **1,382 files / 15,149 tests passed**,
+`npx tsc --noEmit` → clean, and the ledger / INDEX / CLAUDE.md-size guards re-run **in a fresh
+clone with the patches applied**, not only in mine.
 
 🚨 **Commit 3 is time-sensitive.** `migration-parity` is **enforcing** (its `|| true` came off
 2026-08-20) and matches on migration NAME against `git ls-tree HEAD`. Five migration names are in
@@ -284,6 +290,13 @@ mode changed from *transport* to *credentials*, and those look nothing alike.
 - **jobid 16 (`rpc-backfill-pack-pool`) returns `processed:3, ok:0, fail:3, poolRows:0` every tick,
   288×/day** — the wedged-head filing, observed live tonight. Cadence is a lever *only* once you
   accept the head stays wedged.
+- **Two more candidates were measured and DECLINED, with numbers** (commit 6, appended to the
+  `refresh_wmc_fmv_changed` filing). `panini_squeeze_board`'s 26.24 GB/day ranking is a **mid-window
+  blend wearing a stable `queryid`** — the view was repointed onto an MV on 08-22/23 and the live
+  cost is **256 buffers per call**, so no index was added. And jobid 16 is a 100%-no-op firing
+  288×/day, but cutting its cadence trades **0.32% of the read budget** for a **12× slower drain of
+  a 710-row backlog** the day its wedge is fixed. ⭐ Same lever, opposite verdicts: what decides is
+  the ratio of cost to blocked work, not the GB.
 - **The two 0-scan pack-sales-history indexes were NOT dropped**, because the six-source caller rule
   cannot be completed while both writers live outside the repo. The cadence cut already removes ~80%
   of what they cost.
