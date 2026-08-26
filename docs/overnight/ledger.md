@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Cowork, interactive — DB cron reschedule, no code/migration) — three pg_cron jobs that failed with "job startup timeout" moved out of the worker-pool pileup
+
+**DB STATE ONLY. No code, no migration, no `main` change.** Surgical execution of the 0320Z worker-starvation filing. Root cause: `max_worker_processes=6` is shared across pg_cron / parallel-query / logical-replication while `cron.max_running_jobs=32` is fiction; the pool is idle on average (**1.81 concurrent**) but spikes to **6–8 for ~15 min/day**, and any job firing into a spike fails `job startup timeout`. Measured that only **THREE** jobs actually fail that way — the rest fail `statement timeout` (= disk-IO saturation, Lever 2, deliberately NOT touched here). Moved the three into the verified-quietest minutes (`:54–:56`, avg ≤0.71 concurrent from a 89-job p90-occupancy simulation), preserving each job's cadence AND owner (331 kept `cron_heavy`'s 600s budget by using `cron.schedule` under `SET LOCAL ROLE cron_heavy`, since `cron_heavy` has EXECUTE on `schedule` but NOT on `alter_job`):
+
+- `198 rpc-weekly-log-purges`: `40 9 * * *` → `54 9 * * *`
+- `249 rpc-refresh-players-current-team`: `40 9 * * *` → `56 9 * * *`
+- `331 rpc-thp-leg-pinnacle-fmv-share`: `9 3,9,15,21 * * *` → `55 3,9,15,21 * * *`
+
+⛔ **NOT touched:** the ~15 heavy hourly/6-hourly jobs (215/217/71/245/303…). Their failures are `statement timeout` at the 600s ceiling = disk-IO saturation, which rescheduling cannot fix (Lever 2 = cut per-job work; already filed: ccm-step2, `drain_fmv_cold_tail`, pack-ev buffers). Raising `max_worker_processes` is the WRONG lever on an IO-bound instance (more slots → more concurrent IO → worse). A full re-stagger was simulated and rejected as high-risk re-choreography for low marginal value.
+
+**Verified:** all three `cron.job` rows show the new schedule, owner preserved, `active=true`; no duplicate created for 331 (`n=1`).
+
+**Revert (DB only):** as `postgres` → `SELECT cron.alter_job(198, schedule => '40 9 * * *'); SELECT cron.alter_job(249, schedule => '40 9 * * *');` · for 331 → `DO $$ BEGIN PERFORM set_config('role','cron_heavy',true); PERFORM cron.schedule('rpc-thp-leg-pinnacle-fmv-share','9 3,9,15,21 * * *','SELECT public.rpc_thp_leg_pinnacle_fmv_share();'); END $$;`
+
 ### 2026-08-25 · ATTRIBUTION (Claude Code, interactive) — Smoke Tests went red on THREE consecutive pushes and it was the saturation spell, not any of them
 
 **No change shipped. Recorded so the next reader does not mis-attribute a red run to a commit, and does not "fix" a docs-only change.**
