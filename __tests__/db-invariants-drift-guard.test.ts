@@ -1808,3 +1808,80 @@ describe("DB-invariant drift guard — embedded DDL must equal the committed mig
     expect(embedded).toBe(committed)
   })
 })
+
+describe("DB-invariant pin files must not contain a LONE `$`", () => {
+  // 🚨 WHY THIS EXISTS — a real red `main`, 2026-08-26, ~35 minutes and four commits.
+  //
+  // supabase/tests/refresh_wmc_fmv_changed.sql ended its verbatim block with
+  // `$function$;$` — one stray dollar sign left by a bad assembly regex. psql failed
+  // the WHOLE file with `syntax error at or near "$"`, so the `DB invariants (SQL)`
+  // job went red while every local check stayed green.
+  //
+  // ⚠ THE DRIFT GUARD ABOVE IS STRUCTURALLY BLIND TO IT, and that is the point of a
+  // separate check rather than a tweak to that one. `extractSqlFn` ends its slice at
+  // `rest.indexOf(";", closeRel + tag.length)` — the first semicolon after the
+  // dollar-quote terminator — so ANY text after that semicolon, valid or garbage, is
+  // outside what it compares. The pin and the migration therefore matched byte-for-byte
+  // on the extracted region while the file itself would not parse.
+  //
+  // ⚠ `npm test` cannot catch this either: nothing in the vitest suite parses SQL, and
+  // there is no Postgres or Docker on the dev box. Only CI's psql run does — which is
+  // why the rule has to be a cheap TEXTUAL proxy that runs locally.
+  //
+  // ⭐ PROVEN IN BOTH DIRECTIONS before being committed, per the repo's rule about
+  // scripted guards:
+  //   [A] silent on the clean tree — 181 files, 0 hits (so it is satisfiable at a
+  //       population of zero and cannot punish its own success);
+  //   [B] loud on the KNOWN OFFENDER — the exact `$function$;$` line reconstructed from
+  //       the real failure produces exactly 1 hit.
+  // A rule that only passed [A] would be indistinguishable from one that inspects nothing.
+
+  /** A `$` is legitimate only as a dollar-quote tag ($$ / $tag$) or a positional
+   *  parameter ($1). Line comments are stripped first because prose in these files
+   *  legitimately contains prices like `$100`. */
+  function loneDollarLines(src: string): { line: number; text: string }[] {
+    const hits: { line: number; text: string }[] = []
+    src.split(/\r?\n/).forEach((rawLine, i) => {
+      const cleaned = rawLine
+        .replace(/--.*$/, "")
+        .replace(/\$[a-zA-Z_][a-zA-Z0-9_]*\$/g, "")
+        .replace(/\$\$/g, "")
+        .replace(/\$\d+/g, "")
+        .replace(/'[^']*'/g, "")
+      if (cleaned.includes("$")) hits.push({ line: i + 1, text: rawLine.trim().slice(0, 90) })
+    })
+    return hits
+  }
+
+  const sqlDir = path.join(root, "supabase/tests")
+  const sqlFiles = readdirSync(sqlDir).filter((f) => f.endsWith(".sql"))
+
+  it("inspects a non-zero number of pin files (so a passing run means something)", () => {
+    // Guards that silently inspect nothing have shipped green in this repo before.
+    expect(sqlFiles.length).toBeGreaterThan(50)
+  })
+
+  it("no supabase/tests/*.sql contains a dollar sign outside a dollar-quote tag or $n parameter", () => {
+    const offenders: string[] = []
+    for (const f of sqlFiles) {
+      for (const h of loneDollarLines(readFileSync(path.join(sqlDir, f), "utf8"))) {
+        offenders.push(`${f}:${h.line}: ${h.text}`)
+      }
+    }
+    expect(
+      offenders,
+      "A lone `$` in a pin file is a typo that psql rejects for the WHOLE file, and the\n" +
+        "drift guard cannot see it (it stops at the first `;` after the dollar-quote\n" +
+        "terminator). This exact shape turned main red on 2026-08-26. Offenders:",
+    ).toEqual([])
+  })
+
+  it("CATCHES THE KNOWN OFFENDER: the reconstructed `$function$;$` line is detected", () => {
+    // The negative control. Without this, an over-eager future edit to loneDollarLines
+    // could make the check above vacuous and nothing would notice.
+    const good = readFileSync(path.join(sqlDir, "refresh_wmc_fmv_changed.sql"), "utf8")
+    const broken = good.replace("$function$;\n-- <<< END verbatim", "$function$;$\n-- <<< END verbatim")
+    expect(broken, "anchor moved — update this control rather than deleting it").not.toBe(good)
+    expect(loneDollarLines(broken).length).toBeGreaterThan(0)
+  })
+})
