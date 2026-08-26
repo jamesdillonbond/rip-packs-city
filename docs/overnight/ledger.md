@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · FILED (Claude Code, interactive — read-only measurement, docs-only) — the re-stagger's stated exit condition passes ~74% of the time if the fix did nothing, because the check reads LATEST-RUN status
+
+**No code, no DB write.** Read-only against `cron.job`, `cron.job_run_details`, `pg_proc`, prompted by the plan to confirm the `2f2736c5` re-stagger via `check_pgcron_recent_failures()` on the next monitor tick. Filed as `docs/overnight/inbox/2026-08-26T0525Z-the-cron-reschedule-exit-condition-passes-74pct-of-the-time-if-the-fix-did-nothing.md`.
+
+🚨 **The function ends `where l.status = 'failed'`, so it lists a job only if its LATEST run failed** — it is not a count of failures in the window. `fails_in_window` is a column on rows that already passed that gate. **Job 331 is therefore ALREADY absent from the report and was before any tick under the new schedule** (its 2026-08-26 03:09Z run succeeded), with all 8 of its startup timeouts sitting in the window unreported.
+
+**Measured baselines over full retention** (not a snapshot): **198 → 4/38 = 10.5%**, **249 → 4/23 = 17.4%**, **331 → 8/39 = 20.5%**. Hence `P(all three "quiet" | the reschedule did nothing) = 1.00 × 0.895 × 0.826 ≈ **74%**` — the stated exit condition is the expected outcome under the null, not a test of it. ⚠ **The last-3-runs snapshot reads `fail, fail, succeed` (2-in-3) and is wrong by ~6x in the direction that flatters the fix** — the repo's own "a directional claim needs a distribution, not a snapshot", met head-on.
+
+⚠ **n = 0, not n = 1.** Every retained run for all three still fired on the OLD minute (`:40`, `:09`); 331 did **not** also fire at 03:55Z, which brackets the change to after that. First observations are **09:54 / 09:55 / 09:56Z**. `cron.job` confirms all three carry the new schedule, owner preserved, `active=true` — **the config is right and only the evidence is missing**, which is the honest state to record rather than an early clearance.
+
+⭐ **The check is ASYMMETRIC and stays worth running: silence proves nothing, but a single `job startup timeout` falsifies the fix outright.** Read it as a falsifier, never as a clearance. 👉 **Suggested gate: job 331 at 14 clean ticks ≈ 3.5 days** (4 ticks/day, highest baseline rate); 249 needs ~16 days and 198 ~27 days at their own rates, so neither daily job can be what anyone waits on. ⚠ **The arithmetic assumes independent ticks and they are NOT** — failures cluster in the ~15 min/day worker-pool spike, so the tick counts are **optimistic**, order-of-magnitude only, off modest baselines (23–39 runs).
+
+**Revert path:** nothing to revert — read-only measurement plus one inbox filing and its `INDEX.md` entry (total 240 → 241; the `2026-08-25` day heading 9 → 10). To withdraw, `git revert` the commit (`git log --grep="exit condition passes"`); the filing must NOT be archived (append-only rule). **No DB half — no write was issued.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive — docs-only, no code/DB) — promote the stale-index-lock filing into tooling-gotchas.md, with its removal step corrected against a fix that was already rejected
 
 **What shipped:** both halves of `2026-08-26T0411Z-git-gotcha-…` promoted into [tooling-gotchas.md](../reference/tooling-gotchas.md), closing the inbox→doc pipeline on it.
