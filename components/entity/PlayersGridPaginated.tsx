@@ -51,6 +51,12 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
+  // ⚠ A FAILED PAGE IS NOT THE END OF THE LIST. `catch { setExhausted(true) }`
+  // used to conflate the two, which removed the Load-more button and left a
+  // TRUNCATED roster that no viewer could tell from a complete one — the same
+  // class as the sitemap read that served 24,000 of 27,246 editions under a 200.
+  // `exhausted` now means only "the upstream said there are no more".
+  const [pageFailed, setPageFailed] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>("fmv_desc")
   const [view, setView] = useState<RosterView>("current")
 
@@ -71,13 +77,15 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
       const url = `${fetchUrl}${sep}offset=${offset}&limit=${pageSize}`
       const r = await fetch(url, { cache: "no-store" })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setPageFailed(false)
       const next: PlayerTile[] = await r.json()
       const safe = Array.isArray(next) ? next : []
       setRows(prev => [...prev, ...safe])
       setOffset(prev => prev + safe.length)
       if (safe.length < pageSize) setExhausted(true)
     } catch {
-      setExhausted(true)
+      // Do NOT mark exhausted: we do not know whether more entries exist.
+      setPageFailed(true)
     } finally {
       setLoading(false)
     }
@@ -198,9 +206,17 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
         ))}
       </div>
       {!exhausted && (
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          {pageFailed && (
+            <div
+              role="status"
+              style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}
+            >
+              Couldn&apos;t load more entries — this list may be incomplete.
+            </div>
+          )}
           <button type="button" className="rpc-btn-ghost" disabled={loading} onClick={loadMore}>
-            {loading ? "Loading…" : `Load ${pageSize} more`}
+            {loading ? "Loading…" : pageFailed ? "Try again" : `Load ${pageSize} more`}
           </button>
         </div>
       )}

@@ -9,8 +9,8 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 
 // Pins the reusable paginated edition grid's interactive logic — the "Load more"
 // pager (append page → advance offset → mark exhausted when a short page returns,
-// and mark exhausted on a fetch error so the button can't spin forever), the
-// empty state, and the sort toggle. The row comparison + URL building already
+// and — deliberately NOT exhausted on a fetch error, because a failed page is not
+// the end of the list), the empty state, and the sort toggle. The row comparison + URL building already
 // live (tested) in lib/entity-editions-grid-format; this covers the component's
 // own fetch/state machine.
 
@@ -73,13 +73,41 @@ describe("EditionsGridPaginated", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /Load 2 more/ })).toBeNull())
   })
 
-  it("marks exhausted on a fetch error so the pager can't spin forever", async () => {
+  // ⚠⚠ THIS TEST WAS STALE AND PROVABLY BLIND (rewritten 2026-08-26). Its title
+  // said "marks exhausted on a fetch error" — which is the OPPOSITE of what this
+  // component does: the `catch` was deliberately changed to `setLoadFailed(true)`
+  // so a failed page cannot masquerade as the end of the list, and the source
+  // carries a comment saying so.
+  //
+  // It kept passing only because the button's LABEL changes to "Retry" on
+  // failure, so `queryByRole("button", { name: /Load 2 more/ })` is null under
+  // BOTH the fix and the defect. Demonstrated, not assumed: re-introducing
+  // `setExhausted(true)` in the catch left this file at 11/11 green.
+  //
+  // ⭐ Asserting that an affordance DISAPPEARED is almost always the wrong
+  // assertion. Assert what the reader can now see and do.
+  it("does NOT present a truncated list as complete when Load more errors", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 } as any)
     render(
       <EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x" initial={[tile("a"), tile("b")]} pageSize={2} />,
     )
     fireEvent.click(screen.getByRole("button", { name: /Load 2 more/ }))
+    // The incompleteness is disclosed, and the way forward survives.
+    await waitFor(() => expect(screen.getByText(/isn.t the end of the list/i)).toBeTruthy())
+    expect(screen.getByRole("button", { name: /Retry/ })).toBeTruthy()
+  })
+
+  it("NO-CHANGE CONTROL — a genuinely short page still exhausts and offers nothing more", async () => {
+    // Guards the opposite failure: never exhausting would satisfy the test above
+    // while leaving a pager on a list that has really ended.
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => [tile("c")] } as any)
+    render(
+      <EditionsGridPaginated collectionUrlSlug="nba-top-shot" fetchUrl="/api/x" initial={[tile("a"), tile("b")]} pageSize={2} />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Load 2 more/ }))
     await waitFor(() => expect(screen.queryByRole("button", { name: /Load 2 more/ })).toBeNull())
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull()
+    expect(screen.queryByText(/isn.t the end of the list/i)).toBeNull()
   })
 
   it("renders the sort toggle when showSort is set", () => {

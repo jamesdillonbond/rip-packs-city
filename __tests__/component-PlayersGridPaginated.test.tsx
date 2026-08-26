@@ -104,14 +104,42 @@ describe("PlayersGridPaginated", () => {
     await waitFor(() => expect(queryByText("Load 2 more")).toBeNull())
   })
 
-  it("exhausts (no crash) when Load more errors", async () => {
+  // ⚠⚠ INVERTED 2026-08-26. This test was named "exhausts (no crash) when Load
+  // more errors" and asserted the Load-more button DISAPPEARS on a failed page.
+  // That IS the defect: `catch { setExhausted(true) }` conflated "the upstream
+  // said there are no more" with "we could not ask", so a TRUNCATED roster
+  // rendered as a complete one with no way to retry — the same class as the
+  // sitemap read that served 24,000 of 27,246 editions under a 200.
+  //
+  // ⚠ It is also a lesson in why the old assertion was worthless in BOTH
+  // directions: after the fix the button reads "Try again", so
+  // `queryByText("Load 2 more")` is still null and the original assertion
+  // passes against the defect AND the fix, for opposite reasons.
+  it("does NOT present a truncated list as complete when Load more errors", async () => {
     const rows = [tile({ name: "P1", player_slug: "p1" }), tile({ name: "P2", player_slug: "p2" })]
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500 } as Response)))
     const { getByText, queryByText } = render(
       <PlayersGridPaginated {...base} initial={rows} pageSize={2} />
     )
     fireEvent.click(getByText("Load 2 more"))
+    // The incompleteness must be DISCLOSED, and the list must stay expandable.
+    await waitFor(() => expect(getByText(/this list may be incomplete/i)).toBeTruthy())
+    expect(getByText("Try again")).toBeTruthy()
+    expect(queryByText("P1")).toBeTruthy()
+  })
+
+  it("NO-CHANGE CONTROL — a genuinely short page still exhausts and offers nothing more", async () => {
+    // Without this, never exhausting would satisfy the test above while leaving
+    // a Load-more button on a list that really has ended.
+    const rows = [tile({ name: "P1", player_slug: "p1" }), tile({ name: "P2", player_slug: "p2" })]
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [tile({ name: "P3", player_slug: "p3" })] } as unknown as Response)))
+    const { getByText, queryByText } = render(
+      <PlayersGridPaginated {...base} initial={rows} pageSize={2} />
+    )
+    fireEvent.click(getByText("Load 2 more"))
     await waitFor(() => expect(queryByText("Load 2 more")).toBeNull())
+    expect(queryByText(/this list may be incomplete/i)).toBeNull()
+    expect(queryByText("Try again")).toBeNull()
   })
 
   it("does not offer Load more when the first page is already short", () => {
