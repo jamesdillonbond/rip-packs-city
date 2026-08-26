@@ -194,6 +194,39 @@ Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, p
 
   ⚠ **ALSO DISPLACED VERBATIM FROM that same rule (2026-08-23), to make room for the production-caller control below — two fragments, in full:** *"(8 artifact-only views; a sweep without it breaks 3 live boards)"* (i.e. when enumerating callers, the Cowork artifacts' HTML is a source outside BOTH the repo and the catalogue, and a sweep that omits it breaks three live boards) and, on the seventh source, *"; the 08-22 canary greps ZERO callers, runs every 30 min"* (an EDGE function invisible to all six sources *and* to `cron.job`, because cron-job.org drives it).
 
+## 🚨 A ROUTINE WITH AN ATTACHED `SET` CLAUSE CANNOT `COMMIT` — and that makes SECURITY DEFINER and transaction control MUTUALLY EXCLUSIVE here (2026-08-23, re-confirmed 2026-08-26)
+
+**PostgreSQL refuses `COMMIT`/`ROLLBACK` inside any routine carrying an attached `SET` config clause**
+(`SET search_path = …`), with `2D000 invalid transaction termination`. It has cost once and nearly cost twice:
+
+- **It cost, 2026-08-23.** A `search_path`-hardening pass ran `ALTER PROCEDURE
+  public.reconcile_all_saved_wallet_stats(int,int,int) SET search_path = public` on a procedure that
+  **COMMITs per wallet**. Every tick after the ALTER died at `line 30 at COMMIT` — not a timeout, an
+  immediate error before any work. The hourly saved-wallet cache stopped refreshing. ⚠ **The hardening
+  was right in general and the wrong tool on this one routine.**
+- **It nearly cost again, 2026-08-26.** The board-watchdog filing prescribed converting
+  `public_board_liveness_sweep` to *"a PROCEDURE with a `COMMIT` after each board"*. That function is
+  **`prosecdef = true` with `proconfig = {search_path=public, pg_temp}`**, so the conversion as written
+  would have raised `invalid transaction termination` on the first COMMIT and taken the watchdog **fully
+  dark** — worse than the one-tick-in-eight it was meant to fix.
+
+⭐ **The check that settles it in one query, and it is a SHAPE, not a rule to remember:** every routine on
+this database that actually commits reads **`prokind='p'`, `prosecdef=false`, `proconfig=null`**
+(`reconcile_all_saved_wallet_stats`, `rpc_trust_health_precompute_refresh_p` — both, 2026-08-26). **If a
+routine needs transaction control, it cannot also carry a pinned `search_path`, and therefore should not be
+SECURITY DEFINER.** Read `prosecdef` and `proconfig` from `pg_proc` **before** designing any per-item-commit
+fix; a durability design that assumes COMMIT is available is blocked before it is written.
+
+⚠ **And you cannot test the construct through `execute_sql`** — it wraps every statement in a transaction, so
+a scratch `CALL` returns the same `2D000` from the **harness**, which is not evidence about the routine. Same
+limitation as `CREATE INDEX CONCURRENTLY`: a real answer needs a one-statement pg_cron job, or the live
+`proconfig`/`prosecdef` read above, which is cheaper and sufficient.
+
+➡ **The usual escape is not a COMMIT at all: SLICE THE SCHEDULE.** Each pg_cron tick is already its own
+transaction, so running a rotating sweep more often with a smaller budget gives the same "completed work
+survives a timeout" property with no procedure conversion, no `search_path` strip and no privilege change.
+Weigh it against the added IO on this IO-bound instance (R46).
+
 ## 🚨 A PARTIAL INDEX WHOSE PREDICATE SAYS `col IS NOT NULL` ON A `NOT NULL` COLUMN IS UNREACHABLE ON PG 17 (2026-08-23)
 
 This DB is **PostgreSQL 17.6**. PG 17 removes a redundant `col IS NOT NULL` qual when `col` is declared
