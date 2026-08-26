@@ -437,6 +437,27 @@ Under the 15-minute cut the same lap is **~27–40 h**, so the freshness regress
 caught is, if anything, understated above. **Expect head rows around 17:40–18:10Z; their
 arrival is the confirmation, and continued zero past ~19:00Z would falsify the lap model and
 should reopen this.**
+⛔ **ETA CORRECTED at 17:38Z — and it is the SAME mistake a third time today: I used a SPOT
+rate as a RATE.** The 17:40–18:10Z window above came from the two fastest consecutive readings
+(5.5 days of history per minute). Measured across the whole run instead, 2024-12-20 → 2024-03-05
+is **290 days in 191 minutes = 1.52 days/min**, and the spot rates over seven readings range
+**1.03 to 5.5** — noisy, not decelerating, and the two I extrapolated from were the outliers.
+**Revised ETA on the averaged rate: the lap completes ~19:20Z**, not 18:10Z.
+
+⚠ **So the "still zero past 19:00Z falsifies the model" line above is WITHDRAWN as written** —
+it would have fired on my own arithmetic rather than on the walker. ⭐ **Replaced with a
+falsifier that does not depend on an extrapolated rate at all: the CURSOR ADVANCING is the
+observable.** It has moved monotonically across 51+ runs (2024-12-20 → 2024-03-05). **If the
+cursor STALLS — same `after_cursor` across several ticks — the lap model is falsified and
+something else is wrong. If it keeps advancing, the lap arrives when it arrives.** Head rows
+landing is the confirmation; a clock time is not the test.
+
+⭐ **The durable half: this is the third spot-as-rate error in one session** (the others: a
+39-minute pre-cut window read as a cadence baseline, and n=1/n=2 post-fix samples). **The tell
+is always the same — a rate computed from the two most recent readings rather than from the
+whole series.** CLAUDE.md already says *a directional claim needs a distribution, not a
+snapshot*; the gap is that an ETA feels like arithmetic rather than a claim, so the rule does
+not get applied to it.
 **Verification pending:** at 3-min cadence the walker should lap and land head rows within ~5 h of
 14:26 UTC. ⓘ `public._rpc_waste_baseline_20260825` is **retained**, not dropped as the handoff
 proposed — it holds the pre-change baseline this entry is measured against and the question is no
