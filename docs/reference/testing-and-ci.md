@@ -710,6 +710,42 @@ an ACL, so it would CHANGE production while presenting itself as a no-op.
 comment banner was added — not one SQL byte — so re-running them is still a no-op and each revert path is
 intact. Each file says so in its own header.
 
+## ✅ The CI guard estate, PROVEN RED one by one (2026-08-26) — a clean audit, recorded because clean audits are what nobody writes down
+
+CLAUDE.md's rule is *"before relying on a watcher, prove it can see a FAILURE — an unreachable monitor
+and a green build look identical."* That had been applied to individual guards after individual
+incidents; it had **never been run across the estate**. It has now, and the result is good, which is
+exactly why it is written down — otherwise the next session re-does it, or worse, assumes it.
+
+**Method (cheap, ~10 minutes, re-runnable):** for each guard, record the baseline exit code, introduce
+a *synthetic violation of the thing it bans*, confirm it exits **1** and **names the file**, delete
+the probe, confirm it returns to **0**. Probes went in throwaway dirs (`components/_guardprobe`,
+`app/api/_guardprobe`) and one appended line in a memory doc, restored from a copy. ⚠ **`git status`
+verified empty afterwards** — a probe left behind is a defect shipped by an audit.
+
+| guard (CI `typecheck` job) | probe used | red on violation? | non-vacuous arm |
+|---|---|:--:|---|
+| `check-brand-tokens` | hardcoded `#E03A2F` + `'Barlow Condensed'` in a component | ✅ | surface counts `=== 0` |
+| `check-driver-message-leaks` | ungated `GET` returning `err.message` | ✅ **named the file** | `handlersInspected < 100`; **gated-leak count `=== 0`** |
+| `check-unhandled-third-state` | — (**self-testing**) | ✅ **by construction** | **runs a synthetic fixture that MUST flag, before reporting on the real tree** |
+| `check-responsive-flex-basis` | `md:flex-row` + inline `flex: "1 1 320px"` | ✅ | asserts files + media blocks inspected |
+| `check-memory-doc-links` | broken relative link appended to a reference doc | ✅ | `files === 0 \|\| linksChecked === 0`, plus "implausibly few" |
+| `check-unbounded-server-reads` | async server page with a bare `.from().select()` | ✅ **named the file** | `INSTRUMENT BROKEN` on empty walk |
+
+⭐ **THE PATTERN WORTH COPYING IS THE SELF-TEST.** Two of the six do not need an external probe at
+all: `check-unhandled-third-state` runs its detector against a fixture that must be flagged **before**
+it reports anything about the real tree, and `check-driver-message-leaks` treats its **gated** leak
+population as a built-in positive control — *"if it ever reads 0, the GATE or LEAK regex has stopped
+matching and the clean result is meaningless."* **Those two cannot silently rot; the other four can
+only be shown healthy by an audit like this one.** When adding a guard, prefer the self-test: it
+converts "somebody should re-check this" into "CI re-checks it every run".
+
+⚠ **What this does NOT claim:** that the guards catch everything in their class. It is a check on
+*detector liveness*, not on coverage — and this file records two guards whose assertion is
+narrower than their own header (`.range()`/`.order()` presence-vs-uniqueness, and
+`check-unbounded-server-reads`'s reachable-vs-applied). **A guard can be provably red on the thing it
+tests and still test less than it says.**
+
 ## The instrument audit of 2026-08-22 — three daily detectors, and the question that paid
 
 CLAUDE.md's standing rule is **"ask what RUNS a guard, not only whether it passes."** Applied to the three

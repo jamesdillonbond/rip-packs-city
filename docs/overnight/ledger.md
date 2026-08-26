@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — every CI guard proven RED one by one; a CLEAN audit, recorded because clean audits are what nobody writes down
+
+**DOCS ONLY (`testing-and-ci.md`). No code, no DB, no prod-state change.** CLAUDE.md's rule — *"before relying on a watcher, prove it can see a FAILURE; an unreachable monitor and a green build look identical"* — had been applied to individual guards after individual incidents. **It had never been run across the estate.**
+
+✅ **RESULT: 6 of 6 CI guards go RED on a real violation, and 6 of 6 carry a non-vacuous population arm.** Two of them **name the offending file** in the failure output. **The estate is in good shape, and that is the finding** — ⚠ **a passing audit is precisely the thing that goes unrecorded and then gets re-done, or worse, assumed.**
+
+⭐ **METHOD, recorded so it is re-runnable in ~10 minutes rather than re-invented:** per guard, take the baseline exit code, introduce a **synthetic violation of the thing it bans**, confirm exit **1**, delete the probe, confirm exit **0** again. Probes: a hardcoded `#E03A2F` + `'Barlow Condensed'` component; an ungated `GET` returning `err.message`; `md:flex-row` beside an inline `flex: "1 1 320px"`; a broken relative link appended to a reference doc; an async server page with a bare `.from().select()`. ⚠ **`git status` verified EMPTY afterwards — a probe left behind is a defect shipped by an audit.**
+
+⭐ **THE PATTERN WORTH COPYING IS THE SELF-TEST, and two guards already have it.** `check-unhandled-third-state` runs its detector against a fixture that **MUST** be flagged *before* it reports anything about the real tree; `check-driver-message-leaks` uses its **gated** leak population as a built-in control — *"if it ever reads 0, the GATE or LEAK regex has stopped matching and the clean result is meaningless."* **Those two cannot silently rot. The other four can only be shown healthy by an audit like this one** — so a new guard should prefer the self-test, which converts *"somebody should re-check this"* into *"CI re-checks it every run"*.
+
+⚠ **WHAT THIS DELIBERATELY DOES NOT CLAIM, because the distinction is the whole value:** it is a check on **detector LIVENESS**, not on **coverage**. A guard can be provably red on the thing it tests and still test **less than its header says** — and this session recorded two such cases today (`.range()`'s presence-vs-uniqueness, and `check-unbounded-server-reads`'s reachable-vs-applied). **Both statements are true of the same estate at the same time, and reporting only the first would be the flattering half.**
+
+**Verified:** all six guards exit 0 on the clean tree, exit 1 with their probe, and exit 0 again after removal · `git status` empty · full `npm test` green · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` — removes the `testing-and-ci.md` section. No code, no DB half.
+
 ### 2026-08-25 · RETRACTION + DOCS (Claude Code, interactive) — I published a pg_net finding that my OWN memory store had already refuted, and found out only while writing memories
 
 **DOCS ONLY. No code, no DB, no prod-state change.** Correcting a claim I shipped earlier tonight, plus the session's memory writes.
