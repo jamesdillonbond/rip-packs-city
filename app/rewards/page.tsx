@@ -109,6 +109,15 @@ export default function RewardsPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [shop, setShop] = useState<ShopItem[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  // null from the API means the read FAILED (see /api/rewards/summary). Without
+  // this the empty array is indistinguishable from "you have redeemed nothing".
+  const [redemptionsFailed, setRedemptionsFailed] = useState(false);
+  // ⚠ `load()` checked `res.status === 401` AND NOTHING ELSE, so any other
+  // non-2xx fell through to `data.x ?? []` and rendered the whole page as a
+  // confident set of zeros — "Nothing redeemed yet.", 0 points, no referrals.
+  // This is the identical shape already fixed on the ADMIN ship-queue page and
+  // pinned by client-pages-failed-vs-empty-guard; the sibling page was missed.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   // null = the read failed (see /api/rewards/summary). Coercing it to 0 here
   // would undo the server-side distinction and re-render "No referrals yet".
@@ -130,6 +139,7 @@ export default function RewardsPage() {
   const [shipModal, setShipModal] = useState<{ redemptionId: number; itemName: string } | null>(null);
 
   const load = useCallback(async () => {
+    setLoadFailed(false);
     try {
       const res = await fetch("/api/rewards/summary", { cache: "no-store" });
       if (res.status === 401) {
@@ -137,10 +147,17 @@ export default function RewardsPage() {
         setLoading(false);
         return;
       }
+      if (!res.ok) {
+        setLoadFailed(true);
+        setLoading(false);
+        return;
+      }
+      setLoadFailed(false);
       const data = await res.json();
       setSummary(data.summary ?? null);
       setRules(data.rules ?? []);
       setShop(data.shop ?? []);
+      setRedemptionsFailed(data.redemptions === null);
       setRedemptions(data.redemptions ?? []);
       setUserId(data.userId ?? null);
       setReferralCount(data.referralCount ?? null);
@@ -150,6 +167,7 @@ export default function RewardsPage() {
       setResolvedTsUsername(data.resolvedTsUsername ?? null);
       setHasVerifiedWallet(data.hasVerifiedWallet ?? false);
     } catch {
+      setLoadFailed(true);
       setFlash({ kind: "err", msg: "Couldn't load rewards. Try again." });
     } finally {
       setLoading(false);
@@ -415,6 +433,37 @@ export default function RewardsPage() {
             >
               Sign in
             </Link>
+          </div>
+        ) : loadFailed ? (
+          <div
+            role="status"
+            style={{ padding: 24, border: "1px solid #222", borderRadius: 12, background: "#111" }}
+          >
+            <p style={{ marginTop: 0, fontFamily: MONO }}>
+              Couldn&apos;t load your rewards. This is a loading problem — your points,
+              tier and redemption history are safe and nothing has been spent.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                void load();
+              }}
+              style={{
+                marginTop: 8,
+                padding: "10px 18px",
+                background: RED,
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontFamily: DISPLAY,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                cursor: "pointer",
+              }}
+            >
+              Try again
+            </button>
           </div>
         ) : (
           <>
@@ -840,7 +889,12 @@ export default function RewardsPage() {
 
             {/* HISTORY */}
             <SectionTitle>Your redemptions</SectionTitle>
-            {redemptions.length === 0 ? (
+            {redemptionsFailed ? (
+              <p role="status" style={{ fontFamily: MONO, color: "#7a7a7a" }}>
+                Couldn&apos;t load your redemptions. This is a loading problem, not an
+                empty history — nothing has been lost.
+              </p>
+            ) : redemptions.length === 0 ? (
               <p style={{ fontFamily: MONO, color: "#7a7a7a" }}>Nothing redeemed yet.</p>
             ) : (
               <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>

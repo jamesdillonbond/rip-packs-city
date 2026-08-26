@@ -146,7 +146,12 @@ export async function GET() {
     summary: summary ?? null,
     rules: rules.data ?? [],
     shop: shop.data ?? [],
-    redemptions: redemptions.data ?? [],
+    // ⚠ SAME DEFECT AS `referralCount` BELOW, on a sibling field, three lines
+    // apart — `?? []` on a supabase read that RETURNS its error rather than
+    // throwing. A failed redemptions read became an empty array at HTTP 200 and
+    // /rewards renders that as "Nothing redeemed yet." to someone who has
+    // redeemed. NULL = "we could not read it"; [] = "you genuinely have none".
+    redemptions: redemptions.error ? null : (redemptions.data ?? []),
     // ⚠ NULL means "we could not read it", 0 means "you genuinely have none" —
     // and they must stay distinct all the way to the render. supabase-js RETURNS
     // errors rather than throwing, so a failed count (a statement timeout under

@@ -703,4 +703,59 @@ describe("client pages — a failed read is not an empty result", () => {
       expect(src).toContain("No participants yet.")
     })
   })
+
+  // ⚠⚠ THE SIBLING PAGE WAS MISSED FOR MONTHS, WHICH IS THE POINT OF THIS BLOCK.
+  // The /admin/rewards fix above was correct and is pinned — and the USER-FACING
+  // /rewards page carried the IDENTICAL shape the whole time: `load()` checked
+  // `res.status === 401` and nothing else, so any other non-2xx fell through to
+  // `data.x ?? []` and rendered a confident set of zeros. Fixing one copy and
+  // never grepping for the other is this repo's most-repeated lesson.
+  //
+  // ⚠ It also had a SECOND, server-side half the admin page did not: the route
+  // returned `redemptions: redemptions.data ?? []` at HTTP 200, and supabase-js
+  // RETURNS errors rather than throwing — so a failed read became an empty array
+  // that no client check could detect. The comment directly BELOW that line, on
+  // `referralCount`, already explained the trap in full. Three lines apart.
+  describe("/rewards — a failed load is not an empty account", () => {
+    const src = stripComments(read("app", "rewards", "page.tsx"))
+    const route = stripComments(read("app", "api", "rewards", "summary", "route.ts"))
+
+    it("checks res.ok, not just 401", () => {
+      expect(
+        src,
+        "401 alone lets a 500 render 0 points, no referrals and an empty history",
+      ).toMatch(/if \(!res\.ok\) \{\s*setLoadFailed\(true\);/)
+    })
+
+    it("tracks the failure separately, resets it on re-load, and covers the thrown path", () => {
+      expect(src).toContain("const [loadFailed, setLoadFailed] = useState(false)")
+      expect(src).toMatch(/async \(\) => \{\s*setLoadFailed\(false\);/)
+      expect(src).toMatch(/\} catch \{\s*setLoadFailed\(true\);/)
+    })
+
+    it("the page reports a failed read instead of rendering an empty account", () => {
+      expect(src).toContain("loadFailed ? (")
+      expect(src).toMatch(/Couldn&apos;t load your rewards/)
+    })
+
+    it("the ROUTE carries the redemptions read failure instead of coercing it to []", () => {
+      // `?? []` on a supabase read that RETURNS its error is a fabricated empty.
+      expect(route).toContain("redemptions: redemptions.error ? null : (redemptions.data ?? [])")
+      expect(route).not.toMatch(/redemptions: redemptions\.data \?\? \[\],/)
+    })
+
+    it("and the client distinguishes that null from a genuinely empty history", () => {
+      expect(src).toContain("const [redemptionsFailed, setRedemptionsFailed] = useState(false)")
+      expect(src).toContain("setRedemptionsFailed(data.redemptions === null)")
+      // Ordering: the failure branch must precede the emptiness test.
+      expect(src.indexOf("{redemptionsFailed ? (")).toBeGreaterThan(-1)
+      expect(src.indexOf("{redemptionsFailed ? (")).toBeLessThan(src.indexOf("Nothing redeemed yet."))
+    })
+
+    it("BOTH directions: a genuinely empty history still says so", () => {
+      // The correct answer for a collector who has redeemed nothing, which is
+      // most of them — a fix that deleted this would only move the dishonesty.
+      expect(src).toContain("Nothing redeemed yet.")
+    })
+  })
 })
