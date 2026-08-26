@@ -1,0 +1,88 @@
+-- audit_20260826_fmv2026_covering_index_restores_index_only_scan
+--
+-- RECORD-ONLY. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, so
+-- the real work was executed as a one-off pg_cron job (the recipe in
+-- docs/reference/database.md). This file exists so the change has a committed
+-- artefact and so the revert path is in the repo rather than in a session
+-- transcript. Applying it a second time changes nothing.
+--
+-- ── WHAT WAS WRONG ─────────────────────────────────────────────────────────────
+-- `topshot_serial_board_candidates` opens with an unbounded latest-FMV `DISTINCT ON`
+-- over Top Shot's `fmv_snapshots`, reading 871,797 rows to return 19,678. It ran as
+-- an `Index Scan` rather than an `Index Only Scan`, so it took a heap fetch for
+-- every one of those 871,797 index entries.
+--
+-- The sibling index `fmv_snapshots_2026_coll_ed_ct_fmv_idx` (120 MB) was built for
+-- exactly this shape and the planner DECLINED it: it carries `INCLUDE (fmv_usd)`,
+-- but the CTE also selects `confidence`, and one uncovered column is enough to force
+-- the heap fetch and make the INCLUDE buy nothing.
+--
+-- known-issues #30 named this mechanism on 2026-08-23 and correctly labelled it a
+-- hypothesis rather than a measurement. It has now been measured.
+--
+-- ── WHAT IT COST, MEASURED WARM-VS-WARM (2026-08-26) ───────────────────────────
+-- The whole call is 927,466 buffers. Isolating the CTE + its join with NO
+-- `serial_fmv_estimate` calls at all:
+--
+--   DISTINCT ON + join ...................... 841,312 buffers  (90.7% of the call)
+--   ⇒ all 14,748 serial_fmv_estimate calls ..  ~86,154 buffers  ( 9.3%)
+--
+-- So the `DISTINCT ON` was the cost, and the estimate calls were not.
+--
+-- ⚠ A PRIOR MEASUREMENT OF MINE, THE SAME DAY, SAID THE OPPOSITE AND WAS WRONG.
+-- Measuring the CTE "in isolation" selecting only `edition_id` — a covered column —
+-- produced an Index ONLY Scan at 32,641 buffers, and subtracting that suggested the
+-- estimate calls were ~96% of the cost. **The same CTE reads 32,641 buffers in that
+-- isolate and 818,698 in context: a 25x gap produced entirely by the projection.**
+-- Changing what a query SELECTs can change its PLAN, so an isolated sub-measurement
+-- is only valid with the real query's output columns.
+--
+-- ── RESULT (measured after the build, same session) ────────────────────────────
+--   plan node ....... Index Scan  ->  Index Only Scan (Heap Fetches 26,152, from the
+--                     ~1% of fmv_snapshots_2026 pages not all-visible)
+--   CTE + join ...... 841,312  ->   56,859 buffers   (14.8x)
+--   whole function .. 927,466  ->  142,625 buffers   ( 6.5x), warm, same 984 rows
+--
+-- Production distribution before the change (69 calls): mean 13,513 ms, max
+-- 29,949 ms, 11,224 DISK reads/call — and disk reads are what binds on this
+-- IO-throttled instance, so the production gain should exceed the warm figure.
+--
+-- ⓘ No equivalence proof is required or offered: this is an index. An index cannot
+-- change a query's result, only its plan. The 984-row output was identical before
+-- and after, which is a sanity check rather than the argument.
+--
+-- ── EXECUTED 2026-08-26 (UTC) as a one-off pg_cron job ─────────────────────────
+--   ALTER ROLE postgres IN DATABASE postgres SET statement_timeout = '30min';
+--   SELECT cron.schedule('oneoff-fmv2026-covering-conf-idx','27 * * * *',
+--     $$CREATE INDEX CONCURRENTLY fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx
+--       ON public.fmv_snapshots_2026 USING btree
+--       (collection_id, edition_id, computed_at DESC) INCLUDE (fmv_usd, confidence)$$);
+--   -- then, the moment it appeared in pg_stat_progress_create_index:
+--   SELECT cron.alter_job(368, schedule := '55 5 1 1 *');   -- cannot re-fire
+--   -- after `indisvalid`:
+--   SELECT cron.unschedule(368);
+--   ALTER ROLE postgres IN DATABASE postgres RESET statement_timeout;
+--
+-- Verified afterwards: job `succeeded :: CREATE INDEX`, `indisvalid = true`, size
+-- 94 MB, **0 invalid index debris**, one-off job removed, `postgres` rolconfig back
+-- to `search_path` only, and the active job count back to its 99 baseline.
+--
+-- ⏳ FOLLOW-UP, deliberately NOT done in the same change: the older
+-- `fmv_snapshots_2026_coll_ed_ct_fmv_idx` (120 MB, `INCLUDE (fmv_usd)`) is now a
+-- strict SUBSET of the new index and is a drop candidate — worth 120 MB plus the
+-- write amplification of maintaining a 6th index on a hot table. It still shows
+-- 76,439 scans, so it is live; the new index can serve every one of them. Drop it
+-- CONCURRENTLY via the same route once production has been observed using the new
+-- one, not before.
+--
+-- ── REVERT ────────────────────────────────────────────────────────────────────
+-- The old index was NOT touched, so reverting is just dropping the new one (via the
+-- same one-off pg_cron route, CONCURRENTLY):
+--   DROP INDEX CONCURRENTLY public.fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx;
+-- Behaviour returns to the Index Scan immediately; nothing else depends on it.
+
+-- Idempotent record of the object this migration documents. Non-concurrent here on
+-- purpose: a fresh database has no traffic to block, and CIC is not transactional.
+CREATE INDEX IF NOT EXISTS fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx
+  ON public.fmv_snapshots_2026 USING btree (collection_id, edition_id, computed_at DESC)
+  INCLUDE (fmv_usd, confidence);
