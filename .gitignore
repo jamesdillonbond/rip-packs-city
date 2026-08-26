@@ -136,3 +136,10 @@ test-results/
 # for a gate that is now blocking. `supabase functions deploy` resolves deps
 # independently of it.
 supabase/functions/deno.lock
+
+# `git format-patch` hand-offs from Cowork sessions that cannot push land here as
+# an untracked directory at the repo ROOT (e.g. "Rip Packs City/cowork-2026-08-25/").
+# Once the patches are applied their content lives in git history, so the directory
+# is pure redundancy — but until someone deletes it, a `git add -A` would commit the
+# patch files themselves. Ignore it rather than rely on everyone using explicit paths.
+Rip Packs City/
