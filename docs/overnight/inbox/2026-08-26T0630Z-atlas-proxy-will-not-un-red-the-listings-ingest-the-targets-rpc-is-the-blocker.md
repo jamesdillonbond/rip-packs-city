@@ -66,3 +66,29 @@ WHERE COALESCE(no1_estimate_usd, 0) >= p_min_no1_estimate;       -- ⚠ the floo
 - **#30** — the DB timeout at `?phase=targets` is **still the dominant failure as of 2026-08-26 04:07Z**, and now has a located cause rather than a symptom.
 
 **Risk read:** none — read-only. The action is a decision about one RPC.
+
+---
+
+## Addendum — how isolated is this? A candidate list, explicitly NOT a defect list
+
+If a route can fail *before* it writes its `pipeline_runs` row, every health number derived from that table is a survivor rate. Measured across `app/api/**/route.ts` (2026-08-26 06:40Z):
+
+- **97 routes** write a `pipeline_runs` row.
+- **78 of them carry no invocation heartbeat.**
+- Ranked by `return NextResponse.json(...)` paths reachable *before* the log call, the worst are
+  `topshot-active-listings-ingest` (**9**, log at 86 % through the file), `pinnacle-metadata-backfill` (**8**),
+  then `apply-fmv-haircut` (4) and six routes at 3.
+
+⛔ **These numbers are a SEARCH ORDER, not a finding, and must not be quoted as a defect count.** Three reasons the honest reading is narrower:
+
+1. **Most early returns are auth/validation 4xx.** A `401` or `bad json` is genuinely not a pipeline tick and *should not* log one. Only a return on a **data-read failure** creates the blindness.
+2. **The heartbeat rule is scoped.** CLAUDE.md requires an invocation heartbeat for **`after()` routes**, because `try/catch` cannot catch a `maxDuration` kill. "78 without a heartbeat" is not 78 violations — most of these are not `after()` routes.
+3. **Only one is measured.** `topshot-active-listings-ingest` is confirmed by a live log; the rest are unexamined.
+
+⭐ **The cheap per-route test, in one command** — compare what the table logged against what actually ran:
+
+```
+gh run view "$(gh run list --workflow=<wf>.yml --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed
+```
+
+⚠ **And the free tell that needs no log at all: compare LOGGED runs to EXPECTED ticks.** 13 logged in 72 h for a pipeline firing ~8–11×/day is the signature. A high failure rate on a small logged population is not "the" rate — it is the rate among the runs that survived long enough to be counted.
