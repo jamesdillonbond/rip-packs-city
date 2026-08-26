@@ -1063,13 +1063,15 @@ const PINS = [
     // micro-optimisation.
     fn: "refresh_wmc_fmv_changed",
     test: "supabase/tests/refresh_wmc_fmv_changed.sql",
-    // ⚠ RE-POINTED 2026-08-24 from the 08-13 migration. db-pin-staleness compares
-    // THIS migration's DDL against live prosrc, and prod gained
-    // audit_20260822_rwfc_temp_build_materialized_cte, so the old target described a
-    // body that no longer runs. The pin's ASSERTIONS were re-read against the live
-    // body before this was moved — see the header of the .sql for the clause counts.
+    // ⚠ RE-POINTED 2026-08-26 onto the freshness-guarded edition_fmv_current fast
+    // path. db-pin-staleness compares THIS migration's DDL against live prosrc, so a
+    // stale target describes a body that no longer runs — which is why 08-23/08-24
+    // went red. The pin's ASSERTIONS were re-read against the live body before this
+    // was moved, and the .sql gained a whole block for the new branch: see the header
+    // of the .sql for the (comment-STRIPPED) clause counts, and note there that the
+    // previous header's counts were raw and three of them counted prose.
     migration:
-      "supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql",
+      "supabase/migrations/20260826143452_audit_20260826_rwfc_freshness_guarded_edition_fmv_current.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
