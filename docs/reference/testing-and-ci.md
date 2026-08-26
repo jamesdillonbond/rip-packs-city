@@ -652,6 +652,32 @@ instrument. The rules still stand; only the examples moved.
 >   rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can
 >   see a FAILURE** — an unreachable monitor and a green build look identical.
 
+### 🚨 The sharpest instance of that rule: SENTRY, and the zero got written in the HEALTHY column (2026-08-26)
+
+**A dark error reporter reports nothing, including its own darkness** — so its silence arrives in exactly
+the shape of good news, and it was read that way. Sentry ingested nothing from **2026-08-18** onward; on
+**2026-08-26 00:55Z** its newest event was still 7 days old while Vercel carried **50 error groups whose
+newest fired in the same minute as the reading**. Both 2026-08-25 daytime-monitor filings had recorded
+*"✅ Healthy and unaffected: … no new Sentry issues in 24h"*.
+
+⭐ **The durable rule is that the Sentry number is not readable alone — it is a PAIR:**
+
+> **A Sentry zero is health ONLY if the Vercel 24h error groups are ALSO near zero.**
+> A zero on one against 50 groups on the other is a DARK REPORTER, never a quiet week.
+
+⚠ **Why this evaded the sweep for a week:** `rpc-nightly-autonomous-pass/SKILL.md` §2 says *"run …
+Sentry … then distrust each"* and then listed distrust bullets for **six** instruments — Sentry not among
+them. **An instrument named in the "run" list but absent from the "distrust" list is read at face value**,
+which is the failure mode, not the analyst. A seventh bullet now closes it.
+
+⚠ **And two negatives worth not re-deriving:** the Sentry MCP has **no** stats/usage/quota surface (the
+catalogue was searched, not assumed), and the decisive ingest probe — POST one envelope, read the status,
+where **429 + `X-Sentry-Rate-Limits` confirms quota and 202 refutes it** — **cannot be run from a cloud
+sandbox**: it returns the agent proxy's `403 Host not in allowlist`. ⛔ **That 403 is the PROXY's, not
+Sentry's, and reading it as a Sentry signal would be the "diagnose from the error STRING, not the fact
+that it failed" trap.** Full filing:
+[inbox 2026-08-26T0100Z](../overnight/inbox/2026-08-26T0100Z-sentry-is-dark-on-day-seven-and-the-monitor-reads-the-silence-as-health.md).
+
 ## 🚨 A RECOVERY TOOL CAN TRIP A GUARD THAT A HAND-AUTHORED FILE SATISFIES (2026-08-23) — and CI must be verified PER PUSH
 
 **`main` was red for six consecutive commits and nobody noticed, including me.** I verified CI green through
