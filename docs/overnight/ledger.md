@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · FILED (Claude Code, autonomous — read-only measurement) — `atlas-proxy` will NOT un-red the listings ingest, and the instrument everyone reads is BLIND to the reason
+
+**No writes.** Read-only across `pipeline_runs`, `pipeline_runs_daily`, `pg_proc` and GitHub Actions logs. Filed as `docs/overnight/inbox/2026-08-26T0630Z-atlas-proxy-will-not-un-red-the-listings-ingest-the-targets-rpc-is-the-blocker.md`.
+
+✅ **known-issues #20's own warning is RE-VERIFIED, not corrected.** The last **12 of 12** GHA runs are `failure`, and the newest (**2026-08-26T04:07Z**) dies **31 s in** at `GET targets failed: 500 {"error":"canceling statement due to statement timeout"}` — **before the first Atlas call**. Shipping the `wrangler deploy` remains worthwhile for its own 9-of-40 class; it will not turn this workflow green.
+
+🚨 **THE PART WORTH KEEPING: I nearly published the exact opposite, off a structurally blind instrument.** Read from `pipeline_runs` alone the answer is *"9 of 9 failures in 72 h are `egress_blocked`, zero DB timeouts"* → *"the DB-timeout class is gone, so atlas-proxy now fixes everything."* **Wrong by CONSTRUCTION:** the route writes its row only on the FINAL POST (`if (body.final || body.deactivate)`), while `GET ?phase=targets` runs FIRST from the runner — **so a targets timeout can never produce a row.** Every rate derived from `pipeline_runs` describes only the runs that got PAST targets.
+
+⭐ **That also explains the original ~60% `egress_blocked` figure**: it was never the failure rate, it was the failure rate **among rows that exist**. ⚠ **The corroborating tell was available and cheap:** only **13 runs logged in 72 h** (112 across 22 days) for a pipeline firing ~8–11×/day, with `last_error` = `egress_blocked` on *every* one of those days — which is what a blind instrument looks like when it can only ever see one class. **Checking the OTHER arm (the GHA run log) took one command and reversed the conclusion.**
+
+👉 **Cause located, not just characterised.** `?phase=targets` → `topshot_serial_board_targets()` → `topshot_serial_board_candidates()`, which calls **`serial_fmv_estimate` TWICE PER EDITION** across **13,199** eligible TopShot editions, on top of a `DISTINCT ON` over **871,886** TopShot `fmv_snapshots` rows (19,678 distinct editions) — and the **`$100` floor sits in the OUTER select**, so it bounds the OUTPUT and not the COST. ~26,000 function calls before anything is pruned. **The same family as the `drain_fmv_cold_tail` unscoped aggregate fixed earlier today.**
+
+⛔ **NOT shipped, deliberately — FMV/ingest route logic is off-limits for autonomous shipping and this re-prices a board.** Two directions filed for Trevor: defer `perfect_estimate_usd` behind the floor via a `LATERAL` (halves the calls; ⚠ the `COALESCE(no1, perfect)` fallback means equivalence must be PROVEN), or a `lf.fmv_usd >= k` pre-filter (⚠ rests on a monotonicity CLAIM about `serial_fmv_estimate` that must be measured). **Whatever ships: whole-population equivalence proof first, and compare BUFFERS, not wall-clock.**
+
+**Revert path:** nothing to revert — read-only, plus one inbox filing and its `INDEX.md` entry (total 241 → 242; the `2026-08-25` day heading 10 → 11). **No DB half — no write was issued.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, autonomous — /rewards + its route) — the USER-FACING twin of a fix that shipped to the ADMIN page months ago, and the evidence was three lines away
 
 **Two halves of the same defect on the points surface, one client and one server.**
