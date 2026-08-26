@@ -137,3 +137,50 @@ alternatives.
   strip comments, then look for `readBoardOrLive` / `fetchBoardForPage` / `withBoardBudget` /
   `withPagedBoardBudget` in the file or in one level of imported `@/lib/**` or `@/components/**`.
 * ⚠ Numbers are a dated sample. Re-run before quoting.
+
+---
+
+## ✅ THE POPULATION IS BURNED DOWN — ratchet at **0** as of 2026-08-26 (Claude Code, interactive)
+
+This filing's banner closed on *"**STILL OPEN:** the remaining 17. … Burn them down one at a time,
+lowering the ceiling in the same commit."* **They were. The ceiling is now 0 and it is a ban at zero,
+which is what this repo prefers over an allowlist.**
+
+Live: `182 page/layout file(s); 81 async server; **0 unbounded**`.
+
+### ⚠ The last step was a READ, not a tightening, and the distinction is the point
+
+The guard reported one BELOW its ceiling, which has **two** readings and only one is good news:
+**(a)** the last instance was genuinely bounded, or **(b)** the guard lost sight of it — in which case
+tightening locks in a blind spot and makes the ratchet's own comment a lie.
+
+The comment made (b) plausible: it recorded `lib/packs/pack-deals.ts` behind
+`/[collection]/pack-sniper` as a deliberate **FLOOR**, *"a surface that is deliberately off-limits"*.
+And two facts still matched (b): that page is **still** an `export default async function` server
+page, and `pack-deals.ts` **still** carries no budget primitive of its own.
+
+✅ **What settled it was the call site:** the page now does
+`await withBoardBudget(getPackDeals(collection, …), "pack-sniper")` and carries a real degraded branch
+(`ok = false`, provenance stamped AFTER the read). It is **(a)**. The floor note is retired in the same
+commit that lowers the number, so the next reader is not told a surface is untouchable when it is done.
+
+### ⚠ A gap in the guard, recorded because the check above depended on it
+
+`analyze()` marks a page bounded when a budget primitive is **REACHABLE**, not when it is **APPLIED**
+to the read in question. A page could import `withBoardBudget`, wrap a cheap read with it, and leave
+the expensive one bare — and this guard would pass it. **That is the same presence-vs-application gap
+recorded on the `.range()`/`.order()` guard** ([08-23 filing](2026-08-23T0236Z-the-paginated-range-guard-states-the-uniqueness-rule-in-a-comment-and-cannot-check-it.md)),
+now confirmed as a second instance of the shape. It is **not** what happened here — hence the read
+rather than a grep — and it is left unfixed rather than silently tolerated: closing it needs call-graph
+analysis, not a stronger regex.
+
+### Verified both directions on the live tree
+
+| run | result |
+|---|---|
+| clean tree | `0 unbounded (ceiling 0)`, exit **0** |
+| synthetic unbounded async server page added | `1 unbounded`, **RATCHET BROKEN**, names the file, exit **1** |
+| probe removed | exit **0** |
+
+**A ban at zero that cannot detect the thing it bans is the failure this repo keeps recording, so the
+middle row is the one that matters.**

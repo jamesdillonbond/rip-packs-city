@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, guard) — the unbounded-server-read ratchet reaches ZERO, and the last step was a READ because a count below the ceiling has two readings
+
+**GUARD + DOCS (`scripts/check-unbounded-server-reads.mjs` ceiling 1 → 0, inbox appendix). No route code, no DB, no prod-state change.** Closes the 08-22 filing's standing item — *"**STILL OPEN:** the remaining 17 … burn them down one at a time, lowering the ceiling in the same commit."* **They were.** Live: `182 page/layout file(s); 81 async server; 0 unbounded`.
+
+⚠ **THE GUARD WAS ASKING TO TIGHTEN AND I DID NOT SIMPLY DO IT, WHICH IS THE POINT OF THE ENTRY.** A ratchet reporting one BELOW its ceiling has **two** readings and only one is good news: **(a)** the last instance was genuinely bounded, or **(b)** the guard **lost sight of it** — in which case tightening locks in a blind spot and converts a known gap into a silent one.
+
+🚨 **AND THE GUARD'S OWN COMMENT MADE (b) THE LIVE HYPOTHESIS.** It recorded the remaining 1 as a deliberate **FLOOR**: *"`lib/packs/pack-deals.ts` behind `/[collection]/pack-sniper`, which the roadmap lists as untouchable … stated here because a ratchet at 1 with no explanation invites someone to 'finish the job' on a surface that is deliberately off-limits."* **Two facts still matched (b):** that page is **still** an `export default async function` server page, and `pack-deals.ts` **still** carries no budget primitive of its own.
+
+✅ **What settled it was the CALL SITE, not the count:** the page now does `await withBoardBudget(getPackDeals(collection, …), "pack-sniper")` and carries a real degraded branch (`ok = false`, provenance stamped AFTER the read). It is **(a)** — bounded by a later commit, and the "untouchable floor" note is simply stale. **Retired in the same commit that lowers the number**, so the next reader is not warned off a surface that is already done.
+
+⭐ **A GAP IN THE GUARD, RECORDED BECAUSE MY OWN CHECK DEPENDED ON IT.** `analyze()` marks a page bounded when a budget primitive is **REACHABLE**, not when it is **APPLIED** to the read in question. A page could import `withBoardBudget`, wrap a cheap read, and leave the expensive one bare — and this guard would pass it. ⚠ **That is a second instance of the presence-vs-application shape** the repo already recorded on the `.range()`/`.order()` guard (*"asserts `.order(` presence, not uniqueness of its key"*). **Left unfixed rather than silently tolerated** — closing it needs call-graph analysis, not a stronger regex — and stated here so the ban at zero is not read as stronger than it is.
+
+⚠ **PROVEN IN BOTH DIRECTIONS ON THE LIVE TREE, because a ban at zero that cannot detect what it bans is the exact failure this repo keeps recording:** clean tree → `0 unbounded (ceiling 0)`, exit **0**; a synthetic unbounded async server page added → `1 unbounded`, **RATCHET BROKEN**, **names the file**, exit **1**; probe removed → exit **0**. ⓘ The guard already carried its own instrument-broken arm (`entries === 0 || asyncServer === 0` → exit 1), so it stays non-vacuous at a population of zero — the condition CLAUDE.md requires before a ban at zero is safe.
+
+**Verified:** `npx tsc --noEmit` clean · `unbounded-server-reads-analyze` **8 passed** (it pins `analyze()`, not the constant, so the ceiling change is orthogonal — checked rather than assumed) · full `npm test` green · `check-memory-doc-links.mjs` 105/105 · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert path:** `git revert <sha>` — restores `MAX_UNBOUNDED = 1` and the stale floor comment. No DB half.
+
 ### 2026-08-25 · MEASURED + DOCS (Claude Code, interactive) — three filings closed against LIVE state, and a shape sweep that says the shape is not a safe selector
 
 **DOCS ONLY (four inbox appendices). No code, no DB change, no prod-state change.** A verification pass over filings the inbox still carried as open. ⚠ **Nothing was ARCHIVED** — that is Trevor's call per `focus.md`, and the refuted `inbox_archiving_note` is exactly the "queued CLEANUP reads as obviously safe" shape. **Banners record a measurement; the INDEX entries stay.**

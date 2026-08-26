@@ -117,12 +117,31 @@ import { stripComments } from "./lib/strip-comments.mjs"
 // book made from a database error).
 //
 // 3 → 1 (2026-08-22): `/admin/flowty-errors` and `/[collection]/pack/[id]`
-// extracted and bounded. ⚠ The ONE that remains is `lib/packs/pack-deals.ts`
-// behind `/[collection]/pack-sniper`, which the roadmap lists as untouchable —
-// so 1 is the FLOOR under the current rules, not a residue nobody got to. Stated
-// here because a ratchet at 1 with no explanation invites someone to "finish the
-// job" on a surface that is deliberately off-limits.
-const MAX_UNBOUNDED = 1
+// extracted and bounded. The note here used to read: "the ONE that remains is
+// `lib/packs/pack-deals.ts` behind `/[collection]/pack-sniper`, which the roadmap
+// lists as untouchable — so 1 is the FLOOR under the current rules."
+//
+// 1 → 0 (2026-08-26). ⚠ THAT FLOOR NOTE IS RETIRED, AND IT WAS CHECKED RATHER
+// THAN ASSUMED — a guard reporting one BELOW its ceiling has two readings, and
+// only one of them is good news:
+//   (a) the last instance was genuinely bounded, or
+//   (b) the guard LOST SIGHT of it, in which case tightening locks in a blind
+//       spot and makes this comment a lie.
+// Distinguished by reading the page, not the count: `/[collection]/pack-sniper`
+// is STILL an `export default async function` server page and
+// `lib/packs/pack-deals.ts` STILL carries no budget primitive of its own — both
+// of which are consistent with (b). What settles it is the call site: the page
+// now does `await withBoardBudget(getPackDeals(collection, …), "pack-sniper")`,
+// so the expensive read is genuinely wrapped and the page carries a real
+// degraded branch (`ok=false`, provenance stamped AFTER the read). It is (a).
+//
+// ⚠ The distinction matters beyond this one line: `analyze()` marks a page
+// bounded when a budget primitive is REACHABLE, not when it is APPLIED to the
+// read in question — the same presence-vs-application gap this repo has recorded
+// on the `.range()`/`.order()` guard. A page could import `withBoardBudget`,
+// wrap a cheap read with it, and leave the expensive one bare. That is not what
+// happened here, and it is why the check above was a read rather than a grep.
+const MAX_UNBOUNDED = 0
 
 const strip = (s) => stripComments(s)
 
