@@ -279,6 +279,64 @@ describe("GET /api/check-alerts — pipeline-alert edge branches", () => {
     expect(String(log?.p_error)).toContain("gpa boom")
   })
 
+  // ── FAIL CLOSED ON SHAPE — the alert whose failure output is SILENCE ───────
+  //
+  // get_pipeline_alerts returns scalar `jsonb` (pg_proc, not SETOF), so `data`
+  // is whatever that jsonb is. The route read `Array.isArray(data) ? data : []`,
+  // which turned ANY non-array into an EMPTY alert list. An empty list means
+  // hot.length === 0, so the route sent NOTHING, recorded alerts_active: 0, and
+  // logged p_ok: TRUE — because p_ok is `!pipelineAlerts.error` and the coercion
+  // sets no error. An unreadable payload rendered as "nothing is wrong" on the
+  // one instrument whose whole job is to say when something is.
+  //
+  // ⚠ Asserted on p_ok and on SILENCE, not on copy: the pre-fix route produced
+  // no error string at all, so any assertion about wording would have passed
+  // against the defect. The load-bearing claims are (a) it does not report ok
+  // and (b) it does not quietly send nothing while claiming health.
+  it.each([
+    ["object", { alerts: [] }],
+    ["null", null],
+    ["scalar", 0],
+  ])("a non-array get_pipeline_alerts payload (%s) logs ok=false and never reports a clean sweep", async (_label, payload) => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: payload, error: null },
+      ...NO_FMV_TRIGGERS,
+    })
+    const f = stubFetch([telegramOk, resendOk])
+
+    const res = await GET(reqAuthed())
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    // The whole point: an unreadable payload must not read as a healthy sweep.
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("unexpected payload shape")
+    // It still sends nothing (there is nothing to send) — but it no longer
+    // claims that silence was a measurement.
+    expect(f.calls.filter((c) => c.url.includes("telegram") || c.url.includes("resend"))).toHaveLength(0)
+    expect(writes.alert_notifications_sent ?? []).toHaveLength(0)
+  })
+
+  // Positive control for the three cases above, and for the info-only case
+  // below. An EMPTY ARRAY is a real measurement of zero active alerts and must
+  // stay ok=true — without this, "treat everything as unreadable" would satisfy
+  // the shape regressions while breaking the alerting pipeline's normal path.
+  it("an EMPTY ARRAY of alerts is an honest zero and still logs ok=true", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      ...NO_FMV_TRIGGERS,
+    })
+    stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_error ?? null).toBeNull()
+  })
+
   it("only info-severity alerts → no notify, debounced false, ok=true", async () => {
     const { rpcCalls, writes } = install({
       "rpc:get_pipeline_alerts": {

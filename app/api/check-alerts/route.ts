@@ -182,7 +182,39 @@ async function processPipelineAlerts(): Promise<{
     console.log(`[check-alerts] get_pipeline_alerts err: ${error.message}`);
     return { alerts_active: 0, alerts_critical_or_high: 0, emails_sent: 0, telegrams_sent: 0, debounced: false, error: error.message };
   }
-  const allAlerts: PipelineAlert[] = Array.isArray(data) ? data : [];
+  // ⚠ FAIL CLOSED ON SHAPE — this is the sub-class whose failure output is SILENCE.
+  //
+  // get_pipeline_alerts returns scalar `jsonb` (pg_proc, verified 2026-08-25), NOT
+  // SETOF, so `data` is whatever that jsonb happens to be. The old
+  // `Array.isArray(data) ? data : []` turned ANY non-array into an EMPTY alert
+  // list — and an empty list means hot.length === 0, so: no email, no Telegram,
+  // `alerts_active: 0`, and `p_ok: true` on the pipeline_runs row (p_ok is
+  // `!pipelineAlerts.error`, and the coercion sets no error). A read that did not
+  // work would render as "nothing is wrong" on the one instrument whose entire job
+  // is to say when something is, and nothing downstream could tell the difference.
+  // The `error` branch above is already honest; only this path was not.
+  //
+  // ⚠ Structurally an array TODAY — the body is
+  //   coalesce(get_pipeline_alerts_core(), '[]') || coalesce(check_edge_fn_http_failures(...), '[]')
+  // — so this is PROSPECTIVE hardening, not a live repair. ⚠ Verified by READING
+  // prosrc rather than by calling it: this function's core is exactly what times
+  // out during a disk-IO spell, and one was in progress when this was written.
+  //
+  // Reported as an `error` so p_ok goes FALSE and p_error names the shape. Only
+  // the TYPE is recorded, never the payload.
+  if (!Array.isArray(data)) {
+    const shape = data === null ? "null" : typeof data;
+    console.log(`[check-alerts] get_pipeline_alerts returned a non-array payload (${shape}) — no alert evaluated`);
+    return {
+      alerts_active: 0,
+      alerts_critical_or_high: 0,
+      emails_sent: 0,
+      telegrams_sent: 0,
+      debounced: false,
+      error: `get_pipeline_alerts returned an unexpected payload shape (${shape}, expected array)`,
+    };
+  }
+  const allAlerts: PipelineAlert[] = data as PipelineAlert[];
   const hot = allAlerts.filter((a) => a.severity === "critical" || a.severity === "high");
 
   if (hot.length === 0) {

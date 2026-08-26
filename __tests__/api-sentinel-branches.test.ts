@@ -448,6 +448,70 @@ describe("sentinel — pipeline / trust / totals arms", () => {
     const r = await run({ "rpc:detect_stalled_pipelines": { data: null, error: { message: "boom" } } as never })
     expect(chk(r, "Pipeline Silence").status).toBe("warn")
   })
+
+  // ── FAIL CLOSED ON SHAPE — a tripwire that fabricated a healthy claim ──────
+  //
+  // detect_stalled_pipelines returns scalar `jsonb` (pg_proc, not SETOF), so
+  // `data` is whatever that jsonb is. The arm read
+  // `Array.isArray(data) ? data : []`, so ANY non-array payload became an empty
+  // stalled-list and the arm reported status "ok" with the copy "All watchlisted
+  // pipelines running within their max-silent window" — a positive claim about
+  // every watchlisted pipeline, manufactured from a payload it could not read.
+  //
+  // ⚠ Asserted on the STATUS and on the ABSENCE of the healthy sentence, not on
+  // the presence of an error string: the false claim is the defect, so that is
+  // what must not appear.
+  it.each([
+    ["object", { stalled: [] }],
+    ["null", null],
+    ["scalar", 0],
+  ])("a non-array detect_stalled_pipelines payload (%s) warns and never claims the watchlist is healthy", async (_label, payload) => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: payload, error: null } as never })
+    const c = chk(r, "Pipeline Silence")
+    expect(c.status).toBe("warn")
+    expect(c.status).not.toBe("ok")
+    expect(String(c.detail)).not.toContain("All watchlisted pipelines running")
+    expect(String(c.detail)).toContain("unexpected payload shape")
+  })
+
+  // Positive control: an EMPTY ARRAY is a real measurement of "nothing stalled"
+  // and must keep reporting ok with the healthy copy. Without it, "treat every
+  // payload as unreadable" would satisfy the three cases above while permanently
+  // warning on a healthy platform — the cry-wolf failure this repo has paid for.
+  it("an EMPTY ARRAY of stalled pipelines is an honest ok, with the healthy copy intact", async () => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: [], error: null } as never })
+    const c = chk(r, "Pipeline Silence")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toContain("All watchlisted pipelines running")
+  })
+
+  // ── ZERO COLLECTIONS INSPECTED IS NOT A PASS ──────────────────────────────
+  //
+  // `worst` starts at "ok" and only moves when a collection breaches, so an
+  // EMPTY result fell through to status "ok" with an EMPTY detail string: a green
+  // check that examined nothing. An emptied or mis-filtered sentinel_ingest_watch
+  // would read as "sales ingest is healthy" indefinitely, and the arm cannot page
+  // for a collection it never looked at. "0 breaches in 12 collections" and
+  // "0 breaches in 0 collections" are opposite results that rendered identically.
+  it("zero inspected collections is a WARN that names the cardinality, not a green tick", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: [], error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("warn")
+    expect(c.status).not.toBe("ok")
+    expect(String(c.detail)).toContain("inspected 0 collections")
+    expect(c.value).toBe(0)
+  })
+
+  // Positive control for the case above: a NON-empty result must still be able to
+  // report ok, and must state how many collections it actually inspected — the
+  // count is what makes the green readable.
+  it("a populated ingest-health result still reports ok AND states how many it inspected", async () => {
+    const r = await run()
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("ok")
+    expect(Number(c.value)).toBeGreaterThan(0)
+    expect(String(c.detail)).toContain("collections inspected")
+  })
   it("warns and lists the breached metric when trust health has a breach", async () => {
     const r = await run({
       v_rpc_trust_health: {

@@ -368,12 +368,35 @@ export async function POST(req: NextRequest) {
         const breach = st !== "ok" ? ` >${c.ceil}h!` : "";
         return `${flag}${c.display} ${c.s24}/24h (last ${last}${breach})${closed}`;
       });
-      checks.push({
-        name: "Sales Ingest by Collection",
-        status: worst,
-        detail: segs.join(" · "),
-        value: byColl.size,
-      });
+      // ⚠ ZERO COLLECTIONS INSPECTED IS A FAILURE OF THIS ARM, NOT A PASS.
+      // `worst` starts at "ok" and only ever moves when a collection breaches, so
+      // an EMPTY byColl fell straight through to status "ok" with an empty detail
+      // string — a green check that examined nothing. An emptied or mis-filtered
+      // sentinel_ingest_watch, or an RPC that returned zero rows, would read as
+      // "sales ingest is healthy" forever, and the arm cannot page for a
+      // collection it never looked at.
+      //
+      // This is the same shape as a filtering monitor that exits 0 having matched
+      // nothing: "0 breaches in 12 collections" and "0 breaches in 0 collections"
+      // are opposite results that rendered identically here. `value` already
+      // carried the cardinality, but STATUS is what a reader and the alerting key
+      // on, so the count has to move the status.
+      if (byColl.size === 0) {
+        checks.push({
+          name: "Sales Ingest by Collection",
+          status: "warn",
+          detail:
+            "inspected 0 collections — sentinel_sales_ingest_health returned no rows, so this arm evaluated nothing (check sentinel_ingest_watch)",
+          value: 0,
+        });
+      } else {
+        checks.push({
+          name: "Sales Ingest by Collection",
+          status: worst,
+          detail: `${segs.join(" · ")} · [${byColl.size} collections inspected]`,
+          value: byColl.size,
+        });
+      }
     }
   } catch (e: any) {
     checks.push({
@@ -788,14 +811,25 @@ export async function POST(req: NextRequest) {
   // max_silent_minutes, last_run}. High-severity stalls page (critical).
   try {
     const { data, error } = await supabase.rpc("detect_stalled_pipelines");
-    if (error) {
+    // ⚠ FAIL CLOSED ON SHAPE. detect_stalled_pipelines returns scalar `jsonb`
+    // (pg_proc 2026-08-25), so a non-array payload used to coerce to [] and this
+    // tripwire then reported status "ok" with "All watchlisted pipelines running
+    // within their max-silent window" — a fabricated healthy claim built out of a
+    // payload it could not read. Structurally an array today (its body ends
+    // `coalesce(jsonb_agg(...), '[]'::jsonb)`), so this is prospective hardening.
+    // Folded into the error branch because a payload this arm cannot parse and an
+    // error mean the same thing here: the tripwire did not evaluate.
+    if (error || !Array.isArray(data)) {
+      const shape = data === null ? "null" : typeof data;
       checks.push({
         name: "Pipeline Silence",
         status: "warn",
-        detail: `RPC error: ${error.message}`,
+        detail: error
+          ? `RPC error: ${error.message}`
+          : `RPC returned an unexpected payload shape (${shape}, expected array) — the tripwire did not evaluate`,
       });
     } else {
-      const stalled: any[] = Array.isArray(data) ? data : [];
+      const stalled: any[] = data;
       const high = stalled.filter((s) => s.severity === "high");
       const status =
         high.length > 0 ? "critical" : stalled.length > 0 ? "warn" : "ok";
