@@ -44,7 +44,10 @@ export function pickEntityPath(locs: string[], segment: RegExp): string | null {
 //   0 static+insights+overviews+series+profiles · 1 TopShot editions
 //   2 AllDay/Golazos/UFC editions · 3 entities(set/player/team)+top-moments
 //   4 packs+Pinnacle pins
-export const ENTITY_SPEC: Record<string, { sitemap: number; segment: RegExp }> = {
+export const ENTITY_SPEC: Record<
+  string,
+  { sitemap: number; segment: RegExp; expectText?: RegExp }
+> = {
   edition: { sitemap: 1, segment: /\/edition\// },
   // ⚠ `edition` above resolves from segment 1, which is TOP SHOT ONLY (see
   // buildSitemapSegment in lib/sitemap-data.ts — segment 1 is TS, segment 2 is
@@ -54,7 +57,23 @@ export const ENTITY_SPEC: Record<string, { sitemap: number; segment: RegExp }> =
   // stay green. Golazos is named explicitly rather than "first URL in segment
   // 2" because that segment is dominated by AllDay's 6,190 editions, so an
   // unnamed pick would almost never land on the other two.
-  edition_golazos: { sitemap: 2, segment: /\/laliga-golazos\/edition\// },
+  edition_golazos: {
+    sitemap: 2,
+    segment: /\/laliga-golazos\/edition\//,
+    // ⚠ The ONLY instrument that can see this CTA. The coverage gates include
+    // `app/**/route.ts` but NOT `page.tsx`, and jsdom returns no rendered page
+    // at all — so `dapperMarketEditionUrl`'s wiring into the edition page was
+    // unverifiable by every other gate in the repo.
+    //
+    // ⚠ HOW THIS WAS LANDED, because "do not pin an unverified assertion" is
+    // still the rule: the sandbox has no egress (the proxy 403s CONNECT to
+    // every host including our own production), so the CTA could not be seen
+    // from there. It was pinned and IMMEDIATELY dispatched via e2e-smoke.yml
+    // and watched, with a revert ready if it went red — rather than pinned and
+    // left for a scheduled run to discover, which is the thing that makes a
+    // monitor indistinguishable from a broken one.
+    expectText: /View edition on Dapper/i,
+  },
   moment: { sitemap: 3, segment: /^\/moment\// },
   set: { sitemap: 3, segment: /\/set\// },
   player: { sitemap: 3, segment: /\/player\// },

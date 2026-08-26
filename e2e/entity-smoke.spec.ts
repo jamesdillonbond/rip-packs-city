@@ -17,15 +17,12 @@ import { discoverEntityPath, ENTITY_SPEC, type EntityType } from "./entity-urls"
 // second was added, the edition arm could not see the AllDay / Golazos / UFC
 // edition pages at all.
 //
-// ⚠ These arms assert page HEALTH, not page CONTENT. The Golazos edition page
-// gained an outbound "View edition on Dapper" CTA (dapperMarketEditionUrl,
-// 2026-08-22) whose rendering NO instrument currently verifies — the coverage
-// gates include `app/**/route.ts` but not `page.tsx`, and jsdom cannot render
-// it. Asserting it here is one line — add
-// `expectText: /View edition on Dapper/i` to the edition_golazos check — but
-// it was deliberately NOT added blind: a scheduled monitor that reds on its
-// first run is indistinguishable from a broken one. Confirm the CTA in a
-// browser once, THEN pin it here.
+// ⚠ An arm may also assert CONTENT, via `expectText` on its ENTITY_SPEC entry.
+// `edition_golazos` does: it is the only instrument in the repo that can see the
+// edition page's outbound Dapper CTA, because the coverage gates include
+// `app/**/route.ts` but NOT `page.tsx`, and jsdom renders no page at all. A red
+// there means the CTA stopped rendering, NOT that the page is down — read the
+// assertion before assuming an outage.
 
 const TYPES = Object.keys(ENTITY_SPEC) as EntityType[]
 
@@ -33,6 +30,10 @@ for (const type of TYPES) {
   test(`entity · ${type} detail page renders`, async ({ page, request }) => {
     const path = await discoverEntityPath(request, type)
     test.skip(!path, `no live ${type} URL in the sitemap right now`)
-    await assertHealthyPage(page, { path: path!, name: `${type} detail` })
+    await assertHealthyPage(page, {
+      path: path!,
+      name: `${type} detail`,
+      expectText: ENTITY_SPEC[type].expectText,
+    })
   })
 }
