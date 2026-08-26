@@ -42,8 +42,9 @@ Docs only. No migration, no DB write, no prod-state change. Closing pass on the 
 lines / 8 documented quotes**, links **107/107 resolve across 24 files**, bundles **9/9**. Ledger invariants
 swallowed **3**, future-dated **0**.
 
-**Revert path:** `git revert <sha>` — docs-only, nothing to undo in the DB or on Vercel. ⚠ Reverting takes
-CLAUDE.md back to 4 characters of headroom.
+**Revert path (real sha):** `git revert 9d09b377` — docs-only, nothing to undo in the DB or on Vercel.
+⚠ Reverting takes CLAUDE.md back to **4 characters of headroom** and un-registers #33; revert only to undo
+a bad edit of mine.
 
 ⚠ **AND THE DATE ON THIS ENTRY WAS WRONG WHEN FIRST WRITTEN — caught by `find-future-dated-ledger-headings`.**
 I stamped **08-26** because the overnight filings are named with UTC timestamps (`2026-08-26T0100Z`); PT was
