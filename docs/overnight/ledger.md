@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, autonomous — /rewards + its route) — the USER-FACING twin of a fix that shipped to the ADMIN page months ago, and the evidence was three lines away
+
+**Two halves of the same defect on the points surface, one client and one server.**
+
+1. 🚨 **Client — `load()` checked `res.status === 401` AND NOTHING ELSE.** Any other non-2xx fell straight through to `data.x ?? []`, so a 500 rendered the whole page as a confident set of zeros: **"Nothing redeemed yet."**, 0 points, no referrals. ⚠ **This is the IDENTICAL shape already found, fixed and PINNED on `/admin/rewards`** — `client-pages-failed-vs-empty-guard` even quotes it: *"`load()` checked `res.status === 401` and NOTHING ELSE"*. The admin copy was fixed; **the user-facing twin was never grepped for.**
+2. 🚨 **Server — `redemptions: redemptions.data ?? []` at HTTP 200.** supabase-js RETURNS errors rather than throwing, so a failed read became an empty array **no client check could ever detect**. ⭐ **The comment explaining this exact trap sits THREE LINES BELOW, on `referralCount`** (`referrals.error ? null : …`), and spells out the consequence in full — *"a claim about the reader's OWN account, shown to someone who may have referred friends"*. **The fix was applied to one field of one response object and not to its sibling.**
+
+**Fixes:** the route now carries `redemptions.error ? null : (redemptions.data ?? [])`; the client gains `loadFailed` (set on `!res.ok`, **also on the thrown path**, and reset at the top of `load()`) rendering a degraded card with **Try again**, plus `redemptionsFailed` for the 200-with-null case. The two are complementary: **`loadFailed` = the page is unreadable; `redemptionsFailed` = the page loaded and that one read did not.**
+
+**Pinned in `client-pages-failed-vs-empty-guard.test.ts`** as a sibling block to the admin one — six assertions covering both halves, the ordering (failure branch before the emptiness test), and **BOTH directions** (*"Nothing redeemed yet."* must survive, since it is the correct answer for most collectors). **Mutation-proven per half:** removing the `!res.ok` guard reds *"checks res.ok, not just 401"*; restoring `redemptions.data ?? []` reds the route assertion. Nothing else moved.
+
+⚠ **Two self-inflicted process failures tonight, both worth recording because both were caught by the repo's own rules rather than by luck:**
+
+- ⛔ **I pushed a guard that broke `tsc` and did not notice, because I never ran it.** `catch-blocks-do-not-assert-completeness` used a `/gs` regex; this repo's tsc target rejects the `s` flag (**TS1501**), so `npx tsc --noEmit` exited 1 on `main` for ~3 minutes. **vitest transpiles the file happily and the full 1380-file suite went green**, which is exactly why the separate `tsc` step exists — and I had run vitest, not tsc. Fixed in `9b62089a`; the flag was unnecessary (the pattern uses `[^}]`, never a bare `.`), and the guard was **re-proven against the real-tree offender** rather than assumed unchanged.
+- ⚠ **A JS TEMPLATE LITERAL ATE EVERY REGEX BACKSLASH** in a generator script — `s` became `s`, `(` became `(` — producing `SyntaxError: Invalid regular expression … Unterminated group` and a test file with **0 tests**, which vitest reports as a FAILED SUITE rather than a passing one (the one mercy). ⭐ **Fix: splice test blocks from a PLAIN TEXT file, never through a template literal.** The heredoc was already quoted; the JS layer was the one doing the escaping.
+
+**Verification:** `tsc --noEmit` exit 0 (bare, and run this time). Guard 53/53. **Deliberately scoped out and stated:** `rules`, `shop` and `cosmetics` carry the same `?? []` on the same response, but each renders as an empty `.map()` with **no claim sentence**, so they understate rather than assert — the safe direction, and not fixed here.
+
+**Revert path:** `git revert` the commit (`git log --grep="USER-FACING twin"`). ⚠ A revert restores a page that renders a collector's account as empty during any outage. **No DB half — one route field and one client render.**
+
 ### 2026-08-25 · SHIPPED (Claude Code, autonomous — new CI guard) — a BAN AT ZERO on `catch { setExhausted(true) }`, the shape that shipped twice and whose own tests could not see it
 
 **New guard: `__tests__/catch-blocks-do-not-assert-completeness.test.ts`.** A `catch` block must not assert COMPLETENESS — concluding *"that was the whole list"* on evidence that the READ FAILED.
