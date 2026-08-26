@@ -203,7 +203,7 @@ BEGIN
 
   RETURN v_total;
 END;
-$function$;$
+$function$;
 -- <<< END verbatim refresh_wmc_fmv_changed <<<
 
 -- Two collections so the join's collection scoping is exercised.
