@@ -99,12 +99,29 @@ export async function POST(req: NextRequest) {
     // ── PER-COLLECTION SPLIT (2026-08-16) ────────────────────────────────────
     // The un-scoped call (p_collection_id NULL = every collection in ONE
     // statement) failed 100% of its daily runs from at least 2026-08-14, each
-    // at ~125.17s. That is the global `statement_timeout` of 120s plus the
-    // documented overshoot under IO throttle — NOT this route's maxDuration of
-    // 300s, and NOT the RPC's own declared `statement_timeout=300s`, which is
-    // INERT (a function-level SET does not bind the statements inside it; see
-    // the 195-function inert-timeout population). So no clock available here
-    // can fix it: the lever is the WORK.
+    // at ~125.17s.
+    //
+    // ⚠ ATTRIBUTION CORRECTED — THE BOUND IS THE SUPABASE GATEWAY (~120s), NOT
+    // Postgres `statement_timeout`. This comment used to read "the global
+    // `statement_timeout` of 120s plus the documented overshoot under IO
+    // throttle", which names the wrong mechanism and sends the next reader to
+    // tune a clock that was never holding the rope. The two limits sit within
+    // seconds of each other, so ⚠ THE DURATION CANNOT TELL THEM APART — only
+    // the ERROR STRING can:
+    //   `upstream request timeout`                     -> Supabase GATEWAY
+    //   `canceling statement due to statement timeout` -> Postgres (SQLSTATE
+    //                                                     57014)
+    // What this route actually observes is the FORMER. It is also NOT this
+    // route's maxDuration of 300s, and NOT the RPC's own declared
+    // `statement_timeout=300s`, which is INERT (a function-level SET does not
+    // bind the statements inside it; see the 195-function inert-timeout
+    // population). So no clock available here can fix it: the lever is the WORK.
+    //
+    // ⚠ THE DIFFERENCE IS OPERATIONAL, not pedantic. Postgres CANCELS the
+    // statement when `statement_timeout` fires; the gateway does NOT — it hangs
+    // up on the client and the backend keeps going. So each failed nightly run
+    // leaves ~100s of scan still burning after the failure has already been
+    // recorded, which is IO this box is paying for and no instrument attributes.
     //
     // The cost is `SELECT DISTINCT ON (edition_id) * FROM fmv_snapshots` over
     // ~1.15M rows, whose collection filter is the non-sargable
@@ -136,13 +153,9 @@ export async function POST(req: NextRequest) {
     // DISTINCT ON twice (measurement CTE + the UPDATE ... FROM latest), so the
     // leg is ~200s of work. It has failed every run since the split.
     //
-    // ⚠ AND THE BOUND NAMED ABOVE IS THE WRONG ONE. The observed error is
-    // `upstream request timeout`, which is the SUPABASE GATEWAY (~120s), not
-    // Postgres. The two are within seconds of each other, so the number cannot
-    // tell them apart — read the ERROR STRING. It matters practically: on the
-    // gateway path the statement is NOT cancelled when the client gives up, so
-    // each failed nightly run leaves ~100s of scan still burning after the
-    // failure has already been recorded.
+    // ⚠ The failure this leg records is the gateway one described at the top of
+    // this block — `upstream request timeout`, NOT a Postgres cancellation. Do
+    // not re-derive it from the ~125s number; that number is ambiguous.
     //
     // ⚠ Column projection is NOT the lever, tested rather than assumed: the
     // unnarrowed SELECT * timed out at 110s and an eight-column projection

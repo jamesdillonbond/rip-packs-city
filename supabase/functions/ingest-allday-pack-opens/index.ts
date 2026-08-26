@@ -439,13 +439,52 @@ async function writeRips(rips: RipBuild[]): Promise<WriteStats> {
   return { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent }
 }
 
+// ⚠ THE TELEMETRY WRITE MUST CHECK ITS OWN RETURNED ERROR (fixed here).
+//
+// This is the ONE writer for both `allday-pack-opens-forward` and
+// `allday-pack-opens-backfill`, and it used to be a bare
+// `await supabase.from("pipeline_runs").insert({...})`. supabase-js RETURNS
+// errors rather than throwing, so the returned `error` was the only evidence a
+// run row had failed to land — and nothing read it. A failed telemetry write
+// was therefore INDISTINGUISHABLE from a successful one at every level: the
+// walker carried on, the fn returned 200, and `pipeline_runs` simply had no row.
+// That is the "a failed read must not render as an answer" class pointed at the
+// instrument instead of the surface: the absence of a row reads to every
+// downstream consumer (`detect_stalled_pipelines`, `v_pipeline_failure_rates`,
+// `v_pack_pipeline_health`) as "the pipeline did not run", which is a different
+// and much louder claim than "we could not record that it did".
+//
+// ⚠ THIS IS NOT THE CAUSE OF THE `allday-pack-opens-backfill` SILENCE, and must
+// not be filed as its fix. The IDENTICAL call — same function, same client, same
+// table — writes ~46 `allday-pack-opens-forward` rows a day, so the writer
+// demonstrably works and the backfill's missing rows have a different cause
+// upstream of here. This is an independent defect: it makes a whole class of
+// telemetry failure unfalsifiable, which is worth fixing on its own, but closing
+// the backfill investigation on it would be a wrong attribution.
+//
+// ⚠ NEVER THROWS, and never rejects. A telemetry failure must not become a
+// pipeline failure: these calls sit on the walker's own return paths (including
+// the `cursor_read_failed` aborts), so a throw here would replace a recorded
+// failure with an unrecorded crash — strictly worse than the defect being fixed.
+// Both shapes are handled: the RETURNED error (the supabase-js path, the actual
+// bug) and a THROW (transport/DNS, which the client does propagate). Mirrors
+// `writeInvocationHeartbeat` in lib/pipeline/heartbeat.ts, which reached the
+// same contract for the same reason.
 async function logRun(pipeline: string, startMs: number, ok: boolean, found: number, written: number, cb: number | null, ca: number | null, extra: any, error: string | null) {
   // duration_ms is a GENERATED column (finished_at - started_at) — never insert it.
-  await supabase.from("pipeline_runs").insert({
-    pipeline, started_at: new Date(startMs).toISOString(),
-    rows_found: found, rows_written: written, cursor_before: cb != null ? String(cb) : null,
-    cursor_after: ca != null ? String(ca) : null, ok, error, extra,
-  })
+  try {
+    const { error: logErr } = await supabase.from("pipeline_runs").insert({
+      pipeline, started_at: new Date(startMs).toISOString(),
+      rows_found: found, rows_written: written, cursor_before: cb != null ? String(cb) : null,
+      cursor_after: ca != null ? String(ca) : null, ok, error, extra,
+    })
+    // Distinctive prefix so the miss is greppable in the fn logs without
+    // knowing which pipeline was writing — the operator searching for "why is
+    // there no row" has the pipeline name in hand but not this file.
+    if (logErr) console.error(`[pipeline_runs-insert-failed] ${pipeline}: ${logErr.message}`)
+  } catch (e) {
+    console.error(`[pipeline_runs-insert-threw] ${pipeline}: ${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 Deno.serve(async (req) => {
