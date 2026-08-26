@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, interactive, DB migration) — `drain_fmv_cold_tail` grouped 1.28M snapshot rows to answer a question about 518 editions; one WHERE clause, **90× fewer buffers**
+
+**DB MIGRATION + REPO FILE. This changes production DB state.** Closes one of the two "measured-but-unshipped DB fixes" on CLAUDE.md's own prioritized list. ⭐ **Its stated blocker was a MEASUREMENT, not a decision** — *"re-measure at a quiet hour, compare **buffers**"* — so it was cleared by doing exactly that. (The sibling item, `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg, **remains Trevor's** because it re-seeds a pinned fixture.)
+
+🚨 **THE DEFECT: A `LIMIT` BOUNDS OUTPUT, NOT COST — and this is its cleanest instance.** The candidate query opened with an unscoped `SELECT edition_id, MAX(computed_at) FROM fmv_snapshots GROUP BY edition_id`, then LEFT JOINed that to `editions` filtered to ONE collection. So draining a **518-edition** collection still aggregated **~1.28M** snapshot rows, and the `LIMIT p_limit` sat above the aggregate where it could not help.
+
+✅ **THE A/B, IN BUFFERS AS THE REGISTER DEMANDS, AT io_wait 8 / active 11 (not in a spell):**
+
+| | buffers | snapshot rows | time | result |
+|---|---:|---:|---:|---|
+| as-written (unscoped) | **66,499** | ~1,281,000 | **38,615 ms** | 0 rows |
+| scoped (shipped) | **741** | 4,391 | **173 ms** | 0 rows |
+| | **~90×** | ~292× | ~223× | **IDENTICAL** |
+
+Both plans report *"Rows Removed by Filter: 518"* — same editions examined, same zero candidates. ⓘ Served by the **already-existing** covering index `fmv_snapshots_2026_collection_id_edition_id_computed_at_idx` as an Index Only Scan; **no index was created**, so this costs no build IO on the instance R46 says is IO-bound.
+
+⭐ **EQUIVALENCE PROVEN ON THE WHOLE POPULATION, NOT ARGUED.** Scoping the CTE changes the answer only if a snapshot's `collection_id` can disagree with its edition's. Measured across **every row**: **1,281,003** snapshots joined to editions, **0** with a differing `collection_id`, **0** with a NULL one. ⚠ This is the step that made it shippable rather than plausible — the plan comparison alone would only have shown it was *faster*.
+
+⚠ **SCOPE HELD DELIBERATELY TIGHT.** One WHERE clause in the candidate CTE. No pricing branch, no confidence threshold, no INSERT, no ordering, no LIMIT semantics. ⓘ The `statement_timeout=120s` in `proconfig` is left in place and is **INERT** per this repo's own finding — **recorded rather than "fixed"**, because removing it is a separate change with its own argument.
+
+✅ **POST-FLIGHT, ALL READ LIVE:** `prosecdef` true and `proconfig` unchanged · `has_function_privilege` **anon=false, authenticated=false, service_role=true** (unchanged — `CREATE OR REPLACE` does not reset an ACL, which is why the migration carries an **anon-exec decision marker and NOT a REVOKE**: the REVOKE would have been the statement that changed production) · `check_secdef_anon_exec_drift()` **array length 0** (read as a LENGTH, not `count(*)`) · `check_public_security_invariants()` **0 rows**.
+
+⚠ **AND A WRITE CONTROL, because "fast at doing nothing" is not a fix.** The first run (`ufc_strike`) returned `processed: 0` — correct, but it proves only speed. So: `nfl_all_day` limit 3 → **`processed: 3`, `ask_only: 2`, `stale: 1`**, and the rows were confirmed **from outside the function** in `fmv_snapshots` at the run's exact `computed_at`. The write path still works.
+
+⛔ **WHAT IS NOT YET ESTABLISHED, AND I NEARLY MIS-CLAIMED IT.** A scheduled `drain-fmv-cold-tail` tick at **04:17:14Z** wrote **89 rows, ok=true** — against 6 and 13 on the two prior ticks — and it is tempting to read that as validation. **It is not: the migration applied at version `20260826041837` = 04:18:37Z, so that tick ran on the OLD body.** It is a pre-migration reading. ➡ **THE FALSIFIER IS THE NEXT SCHEDULED TICK (~04:47Z):** a manual invocation is not a production-caller control, and this repo already records that *a scheduled job is verified by a tick it does not share a cache with*. If it errors, revert by deleting the single `WHERE collection_id = v_collection_id` line.
+
+**Verified:** buffers A/B run at a measured-quiet moment · equivalence proven over 1,281,003 rows · security checks clean · write control run and confirmed from outside · migration file committed in the SAME turn as the apply (the 08-25 lesson: a scheduled parity check reads git, not the working tree) · ledger instruments re-read after writing: `^### ` +1, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**.
+
+**Revert:** `git revert <sha>` for the repo half, **AND the DB half must be reverted separately** — delete the single line `WHERE collection_id = v_collection_id` from the `latest` CTE and re-apply (prior body md5 `cbe40bd986c8d6f9b1b3df76f3f07c7f`). Reverting the code alone leaves live and repo drifted.
+
 ### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — the stale-`index.lock` git gotcha reaches the inbox, and the mount is reconciled with origin
 
 **What shipped:** the inbox candidate `2026-08-26T0411Z-git-gotcha-a-stale-index-lock-makes-merge-print-Updating-while-HEAD-never-moves.md`, plus its `INDEX.md` entry and the **two counts** that file asserts (total 239 → 240; the `2026-08-25` day heading 8 → 9). Both inbox guards run green (`inbox-index-lists-every-filing`, `inbox-is-append-only-since-the-rule` — 8/8).
