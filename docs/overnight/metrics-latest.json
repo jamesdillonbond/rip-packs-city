@@ -1,64 +1,77 @@
 {
-  "run": "nightly-20260825T0804Z-cloud-NOPUSH",
-  "captured_at_utc": "2026-08-25T08:12Z",
-  "captured_at_pt": "2026-08-25T01:12 PT",
-  "mode": "NO-PUSH (cloud Cowork; remote.origin.pushurl EMPTY on mount, git push --dry-run refused no-creds). DB migrations + verification + artifact repair available; nothing clearly-safe + net-positive to ship. Blocker specific to this cloud session; Trevor's box + Claude Code push normally.",
+  "run": "nightly-20260826T0804Z-cloud-NOPUSH",
+  "captured_at_utc": "2026-08-26T08:07Z",
+  "captured_at_pt": "2026-08-26T01:07 PT",
+  "mode": "NO-PUSH (cloud Cowork; mount had NO remote.origin.pushurl, url fallback carries no PAT, git push --dry-run -> 'could not read Username'). DB migrations + verification + artifact repair available; nothing clearly-safe + net-positive to ship. Blocker specific to this cloud session; Trevor's box + Claude Code push normally.",
   "genuine_overnight": true,
-  "clock_check": "sandbox date -u 08:02:37Z vs DB now() 08:02:48Z — <15s drift, NOT skewed. max(ingested_at) sales 07:57Z + max(computed_at) fmv 07:56Z bound real time from below. Real local ~01:04 PT.",
+  "clock_check": "DB now() 08:03:30Z = 01:03 PT (inside 00:00-06:00 window). max(ingested_at) sales 08:03:10Z + max(computed_at) fmv 07:56Z bound real time from below. Genuine overnight run.",
   "shipped_to_prod_state": "NOTHING. No DB migration, no code deploy (NO-PUSH), no data mutation, no edge-fn, no artifact change. Quiet honest night.",
   "security": {
     "invariants": "clean ([])",
     "anon_write_holes": "clean ([])",
-    "rls_off_base_tables": "clean ([])",
-    "secdef_anon_violations": "not separately re-run; invariants cover the public surface, clean"
+    "rls_off_base_tables": "clean ([]) -- _rpc_waste_baseline_20260825 (08-25 filing) already secured by owning session: RLS on, anon/auth SELECT false",
+    "secdef_anon_violations": "clean ([])"
   },
-  "stalled_pipelines": [
-    "weekly-db-maintenance (info, log-purge housekeeping, pg_cron jobid 198 daily 09:40Z) — MISSED the 08-24 09:40Z tick, ~46.5h silent (2788m vs 1800m bar). Self-heals 09:40Z 08-25. WATCH for a second miss (would signal pg_cron-startup class under saturation)."
-  ],
-  "trust_health_breaches": [
-    "public_board_slow_count=4 (candy-mlb boards, known-structural)",
-    "unmapped_resolution_backlog_max=350 (All Day ~47k actionable, known-structural, draining net ~-25/day)"
-  ],
-  "rpc_ops_snapshot": "TIMED OUT on sentinel_fmv_confidence_rows leg (canceling statement due to statement timeout) — expensive FMV-confidence aggregate under saturation. Cheaper legs run individually instead. FMV HIGH/MED per-collection NOT force-computed (focus PRIORITY 3: do not add IO chasing a saturation symptom).",
   "post_ship_watch_prev": {
-    "20260824_saved_wallets_count_guard_d8962ae1": "CLEAN — fail-safe honesty guard (a failed count can no longer re-seed saved_wallets). Happy path unchanged; no regression.",
-    "20260824_sentinel_leak_arm_024bafaf": "CLEAN — TS editions +3/24h (19838->19841), far below the 250 leak-warn threshold; underlying metric healthy, arm now honest on a failed read.",
-    "20260824_candy_offers_guard_02b2e849": "CLEAN — no regression.",
-    "note": "All last-24-48h changes were Claude Code interactive (08-24) honesty guards deployed from Trevor's box. No new pipeline-failure class, no new Sentry issue, security clean -> nothing attributable to any recent ship."
+    "20260825_ccm_step2_enable_nestloop_off_migration_20260825170000": "PASS -- jobid 4 succeeded 2026-08-25 23:25:09Z in 9.5s, FIRST success since 08-17. The SET LOCAL enable_nestloop=off diagnosis holds. Do not revert.",
+    "20260825_pipeline_health_24h_floor_4fb977b9": "CLEAN -- on origin/main; no regression. Corrected the unconditional 24h red-floor that marked healthy weekly/long-cadence jobs red ~6 days in 7.",
+    "note": "Recent ships were Claude Code interactive from Trevor's box. No new pipeline-failure class attributable, security clean, no new Sentry issue (though Sentry is dark -- see caveat)."
   },
-  "db_size_mb": 13918,
+  "trust_health_breaches": [
+    "public_board_slow_count=5 (candy-mlb boards timing out; corroborated by Vercel -- 6 candy_*_board statement-timeout groups; known IO-saturation class)",
+    "unmapped_resolution_backlog_max=348 (All Day standing residual; 47,183 actionable, net-draining; known-structural)"
+  ],
+  "trust_precompute_max_age_hours": 5.31,
+  "trust_precompute_note": "FRESH (5.31h vs 13h breach) -> the two breaches above are REAL, not a stale-refresher rollback artifact.",
+  "db_size_mb": 13953,
   "editions_by_collection": {
-    "nba_top_shot": 19841,
+    "nba_top_shot": 19849,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
   },
-  "total_editions": 27249,
+  "total_editions": 27257,
+  "fmv_high_plus_medium_by_collection": {
+    "nba_top_shot": 7631,
+    "nfl_all_day": 1579,
+    "laliga_golazos": 2,
+    "ufc_strike": 0,
+    "disney_pinnacle": "own table (pinnacle_fmv_stale_hours=9.5 ok, healthy)"
+  },
+  "sentinel_ts_uuid_editions_48h": 0,
   "pipeline_health": {
-    "dominant_error_class": "saturation-class (statement/lock/connection-pool timeout, soft-deadline partial sweep, upstream timeout) — known R46 structural root, decided 08-23 no-capacity-change permanently.",
-    "notable_24h_fails": [
-      "topshot-pack-pool-backfill 100% (278/278) — cause shifted 403->200 'no editions'; QUEUED #A (retire/re-map decision)",
-      "reconcile-saved-wallet-stats 90.9% (20/22) — all soft_deadline_reached_partial_sweep_committed (BY-DESIGN), oldest_cache_h climbing 379->386h (saturation, PRIORITY-3 bar). NOT a regression from the 08-23 searchpath fix.",
-      "sync-nba-projections 100% (8/8) — ESPN/sports-proxy dark (known ~Oct slate-gate)",
-      "refresh_wmc_fmv_drift_active 31.6% / refresh_wmc_fmv_changed 23.7% / wallet-username-resolver 62.5% / topshot-active-listings-ingest 80% — all known saturation/operator-gated"
+    "dominant_error_class": "saturation-class (statement/lock/connection-pool timeout, 300s Vercel cron kills, upstream timeout, 45s public-page RPC timeouts degrading honestly to empty) -- known R46 structural root, no-capacity-change decision stands.",
+    "notable_alerts": [
+      "topshot-pack-pool-backfill 99.8% (573/574) -- '0/3 dists converted; 3 returned no editions'; QUEUED (retire/re-map decision; inbox 2026-08-25T0312Z)",
+      "candy-listings-indexer -- 73% of ticks KILLED at 300s (heartbeat present, no terminal row); ingest logic, QUEUED (inbox 2026-08-26T0400Z)",
+      "compute-laliga-pack-ev -- PGRST002 schema-cache collision + 508s>300s budget overrun; ingest logic, QUEUED (inbox 2026-08-26T0400Z ADD3)",
+      "topshot-active-listings-ingest 75% egress_blocked -- but real blocker is topshot_serial_board_candidates RPC timing out at ?phase=targets before atlas; QUEUED #20/#30 (inbox 2026-08-26T0630Z)",
+      "weekly-db-maintenance / rpc-ccm-step2-class worker starvation (max_worker_processes=6 vs cron.max_running_jobs=32) -- platform-capacity decision, QUEUED",
+      "wallet-backfill-*/wallet-username-resolver/refresh_wmc_fmv_* -- connection-pool + statement timeouts, known saturation class"
     ]
   },
-  "vercel": "production deploy READY (b3230e36 per monitor 0312Z); newest CANCELED = expected docs-only ledger commit (vercel.json ignoreCommand). No new non-saturation runtime error class.",
-  "sentry_new_issues_24h": 0,
-  "sentry_caveat": "Sentry reported dark since 08-18 (inbox 08-23T0250Z) — '0 new' may be instrument silence, NOT proof of no errors. QUEUED (needs config/route work, NO-PUSH).",
-  "artifacts": "11 present, none flagged broken/stale in the inbox; daytime monitor validated rpc-live-health 12/12 backing views this tick. No repair needed.",
+  "vercel": "50 runtime error groups in 24h, all saturation-class (candy-mlb board timeouts, wallet-backfill connection-pool timeouts, 300s cron kills, 45s edition/player/pack RPC timeouts degrading to empty). No new non-saturation class. Last prod deployment dpl_2e4v6fnmxkii3ETawiWiHNosBBUz.",
+  "sentry_new_issues_48h": 0,
+  "sentry_caveat": "SENTRY STILL DARK ~8 DAYS. 0 unresolved issues in 48h/7d against 50 live Vercel error groups (timestamps minutes old) -> dark-reporter, NOT a clean bill. Operator-gated: needs Sentry Stats/Usage (accepted vs dropped) or an ingest-envelope probe from a box with egress. QUEUED. Also blocks the two-client-init consolidation (wants a live Sentry to verify against).",
+  "artifacts": "11 present, none flagged broken/stale in the inbox, none updated since 08-16; fresh-on-open. No drift, no repair needed (regenerating working artifacts is discouraged).",
   "queued_this_run": [
-    "#A topshot-pack-pool-backfill: decide exhausted-finite vs conversion-regression, then re-map terminal outcome or retire watchlist row; ledger '403-dead jobid-16 lane' belief is stale (inbox 2026-08-25T0312Z)",
-    "#B cross_collection_ts_set_overlap_mat ~51h stale + unwatched: add additive cross_collection_overlap_stale_hours arm to v_rpc_trust_health (breach ~30h, preserve security_invoker=on); not shipped tonight because it modifies a widely-read instrument I could not round-trip verify while the snapshot FMV leg is timing out (inbox 2026-08-25T0011Z)"
+    "Sentry ingestion dark ~8d (operator: Stats/Usage or ingest probe from egress box)",
+    "candy-listings-indexer 300s wall-kill on 73% of ticks (ingest logic; chunk the ME listing walk WITHOUT breaking the complete-sweep-or-abort invariant)",
+    "compute-laliga-pack-ev PGRST002 + 508s budget overrun (pack-EV/ingest logic)",
+    "topshot-active-listings-ingest real blocker = topshot_serial_board_candidates calls serial_fmv_estimate 2x/edition before the $100 floor prunes (FMV route logic; prove equivalence over full population first)",
+    "worker-slot starvation (max_worker_processes=6) causing job-startup-timeout class (platform-capacity decision)",
+    "hours_since_last_completion monitoring arm -- additive read-only instrument to catch heartbeat-without-terminal kills (predicate designed in inbox 2026-08-26T0400Z; queued rather than shipping an orphan instrument overnight)",
+    "cron-reschedule (2f2736c5) exit-condition correction: first ticks under new schedule are 09:54-09:56Z (after this run); read a startup-timeout as a FALSIFIER, silence proves ~33% nothing (inbox 2026-08-26T0525Z)",
+    "git-gotcha doc: stale .git/index.lock makes merge print 'Updating' while HEAD never moves -> append to tooling-gotchas.md (docs, needs push)"
   ],
   "operator_blockers_unchanged": [
-    "git push credentials in cloud/desktop Cowork (blocks all autonomous code deploys; Trevor's box + Claude Code unaffected)",
-    "atlas-proxy wrangler deploy (topshot-active-listings egress arm)",
-    "sports-proxy 403 (ESPN slate-gated ~Oct)",
+    "git push credentials in cloud Cowork (blocks all autonomous code deploys; Trevor's box + Claude Code unaffected)",
     "Sentry ingestion dark since 08-18",
-    "#22 defeated credential-purge branch claude/todo-implementation-e4tib3 still live at ee94c8a2a (triage -> GitHub-UI delete -> GC -> rotate regardless)"
+    "atlas-proxy wrangler deploy (partial: fixes only ~9 of 40 topshot-active-listings fails; 29+ die earlier on the RPC DB timeout)",
+    "sports-proxy 403 (ESPN, measured dead)",
+    "#22 defeated credential-purge branch claude/todo-implementation-e4tib3 still live (triage ee94c8a2a -> GitHub-UI delete -> GC -> rotate regardless)"
   ],
-  "inbox_archiving_note": "DO NOT ARCHIVE inbox filings (REFUTED 2026-08-24, 3e2d90ac). inbox/ files are permanent citation targets; retire a resolved filing by ANNOTATING it in place, never by moving it. ~200 files is the intended steady state; INDEX.md is the remedy. This run archived nothing (also NO-PUSH).",
-  "ledger_write_note": "This run's ledger splice initially hit a STALE read-only /tmp/ledger_entry.md from an Aug-23 session (cat > denied silently), which duplicated the 08-23 R14 entry at the top; caught immediately via heading re-read, dup removed, real entry re-spliced. Instruments verified after: ^### 1037, swallowed 3, future-dated 0. Lesson: never reuse a fixed /tmp filename another session may own; write ledger temps to $HOME with a unique name."
+  "inbox_archiving_note": "DO NOT ARCHIVE inbox filings (REFUTED 2026-08-24, 3e2d90ac). inbox/ files are permanent citation targets; ~244 files now, the intended steady state. This run archived nothing.",
+  "ledger_write_note": "NO-PUSH: ledger + metrics + handoff written to the MOUNT (persist on Trevor's machine, picked up by future runs), uncommitted. Splice anchored on the ^### 2026-08-25 heading; verify ^### count rose by exactly 1."
 }
