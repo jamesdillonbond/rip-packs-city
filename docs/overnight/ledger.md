@@ -10,6 +10,85 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — Sentry stays unpaid, so: the quota guard covers the class it was missing, and `global-error` stops telling users a human has seen it
+
+**Trevor's decision: do NOT raise the Sentry subscription** — consistent with the roadmap's
+*no infra spend pre-revenue*. This entry is what follows from that, and none of it costs
+anything.
+
+⭐ **FIRST, THE THING THAT CHANGES THE FRAMING: we are not blind.** `get_runtime_errors`
+gives grouped clusters — signature, count, first/last seen, sample stacks — **50 groups over
+7 days, free, and working the entire time Sentry has been dark.** It is how everything below
+was measured. Top clusters (7d): Vercel task timeouts **24,027**; `Timed out acquiring
+connection from connection pool` **~18,600**; the 45 s RPC-deadline family ~10,000;
+`canceling statement due to statement timeout` ~10,000.
+⚠ **COUNTS ONLY** — that tool's `users=`/`routes=` are documented untrustworthy (smeared
+attribution, 2026-08-21), so **no user-impact figure is claimed anywhere here.**
+
+⛔ **THE RESIDUAL GAP IS CLIENT-SIDE, AND IT IS REAL.** Vercel sees only server execution.
+Checked rather than assumed: **there is no non-Sentry client capture in the repo** — no
+`window.onerror`, no `unhandledrejection`, no client logging endpoint; both error boundaries
+report via `Sentry.captureException`. **So browser-only failures are currently captured by
+NOTHING** — which matters here specifically because this repo has already been bitten by
+`React #418`, a hydration class that by construction never appears in a server log. **That
+is the honest cost of the decision, stated so it is known rather than discovered.**
+
+**SHIPPED 1 — the quota guard's sizing rebuilt from an instrument that still works.** It
+sampled exactly one signature. Sentry cannot report on itself, so the list was re-derived
+from Vercel, restricted to errors that are actually **THROWN** (a `console.error` line never
+becomes a Sentry event, so raw log counts overstate this badly):
+
+| thrown signature | 7d |
+|---|---:|
+| `team detail unavailable: canceling statement due to statement timeout` | 2,460 |
+| `set editions unavailable: canceling statement due to statement timeout` | 1,358 |
+
+**≈3,818 in 7 days ≈ 16,400/month from one uncovered signature** — several times a
+5,000/month quota on its own. Added `pg-statement-timeout` at 1-in-20, DEFAULT-IS-SEND
+preserved. ⚠ **Pool-acquire timeouts deliberately NOT sampled** even though they are the
+largest class: the guard's existing negative control says so and is right — a pool-acquire
+failure and a statement timeout are **different faults with different fixes**, and the pool
+one is the loudest signal about the saturation everything else is downstream of. Quieting it
+would be optimising the instrument instead of the problem.
+
+🚨 **SHIPPED 2 — a USER-FACING FALSE CLAIM, and the guard that existed for it could not see
+it.** `app/global-error.tsx` told every user hitting the last-resort boundary:
+
+> *"An unexpected error occurred. **Our team has been notified.**"*
+
+**That has been false since 2026-08-18.** `captureException` runs, the envelope is accepted
+with a `200`, and the event is dropped.
+
+⭐ **The test protecting that sentence pinned the implication *claim ⇒ capture-called*,** on
+the stated reasoning that the capture "is the only thing making it true". **That is correct
+about the CODE and wrong about the WORLD: no test can observe whether a report is STORED.**
+The capture fired on every one of those users and the suite stayed green for eight days.
+**A guard can be exactly right about the call and blind to the delivery.**
+
+Fixed by dropping the claim — the old test's own comment anticipated exactly this, noting
+that removing the sentence *"is a fix, not a regression"*. New copy matches the sibling
+boundary at `app/(collections)/[collection]/error.tsx`, which already had the right voice:
+**"We logged it — trying again often works."** A claim about US, not about a third party.
+
+⚠ **The test is INVERTED, not deleted**, per this file's rule: it still pins the capture
+(worth doing if the collector recovers) and now pins the **ABSENCE** of a delivery promise,
+matched on the PROPERTY rather than one spelling. ⭐ **Proven in both directions before
+shipping** — the old copy and two synonym rewordings all red it; the new copy and the
+sibling's copy do not. A fourth assertion pins that removing the false claim did not leave a
+bare heading, so the new check is not satisfiable by rendering nothing.
+
+**Revert path:** `git revert` the two commits; the guard's new rule can be removed on its own
+by deleting the `pg-statement-timeout` entry from `KNOWN_HIGH_VOLUME` (its tests name it and
+would red, which is the intent). No DB or prod-state change.
+
+⏳ **Still open, all free:** the quota resets on Sentry's billing cycle and **whether the
+guard is now sufficient needs one post-reset week to measure**; and ⚠ **nothing watches
+"did Sentry STORE anything recently"** — a dropping collector looks exactly like a quiet
+week, which is precisely how this went eight days unnoticed. ⭐ **The real lever is still
+cutting query cost** — every top cluster is a timeout, so today's covering index and `rwfc`
+fast path are worth more to that error board than quota would be. **An error tracker that
+can see the fire is not a fire extinguisher.**
+
 ### 2026-08-26 · ⛔ I TURNED `main` RED FOR 35 MINUTES WITH ONE STRAY `$`, and the guard that should have caught it is structurally blind — fixed, plus a new guard proven against the offender
 
 **Repo only (one pin file + one new guard). No prod state.**
