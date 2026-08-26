@@ -2,6 +2,23 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+
+## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
+
+CLAUDE.md was at **39,996 of 40,000 characters — four characters of headroom** — which is one edit away from
+silently losing the whole memory file. This list is pure lookup DATA, so it is the correct thing to move; the
+rules stayed.
+
+- Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`,
+  `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
+
+⚠ **`.env.example` is NOT a complete substitute for this list — measured 2026-08-24, only 5 of the 8 appear
+there** (`FLOWTY_PROXY_TOKEN`, `SPORTS_PROXY_URL` and `SPORTS_PROXY_SECRET` are absent). That is why the list
+was moved here rather than deleted in favour of a pointer at `.env.example`.
+
+Rotation surfaces and which worker carries which secret: see the three-rotation-surfaces section of
+[brand-auth-proxy.md](brand-auth-proxy.md) and `RPC_DESIGN_SYSTEM.md` §11.
+
 ## Windows / Git Bash patching rules (CRITICAL)
 
 - Dev environment: Windows, Git Bash (MINGW64), VS Code.

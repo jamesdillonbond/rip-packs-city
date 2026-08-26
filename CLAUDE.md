@@ -267,7 +267,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 ## Hot wallet & secrets
 
 - Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 for months; tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
-- Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`, `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
+- Key env vars (8, incl. 3 absent from `.env.example`): [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ---
 

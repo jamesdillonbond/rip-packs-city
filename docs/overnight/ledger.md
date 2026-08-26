@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, web sandbox) — thread close-out: memory-file headroom restored, the ISR decision promoted out of the inbox into the register, #32 re-verified
+
+Docs only. No migration, no DB write, no prod-state change. Closing pass on the multi-day memory refresh.
+
+- 🚨 **CLAUDE.md was at 39,996 of 40,000 characters — FOUR characters of headroom**, i.e. one ordinary edit
+  away from silently losing the whole memory file. **Paid for properly rather than trimmed:** the **key env-var
+  list** (pure lookup DATA) moved **verbatim** to [tooling-gotchas.md](../reference/tooling-gotchas.md).
+  **39,996 → 39,928, headroom 72.** ⚠ Earlier in this refresh I *rejected* displacing that list — but the
+  objection was to the DESTINATION (`.env.example` holds only 5 of the 8 names, so pointing there would have
+  LOST information), not to the displacement. **A verbatim move into the matching reference doc was always the
+  correct form, and the reference doc now records why `.env.example` is not a substitute.**
+- ⭐ **The ISR/`pack-drops` finding was filed to `inbox/` on 08-24 and left there for two days — now registered
+  as known-issues #33.** ➡ **An inbox filing is a HYPOTHESIS; the register is the TRACKED list.** A decision
+  item awaiting Trevor that never reaches the register is one nobody re-reads — **this file's own
+  most-repeated failure mode, applied to my own finding.** The entry carries the six-sample distribution, the
+  empty-fallback blast radius, the "does a COLD pass still exceed the budget" test, and the **three remedies
+  that are wrong**, so none is re-proposed. **The honesty half is FIXED and live; only the caching behaviour is
+  open.**
+- ✅ **#32 RE-VERIFIED AND STILL OPEN.** The installed `rpc-cron-ops` is still **4,232 bytes** against the
+  repo's **4,823**, and grep for the 2026-06-19 secret-safety HARD RULE in it still returns **0**. Two days on,
+  a session loading that skill is still running the pre-incident instructions. **Operator-only: re-upload
+  `docs/cowork-skills/rpc-cron-ops.skill`.**
+- ⭐ **The adjacent-only suppression failed CLOSED, exactly as designed, on my own edit.** Inserting #33 above
+  #32 separated #32's `<!-- retired-rule:allow -->` marker from the line it excuses, and the guard immediately
+  reddened. ➡ **That is the argument for adjacent-only over a wider lookback in one observation: a marker that
+  drifts away from its line stops excusing it, instead of silently covering whatever moved into range.**
+  Re-anchored.
+
+**State at close:** all three memory guards green — retired-rule **6 rules absent across 33 surfaces / 6,667
+lines / 8 documented quotes**, links **107/107 resolve across 24 files**, bundles **9/9**. Ledger invariants
+swallowed **3**, future-dated **0**.
+
+**Revert path:** `git revert <sha>` — docs-only, nothing to undo in the DB or on Vercel. ⚠ Reverting takes
+CLAUDE.md back to 4 characters of headroom.
+
+⚠ **AND THE DATE ON THIS ENTRY WAS WRONG WHEN FIRST WRITTEN — caught by `find-future-dated-ledger-headings`.**
+I stamped **08-26** because the overnight filings are named with UTC timestamps (`2026-08-26T0100Z`); PT was
+**08-25**. ➡ **A filename is a clock whose zone you did not check** — the same class CLAUDE.md records four
+incidents of. Every stamp in this pass was corrected. The guard is why it cost thirty seconds instead of
+becoming a fifth incident.
+
 ### 2026-08-25 · SHIPPED (Claude Code, interactive) — the edition-page Dapper CTA is now VERIFIED rather than merely shipped, and the sitemap's own fix quietly unwatches four monitor arms
 
 ✅ **The CTA that no gate could see is now pinned and confirmed.** `dapperMarketEditionUrl`'s wiring into
