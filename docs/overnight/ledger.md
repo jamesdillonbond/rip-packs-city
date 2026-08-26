@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-25 · SHIPPED (Claude Code, web sandbox) — CLAUDE.md's "two unshipped DB fixes" went stale within hours of the refresh that verified it; corrected against live `prosrc`
+
+Docs only. No migration, no DB write, no prod-state change.
+
+- ⭐ **`drain_fmv_cold_tail` SHIPPED, so CLAUDE.md's Prioritized-next-actions bullet was wrong.** It read *"Two
+  measured-but-unshipped DB fixes … both re-verified unshipped 08-24 from live `prosrc`"* — accurate when
+  written, and **overtaken the same night** by the scoping migration. Now reads **ONE** left, with the shipped
+  half marked ✅.
+- ⚠ **Verified from LIVE `prosrc`, not from the committed migration file** — this repo records a
+  committed-but-unapplied migration sitting a full day with no marker in either direction, so a `.sql` in
+  `supabase/migrations/` is not evidence of application. The live body carries
+  `WHERE collection_id = v_collection_id` inside the `latest` CTE, plus its own equivalence proof (**0 of
+  1,281,003 snapshots carry a collection_id differing from their edition's**).
+- ⚠ **And not asserted from the comment either.** The body carries a `-- SCOPED 2026-08-26` comment that would
+  have been enough to *look* shipped; the predicate itself was read, because **a substring test on a multi-KB
+  function body is not a state check** — this file's own rule.
+- **`compute_pack_ev_per_edition_weighted` re-verified STILL unshipped** (its `fmv_current` leg is still in the
+  live body). Remains Trevor's call — it re-seeds a pinned fixture.
+- ✅ **#22 (the P0 credential purge) re-verified at close and UNCHANGED:** `claude/todo-implementation-e4tib3`
+  still on origin, values-free marker control still **e4tib3 2 / main 0**. Still operator-only.
+- ⓘ **Checked whether the stale claim had spread before fixing it** — the habit this refresh prescribed. It is
+  single-surface, so **no `check-retired-rules.mjs` entry was added**: that guard is for RULES a reader would
+  copy, not for status claims, and padding it with statuses would make its output noise.
+
+⚠ **The durable point, and it is uncomfortable in the right way:** this bullet was **re-derived against live
+sources less than 48 hours earlier** and was still wrong by the time anyone read it. **A dated sample does not
+become durable by being carefully measured — a STATUS claim about in-flight work has a shelf life measured in
+hours.** The fix is not more diligence at write time; it is that the bullet now names what would falsify it.
+
+**Revert path:** `git revert <sha>` — docs-only. CLAUDE.md 39,928 → 39,924 (headroom 76).
+
 ### 2026-08-25 · FILED (Claude Code, interactive — docs-only, no code/DB) — thread close-out: four durable lessons promoted, and the cold-tail defect's REAL cost measured after the fact
 
 **Docs only. No migration, no DB write, no prod-state change.** The memory half of the turn that shipped the
