@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ⛔ CAUGHT AND FIXED — the docs-only-tip trap bit a THIRD time, and it was mine: the Sentry guard was on `main` but NOT in production
+
+**I landed the Cowork patch set, saw CI green, and nearly stopped there. The deploy check is what caught it:** BOTH production deployments read **`CANCELED`**, not READY.
+
+**Mechanism, confirmed against `vercel.json` rather than assumed.** `ignoreCommand` runs `git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'` — it inspects **only the LAST COMMIT**. My push contained the three code commits *and then* a ledger commit on top, so **the TIP was docs-only, the diff was empty, and the build was skipped.** The Sentry quota guard, the telemetry fix and the migration records were all on `main` with **none of them running**.
+
+⚠ **CLAUDE.md's rule is exactly this and I still walked into it:** *"Commit the ledger BEFORE the code so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice)."* **Three times now.**
+
+⭐ **THE NEW DETAIL, which is why this is worth an entry rather than a shrug: `git am` INVERTS the safe order for you.** The rule assumes you choose when to commit the ledger. Applying a patch set does not work that way — the code commits arrive first, from the patches, and the ledger entry describing them can only be written afterwards. **So landing ANY patch set produces a docs-only tip by construction unless you deliberately re-order or force a build.** The habit that prevents it is not "commit the ledger first" — it is **check `state` on the deployment after every push, and never infer a deploy from a green CI**, because CI and Vercel are independent and CI was green on the very push that shipped nothing.
+
+⛔ **TWO API ATTEMPTS FAILED, AND THAT IS THE CORRECTION WORTH RECORDING — CLAUDE.md's stated lever DOES NOT WORK HERE.** The rule says *"Use the v13 deployments POST, or touch a non-docs file."* **The first half is wrong for this project:**
+
+1. `POST /v13/deployments` with `forceNew=1` on the head sha → `dpl_9UF9TQVGSKvxoGPJRKGo9P1HbL5j` → **CANCELED**, `errorLink: …#ignored-build-step`. `forceNew` creates a NEW deployment; it does not skip the ignore step.
+2. The same POST plus `projectSettings.commandForIgnoringBuildStep = "exit 1"` → `dpl_9gZrnEbjeTGdcHJerf49VJMieH1A` → **CANCELED, identical errorLink.**
+
+⭐ **Why: `ignoreCommand` is declared in `vercel.json`, which lives IN THE REPO, so it wins over the per-deployment `projectSettings` override.** A deployment built from the git source carries that file, and the ignore step runs from it. **Only the second half of the rule works: the TIP COMMIT MUST TOUCH A NON-DOCS FILE.**
+
+**Fix actually applied:** committed `.gitignore` (neither `docs/**` nor `*.md`, so it satisfies the ignore predicate) as the tip, with the ledger committed BEFORE it — the documented order, this time obeyed. ⓘ The `.gitignore` change is not a no-op made to trip the build: it ignores `Rip Packs City/`, the untracked `format-patch` directory at repo root that a `git add -A` would otherwise commit. **A real fix that happens to be non-docs, rather than a fake edit.**
+
+⚠ **This also means the earlier ledger line "the guard deploys with this push" was WRONG when written** — it was true of the intent and false of the outcome. Corrected here rather than left standing.
+
+**Revert path:** nothing to revert — a deployment trigger, no repo or DB change beyond this entry.
+
 ### 2026-08-25 · SHIPPED (Cowork cloud, interactive — one GRANT/RLS pair) — closed the anon-readable scratch table I had created, which was reddening the smoke test, and swept the estate for siblings
 
 **Prod state (privileges only). No code, no migration row.**
