@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (Claude Code, autonomous) — landed 3 of 7 patches from a Cowork session that could not push, and the SENTRY P0 IS DIAGNOSED
+
+**A Cowork cloud session left a `git format-patch` set in this shared working tree** (`Rip Packs City/cowork-2026-08-25/`, still untracked) with an explicit request to `git am` + push **from this box**, which can push. Its DB half was already live in production; only the code/doc half was stranded. **Landed the clean, urgent subset — 0001, 0002, 0003 — and deferred 0004–0007.**
+
+🚨 **THE HEADLINE IS THE SENTRY DIAGNOSIS, which closes an 8-day P0 that three sessions had filed as unexplained.** Measured by POSTing one envelope at the production DSN: **HTTP 429**, `x-sentry-rate-limits: …organization:error_usage_exceeded`. **Sentry is not broken — the ORG ERROR QUOTA is exhausted**, and the burn is **one already-tracked signature** (the RPC deadline shape from `lib/analytics/rpc-with-retry.ts`) at **15,388 events in 7 days from the edition page alone.** Patch 0001 adds `lib/observability/sentry-quota-guard.ts` to bound how much of the quota one signature may consume. ⭐ **Its test is built the right way round:** the load-bearing assertion is the NEGATIVE one — an unrecognised error is never dropped at any random draw — and it is deliberately satisfiable at a population of ZERO, so emptying the sampled list cannot red it.
+
+**0002 — `logRun` swallowed its own `pipeline_runs` insert error.** The honesty canon pointed at the INSTRUMENT rather than the surface: supabase-js returns errors instead of throwing, nothing read the returned `error`, so a failed telemetry write was indistinguishable from a successful one and the absence of a row reads downstream as *"the pipeline did not run"* — a louder and different claim than *"we could not record that it did"*. ⭐ It also **scopes itself honestly**: it states it is NOT the cause of the `allday-pack-opens-backfill` silence, since the identical call writes ~46 forward rows/day. ⓘ Same family as tonight's own finding that `pipeline_runs` cannot see a `?phase=targets` death — **two independent blindness mechanisms in one table**.
+
+**0003 — migration parity.** ⚠ **I nearly filed a false alarm here.** Matching applied versions against filename prefixes showed **2 of 5 "MISSING"** — but the parity script matches on **NAME, not version**, precisely because *`apply_migration` assigns its own stamp at apply time*, and its header says so. By name, both are present (`20260825170000_…ccm_step2…`, `20260826043000_…cold_tail…`). **Parity is satisfied; read the matcher before trusting the mismatch.**
+
+⛔ **A GAP THE HANDOFF DOES NOT MENTION, recorded here because nobody else will:** 0002's behavioural half is in **`supabase/functions/ingest-allday-pack-opens/index.ts`, and committing an edge function does NOT deploy it.** The source now differs from what is running, which is the repo's already-tracked drift class (26/37 edge fns behind `main`), and memory records edge-fn deploys as **blocked pending a gate-key rotation**. **The route half (a comment-only timeout re-attribution) is live; the edge-fn half is not.**
+
+**Deferred — 0004 through 0007 — and why:** they touch `docs/overnight/ledger.md`, `inbox/INDEX.md` and `CLAUDE.md`, all of which this session has rewritten many times since the patches' base (`639b6fa`), so `git am` would conflict on append-at-top files. ⚠ **0004 also adds an inbox filing with the SAME FILENAME as one I created independently tonight** — both sessions found the anon-readable table and stamped it `0650Z`. That needs a human merge decision, not an automatic one. ⚠ **And 0004 puts CLAUDE.md at 3 characters of headroom (39,997/40,000)**, so it must not be applied concurrently with any other CLAUDE.md edit.
+
+**Verified before pushing, not inherited from the handoff:** `npx tsc --noEmit` exit 0 (bare), full `npm test` re-run locally, and the migration-parity claim re-derived from `supabase_migrations.schema_migrations` against the committed tree.
+
+**Revert path:** `git revert` the three commits (`490b852c`, `9817e795`, `a7015cf0`) — code-only, no DB half, since the DB changes they DOCUMENT were applied by the other session and carry their own revert paths in the migration headers. ⚠ Reverting 0003 re-reds `migration-parity`.
+
 ### 2026-08-26 · FALSIFICATION TEST RUN (Claude Code, autonomous — read-only) — the re-stagger's first tick is CLEAN on all three, and the 10-day series refuted my own alarm about it
 
 **The check I promised, run at the first tick under the new schedules (09:54–09:56Z).** All three fired **at their new minutes** and **succeeded**:
