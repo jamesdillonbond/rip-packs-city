@@ -29,6 +29,10 @@ Measured directly against `pg_class` / `pg_policies`:
 
 Columns: `captured_at, label, calls, rows_, total_exec_ms, blks_hit, blks_read, blks_dirtied, wal_bytes, n_tup_ins, n_tup_upd`. **Internal `pg_stat_statements`-style performance counters. No user data, no PII, no secrets, no addresses.** The practical disclosure is "which internal workloads cost what".
 
+## ⭐ WHEN it appeared — bounded by an independent artifact
+
+`docs/overnight/metrics-latest.json` (nightly run `20260825T0804Z`, captured **2026-08-25 08:12Z**) records `security.rls_off_base_tables: "clean ([])"`. **So the table did not exist — or had RLS — at 08:12Z on 08-25, and the violation is live by 06:32Z on 08-26.** That is a ~22 h window, and it matches the `20260825` stamp in the name. ⓘ Useful because it makes the "another session created it today" reading **measured rather than inferred from the filename**.
+
 ## ⛔ DELIBERATELY NOT FIXED, and the reasons are measured rather than asserted
 
 The one-statement fix is `ALTER TABLE public._rpc_waste_baseline_20260825 ENABLE ROW LEVEL SECURITY;` — non-destructive and reversible (`postgres` and `service_role` **BYPASSRLS**, so the owning session keeps full access; only `anon`/`authenticated` lose it). I did not run it:
