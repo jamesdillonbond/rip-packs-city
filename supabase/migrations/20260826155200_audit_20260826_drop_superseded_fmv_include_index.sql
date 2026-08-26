@@ -1,0 +1,55 @@
+-- audit_20260826_drop_superseded_fmv_include_index
+--
+-- RECORD-ONLY, and the second half of
+-- 20260826153459_audit_20260826_fmv2026_covering_index_restores_index_only_scan.sql.
+-- `DROP INDEX CONCURRENTLY` cannot run inside a transaction block, so the real work
+-- ran as a one-off pg_cron job (recipe in docs/reference/database.md).
+--
+-- ── WHAT WAS DROPPED, AND WHY IT WAS SAFE ─────────────────────────────────────
+--   fmv_snapshots_2026_coll_ed_ct_fmv_idx  (120 MB)
+--     btree (collection_id, edition_id, computed_at DESC) INCLUDE (fmv_usd)
+--
+-- The index built earlier the same day,
+--   fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx   (94 MB)
+--     btree (collection_id, edition_id, computed_at DESC) INCLUDE (fmv_usd, confidence)
+-- has IDENTICAL key columns in identical order and a strict SUPERSET of the INCLUDE
+-- list, so every plan the old index could serve, the new one serves — this is a
+-- structural argument, not a benchmark.
+--
+-- ⚠ The precondition was stated in the earlier migration ("drop it once production has
+-- been observed using the new one, not before") and was WAITED FOR, not assumed. At
+-- the moment of the drop, measured from pg_stat_user_indexes:
+--     new index ... 15,058 scans in its first ~15 minutes
+--     old index ... 76,487 lifetime, of which only +48 in the same window
+-- i.e. production had already migrated off it.
+--
+-- ── CORRECTION TO MY OWN STATED RATIONALE ─────────────────────────────────────
+-- I justified this partly as removing "a hot table's 6th-index write amplification".
+-- **That was wrong and is corrected here.** `fmv_snapshots_2026` carried 6 indexes
+-- before this pair of changes and carries 6 now (one added, one dropped), so write
+-- amplification is UNCHANGED. The real gain is disk only:
+--     497 MB of indexes  ->  471 MB   (net -26 MB)
+-- The new index is smaller than the one it replaces despite carrying an extra
+-- INCLUDE column, because it was freshly built and the old one had accumulated bloat.
+--
+-- ── EXECUTED 2026-08-26 (UTC) as a one-off pg_cron job ────────────────────────
+--   ALTER ROLE postgres IN DATABASE postgres SET statement_timeout = '30min';
+--   SELECT cron.schedule('oneoff-drop-redundant-fmv-include-idx','47 * * * *',
+--     $$DROP INDEX CONCURRENTLY public.fmv_snapshots_2026_coll_ed_ct_fmv_idx$$);
+--   SELECT cron.alter_job(369, schedule := '55 5 1 1 *');   -- the moment it was in flight
+--   SELECT cron.unschedule(369);
+--   ALTER ROLE postgres IN DATABASE postgres RESET statement_timeout;
+--
+-- Verified after: job `succeeded :: DROP INDEX`, the index is gone, **0 invalid index
+-- debris**, one-off jobs removed, `postgres` rolconfig back to `search_path` only, and
+-- the active job count back to its 99 baseline.
+--
+-- ── REVERT ────────────────────────────────────────────────────────────────────
+-- Rebuild it via the same one-off pg_cron route (it is a plain index, no data):
+--   CREATE INDEX CONCURRENTLY fmv_snapshots_2026_coll_ed_ct_fmv_idx
+--     ON public.fmv_snapshots_2026 USING btree (collection_id, edition_id, computed_at DESC)
+--     INCLUDE (fmv_usd);
+-- ⚠ But read the rationale above first: it is a strict subset of an index that still
+-- exists, so rebuilding it costs 120 MB and buys nothing.
+
+DROP INDEX IF EXISTS public.fmv_snapshots_2026_coll_ed_ct_fmv_idx;
