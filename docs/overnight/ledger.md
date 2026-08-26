@@ -85,6 +85,18 @@ candidate — worth 120 MB plus the write amplification of a 6th index on a hot 
 still shows **76,439 scans**, so it is live, and the new index can serve every one of them.
 **Drop it CONCURRENTLY once production has been observed using the new index, not before.**
 
+✅ **VERIFIED END-TO-END, which is the point of the whole exercise — the P0 is CLEARED.** Re-ran `scripts/run-active-listings-ingest.ps1 -DryRun` (writes nothing) from Trevor's box, the same command that failed 30 minutes earlier at `GET targets failed: 500 {"error":"canceling statement due to statement timeout"}`:
+
+```
+[listings-ingest] start floor=$100 dryRun=true base=https://www.rippackscity.com
+[listings-ingest] 749 targets; processing 3
+[listings-ingest] 3/3 | #1=0 perfect=0 upserted=0 atlasCalls=6 skipped=0
+[listings-ingest] DONE {"targets_processed":3,"targets_skipped":0,"atlas_calls":6}
+EXIT=0
+```
+
+**Exit code 1 → 0, and the targets phase returns 749 rows instead of a 500.** ⓘ 749 rather than the function's 984 because `topshot_serial_board_targets` inner-joins `topshot_atlas_edition_map` — only Atlas-mapped editions survive. ⭐ **6 Atlas calls, 0 skipped**, so the residential-egress arm is healthy too: this run reached Atlas, which is the half #20 is about and which no run had gotten to in a week. **known-issues #30 was 100% red since 2026-08-19; it is not red now.**
+
 **Revert path:** the old index was not touched, so revert is a single
 `DROP INDEX CONCURRENTLY public.fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx;` via the same
 one-off pg_cron route. Record-only migration:
