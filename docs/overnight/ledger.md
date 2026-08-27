@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ VERIFIED — the candy board is **10 minutes stale instead of 44 hours**, panini is ingesting, and `detect_stalled_pipelines()` returns **ZERO**
+
+Outcome check on tonight's three pipeline fixes, measured rather than assumed.
+
+**1. `candy-listings-indexer` — the 44 h blackout is broken.** The 03:35:12Z tick wrote a terminal
+`pipeline_runs` row, **the first since 2026-08-25 06:35Z**:
+
+```
+ok: true   rows_found: 1100   rows_written: 1100
+duration_ms: 252233   pages_walked: 11   budget_exhausted: true
+activities_seen: 0    deactivated: 0     sweep_complete: false
+```
+
+⭐ **This is precisely the designed behaviour, and every field is doing its job.** The sweep hit the
+(then-deployed 240 s) budget at 11 pages, **stopped, and LOGGED** instead of being killed silently at
+300 s — and still wrote 1,100 fresh asks. `budget_exhausted: true` beside `sweep_complete: false`
+distinguishes "we ran out of time" from "the book ended", which was the whole point of adding it.
+`activities_seen: 0` → `deactivated: 0`: the budget stopped the activities walk, and with no evidence
+the sweep correctly destroyed nothing.
+
+**`candy_listings`: `max(last_seen_at)` now 10 MINUTES old, was 44.3 HOURS. 1,100 rows refreshed in
+30 minutes, 1,987 active.** The PUBLIC `/insights/candy-mlb` Deals/Spread/Serials tabs are live again.
+
+⚠ **That tick ran the 240 s budget and pre-batching code** — both the 600 s correction and the
+round-trip batching deployed after it. So this is the floor, not the result: the next tick should
+complete rather than truncate. **Re-read `budget_exhausted` and `duration_ms` on it** — if batching
+works, `duration_ms` should collapse from ~252 s and `budget_exhausted` should go false.
+
+**2. `panini-ingest` — the hung Chrome was the whole problem, and the session was NEVER expired.**
+After the restart the runner posts continuously:
+`posted cards=2 packs=0 serials=47 sales=21 -> 202`, repeated. **14 `pipeline_runs` rows, 24 rows
+written, latest 03:48Z, after 22 h of nothing.** ⛔ **This retires the worry recorded in that entry**
+— the first two rows carried `rows_found = 0`, which the launcher documents as the "session expired,
+re-login required" signature, and I flagged it as possibly needing Trevor. **It did not: those were
+simply the first batches of the walk.** ⭐ *A zero at the START of a batched walk is not the same
+observation as a zero at the END of one* — do not read the launcher's `enumerated 0` rule against a
+run still in progress.
+
+**3. `detect_stalled_pipelines()` returns an EMPTY array** — down from three
+(`candy-listings-indexer` 2,687 min, `panini-ingest` 1,343 min, `ufc-sales-indexer` 293 min).
+
+⚠ **`ufc-sales-indexer` cleared on its own and that is NOT a fix** — the GHA backstop happened to
+fire at 03:33Z. Its cron-job.org primary is still dead and the backstop still delivers ~16 of 48
+runs, so it will re-breach. **That filing stands and still needs Trevor.**
+
 ### 2026-08-26 · SHIPPED (code) — the candy sweep's real cost was **~1,600 sequential round trips**; batching them is a measured **25x** fewer queries per page
 
 Acts on the problem the previous entry identified but explicitly did NOT fix: **a ~385 s sweep
