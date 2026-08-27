@@ -119,13 +119,42 @@ const ME_FETCH_TIMEOUT_MS = 15_000
 // tick writes NO terminal row, so the failure is invisible to `pipeline_runs`
 // and reads as "the cron never fired".
 //
-// 240s leaves ~60s of headroom under maxDuration for the upserts, the
-// activities walk and the deactivation pass that follow, so the sweep ALWAYS
-// reaches its own logging. A deadline break refreshes fewer prices and reports
-// `sweep_complete: false`; it cannot destroy data, because deactivation here is
-// evidence-based (an explicit delist or fill from the activities feed), never
-// absence-based, and `sweepComplete` gates nothing but reporting.
-const SWEEP_BUDGET_MS = 240_000
+// 🚨 THE VALUE IS 600s, NOT THE 240s YOU WOULD DERIVE FROM `maxDuration = 300`,
+// AND THE DIFFERENCE IS MEASURED. Every SUCCESSFUL run of this sweep in the
+// retained `pipeline_runs` window took **375,699 / 389,236 / 391,226 ms** — all
+// well ABOVE the 300s maxDuration — and all three completed AND wrote their
+// terminal row. `extra.duration_ms` is computed as `Date.now() - startedMs`,
+// the SAME clock this budget uses, so those numbers are directly comparable:
+// **a 240s budget would have truncated every healthy sweep on record.** That
+// was the first value here and it was a regression, caught only by reading the
+// duration distribution instead of reasoning from the declared ceiling.
+//
+// ⭐ The lesson: `maxDuration` is what the platform DECLARES; the success band
+// is what the route actually gets. They disagree here (Fluid Compute does not
+// bill or bound `after()` work the way a naive reading of maxDuration implies),
+// so a deadline derived from the declared ceiling is derived from the wrong
+// number. **Size a budget off the observed distribution of successes, never off
+// the config.**
+//
+// 600s therefore sits ~1.5x above the observed max: it NEVER truncates a healthy
+// sweep, while still capping the aggregate worst case, which per-request timeouts
+// alone cannot (MAX_PAGES 100 x 15s = 1,500s). The per-call
+// ME_FETCH_TIMEOUT_MS above is the real hang protection; this is the backstop
+// for many-slow-calls rather than one-stuck-call.
+//
+// ⚠ SEPARATE, LARGER PROBLEM this budget does NOT solve, stated so nobody reads
+// the timeout work as a fix for it: a ~385s sweep against a 300s maxDuration is
+// OVER BUDGET BY DESIGN, which is why terminal rows are rare and most ticks die.
+// The cost is dominated by per-listing round trips (~1,600 listings x 1-2
+// sequential supabase lookups each); the DB side of each is an Index Only Scan
+// at ~1.4ms, so it is ROUND-TRIP COUNT, not query cost. Batching those lookups
+// is the real fix. Filed, not attempted here.
+//
+// A deadline break refreshes fewer prices and reports `sweep_complete: false`;
+// it cannot destroy data, because deactivation here is evidence-based (an
+// explicit delist or fill from the activities feed), never absence-based, and
+// `sweepComplete` gates nothing but reporting.
+const SWEEP_BUDGET_MS = 600_000
 
 async function fetchActivities(offset: number): Promise<MeActivity[]> {
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=500`
