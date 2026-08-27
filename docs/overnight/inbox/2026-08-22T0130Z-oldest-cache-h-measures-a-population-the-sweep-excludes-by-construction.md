@@ -98,3 +98,65 @@ today's definition, which is the point.
 to correct a number **nothing automated reads** is the wrong trade. **Batch it into the 20:00–00:00Z
 window** with the other pending migrations (the `refresh_wmc_fmv_changed` CTE rewrite in the 00:10Z
 filing is a natural pair). Nothing degrades further by waiting — the metric is wrong at a constant rate.
+
+---
+
+## 6. ⭐ RE-MEASURED 2026-08-27 ~08:55 PT (15:55Z) — mechanism confirmed six days on, the missing contrast number, and it caught a SECOND reader
+
+**Nothing new is claimed and nothing is re-filed.** This appends three things the original could not have:
+a dated re-measurement, the number this metric *should* be reporting, and a fresh instance of it
+misleading someone — me.
+
+### The mechanism is confirmed, exactly as predicted
+
+| | 2026-08-21 filing | 2026-08-27 re-read | predicted |
+|---|---|---|---|
+| `oldest_cache_h` | ~308 | **442.9** | +1.0/hour, never falls |
+
+**308 → 442.9 across 5.6 days is +1.00/hour to two decimals.** The 21 rows are still frozen at the same
+2026-08-09 bulk-write instant, still `cached_moment_count = 0`, still holding zero `wmc` rows. §1's
+"the 308h age is intentional" holds without amendment.
+
+### ⭐ The contrast number, which the original filing did not state
+
+Computed with the **queue's own predicate** (`EXISTS` applied BEFORE the `GROUP BY`, i.e. exactly what
+`v_pairs` selects):
+
+| | |
+|---|---|
+| pairs with `wmc` rows | 21 |
+| **eligible right now** | **15** — matches the `wallets_total` the sweep reports |
+| **oldest ELIGIBLE staleness** | **15.1 h** |
+| average | 10.0 h |
+| **eligible over 7 days** | **0** |
+| **reported `oldest_cache_h`** | **442.9 h** |
+
+⭐ **So the metric overstates the thing it is named for by ~29×, and the sweep is very nearly keeping
+up** — 15.1 h against a 6 h target, with nothing starved. **That is the sentence the original filing was
+missing:** it proved the number is meaningless, but not that the underlying health is FINE. Both halves
+matter, because "the metric is broken" and "the sweep is behind" would need opposite responses.
+
+### ⚠ It caught a second reader, and the near-miss is the reusable part
+
+The original says the figure *"misled me for six queries this evening"*. **It did the same to me, worse.**
+Re-deriving staleness I aggregated per **wallet** with `bool_or(has_moments)` instead of filtering rows
+by `EXISTS` before grouping — mixing the frozen zero-rows back into the population — and got **"11 of 21
+eligible wallets over 7 days stale, oldest 442.9 h"**. On that basis I was one step from filing a
+**user-facing alarm** (these columns back the dashboard, `/profile` and `/share` cards). The true figure
+is **zero over 7 days**.
+
+⭐ **The rule that would have prevented it, and it is already in this repo: never pair a count from one
+population with a property sampled from another.** `bool_or` at the wallet level and `EXISTS` at the row
+level are *different populations*, and the difference is invisible in the output — both produce a tidy
+per-wallet age. **The only safe way to re-derive a queue's health is to copy the queue's predicate
+verbatim, including WHERE the filter sits relative to the GROUP BY.**
+
+### The §5 blocker was re-read rather than inherited — and it still stands
+
+§5 defers the fix because `apply_migration` costs a **~10–20 s burst of user-facing `PGRST002` 500s** and
+says to batch it into the 20:00–00:00Z window. ✅ **Re-derived, not assumed** (this repo's rule that a
+recorded decision NOT to act is the one nobody re-checks). It holds, and today more strongly: it is
+**08:55 PT — daytime**, and **three `apply_migration` bursts have already been spent today** (06:24Z,
+15:17Z, 15:21Z). Spending a fourth on a number with **no runtime consumer** is exactly the trade §5
+rejects. ⭐ **The fix in §5 is still correct as written and still cheap** — one `EXISTS` clause plus the
+property-pinning test. **It should ride along with the next migration that has its own reason to run.**
