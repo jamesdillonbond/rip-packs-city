@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ VERIFIED ON THE NATURAL CADENCE — three consecutive scheduled candy sweeps, all complete, **21.8–33.1 s** against a 375–391 s baseline
+
+The batching entry's caveat was explicit: *"one tick is not a rate."* Three consecutive **scheduled**
+ticks (not manual triggers) now close it:
+
+| tick (UTC) | duration | pages_walked | sweep_complete | budget_exhausted | activities_seen |
+|---|---:|---:|---|---|---:|
+| 06:35 | 25,011 ms | 16 | true | false | 1,000 |
+| 09:35 | 21,786 ms | 16 | true | false | 1,000 |
+| 12:35 | 33,139 ms | 16 | true | false | 1,000 |
+
+All `ok`, all **1,677 found / 1,677 upserted**, all walking the full 16-page book. Against the
+pre-outage success band of **375,699 / 389,236 / 391,226 ms**, that is a sustained **~13–18×** — and
+unlike the single 18.7 s manual tick, this is the cron's own path.
+
+⭐ **`budget_exhausted: false` on all three is the load-bearing field**, not the duration: the 600 s
+deadline is now pure backstop with an order of magnitude of headroom, which is what it should be.
+ⓘ `deactivated: 0` on all three is expected, not a regression — the 51 stale asks were retired by the
+first complete sweep; there is nothing left to retire until asks actually end.
+
+⚠ **Still a 24 h window on one book size.** The claim that holds is *"the round-trip bottleneck is
+gone"*; `budget_exhausted` remains the instrument to watch, and it is now meaningful in both
+directions.
+
+### 2026-08-27 · ⚪ NO-PUSH cloud night — nothing shipped, health clean, one fresh operator finding (ufc-sales-indexer trigger dead)
+
+**Genuine overnight (01:03 PT), NO-PUSH cloud session** (mount has no `remote.origin.pushurl`; `git push --dry-run` → *"could not read Username"*). DB migrations + artifact repair were available; **nothing was clearly-safe + net-positive to ship.** Security clean on all four invariants; post-ship watch on the 08-26 Claude-Code DB ships (reconcile logging fix, pg17 index repair) found **no regression**. Two standing trust breaches only — `public_board_slow_count` 5→7 and `unmapped_resolution_backlog_max` 348→357, both known IO-saturation / structural class (`trust_precompute_max_age_hours`=5.27 FRESH, so real not rollback). Vercel 50 groups all saturation-class, no new non-saturation signature. Sentry still dark (quota-exhaustion root, settled 08-26). Artifacts 11, none broken. Editions 27,257→27,299; DB 13,953→14,004 MB.
+
+**Fresh finding, QUEUED (operator):** `ufc-sales-indexer` fired **11×/24h vs ~80–83** for the three healthy sales indexers, silent 273m — its **cron-job.org trigger is dead** and only the GHA `Sales Indexers Backstop` fires it (~16/day, ~77m gaps), so it periodically crosses the 240m smoke threshold and reds `Smoke Tests` on `main`. **The alarm is correct — do not silence.** Fix = recreate/re-enable the UFC entry in the cron-job.org console (auth-gated). No sales lost (UFC dormant ~96d). Filing: `inbox/2026-08-27T0250Z-…`.
+
+Also re-confirmed queued (no action available this run): 48 inert-`statement_timeout` pg_cron jobs incl. jobid 256 failing daily (inbox 0450Z; fix cuts against "never raise a timeout under saturation"); cron waste = schedule alignment on `cron_heavy`/pack-EV jobs (inbox 0430Z, off-limits); unbounded-fetch class 29 sites (code, packaged in CLAUDE-CODE-HANDOFF 0420Z); #20/#30/#38 ingest; #22 stale credential branch. Handoff: `docs/handoff-2026-08-27-overnight-pass.md`. Revert path: n/a (nothing shipped). ⚠ NO-PUSH — this entry + metrics + handoff are on the MOUNT, uncommitted; Trevor's box/Claude Code commit them normally.
+
 ### 2026-08-26 · ✅ SHIPPED (DB) — `reconcile-saved-wallet-stats` recorded **10 ms for runs that took 27 seconds**; the cause was a shared helper that is correct for all 14 other callers
 
 **The instrument, not the pipeline.** Chasing a 77.3% failure rate on this hourly job, the failures turned
