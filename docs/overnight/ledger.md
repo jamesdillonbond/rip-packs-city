@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — the candy-mlb OG card claimed **"Live secondary FMV"** on a read that never happened, and the guard for that exact defect had been **enrolling cards by their COMMENTS**
+
+**Three defects, each of which hid the next.**
+
+**1. The card (`app/api/og/insights/candy-mlb/route.tsx`).** It read
+`const { data } = await sb…`. supabase-js **RESOLVES** with `{ data: null, error }` rather than
+throwing, so a failed read never reached the `catch`, left the counters at `null`, and fell through
+to the SAME branch as a genuinely empty board — publishing **"Live secondary FMV for the 2026 MLB
+Base Series"** off a read that failed. **A claim of LIVENESS is the worst thing to synthesise from a
+failure.** Now: `error` is destructured, a `fetched` flag separates the three states, and a failed
+read says *"Couldn't load the live board — open the page for current data."* ⓘ The
+successful-but-unpriced branch is deliberately unchanged — it is a description, not an unmeasured
+claim. Flagged as shippable-alone by [inbox 2026-08-26T1640Z](inbox/2026-08-26T1640Z-the-og-honesty-convention-is-structurally-unavailable-to-supabase-backed-cards.md).
+
+**2. The card's own test could not see it.** Its "when the view read fails" case mocked the client
+**THROWING** — a shape supabase-js never produces — so it proved the card survives an impossible
+failure while blind to the real one, and it asserted only that *a* PNG came back, never what the PNG
+**said**. Both halves fixed: the real `{ data: null, error }` shape is now covered, and a new
+`__tests__/api-og-insights-candy-mlb-honesty.test.ts` drives all three states through the `next/og`
+capture harness and asserts **rendered text**. ✅ **Proven against the offender**: run against the
+old body it fails with `expected '…Live secondary FMV for the 2026 MLB Base Series…' not to contain
+'Live secondary FMV'`. It asserts the **ABSENCE of the false claim**, not the presence of an error
+string, and carries a not-vacuous arm (every other assertion is a `not.toContain`, which passes for
+free against an empty string).
+
+🚨 **3. THE ONE WORTH READING — the family guard was selecting its POPULATION from raw source,
+comments included.** `__tests__/api-og-insights-empty-vs-unavailable.test.ts` picks its 15 cards with
+`readFileSync(p).includes("boardEmptyCopy(")`. Adding a comment to candy-mlb **explaining why it
+cannot adopt that helper** contained the literal `boardEmptyCopy(` — and **enrolled the card in the
+guard**, which then failed it on fetch-driven assertions it structurally cannot satisfy (the card
+reads `supabaseAdmin` directly and deliberately, because a self-fetch is 302'd to /login while the
+surface is launch-gated, so a `globalThis.fetch` mock cannot drive it at all).
+
+⭐ **That file already warned about precisely this, one function above the offending line:** *"Any
+check that greps source for user copy must strip comments — including the one you are about to
+write."* The warning was written for its `loading`-claim sweep and **not applied to the selector
+sitting directly beneath it.** `boardCards()` now calls `stripComments()`.
+
+**The durable rule, and it is a new one: a guard's POPULATION is as comment-sensitive as its
+ASSERTIONS, and it is the half nobody re-checks — because a wrong population still reports a
+number.** The guard stayed green the whole time; it simply measured a different set. Same family as
+*"ask what a passing guard is structurally SILENT about"*, but one level up: not what it asserts,
+what it asserts it ON.
+
+⭐ **Also worth recording: this vindicates the 1640Z filing's judgement and corrects its mechanism.**
+That filing wrote and REVERTED this fix because adopting `boardEmptyCopy` would enrol the card in an
+incompatible guard. **It was right that adoption enrols — and it turns out even MENTIONING it did.**
+
+**Verification:** all 4 OG test files green (119 tests); the guard's own not-vacuous arm
+(`cards.length >= 15`) still holds after the population fix, so the set did not collapse; `tsc`
+clean. ⚠ **Full-suite caveat:** `__tests__/api-allday-listings-indexer.test.ts` failed once under
+full-suite load with `Hook timed out in 10000ms` — it passes in isolation in 667 ms, is unrelated to
+every file changed here, and passed in an earlier full run tonight. Timing-shaped, not an assertion
+failure. CI is the arbiter.
+
+**Revert path:** `git revert` the code commit. No DB or prod-state change; OG cards are
+`force-dynamic` so the next request re-renders.
+
 ### 2026-08-26 · SHIPPED (comment correction on `main`) + FILED — `ufc-sales-indexer` has only the flaky GHA backstop left, and that backstop delivers **16 of its 48** scheduled runs a day
 
 **Why this matters beyond UFC.** `Smoke Tests` went red on `main` (green 02:09:45Z → hard-fail
