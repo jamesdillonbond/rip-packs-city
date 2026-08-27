@@ -337,6 +337,8 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
     return Number.isFinite(t) ? t : null
   })
   useEffect(() => {
+    // hydration-safe: post-mount only — this is the SWAP to the live clock that
+    // makes the first render deterministic; it runs after hydration.
     setNowMs(Date.now())
   }, [])
 

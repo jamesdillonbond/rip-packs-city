@@ -79,6 +79,35 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // a 40-entry allowlist is theatre. Rule B stays a BAN inside the insights roots
 // (where it is genuinely at zero) and a site-wide RATCHET everywhere else.
 
+// ── RULE C ADDED 2026-08-26, AFTER THIS GUARD WAS GREEN ON A LIVE #418 ─────
+// Rules A and B are about FORMATTING — the runtime timezone and the runtime
+// locale. Both were green on 2026-08-26 while `/insights/underpriced-serials`
+// threw React #418 on the production site, caught by `E2E DOM Smoke` at 13:37Z
+// and 21:09Z (all three retries, both runs).
+//
+// The cause was a class neither rule can see: **reading the WALL CLOCK during
+// render**. `UnderpricedSerialsBoardClient` computed `listingsAgeHours` from
+// `Date.now()` in a `useMemo` and rendered it two ways — a `>= 4` branch that
+// emits an element or nothing, and a `Math.round(...)h ago` caption. No
+// formatting API is involved, so Rule A's `.toLocale*` scan is structurally
+// blind to it. **A guard can be exactly right about the API it polices and
+// silent about the defect standing next to it** — the thing to ask of a green
+// guard is what it is SILENT about, not whether it passes.
+//
+// ⚠ AND THE SERVER/CLIENT CLOCK GAP IS NOT THE `revalidate` WINDOW. Next serves
+// the stale cached page while regenerating, so on a low-traffic site the served
+// HTML can be hours old: measured 2026-08-27 02:40Z, that page's own server
+// stamp read 00:12:06Z — **2.5 h earlier**. Any threshold or rounding boundary
+// between the two renders is a mismatch, which is why the observed error was
+// `args[]=HTML` (STRUCTURAL) rather than `args[]=text`.
+//
+// Population when the rule was added: **1 real defect** (fixed by anchoring to
+// the `initialFetchedAt` prop, the same two-phase shape as TopSalesBoardClient
+// and FreshnessStamp) and **3 correct sites** that now carry the marker — a
+// mount-gated call site, a post-mount-only fetch, and the swap effect itself.
+// So the insights roots are at ZERO unmarked and a ban costs no allowlist;
+// site-wide is 57, which is a ratchet population, not a ban population.
+
 const INSIGHTS_ROOTS = ["app/insights", "components/insights"]
 const SITE_ROOTS = ["app", "components"]
 
@@ -88,6 +117,12 @@ const SITE_ROOTS = ["app", "components"]
 // once as server-page-data-access-ratchet's `pages.length > 10`. Lower it when
 // you drain some; never raise it to make a new violation pass.
 const RULE_B_SITEWIDE_CEILING = 79
+
+// Site-wide Rule-C population, measured 2026-08-26 AFTER the one live defect was
+// fixed and the three correct sites were marked. ⚠ Same discipline as Rule B's:
+// this is a CEILING (`<=`), satisfiable at zero, and it is lowered when sites are
+// drained — never raised to admit a new one.
+const RULE_C_SITEWIDE_CEILING = 57
 
 /**
  * Blank out comments, preserving offsets.
@@ -170,6 +205,37 @@ export function findUnsafeLocaleCalls(src: string): Violation[] {
 }
 
 /**
+ * Rule C — find every WALL-CLOCK read: `Date.now()` and the no-argument
+ * `new Date()`.
+ *
+ * ⚠ Deliberately NOT `new Date(iso)`. Parsing a value that came from the server
+ * is deterministic on both sides and is what every honest formatter does; it is
+ * the *undated* form — the one that asks the machine what time it is now — that
+ * cannot agree across two renders separated by an unbounded cache window.
+ *
+ * ⚠ This CANNOT tell a render-path read from a post-mount one, and that is by
+ * design: the same call is a defect in a `useMemo` and correct inside a
+ * `useEffect`. The escape is the co-located `hydration-safe: <reason>` marker,
+ * for exactly the reason Rule A uses one — a central allowlist drifts both ways,
+ * while a marker makes a new violation visible by default and costs the author a
+ * written reason where the next reader is standing.
+ */
+export function findWallClockReads(src: string): Violation[] {
+  const out: Violation[] = []
+  const re = /(\bDate\.now\s*\(\s*\)|\bnew\s+Date\s*\(\s*\))/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const line = src.slice(0, m.index).split("\n").length
+    out.push({
+      line,
+      reason: "wall-clock read (anchor it to a server-stamped prop, or gate the call site on mount)",
+      snippet: m[0].replace(/\s+/g, " "),
+    })
+  }
+  return out
+}
+
+/**
  * True when the RAW source carries a justified `hydration-safe:` marker for a
  * call whose head sits on 1-based `line`.
  *
@@ -207,6 +273,27 @@ function scanRoots(roots: string[], keep: (v: Violation, raw: string) => boolean
       const raw = readFileSync(full, "utf8")
       if (!isClientFile(raw)) continue
       const violations = findUnsafeLocaleCalls(stripComments(raw)).filter((v) => keep(v, raw))
+      if (violations.length) out.push({ file: relative(process.cwd(), full).split(sep).join("/"), violations })
+    }
+  }
+  return out
+}
+
+/**
+ * Rule C's scanner. Same walk and the same marker escape as Rule A's, but a
+ * separate predicate — kept separate on purpose so a change to one rule cannot
+ * silently widen or narrow the other.
+ */
+function scanWallClock(roots: string[]): Scanned[] {
+  const out: Scanned[] = []
+  const seen = new Set<string>()
+  for (const root of roots) {
+    for (const full of walk(join(process.cwd(), root))) {
+      if (seen.has(full)) continue
+      seen.add(full)
+      const raw = readFileSync(full, "utf8")
+      if (!isClientFile(raw)) continue
+      const violations = findWallClockReads(stripComments(raw)).filter((v) => !hasHydrationSafeMarker(raw, v.line))
       if (violations.length) out.push({ file: relative(process.cwd(), full).split(sep).join("/"), violations })
     }
   }
@@ -414,5 +501,109 @@ describe("client date formatting is hydration-safe site-wide", () => {
       expect(ruleA.length, f + " no longer has the Rule-A call this pin describes").toBeGreaterThan(0)
       for (const v of ruleA) expect(hasHydrationSafeMarker(raw, v.line), f + ":" + v.line).toBe(true)
     }
+  })
+})
+
+// ── RULE C (added 2026-08-26) ──────────────────────────────────────────────
+// A wall-clock read during render. See the header for the live #418 this was
+// green on, and for why Rules A and B are structurally blind to it.
+
+describe("hydrated insights components do not read the wall clock during render", () => {
+  it("the Rule-C enumerator actually inspects the insights client tree (not vacuously passing)", () => {
+    // ⚠ Asserts on what was INSPECTED, never on the dirty count — a threshold on
+    // violations goes red the moment the population reaches zero, which is the
+    // goal. This repo has shipped that inversion once already.
+    const inspected = INSIGHTS_ROOTS.flatMap((r) => walk(join(process.cwd(), r))).filter((f) =>
+      isClientFile(readFileSync(f, "utf8")),
+    )
+    expect(inspected.length).toBeGreaterThan(15)
+    // And the predicate must be able to SEE something in this tree at all: the
+    // marked sites prove the scan reaches real call sites rather than matching
+    // nothing everywhere.
+    const withMarkersIgnored = INSIGHTS_ROOTS.flatMap((r) => walk(join(process.cwd(), r)))
+      .filter((f) => isClientFile(readFileSync(f, "utf8")))
+      .flatMap((f) => findWallClockReads(stripComments(readFileSync(f, "utf8"))))
+    expect(withMarkersIgnored.length).toBeGreaterThan(0)
+  })
+
+  it("BAN: no insights client component reads the wall clock without a justified marker", () => {
+    const bad = scanWallClock(INSIGHTS_ROOTS)
+    const r = report(bad)
+    expect(
+      r,
+      "React #418 hydration risk (Rule C — wall-clock read).\n" +
+        "The server render and the browser's hydration happen at DIFFERENT times,\n" +
+        "and the gap is NOT bounded by `revalidate` — a stale cached page can be\n" +
+        "hours old. Fix by anchoring to a server-stamped prop (see\n" +
+        "UnderpricedSerialsBoardClient / TopSalesBoardClient / FreshnessStamp), or\n" +
+        "— if the call genuinely cannot run before mount — add an inline\n" +
+        "`hydration-safe: <reason>` comment at the call:\n" +
+        r,
+    ).toBe("")
+  })
+
+  it("RATCHET: the site-wide wall-clock population does not grow", () => {
+    const bad = scanWallClock(SITE_ROOTS)
+    const count = bad.reduce((n, f) => n + f.violations.length, 0)
+    expect(
+      count,
+      "Rule C (wall-clock read) grew past its ceiling of " +
+        RULE_C_SITEWIDE_CEILING +
+        ".\n" +
+        report(bad),
+    ).toBeLessThanOrEqual(RULE_C_SITEWIDE_CEILING)
+  })
+
+  // ── guards-the-guard ─────────────────────────────────────────────────────
+
+  it("flags the EXACT pre-fix underpriced-serials source", () => {
+    // Verbatim from the defect, so a future edit that reintroduces this shape is
+    // caught by the same string that shipped it.
+    const preFix = "    return (Date.now() - maxTs) / 3_600_000"
+    expect(findWallClockReads(preFix)).toHaveLength(1)
+    expect(findWallClockReads(preFix)[0].reason).toMatch(/wall-clock/)
+  })
+
+  it("accepts the FIXED form — an anchored prop is not a clock read", () => {
+    expect(findWallClockReads("    return (nowMs - maxTs) / 3_600_000")).toHaveLength(0)
+  })
+
+  it("does NOT flag `new Date(iso)` — parsing a server value is deterministic", () => {
+    // The load-bearing distinction. A rule that punished this would red every
+    // honest formatter in the tree and be turned off within a week.
+    expect(findWallClockReads("const d = new Date(iso)")).toHaveLength(0)
+    expect(findWallClockReads("const d = new Date(r.last_seen_at)")).toHaveLength(0)
+    expect(findWallClockReads("const t = Date.parse(iso)")).toHaveLength(0)
+    // ...while the undated form IS the defect.
+    expect(findWallClockReads("const d = new Date()")).toHaveLength(1)
+    expect(findWallClockReads("const d = new Date( )")).toHaveLength(1)
+  })
+
+  it("strips comments, so documenting the banned form is not itself a violation", () => {
+    const documented = ["// was: Date.now() - maxTs", "/* also banned: new Date() */", "const x = nowMs - maxTs"].join(
+      "\n",
+    )
+    expect(findWallClockReads(stripComments(documented))).toHaveLength(0)
+  })
+
+  it("the marker suppresses a clock read, and a BARE marker suppresses nothing", () => {
+    const marked = ["// hydration-safe: post-mount only, inside useEffect", "setNowMs(Date.now())"].join("\n")
+    expect(findWallClockReads(stripComments(marked))).toHaveLength(1) // still SEEN
+    expect(hasHydrationSafeMarker(marked, 2)).toBe(true) // and excused
+    const bare = ["// hydration-safe:", "setNowMs(Date.now())"].join("\n")
+    expect(hasHydrationSafeMarker(bare, 2)).toBe(false)
+  })
+
+  it("the fixed board no longer reads the clock in its render path", () => {
+    // Pins the FIX itself, not just the rule: the memo that produces the stale
+    // caption must ride `nowMs`. Asserted on the property (no unmarked clock read
+    // in the file) rather than on one spelling of the line.
+    const src = readFileSync(
+      join(process.cwd(), "app/insights/underpriced-serials/UnderpricedSerialsBoardClient.tsx"),
+      "utf8",
+    )
+    const unmarked = findWallClockReads(stripComments(src)).filter((v) => !hasHydrationSafeMarker(src, v.line))
+    expect(unmarked, "the fixed board must keep its only clock read inside the post-mount effect").toEqual([])
+    expect(src).toContain("nowMs - maxTs")
   })
 })

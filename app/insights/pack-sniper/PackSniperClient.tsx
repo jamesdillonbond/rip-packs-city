@@ -116,6 +116,10 @@ function fmtRatio(n: number): string {
 
 function relTime(iso: string | null): string {
   if (!iso) return ""
+  // hydration-safe: every call site is gated on `mounted` (RecencyChips, line
+  // ~177), so this never runs during SSR or the first client render. Do NOT
+  // "fix" it by anchoring to a prop — that would freeze a live "listed 3m ago"
+  // chip at page-bake time, which is a regression, not a fix.
   const ms = Date.now() - Date.parse(iso)
   if (!Number.isFinite(ms) || ms < 0) return ""
   const m = Math.floor(ms / 60000)

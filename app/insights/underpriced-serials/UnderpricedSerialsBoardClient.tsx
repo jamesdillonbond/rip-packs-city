@@ -260,6 +260,45 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
 
+  /**
+   * The clock this component renders against — anchored to a PROP for the first
+   * render, swapped to the live clock after mount.
+   *
+   * ── THE DEFECT THIS EXISTS FOR (live, measured 2026-08-26) ───────────────
+   * `listingsAgeHours` below used to read `Date.now()` during render, and the
+   * caption it feeds is BOTH structural (the `>= 4` branch renders an element
+   * or nothing) and textual (`Math.round(...)h ago`). This component is
+   * imported directly by a server page, so it is server-rendered and then
+   * hydrated — and the two renders happen at DIFFERENT wall-clock times.
+   *
+   * ⚠ AND THE GAP IS NOT THE 900 s `revalidate` WINDOW — it is unbounded.
+   * Next serves the stale cached page while it regenerates, and on a
+   * near-zero-traffic site that HTML can be hours old: measured 2026-08-27
+   * 02:40Z, the served page's own server stamp read **00:12:06Z — 2.5 h
+   * earlier**. So the server's `Date.now()` and the browser's routinely sit on
+   * OPPOSITE sides of the 4-hour threshold, which renders the caption element
+   * server-side and nothing client-side. That is React #418 with `args[]=HTML`
+   * — a STRUCTURAL mismatch, which is exactly the flavour `E2E DOM Smoke`
+   * caught on 2026-08-26 at 13:37Z and 21:09Z (all retries, both runs).
+   *
+   * `initialFetchedAt` is when the SERVER asked, i.e. the wall clock at bake
+   * time, so anchoring to it makes the server render and the first client
+   * render byte-identical. Same shape as `TopSalesBoardClient` (fixed for the
+   * identical class 2026-08-16) and `components/insights/FreshnessStamp`.
+   *
+   * `null` means we have no deterministic anchor (a failed seed carries no
+   * stamp) — the caption then renders nothing until mount rather than guessing.
+   */
+  const [nowMs, setNowMs] = useState<number | null>(() => {
+    const t = initialFetchedAt ? Date.parse(initialFetchedAt) : NaN
+    return Number.isFinite(t) ? t : null
+  })
+  useEffect(() => {
+    // hydration-safe: post-mount only — this runs after the first client render,
+    // so it can never contribute to the SSR/hydration diff.
+    setNowMs(Date.now())
+  }, [])
+
   const [headline, setHeadline] = useState<HeadlineMode>("all")
   const [tier, setTier] = useState<TierFilter>("all")
   const [quality, setQuality] = useState<QualityFilter>("all")
@@ -345,8 +384,11 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
       if (Number.isFinite(t) && t > maxTs) maxTs = t
     }
     if (!maxTs) return null
-    return (Date.now() - maxTs) / 3_600_000
-  }, [rows])
+    // ⚠ Rides `nowMs`, NEVER `Date.now()`. A useMemo runs during RENDER, so a
+    // live clock read here is a server/client divergence by construction.
+    if (nowMs == null) return null
+    return (nowMs - maxTs) / 3_600_000
+  }, [rows, nowMs])
 
   const shareUrl = `${SITE_URL}/insights/underpriced-serials`
   const tweetIntent = useMemo(() => {

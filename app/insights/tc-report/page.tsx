@@ -112,6 +112,9 @@ function fmtRelDate(iso: string | null | undefined): string {
   if (!iso) return "—"
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return "—"
+  // hydration-safe: `report` starts null and is only ever filled by the
+  // post-mount wallet-paste fetch, so `recent_acquisitions` is empty at SSR and
+  // this formatter cannot contribute to the hydration diff.
   const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
   if (days <= 0) return "today"
   if (days === 1) return "1d ago"
