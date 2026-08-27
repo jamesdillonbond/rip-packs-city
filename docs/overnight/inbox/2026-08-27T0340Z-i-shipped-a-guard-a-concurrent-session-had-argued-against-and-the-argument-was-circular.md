@@ -129,6 +129,28 @@ with ids that are NULL in one snapshot and restored in the next, it is the flip-
 is to skip the arm when the incoming id is NULL. If the ids are all non-NULL and simply different,
 it is a genuine rotation and the rewrite is work, not waste.**
 
+✅ **AND THE INSTRUMENT IS NOW SELF-SAMPLING, so nobody has to sit and watch for it.** The mass event
+has not recurred in the ~55 minutes since (ticks rewrite **1–3 rows**), so its period is longer than
+a single watch and manual polling would have missed it. Armed instead — all via `execute_sql`, so
+**no migration-parity debt** (CLAUDE.md's scratch-DDL rule):
+
+- **`audit_20260827_pack_ask_rewrite_rate`** — pg_cron **jobid 370**
+  (`rpc-audit-pack-ask-rewrite-rate`, `*/5 * * * *`, owned by `postgres`) writes **ONE row per tick**
+  recording how many rows the last sweep actually rewrote. ⭐ **Cheap by construction: 1 row a tick,
+  not 2,981 — an instrument for a write-amplification problem must not be a write-amplification
+  problem.** 288 rows/day.
+- **On a mass tick (`> 100`) it ALSO snapshots the ids** into `audit_20260827_pack_listing_id_churn`.
+  The five manual baselines already captured (03:31 / 03:36 / 03:42 / 03:47 / 03:52Z, **2,981 rows
+  each, zero NULL ids**) are the **BEFORE** side, so the comparison is complete the moment the event
+  fires.
+- **It self-unschedules after 2026-08-29** rather than becoming permanent furniture, and
+  `check_secdef_anon_execute_violations()` returns `[]` with the function revoked from
+  `public`/`anon`/`authenticated`.
+
+**Cleanup when answered:** `SELECT cron.unschedule('rpc-audit-pack-ask-rewrite-rate');` then
+`DROP FUNCTION public.audit_20260827_sample_pack_ask_rewrite_rate();` and `DROP TABLE` both audit
+tables.
+
 ⛔ **Do not "fix" this by dropping `pack_listing_id` from the guard.** That column is written to
 state other code reads; a guard that ignores a column it writes is the original bug in the other
 direction. `DROP TABLE public.audit_20260827_pack_listing_id_churn` once the question is settled.
