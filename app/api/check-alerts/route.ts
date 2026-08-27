@@ -73,6 +73,24 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
+// Per-request cap on the outbound OPS-ALERT calls.
+//
+// 🚨 An alert dispatcher's output is SILENCE, so a hung delivery is the least
+// falsifiable failure shape there is — CLAUDE.md names it the worst sub-class.
+// `fetch()` has no default timeout and this work runs in `after()` under
+// maxDuration 60, where a kill writes NO terminal row: "no alerts sent" would be
+// indistinguishable from "no alerts to send".
+//
+// ⚠ Measured over 48h, this route is ALREADY exceeding its ceiling: 135 runs,
+// avg 9,697 ms, p95 36,255 ms, **max 84,836 ms against a 60,000 ms maxDuration**.
+// The sibling alerts-send shows the same shape more starkly (p95 1,644 ms, max
+// 58,670 ms — within 1.3s of a kill).
+//
+// ⚠ Both senders here already try/catch and return { ok: false, error }, so an
+// abort is RECORDED as a failed send rather than thrown — the alert failure
+// becomes visible instead of silent, which is the entire point.
+const ALERT_FETCH_TIMEOUT_MS = 10_000;
+
 async function sendTelegram(text: string): Promise<{ ok: boolean; error?: string }> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     return { ok: false, error: "TELEGRAM_BOT_TOKEN/CHAT_ID not configured" };
@@ -84,6 +102,7 @@ async function sendTelegram(text: string): Promise<{ ok: boolean; error?: string
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
+        signal: AbortSignal.timeout(ALERT_FETCH_TIMEOUT_MS),
       }
     );
     if (!res.ok) {
@@ -113,6 +132,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<{ o
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from: FROM, to, subject, html }),
+      signal: AbortSignal.timeout(ALERT_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");

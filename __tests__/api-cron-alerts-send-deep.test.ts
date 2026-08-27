@@ -113,6 +113,60 @@ beforeEach(() => {
   process.env.DISCORD_BOT_TOKEN = "disc-token"
 })
 
+describe("alerts-send — every outbound delivery call is time-bounded", () => {
+  // 🚨 WHY THIS ROUTE ESPECIALLY. An alert dispatcher's output is SILENCE, so a
+  // hung delivery is the least falsifiable failure on the platform — CLAUDE.md
+  // names it the worst sub-class. `fetch()` has no default timeout, this work
+  // runs in `after()` under maxDuration 60, and a maxDuration kill writes NO
+  // terminal row: "no alerts sent" would be indistinguishable from "no alerts to
+  // send".
+  //
+  // ⚠ Measured, not speculative: over 48h this pipeline ran 276 times with an
+  // avg of 1,494ms and a p95 of 1,644ms — and a max of 58,670ms against the
+  // 60,000ms ceiling. A route with a 1.6s p95 does not take 58.7s for a normal
+  // reason; that outlier came within 1.3 SECONDS of a kill.
+  //
+  // ⚠ Asserted on the REQUEST INIT, not the source text — a source grep would be
+  // satisfied by the comment you are reading.
+  it.each([
+    ["email", "api.resend.com", { id: "e1" }],
+    ["telegram", "api.telegram.org", { ok: true }],
+  ] as const)("%s delivery passes an abort signal", async (channel, host, body) => {
+    state.claim = { [channel]: [delivery("d1", channel, "target-1")] } as never
+    install()
+    const f = stubFetch([jsonRoute(host, body)])
+
+    await GET(req(channel))
+    await runDeferred()
+
+    const calls = f.calls.filter((c) => c.url.includes(host))
+    // Not vacuous: a run that sent nothing would assert nothing below.
+    expect(calls.length).toBeGreaterThan(0)
+    const unbounded = calls.filter((c) => !c.init?.signal).map((c) => c.url)
+    expect(
+      unbounded,
+      `every ${channel} delivery must carry an AbortSignal — an unbounded one ` +
+        `consumes the whole 60s tick and the run dies without a terminal row`,
+    ).toEqual([])
+  })
+
+  it("discord delivery passes an abort signal on BOTH the DM-open and the message call", async () => {
+    // Discord takes two hops, and the first one (opening the DM channel) is the
+    // one a per-send timeout is easiest to forget.
+    state.claim = { discord: [delivery("d1", "discord", "user-9")] }
+    install()
+    const f = stubFetch([jsonRoute("discord.com", { id: "dm-1" })])
+
+    await GET(req("discord"))
+    await runDeferred()
+
+    const calls = f.calls.filter((c) => c.url.includes("discord.com"))
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    const unbounded = calls.filter((c) => !c.init?.signal).map((c) => c.url)
+    expect(unbounded, "both Discord hops must be bounded").toEqual([])
+  })
+})
+
 describe("alerts-send — healthy drain", () => {
   it("digests one email recipient, marks the row sent, and logs written=sent", async () => {
     state.claim = { email: [delivery("d1", "email", "user@example.com")] }

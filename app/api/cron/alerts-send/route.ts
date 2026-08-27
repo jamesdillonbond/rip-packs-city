@@ -53,6 +53,29 @@ function groupByTarget(deliveries: Delivery[]): Map<string, Delivery[]> {
   return m;
 }
 
+// Per-request cap on every outbound DELIVERY call (Resend / Telegram / Discord).
+//
+// 🚨 WHY THIS ROUTE ESPECIALLY. `fetch()` has no default timeout, this dispatcher
+// runs inside `after()` under `maxDuration = 60`, and its output is SILENCE — so
+// a hung delivery call is the least falsifiable failure on the platform. CLAUDE.md
+// names this the worst sub-class for exactly that reason: nobody notices alerts
+// that were never sent.
+//
+// ⚠ AND THE DISTRIBUTION SAYS IT IS ALREADY HAPPENING, not that it might.
+// Measured over 48h: 276 runs, avg 1,494 ms, **p95 1,644 ms** — and **max
+// 58,670 ms against the 60,000 ms ceiling**. A route whose p95 is 1.6s does not
+// take 58.7s for a normal reason; that outlier came within 1.3 SECONDS of a
+// maxDuration kill, and a kill here writes no terminal row, so "no alerts sent"
+// would be indistinguishable from "no alerts to send".
+//
+// 10s is generous for three transactional APIs that normally answer in ~1.5s.
+//
+// ⚠ An abort THROWS, which is the desired shape: `drainChannel` already wraps each
+// recipient group in try/catch and counts it as a failed delivery, so one stuck
+// recipient is recorded and the batch CONTINUES — instead of one stuck recipient
+// silently costing every remaining recipient their alert.
+const DELIVERY_TIMEOUT_MS = 10_000;
+
 async function sendEmailGroup(to: string, group: Delivery[]): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("RESEND_API_KEY missing");
@@ -61,6 +84,7 @@ async function sendEmailGroup(to: string, group: Delivery[]): Promise<void> {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: "Rip Packs City <noreply@rippackscity.com>", to, subject, html, text }),
+    signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
@@ -82,6 +106,7 @@ async function sendTelegramGroup(chatId: string, group: Delivery[]): Promise<voi
       parse_mode: "HTML",
       disable_web_page_preview: false,
     }),
+    signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`telegram ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
@@ -94,6 +119,7 @@ async function sendDiscordGroup(userId: string, group: Delivery[]): Promise<void
     method: "POST",
     headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ recipient_id: userId }),
+    signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
   });
   if (!dmRes.ok) throw new Error(`discord dm ${dmRes.status}: ${(await dmRes.text()).slice(0, 200)}`);
   const dm = await dmRes.json();
@@ -114,6 +140,7 @@ async function sendDiscordGroup(userId: string, group: Delivery[]): Promise<void
         `_Reply with_ \`/ask <question>\` _— plain messages don't reach the bot here._`,
       embeds: buildDiscordEmbeds(group),
     }),
+    signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
   });
   if (!msgRes.ok) throw new Error(`discord msg ${msgRes.status}: ${(await msgRes.text()).slice(0, 200)}`);
 }
