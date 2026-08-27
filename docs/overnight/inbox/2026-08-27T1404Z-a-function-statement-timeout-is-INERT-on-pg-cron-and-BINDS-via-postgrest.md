@@ -118,3 +118,63 @@ nobody re-derives it.
 aggregate every 3 h to discover a handful of new addresses. Maintaining `wallet_usernames` rows at
 ingest (username NULL) would turn the resolver into `WHERE username IS NULL`. **That is an
 ingest-path change and is NOT auto-shippable** — filed, not built.
+
+---
+
+## 7. ⭐⭐ ADDENDUM, same session ~07:55 PT — there is a THIRD ceiling above both of these, and it CORRECTS §4 of this filing
+
+§4 concluded *"a `supabaseAdmin` RPC is bounded by whatever its FUNCTION declares."* **That is true only
+up to ~120 seconds.** Found by pulling on a different thread — six pipelines all failing with the same
+error string — and it changes the actionable conclusion, so it is recorded here rather than in a new file.
+
+### The measurement, controlled in both directions
+
+One `SECURITY INVOKER` function declaring `SET statement_timeout TO '600s'`, called through
+`/rest/v1/rpc/…` with the service-role key, at two sleep lengths:
+
+| sleep | result |
+|---|---|
+| **150 s** | **HTTP 504 after 125 s** — body `upstream request timeout` |
+| **110 s** | **HTTP 200 after 111 s** — `COMPLETED 110s; timeout=10min` |
+
+⭐ **The positive control is what makes this readable.** The 110 s run proves the 600 s declaration really
+was in force (`service_role`'s 30 s would have killed it at 30), *and* that nothing else was broken. The
+150 s run then fails at **125 s** with a **504** — an HTTP status, not a Postgres error code. **So the
+Supabase gateway hard-caps a PostgREST request at ~120 s regardless of role or declaration.**
+
+### ⛔ What this changes
+
+**The declaration ceiling and the gateway ceiling compose, and the lower one wins:**
+
+| path | what bounds a long call |
+|---|---|
+| pg_cron (`SELECT public.fn()`) | the role's timeout — **the declaration is INERT** (44/248 overrun, worst 596,559 ms) |
+| PostgREST / `supabaseAdmin` | `service_role` 30 s, **raised by the callee's declaration**, **hard-capped by the gateway at ~120 s** |
+
+⭐⭐ **Therefore a declaration above ~120 s is unreachable on BOTH paths** — inert where pg_cron calls it,
+gateway-killed where PostgREST does. **48 of the 196 declaring functions are in that band** (up to
+**900 s**), including `fmv_thin_sale_ask_disclosure_refresh` at 900 s and four board refreshes at 600 s.
+⚠ **This does NOT make them safe to strip** — §3's warning stands for the **75 functions declaring 30–120 s**,
+which are exactly the ones the gateway still lets through. **The two groups need opposite treatment, and
+telling them apart requires the 120 s line.**
+
+### ⓘ It also gives six failing pipelines one root
+
+`upstream request timeout` is the gateway's string, not Postgres's — CLAUDE.md already warns the two
+"produce the same number and mean completely different things". Over 24 h these all fail with it:
+`run-insider-detectors` **5/24**, `lock-check-batch` **9/46**, `compute-allday-pack-ev` **6/46**,
+`allday-unmapped-resolver` **8/76**, `populate-pinnacle-wmc-fmv` **2/23** (plus
+`topshot-buyer-backfill-historical` **7/47** on pool exhaustion). ⭐ **That is one ceiling with six
+symptoms, not six bugs** — the same shape as the pg_cron statement-timeout cluster the register already
+records as "one root, not 8". ⚠ **Pipeline `duration_ms` above 125 s does not contradict this** — several
+of these make one RPC per collection, so a tick can burn ~120 s more than once
+(`lock-check-batch` reports `nba_top_shot: … | disney_pinnacle: …`, avg 142 s, max 295 s).
+
+⚠ **Not a fix, and no fix is proposed here.** The lever for each is "make the call finish inside 120 s"
+(smaller batches per RPC), which is per-pipeline route logic. Filed, not built.
+
+ⓘ **One mechanical note worth keeping:** a function created with `execute_sql` is **invisible to
+PostgREST until the schema cache reloads** — the first probe returned `PGRST202 … no matches were found
+in the schema cache`. `NOTIFY pgrst, 'reload schema'` fixes it in a few seconds. This is why
+`apply_migration` causes the documented PGRST002 burst and `execute_sql` DDL does not: only one of them
+reloads.

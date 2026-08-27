@@ -10,6 +10,61 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⭐⭐ MEASURED, nothing shipped — a THIRD timeout ceiling that **corrects my own entry from an hour ago**, and gives six failing pipelines ONE root
+
+**This corrects the entry below it.** That entry concluded *"a `supabaseAdmin` RPC is bounded by its
+CALLEE's declaration."* **True only up to ~120 seconds.** Found by pulling a different thread — six
+pipelines failing with the same error string — which is why it is worth recording rather than filing as a
+detail.
+
+**The measurement, controlled both ways.** One `SECURITY INVOKER` function declaring
+`SET statement_timeout TO '600s'`, called through `/rest/v1/rpc/…` with the service-role key:
+
+| sleep | result |
+|---|---|
+| **110 s** | **HTTP 200 after 111 s** — `COMPLETED 110s; timeout=10min` |
+| **150 s** | **HTTP 504 after 125 s** — body `upstream request timeout` |
+
+⭐ **The positive control is what makes the failure readable.** The 110 s run proves the 600 s declaration
+really was in force (`service_role`'s 30 s would have killed it at 30) and that nothing else was broken;
+only then does the 150 s **504** mean something. Without it, "the call failed at 125 s" is compatible with
+half a dozen boring explanations. **The Supabase gateway hard-caps a PostgREST request at ~120 s
+regardless of role or declaration** — and note it is an **HTTP status, not a Postgres SQLSTATE**, which is
+the tell.
+
+⛔ **THE TWO CEILINGS COMPOSE AND THE LOWER WINS, which splits this morning's population in two.** A
+declaration above ~120 s is **unreachable on BOTH paths** — inert where pg_cron calls it, gateway-killed
+where PostgREST does. **48 of 196 declaring functions are in that band** (up to **900 s**). ⚠ **So my own
+"122 are load-bearing, do NOT strip them" is too broad: it holds for the 75 declaring 30–120 s** — the
+ones the gateway still lets through — **and not for the 48 above it.** The two groups need opposite
+treatment, and the 120 s line is the only thing that separates them. **Corrected in CLAUDE.md,
+`database.md` and known-issues #43 in the same turn as the claim it narrows.**
+
+⭐⭐ **AND IT GIVES SIX PIPELINES ONE ROOT.** `upstream request timeout` is the **gateway's** string, not
+Postgres's — CLAUDE.md already warns the two "produce the same number and mean completely different
+things", and this is that warning cashing out. Over 24 h: `run-insider-detectors` **5/24**,
+`lock-check-batch` **9/46**, `compute-allday-pack-ev` **6/46**, `allday-unmapped-resolver` **8/76**,
+`populate-pinnacle-wmc-fmv` **2/23**. **One ceiling, six symptoms — not six bugs**, the same shape the
+register already records for the pg_cron statement-timeout cluster. ⚠ **A `duration_ms` above 125 s does
+not contradict this**: several make one RPC per collection, so a tick can burn ~120 s more than once
+(`lock-check-batch` avg 142 s, max 295 s, and its error string names two collections).
+
+👉 **No fix proposed and none shipped.** The lever for each is "finish inside 120 s" — smaller batches per
+RPC — which is per-pipeline route logic on live ingest paths, not a config change. ⛔ **Explicitly NOT the
+lever: raising anything.** The declarations already exceed the ceiling that actually binds, so raising
+them is the one guaranteed no-op, and raising a timeout under a saturated instance cuts against the
+standing steer.
+
+ⓘ **One mechanical fact worth keeping:** a function created with `execute_sql` is **invisible to PostgREST
+until the schema cache reloads** — the first probe returned `PGRST202 … no matches were found in the
+schema cache`, and `NOTIFY pgrst, 'reload schema'` fixed it in seconds. **That asymmetry is exactly why
+`apply_migration` causes the documented PGRST002 burst and `execute_sql` DDL does not: only one of them
+reloads.**
+
+**Prod state:** one scratch probe function created and **dropped**; `scratch%` count **0**,
+`check_secdef_anon_execute_violations()` = `[]`. No migration, no schema change, no data mutation.
+**Revert:** docs only. ⚠ CLAUDE.md **displaced, not grown** (39,974 / 40,000).
+
 ### 2026-08-27 · ⭐⭐ SETTLED, nothing shipped to prod — the `proconfig` experiment this repo DESIGNED on 08-17 and could not run has now been run, and **both sides of a two-week argument were right about their own evidence**
 
 **What was open.** `database.md` has carried a contradiction since 08-16. One bullet proves a function's
