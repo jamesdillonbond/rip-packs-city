@@ -16,7 +16,7 @@
 // Returns 204 on success — the client doesn't need a body and we don't
 // want telemetry to ever block UI.
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -84,16 +84,26 @@ export async function POST(req: NextRequest) {
 
   // Fire-and-forget insert. We deliberately swallow errors here — telemetry
   // must never surface as a 5xx in the UI.
-  ;(supabaseAdmin as any)
-    .from("usage_events")
-    .insert({
+  //
+  // ⚠ MEASURED 2026-08-27: this was a FLOATING PROMISE (`.insert(...).then(...)`
+  // with no `await` and no `after()`), and on Vercel the lambda can be frozen the
+  // moment the response is returned — so most beacons were simply never written.
+  // Proven after the proxy bypass landed: four identical anonymous POSTs all
+  // answered 204 and **exactly one** row reached `usage_events`. That also explains
+  // the historical shape — 10 authed rows over 14 days is a TRICKLE, not a stream,
+  // and it looked like "low usage" rather than a dropped write.
+  // `after()` is this repo's documented primitive for work that must outlive the
+  // response; a bare un-awaited promise is not a substitute for it.
+  // ⚠ Do NOT "fix" this by awaiting the insert instead — that puts a DB round-trip
+  // on the UI's critical path, which is the thing fire-and-forget exists to avoid.
+  after(async () => {
+    const { error } = await (supabaseAdmin as any).from("usage_events").insert({
       wallet_address: walletAddress,
       feature_name: feature,
       metadata,
     })
-    .then((r: { error: { message: string } | null }) => {
-      if (r.error) console.log("[telemetry]", feature, r.error.message)
-    })
+    if (error) console.log("[telemetry]", feature, error.message)
+  })
 
   return new NextResponse(null, { status: 204 })
 }
