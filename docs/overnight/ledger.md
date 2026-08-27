@@ -10,6 +10,106 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (Trevor's two decisions) — UFC search pipelines RETIRED on a measured precondition, and the Underpriced-#1s board joins the LIGHT warmer
+
+Both were put to Trevor tonight. Recording the answers verbatim, because both carry conditions that
+matter more than the actions.
+
+## 1. UFC — *"once we've ingested all existing UFC Strike history, we don't need to keep searching"*
+
+⭐ **That is a PRECONDITION, not an instruction, and it was MEASURED rather than assumed:**
+
+| pipeline | runs/30d | rows written | rows found |
+|---|---:|---:|---:|
+| `ufc-sales-indexer` | 672 | **0** | **0** |
+| `ufc-studio-sales-history-backfill` | 272 | **0** | 0 |
+| `ufc-sales-history-backfill` | 222 | **0** | 57 (all already held) |
+
+Plus: newest `ufc_strike` sale **2026-05-13**; **0 sales in 30 d AND 90 d** of 813,934 total;
+coverage spanning the full **2022-02-15 → 2026-05-13** lifetime; and `extra.v2_dapper_typeids_seen`
+has **never once** carried a UFC type id. The repo's own watchlist notes already recorded *"UFC Strike
+Flow market frozen since 2026-05-13 (migrating to Aptos)"*, and **`ufc-listings-indexer` was retired
+this exact way on 2026-07-11** — this is the sales leg following its sibling.
+
+⚠ **Stated precisely: this proves the SCANNERS have stopped yielding, not that we hold every sale
+ever.** The honest claim is "continued scanning returns nothing", which is what the decision needed.
+
+🚨 **A blanket "retire UFC" would have broken working pipelines, and only per-pipeline yield caught
+it:** `ufc-enrichment-drain` wrote **39,934 rows in 30 days**. Also untouched: `ufc-stub-thumbnail-
+resolver`, `wallet-backfill-ufc`. **Retire by MEASURED YIELD, never by collection name.**
+
+**Retired (3 triggers + 3 watchlist rows):** the UFC step in `sales-indexers-backstop.yml` — which was
+the **last live trigger**, cron-job.org's `/api/ufc-pipeline` being already dead — and both
+`/api/cron/ufc-*-history-backfill` entries in `vercel.json` (38 → 36 crons). Watchlist rows set
+`is_active=false` with the full precondition in `notes`. **Routes, the 813,934 sales and every UFC
+surface are untouched**, so this reverses by re-enabling triggers.
+
+✅ Verified: `detect_stalled_pipelines()` = **0**, no UFC entry, and the three working UFC pipelines
+still watched. **The smoke test's chronic UFC flap is gone** — and it was a true positive being
+silenced correctly, by removing the thing it truly reported, not the alarm.
+
+## 2. Underpriced-#1s board — *"do what you think will be best for RPC long term and our users"*
+
+**Chose the LIGHT warmer (`/api/cron/warm`), not `WARM_BOARDS`.** The board is **19,895 ms cold /
+32 ms warm (622×)** on 3,069 buffers — always cold because a 15-min `s-maxage` on a low-traffic public
+route means nearly every execution is the first in a while. There is **no plan defect to fix**.
+
+⭐ **Why the light warmer is the better long-term answer:** `/api/cron/warm` is a pure BUFFER warmer,
+so this adds **~32 ms of sustained work**; `WARM_BOARDS` is a snapshot writer whose cron
+[already loses 3 of 5 boards per tick](inbox/2026-08-15T1200Z-the-insights-cache-warms-half-its-boards-and-reports-perfect-health.md)
+and is called *"a meaningful contributor to the saturation it exists to survive"*. **Adding a sixth
+board to a `Promise.all` losing three of five is how you make it four of six.** On an IO-bound
+instance the cheapest fix that removes the symptom beats the richest one.
+
+⚠ **What I gave up, stated rather than buried:** the snapshot cache would be strictly better for users
+(it survives saturation on a PK-keyed row and gains the stale-but-honest rung). If cold 503s persist,
+that is the next step — not a redesign of this one.
+
+ⓘ The existing test mocked only `.rpc()`, so the board's `.from()` chain threw and the aggregate went
+`ok:false` — **the test caught a real integration gap, not a typo.** Mock extended to both shapes, and
+the third warm target is pinned BY NAME so removing it is a visible test change.
+
+ⓘ A concurrent Cowork session also has commits in this shared tree; they ride along on the same
+branch. Not reviewed here — out of scope for this session.
+
+### 2026-08-26 · SHIPPED (docs) — the 2026-08-26 Cowork cloud patch set (10 commits) applied to `main`, and applying it caught a guard the sender's own verification could not see
+
+**What landed.** All ten patches from `cowork-2026-08-27/` applied with `git am --3way` onto a `main`
+that had moved **14 commits past their `6ef8638` base**, with **zero conflicts**. Contents: the
+`upsert_pack_ask_state` change-detection guard's migration record file, known-issues **#39–#43**, two
+retractions, the Sentry read-scope correction, the pg_cron waste measurement, the
+`statement_timeout`-is-inert proof, and the session handoff.
+
+⚠ **The patch set was INCOMPLETE and the sender could not have known.** It added **8 inbox filings and
+did not update `docs/overnight/inbox/INDEX.md`**, so `__tests__/inbox-index-lists-every-filing.test.ts`
+failed on **two of its five assertions** — the missing entries and the line-1 total (**260 vs 268**).
+Reconciled here: 8 entries added under `## 2026-08-27` (3 → 11) and the header total 260 → 268; the
+guard now passes 5/5.
+
+⭐ **Why the sender's verification missed it, and this is the durable half.** The handoff reported
+*"targeted vitest (11 doc/guard files) — 99/99 pass"* and its full-suite run was **killed by the
+sandbox's 850 s ceiling (`RC=124`) — timed out, not failed.** A curated file list cannot include the
+guard you did not know you tripped, and **a timed-out suite is not a green suite**; the two gaps
+compose into a patch set that is verified and still reddens `main`. **The receiving box, which can run
+the full suite, is the only place this was findable** — so *run the FULL suite after applying a patch
+set, however thoroughly the sender verified it.*
+
+⚠ **Second trap, avoided rather than hit:** `git am --3way "…/000*.patch"` silently applied only
+**9 of 10** — the glob matches `0001`–`0009` but **not `0010`**. It reported success. Caught by
+counting commits against the sender's manifest rather than reading the exit code. **A glob is an
+assertion about filenames; count what it matched.**
+
+ⓘ **Guards, all run in the applied tree:** ledger `^### ` **1116 → 1123** (+6 from the patches, +1 this
+entry) · `find-swallowed-ledger-headings.awk` **3** (baseline, unchanged) ·
+`find-future-dated-ledger-headings.mjs` **0** · `find-clobbered-ledger-headings.mjs` vs `6e63dd89`
+**0** · `check-memory-doc-links.mjs` **129/129 resolve** · `check-retired-rules.mjs` clean ·
+CLAUDE.md **39,985 / 40,000, untouched** · `tsc --noEmit` clean · **full `npm test` green.**
+
+**Revert path:** `git revert` the eleven commits, or `git reset --hard 6e63dd89` before anything builds
+on them. **No code and no prod DB state changed by this push** — the DB objects the patches DESCRIBE
+were applied live by the Cowork session itself (audit tables + pg_cron **jobid 370**, which
+**self-unschedules 2026-08-29**; cleanup SQL is in the handoff and in `APPLY.md`).
+
 ### 2026-08-26 · SHIPPED (docs) — tonight's six instrument lessons PROMOTED out of the ledger, and CLAUDE.md is now at **39,985 / 40,000**
 
 CLAUDE.md's own instruction is that *a fact left only in a session log stops being read*. Tonight
