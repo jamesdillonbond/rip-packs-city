@@ -50,13 +50,44 @@ taken as precedent for touching `proxy.ts` unattended.**
 **Verification:** `npx tsc --noEmit` clean; `proxy-is-public-path` + `proxy-dispatch` +
 `proxy-page-rate-limit` **213/213**; full suite green.
 
-⏳ **NOT YET VERIFIED IN PRODUCTION — stated as pending, not claimed.** **Falsifier, in order:** (1) an
-anonymous/incognito load of `/insights/pack-sniper` must show `POST /api/telemetry` → **204**, no
-`/login` redirect; (2) after some anon traffic,
-`SELECT count(*) FROM usage_events WHERE wallet_address = 'anon' AND occurred_at > now() - interval '1 hour'`
-must be **> 0**. ⚠ **If (1) passes and (2) stays 0, the proxy is fixed and something downstream is
-dropping the write — do not read (1) as sufficient.** ⚠ The ledger is committed BEFORE the code so the
-code commit is the tip and `ignoreCommand` cannot skip the Vercel build.
+✅ **VERIFIED IN PRODUCTION — and the falsifier's SECOND clause did its job, which is the point of having
+written it.** (1) An anonymous `POST /api/telemetry` now returns **204** (was **405**), with
+`track-funnel` at 200 as the control. (2) **`cc-probe-1` landed in `usage_events` as the first
+`wallet_address = 'anon'` row** — so the proxy fix is correct and necessary end-to-end.
+
+⛔⛔ **BUT ONLY 1 OF 4 PROBES LANDED, AND THAT EXPOSED A SECOND DEFECT THE HANDOFF DID NOT FIND.** All
+four answered 204; exactly one row appeared. The route's insert was a **FLOATING PROMISE** —
+`.insert(...).then(...)` with no `await` and no `after()` — and on Vercel the lambda can be frozen the
+moment the response returns, so most beacons were never written at all. ⭐ **This also re-reads the
+positive control:** *10 authed rows over 14 days* was never "authed telemetry works fine"; it is a
+**trickle** — the survivors of the same dropped write, which looked like low usage rather than a bug.
+**So the anon stream was gated out AND the authed stream was leaking, and the second fault was invisible
+behind the first.**
+
+✅ **Fixed in the same push** by wrapping the insert in **`after()`** — this repo's documented primitive
+for work that must outlive the response. ⚠ **Deliberately NOT "just await the insert"**: that would put a
+DB round-trip on the UI's critical path, which is precisely what fire-and-forget exists to avoid.
+⚠ `after-route-heartbeat-ratchet` **8/8** (this is a single-row insert, not the long `after()` work whose
+kills the heartbeat rule exists for).
+
+⛔⛔ **AND I WROTE A VACUOUS ASSERTION WHILE FIXING IT, THEN CAUGHT IT BY PROVING THE GUARD AGAINST THE
+OFFENDER.** Mocking `after()` in `api-telemetry.test.ts` made the suite green again, and I wrote in the
+test that without the drain *"these assertions would pass vacuously the moment someone reverts to a
+floating promise."* **That was false.** The supabase mock records the insert payload **synchronously**,
+so every payload assertion passes identically either way — measured by restoring the exact floating
+promise: **`tsc` clean, 11/11 green.** ✅ Replaced with one assertion that actually discriminates —
+*"registers the usage_events write as deferred `after()` work"* — since a floating promise never calls
+`after()`. **Proven in BOTH directions: against a COMPILING offender exactly that test fails (1 failed /
+11 passed); on the fixed route 12/12.** ⭐ **A guard is not proven by the suite going green — only by
+watching it go red against the defect it names.** This is CLAUDE.md's *"a test stating the contract in a
+comment and asserting something weaker"*, written by someone who had read the rule that morning.
+
+⭐ **The transferable lesson: clause (1) of a falsifier can pass while the thing you care about is still
+broken.** "The endpoint stopped 405-ing" is a statement about the PROXY; "the row exists" is the only
+statement about the FEATURE. **Writing the second clause down before deploying is what turned a
+half-fix into a whole one** — and a single probe would have passed, so **firing four and counting is what
+made the leak visible at all.** ⚠ The ledger was committed BEFORE the code so the code commit is the tip
+and `ignoreCommand` cannot skip the Vercel build.
 
 **Revert:** `git revert` the code commit — a single additive `if` return in `isPublicPath`. No DB half.
 
