@@ -10,6 +10,84 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⛔ SHIPPED A REGRESSION TO PRODUCTION AND REVERTED IT IN ~4 MINUTES — an inline CTE is not a measurement of the function that contains it
+
+**What I shipped, and it was worse.** `get_lock_check_batch`'s hot-wallet branch is a
+`CROSS JOIN LATERAL` **per hot wallet**, each with its own `LIMIT p_limit`. The plan names the cost
+outright: **`Limit (actual rows=81 loops=574)` — 574 hot wallets, 46,320 rows read to return 200.** I
+replaced it with one scan filtered by `wallet_address IN (hot)`, applied it, and it made production
+**slower and 2.6× more expensive**.
+
+| | buffers | time |
+|---|---|---|
+| before — lateral-per-wallet, **inline with literals** | 49,438 | 56,421 ms |
+| rewrite — single scan, **inline with literals** | **232** | **15.3 ms** |
+| rewrite — **called as the FUNCTION**, run 1 | **127,501** | 73,486 ms |
+| rewrite — **called as the FUNCTION**, run 2 (warm) | **127,534** | **114,531 ms** |
+
+⭐⭐ **THE LESSON, and it is why this entry exists: A PARAMETERISED SQL FUNCTION DOES NOT PLAN LIKE THE
+SAME TEXT WITH LITERALS INLINE.** `IN (SELECT hot.addr FROM hot)` against a literal `collection_id`
+plans as a cheap index scan plus hash semi-join. Inside a function whose `p_collection_slug` and
+`p_limit` are **parameters**, the planner has no constants and chose something far worse. **Measure the
+FUNCTION, by calling the FUNCTION.** Same family as this repo's *"the PROJECTION can change the PLAN"*
+and *"a plan measured against a guessed UUID is not the real plan"* — a third way an isolated
+sub-measurement describes a plan the code never runs.
+
+⚠ **And my A/B was not sloppy, which is the uncomfortable part.** It was warm-vs-warm, same session,
+same predicate, and the inline old-form number (**56,421 ms**) reproduced the production mean
+(**51,041 ms over 694 calls**) — so the baseline was independently corroborated and the comparison
+looked airtight. **Everything about the method was right except the object it was applied to.**
+
+✅ **Caught by verifying through the real callable before trusting it, and by re-running.** Run 1
+(73 s) could have been dismissed as a cold cache — it dirtied 14,157 pages. **Run 2 was warm and
+worse (114 s), which is what made it unambiguous.** ⭐ *One measurement of a suspicious result is a
+hypothesis; the second one is the finding.*
+
+✅ **Reverted and PROVEN EXACT, not merely structural.** The revert was spliced server-side from
+`pg_get_functiondef` (not retyped), and the whitespace-collapsed md5 of the live definition afterwards
+equals the md5 of the definition captured **before** the change —
+**`30d615edf9e33b8d1a4fb79869c16dab`** on both sides. Structure re-checked too: 2 `CROSS JOIN LATERAL`,
+per-wallet leg present, single-scan leg absent, 4 `LIMIT p_limit` sites, `ROW_NUMBER() OVER` and
+`forced_priority` intact. **Both migrations carry an assertion block that fires if the bad form ever
+returns.**
+
+ⓘ **Blast radius, stated rather than minimised:** `get_lock_check_batch` is **SELECT-only** — it picks
+candidates, it does not write lock state — so the worst case was slower candidate selection for ~4
+minutes across at most one 30-minute tick. No rows were written wrongly and nothing needed repair.
+**That is the only reason this was an acceptable thing to try in production at all**, and it is the
+test I should apply before the next one.
+
+⭐ **THE DIAGNOSIS SURVIVES EVEN THOUGH THE FIX DIED, and it is now much better evidenced:**
+
+- `get_lock_check_batch` is **51,041 ms mean / 119,631 ms max over 694 calls = 35,422 s (9.8 h) of DB
+  time**, and its **max is CLIPPED at ~120 s** — the ceiling measured earlier today.
+- The hot leg is structurally **O(hot_wallets × p_limit)**: 574 hot wallets, **46,320 rows to return
+  200**.
+- `lock-check-batch` fails **9 of 46 ticks/24 h**, and **a failed tick writes ZERO rows after burning
+  ~246 s** (both slugs hitting the ceiling), while an ok tick writes ~324.
+- ⚠ **The route's own comment is a STALE SAMPLE**: it records the selection read at *"5.8 s @200"* and
+  runs at *"17–27 s"*, measured 2026-07-19/20. It is now **51 s mean**, with `wmc` grown **1.6M → 2.5M**.
+  A ~9× degradation against 58% growth is **superlinear**, which is what the per-wallet lateral
+  predicts. **Re-derive that comment before quoting it.**
+- ⛔ **Lowering `BATCH_LIMIT` is NOT the obvious fix and the arithmetic says so:** ok ticks currently
+  write ~324 each (11,987 rows/24 h). Halving the limit would remove the failures but also halve the
+  yield — **fewer rows than today**. The cost is `O(hot_wallets × limit)`, so the lever that actually
+  pays is removing the per-wallet multiplication, not shrinking it.
+- ⚠ Equivalence was never the blocker and was argued soundly: any row in the global top-`p_limit` is
+  necessarily inside its own wallet's top-`p_limit`, so both forms select **a valid global
+  top-`p_limit`**, differing only in tie-breaking — which both already do arbitrarily across ~1.4M NULL
+  `lock_checked_at` rows.
+
+👉 **NEXT ATTEMPT, if anyone makes one: measure THROUGH the function, and expect the parameterised plan
+to differ.** Forcing a stable plan (materialised CTE for `hot`, or restructuring so the collection
+predicate is not a parameter at plan time) is the direction — **not** re-trying the same text.
+
+**Revert path:** already applied —
+`supabase/migrations/20260827152136_audit_20260827_revert_get_lock_check_batch_single_scan_measured_worse.sql`.
+Both migration record files committed in this turn (the parity guard had them as **UNTRACKED**, which is
+precisely the "applied but never committed" signature it exists to catch). **Target metric:**
+`get_lock_check_batch` mean back at ~51 s, and `lock-check-batch` back to its ~80% ok rate.
+
 ### 2026-08-27 · ⭐⭐ MEASURED, nothing shipped — a THIRD timeout ceiling that **corrects my own entry from an hour ago**, and gives six failing pipelines ONE root
 
 **This corrects the entry below it.** That entry concluded *"a `supabaseAdmin` RPC is bounded by its
