@@ -162,3 +162,44 @@ out, not failed.** These commits change **no application code**; CI on push is t
 
 **Security posture held:** no token was read, printed or handled; `git remote -v` was never run; the
 push 403 was reported, not routed around; `check_secdef_anon_execute_violations()` → `[]`.
+
+
+---
+
+## 7. ⭐ ADDENDUM 04:55Z — two findings landed after this document was written, and one of them is the biggest of the night
+
+**#42 — 22.6% of all pg_cron time is thrown away, and the driver is schedule ALIGNMENT.** 7 days:
+**28,509 runs, 914,843 busy seconds, 206,362 wasted (22.6%)**, and **85.2% of that waste is
+statement timeouts** from just 384 of 1,502 failures. 🚨 **22.6% is the same ratio the earlier
+Class-A audit measured — after its named "lever" was pulled and reduced to 0.9% of waste.** Mechanism:
+**hours divisible by 3, where the `*/2`/`*/3`/`*/6` cohorts coincide, are 8 of 24 hours but carry 47%
+of all busy time and 72% of all timeout waste**, throwing away 29.3% of the work done in them against
+10.3% elsewhere. ✅ **The controlled evidence is jobid 211** — one function, four slots, since
+2026-07-20: **00:35Z 97% ok, 06:35Z 51%, 12:35Z 54%, 18:35Z 42%**, successes 32–106 s, failures
+exactly 600 s. **The hour decides the outcome, not the job.** Introduces a one-query triage
+instrument: **`max(success duration) ÷ that job's own ceiling`**.
+
+**#43 — PROVEN BY EXPERIMENT: 48 pg_cron jobs declare a `statement_timeout` that does nothing.**
+⭐⭐ **`statement_timeout` arms a timer once, at top-level statement start. Changing the GUC inside a
+function — `proconfig` or `set_config(…, true)` — does not re-arm it, in either direction.** Four
+probes: proconfig `10s` under a `2s` session → killed at 2 s; `set_config` the same; 🚨 **proconfig
+`1s` under a `20s` session RAN FOR 4 SECONDS AND FINISHED, while `current_setting()` inside read
+`1s`**; a leading `SET` as its own statement works. **That last detail is why it survived: every
+check anyone could run says the setting is applied.**
+
+- **36 `cron_heavy` jobs run at that role's 600 s whatever their function says** — and the fiction
+  runs both ways: **26 declare 60–480 s and are free to burn 600.**
+- ✅ Confirmed on production data: **jobid 217 declares 120 s and has SUCCEEDED at 595 s.**
+- ⛔ **"Make the declarations real" would be a MISTAKE** — enforcing 217's 120 s converts most of its
+  successful runs into failures. **The declared budgets are fiction, to be reconciled per job against
+  its observed success distribution, and until then nobody may read a `proconfig` as a budget.**
+- ⛔ **jobid 256 burns 600 s a day to fill `fmv_thin_sale_ask_disclosure_cache`, which has NO
+  consumer** (0 functions, 0 views, 0 matviews, no anon grant, no repo reference) and serves 14-day-
+  old rows to anyone who does. **Cheapest decision on the list.**
+- The durable rule is in `docs/reference/database.md` beside the PG17 partial-index rule.
+
+⚠ **#43 corrected #42 twice within twenty minutes** — "jobid 256 never succeeded" (it succeeded once,
+on 08-13) and "read each function's own `SET statement_timeout`; the FUNCTION is authoritative"
+(flatly wrong, retracted). **#42's "Class B" is weakened too**: jobid 215's 731 s is two statements
+each getting 600 s, and jobid 210's 771 s is probably **queue wait** (`cron.max_running_jobs = 32`
+against `max_worker_processes = 6`), which means the triage ratio carries noise.
