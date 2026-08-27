@@ -810,13 +810,19 @@ is live again. **One cause, cleanly attributed — which is the entire reason th
 took **252 s** and logged `budget_exhausted: true`, `sweep_complete: false`, `pages_walked: 11` —
 the designed degradation, since `f11fe69` added `SWEEP_BUDGET_MS = 240_000` so a truncated sweep
 reports itself instead of dying invisibly. Against that 240 s, the leg I blamed is **1,100 × 1.39
-ms ≈ 1.5 s — 0.6%.** ⛔ **The batching diff is NOT recommended for merge**; adding risk to a public
-pipeline that recovered twenty minutes ago for a best case of 0.6% is not a trade worth making.
-⚠ **And I am not making the argument that would rescue it** — *"1.39 ms is execution time, a real
-round trip is ~30 ms, so 1,100 × 30 ms ≈ 33 s"* is the **identical** error retracted above. The
-wall-clock round trip is unmeasured and I am not guessing it twice. **Prerequisite for revisiting:
-one line of per-phase timing in the route, which would settle in a single tick what two rounds of
-arithmetic could not.**
+ms ≈ 1.5 s — 0.6%.** 🚨 **THE DISPOSITION I DREW FROM THIS WAS WRONG AND IS RETRACTED — see the entry above dated the
+same night.** I wrote *"the batching diff is NOT recommended for merge; best case 0.6%"*, and
+`6455fb9` shipped exactly that change on a measurement: the cost **is** round-trip count — ~1,600
+sequential Vercel→Supabase trips at **~240 ms per listing**, the entire ~385 s sweep. ⭐ **I used a
+per-item DB cost to dismiss an aggregate, which is the trap the same author had already named: "a
+per-item cost of 1.4 ms is not an argument against N+1 — it is the thing you multiply by N."** ⭐⭐
+**And the deeper error is the one I was congratulating myself for avoiding.** I explicitly refused
+to guess the wall-clock round trip — correctly — and then reasoned as though it were **zero**.
+**Refusing to guess an unmeasured number is a reason to MEASURE it, never a licence to conclude it
+is small; turning an unmeasured quantity into a finding and turning it into a dismissal are the same
+error, and the second wears the costume of the first one's discipline.** ⚠ Compounded by the wrong
+denominator: 1,100 listings from a *budget-truncated* tick, where a healthy sweep is ~1,600. Full
+account: [inbox 2026-08-27T0405Z](inbox/2026-08-27T0405Z-SECOND-RETRACTION-refusing-to-guess-a-number-is-not-a-reason-to-assume-it-is-small.md).
 
 👉 **The order that keeps the evidence: let `f11fe69` deploy and prove itself first.** If ticks then complete
 comfortably inside 240 s, the round-trip term was never dominant and my batching is a cost improvement to

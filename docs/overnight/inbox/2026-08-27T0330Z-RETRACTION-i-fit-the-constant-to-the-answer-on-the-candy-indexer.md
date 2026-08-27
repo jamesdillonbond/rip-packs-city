@@ -187,3 +187,34 @@ now consumes the whole 240 s budget, so **`activities_seen` went from 1,000 on t
 to 0**, and `sweep_complete` from `true` to `false`. The route can no longer do in 300 s what it
 used to do in ~390 s. That is a **capacity** question about `maxDuration` and the budget split —
 not a reason to un-fix the timeout, and not something one tick can size.
+
+
+---
+
+## 🚨 SUPERSEDED 2026-08-27 04:05Z — §"Disposition" above is RETRACTED; the batching change was right and is shipped upstream
+
+**Everything in the section above about the ORIGINAL causal claim stands.** What does not stand is
+the disposition I drew from it:
+
+> ⛔ *"the batching diff is NOT recommended for merge … best case 0.6% … I am deliberately NOT
+> making the argument that would rescue it."*
+
+`6455fb9` shipped the batching on a **measurement**: the per-mint probe is ~1.4 ms of DB execution,
+but issued sequentially for ~1,600 listings it is ~1,600 Vercel→Supabase round trips at **~240 ms
+per listing** — the entire ~385 s sweep. Batched: ~1,600 → **~16–32** round trips, with a test that
+reports `expected ONE batched wmc query for 25 mints, got 25` when reverted.
+
+⭐ **I used a per-item DB cost to dismiss an aggregate** — the exact trap the same author had already
+named an entry earlier: *"a per-item cost of 1.4 ms is not an argument against N+1 — it is the thing
+you multiply by N."* ⭐⭐ **And the deeper error is the one I was congratulating myself for
+avoiding: I refused to guess the wall-clock round trip, correctly, and then reasoned as though it
+were ZERO. Refusing to guess an unmeasured number is a reason to MEASURE it, never a licence to
+conclude it is small.** ⚠ Compounded by the wrong denominator — 1,100 listings from a
+budget-truncated tick, where a healthy sweep is ~1,600.
+
+⛔ **`cowork-2026-08-26/candy-batching-HOLD.diff` should be DISCARDED, not merged.** Upstream's
+implementation supersedes it and additionally closes an honesty defect mine did not: the sequential
+version destructured only `data`, so a failed `wallet_moments_cache` read silently classified a
+listing as "not a Candy mint" and **dropped** it. The batched lookups throw instead.
+
+Full account: [2026-08-27T0405Z](2026-08-27T0405Z-SECOND-RETRACTION-refusing-to-guess-a-number-is-not-a-reason-to-assume-it-is-small.md).
