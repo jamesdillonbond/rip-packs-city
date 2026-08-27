@@ -576,6 +576,130 @@ subsystem.
 
 ---
 
+## 🚨 The unbounded-`fetch` ratchet, and six instrument lessons that cost real time (2026-08-27)
+
+`__tests__/unbounded-fetch-in-after-routes-ratchet.test.ts` — sibling to the unbounded-server-read
+ratchet above. **No NEW unbounded `fetch(` in an `after()` + `maxDuration` route; count down only
+(`RATCHET`).** Same rationale as its sibling: a ban is not satisfiable today, and the correct timeout
+is not a constant.
+
+**Why this shape and not "unbounded fetch" generally.** `fetch()` has NO default timeout. In an
+ordinary handler an upstream that accepts the connection and holds it open is merely slow. In an
+`after()` route with a `maxDuration` it is **invisible**: the lambda is killed, so neither the success
+path nor the `catch` runs, **no terminal `pipeline_runs` row is written at all**, and the outage reads
+as *"the cron never fired"*. Measured on `/api/candy-listings-indexer`: 15 invocation heartbeats
+against ONE terminal row in 48 h, while the PUBLIC `/insights/candy-mlb` board served asks **44 hours
+stale**.
+
+⭐ **The fix already existed one file away and had never spread.** `solUsd()` in
+`lib/chains/solana/das.ts` — called by that route one line above the walk that hung — carries an 8 s
+cap and a comment naming this exact failure mode. This repo's rule is *"when you find one, grep for
+the EXPRESSION, not the file"*; here **it was not the DEFECT that spread by copy-paste, it was the FIX
+that failed to.** A comment is only read by someone already in that file. That is what a ratchet is
+for.
+
+⚠ **Scope limit, stated so the guard is not over-trusted:** it walks `app/api` only. A `lib/` helper
+reached FROM an `after()` route is out of scope by construction — `dasCall` was exactly that, and had
+to be bounded by hand. **The guard cannot see a hazard one import away.**
+
+### 1. ⛔ Size a deadline off the OBSERVED SUCCESS BAND, never off `maxDuration`
+
+The first sweep budget shipped for the candy sweep was 240 s, reasoned as *"60 s of headroom under the
+300 s `maxDuration`"*. **Every successful run on record took 375,699 / 389,236 / 391,226 ms — all
+ABOVE the declared ceiling, all completing and logging.** `extra.duration_ms` is `Date.now() -
+startedMs`, the same clock the budget uses, so **240 s would have truncated every healthy sweep the
+pipeline had.**
+
+**`maxDuration` is what the platform DECLARES; the success band is what the route actually GETS**, and
+on Fluid Compute they disagree — `after()` work routinely overruns. Confirmed on four independent
+pipelines the same night: `candy-listings` (391 s vs 300 s), `check-alerts` (84.8 s vs 60 s),
+`topshot-listing-cache` (361.5 s vs 300 s), `allday-listing-cache` (344.3 s vs 300 s).
+
+⚠ **A budget is invisible to every test that does not exceed it.** The route's tests mock a one-page
+book that finishes instantly, so they passed either way and CI was green. It surfaced only from
+reading the duration distribution.
+
+⭐ **And the rule produces OPPOSITE actions on different routes, which is the point.** `sales-indexer`
+(85/85 ok, p95 40 s, max 83 s vs 120 s) and both alert dispatchers got per-request timeouts and
+**deliberately NO deadline** — they are finishing, so a budget could only truncate healthy runs.
+**Read the distribution; the rule is not "add a budget".**
+
+### 2. 🚨 A guard's POPULATION is as comment-sensitive as its assertions — and nobody re-checks it
+
+`__tests__/api-og-insights-empty-vs-unavailable.test.ts` selected its 15 cards with
+`readFileSync(p).includes("boardEmptyCopy(")` — **raw source**. Adding a comment to `candy-mlb`
+*explaining why it cannot adopt that helper* contained the literal token and **enrolled the card in
+the guard**, which then failed it on fetch-driven assertions it structurally cannot satisfy (the card
+reads `supabaseAdmin` directly, so a `globalThis.fetch` mock cannot drive it).
+
+⭐ **That file already warned about exactly this, one function ABOVE the offending line** — *"Any check
+that greps source for user copy must strip comments — including the one you are about to write."* The
+warning was applied to its `loading`-claim sweep and not to the selector beneath it. `boardCards()`
+now strips.
+
+**The generalisable half: a wrong population still reports a number.** The guard was green throughout;
+it simply measured a different set. Related to *"ask what a passing guard is structurally SILENT
+about"*, one level up: not what it asserts — what it asserts it ON.
+
+### 3. ⛔ A detector validated only against the population it measures cannot report its own blind spot
+
+The ad-hoc sweep that found this class used a regex requiring `;` or a newline after the closing
+paren. It matched every real file (they are formatted that way) and **missed
+`await fetch(u, {...}) })` entirely.** Every count published from it was a floor.
+
+**It had a real consequence, not just a numerical one:** the regex was blind to `support-chat`,
+`smoke-test` and `golazos-listing-cache`, so three of the four `*-listing-cache` siblings were bounded
+and the fourth was left — *purely because the detector did not show it*. The ratchet balances parens
+and carries **synthetic fixtures** (bounded / unbounded / mixed / zero-arg). **The fixture caught the
+bug; running against the repo never would have, because the repo is formatted agreeably.**
+
+⚠ **Never compare counts across detectors.** The "29" in the inbox filing and the ratchet's number
+count different things; only the ratchet's is detector-verified.
+
+### 4. ⚠ The SHARED comment stripper is not a guarantee that comments were stripped
+
+`scripts/lib/strip-comments.mjs` (mandatory, `MAX_LOCAL_STRIPPERS` down-only) **does not blank** line
+80 of `app/api/check-alerts/route.ts` — while blanking the identical line in isolation and in every
+other file swept. So a comment documenting a fix was counted as code **through the mandated
+protection rather than around it**. Root cause NOT found; backtick imbalance (counted, all even),
+templates-with-URLs, regex literals carrying quotes, and comment-backticks are all **falsified** — see
+`docs/overnight/inbox/2026-08-27T0500Z-the-shared-comment-stripper-leaves-a-comment-line-intact-in-one-file.md`.
+
+⭐ **Tactic worth reusing: where a shared helper is unreliable, prefer a check that does not NEED it to
+be right over one that assumes it is.** The ratchet skips zero-argument `fetch()` (never a real call
+site), so its count no longer depends on stripping having succeeded.
+
+### 5. ⚠ A retry loop only helps a TRANSIENT failure
+
+`Install Flow CLI` reddened `main` twice in one hour with a **7-attempt exponential-backoff loop
+already in place**. All seven failed **~65 ms in**, at *"Getting version of latest stable release"* —
+`install.sh` resolving `latest` through the **unauthenticated GitHub API at 60 req/hr shared across
+the runner IP pool**. Once that limit is hit the failure is deterministic for the hour; the loop's
+whole budget is ~168 s. **It converted a fast red into a slow red.**
+
+Fixed by passing the auto-minted `secrets.GITHUB_TOKEN` as `GITHUB_TOKEN` on both `Install Flow CLI`
+steps (the script reads it, and falls back to unauthenticated on 403, so it cannot make things worse).
+⛔ Deliberately NOT pinned to a version — that trades a CI-reliability problem for a coverage one.
+
+**Ask what a retry is RETRYING.** The existing comment block was careful and correct about the failure
+it was written for (a 2026-07-31 curl reset on the `raw.githubusercontent` fetch); this was a
+different failure, at a different URL, in a different phase — and the loop was inherited as though it
+covered both.
+
+### 6. ⚠ A liveness probe must exercise the PRODUCTION CALLER's code path
+
+`panini-run.bat` relaunched Chrome only when port 9222 was not listening. **A hung browser still
+accepts TCP**, so it was never restarted and every run died on `connectOverCDP: Timeout 30000ms
+exceeded` — 22 h, four missed bursts, a PUBLIC board drifting.
+
+🚨 **The obvious upgrade is also wrong, and it was MEASURED rather than assumed:** against the
+actually-hung browser, `GET /json/version` returned **HTTP 200** with a full version payload. **Three
+probes of the same process disagreed — TCP said healthy, HTTP said healthy, the real client said
+dead.** The preflight (`scripts/panini-cdp-preflight.mjs`) now does what the runner does
+(`connectOverCDP`). Same family as *a control must use the PRODUCTION CALLER* and *probe THE ENDPOINT
+YOU NEED, not any endpoint it should reach*.
+
+
 ## eslint is NOT in CI, and that is a decision (2026-08-22)
 
 `grep eslint .github/workflows` returns nothing; `package.json` has the script and no job calls it.

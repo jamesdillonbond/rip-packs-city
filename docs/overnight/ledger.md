@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (docs) — tonight's six instrument lessons PROMOTED out of the ledger, and CLAUDE.md is now at **39,985 / 40,000**
+
+CLAUDE.md's own instruction is that *a fact left only in a session log stops being read*. Tonight
+produced six lessons that generalise well past the routes they came from, so they are now a section
+in [testing-and-ci.md](../reference/testing-and-ci.md) (**+8,398 chars**, 22 → 23 sections) rather
+than only in ledger entries nobody will scroll back to:
+
+1. **Size a deadline off the OBSERVED SUCCESS BAND, never off `maxDuration`** — with the four
+   pipelines measured overrunning their declared ceiling, and the note that **a budget is invisible to
+   every test that does not exceed it**. ⭐ Includes the case where the SAME rule produced the OPPOSITE
+   action (no deadline on `sales-indexer` / the alert dispatchers), because that is the part a
+   one-line rule would lose.
+2. **A guard's POPULATION is as comment-sensitive as its assertions** — *a wrong population still
+   reports a number.*
+3. **A detector validated only against the population it measures cannot report its own blind spot**
+   — the regex that missed three files, and cost the fourth `*-listing-cache` sibling its fix.
+4. **The SHARED comment stripper is not a guarantee that comments were stripped** — and the tactic
+   that followed: *where a shared helper is unreliable, prefer a check that does not NEED it to be
+   right.*
+5. **A retry loop only helps a TRANSIENT failure** — *ask what a retry is RETRYING.*
+6. **A liveness probe must exercise the PRODUCTION CALLER's code path** — three probes of one hung
+   process disagreeing (TCP healthy, HTTP healthy, real client dead).
+
+## ⚠ CLAUDE.md: one line added, and the headroom is now 15 characters
+
+Added to the existing `after()` bullet, where it belongs: **"⚠ Bound every `fetch` inside one — no
+default timeout."**
+
+⭐ **Deliberately that short, and the reasoning matters for the next editor.** The full rule wanted
+~200 chars and there were 74. Rather than displace load-bearing text from that bullet at the end of a
+long session, the line names the rule and leaves the detail to the reference doc — **because the rule
+is now MECHANICALLY ENFORCED by the new ratchet, which is stronger than prose.** A CI guard that fails
+loudly does not depend on anyone having read the file.
+
+🚨 **CLAUDE.md is now 39,985 of 40,000 — FIFTEEN characters.** The file was already described as at
+its size equilibrium; it is now effectively AT the wall. **The next durable rule cannot be appended,
+it must DISPLACE**, and the displaced text goes verbatim into the matching `docs/reference/*.md` with
+a one-line pointer. Measured with Node `.length`, not `wc -c` (the guard's own instrument).
+
+Full suite green (**1385 files / 15188 tests**), including the CLAUDE.md size guard.
+
 ### 2026-08-26 · ✅ VERIFIED THROUGH THE REAL CALLER — the rewritten `panini-run.bat` fired on schedule at 22:00 PT, preflight passed, runner connected
 
 The panini fix was applied and then exercised by hand. **It has now run through the Windows Task
