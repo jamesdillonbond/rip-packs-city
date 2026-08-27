@@ -10,6 +10,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · SHIPPED (monitor + guard, no app code) — the #418 verification was going to be decided by luck, so the clock is shifted ON PURPOSE
+
+**Repo only: one new e2e spec, one helper, four self-check cases, one new CI guard, one workflow
+line. No app code, no DB, no prod state.**
+
+⭐ **THE FINDING THAT PROMPTED IT IS ABOUT MY OWN VERIFICATION PLAN, AND IT WAS WRONG.**
+Last night's entry closed with *"the verification is several SCHEDULED runs"*. Two have now landed
+since the fix — **03:06Z (dispatch) and 10:27Z (schedule), both green** — and **NEITHER EXERCISED
+THE BRANCH THAT WAS FAILING.** The caption at issue only renders when the listings spine is >4 h
+stale, and `topshot-active-listings-ingest` succeeded at **04:13Z, 07:13Z and 10:13Z**, so at the
+10:27Z run the spine was **14 minutes old**. ⛔ **The pre-fix code would have passed both runs.**
+
+> **A verification plan that depends on an unrelated pipeline breaking is not a plan, it is a wait.**
+> The monitor's own docblock already said its #418 detection is *"BROAD but PROBABILISTIC"*; what
+> was missing is that the probability is not "sometimes" — for this defect it is *"only while
+> something else is broken"*.
+
+**SHIPPED — `e2e/hydration-clock.spec.ts`: hydrate every clock-reading insights board in a browser
+whose wall clock runs 7 h ahead of the server's.** A page whose first client render does not read
+the clock is unaffected by any shift; a page whose render does read it mismatches **immediately and
+every time**. That turns a data-dependent class into a deterministic one.
+
+⭐ **IT IS ALSO THE ONLY CHECK THAT EXISTS ON A `hydration-safe:` MARKER.** Rule C (shipped
+yesterday) bans unmarked wall-clock reads in insights client files, and its escape is an inline
+marker whose reason is **the author's ASSERTION** that the call cannot run before mount. **No static
+check can verify that claim** — three markers were written on exactly that basis. A shifted browser
+clock checks them: if a "post-mount only" call actually runs during the first render, the board reds.
+
+**The page set is DERIVED, not curated** — every `app/insights/<slug>/` containing a client file that
+reads the wall clock, the same predicate as Rule C. Today that is **4 boards**: `pack-sniper`,
+`tc-report`, `top-sales`, `underpriced-serials`. A new board with a clock read is in scope the moment
+it exists.
+
+✅ **PROVEN END TO END BEFORE SHIPPING, in the existing self-check harness (localhost, no egress
+needed), because ARMING and DETECTING are two different things:**
+
+| case | proves |
+|---|---|
+| the shift arms and is observable in the page | `addInitScript` reaches the page before its scripts |
+| `assertClockShiftArmed` FAILS when not armed | **the spec cannot pass vacuously** — a silently-inert shim would otherwise green every board |
+| a clock-sensitive fixture FAILS under the shift | the shift + the console/pageerror listeners compose into a caught failure |
+| the SAME fixture PASSES with the real clock | the shift is what makes it fail — not a broken fixture |
+
+⚠ **`Date.parse`, `Date.UTC` and `new Date(iso)` are asserted UNCHANGED by the shim.** Only `Date.now`
+and the no-argument `new Date()` move. A shim that broke the deterministic forms would red every
+board for a reason that has nothing to do with hydration, and the failure message would be lying.
+
+⚠ **Each board is run TWICE — control first with the real clock, then shifted.** If a page is already
+sick, the control says so, so a red under the shift is attributable to the clock rather than to the
+page being generally broken.
+
+🚨 **AND A SECOND CURATED LIST WAS FOUND WHILE WIRING THIS UP.** `.github/workflows/e2e-smoke.yml`
+names its spec files explicitly instead of letting Playwright discover `testDir` — so **a spec that
+exists and never runs is indistinguishable from a spec that passes**, silently, in the monitor
+nobody watches until something breaks. New guard `e2e-workflow-runs-every-spec` walks `e2e/*.spec.ts`
+and requires each to be named in the workflow; **falsified by removing the new spec from the line
+(it reds and names the file to edit)**, and its parser is pinned in both directions so an
+unparseable rewrite reports every spec missing (loud) rather than none (silent).
+
+**Revert path:** `git revert` the code commit — deleting `e2e/hydration-clock.spec.ts`,
+`e2e/clock-shift.ts`, the four self-check cases, the guard and the workflow's added spec name. No app
+code, DB or prod state was touched.
+
 ### 2026-08-27 · ⛔ SHIPPED A REGRESSION TO PRODUCTION AND REVERTED IT IN ~4 MINUTES — an inline CTE is not a measurement of the function that contains it
 
 **What I shipped, and it was worse.** `get_lock_check_batch`'s hot-wallet branch is a
