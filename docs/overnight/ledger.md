@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ VERIFIED IN PRODUCTION — the warmed Underpriced-#1s board answers **200 in 437 ms on a cache MISS**, where it returned **503 after 62 s** earlier tonight
+
+Both halves of the previous entry exercised against production, not asserted.
+
+**The warmer runs and includes the board:**
+
+```
+GET /api/cron/warm  ->  200
+{"ok":true,"elapsed_ms":1490,"warmed":[
+  {"rpc":"get_topshot_sniper_deals",   "rows":500,"ms":1099,"ok":true},
+  {"rpc":"get_allday_market_listings", "rows":500,"ms":1489,"ok":true},
+  {"rpc":"underpriced_serials_board",  "rows":7,  "ms":1058,"ok":true}]}
+```
+
+**And the public API that was failing:**
+
+```
+GET /api/public/insights/underpriced-serials
+  -> 200 in 1,176 ms wall · x-vercel-cache: MISS · meta.elapsed_ms 437 · 7 rows
+```
+
+⭐ **`x-vercel-cache: MISS` is the part that matters** — this is the un-cached path, the same one that
+returned **503 after 62 s** twice this evening. It is now served from warm buffers.
+
+⚠ **One spot check is not the proof, and the distinction is the whole point of the fix.** The board
+was never slow *warm* (32 ms measured); it was slow *cold*. What this confirms is that the warmer
+executes and the board answers once warm — **what it cannot yet confirm is that the `*/10` cadence
+keeps it warm across a full day**, which is the actual claim. ⓘ The 1,058 ms warm figure is itself
+against partly-warm buffers (I had queried this board repeatedly tonight), so it is **not** a cold
+measurement either.
+
+👉 **The falsifier, and the number to read:** if `/api/public/insights/underpriced-serials` 503s or
+runs multi-second again during business hours, the `*/10` cadence is not enough against buffer
+eviction and the answer is the snapshot cache (known-issues #39's other option), **not** a shorter
+warm interval. ⓘ Outside the warmer's window (`*/10 14-23,0-5`) the board is unwarmed by design —
+a cold hit there is expected, not a regression.
+
 ### 2026-08-26 · SHIPPED (Trevor's two decisions) — UFC search pipelines RETIRED on a measured precondition, and the Underpriced-#1s board joins the LIGHT warmer
 
 Both were put to Trevor tonight. Recording the answers verbatim, because both carry conditions that
