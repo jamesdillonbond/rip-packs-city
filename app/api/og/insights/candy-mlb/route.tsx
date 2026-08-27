@@ -43,23 +43,50 @@ export async function GET() {
 
   let priced: number | null = null
   let total: number | null = null
+  // "Did the read SUCCEED?", not "did it return rows" — the same contract as
+  // lib/og/board-empty-copy.ts. See the note below on why that helper is not
+  // imported here.
+  let fetched = false
 
   try {
     const sb = supabaseAdmin as any
-    const { data } = await sb
+    // ⚠ `error` is destructured DELIBERATELY. supabase-js RESOLVES with
+    // `{ data: null, error }` instead of throwing, so before this the `catch`
+    // below was very nearly dead code: a failed read skipped it entirely, left
+    // `priced`/`total` at null, and fell through to the same branch as a
+    // genuinely empty board. That is this repo's most-repeated defect class —
+    // a failed read rendering as a fact — and on this card the fact asserted
+    // was liveness ("Live secondary FMV") that had not been measured.
+    const { data, error } = await sb
       .from("candy_secondary_board")
       .select("fmv_usd")
       .limit(500)
-    if (Array.isArray(data) && data.length > 0) {
+    if (error) throw error
+    if (Array.isArray(data)) {
+      fetched = true
       total = data.length
       priced = data.filter((r: { fmv_usd: number | null }) => r.fmv_usd != null).length
     }
   } catch {
-    /* generic card fallback */
+    // `fetched` stays false. The card must not claim liveness it could not measure.
   }
 
-  const headline =
-    priced != null && total != null && priced > 0
+  // THREE states, not two. Wording matches lib/og/board-empty-copy.ts so this
+  // card speaks the same voice as the other fifteen insights cards.
+  //
+  // ⚠ That helper is deliberately NOT imported, and this is not an evasion.
+  // __tests__/api-og-insights-empty-vs-unavailable.test.ts selects its
+  // population with `includes("boardEmptyCopy(")` and drives every member by
+  // mocking `globalThis.fetch`. This card reads `supabaseAdmin` DIRECTLY and on
+  // purpose — a self-fetch goes back through proxy.ts and is 302'd to /login
+  // while the surface is launch-gated (see this card's own test header) — so a
+  // fetch mock cannot drive it and importing the helper would enrol it in a
+  // guard that is structurally unable to exercise it. The honesty property is
+  // pinned instead by __tests__/api-og-insights-candy-mlb-honesty.test.ts,
+  // which asserts the rendered TEXT for all three states.
+  const headline = !fetched
+    ? "Couldn't load the live board — open the page for current data."
+    : priced != null && total != null && priced > 0
       ? `${priced} of ${total} ICON editions priced off live Solana sales`
       : "Live secondary FMV for the 2026 MLB Base Series"
 

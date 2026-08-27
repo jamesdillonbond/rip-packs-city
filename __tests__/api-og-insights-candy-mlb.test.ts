@@ -64,7 +64,40 @@ describe("/api/og/insights/candy-mlb", () => {
     expect(buf.readUInt32BE(20)).toBe(630)
   }, 60000)
 
-  it("still renders a valid PNG when the view read fails (generic fallback)", async () => {
+  // ⚠ BOTH failure shapes, and the distinction cost a real defect.
+  //
+  // This file used to carry ONLY the throwing case below, described as "when the
+  // view read fails". supabase-js does not throw — it RESOLVES with
+  // `{ data: null, error }` — so the one case here proved the card survives a
+  // failure mode that cannot occur while being blind to the one that does. The
+  // route meanwhile destructured only `data`, so a real failure skipped its
+  // `catch` entirely and published "Live secondary FMV" on a read that never
+  // happened (fixed 2026-08-27).
+  //
+  // These two assert only that a real PNG comes back. What the PNG SAYS is a
+  // different property and no byte-level assertion can express it — that lives
+  // in __tests__/api-og-insights-candy-mlb-honesty.test.ts, which drives the
+  // same states through the next/og capture harness and asserts rendered text.
+  it("still renders a valid PNG when the view read RESOLVES with an error (the real supabase-js shape)", async () => {
+    vi.doMock("@/lib/supabase", () => ({
+      supabaseAdmin: {
+        from: () => ({
+          select: () => ({
+            limit: async () => ({
+              data: null,
+              error: { message: "canceling statement due to statement timeout" },
+            }),
+          }),
+        }),
+      },
+    }))
+    const { res, buf } = await render()
+    expect(res.status).toBe(200)
+    expect(buf.length).toBeGreaterThan(1000)
+    expect(buf.subarray(0, 8).toString("hex")).toBe(PNG_MAGIC)
+  }, 60000)
+
+  it("still renders a valid PNG when the client THROWS (transport-level failure)", async () => {
     vi.doMock("@/lib/supabase", () => ({
       supabaseAdmin: {
         from: () => ({

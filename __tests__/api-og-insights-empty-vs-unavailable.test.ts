@@ -68,7 +68,25 @@ function allOgRoutes(dir: string = ALL_OG, out: string[] = []): string[] {
   return out
 }
 
-/** Cards that render a board list and therefore carry the empty/failed states. */
+/**
+ * Cards that render a board list and therefore carry the empty/failed states.
+ *
+ * 🚨 `stripComments` here is LOAD-BEARING, and its absence was a live defect
+ * found on 2026-08-27. This selector used the RAW source, so a card that merely
+ * MENTIONED `boardEmptyCopy(` in a comment was enrolled in the population — and
+ * then failed every fetch-driven assertion below, because mentioning a helper
+ * does not make a card fetch-shaped. `/api/og/insights/candy-mlb` hit exactly
+ * that: it reads `supabaseAdmin` directly (deliberately — a self-fetch is 302'd
+ * to /login while the surface is launch-gated), and a comment EXPLAINING why it
+ * cannot adopt the helper enrolled it in the guard for the helper.
+ *
+ * ⭐ This file already warned about precisely this, one function up — *"Any
+ * check that greps source for user copy must strip comments — including the one
+ * you are about to write."* That warning was written for the `loading`-claim
+ * sweep and not applied to the selector sitting directly beneath it. A guard's
+ * POPULATION is as comment-sensitive as its assertions, and it is the half
+ * nobody re-checks, because a wrong population still reports a number.
+ */
 function boardCards(): string[] {
   return readdirSync(INSIGHTS_OG)
     .filter((d) => {
@@ -78,7 +96,7 @@ function boardCards(): string[] {
       } catch {
         return false
       }
-      return readFileSync(p, "utf8").includes("boardEmptyCopy(")
+      return stripComments(readFileSync(p, "utf8")).includes("boardEmptyCopy(")
     })
     .sort()
 }
