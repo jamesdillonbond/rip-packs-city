@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — the candy sweep's real cost was **~1,600 sequential round trips**; batching them is a measured **25x** fewer queries per page
+
+Acts on the problem the previous entry identified but explicitly did NOT fix: **a ~385 s sweep
+against a 300 s `maxDuration` is over budget by design**, which is why terminal rows were rare and
+the PUBLIC `/insights/candy-mlb` board went 44 h stale. The timeout work bounded hangs and
+guaranteed logging; it never made the sweep FIT.
+
+**The cost was round-trip COUNT, not query cost.** Each per-mint `wallet_moments_cache` probe is an
+**Index Only Scan on `idx_wmc_moment_collection_cover`, ~1.4 ms / 3 buffers** — genuinely cheap. But
+issued one-at-a-time for ~1,600 listings it is ~1,600 sequential Vercel→Supabase round trips, and at
+~240 ms per listing that is the entire 385 s.
+
+⛔ **This corrects a conclusion of mine from earlier tonight.** I measured that probe, found it
+index-only and fast, and recorded the N+1 hypothesis as **"FALSIFIED"**. The measurement was right
+and the inference was wrong: *"the query is slow"* and *"the number of queries is the cost"* are
+different claims, and I falsified the first while treating the second as dead. **A per-item cost of
+1.4 ms is not an argument against N+1 — it is the thing you multiply by N.**
+
+**What shipped.** Each page now resolves its distinct mints in three batched steps before the
+per-listing loop: `wallet_moments_cache` → `editions` → `candy_packs` (chunked at 200). The
+per-listing loop then reads only from the in-memory caches.
+
+✅ **Equivalence:** each cache ends the page holding exactly what the sequential version would have
+put there — `false` for a mint with no wmc row, the edition id or null otherwise. The batch filter is
+the exact complement of the loop's guard (`pdaAddress && tokenMint && price != null && price > 0`),
+so every mint that reaches resolution was batched. First-wins on a multi-wallet mint matches the
+`.limit(1)` it replaces (`edition_key` is a property of the moment, not the holder).
+
+🚨 **And it closes a silent honesty defect on the way.** The sequential version destructured only
+`data`:
+
+> `const { data: wmcRow } = await ...` — supabase-js RESOLVES with `{ data: null, error }`, so a
+> failed read left `key` undefined, the listing was classified **"not a Candy mint"** and **silently
+> DROPPED**.
+
+A failed read rendering as a fact, on the feed behind a public board. The batched lookups **THROW**
+instead. Safe to throw: deactivation is evidence-based, so a thrown sweep deactivates nothing.
+
+**Tests: the round-trip contract is pinned directly, because nothing else can see it.** Reverting to
+per-listing lookups keeps every other test green — the DATA is identical, only the trip count
+changes. ✅ **Proven against the offender:** with the batch block removed the new test reports
+**`expected ONE batched wmc query for 25 mints, got 25`**. It carries a not-vacuous arm. Full suite
+green (**1384 files / 15178 tests**).
+
+⭐ **The fixtures had to be made FAITHFUL to make this work, and that is its own finding.** Two
+`wallet_moments_cache` fixtures returned `{ edition_key }` with **no `moment_id`**, and one
+`editions` fixture returned `{ id }` with **no `external_id`** — shapes the real DB never returns,
+since both columns are in the select list. The per-listing code never noticed because it looked up
+one row at a time and did not need the key back. **A mock that omits a selected column is invisible
+until something batches** — the mirror of this repo's "a route test can mock a payload the DB never
+returns".
+
+⚠ **Expected effect stated as a PREDICTION, not a result:** ~1,600 round trips → ~16–32 (one or two
+per 100-listing page), which should take the sweep from ~385 s to well under the budget. **Re-measure
+`extra.duration_ms` on the next successful tick before quoting any improvement** — this session has
+already had one number that looked settled and was not.
+
 ### 2026-08-26 · ⛔ CORRECTION to my own candy-listings fix, ~30 min later — the 240s sweep budget would have TRUNCATED EVERY HEALTHY SWEEP ON RECORD
 
 **Self-correcting the entry two above.** That fix shipped `SWEEP_BUDGET_MS = 240_000`, justified as
