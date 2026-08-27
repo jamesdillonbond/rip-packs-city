@@ -84,11 +84,17 @@ mapping still reproduces what the 3-arg overload derived. ⚠ **The start-time a
 a duration threshold**: this harness completes in milliseconds, so any timing bound would be satisfied by
 the bug too and would read as coverage while inspecting nothing.
 
-⏳ **NOT YET VERIFIED IN PRODUCTION — the next tick is 06:44Z and the DB clock read 06:26Z when this was
-written.** ⚠ Recorded as pending rather than claimed: applying a migration is not evidence the next run
-logs correctly. **Falsifier: the 06:44Z row must show `duration_ms` within a few hundred ms of
-`extra->>'elapsed_ms'`** (both are computed from the same `v_started`, so they should now agree closely).
-If `duration_ms` is still ~10 ms, the change did not take.
+✅ **VERIFIED IN PRODUCTION on the falsifier this entry stated BEFORE the tick ran.** The 06:44:00Z run:
+
+| | `elapsed_ms` | `duration_ms` | delta |
+|---|---|---|---|
+| **06:44:00Z (after)** | **58,478** | **58,479** | **1 ms** |
+| 05:44:06Z (before) | 6,156 | 2 | 6,154 ms |
+
+⭐ **And the verifying run makes the point better than the average did: it took 58.5 SECONDS.** Under the
+old call that would have been recorded as single-digit milliseconds — a 58-second hourly job, on the path
+that backs every `/profile`, `/share` and dashboard card, was invisible to the one column an operator
+reads to ask "is this slow?".
 
 **Revert:** re-apply
 `supabase/migrations/20260816181600_audit_20260816_snapshot_reconcile_all_saved_wallet_stats.sql` verbatim
