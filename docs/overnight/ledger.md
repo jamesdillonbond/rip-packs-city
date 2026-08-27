@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ VERIFIED (15 min later) — the pack-pool rotation ANSWERED its own open question, and the answer is the opposite of the branch I hedged for
+
+Follow-up to the `get_topshot_pool_backfill_targets` rotation shipped an hour ago. That entry left
+one question open — *"if the conversion rate stays ~0 across a rotating sample, the backlog is
+genuinely unconvertible and the pipeline should be PARKED, not tuned"*. **It resolved within three
+ticks, and it is the other branch.**
+
+| | before (72 h) | after (3 ticks, ~15 min) |
+|---|---:|---:|
+| runs | 808 | 3 |
+| dists converted | **1** | **9** |
+| pool rows written | 46 | **1,164** (62 + 303 + 799) |
+| `empty_eds` | 3 of 3 every tick | **0** |
+| `ok` | 2 of 808 | 3 of 3 |
+
+Eligible backlog **710 → 701**; distinct converted dists **1,373 → 1,382**.
+
+⭐ **So "3 permanently-unresolvable dists" was entirely an artifact of the wedge.** The distributions
+were convertible the whole time — Top Shot's `packEditionsV3` answers for them normally. The only
+thing wrong was that the tied `ORDER BY` kept re-serving the same three bad head rows, and **those
+three were the ONLY bad ones in the sample so far** (9 of 9 subsequent draws converted, zero empty
+walks).
+
+⭐⭐ **The lesson is the one the migration header argued for, now demonstrated rather than predicted:
+the diagnostic value WAS the fix.** The pipeline could not distinguish "3 dists are broken" from
+"710 are", because it only ever asked about three — and the daytime monitor, reading that instrument
+faithfully, filed the wrong one. Making the sample representative did not just unblock throughput; it
+produced the answer, immediately, at no extra cost. **When a stalled process can only report on the
+rows it is stuck on, fix the SAMPLING before you investigate the rows.**
+
+⚠ **This does NOT retroactively justify guessing.** The change shipped on a proven equivalence (the
+eligible-set md5 was identical before and after) and on the diagnostic argument alone, explicitly
+NOT on a throughput prediction. The throughput result is a welcome outcome, not the evidence the
+decision rested on.
+
+**Projection, flagged as such:** at ~3 dists per 5-minute tick the remaining 701 should clear in
+under a day. ⚠ **A three-tick sample cannot rate the whole backlog** — a later cohort may well
+contain more unconvertible dists, and `empty_eds` is now the honest instrument for that. Re-read it
+tomorrow rather than assuming a clean drain.
+
 ### 2026-08-26 · SHIPPED (code) — the PUBLIC candy board went dark for **44 hours** because two `fetch()` calls had no timeout; the fix already existed one file away and had never spread
 
 **The symptom.** `/insights/candy-mlb` is public, and its Deals/Spread/Serials tabs read
