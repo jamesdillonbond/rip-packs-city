@@ -630,6 +630,46 @@ retries (one ownership walk is already 87.7% of the monthly datapoint budget).
 **Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
 change is shared — reverting it re-exposes all five candy routes, not just this one.
 
+### 2026-08-26 · ⚠ MEASURED, nothing shipped — jobid 235's cadence cut saved **~1.4 h/wk, not 3.7**, because a `REFRESH … CONCURRENTLY` costs what CHANGED
+
+**Found by reading the failure table rather than the stall detector** (`detect_stalled_pipelines()`
+is empty, and this job never appears in it). pg_cron **jobid 235** `rpc-refresh-market-index-daily`,
+`7 */6 * * *`, `SET statement_timeout = '600s'; REFRESH MATERIALIZED VIEW CONCURRENTLY
+public.mv_topshot_market_index_daily;`.
+
+**Since the `7 */2` → `7 */6` cut took effect (2026-08-22 12:00Z), 19 runs:** **4 failed = 21.1%**,
+all statement timeouts; successes **p50 346 s / p90 515 s / max 565 s** against a **600 s** budget.
+Over the whole retained history (305 runs since 08-01) the **max success is 598 s against 600 —
+two seconds.** ⭐ **Not a flaky job: a distribution whose right tail is clipped by the ceiling.**
+The failures burn **2,401 s in 5 days ≈ 480 s/day of heavy IO returning nothing.**
+
+⭐⭐ **The cause, and I believe it is new here: a `REFRESH MATERIALIZED VIEW CONCURRENTLY` costs what
+CHANGED since the last refresh, not what the view contains — so tripling the interval triples each
+run's delta.** p50 **67 s → 346 s (5.2×)** against a 3× cadence factor. The recorded *"saves ~3.7 h of
+heavy DB time per week"* assumed the per-run cost was unchanged (12 × 204 s → 4 × 204 s); measured,
+it is **≈2,448 → ≈1,704 s/day ≈ 1.4 h/wk.** ⭐ **Transferable: when you cut the cadence of a
+delta-proportional job, the per-run cost rises to meet you — predict the saving from the measured
+post-change cost, never by multiplying the old cost by the new frequency.** ⓘ The consumer reasoning
+behind that cut (daily grain, ~121-day series, only today's partial point moves) is **correct and not
+disputed**; it is the cost half that did not hold.
+
+⚠ **CONFOUND NAMED BEFORE THE CONCLUSION, and part of it is mine:** the 5-day window overlaps a known
+saturation spell — index builds and drops, several 900k-buffer `EXPLAIN`s, and the `rwfc` work already
+set aside as confounded for exactly this reason. n = **19**. **Falsifier, cheap: re-measure p50 over a
+genuinely quiet 24 h with no index work. Near ~346 s ⇒ the cadence is the cause. Toward ~67 s ⇒ the
+window was contention and only the budget headroom is the issue.** ⛔ **Do not act on the cause before
+that read.**
+
+⛔ **Nothing shipped, for a specific reason rather than general caution:** a failure here costs at most
+~12 h of staleness on **one point of a four-month chart**, so the user-facing upside is near nil while
+the IO cost lands on the instance's binding constraint. **Option (a)** is `600s → 900s` — ~1.6× the
+observed max, the same heuristic used on the candy sweep budget the same night — one reversible
+`cron.alter_job` on a `postgres`-owned job; ⚠ a failed run then wastes 900 s, not 600. **Option (b)**
+restores `7 */3`. ⚠ **Watch `wasted_s` (`sum(duration) WHERE status='failed'`, now ~480 s/day), not
+the failure count** — raising a budget can cut failures while raising waste, and only that number
+tells them apart. Registered as **known-issues #41**. Filing:
+[inbox 2026-08-27T0415Z](inbox/2026-08-27T0415Z-the-cadence-cut-on-jobid-235-did-not-save-what-it-claimed-because-a-CONCURRENTLY-refresh-scales-with-the-delta.md).
+
 ### 2026-08-26 · ⭐ MEASURED, nothing shipped — the Sentry read scope was NOT blocked here, and with it the quota guard audits at **93.8% coverage / 89.1% reduction**
 
 **A standing blocker turned out to be a statement about a TOKEN, not about ACCESS.** Commit `278c79c`
