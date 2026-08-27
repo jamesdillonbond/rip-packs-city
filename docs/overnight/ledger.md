@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (comment correction on `main`) + FILED — `ufc-sales-indexer` has only the flaky GHA backstop left, and that backstop delivers **16 of its 48** scheduled runs a day
+
+**Why this matters beyond UFC.** `Smoke Tests` went red on `main` (green 02:09:45Z → hard-fail
+02:33Z / 02:40Z: `ufc-sales-indexer silent 251m (>240m)`). ⚠ **Not caused by the commits it failed
+on** — identical failure on a docs-only commit and on a pack-ask DB function. Read the failing job.
+
+**Measurement, with three same-instrument controls (24 h):**
+
+| pipeline | runs/24h | avg gap | max gap |
+|---|---:|---:|---:|
+| `topshot-sales-indexer` | 85 | 16.9 m | 40.0 m |
+| `allday-sales-indexer` | 85 | 16.9 m | 40.0 m |
+| `golazos-sales-indexer` | 87 | 16.5 m | 39.0 m |
+| **`ufc-sales-indexer`** | **16** | **76.9 m** | **191.9 m** |
+
+Three of four run on cron-job.org's ~17-minute primary. UFC runs 16×/day and **its timestamps match
+the `Sales Indexers Backstop` GHA runs exactly** → cron-job.org's UFC trigger is dead and only the
+GHA backstop still fires it. ⚠ **INFERENCE, not a direct reading** — the cron-job.org console was
+deliberately not opened (bearer token lives in that page's DOM; leaked twice before).
+
+🚨 **The important half: the backstop's stated guarantee was measured FALSE, and it was
+load-bearing.** Its header claimed *"Twice hourly (30-min max gap) … even if GitHub drops a
+scheduled run"* — GitHub delivered **16 of 48**. That comment is why nobody treated the backstop as
+fragile. **UFC is the canary that already fired**: it is the only one of the four whose primary is
+gone, so it is the only pipeline measuring what this workflow alone delivers — and this workflow is
+the safety net for the three LIVE indexers. **A 191.9 m max gap BREACHES All Day's 90 m
+`max_silent`.** ✅ Comment corrected in place with the measured table and a ⛔ against "just tighten
+the cron expression" (GitHub drops the extra fires too).
+
+⛔ **The alarm is CORRECT — do not silence it, and I did not.** UFC's data impact is nil (newest
+`ufc_strike` sale **2026-05-13**; **0 sales in 30 d and 90 d** of 813,934 total; every run
+`ok:true / 0 rows`; `extra.v2_dapper_typeids_seen` has **never** carried a UFC type ID — control:
+newest Top Shot sale is minutes old, so the instrument works). Widening the threshold would convert
+a true positive into a blind spot on the mechanism protecting three live pipelines.
+
+👉 **Needs Trevor:** is the cron-job.org `/api/ufc-pipeline` entry disabled — and the real question
+underneath, **should this indexer be RETIRED rather than repaired**, since UFC Strike appears to
+have left Flow? `ufc_strike` is still `chain=flow, is_active=true`, so that is a product call.
+**Either answer is fine; the current state is the one that is not.**
+
+**Revert path:** `git revert` the comment commit (comment-only; no behaviour). Filing:
+`docs/overnight/inbox/2026-08-27T0250Z-ufc-sales-indexer-has-only-the-flaky-gha-backstop-left-and-the-backstop-delivers-a-third-of-its-schedule.md`.
+
 ### 2026-08-26 · SHIPPED (prod DDL + repo + pin) — `roll_pack_ask_hourly_low` wrote **26,846 rows an hour to effect ~8**; BOTH unguarded legs now carry change detection, and the pin that "covered" it was structurally blind to the property
 
 **What shipped.** `public.roll_pack_ask_hourly_low()` (pg_cron jobid 77, every 15 min) rewrote

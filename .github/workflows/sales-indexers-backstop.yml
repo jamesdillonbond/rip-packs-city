@@ -8,10 +8,40 @@ name: Sales Indexers Backstop
 # is a REDUNDANT BACKSTOP, not a replacement: both routes are fire-and-forget
 # (return 202/200, work runs in after()) and idempotent (block-cursor +
 # transaction_hash dedup), so firing them again from GHA is safe — a duplicate
-# tick advances the cursor or no-ops. Twice hourly (30-min max gap) stays well
-# under the watchlist max_silent (allday 90m / topshot 180m) even if GitHub
-# drops a scheduled run. Minutes :18/:48 are GHA-empty (rpc-pipeline+listing
-# 5,25,45; allday-ingest 10,30,50; pinnacle-owner 6,26,46; ops-monitor 13,43).
+# tick advances the cursor or no-ops. Scheduled twice hourly. Minutes :18/:48
+# are GHA-empty (rpc-pipeline+listing 5,25,45; allday-ingest 10,30,50;
+# pinnacle-owner 6,26,46; ops-monitor 13,43).
+#
+# 🚨 CORRECTED 2026-08-27 — this block used to claim "Twice hourly (30-min max
+# gap) stays well under the watchlist max_silent (allday 90m / topshot 180m)
+# even if GitHub drops a scheduled run." THAT GUARANTEE IS MEASURED FALSE, and
+# it was load-bearing: it is why nobody treated this backstop as fragile.
+#
+# GitHub deprioritises `schedule` events under load and drops most of them. The
+# rate is directly measurable on ufc-sales-indexer, which is the ONLY one of the
+# four whose cron-job.org primary is dead — so it is the one pipeline whose
+# cadence reflects THIS WORKFLOW ALONE. Measured over 24h on 2026-08-27:
+#
+#     pipeline                  runs/24h   avg gap   max gap
+#     topshot-sales-indexer          85     16.9m     40.0m   <- cron-job.org alive
+#     allday-sales-indexer           85     16.9m     40.0m   <- cron-job.org alive
+#     golazos-sales-indexer          87     16.5m     39.0m   <- cron-job.org alive
+#     ufc-sales-indexer              16     76.9m    191.9m   <- THIS WORKFLOW ONLY
+#
+# 16 of 48 scheduled runs delivered. The old comment budgeted for ONE dropped
+# run; the real rate is two in three. **A 191.9m max gap BREACHES All Day's 90m
+# max_silent**, so if cron-job.org ever dies for AllDay the way it has for UFC,
+# this backstop does NOT hold the line its header promised.
+#
+# ⛔ Do not "fix" this by tightening the cron expression — GitHub drops the
+# extra fires too, and a denser schedule on a deprioritised queue buys little.
+# A real fix needs a caller GitHub does not throttle. Full measurement, controls
+# and the UFC-specific finding: docs/overnight/inbox/2026-08-27T0250Z-ufc-sales-
+# indexer-has-only-the-flaky-gha-backstop-left-and-the-backstop-delivers-a-third-
+# of-its-schedule.md
+#
+# ⚠ These are DATED SAMPLES. GitHub's drop rate follows its own load — re-derive
+# from pipeline_runs before quoting them.
 #
 # 2026-06-30 (handoff-2026-06-30-cron-to-gha-migration): extended to the two
 # remaining watchlisted sales indexers, golazos-sales-indexer (cron-job.org
