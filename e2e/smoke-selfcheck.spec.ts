@@ -1,7 +1,8 @@
 import { test, expect, request as apiRequest } from "playwright/test"
 import http from "node:http"
 import type { AddressInfo } from "node:net"
-import { assertHealthyPage } from "./healthy-page"
+import { assertHealthyPage, CONSOLE_FAILURES } from "./healthy-page"
+import { armClockShift, assertClockShiftArmed, CLOCK_SHIFT_MS } from "./clock-shift"
 import {
   parseSitemapLocs,
   toPath,
@@ -107,6 +108,33 @@ const AMBIENT_NOISE = `<!doctype html><html><body>
   </script>
 </body></html>`
 
+// ── clock-shift fixture (positive control for e2e/hydration-clock.spec.ts) ──
+// Stands in for a page whose FIRST client render reads the wall clock. The
+// server's render time is baked into the HTML exactly as an ISR snapshot bakes
+// it; the script compares it to the browser's clock and reports a #418 when they
+// disagree by more than a minute — which is what React does when the two renders
+// produce different markup.
+//
+// ⚠ THIS EXISTS BECAUSE ARMING AND DETECTING ARE TWO DIFFERENT THINGS. The clock
+// spec's whole value rests on addInitScript reaching the page before its scripts
+// run; if it silently did not, every board would pass and the monitor would be
+// measuring nothing. This fixture is the end-to-end proof that a shifted clock
+// PRODUCES a caught failure — and its unshifted twin is the proof that an
+// unshifted run does not.
+function clockSensitive(serverNowMs: number): string {
+  return `<!doctype html><html><body>
+  <main>${CONTENT}</main>
+  <script>
+    (function () {
+      var serverNow = ${serverNowMs};
+      if (Math.abs(Date.now() - serverNow) > 60000) {
+        throw new Error("Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message");
+      }
+    })();
+  </script>
+</body></html>`
+}
+
 // Sitemap fixtures for the entity-URL discovery self-check (entity-urls.ts).
 // Segment 1 = TopShot editions, 2 = AllDay/Golazos/UFC editions, 3 = entities
 // (set/player/team) + top moments, 4 = packs, 0 = series (served EMPTY here to
@@ -168,6 +196,7 @@ test.beforeAll(async () => {
     else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
     else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
     else if (url.startsWith("/ambient-noise")) html(AMBIENT_NOISE)
+    else if (url.startsWith("/clock-sensitive")) html(clockSensitive(Date.now()))
     else if (url.startsWith("/four-oh-four-with-content")) html(`<!doctype html><html><body><main>${CONTENT}</main></body></html>`, 404)
     else if (url.startsWith("/five-hundred")) html("<!doctype html><html><body><h1>Internal Server Error</h1></body></html>", 500)
     else if (/^\/sitemap\/(\d)\.xml/.test(url)) {
@@ -370,4 +399,57 @@ test("a discovered entity path passes the health assertion end-to-end", async ({
   // Serve the discovered path off the same server as a healthy page: proves the
   // discover -> assertHealthyPage handoff the live spec performs.
   await assertHealthyPage(page, { path: `${base}/healthy`, name: "discovered-entity stand-in" })
+})
+
+// ── clock-shift machinery (guards e2e/hydration-clock.spec.ts) ─────────────
+
+function collectClockFailures(page: import("playwright/test").Page): string[] {
+  const failures: string[] = []
+  const record = (text: string) => {
+    if (CONSOLE_FAILURES.some((rx) => rx.test(text))) failures.push(text.slice(0, 300))
+  }
+  page.on("console", (msg) => {
+    if (msg.type() === "error" || msg.type() === "warning") record(msg.text())
+  })
+  page.on("pageerror", (err) => record(err.message))
+  return failures
+}
+
+test("the clock shift ARMS and is observable in the page", async ({ page }) => {
+  await armClockShift(page)
+  await page.goto(`${base}/healthy`, { waitUntil: "domcontentloaded" })
+  // Passes only if Date.now() really moved AND Date.parse / Date.UTC / new
+  // Date(iso) did not — a shim that broke those would red every board for a
+  // reason unrelated to hydration.
+  await assertClockShiftArmed(page)
+})
+
+test("assertClockShiftArmed FAILS when the shift was never armed (it cannot pass vacuously)", async ({ page }) => {
+  // The check that keeps the clock spec honest. Without this, a broken
+  // addInitScript would make every board pass while measuring nothing.
+  await page.goto(`${base}/healthy`, { waitUntil: "domcontentloaded" })
+  await expect(assertClockShiftArmed(page)).rejects.toThrow(/init script did not run|measuring nothing/)
+})
+
+test("a clock-sensitive page FAILS under the shift — the detector composes end to end", async ({ page }) => {
+  const failures = collectClockFailures(page)
+  await armClockShift(page)
+  await page.goto(`${base}/clock-sensitive`, { waitUntil: "domcontentloaded" })
+  await page.waitForLoadState("load").catch(() => {})
+  await page.waitForTimeout(500)
+  expect(
+    failures.some((f) => /#418/.test(f)),
+    `a page that renders differently ${CLOCK_SHIFT_MS / 3_600_000}h ahead must be caught; saw: ${failures.join(" | ")}`,
+  ).toBe(true)
+})
+
+test("the SAME page PASSES with the real clock (the shift is what makes it fail)", async ({ page }) => {
+  // Without this control, the case above would also pass if the fixture were
+  // simply broken — and the clock spec's failure message would be blaming the
+  // wrong thing.
+  const failures = collectClockFailures(page)
+  await page.goto(`${base}/clock-sensitive`, { waitUntil: "domcontentloaded" })
+  await page.waitForLoadState("load").catch(() => {})
+  await page.waitForTimeout(500)
+  expect(failures, `unshifted run must be clean; saw: ${failures.join(" | ")}`).toEqual([])
 })

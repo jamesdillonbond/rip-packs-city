@@ -62,7 +62,7 @@ const DEFAULT_MIN_CONTENT = 200
 // runtime-zone/locale formatting in hydrated insights components (see
 // __tests__/insights-client-dates-are-hydration-safe-guard.test.ts). Prevention
 // belongs there; this monitor is the net that catches what those cannot model.
-const CONSOLE_FAILURES: RegExp[] = [
+export const CONSOLE_FAILURES: RegExp[] = [
   /Minified React error #\d+/i, // any React invariant, incl. #418/#419/#423/#425
   /Hydration failed/i,
   /Text content does not match server-rendered HTML/i,
