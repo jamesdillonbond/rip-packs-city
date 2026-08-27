@@ -271,6 +271,46 @@ transaction, so running a rotating sweep more often with a smaller budget gives 
 survives a timeout" property with no procedure conversion, no `search_path` strip and no privilege change.
 Weigh it against the added IO on this IO-bound instance (R46).
 
+## 🚨 A FUNCTION'S `SET statement_timeout` DOES NOTHING — in EITHER direction — AND `current_setting()` REPORTS THE LIE BACK TO YOU (proven 2026-08-26)
+
+**`statement_timeout` arms a timer ONCE, when the top-level statement begins, from the value in
+effect at that moment. Changing the GUC inside a function — by `proconfig` (`SET … TO …` on the
+routine) or by `set_config(…, is_local => true)` in the body — does NOT re-arm it.**
+
+Proven by four probes on this instance, not inferred:
+
+| probe | setup | result |
+|---|---|---|
+| **A — can proconfig RAISE?** | fn with `SET statement_timeout TO '10s'`, sleeps 4 s, session at **2 s** | ⛔ **killed at 2 s** |
+| **B — can `set_config(…, true)` RAISE?** | same, set from inside the body | ⛔ **killed at 2 s** |
+| **C — can proconfig LOWER?** | fn with `SET statement_timeout TO '1s'`, sleeps 4 s, session at **20 s** | ✅ **FINISHED** |
+| **D — does a leading `SET` work?** | `SET statement_timeout='2s'; SET …='9s'; SELECT pg_sleep(4)` | ✅ completed, effective `9s` |
+
+🚨 **In probe C, `current_setting('statement_timeout')` read `1s` from inside a function that had
+already been running for four seconds.** ⭐ **So the obvious diagnostic — ask the session what
+timeout it is under — returns a value that is true about the GUC and false about the behaviour.**
+That is why this class of bug survives: every check anyone can run says the setting is applied.
+
+⭐ **THE ONLY FORM THAT WORKS is a leading `SET` as its own TOP-LEVEL statement**, which is why the
+pg_cron two-statement command works:
+
+```sql
+SET statement_timeout = '900s'; SELECT public.my_heavy_function();
+```
+
+pg_cron runs both in one implicit transaction with the `SET` as its own top-level command, so the
+session value is already changed when the `SELECT` arms its timer.
+
+**What actually governs a pg_cron job with no leading `SET`: the job's ROLE.** `cron_heavy.rolconfig`
+is `statement_timeout=600s`; `postgres` has none, so those fall to the cluster default. Measured
+2026-08-26: **48 active jobs declare a proconfig timeout that is inert** — and the fiction runs both
+ways, with **26 `cron_heavy` jobs declaring 60–480 s while actually free to run to 600 s.**
+
+⛔ **Do not read a routine's `proconfig` as a budget** — not in review, not in an incident, not when
+tuning. ⛔ **And do not "make the declarations real" as a batch:** several jobs have SUCCEEDED well
+past their declared value (jobid 217 declares 120 s and has succeeded at 595 s), so enforcing them
+would convert working runs into failures. See known-issues **#43**.
+
 ## 🚨 A PARTIAL INDEX WHOSE PREDICATE SAYS `col IS NOT NULL` ON A `NOT NULL` COLUMN IS UNREACHABLE ON PG 17 (2026-08-23)
 
 This DB is **PostgreSQL 17.6**. PG 17 removes a redundant `col IS NOT NULL` qual when `col` is declared

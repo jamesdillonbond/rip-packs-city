@@ -630,6 +630,64 @@ retries (one ownership walk is already 87.7% of the monthly datapoint budget).
 **Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
 change is shared — reverting it re-exposes all five candy routes, not just this one.
 
+### 2026-08-26 · 🚨 PROVEN BY EXPERIMENT, nothing shipped — **48 pg_cron jobs declare a `statement_timeout` that does nothing**, and `current_setting()` reports the lie back to you
+
+**Followed the cheapest item in the entry below** — jobid 256 `rpc-thin-sale-ask-disclosure-refresh`,
+whose function declares **900 s twice** (proconfig *and* an explicit `set_config(..., true)` whose own
+comment records *"the first scheduled run died at exactly 120s despite proconfig saying 300s"*) —
+**and whose every run dies at exactly 600.** ⭐ **The author diagnosed the symptom correctly and then
+reached for a second fix of the same shape as the one that had just failed.**
+
+⭐⭐ **The mechanism, proven rather than inferred: `statement_timeout` arms a timer ONCE, when the
+top-level statement begins, from the value in effect at that moment. Changing the GUC inside a
+function does not re-arm it — in EITHER direction.** Four probes, created and cleaned up:
+
+| probe | setup | result |
+|---|---|---|
+| **A — can proconfig RAISE?** | fn proconfig `10s`, sleeps 4 s, session `2s` | ⛔ **killed at 2 s** |
+| **B — can `set_config(…, true)` RAISE?** | same, set from inside the body | ⛔ **killed at 2 s** |
+| **C — can proconfig LOWER?** | fn proconfig **`1s`**, sleeps 4 s, session `20s` | ✅ **FINISHED**, and `current_setting()` **inside** read `1s` |
+| **D — does a leading `SET` work?** | `SET …='2s'; SET …='9s'; SELECT pg_sleep(4)` | ✅ completed, effective `9s` |
+
+🚨 **Probe C is the one to remember: a function whose declared timeout is ONE SECOND ran for four
+seconds while reporting `1s` from `current_setting()`.** ⭐ **That is why this survived — every check
+anyone could run says the setting is applied. A diagnostic that asks the session "what timeout am I
+under?" gets an answer that is true about the GUC and false about the behaviour.**
+
+**THE POPULATION.** Of active jobs whose target function declares a proconfig timeout: **36
+`cron_heavy` with no leading `SET`** (1 declares >600 s, 9 declare 600 s, **26 declare 60–480 s**),
+**12 `postgres` with no leading `SET`** (all 60–300 s), and **only 7 use the working two-statement
+form.** `cron_heavy.rolconfig` is `statement_timeout=600s`, so **all 36 actually run at 600 s.**
+⭐ **The fiction runs BOTH ways, and the second half is the surprise: 26 jobs written to stop after a
+minute to eight minutes are actually free to burn ten.**
+
+✅ **Confirmed on production data, independently of the probes:** jobid **217** declares 120 s, has
+**SUCCEEDED at 595 s**, fails at 600; jobid **73** declares 120 s, max success 589 s, fails at 600.
+
+🚨 **What it costs, and the trap in the obvious fix.** Those two wasted **22,360 s and 15,114 s** in
+7 days at 600 s a failure; **real budgets would have made that ~7,500 s instead of ~37,500 s — 5×,
+with no query changed**, since a run that is going to fail should fail fast. ⛔ **But "make the
+declarations real" would be a MISTAKE: jobid 217 has SUCCEEDED at 595 s, so enforcing its declared
+120 s converts most of its successful runs into failures.** The numbers were written by people who
+never saw them take effect, **so there is no reason to believe any of the 48 reflects a considered
+budget.** 👉 **They are fiction, to be reconciled deliberately per job against its observed success
+distribution — and until then nobody may read a function's `proconfig` as a budget.**
+
+⛔ **And do NOT just raise jobid 256's budget.** `fmv_thin_sale_ask_disclosure_cache` has **no
+consumer** — 0 functions, 0 views, 0 matviews, no `anon`/`authenticated` grant, no repo reference —
+so it burns **600 s a day of the instance's binding constraint to fill a table nothing reads**, and
+serves **14-day-old rows** (216 rows stamped 2026-08-13) to anyone who does. ⓘ **This also corrects
+the entry below: "never succeeded" was wrong — it succeeded once, on 08-13, and has failed every day
+since.** ⚠ "No consumer found" is not "no consumer"; that is Trevor's call, and it is the cheapest
+item in #42 either way.
+
+⛔ **It also WEAKENS the entry below's "Class B".** jobid 215's 731 s is explained (its cron command
+is **two** statements, each getting its own 600 s); **jobid 210's 771 s on a single statement is
+not**, and the likeliest reading is that `job_run_details.start_time` includes **queue wait**
+(`cron.max_running_jobs = 32` vs `max_worker_processes = 6`). **So that ratio carries queue-wait
+noise, and Class B may be an artifact of it.** Registered as **known-issues #43**. Filing:
+[inbox 2026-08-27T0450Z](inbox/2026-08-27T0450Z-PROVEN-48-cron-jobs-declare-a-statement-timeout-that-does-nothing.md).
+
 ### 2026-08-26 · ⭐ MEASURED, nothing shipped — **22.6% of all pg_cron time is thrown away**, 85.2% of it is statement timeouts, and the driver is **schedule ALIGNMENT**
 
 **7 days of `cron.job_run_details`: 28,509 runs, 914,843 busy seconds, 1,502 failures, 206,362
