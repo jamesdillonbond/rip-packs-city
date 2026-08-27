@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (CI) — `Install Flow CLI` reddened `main` twice tonight, and the 7-attempt retry loop was **structurally unable** to help
+
+**The symptom.** Two of the last 20 CI runs failed, both on `Cadence escrow tests (flow test)` →
+`Install Flow CLI`, both within an hour. ⚠ **Neither was caused by the commit it failed on** (one was
+a ledger docs commit, the other the alerts timeout change) — read the failing JOB, not the commit.
+
+⭐ **The log is the whole diagnosis, and it says the retry loop cannot possibly work.** All **seven**
+attempts failed **~65 ms in**, each at:
+
+```
+Getting version of latest stable release ...
+flow-cli install attempt N failed; retrying in 8s / 16s / 24s / 32s / 40s / 48s
+##[error]Flow CLI failed to install after retries
+```
+
+**65 ms is not a download.** `install.sh` resolves "latest" via
+`curl https://api.github.com/repos/onflow/flow-cli/releases/latest` — **unauthenticated, 60 req/hr,
+shared across the entire GitHub-runner IP pool.** Once that limit is hit the failure is
+DETERMINISTIC for the rest of the hour, and the loop's whole budget is ~168 s.
+
+⭐ **The durable lesson: a retry loop only helps a TRANSIENT failure. Against a deterministic one it
+converts a fast red into a slow red** — here it spent nearly three minutes proving the same thing
+seven times. The existing comment block is careful and correct about the failure it was written for
+(a 2026-07-31 curl reset on the raw.githubusercontent fetch); **this is a different failure at a
+different URL in a different phase, and the loop was inherited as if it covered both.** ⚠ *Ask what
+a retry is retrying.*
+
+**Fix: `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` on both `Install Flow CLI` steps.** `install.sh`
+already reads `GITHUB_TOKEN` and sends it as an auth header, and **falls back to unauthenticated on a
+403**, so it cannot make things worse. `secrets.GITHUB_TOKEN` is minted per run — **no new secret** —
+and lifts the limit to 1,000/hr scoped to this repo instead of 60/hr shared with every other project
+on the runner.
+
+⛔ **Deliberately NOT pinned to a version**, though `install.sh` takes one as arg 1 and would skip the
+API call entirely. Pinning trades a CI-reliability problem for a COVERAGE one: these jobs exist to
+run `flow cadence lint` and `flow test` against the CLI users actually get. Recorded in the workflow
+so the option is visible without being silently taken.
+
+⚠ **Both copies were changed.** The step is duplicated across `cadence-lint` and
+`cadence-escrow-tests`, and only the second went red — fixing one would have left a live instance,
+which is this repo's recurring "fixed the file, not the expression" shape.
+
+**Verified:** the workflow **parses** (js-yaml, 10 jobs) and both steps carry the env — not just a
+grep for the string. ⚠ **The real proof is a green run on a fresh rate-limit window**, which is CI's
+to give; the mechanism is measured but the fix is unconfirmed until then.
+
 ### 2026-08-26 · SHIPPED — the unbounded-fetch class gets a RATCHET, and building it proved my own sweep had been UNDERCOUNTING
 
 Rather than fix all 29 sites (unsafe — the correct timeout is not a constant) or keep filing them,

@@ -117,6 +117,32 @@ jobs:
         # confusing `flow: command not found` (exit 127). Retry the fetch with
         # backoff, and verify `flow` is actually on PATH so a real install
         # failure fails HERE, loudly, instead of masquerading downstream.
+        #
+        # 🚨 GITHUB_TOKEN added 2026-08-27, and it is NOT about the fetch above —
+        # it fixes a failure the retry loop is STRUCTURALLY UNABLE to help with.
+        #
+        # Two CI runs failed this step that night. The log shows all SEVEN
+        # attempts failing ~65ms in, each at "Getting version of latest stable
+        # release ..." — i.e. not a download at all. install.sh resolves "latest"
+        # via `curl "https://api.github.com/repos/onflow/flow-cli/releases/latest"`,
+        # which is UNAUTHENTICATED at 60 req/hr shared across the whole runner
+        # IP pool. Once that limit is hit, more retries cannot clear it: the
+        # loop's entire budget is ~168s and the rate-limit window is an hour.
+        # ⭐ A retry loop only helps a TRANSIENT failure; it converts a
+        # deterministic one into a slower deterministic one.
+        #
+        # install.sh reads GITHUB_TOKEN and sends it as an auth header (and falls
+        # back to unauthenticated on a 403, so this cannot make things worse).
+        # `secrets.GITHUB_TOKEN` is minted automatically per run — no new secret —
+        # and raises the limit to 1,000/hr scoped to this repo rather than 60/hr
+        # shared with every other project on the runner.
+        #
+        # ⓘ The alternative is pinning a version (install.sh takes it as arg 1 and
+        # then skips the API call entirely). Deliberately NOT done: it would stop
+        # these jobs testing against the Flow CLI users actually get, trading a
+        # CI-reliability problem for a coverage one.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5 6 7; do
@@ -173,6 +199,13 @@ jobs:
       - name: Install Flow CLI
         # See the cadence-lint job above: retry the network fetch and verify the
         # binary landed so a transient reset fails here instead of downstream.
+        #
+        # ⚠ GITHUB_TOKEN is required here for the SAME reason as that job, and
+        # both copies must carry it — this is the job that actually went red on
+        # 2026-08-27 (twice), on the unauthenticated GitHub API rate limit during
+        # "Getting version of latest stable release", which no retry can clear.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5 6 7; do
