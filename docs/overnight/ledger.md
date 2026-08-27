@@ -10,6 +10,76 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⭐⭐ SETTLED, nothing shipped to prod — the `proconfig` experiment this repo DESIGNED on 08-17 and could not run has now been run, and **both sides of a two-week argument were right about their own evidence**
+
+**What was open.** `database.md` has carried a contradiction since 08-16. One bullet proves a function's
+`SET statement_timeout` is **INERT** (live probes, both directions). Another records that the rule *"came
+one inference from being overturned"* by a filed correction claiming it **BINDS** on the PostgREST path —
+rejected as **selection bias** because it never queried for exceedances, and exceedances are everywhere
+(`refresh_mv_pack_ev_latest` declares **120 s** and reaches **596,559 ms**; *"if `proconfig` bound, every
+one is impossible"*). The file names the decisive experiment verbatim — *two throwaway `pg_sleep(45)`
+functions, one declaring 60 s and one bare, called through HTTP with the service-role key* — and says it
+**cannot be run from the sandbox** (no egress, no key). ⭐ **Trevor's box has both.**
+
+**Result — A/B, same path, one variable.** Two `SECURITY INVOKER` probes, both sleeping **40 s**, both
+POSTed to `/rest/v1/rpc/…` with the service-role key:
+
+| probe | declares | result |
+|---|---|---|
+| bare | *nothing* | **HTTP 500 at 31 s** — `57014 canceling statement due to statement timeout` |
+| declaring | `SET statement_timeout TO '60s'` | **HTTP 200 at 41 s** — completed, reads `1min` |
+
+✅ Reproduced on the real object: `wallet_usernames_unresolved` (declares 60 s) → **500 at 61 s**.
+
+⭐⭐ **THE RECONCILIATION IS THE FINDING, not the A/B.** The 08-17 refutation was right to demand
+exceedances and right that it found them — **but every one is on the other path.** Joining
+`pg_stat_statements` to `pg_roles` and splitting on the `pgrst_source` wrapper that marks a PostgREST
+statement: bare `SELECT public.fn()` calls overrun their declaration **44 of 248 times (worst 596,559 ms
+against 120 s)**; PostgREST statements overrun **2 of 106**. All top-12 overruns are `cron_heavy` (11) or
+`postgres` (1). **"Impossible if proconfig bound" was true of the sample, and the sample was one path.**
+
+⚠ **The two exceptions are not noise — they give the second half of the rule.** `get_pack_detail` and
+`get_set_detail` both declare **8 s** and reach **20,704 / 13,167 ms**, both `service_role`, both matching
+exactly one declaring function. **Both declare BELOW `service_role`'s 30 s.** So: **on the PostgREST path a
+HIGHER declaration RAISES the ceiling; a LOWER one stays inert.** A declaration can buy time, never give
+it back. ⭐ **Checking the two rather than rounding them to zero is what produced the direction half** — my
+prediction was "zero PostgREST exceedances", and it was wrong in an informative way.
+
+⛔ **CONSEQUENCE THAT CHANGES WHAT IS SAFE TO DO, and it is the MIRROR of #43's warning.** #43 rightly
+says do not *make* the declarations real as a batch. **The live hazard is the opposite: 122 of 195
+declaring functions declare MORE than `service_role`'s 30 s** (up to **900 s**; four board refreshes at
+600 s), **and on the PostgREST path those are load-bearing — a cleanup that strips them as "proven
+no-ops" would silently cap 122 functions at 30 s.** ⚠ Parsed to seconds, not compared as text: `max()` on
+the raw column is **lexicographic** and reports `'90s' > '600s'`.
+
+✅ **Closes two questions this file left open** — the *"UNIDENTIFIED ~60 s client-side bound"* on that
+route is **no client bound at all**, it is the callee's own declaration; and the 58.2-vs-60 s match
+recorded as *"a COINCIDENCE"* **is the mechanism**. CLAUDE.md's *"no Postgres timeout bounds a
+`supabaseAdmin` RPC"* is refuted **and explained**: 352 s is what you get when the callee declares 600 s.
+
+⛔ **THE MECHANISM IS DELIBERATELY NOT CLAIMED.** A session `SET statement_timeout = '3s'` around a
+function declaring `60s` **still dies at 3 s**, so #43's probes reproduce exactly and **both behaviours are
+real**. Four data points, no unifying story — writing one would be the *"a plausible mechanism is not a
+measurement"* error. ⚠ **`anon`/`authenticated` NOT re-probed**: it needs an anon-executable sleep
+function, a DoS primitive on a public API that would trip the SECDEF-anon-exec sentinel.
+
+ⓘ **Where it came from, and a refuted rewrite recorded so nobody re-derives it.**
+`wallet-username-resolver` fails **10 of 15 ticks / 48 h**, every failure at **~60.1 s with
+`rows_found: 0`**. It is not a config bug: the 60 s is real and the query needs it. Measured **during a
+saturation spell (active=8 / io_wait=9), so BUFFERS only, no timing claims** — **147,652 buffers**, the
+`sales` legs ~61,000 each with **`Heap Fetches: 49,343 of 98,511 (50%)`** because the 21-day window sits on
+the write head of `sales_2026` (the #39 lesson in a second place). ⭐⭐ **All of it to find 15 rows**
+(`Limit actual rows=15`, `Rows Removed by Filter: 4130`), every 3 h. ⛔ **A rewrite I was about to ship is
+REFUTED by its own measurement**: making the `sales` leg pre-aggregate like the `pack_purchases` legs is
+**provably equivalent** (symmetric diff over the real population: 3,238 = 3,238, **0 only-in-old, 0
+only-in-new**) but makes the plan scan `sales` **twice** — equivalent and worse. The real lever is
+maintaining `wallet_usernames` at ingest, which is an ingest-path change and **not auto-shippable**.
+
+**Prod state:** three scratch probe functions created and **dropped**; `scratch%` count back to **0** and
+`check_secdef_anon_execute_violations()` = `[]`. No migration, no schema change, no data mutation.
+**Revert:** docs only — `git revert` this commit. ⚠ CLAUDE.md's Database bullet was **displaced, not
+grown** (39,970 / 40,000, 30 chars headroom).
+
 ### 2026-08-27 · ✅ VERIFIED ON THE NATURAL CADENCE — three consecutive scheduled candy sweeps, all complete, **21.8–33.1 s** against a 375–391 s baseline
 
 The batching entry's caveat was explicit: *"one tick is not a rate."* Three consecutive **scheduled**
