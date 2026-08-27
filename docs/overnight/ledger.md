@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — unbounded-fetch class item 2: `sales-indexer`'s Top Shot GQL call, and a deadline deliberately NOT added
+
+Second item off tonight's [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md)
+triage, still one route at a time. `sales-indexer` is the **HIGH-severity** watchlist pipeline behind
+Top Shot sales — the busiest ingest on the platform.
+
+**One unbounded call, inside the worst possible shape.** The GQL proxy fetch runs up to `GQL_MAX`
+(50) times inside an `after()` body under `maxDuration = 120`. `fetch()` has no default timeout, so
+one upstream holding the connection open consumes the entire tick — and the route's own header
+already spells out the consequence: *"a maxDuration kill therefore takes the terminal row with it"*.
+The failure would be invisible and read as "the cron never fired". Now `AbortSignal.timeout(10_000)`.
+
+✅ **Checked the sibling path rather than assuming it shared the defect:**
+`decodeTopShotSaleTx` in `lib/chains/flow/dapper-v1-tx-decode.ts` was **already bounded at 8 s**
+(and `decodeTopShotSaleTxViaSpork` at 25 s). The GQL call was the only unbounded one in the route.
+
+## ⛔ And a deadline was deliberately NOT added — measured, not stylistic
+
+The candy sweeps got a whole-loop `SWEEP_BUDGET_MS`. This route does not, and the difference is the
+distribution:
+
+| | runs/24h | ok | min | avg | p95 | max | ceiling |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `topshot-sales-indexer` | 85 | **85** | 541 ms | 13,318 ms | 40,051 ms | 83,046 ms | 120 s |
+
+**It is not missing terminal rows — 85 of 85 succeeded.** A deadline would have to be sized into the
+narrow 83–120 s band between the observed max and the ceiling, where it could only ever truncate
+healthy runs. ⭐ **Bound the hang; do not police a route that is already finishing.**
+
+⚠ **That restraint is a direct application of the error corrected earlier tonight** on
+`candy-listings-indexer`, where a budget sized off the DECLARED `maxDuration` instead of the observed
+success band would have truncated every healthy sweep on record. **The same reasoning produces
+opposite actions on the two routes, because the two distributions are different** — which is the
+point: the rule is "read the distribution", not "add a budget".
+
+**Test asserts the property on the REQUEST INIT, not the source text**, and was proven against the
+offender: with the signal removed it fails with the proxy URL listed. Not-vacuous arm included (a
+run where the GQL fallback never fires would assert nothing). Full suite green (**1384 files /
+15179 tests**).
+
+⚠ **26 sites remain in the class**, still deliberately untouched.
+
+**Revert path:** `git revert` the code commit. No DB or prod-state change.
+
 ### 2026-08-26 · ✅ VERIFIED — the batched candy sweep runs in **18.7 s instead of ~385 s** (~20x), and it is the first COMPLETE sweep since 2026-08-25
 
 The previous entry's expected effect was filed explicitly as a **prediction**, with an instruction to
