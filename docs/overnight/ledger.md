@@ -10,6 +10,84 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — the PUBLIC candy board went dark for **44 hours** because two `fetch()` calls had no timeout; the fix already existed one file away and had never spread
+
+**The symptom.** `/insights/candy-mlb` is public, and its Deals/Spread/Serials tabs read
+`candy_listings`. Measured 2026-08-27: `max(last_seen_at)` = **2026-08-25 06:42Z — 44.3 h stale**,
+**0 rows seen in 24 h**, and it was **getting worse** (38 h at the 21:20Z filing, 44 h six hours later).
+
+**The signature, and it is the documented one.** In 48 h: **15 invocation heartbeats, ONE terminal
+`pipeline_runs` row.** The `after()` body has a try/catch that logs an `ok:false` row, so a THROW
+would have been recorded — **nothing was**, which means the tick was **KILLED, not failed**.
+Corroborated by Vercel: `GET /api/candy-listings-indexer 202` → `Vercel Runtime Timeout Error: Task
+timed out after 300 seconds`.
+
+**The cause: `fetch()` HAS NO DEFAULT TIMEOUT.** `fetchListings` and `fetchActivities` were bare
+fetches. An upstream that accepts the connection and holds it open consumes the entire 300 s budget.
+
+⭐ **The fix already existed in this codebase, in a function this very route calls one line above the
+ME walk.** `solUsd()` in `lib/chains/solana/das.ts` carries `AbortSignal.timeout(8000)` and a comment
+naming this exact failure mode — *"rate-limits datacenter egress hard and can hold a connection open
+indefinitely. fetch() has no default timeout, so an unbounded call here can consume a caller's ENTIRE
+lambda budget."* The reasoning was written down, applied to CoinGecko, and never applied to Magic
+Eden. **This is CLAUDE.md's "grep for the EXPRESSION, not the file" — in the direction nobody checks:
+it is not the DEFECT that spread by copy-paste, it is the FIX that failed to.**
+
+## ⛔ Three hypotheses I tested and KILLED before landing on this
+
+Recorded because each was plausible and two were mine:
+
+1. **N+1 DB lookups in the page loop** (up to 10,000 listings × a `wallet_moments_cache` probe).
+   **FALSIFIED:** with the real Candy UUID that probe is an **Index Only Scan on
+   `idx_wmc_moment_collection_cover`, 1.39 ms, 3 buffers** → ~14 s for the whole book, not 300 s.
+   ⚠ My first EXPLAIN used a GUESSED UUID and chose a different, worse index — **a plan measured
+   against a fake key is not the plan production runs.**
+2. **`MAX_PAGES` truncation** (100 × 100 = 10,000-listing bound). **FALSIFIED:** the book is shallow —
+   ME returns **0 rows by offset 2000**, so the short-page break ends the sweep long before the cap.
+3. **The filing's Magic Eden 429 hypothesis.** ⚠ **NOT falsified, and I nearly said it was.** ME
+   answered **200 in 0.1–1.0 s** from this box — but CLAUDE.md is explicit that this box is a
+   **DIFFERENT EGRESS** and that a latency/timeout failure must never be attributed from here. A hang
+   that appears only on datacenter egress is exactly the shape of the Cloudflare 1015s the sibling
+   `candy-offers-indexer` is getting from Vercel in the same window. **The residential 200s
+   STRENGTHEN that reading rather than weakening it** — fast and shallow from a home IP, dead from
+   Vercel, is an egress difference.
+
+**Which is why the fix is a timeout and not a guess at the upstream.** Bounding the wait does not
+require knowing whether ME hangs, throttles or tarpits; it converts an invisible 300 s kill into a
+cheap, LOGGED failure — and that is the diagnostic every one of the above hypotheses was missing.
+
+## What shipped
+
+- `AbortSignal.timeout(15_000)` on **both** ME calls.
+- ⭐ **A whole-sweep `SWEEP_BUDGET_MS = 240_000` deadline, which is a SEPARATE guarantee and not
+  belt-and-braces.** A per-request cap bounds ONE call; `MAX_PAGES` is 100, so per-request caps alone
+  still permit **100 × 15 s = 1,500 s**, five times `maxDuration`. Without a total budget the route
+  could still be killed before reaching `logRun` — which IS the defect. 240 s leaves ~60 s for the
+  upserts, activities walk and deactivation pass, so the sweep always reaches its own logging.
+- `budget_exhausted` + `pages_walked` in `extra`. Without them a time-truncated sweep and a genuinely
+  short book both read `sweep_complete:false` — the same empty-vs-unavailable conflation this repo
+  fixes everywhere else.
+
+**Safety:** every failure path already fails safe. Deactivation here is **evidence-based** (an
+explicit delist or fill from the activities feed), never absence-based, and `sweepComplete` gates
+nothing but reporting (verified — it appears at 6 sites, all assignment or logging). A deadline break
+refreshes fewer prices and cannot destroy an ask.
+
+**Tests:** two added, and **the property is asserted on the REQUEST INIT, not the source text** — a
+source grep would be satisfied by the comment documenting the fix, which is precisely the trap the
+sibling OG guard fell into earlier tonight. ✅ **Proven against the offender**: with the signals
+removed the guard fails with both call sites listed. A second test pins that an abort still writes an
+`ok:false` terminal row — bounding the wait is only useful if the failure becomes visible. Full suite
+green (1383 files / 15160 tests).
+
+🚨 **This is a CLASS, not an instance — filed, not swept.** A comment-stripped walk of `app/api` and
+`lib` finds **117 unbounded `await fetch(` sites across 87 files.** ⛔ **Do NOT blanket-fix them** —
+many are internal or already inside a bounded caller, and a blind sweep would be a large untested
+change. The triage that matters: an unbounded fetch inside an `after()` route with a `maxDuration` is
+the dangerous shape, because that is the one whose failure is INVISIBLE.
+
+**Revert path:** `git revert` the code commit. No DB or prod-state change.
+
 ### 2026-08-26 · SHIPPED (code + a new guard rule) — the production React #418 is FIXED, and the guard that was green while it threw now has the rule it was missing
 
 **Repo only: two component fixes' worth of behaviour in one file, three inline markers,
