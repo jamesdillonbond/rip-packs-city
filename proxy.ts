@@ -384,6 +384,19 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // allowlists event_type + clamps every field server-side; the proxy /api/
   // rate limiter (60/min/IP) still applies.
   if (pathname === "/api/track-funnel") return true
+  // /api/telemetry — fire-and-forget feature beacon behind lib/telemetry/track.ts.
+  // Anon visitors fire it on public surfaces (found live on /insights/pack-sniper),
+  // and without this bypass the unauthenticated POST is caught by the session gate,
+  // 302'd to /login, and /login rejects POST with 405 — so the beacon is dropped and
+  // the ENTIRE anonymous telemetry stream is lost. Positive control at the time of
+  // the fix: usage_events held 10 `user:%` rows and ZERO `anon` rows over 14 days.
+  // The route resolves the caller server-side (session -> wallet, else `user:<id>`,
+  // else "anon"), clamps feature to 80 chars and metadata to 4 KB, writes only
+  // usage_events, and ALWAYS returns 204 with a null body — so it is not an oracle.
+  // The proxy /api/ rate limiter (60/min/IP) still applies: it runs BEFORE this
+  // public-bypass block and exempts only /api/cron, /api/ingest and bot-token calls.
+  // Same risk profile as track-click / track-funnel / subscribe above.
+  if (pathname === "/api/telemetry") return true
   // /api/subscribe + subpaths — anon email / early-access capture (POST) plus
   // the email-link verify / unsubscribe GETs. The marketing home and /insights
   // lead-capture band hit POST /api/subscribe unauthenticated.
