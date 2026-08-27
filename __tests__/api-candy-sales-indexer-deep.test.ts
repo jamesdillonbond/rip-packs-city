@@ -138,6 +138,37 @@ describe("candy-sales-indexer — discovery gate + auth", () => {
   })
 })
 
+describe("candy-sales-indexer — the Magic Eden walk is time-bounded", () => {
+  // 🚨 WHY. `fetch()` has NO default timeout, and this route runs inside
+  // `after()` with maxDuration 300 — so an upstream holding the connection open
+  // consumes the whole budget, and a maxDuration kill writes NO terminal
+  // pipeline_runs row, making the outage invisible. Measured on the sibling
+  // /api/candy-listings-indexer 2026-08-27 (15 heartbeats, ONE terminal row in
+  // 48h, PUBLIC board 44h stale). This route is the MOST exposed caller of the
+  // pattern: it is the one already observed taking Cloudflare 1015 rate-limits
+  // (HTTP 429) from Vercel against this same host.
+  //
+  // ⚠ Asserted on the REQUEST INIT, not the source text — a source grep would be
+  // satisfied by the comment you are reading.
+  it("passes an abort signal on every Magic Eden request", async () => {
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    install({ sales: [{ data: [], error: null }] })
+
+    await POST(req())
+    await runDeferred()
+
+    const meCalls = fetchMock.calls.filter((c) => /magiceden\.dev/.test(c.url))
+    // Not vacuous: with no ME calls the filter below asserts nothing.
+    expect(meCalls.length).toBeGreaterThan(0)
+    const unbounded = meCalls.filter((c) => !c.init?.signal).map((c) => c.url)
+    expect(
+      unbounded,
+      "every Magic Eden request must carry an AbortSignal — an unbounded one " +
+        "consumes the whole 300s lambda budget and the tick dies unlogged",
+    ).toEqual([])
+  })
+})
+
 describe("candy-sales-indexer — ingest ladder", () => {
   it("writes an exact USD `sales` row for a resolvable ME sale + logs cursor accounting", async () => {
     const acts: Act[] = [

@@ -49,9 +49,12 @@ interface DasPage {
   items: DasAsset[]
 }
 
+/** Per-request cap on a DAS proxy call. See the note at the `fetch` below. */
+const DAS_FETCH_TIMEOUT_MS = 25_000
+
 /**
  * Low-level JSON-RPC call through helius-proxy. Returns the `result` field;
- * throws on a JSON-RPC `error` or a non-2xx proxy response.
+ * throws on a JSON-RPC `error`, a non-2xx proxy response, or a timeout.
  */
 export async function dasCall<T = unknown>(
   method: string,
@@ -69,6 +72,24 @@ export async function dasCall<T = unknown>(
       "X-Proxy-Secret": HELIUS_PROXY_SECRET,
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    // 25s cap. `fetch()` has no default timeout, so a proxy that accepts the
+    // connection and holds it open consumes the CALLER's entire lambda budget —
+    // and every caller of this helper is a candy ingest route running inside
+    // `after()`, where a maxDuration kill writes NO terminal pipeline_runs row
+    // at all. The failure is therefore invisible and reads as "the cron never
+    // fired". That exact outage was measured on the sibling
+    // /api/candy-listings-indexer on 2026-08-27: 15 heartbeats, ONE terminal row
+    // in 48h, and a PUBLIC board 44 hours stale.
+    //
+    // ⚠ Deliberately looser than the 8s used for CoinGecko below: a DAS page
+    // (getAssetsByGroup at limit 1000) is real work, not a price lookup, so a
+    // tight cap would convert working behaviour into failure. This bounds a
+    // HANG, it does not police latency.
+    //
+    // ⚠ This helper THROWS on abort, like every other failure here, and callers
+    // already handle a throw. `candy-sales-indexer` budgets 400 asset fetches a
+    // tick — unbounded, one stuck call could eat all 300s on its own.
+    signal: AbortSignal.timeout(DAS_FETCH_TIMEOUT_MS),
   })
   if (!resp.ok) {
     const text = await resp.text().catch(() => "")

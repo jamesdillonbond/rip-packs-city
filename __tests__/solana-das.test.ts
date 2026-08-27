@@ -63,6 +63,29 @@ describe("dasCall request/response", () => {
     expect(payload).toEqual({ jsonrpc: "2.0", id: 1, method: "getAsset", params: { id: "mint1" } })
   })
 
+  it("bounds the request with an abort signal — an unbounded DAS call eats the caller's whole lambda", async () => {
+    // 🚨 WHY. `fetch()` has NO default timeout. Every caller of this helper is a
+    // candy ingest route running inside `after()` with a `maxDuration`, and a
+    // lambda killed at that ceiling runs neither the success path nor the catch
+    // — so NO terminal pipeline_runs row is written and the outage is invisible,
+    // reading as "the cron never fired". Measured on the sibling
+    // /api/candy-listings-indexer 2026-08-27: 15 heartbeats, ONE terminal row in
+    // 48h, and a PUBLIC board 44 hours stale.
+    //
+    // `candy-sales-indexer` budgets 400 asset fetches per tick, so unbounded a
+    // single stuck call could consume all 300s by itself.
+    //
+    // ⚠ Asserted on the REQUEST INIT, not on the source text — a source grep
+    // would be satisfied by the comment you are reading.
+    const das = await load()
+    fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: {} }))
+    await das.dasCall("getAsset", { id: "mint1" })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.signal, "dasCall must pass an AbortSignal").toBeDefined()
+    expect(typeof (init.signal as AbortSignal).aborted).toBe("boolean")
+  })
+
   it("throws with status + body on a non-2xx proxy response", async () => {
     const das = await load()
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "worker down" })

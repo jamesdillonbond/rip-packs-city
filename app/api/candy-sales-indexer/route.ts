@@ -34,6 +34,20 @@ const PIPELINE_NAME = "candy-sales-indexer"
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
 const ME_LIMIT = 500
 const MAX_PAGES = 40
+// Per-request cap on each Magic Eden call. See the note at the fetch itself.
+const ME_FETCH_TIMEOUT_MS = 15_000
+// Whole-sweep deadline, and a SEPARATE guarantee from the per-request cap — not
+// a duplicate of it. ME_FETCH_TIMEOUT_MS bounds ONE call; MAX_PAGES is 40, so
+// per-request caps alone still permit 40 x 15s = 600s, twice this route's 300s
+// maxDuration. Without a total budget the sweep can still be killed before
+// reaching logRun, which is the whole defect being fixed: a killed tick writes
+// no terminal row, so the failure is invisible to pipeline_runs.
+//
+// 240s leaves ~60s for the asset-resolution, drain and logging phases that
+// follow the walk. Stopping early just leaves sales for the next tick — the
+// cursor only advances over pages actually processed, and unresolved rows are
+// retried by design.
+const SWEEP_BUDGET_MS = 240_000
 // Bound DAS getAsset() calls per tick (edition + serial resolution) so a large
 // backlog can't blow the lambda budget — unresolved sales are retried next tick.
 const ASSET_FETCH_BUDGET = 400
@@ -84,7 +98,17 @@ async function fetchActivities(offset: number): Promise<MeActivity[]> {
   const key = process.env.MAGIC_EDEN_API_KEY
   if (key) headers["Authorization"] = `Bearer ${key}`
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=${ME_LIMIT}`
-  const resp = await fetch(url, { headers })
+  // 15s cap. `fetch()` has no default timeout, and this route runs inside
+  // `after()` with maxDuration 300 — so an upstream that accepts the connection
+  // and holds it open consumes the whole budget, and a maxDuration kill writes
+  // NO terminal pipeline_runs row, making the outage invisible. Measured on the
+  // sibling /api/candy-listings-indexer 2026-08-27 (15 heartbeats, ONE terminal
+  // row in 48h, public board 44h stale) and fixed there the same evening.
+  //
+  // ⚠ This route is the one already observed taking Cloudflare 1015 rate-limits
+  // (HTTP 429) from Vercel against this same Magic Eden host, so it is the most
+  // exposed caller of the pattern, not a speculative one.
+  const resp = await fetch(url, { headers, signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
     throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
   }
@@ -392,7 +416,13 @@ async function handleIndex(req: NextRequest) {
 
       let activitiesSeen = 0
       let reachedKnown = false
+      let budgetExhausted = false
       for (let page = 0; page < MAX_PAGES && !reachedKnown; page++) {
+        // Stop before the lambda is killed, so logRun below always runs.
+        if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+          budgetExhausted = true
+          break
+        }
         const acts = await fetchActivities(page * ME_LIMIT)
         activitiesSeen += acts.length
         if (acts.length === 0) break
@@ -502,8 +532,17 @@ async function handleIndex(req: NextRequest) {
       // public arms for this symbol are known to serve degraded answers (its
       // /stats arm echoes `listedCount: 0` for ANY symbol). Reporting ok=true on
       // it is the silent-degradation shape — found=0, written=0, "healthy".
-      const feedErr =
-        activitiesSeen === 0
+      // ⚠ `budgetExhausted` must be excluded here, and this is not a nicety.
+      // If the sweep deadline fires before the first page lands, activitiesSeen
+      // is 0 for a reason that has NOTHING to do with the upstream — and this
+      // line would then publish "upstream fault" about OUR OWN timeout. That is
+      // the honesty canon inverted: not a failed read rendering as a fact, but a
+      // local failure rendering as someone else's fault. The two states get
+      // different messages, and `budget_exhausted` in `extra` carries the
+      // distinction for anything querying it.
+      const feedErr = budgetExhausted
+        ? "sweep budget exhausted before the activities walk completed — no upstream claim implied"
+        : activitiesSeen === 0
           ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"
           : null
 
@@ -511,6 +550,10 @@ async function handleIndex(req: NextRequest) {
         sales_found: found,
         sales_written: written,
         skipped,
+        // Distinguishes "we walked the whole feed" from "we ran out of time".
+        // Without it a time-truncated sweep and a genuinely short feed report
+        // identically — the empty-vs-unavailable conflation in a new place.
+        budget_exhausted: budgetExhausted,
         parked: parked.length,
         pack_sales_seen: packSales,
         drain_attempted: drainAttempted,
