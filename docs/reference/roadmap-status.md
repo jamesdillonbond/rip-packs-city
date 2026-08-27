@@ -18,6 +18,36 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+## ⭐ HEADLINE METRIC — re-read live 2026-08-27 09:55 PT (16:55Z) (supersedes the 08-26 block below)
+
+Read the documented way: straight from `public.rpc_trust_health_precompute`
+(`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
+`rpc_fmv_confidence_share()`**, which blows a 60 s budget. ⚠ **Leg age at read time: 3.1 h for the five
+shared collections** (13:48:00Z) **and 1.0 h for Pinnacle** (15:55:00Z, its own jobid 331 schedule). **That
+is 12× staler than the 08-26 read’s 15 minutes — the figures below are a 3-hour-old instant, not a live one.**
+
+| collection | 08-27 09:55 PT | 08-26 19:00 PT | 08-24 15:35Z | 08-22 |
+|---|---:|---:|---:|---:|
+| `nba_top_shot` | **55.4%** | 57.8% | 57.2% | 49.6% |
+| `candy_mlb` | **64.0%** | 63.2% | 62.4% | 59.2% |
+| `disney_pinnacle` | **43.8%** | 43.8% | 43.4% | 43.2% |
+| `nfl_all_day` | **25.2%** | 26.7% | 27.0% | 22.5% |
+| `laliga_golazos` | **0.3%** | 0.3% | 0.2% | 0.0% |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% | 0.0% |
+
+⛔ **Top Shot 57.8 → 55.4 and All Day 26.7 → 25.2 are NOT a decline — they are two instants, and this
+file’s own rule is that a directional claim needs a distribution.** The honest statement remains a RANGE:
+**Top Shot has read between 49.6% and 57.8% across 08-22 → 08-27, and All Day between 22.5% and 27.0%.
+Today’s readings sit INSIDE both ranges**, on a population `/api/fmv-recalc` rewrites continuously. ✅
+**Corroborated independently the same morning** by the nightly pass, which recorded HIGH+MED **counts**
+moving Top Shot 7,631 → 7,502 and All Day 1,579 → 1,519 and classified both as *normal recompute churn*
+with `*_fmv_stale_hours` = 0.1 — i.e. **fresh, not a coverage loss**. Two instruments, same conclusion.
+
+⚠ **Candy is the only collection that has moved monotonically across all four samples** (59.2 → 62.4 →
+63.2 → 64.0) and is the one worth watching for a real trend — **but four instants is still not a
+distribution, and it is the smallest population here.** ⛔ **UFC 0.0% remains CORRECT and permanent**
+(market closed) and **Golazos ~0.3% remains a liquidity ceiling, not a defect.** Neither is a queue.
+
 ## ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-26 19:00 PT (supersedes the 08-24 canonical block below)
 
 Read straight from `public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by

@@ -10,6 +10,108 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — the ENTIRE anonymous telemetry stream was being dropped at the proxy, and the instrument that proves it is a zero
+
+**Handed off, not found here.** The Cowork weekly surface-QA pass filed
+`docs/handoff-2026-08-27-telemetry-proxy-bypass.md` (committed in the same push — it was sitting
+uncommitted on the mount from a no-push session) after reading live network traffic on an **anonymous**
+load of `/insights/pack-sniper`. It is a route/proxy change, which needs Claude Code + git, so it was
+queued rather than shipped.
+
+**The defect.** `lib/telemetry/track.ts` fires `POST /api/telemetry` for anonymous visitors. `proxy.ts`'s
+`isPublicPath` never allow-listed it, so the unauthenticated POST is caught by the session gate, **302'd
+to `/login`**, and `/login` rejects POST with **405**. The beacon is dropped. `POST /api/track-funnel` on
+the same page returns 200 — it *is* allow-listed. **The route was built for anon callers** (its own
+header describes falling back to a `user:<auth_id>` sentinel and `"anon"` for fully unauthenticated
+ones); only the proxy disagreed.
+
+⭐ **The positive control is what makes this a finding rather than a theory, and its shape is the lesson:**
+over 14 days `usage_events` holds **10 `user:%` rows and ZERO `anon` rows**. **Authed telemetry lands;
+anonymous telemetry is uniformly absent.** A zero is normally the weakest possible evidence — here the
+*paired* non-zero is the control that makes it strong. ⚠ **And nothing alarms on it**: an analytics table
+that quietly stops receiving one class of row looks exactly like a quiet week, which is the same
+unfalsifiable shape as the Sentry blackout.
+
+⭐ **I verified the handoff's safety argument instead of taking it, and the one claim worth checking was
+the one that could have been wrong.** It asserts *"the proxy `/api/` rate limiter (60/min/IP) still
+applies"* — an unauthenticated unbounded POST would be a real exposure. Read directly: the `/api/`
+limiter sits at `proxy.ts:~949` and the public-bypass block at `~990`, so **the limiter runs FIRST**, and
+its only exemptions are `/api/cron`, `/api/ingest` and bot-token calls. ✅ **True as stated.** Also
+checked rather than assumed: the route **always** returns `204` with a **null body** (so it is not an
+oracle), clamps `feature` to 80 chars and `metadata` to 4 KB, and its only write is `usage_events`
+(it reads `allow_list` but exposes nothing). **Same risk profile as `track-click` / `track-funnel` /
+`subscribe`, already public.**
+
+⚠ **`proxy.ts` is on the never-auto-ship list** (auth), and that rule is right — this change *widens*
+anonymous access. It ships here because it is interactive, hand-verified against the real file rather
+than the handoff's line numbers, and every safety claim was independently re-derived. **It should not be
+taken as precedent for touching `proxy.ts` unattended.**
+
+**Verification:** `npx tsc --noEmit` clean; `proxy-is-public-path` + `proxy-dispatch` +
+`proxy-page-rate-limit` **213/213**; full suite green.
+
+⏳ **NOT YET VERIFIED IN PRODUCTION — stated as pending, not claimed.** **Falsifier, in order:** (1) an
+anonymous/incognito load of `/insights/pack-sniper` must show `POST /api/telemetry` → **204**, no
+`/login` redirect; (2) after some anon traffic,
+`SELECT count(*) FROM usage_events WHERE wallet_address = 'anon' AND occurred_at > now() - interval '1 hour'`
+must be **> 0**. ⚠ **If (1) passes and (2) stays 0, the proxy is fixed and something downstream is
+dropping the write — do not read (1) as sufficient.** ⚠ The ledger is committed BEFORE the code so the
+code commit is the tip and `ignoreCommand` cannot skip the Vercel build.
+
+**Revert:** `git revert` the code commit — a single additive `if` return in `isPublicPath`. No DB half.
+
+### 2026-08-27 · ✅ #38's DRAIN COMPLETED — and the pipeline went permanently RED for the RIGHT reason, which is the finding
+
+**`topshot-pack-pool-backfill` looked like a fresh regression and is the opposite.** A 6-hour window
+reads **53% failed**, so the first instinct is a new fault. Read hourly, it is a clean monotonic
+handover from work to no-work:
+
+| hour (Z) | ok | pool rows | `dists_ok` | `empty_eds` |
+|---|---|---|---|---|
+| 09:00 | 12/12 | 2,031 | **36** | 0 |
+| 10:00 | 12/12 | 1,721 | 34 | 2 |
+| 11:00 | 12/12 | 1,375 | 32 | 4 |
+| 12:00 | 10/11 | 1,494 | 23 | 7 |
+| 13:00 | 6/7 | 1,371 | 12 | 6 |
+| 14:00 | 1/12 | 4 | 2 | 34 |
+| 15:00 | 0/12 | 0 | **0** | 36 |
+| 16:00 | 0/11 | 0 | **0** | 33 |
+
+**Eligible backlog 710 (03:00Z) → 600 (06:15Z) → 368 (16:50Z), and the population that actually matters —
+rip-bearing dists, which the `ORDER BY` deliberately puts first — went 240 → 8. A 99.7% drain.** The
+error is `0/3 dists converted; 3 returned no editions`, which is the string the 08-23 work
+**deliberately synthesized** so a queue with nothing convertible could never report as a silent success.
+**It is now telling the exact truth.**
+
+⭐⭐ **THE FINDING: the pipeline has finished its job and has no way to say so.** #38 warned that *"a
+pipeline whose steady state is 99.6% failed is a permanently-red instrument"* and that those *"become
+unreadable and train people to skim"*. It has now returned to permanently red — **for the opposite
+reason to the one that put it there the first time.** In August the red meant *wedged sampler, 808
+requests for the same 3 dists*; today the identical red means *drained, nothing left to convert*.
+**"Nothing to do" and "broken" are byte-identical on this arm**, which is the same shape as
+`match-topshot-players` in `database.md` (healthy and broken indistinguishable on `rows_written`).
+
+⚠ **NOT MINE, checked rather than assumed.** The crossover starts at **12:00Z** and I resumed work at
+**13:49Z**; it is monotonic across the whole span, and my heavy queries land in 14:00–15:30Z where there
+are **zero** pool timeouts. ⓘ Separately: a real **connection-pool exhaustion spike did occur, confined
+to 12:00–13:00Z** (189 pool timeouts in that hour, 3 in the hour before, **0 in 14:00/15:00/16:00Z**),
+against **981 ticks that hour vs ~420 normal** — the documented seed-wave signature, and also not mine.
+**Two unrelated events in one window, and the 6-hour average blends them into one wrong story.**
+
+👉 **DISPOSITION — this needs a decision, not a fix, and both options are cheap.** (1) **Cut the
+cadence.** 12 ticks/hour to rediscover that 368 structural residue dists still return no editions is
+pure waste, and new dists arrive slowly. (2) **Let the arm say "drained".** `dists_ok = 0 AND empty_eds
+= processed` with a non-empty queue is *complete*, not *failed* — reporting `ok = true` with a
+`drained: true` flag would end the permanent red without silencing anything. ⛔ **Do NOT simply suppress
+the arm** — #38 says so explicitly, and the reason is now sharper: the same signature will mean *wedged*
+again the moment a new batch of convertible dists lands.
+
+⚠ **What is NOT established:** whether the 368 remaining dists are *permanently* unconvertible or merely
+awaiting upstream data. The 8 rip-bearing ones are the only ones worth probing — **that is the cheap
+next measurement**, and it is the difference between "retire the cadence" and "keep it slow".
+
+**Prod state:** nothing shipped, nothing changed. Read-only measurement. **Revert:** n/a.
+
 ### 2026-08-27 · SHIPPED (monitor + guard, no app code) — the #418 verification was going to be decided by luck, so the clock is shifted ON PURPOSE
 
 **Repo only: one new e2e spec, one helper, four self-check cases, one new CI guard, one workflow
