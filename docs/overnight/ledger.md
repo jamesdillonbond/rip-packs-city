@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ INSTRUMENT REPORTED — 174 ticks, ZERO mass rewrites, and my "periodic" was one observation wearing a period
+
+`audit_20260827_pack_ask_rewrite_rate` (pg_cron jobid 370) ran unattended **03:50Z → 18:50Z —
+174 consecutive 5-minute samples.** **Zero ticks rewrote more than 100 rows; the maximum in any tick
+was 10.** So the 02:58Z rewrite of all 2,981 `pack_ask_state` rows **has not recurred at any period
+shorter than ~15 hours**, and the `upsert_pack_ask_state` change-detection saving is **better** than
+its own entry claimed — there is no periodic full rewrite riding on top of the 99.92% cut.
+
+🚨 **Which makes that entry's framing wrong, and it is this session's recurring error in a fourth
+costume.** I wrote *"this is periodic, not the steady state"* on the strength of **one event.**
+⭐ **One occurrence establishes that a thing CAN happen. It says nothing about a period — that needs
+two, and I had one.** Same shape as the spot-rate-as-a-rate, the sample-that-never-moves, and the
+unmeasured-term-treated-as-zero, all recorded the same night.
+
+⚠ **And the instrument is blind to the one period that matters.** Its window is 03:50–18:50Z; the
+event was at **02:58Z**, outside it. **A DAILY event at ~02:58Z is exactly what 174 samples cannot
+see.** ✅ The job self-unschedules **2026-08-29 00:00Z**, so it covers **exactly one** 02:58Z window —
+**2026-08-28** — and that single sample is the whole remaining test. **`captured_ids = true` ⇒ daily,
+and the id snapshot beside it settles rotation vs flip-flop against the 03:31–03:52Z baselines; all
+ticks ≤ 10 ⇒ one-off, and ⛔ drop jobid 370 and both audit tables rather than extending the watch.**
+
+### 2026-08-27 · ⛔ RETRACTED SCOPE — my `database.md` heading said a function's `SET statement_timeout` does nothing "in EITHER direction"; on the PostgREST path it RAISES
+
+**The A/B on Trevor's box settled this and the correction was filed, but my original heading was left
+standing ~140 lines below it, unqualified and more absolute-sounding than the truth** — and
+known-issues #43 links a reader straight to it. **Both surfaces are now scoped in place**
+(`docs/reference/database.md` and `docs/overnight/inbox/INDEX.md`), pointing forward to the settled
+entry. ⛔ **The live hazard the old heading created: "these declarations do nothing, remove them"
+would cap 122 functions at `service_role`'s 30 s, four of them board refreshes that legitimately run
+for minutes.**
+
+⭐⭐ **The reason I over-generalised is a heading in the same file, ~78 lines below my own: "A CONTROL
+THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL (2026-08-23)."** My four probes sent
+`SET …; SELECT fn()` as **one multi-statement batch through the admin SQL path** — a caller no
+production code uses. The settling A/B used `SECURITY INVOKER` functions POSTed to `/rest/v1/rpc/…`
+with the service-role key, i.e. how every `supabaseAdmin` RPC actually runs. **A synthetic path can
+prove a mechanism and still be silent about the ceiling that binds in production; a result from one
+is not licence to say "in either direction" about paths you never tested.** ⭐ **I added a rule to a
+file whose existing heading names the exact flaw that rule contained.**
+
+✅ **What survives unchanged:** inert on the **pg_cron** path (44/248 overruns, and jobid 217 declares
+120 s while having succeeded at 595 s), a LOWER declaration inert on both paths, and the
+`current_setting()` trap — a function declaring `1s` ran four seconds while reporting `1s` — which is
+real on every path and is why this class of bug survives review.
+
+
 ### 2026-08-27 · MEASURED (read-only, docs) — the pack-pool rotation converted 342 dists in 11 hours and then stopped dead, and the error string cannot tell you which of those two states you are in
 
 **No code, no DB, no prod state. This is the measurement the rotation fix's own filing asked for**

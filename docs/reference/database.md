@@ -312,13 +312,33 @@ transaction, so running a rotating sweep more often with a smaller budget gives 
 survives a timeout" property with no procedure conversion, no `search_path` strip and no privilege change.
 Weigh it against the added IO on this IO-bound instance (R46).
 
-## 🚨 A FUNCTION'S `SET statement_timeout` DOES NOTHING — in EITHER direction — AND `current_setting()` REPORTS THE LIE BACK TO YOU (proven 2026-08-26)
+## ⚠ A FUNCTION'S `SET statement_timeout` IS INERT **ON THE pg_cron PATH** — and `current_setting()` REPORTS THE LIE BACK TO YOU (proven 2026-08-26, **SCOPED 2026-08-27 — read the correction below FIRST**)
+
+> 🚨 **THE ORIGINAL HEADING OF THIS SECTION SAID "DOES NOTHING — in EITHER direction". THAT IS
+> WRONG AND IS RETRACTED.** The A/B run on Trevor's box on 2026-08-27 (recorded ~140 lines above,
+> *"`proconfig` IS PATH- AND DIRECTION-DEPENDENT"*) shows that **via PostgREST a HIGHER declaration
+> RAISES the ceiling** (30 s → 60 s, measured), so **122 functions declaring more than
+> `service_role`'s 30 s are LOAD-BEARING and must not be stripped as no-ops.** ⛔ **Do not act on
+> this section without reading that one.** What survives here: the declaration is inert **on the
+> pg_cron path** (44/248 overruns), a LOWER declaration is inert on both paths, and the
+> `current_setting()` trap below is real on every path.
+>
+> ⭐⭐ **AND THE REASON I OVER-GENERALISED IS NAMED BY A HEADING IN THIS VERY FILE, ~78 LINES BELOW:
+> "A CONTROL THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL (2026-08-23)."** My four
+> probes below sent `SET …; SELECT fn()` as **one multi-statement batch through the admin SQL
+> path** — a caller no production code uses. The A/B that settled it used `SECURITY INVOKER`
+> functions POSTed to `/rest/v1/rpc/…` with the service-role key, i.e. **exactly how every
+> `supabaseAdmin` RPC actually runs.** ⭐ **A synthetic path can prove a mechanism and still be
+> silent about the ceiling that binds in production — and a result from one is not licence to say
+> "in either direction" about paths you did not test.**
 
 **`statement_timeout` arms a timer ONCE, when the top-level statement begins, from the value in
 effect at that moment. Changing the GUC inside a function — by `proconfig` (`SET … TO …` on the
 routine) or by `set_config(…, is_local => true)` in the body — does NOT re-arm it.**
 
-Proven by four probes on this instance, not inferred:
+Proven by four probes on this instance, not inferred — ⚠ **all four issued through the admin SQL
+path, which is the confound named above; they establish the timer mechanism, not the production
+ceiling:**
 
 | probe | setup | result |
 |---|---|---|

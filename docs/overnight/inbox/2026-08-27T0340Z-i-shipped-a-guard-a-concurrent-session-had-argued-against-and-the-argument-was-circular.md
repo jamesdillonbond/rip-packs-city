@@ -165,3 +165,45 @@ direction. `DROP TABLE public.audit_20260827_pack_listing_id_churn` once the que
 2. **"The row genuinely changes every call" is never evidence that a write is worth keeping** —
    it is a restatement of the write. The discriminating question is *who reads it*, and it takes
    four queries to answer.
+
+---
+
+## 6. ✅ THE INSTRUMENT HAS REPORTED — 174 ticks, ZERO mass events, and §4's "periodic" was an over-claim
+
+`audit_20260827_pack_ask_rewrite_rate` (pg_cron jobid 370) ran unattended from **03:50Z to 18:50Z on
+2026-08-27 — 174 consecutive 5-minute samples, 14.5 hours.**
+
+| | |
+|---|---:|
+| samples | **174** |
+| ticks rewriting **> 100** rows (`captured_ids`) | **0** |
+| **max rows rewritten in any tick** | **10** |
+
+⭐ **So the 02:58Z rewrite of all 2,981 rows has not recurred at any period shorter than ~15 hours,
+and the steady state is 0–10 rows a tick.** The change-detection guard's saving is therefore
+**better** than this filing reported: there is no periodic full rewrite riding on top of it.
+
+🚨 **Which makes §4's framing wrong, and the error is this session's recurring one in a fourth
+costume.** I wrote *"this is periodic, not the steady state"* on the strength of **one observed
+event**. ⭐ **One occurrence establishes that a thing can happen. It says nothing whatever about a
+period — that requires two, and I had one.** The same shape as the spot-rate-as-rate, the
+sample-that-never-moves, and the unmeasured-term-treated-as-zero errors already recorded tonight.
+
+⚠ **AND THE INSTRUMENT CANNOT YET RULE OUT THE ONE PERIOD THAT MATTERS.** Its window is
+**03:50Z → 18:50Z**; the observed event was at **02:58Z**, which falls **outside** it. **A DAILY
+event at ~02:58Z is precisely what these 174 samples are blind to.** ✅ The job self-unschedules at
+**2026-08-29 00:00Z**, so it covers **exactly one** 02:58Z window — **2026-08-28** — before it
+retires. **That single sample is the whole remaining test.**
+
+👉 **Read it as: `SELECT at, rewritten_5min, captured_ids FROM public.audit_20260827_pack_ask_rewrite_rate
+WHERE at BETWEEN '2026-08-28 02:30Z' AND '2026-08-28 03:30Z' ORDER BY at;`**
+
+- **A tick with `captured_ids = true`** ⇒ daily, and the id snapshot beside it settles rotation vs
+  flip-flop against the 03:31–03:52Z baselines.
+- **All ticks ≤ 10** ⇒ the 02:58Z event was a **one-off**, the guard needs no further work, and
+  ⛔ **both audit tables and jobid 370 should simply be dropped** rather than extended: a second
+  window would only re-ask a question a full day already answered.
+
+**Cleanup either way:** `SELECT cron.unschedule('rpc-audit-pack-ask-rewrite-rate');` then
+`DROP FUNCTION public.audit_20260827_sample_pack_ask_rewrite_rate();` and `DROP TABLE` both
+`audit_20260827_*` tables.
