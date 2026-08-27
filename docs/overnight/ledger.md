@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (prod DDL + repo + pin) — `roll_pack_ask_hourly_low` wrote **26,846 rows an hour to effect ~8**; BOTH unguarded legs now carry change detection, and the pin that "covered" it was structurally blind to the property
+
+**What shipped.** `public.roll_pack_ask_hourly_low()` (pg_cron jobid 77, every 15 min) rewrote
+its two tables in full on every tick. Measured over the real population before the change:
+
+| statement | rows written/call | genuinely changed |
+|---|---:|---:|
+| `INSERT … ON CONFLICT DO UPDATE` (the one the 08-26 filing named) | 2,981 | **1** |
+| `UPDATE pack_ask_state` (**nobody had flagged this one**) | 2,988 | **1** |
+
+Per hour: 4 × (2,981 + 2,988) + one 2,970-row prune = **26,846 row writes**. `pg_stat_statements`
+attributed **726.3 MB WAL/day and 304,851 blocks dirtied/day** to this function.
+
+⭐ **The filing (`2026-08-26T1650Z-the-four-unguarded-upserts…`) named only leg 1.** Leg 2 is the
+same size, and is the SAFER of the two to fix because its `ROW_COUNT` is discarded — it changes no
+recorded metric at all. **Re-read the function body; do not inherit a filing's list of legs.**
+
+**Honest saving: ~26,846 → ~2,978 row writes/hr, i.e. ~89% — NOT the 99.97% the two legs alone
+suggest.** The 7-day prune deletes ~2,970 rows once an hour and is irreducible; it becomes the
+dominant remainder. ⚠ **The WAL/blocks figures above are a PREDICTION, not a result** — re-derive
+from `pg_stat_statements` in a few days before quoting a saving.
+
+**Equivalence PROVEN over the population, not argued.** Both bodies were run against independent
+copies of the real tables (3,025 `pack_ask_state` rows, 499,186 `pack_ask_hourly_low` rows); the
+symmetric difference was **0 rows in BOTH tables** while writes fell 2,981→1 and 2,988→1. Leg 1 is
+safe because `LEAST()` cannot change a row the predicate excludes; leg 2 because the `UPDATE` sets
+exactly the two columns the predicate tests. Supporting distribution: over **71,407 real hour-buckets
+in 24 h, 96.88% of dists had exactly ONE distinct `low_ask` all day** (avg 1.058) — the asks are
+static, so this is a property of the data and not of the instant it was sampled.
+
+🚨 **The lesson worth more than the fix: the existing pin could not see this change, and proving that
+took one control.** Every assertion in the pin tested a stored VALUE — but `LEAST()` already
+guarantees the value with or without the predicate, so an **INVERTED** predicate was run through the
+identical assertions and **also passed**. A pin that passes for both a change and its opposite is
+measuring something else. This is CLAUDE.md's *"a test stating the contract in a comment and asserting
+something weaker"* in its purest form, on a pin nobody would have doubted. **Section 2 was added to
+`supabase/tests/roll_pack_ask_hourly_low.sql`**: it swaps the raising log stub for a RECORDING one and
+asserts `ROW_COUNT` — the only thing the predicate changes — and was **verified to FAIL against the old
+body** (`got [1], want [0]`) before being trusted.
+
+**Metric semantics changed, deliberately, and the change is an improvement.** `rows_found` /
+`rows_written` were **a constant**: all 185 runs in the preceding 48 h reported 2,971–2,981, i.e. the
+column never carried information. Now `rows_found` = candidate count (the OLD number, so any
+recency/emptiness heuristic sees exactly what it saw before) and `rows_written` = rows genuinely
+changed, with `candidates` + `state_rows_changed` added to `extra`. ✅ Safe because the **only** caller
+is pg_cron jobid 77, which discards the return value — checked against `pg_proc`, `pg_views`,
+`cron.job`, `pg_trigger` and a full-repo grep, and no function reads this pipeline's `rows_written`.
+
+⚠ **Expect `rows_written` on `pack-ask-hourly-low-roll` to read 0 on most ticks from now on.** That is
+the fix working, not a stall. Read `extra.candidates` to confirm the roll ran.
+
+**Verification:** live `pg_get_functiondef` md5 matches the committed file (`91909df4…`); full pin
+re-run (sections 1+2, 20 assertions) passes on the new body; `npm test` green; drift guard +
+anon-exec-decision guard green.
+
+**Revert path:** re-apply `supabase/migrations/20260802204000_audit_20260802_snapshot_roll_pack_ask_hourly_low.sql`
+(restores the unguarded body), and re-point `PINS` in `__tests__/db-invariants-drift-guard.test.ts`
+back at it — Section 2 of the pin must be dropped in the same commit, since it asserts the property
+the revert removes.
+
 ### 2026-08-26 · SHIPPED (docs only, no code / no prod state) — the memory-file refresh: every status re-READ against live systems, seven register items moved, and two live defects nobody had registered
 
 **Requested refresh of `CLAUDE.md`, the roadmap, the issue register "and anywhere else that holds
