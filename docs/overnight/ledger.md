@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · MEASURED (read-only, docs) — the edge-fn drift set is NAMED for the first time, and the risk is THREE functions, not twenty
+
+**No code, no DB, no prod state.** `Edge function deploy drift` has been red for weeks reporting a
+COUNT (30 → 25 → 20) and never a LIST, so the only question that matters — *are the drifted
+functions actually being called?* — could not be asked.
+
+⭐ **Tier 1 re-derived INDEPENDENTLY of the CI job, and it agrees exactly.** Deployed metadata read
+through the Supabase MCP (`list_edge_functions` returns `import_map` **and `ezbr_sha256`** for free),
+repo sources from the tree, and the script's own exported `classifyImportMapDrift` applied to both:
+**20 proven-drift functions, the same 20 CI reports.** Two instruments agreeing, not one repeated.
+⭐ **And it settles the token question for READS: known-issues #31's candidate fix (b) — "use
+`ezbr_sha256` from the LIST endpoint" — is reachable TODAY with no `SUPABASE_ACCESS_TOKEN` at all.**
+
+**The 20, split by whether anything runs them** (7-day `pipeline_runs` + `cron.job` + a repo grep):
+
+| state | n |
+|---|---:|
+| running, healthy, on STALE code (88–100% ok) | **9** |
+| invoked, but writes no `pipeline_runs` row of its own | **3** |
+| dormant — no pg_cron job, no repo caller found | **8** |
+
+🚨 **The risk is the middle row: `enrich-ufc-wallet`, `topshot-insider-detect-patterns`,
+`ingest-topshot-atlas-pool`.** They are provably running code that is not `main` **and** invisible to
+the pipeline board — the drift detector says *drifted* without saying *invoked*, and `pipeline_runs`
+says nothing at all. ⭐ **One of the three is called only from `scripts/atlas-pool-harvest.ps1`**,
+i.e. Trevor's Task Scheduler — the eighth caller source CLAUDE.md warns is invisible to every
+catalogue, found here by grepping for it rather than by trusting the catalogue.
+
+✅ **And 9 of 20 REFUTE the workflow's own framing.** Its failure line says omitting the import map
+*"turns a stale function into a hard-down one"*; those nine are executing at 88–100% ok, because
+their artifacts were built when their sources did not yet need a map. **Stale, not down.**
+⛔ **"20 edge functions are broken" is not a thing anything measured says** — do not quote it.
+
+⚠ **NOT CLAIMED:** Tier 1 is a lower bound, so *dormant* means *no caller found in pg_cron or the
+repo*, never *never called* — cron-job.org and the Task Scheduler are outside this sandbox, and one
+of the three above lives exactly there. A healthy `ok` rate says the deployed code RUNS, never that
+it is CORRECT.
+
+⛔ **Nothing redeployed.** Twenty production edge-function deploys is not a read-only pass's call,
+and the estate is measurably not on fire. **Revert path:** docs only.
+
 ### 2026-08-27 · ✅ INSTRUMENT REPORTED — 174 ticks, ZERO mass rewrites, and my "periodic" was one observation wearing a period
 
 `audit_20260827_pack_ask_rewrite_rate` (pg_cron jobid 370) ran unattended **03:50Z → 18:50Z —
