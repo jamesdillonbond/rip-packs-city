@@ -219,6 +219,63 @@ describe("candy-listings-indexer — sweep ladder", () => {
 // So a listing is only deactivated on POSITIVE evidence: an explicit `delist`
 // or a fill in the activities feed, or its own expiry.
 // ---------------------------------------------------------------------------
+describe("candy-listings-indexer — every Magic Eden call is time-bounded", () => {
+  // 🚨 WHY. `fetch()` has NO default timeout. Both ME calls were bare fetches, so
+  // an upstream that accepts the connection and holds it open consumed the whole
+  // 300s `maxDuration` — and a KILLED lambda writes no terminal `pipeline_runs`
+  // row at all, so the failure was invisible and read as "the cron never fired".
+  // Measured 2026-08-27: 15 invocation heartbeats in 48h, ONE terminal row, and a
+  // Vercel `Task timed out after 300 seconds`, while the PUBLIC /insights/candy-mlb
+  // board served asks 44 HOURS stale.
+  //
+  // ⚠ The property is asserted on the REQUEST INIT, not on the source text. A
+  // source grep would be satisfied by the comment you are reading — this file's
+  // sibling guard was enrolled in exactly that trap the same day.
+  it("passes an abort signal on the listings AND activities requests", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    install({
+      candy_listings: [{ data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const meCalls = fetchMock.calls.filter((c) => /\/listings|\/activities/.test(c.url))
+    // Not vacuous: if the sweep made no ME calls the loop below asserts nothing.
+    expect(meCalls.length).toBeGreaterThan(0)
+    const unbounded = meCalls.filter((c) => !c.init?.signal).map((c) => c.url)
+    expect(
+      unbounded,
+      "every Magic Eden request must carry an AbortSignal — an unbounded one " +
+        "consumes the entire 300s lambda budget and the tick dies unlogged",
+    ).toEqual([])
+  })
+
+  it("the sweep still logs a terminal row when an ME call aborts", async () => {
+    // The point of bounding the wait is that the failure becomes VISIBLE. An
+    // abort must land in the after() catch and write ok=false — never vanish.
+    fetchMock = installFetchMock([
+      {
+        match: (u) => /\/listings/.test(u),
+        respond: () => {
+          throw Object.assign(new Error("The operation was aborted due to timeout"), {
+            name: "TimeoutError",
+          })
+        },
+      },
+      jsonRoute("/activities", []),
+    ])
+    const spy = install({ candy_listings: [{ data: [] }, { data: [] }] })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String((log as Record<string, unknown>)?.p_error)).toMatch(/abort/i)
+  })
+})
+
 describe("candy-listings-indexer — deactivation needs evidence, not absence", () => {
   it("does NOT deactivate an unseen ask when the feed returns nothing", async () => {
     fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])

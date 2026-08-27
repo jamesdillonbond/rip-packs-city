@@ -85,9 +85,51 @@ interface MeActivity {
   blockTime?: number
 }
 
+// Per-request cap on every Magic Eden call. `fetch()` HAS NO DEFAULT TIMEOUT, so
+// an upstream that accepts the connection and then holds it open consumes the
+// caller's ENTIRE lambda budget — and this route's budget is 300s.
+//
+// 🚨 That is not hypothetical here; it is the measured cause of a 44-hour
+// blackout on the PUBLIC /insights/candy-mlb board (2026-08-27). The signature:
+// 15 invocation heartbeats in 48h, ONE terminal `pipeline_runs` row, and a
+// Vercel `Task timed out after 300 seconds`. The route's `after()` body has a
+// try/catch that logs an ok:false row, so a THROW would have been recorded —
+// nothing was, which means the tick was KILLED rather than failing. The only
+// unbounded awaits in the path were the two ME fetches below.
+//
+// ⭐ The fix already existed in this codebase and had not spread. `solUsd()` in
+// lib/chains/solana/das.ts — called by this very route, one line above the ME
+// walk — carries an 8s cap and a comment naming this exact failure mode
+// ("CoinGecko rate-limits datacenter egress hard and can hold a connection open
+// indefinitely"). The same reasoning applies to Magic Eden and was never
+// applied. When you find one of these, grep for the EXPRESSION, not the file.
+//
+// ⚠ Egress-dependent, so do not "disprove" it from a laptop. Probed residentially
+// on 2026-08-27 ME answered 200 in 0.1–1.0s with a shallow book (0 rows by
+// offset 2000), i.e. from a home IP there is nothing slow to find. The sibling
+// candy-offers route is simultaneously getting Cloudflare 1015 rate-limits from
+// Vercel. A hang that only appears on datacenter egress is exactly that shape.
+const ME_FETCH_TIMEOUT_MS = 15_000
+
+// Whole-sweep deadline, and it is a SEPARATE guarantee from the per-request cap
+// above — not a belt-and-braces duplicate. ME_FETCH_TIMEOUT_MS bounds ONE call;
+// MAX_PAGES is 100, so per-request caps alone still permit 100 x 15s = 1,500s,
+// five times the 300s `maxDuration`. Without a total budget the route could
+// still be killed before reaching `logRun`, which is the whole defect: a killed
+// tick writes NO terminal row, so the failure is invisible to `pipeline_runs`
+// and reads as "the cron never fired".
+//
+// 240s leaves ~60s of headroom under maxDuration for the upserts, the
+// activities walk and the deactivation pass that follow, so the sweep ALWAYS
+// reaches its own logging. A deadline break refreshes fewer prices and reports
+// `sweep_complete: false`; it cannot destroy data, because deactivation here is
+// evidence-based (an explicit delist or fill from the activities feed), never
+// absence-based, and `sweepComplete` gates nothing but reporting.
+const SWEEP_BUDGET_MS = 240_000
+
 async function fetchActivities(offset: number): Promise<MeActivity[]> {
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=500`
-  const resp = await fetch(url, { headers: meHeaders() })
+  const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
     throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
   }
@@ -100,7 +142,7 @@ const LISTING_ENDING_TYPES = new Set(["delist", "buyNow", "buyNowFill", "acceptB
 
 async function fetchListings(offset: number): Promise<MeListing[]> {
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/listings?offset=${offset}&limit=${ME_LIMIT}`
-  const resp = await fetch(url, { headers: meHeaders() })
+  const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
     throw new Error(`ME listings HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
   }
@@ -249,7 +291,14 @@ async function handleSweep(req: NextRequest) {
       let rawSeen = 0
 
       let page = 0
+      let budgetExhausted = false
       for (; page < MAX_PAGES; page++) {
+        // Stop before the lambda is killed, so logRun below always runs.
+        if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+          budgetExhausted = true
+          sweepComplete = false
+          break
+        }
         const listings = await fetchListings(page * ME_LIMIT)
         rawSeen += listings.length
         if (listings.length === 0) {
@@ -386,6 +435,9 @@ async function handleSweep(req: NextRequest) {
       let activitiesSeen = 0
       try {
         for (let ap = 0; ap < ACTIVITY_PAGES; ap++) {
+          // Same deadline. No evidence is safer than a killed tick: an empty
+          // endedMints set simply deactivates nothing this pass.
+          if (Date.now() - startedMs > SWEEP_BUDGET_MS) break
           const acts = await fetchActivities(ap * 500)
           activitiesSeen += acts.length
           for (const a of acts) {
@@ -453,6 +505,12 @@ async function handleSweep(req: NextRequest) {
         skipped,
         deactivated,
         sweep_complete: sweepComplete,
+        // Distinguishes "the book ended" from "we ran out of time". Without it a
+        // budget-truncated sweep and a genuinely short book both read as
+        // sweep_complete:false, which is the same empty-vs-unavailable
+        // conflation this repo fixes everywhere else.
+        budget_exhausted: budgetExhausted,
+        pages_walked: page,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,
