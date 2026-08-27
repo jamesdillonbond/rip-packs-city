@@ -203,3 +203,20 @@ on 08-13) and "read each function's own `SET statement_timeout`; the FUNCTION is
 (flatly wrong, retracted). **#42's "Class B" is weakened too**: jobid 215's 731 s is two statements
 each getting 600 s, and jobid 210's 771 s is probably **queue wait** (`cron.max_running_jobs = 32`
 against `max_worker_processes = 6`), which means the triage ratio carries noise.
+
+
+---
+
+## 8. ⚠ One small correction to this session's own filenames
+
+**The `Z` timestamps in the later filenames run up to ~30 minutes ahead of the real clock.** Read
+against the DB (`SELECT now()`), this addendum was written at **2026-08-27 04:20:30Z = 2026-08-26
+21:20 PT**, while two filings are stamped `0430Z` and `0450Z`.
+
+**Cause: I stamped them by estimating elapsed time instead of reading a clock** — the same shape as
+this repo's standing "a spot rate is not a rate" and "the only trustworthy clock is the one that
+prints its offset" rules, in a smaller costume. ✅ **The PT dates are correct**, which is what the
+ledger's dating rule and `find-future-dated-ledger-headings.mjs` actually check, and that guard reads
+**0**. **Filenames are left as-is because the cross-links depend on them**; noted rather than
+silently corrected. ⭐ **The rule for next time: read `SELECT now()` before stamping, every time —
+estimating elapsed time is guessing a number, and guessing numbers is the theme of this session.**
