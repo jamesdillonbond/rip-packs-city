@@ -630,6 +630,65 @@ retries (one ownership walk is already 87.7% of the monthly datapoint budget).
 **Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
 change is shared — reverting it re-exposes all five candy routes, not just this one.
 
+### 2026-08-26 · ⭐ MEASURED, nothing shipped — **22.6% of all pg_cron time is thrown away**, 85.2% of it is statement timeouts, and the driver is **schedule ALIGNMENT**
+
+**7 days of `cron.job_run_details`: 28,509 runs, 914,843 busy seconds, 1,502 failures, 206,362
+wasted — 22.6%.** Only **384 of 1,502 failures (25.6%) are statement timeouts, and they carry
+175,882 s = 85.2% of ALL waste.**
+
+🚨 **22.6% is EXACTLY the ratio the earlier Class-A audit recorded over 48 h** — the one that named
+`rpc-refresh-perfect-mint-premiums` *"the lever"* at 27.8% of waste. **That lever was pulled; the job
+is now 0.9% of waste; the total has not moved.** ⚠ Two points, two windows — not a law. **But there
+is a mechanism that predicts it: if waste is a property of the CONTENTION rather than of any one job,
+removing the biggest job redistributes it rather than reducing it.**
+
+⭐ **A triage instrument that splits the fleet in one query: `max(success duration) ÷ that job's own
+timeout ceiling`.** The classes have different remedies and conflating them is why "the cron jobs
+time out" has never converged.
+
+- **Class A — clipped tail (≥ 90%).** Succeeds right up against its wall; failures are that same
+  distribution's right tail, so **headroom finishes most of them**: jobid **71** (578/600 = 96%,
+  **24,096 s/7 d**), **217** (595/600 = 99%, **22,360 s**), **73** (589/600 = 98%, 15,114 s), 65,
+  212, 235, 261, 259.
+- **Class B — already exceeds its ceiling (> 100%).** 🚨 **Jobid 210 has SUCCEEDED at 771 s and is
+  killed at 602 s**; 215 at 731 vs 600. **The ceiling is not constant across runs — a correctness
+  question about the schedule, not a capacity one.** Read each function's own `SET statement_timeout`
+  against its cron command's; jobid 211's function carries its own, so the FUNCTION is authoritative.
+- **Class C — the failures are a different population (≪ 90%).** ⛔ **Headroom will not help.**
+  `rpc-ccm-step2` succeeds in **10 s** and fails at **300 s**; `refresh_allday_pack_realized`
+  succeeds in **32–106 s** and fails at **600 s**. ⭐ **A clean bimodal split at exactly the ceiling
+  is the signature of BLOCKING or STARVATION, not of slowness.**
+- ⛔ **Jobid 256 `rpc-thin-sale-ask-disclosure-refresh` has NEVER SUCCEEDED** — 7 runs, 5 timeouts,
+  zero successes in the retained window, 600 s burned daily, **and it is in no register.**
+
+⭐⭐ **The mechanism is arithmetic, not load-of-day.** Run counts are flat (**1,120–1,313/hour**) but
+the timeout rate swings **0.0 → 51.0 per 1,000**: hour 12 is 51.0 while hour 14 is 5.1 and hour 11 is
+2.7, and hour 0 beats hour 11. **Hours divisible by 3 — where the `*/2`, `*/3`, `*/6` and daily
+cohorts coincide — are 8 of 24 hours but carry 47% of all busy time and 72% of all timeout waste, and
+throw away 29.3% of the work done in them against 10.3% elsewhere (2.8×).**
+
+✅ **THE CONTROLLED EVIDENCE, because everything above is between-jobs and confounded.** Jobid **211**
+is one function, one MV, four slots, since 2026-07-20: **00:35Z 36/37 ok (97%), 06:35Z 51%, 12:35Z
+54%, 18:35Z 42%** — successes 32–106 s, failures exactly 600 s. **The hour decides the outcome, not
+the job.** ⛔ **And the competing explanation dies without a query:** *"00:35 succeeds because its
+delta is small"* cannot hold — a `REFRESH … CONCURRENTLY` costs what CHANGED, and the 18:35 run
+usually fails, so **00:35 folds in 12 h of sales rather than 6. The most reliable slot is the one
+with the most work to do.**
+
+⚠ **The recent week is worse than the long run (211: 73% failures over 7 d vs 39% all-time), partly
+from a saturation spell of my own making.** ⭐ **I nearly filed "0 of 19 — the other three slots never
+work"; the full history says they work about half the time, and checking it is the only reason this
+entry is not wrong.**
+
+👉 **Order: (1) jobid 256, which has never succeeded — find out whether it CAN complete before tuning
+anything else; (2) move 211 off multiples of 3; (3) resolve Class B's inconsistent ceilings;
+(4) headroom for Class A (61,570 s/7 d across 71/217/73 alone).** ⛔ **The staggering move is the
+shape of a proposal this repo has already REFUTED** — the `:13` stagger died for moving a lone job
+onto an occupied slot. ⭐ **Verify the DESTINATION slot is empty against live `cron.job`, not against
+the filing that motivated the move.** ⓘ `cron_heavy` jobs **are** reschedulable via `SET LOCAL ROLE`.
+Registered as **known-issues #42**. Filing:
+[inbox 2026-08-27T0430Z](inbox/2026-08-27T0430Z-cron-waste-is-SCHEDULE-ALIGNMENT-not-a-load-band-and-one-third-of-the-hours-carry-72pct-of-it.md).
+
 ### 2026-08-26 · ⚠ MEASURED, nothing shipped — jobid 235's cadence cut saved **~1.4 h/wk, not 3.7**, because a `REFRESH … CONCURRENTLY` costs what CHANGED
 
 **Found by reading the failure table rather than the stall detector** (`detect_stalled_pipelines()`
