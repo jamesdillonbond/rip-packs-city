@@ -10,6 +10,62 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (prod DDL + repo) — the pack-pool backfill was **wedged on 3 unconvertible head rows**, burning 808 runs in 72 h to convert **one** dist; the target sample now ROTATES
+
+**The measurement, which corrects the filing that prompted it.** The 2026-08-26 daytime-monitor
+tick reported *"3 permanently-unresolvable dists"* for `topshot-pack-pool-backfill`. Measured:
+
+- **808 runs in 72 h → 2 ok → 1 distribution converted (46 pool rows).**
+- Backlog: **710 eligible dists** (350 with rips). At the observed rate that is ~140 years.
+- 138 of 139 runs in a 12 h window: `0/3 dists converted; 3 returned no editions`.
+
+⛔ **"Three unresolvable dists" is an ARTIFACT of the wedge, not a finding.** The eligible set is
+selected by *"NOT EXISTS a row in `pack_drop_pool`"*, and a dist whose Top Shot GQL walk **succeeds
+and returns zero editions** writes no pool row — so it stays eligible and is re-selected forever.
+There is no failure memory anywhere: `pack_distributions` has **no attempt or error column**, and
+the edge function records the empty walk only in its own `pipeline_runs.extra`.
+
+The old `ORDER BY` made that permanent rather than merely likely: **~350 of the eligible rows share
+`first_seen_at = 2026-06-29 04:13:05.21+00`**, so the sort was a TIE across the whole cohort and the
+head was decided by physical order — and `pack_distributions` is not being rewritten, so physical
+order is stable and the SAME three rows were served every tick. This is the repo's own *"dead head
+rows never leave"* / *"a flaky upstream needs a directional checkpoint"* shape.
+
+⭐ **The strongest argument for the fix is DIAGNOSTIC, not throughput — and it is what makes this
+worth shipping rather than filing.** In its wedged state the pipeline **cannot distinguish "3 dists
+are unconvertible" from "710 are"**: it only ever asks about three, so its 99% failure rate carries
+no information about the backlog. That is precisely why the monitor read it as the former. **Once
+the sample rotates, the observed conversion rate IS the answer**, because the population being
+sampled is the whole backlog. This converts an undiagnosable stall into a measurement, and that
+holds whether or not throughput also improves.
+
+**The change is ORDER BY only.** The `WHERE` is byte-identical. ✅ **Proven, not asserted:** the
+eligible-set md5 is **`c1e4a908304b075418cea4e5eb13daf3` before AND after** the apply (710 rows both
+times), and of the 400 rows the new function returns, **0 are outside the eligible set** and all 400
+are distinct. Rotation salt is a 5-minute epoch bucket matching the caller's cadence; verified
+read-only over six consecutive buckets before applying — **18 distinct dists, zero repeats**.
+
+⚠ **What is given up, stated rather than buried:** the `first_seen_at DESC` newest-first preference.
+It was already inert across the ~350-row tied cohort that is most of the backlog. `(has rips) DESC`
+— the one ordering term carrying real signal — is **preserved as the first key**.
+
+**Also gained:** the function had **no committed migration at all** before this, so it now has a
+revert path it did not have. Not pinned. Callers checked six ways: the
+`backfill-topshot-pack-supply` edge function only, two call sites, both `p_only_with_rips := false`.
+
+⚠ **This does NOT fix the underlying question — why Top Shot's `packEditionsV3` returns no editions
+for these historical distributions.** It stops the pipeline lying about the size of that problem.
+👉 **Follow-up: read the conversion rate over the next day. If it stays ~0 across a rotating sample,
+the backlog is genuinely unconvertible and the pipeline should be PARKED, not tuned** — and that
+will then be a measurement rather than an inference. ⛔ The edge function itself was not touched
+(edge-fn deploys are gate-key blocked, memory `edge-fn-deploy-blocked-by-unset-gate-key`).
+
+**Verification:** live `pg_get_functiondef` md5 matches the committed file (`0e34d5fb…`);
+anon/authenticated EXECUTE both **false** after apply; anon-exec-decision and drift guards green.
+
+**Revert path:** re-apply the previous `ORDER BY` (recorded verbatim in the migration header):
+`ORDER BY (EXISTS …pack_rips…) DESC, d.first_seen_at DESC NULLS LAST`.
+
 ### 2026-08-26 · SHIPPED (code) — the candy-mlb OG card claimed **"Live secondary FMV"** on a read that never happened, and the guard for that exact defect had been **enrolling cards by their COMMENTS**
 
 **Three defects, each of which hid the next.**
