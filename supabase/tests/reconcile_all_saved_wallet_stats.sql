@@ -67,9 +67,34 @@ BEGIN
   RETURN 1;
 END $$;
 
-CREATE TABLE public._runs (pipeline text, ok boolean, extra jsonb);
-CREATE FUNCTION public.log_pipeline_run(p text, p_ok boolean, p_extra jsonb) RETURNS void
-LANGUAGE sql AS $$ INSERT INTO public._runs VALUES (p, p_ok, p_extra) $$;
+CREATE TABLE public._runs (pipeline text, ok boolean, extra jsonb,
+                          started_at timestamptz, rows_found int, rows_written int,
+                          rows_skipped int, err text);
+-- ⚠ This stub mirrors PRODUCTION's ELEVEN-argument log_pipeline_run, parameter NAMES
+-- included. The procedure calls it with NAMED arguments, so a stub that merely has the
+-- right arity cannot bind -- and until 2026-08-26 this stub carried only the 3-arg
+-- (text, boolean, jsonb) form, which is what made the duration_ms fix red in CI.
+-- ⚠ Keep it in sync with the real signature: this harness has no schema to check it
+-- against, so a drift here is invisible until a call fails to resolve.
+CREATE FUNCTION public.log_pipeline_run(
+  p_pipeline        text,
+  p_started_at      timestamptz,
+  p_rows_found      integer DEFAULT 0,
+  p_rows_written    integer DEFAULT 0,
+  p_rows_skipped    integer DEFAULT 0,
+  p_ok              boolean DEFAULT true,
+  p_error           text    DEFAULT NULL,
+  p_collection_slug text    DEFAULT NULL,
+  p_cursor_before   text    DEFAULT NULL,
+  p_cursor_after    text    DEFAULT NULL,
+  p_extra           jsonb   DEFAULT NULL
+) RETURNS void
+LANGUAGE sql AS $$
+  INSERT INTO public._runs (pipeline, ok, extra, started_at, rows_found, rows_written,
+                            rows_skipped, err)
+  VALUES (p_pipeline, p_ok, p_extra, p_started_at, p_rows_found, p_rows_written,
+          p_rows_skipped, p_error)
+$$;
 
 -- >>> BEGIN verbatim reconcile_all_saved_wallet_stats (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE PROCEDURE public.reconcile_all_saved_wallet_stats(IN p_max_seconds integer DEFAULT 50, IN p_max_wallets integer DEFAULT 500, IN p_min_age_minutes integer DEFAULT 360)
@@ -267,6 +292,31 @@ SELECT _assert_eq((SELECT ok::text FROM public._runs), 'true',
 SELECT _assert((SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs) IS NOT NULL,
   'and carries the oldest cache age, the figure that shows whether the sweep is keeping up');
 
+-- ⚠ PINS THE 2026-08-26 duration_ms FIX, and pins the PROPERTY rather than a duration.
+-- The 3-arg log_pipeline_run(text, boolean, jsonb) overload hard-codes p_started_at := now(),
+-- and now() is TRANSACTION start. This procedure COMMITs per wallet, so at log time now() is
+-- the start of the tiny post-COMMIT transaction: pipeline_runs.duration_ms is GENERATED over
+-- (finished_at - started_at), so it recorded 10 ms for runs that really took 27 SECONDS
+-- (worst observed 114,748 ms logged as 37 ms -- understated 2,688x).
+-- ⚠ Deliberately NOT asserted as a duration threshold: this harness completes in
+-- milliseconds, so any timing bound would be satisfied by the bug too and would read as
+-- coverage while inspecting nothing. What is checkable is that an EXPLICIT start arrives.
+SELECT _assert((SELECT started_at FROM public._runs) IS NOT NULL,
+  'the run is logged with an explicit p_started_at - the 3-arg overload substitutes now(), '
+  'which for a procedure that COMMITs is the last COMMIT and not the start of the sweep');
+
+-- ⚠ AND PINS THE EQUIVALENCE that fix claimed. Moving to named arguments had to reproduce
+-- exactly what the 3-arg overload derived from extra, or the change quietly rewrote what
+-- every reader of pipeline_runs sees. These three are the mapping it performed.
+SELECT _assert_eq((SELECT rows_found::text FROM public._runs),
+                  (SELECT extra->>'fetched' FROM public._runs),
+  'p_rows_found still equals the fetched key, exactly as the 3-arg overload derived it');
+SELECT _assert_eq((SELECT rows_written::text FROM public._runs),
+                  (SELECT extra->>'upserted' FROM public._runs),
+  'p_rows_written still equals the upserted key');
+SELECT _assert_eq((SELECT rows_skipped::text FROM public._runs), '0',
+  'p_rows_skipped is 0 - this caller never sets a skipped key, so the overload derived 0');
+
 DELETE FROM public._runs; DELETE FROM public._refreshed;
 UPDATE public.saved_wallets SET cache_updated_at = now() - interval '10 hours';
 CALL public.reconcile_all_saved_wallet_stats(p_max_seconds => 50, p_max_wallets => 1,
@@ -283,6 +333,10 @@ SELECT _assert_eq((SELECT extra->>'wallets_done' FROM public._runs), '1',
   'the payload states how many were done...');
 SELECT _assert((SELECT (extra->>'wallets_total')::int FROM public._runs) > 1,
   '...against how many were owed, so the shortfall is readable rather than inferred');
+SELECT _assert_eq((SELECT err FROM public._runs),
+                  (SELECT extra->>'error' FROM public._runs),
+  'and the column-level error still mirrors the error key - the 3-arg overload set '
+  'p_error from extra, so the named-arg form must not diverge from it');
 
 -- ⚠ AND THE PARTIAL WORK REALLY IS DURABLE. The per-wallet COMMIT is why: the wallet the
 -- truncated sweep did reach keeps its refreshed figures, so the next tick starts from

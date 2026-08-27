@@ -66,6 +66,24 @@ updated too. **It was then patched FROM the migration's own text rather than ret
 hand-copying is exactly how the two drift. ✅ `db:pins:check` **189/189 clean**; the pin + parser tests
 **200/200**.
 
+⛔ **AND IT WENT RED IN CI ANYWAY — a THIRD copy I had not enumerated.** `npm test` was green on this box
+(1385 files / 15,188 tests) because the `DB invariants (SQL)` job runs **only in CI**, against a throwaway
+Postgres provisioned from the runner's binaries, and **there is no local Postgres here** (`psql`, `initdb`,
+`pg_ctl`, `postgres` all absent). That job failed with `function public.log_pipeline_run(p_pipeline => …)
+does not exist`: the SQL harness **STUBS** the helper, and its stub declared only the 3-arg form, so a
+**named**-argument call could not bind. ⭐ **The lesson is the one this repo keeps re-learning from a new
+angle: I enumerated the callers of the FUNCTION and correctly found 15, but not the copies of its
+SIGNATURE.** A test double is a silent re-declaration of an interface, and nothing checks a stub against
+the real signature — the harness has no schema to compare it to. ✅ Fixed by mirroring production's
+**11-arg** signature (names, order, types and defaults all verified against
+`pg_get_function_arguments`), and the binding was then proven **before pushing** by building that exact
+stub in a live scratch schema and calling it with the procedure's exact named-arg form (bound; `started_at`
+passed; `rows_found`/`rows_written` matching `extra`), then dropping the schema. ⭐ **Five assertions added
+so the harness now PINS both halves** — that an explicit `p_started_at` arrives, and that the named-arg
+mapping still reproduces what the 3-arg overload derived. ⚠ **The start-time assertion is deliberately NOT
+a duration threshold**: this harness completes in milliseconds, so any timing bound would be satisfied by
+the bug too and would read as coverage while inspecting nothing.
+
 ⏳ **NOT YET VERIFIED IN PRODUCTION — the next tick is 06:44Z and the DB clock read 06:26Z when this was
 written.** ⚠ Recorded as pending rather than claimed: applying a migration is not evidence the next run
 logs correctly. **Falsifier: the 06:44Z row must show `duration_ms` within a few hundred ms of
