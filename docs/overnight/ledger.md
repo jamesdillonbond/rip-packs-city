@@ -114,9 +114,14 @@ per-wallet leg present, single-scan leg absent, 4 `LIMIT p_limit` sites, `ROW_NU
 `forced_priority` intact. **Both migrations carry an assertion block that fires if the bad form ever
 returns.**
 
-ⓘ **Blast radius, stated rather than minimised:** `get_lock_check_batch` is **SELECT-only** — it picks
-candidates, it does not write lock state — so the worst case was slower candidate selection for ~4
-minutes across at most one 30-minute tick. No rows were written wrongly and nothing needed repair.
+ⓘ **Blast radius, stated rather than minimised — then CHECKED, and it was zero.** `get_lock_check_batch`
+is **SELECT-only** (it picks candidates; it does not write lock state), so the worst case was slower
+candidate selection across at most one 30-minute tick. ✅ **Verified against `pipeline_runs`: no tick ran
+during the window at all.** The bad definition was live **15:17:42Z → 15:21:36Z**; the surrounding ticks
+are **14:38:18Z** (failed on the pre-existing signature) and **15:08:19Z** (ok, 200 found / 200 written),
+with the next due ~15:38Z. **No production run ever executed it.** ⚠ Recorded as a fact I checked, not as
+a defence — the window was luck, not design, and the thing that made it *acceptable to try at all* was
+the SELECT-only property, which is the test to apply next time.
 **That is the only reason this was an acceptable thing to try in production at all**, and it is the
 test I should apply before the next one.
 
@@ -144,6 +149,18 @@ test I should apply before the next one.
 👉 **NEXT ATTEMPT, if anyone makes one: measure THROUGH the function, and expect the parameterised plan
 to differ.** Forcing a stable plan (materialised CTE for `hot`, or restructuring so the collection
 predicate is not a parameter at plan time) is the direction — **not** re-trying the same text.
+
+✅ **POST-REVERT WATCH, and the honest reading of it.** The next tick (**15:38:19Z**) **FAILED** —
+`get_lock_check_batch: nba_top_shot: canceling statement due to statement timeout`, 240,367 ms, 0
+found / 0 written. ⚠ **That is the PRE-EXISTING signature, not a residue of my change**: it is
+byte-identical to the **14:38:18Z** failure that happened *before* I touched anything, and it matches the
+documented ~20% baseline (9 of 46 ticks/24 h). ✅ **Confirmed by the definition itself, not by
+inference** — the live whitespace-collapsed md5 re-read after the tick is still
+**`30d615edf9e33b8d1a4fb79869c16dab`**, equal to the pre-change original. ⓘ Note the failure carries the
+**Postgres** SQLSTATE (`canceling statement due to statement timeout` = the function's own 120 s
+declaration binding on the PostgREST path, per today's earlier finding) rather than the gateway's
+`upstream request timeout` — **this pipeline produces BOTH strings, which is exactly why "read the error
+string, not the duration" matters here.**
 
 **Revert path:** already applied —
 `supabase/migrations/20260827152136_audit_20260827_revert_get_lock_check_batch_single_scan_measured_worse.sql`.
