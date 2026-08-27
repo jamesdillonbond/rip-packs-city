@@ -550,6 +550,41 @@ DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; 
 >   correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample**
 >   but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
 
+### 🚨 A FIFTH way a measurement lies: A PARAMETERISED FUNCTION DOES NOT PLAN LIKE THE SAME TEXT INLINE (2026-08-27)
+
+⛔ **This one was paid for in production.** `get_lock_check_batch`'s hot-wallet branch is a
+`CROSS JOIN LATERAL` **per hot wallet**, each with its own `LIMIT p_limit` — the plan says it plainly:
+**`Limit (actual rows=81 loops=574)`, i.e. 574 hot wallets and 46,320 rows read to return 200.**
+Replacing it with a single scan filtered by `wallet_address IN (hot)` measured, **warm-vs-warm in one
+session, with the slug and limit written as LITERALS**:
+
+| form (inline CTE, literals) | buffers | time |
+|---|---|---|
+| lateral-per-wallet (current) | 49,438 | 56,421 ms |
+| single scan (rewrite) | **232** | **15.3 ms** |
+
+⭐ **And the baseline was independently corroborated** — the inline old-form 56,421 ms reproduced the
+production mean of **51,041 ms over 694 calls**. Every methodological box was ticked: same session, warm
+both sides, same predicate, real population, baseline cross-checked against production.
+
+⛔ **Applied as the FUNCTION, it was WORSE:** **127,501 buffers / 73,486 ms**, then **127,534 buffers /
+114,531 ms on a warm re-run** — ~2.6x the buffers of the form it replaced. Reverted ~4 minutes later
+(revert proven exact by whitespace-collapsed md5 against the definition captured before the change).
+
+⭐⭐ **THE RULE: measure the FUNCTION, by calling the FUNCTION.** With `p_collection_slug` and `p_limit`
+as **parameters** the planner has no constants to prune with and can choose a completely different plan
+from the same SQL text with literals substituted. **An inline CTE is a measurement of a query you are
+not going to run.** ⚠ **The tell is not in the numbers — it is structural**: if the thing you are
+optimising is a function whose *parameters appear in the predicates you are relying on for the win*,
+the inline measurement cannot be trusted, however clean the A/B.
+
+⚠ **Two corollaries worth keeping.** (1) **Run the suspicious result twice.** The first post-apply run
+(73 s) dirtied 14,157 pages and was dismissible as a cold cache; **the warm re-run at 114 s is what made
+it unambiguous.** (2) **What made trying it in production acceptable was that the function is
+SELECT-only** — it picks candidates and writes nothing — so the worst case was a slower selection for one
+tick. **Check that property BEFORE applying, not after**; here it also turned out that no tick ran during
+the 4-minute window at all, which was luck rather than design. Ledger: 2026-08-27.
+
 ### 🚨 A FOURTH way a measurement lies: the PROJECTION can change the PLAN (2026-08-26)
 
 ⚠ **Isolating a sub-expression to price it is only valid if you isolate it with the REAL query's output
