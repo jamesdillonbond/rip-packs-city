@@ -10,6 +10,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ⛔ CORRECTION to my own candy-listings fix, ~30 min later — the 240s sweep budget would have TRUNCATED EVERY HEALTHY SWEEP ON RECORD
+
+**Self-correcting the entry two above.** That fix shipped `SWEEP_BUDGET_MS = 240_000`, justified as
+*"240s leaves ~60s of headroom under maxDuration for the upserts, the activities walk and the
+deactivation pass"*. **The reasoning is sound and the number is wrong, because it was derived from
+the DECLARED ceiling instead of from what the route actually gets.**
+
+Every SUCCESSFUL run of this sweep in the retained `pipeline_runs` window:
+
+| started_at | duration_ms | raw listings | upserted |
+|---|---:|---:|---:|
+| 2026-08-25 06:35Z | **391,226** | 1,599 | 1,585 |
+| 2026-08-24 12:35Z | **389,236** | 1,499 | 1,484 |
+| 2026-08-24 06:35Z | **375,699** | 1,499 | 1,484 |
+
+**All three are ABOVE the 300s `maxDuration`, and all three completed and wrote their terminal row.**
+`extra.duration_ms` is `Date.now() - startedMs` — **the same clock the budget uses** — so the
+comparison is direct and unambiguous: **240s would have cut short every healthy sweep this pipeline
+has on record.** Raised to **600_000** (~1.5× the observed max).
+
+⭐ **The durable lesson, and it is a new one for this file: `maxDuration` is what the platform
+DECLARES; the success band is what the route actually GETS, and here they disagree.** Fluid Compute
+does not bound `after()` work the way a naive reading of maxDuration implies. **Size a deadline off
+the observed distribution of successes, never off the config value** — the config was the more
+authoritative-looking number and it was the wrong one.
+
+⚠ **How it was nearly missed:** the fix's own tests passed (they mock a one-page book that finishes
+instantly, so no test can see a budget that is too tight), CI was green, and the change looked
+strictly protective. **A budget is invisible to every test that does not exceed it.** It surfaced
+only because I went back to read the duration distribution while checking whether the deploy had
+landed — i.e. by accident. ⓘ Blast radius was near zero in practice: the truncation would have
+reported `budget_exhausted: true` and written partial data rather than corrupting anything, and the
+deployed window was ~30 minutes containing one tick.
+
+✅ **Checked the sibling rather than assuming symmetry:** `candy-sales-indexer` has **24 successful
+runs, min 1,318 ms, avg 8,894 ms, max 102,696 ms** — its 240s budget sits 2.3× above the observed
+max and is correct. **No change there.** Same reasoning, opposite conclusion, because the two
+workloads are nothing alike.
+
+## 🚨 And the distribution exposes the REAL problem, which the timeout work does NOT fix
+
+**A ~385s sweep against a 300s `maxDuration` is over budget BY DESIGN.** That is why terminal rows
+are rare (3 in the retained window) and most ticks die — the route is not usually *hanging*, it is
+usually *not finishing*. ⛔ **So the timeout fix should not be read as having fixed the staleness**;
+it bounds hangs and guarantees the failure is logged, which is what was missing, and that is all.
+
+👉 **The cost is ROUND-TRIP COUNT, not query cost — and this corrects my own earlier note too.**
+Earlier tonight I recorded the per-mint `wallet_moments_cache` lookup as "falsified" as a cause,
+having measured it at **1.39 ms / 3 buffers (Index Only Scan)**. That measurement was of the DB-side
+execution and it stands — but it does **not** falsify the cost of issuing **~1,600 × 1–2 SEQUENTIAL
+round trips** from Vercel to Supabase. **Those are different claims and I conflated them.** Batching
+those lookups is the real fix and is filed, not attempted.
+
 ### 2026-08-26 · SHIPPED (repo + a live OPERATIONAL fix on Trevor's box) — `panini-ingest` was dead for 22 h because Chrome was HUNG, and the guard that should have restarted it passes on a hung browser
 
 ⭐ **Found from the one place it was findable.** `detect_stalled_pipelines()` reported `panini-ingest`
