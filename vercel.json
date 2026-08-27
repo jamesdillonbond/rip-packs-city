@@ -86,10 +86,6 @@
       "schedule": "34 */3 * * *"
     },
     {
-      "path": "/api/cron/ufc-sales-history-backfill",
-      "schedule": "48 */3 * * *"
-    },
-    {
       "path": "/api/cron/allday-studio-sales-history-backfill",
       "schedule": "52 */3 * * *"
     },
@@ -100,10 +96,6 @@
     {
       "path": "/api/cron/pinnacle-studio-sales-history-backfill",
       "schedule": "58 */3 * * *"
-    },
-    {
-      "path": "/api/cron/ufc-studio-sales-history-backfill",
-      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/topshot-listing-cache",

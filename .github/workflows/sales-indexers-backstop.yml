@@ -98,14 +98,34 @@ jobs:
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::Golazos sales-indexer returned $STATUS"
           fi
-      - name: UFC Sales Indexer (on-chain) — backstop trigger
-        continue-on-error: true
-        run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/ufc-sales.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/ufc-sales-indexer)
-          echo "UFC sales-indexer status: $STATUS"
-          cat /tmp/ufc-sales.json
-          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
-            echo "::warning::UFC sales-indexer returned $STATUS"
-          fi
+      # ⛔ UFC Sales Indexer step REMOVED 2026-08-27, on Trevor's call: "once we've
+      # ingested all existing UFC Strike history, we don't need to keep searching
+      # and trying to look for more. If they decide to come back, we can start
+      # monitoring it more actively again."
+      #
+      # The precondition was MEASURED, not assumed:
+      #   * `ufc-sales-indexer`         672 runs / 30d, rows_written **0**, rows_found **0**
+      #   * `ufc-sales-history-backfill` 222 runs / 30d, rows_written **0** (found 57, all already held)
+      #   * newest ufc_strike sale **2026-05-13**; 0 sales in 30d AND 90d, of 813,934 total
+      #   * coverage spans the full lifetime 2022-02-15 → 2026-05-13
+      #   * `extra.v2_dapper_typeids_seen` has NEVER carried a UFC type id
+      # UFC Strike left Flow for Aptos on 2026-05-13 — already recorded in this
+      # repo's own watchlist notes, and `ufc-listings-indexer` was retired the same
+      # way on 2026-07-11. This is the sales leg following its own sibling.
+      #
+      # ⚠ The three UFC pipelines that DO work were left running, because a blanket
+      # "retire UFC" would have broken them: `ufc-enrichment-drain` wrote **39,934
+      # rows in 30 days**, plus `ufc-stub-thumbnail-resolver` and `wallet-backfill-ufc`.
+      # Retire by MEASURED YIELD, never by collection name.
+      #
+      # ⚠ This workflow was ALSO the last live trigger for that route — cron-job.org's
+      # /api/ufc-pipeline entry is already dead (measured 2026-08-27: 16 runs/24h here
+      # vs 85-87 for the three live siblings, timestamps matching these GHA runs
+      # exactly). So removing this step stops the route entirely; nothing else calls it.
+      #
+      # REVERT (all four parts): re-add this step; re-add the two `/api/cron/ufc-*`
+      # entries to vercel.json; and
+      #   UPDATE public.pipeline_cadence_watchlist SET is_active = true
+      #    WHERE pipeline IN ('ufc-sales-indexer','ufc-sales-history-backfill',
+      #                       'ufc-studio-sales-history-backfill');
+      # The routes, the 813,934 sales and every UFC surface are untouched.
