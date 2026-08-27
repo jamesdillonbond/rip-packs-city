@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ VERIFIED — the batched candy sweep runs in **18.7 s instead of ~385 s** (~20x), and it is the first COMPLETE sweep since 2026-08-25
+
+The previous entry's expected effect was filed explicitly as a **prediction**, with an instruction to
+re-measure before quoting it. Measured. Triggered the route directly (same call cron makes,
+idempotent upserts) rather than waiting for the 06:35Z tick:
+
+| | 03:35Z pre-batch | **04:36Z batched** | historical "healthy" |
+|---|---:|---:|---:|
+| `duration_ms` | 252,233 (truncated) | **18,663** | 375,699 / 389,236 / 391,226 |
+| `pages_walked` | 11 | **16** | — |
+| `budget_exhausted` | true | **false** | — |
+| `sweep_complete` | false | **true** | true |
+| `rows_written` | 1,100 | **1,677** | 1,484 / 1,585 |
+| `activities_seen` | 0 | **1,000** | — |
+| `deactivated` | 0 | **51** | — |
+
+⭐ **~20x against the previous SUCCESSFUL runs, not against the broken ones** — 18.7 s vs a 375–391 s
+success band. The comparison that matters is to the healthy baseline, and the prediction (~1,600
+round trips → ~32) is borne out: the sweep is no longer round-trip-bound.
+
+⭐ **And it is the first COMPLETE sweep since 2026-08-25 06:35Z.** Everything downstream of the page
+walk came back to life in the same tick: all 16 pages walked (the whole book, `raw_listings_seen`
+1,699), the activities feed read **1,000** activities, and evidence-based deactivation retired **51**
+stale asks — none of which had run at all while the sweep was dying at the page loop. **A route that
+times out mid-walk does not merely do less; every later phase silently never happens**, and that is
+invisible unless something reports the phase counts.
+
+✅ **The whole chain is now confirmed end-to-end**: the timeouts stopped the silent kill, the budget
+guaranteed a terminal row, `budget_exhausted` made truncation legible, and batching removed the need
+to truncate at all. `budget_exhausted: false` on a 600 s budget with an 18.7 s sweep means the
+deadline is now pure backstop, which is what it should be.
+
+⚠ **One tick is not a rate.** This is a single sweep on a warm path against a ~1,700-listing book; a
+larger book or a cold start will cost more. The honest claim is "the round-trip bottleneck is gone",
+not "the sweep takes 18.7 s". `budget_exhausted` is the instrument to watch, and it is now
+meaningful in both directions.
+
 ### 2026-08-26 · ✅ VERIFIED — the candy board is **10 minutes stale instead of 44 hours**, panini is ingesting, and `detect_stalled_pipelines()` returns **ZERO**
 
 Outcome check on tonight's three pipeline fixes, measured rather than assumed.
