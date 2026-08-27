@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — unbounded-fetch class items 3 & 4: the two ALERT dispatchers, which are the worst instance of the shape and were **already brushing their ceiling**
+
+Third and fourth items off tonight's triage, still one route at a time. These two are the class's
+worst case for a reason CLAUDE.md states outright: **an alert's output is SILENCE, so a hung delivery
+is unfalsifiable.** A `maxDuration` kill writes no terminal row, so *"no alerts sent"* and *"no alerts
+to send"* become the same observation.
+
+## ⚠ These were not speculative — the distributions say it is already happening
+
+| pipeline | runs/48h | ok | avg | p95 | **max** | ceiling |
+|---|---:|---:|---:|---:|---:|---:|
+| `alerts-send` | 276 | 276 | 1,494 ms | **1,644 ms** | **58,670 ms** | 60,000 ms |
+| `check-alerts` | 135 | 132 | 9,697 ms | 36,255 ms | **84,836 ms** | 60,000 ms |
+| `alerts-dispatch` | 186 | 186 | 12,395 ms | 41,303 ms | 117,984 ms | — |
+
+⭐ **`alerts-send` is the striking one: a p95 of 1.6 s and a max of 58.7 s.** A route that normally
+answers in under two seconds does not take fifty-eight for a benign reason, and that run finished
+**1.3 seconds** before a kill. `check-alerts` has already **exceeded** its declared ceiling (84.8 s
+against 60 s) — the same platform behaviour observed on candy-listings tonight, where `after()` work
+routinely overran `maxDuration`.
+
+**Bounded, all six outbound calls at 10 s** (generous against a ~1.5 s norm):
+`alerts-send` → Resend, Telegram, Discord **DM-open** and Discord **message** (two hops — the DM-open
+is the easy one to miss); `check-alerts` → Telegram, Resend.
+
+⭐ **An abort here is BETTER than a hang in both routes, and neither needed new error handling.**
+`alerts-send`'s `drainChannel` already wraps each recipient group in try/catch and marks the delivery
+failed — so one stuck recipient is now RECORDED and the batch continues, instead of one stuck
+recipient silently costing every remaining recipient their alert. `check-alerts`' senders already
+return `{ ok: false, error }`. **The timeout converts an invisible loss into a counted failure**,
+which is the entire point on a surface whose failure mode is silence.
+
+⛔ **No whole-loop deadline on either**, same reasoning as `sales-indexer` and opposite to the candy
+sweeps: both are finishing (276/276 and 132/135), so a budget could only truncate healthy runs.
+**Read the distribution; the rule is not "add a budget".**
+
+**Tests** assert on the REQUEST INIT rather than the source text, cover all three channels including
+both Discord hops, and carry not-vacuous arms. ✅ **Proven against the offender:** with the four
+signals removed, three tests fail. Full suite green (**1384 files / 15182 tests**).
+
+⚠ **24 sites remain in the class.** ⓘ `alerts-dispatch` was measured here but NOT changed — it was
+not in the triage's `after()`+`maxDuration` list and needs its own read before being touched.
+
+**Revert path:** `git revert` the code commit. No DB or prod-state change.
+
 ### 2026-08-26 · ⛔ MEASURED, and my own figure was OPTIMISTIC — the pack-ask roll saves **77.8%**, not the ~89% I predicted; the remainder is now 99.9% irreducible
 
 The change-detection entry filed **~89% fewer row writes (26,846 → ~2,978/hr)** as a PREDICTION and
