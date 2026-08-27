@@ -558,6 +558,29 @@ export async function POST(req: NextRequest) {
               query: gqlQuery,
               variables: { id: nftId },
             }),
+            // 10s cap. `fetch()` has NO default timeout, and this loop runs up to
+            // GQL_MAX (50) times inside an `after()` body under maxDuration 120 —
+            // so ONE upstream that accepts the connection and holds it open
+            // consumes the whole tick, and a maxDuration kill takes the terminal
+            // `pipeline_runs` row with it (this file's own header says exactly
+            // that). The failure would then be invisible and read as "the cron
+            // never fired" on a HIGH-severity watchlist pipeline.
+            //
+            // Same defect class fixed on the candy indexers 2026-08-27, where it
+            // had already cost a 44h blackout on a public board. The sibling
+            // decode path in lib/chains/flow/dapper-v1-tx-decode.ts was ALREADY
+            // bounded (8s) — this was the one call in the route that was not.
+            //
+            // ⚠ Deliberately NO whole-loop deadline here, unlike the candy
+            // sweeps, and the difference is measured rather than stylistic: over
+            // 24h this pipeline ran 85 times, 85 ok, avg 13.3s / p95 40s / max
+            // 83s against the 120s ceiling. It is not missing terminal rows, so a
+            // deadline would have to be sized into the narrow 83-120s band and
+            // could only truncate healthy runs. Bound the hang, do not police a
+            // route that is already finishing. (Sizing a budget off the config
+            // rather than the observed success band is precisely the error that
+            // had to be corrected on candy-listings the same evening.)
+            signal: AbortSignal.timeout(10_000),
           })
 
           console.log(`[sales-indexer] GQL response status=${resp.status}`)

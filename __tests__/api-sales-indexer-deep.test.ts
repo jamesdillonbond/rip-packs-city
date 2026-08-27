@@ -364,6 +364,52 @@ describe("sales-indexer — resolution ladder", () => {
     expect((run?.extra as Record<string, unknown>).gql_resolved).toBe(1)
   })
 
+  it("the Top Shot GQL proxy call is time-bounded", async () => {
+    // 🚨 WHY. `fetch()` has NO default timeout, and this call runs up to GQL_MAX
+    // (50) times inside an `after()` body under maxDuration 120 — so ONE upstream
+    // holding the connection open consumes the whole tick, and a maxDuration kill
+    // takes the terminal pipeline_runs row with it (this route's own header says
+    // so). The failure would then be invisible on a HIGH-severity watchlist
+    // pipeline. Same class that cost the candy board a 44h blackout (2026-08-27);
+    // the sibling decode path was already bounded at 8s, this call was not.
+    //
+    // ⚠ Asserted on the REQUEST INIT, not the source text — a source grep would
+    // be satisfied by the comment you are reading.
+    const txG = "a".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9003", "60", txG, DAPPER_MERCHANT)]
+    install({
+      editions: [
+        { data: [], error: null },
+        { data: [{ id: "stub-uuid", external_id: "12:34" }], error: null },
+      ],
+      "rpc:ensure_topshot_edition_stub": { data: "stub-uuid", error: null },
+      sales: { data: null, error: null },
+    })
+    fetchMock?.restore()
+    fetchMock = installFetchMock([
+      jsonRoute("ts-proxy.test", {
+        data: {
+          getMintedMoment: {
+            data: { flowSerialNumber: "7", play: { flowID: "34" }, set: { flowId: 12 } },
+          },
+        },
+      }),
+    ])
+
+    await POST(req())
+    await runDeferred()
+
+    const gqlCalls = fetchMock.calls.filter((c) => /ts-proxy\.test/.test(c.url))
+    // Not vacuous: if the GQL fallback never fired, the loop below asserts nothing.
+    expect(gqlCalls.length).toBeGreaterThan(0)
+    const unbounded = gqlCalls.filter((c) => !c.init?.signal).map((c) => c.url)
+    expect(
+      unbounded,
+      "every Top Shot GQL proxy request must carry an AbortSignal — an unbounded " +
+        "one consumes the whole 120s tick and the run dies without a terminal row",
+    ).toEqual([])
+  })
+
   it("F9 parallel split: a confirmed parallel is redirected from the base onto its ::subID edition", async () => {
     const tx4 = "4".repeat(64)
     state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9004", "60", tx4, DAPPER_MERCHANT)]
