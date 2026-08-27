@@ -69,6 +69,15 @@ and requires each to be named in the workflow; **falsified by removing the new s
 (it reds and names the file to edit)**, and its parser is pinned in both directions so an
 unparseable rewrite reports every spec missing (loud) rather than none (silent).
 
+✅ **RAN AGAINST PRODUCTION 15:43–15:46Z, AND #37 IS CLOSED ON IT.** Read from the job log rather
+than the badge: the invocation line names the new spec, **109 tests ran and 109 passed**, and the
+four board cases appear individually — `pack-sniper` ✓, `tc-report` ✓, `top-sales` ✓,
+**`underpriced-serials` ✓ (4.5s)**. ⭐ **The detector's own failure path was proven in the same run**
+(`assertClockShiftArmed FAILS when the shift was never armed` ✓, `a clock-sensitive page FAILS under
+the shift` ✓), which is what separates this green from the two before it. ⭐ **It also checked three
+claims that were previously only ASSERTED** — the three `hydration-safe:` markers written yesterday
+all held under a 7-hour skew.
+
 **Revert path:** `git revert` the code commit — deleting `e2e/hydration-clock.spec.ts`,
 `e2e/clock-shift.ts`, the four self-check cases, the guard and the workflow's added spec name. No app
 code, DB or prod state was touched.
