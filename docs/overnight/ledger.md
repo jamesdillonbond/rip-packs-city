@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · MEASURED (read-only, docs) — the pack-pool rotation converted 342 dists in 11 hours and then stopped dead, and the error string cannot tell you which of those two states you are in
+
+**No code, no DB, no prod state. This is the measurement the rotation fix's own filing asked for**
+(*"needs ~100+ ticks; do not close on this"*) — **tested at n = 173, not re-read.**
+
+Read from the pipeline's own per-tick `extra` (`dists_ok` / `empty_eds` / `processed`), hourly,
+because a rate needs a distribution and this file has been wrong three times this week by reading
+two instants:
+
+| window (UTC) | dists_ok / processed | pool rows |
+|---|---|---:|
+| 02:00 (pre-fix) | **0 / 36** | 0 |
+| 03:00–11:00 | **~34 / 36 every hour** | 1,375–3,490 per hour |
+| 12:00–13:00 | 23/30 → 12/18 | declining |
+| 14:00 | **2 / 36** | 4 |
+| **15:00–17:00** | **0 / 36 every hour** | **0** |
+
+✅ **The fix is vindicated on the numbers: 342 distributions and 24,390 pool rows in ~11 hours,
+against 46 rows in the 72 hours before it.**
+✅ **And the statement-timeout residual is now a MEASUREMENT rather than an absence: 1 of 173
+(0.58%)**, against 15 of 274 (5.5%) pre-fix. The 0-of-9 reading was correctly refused as evidence.
+
+🚨 **THE FINDING IS THE SIGNATURE, NOT THE PIPELINE.** `0/3 dists converted; 3 returned no editions`
+is **byte-identical** in the 02:00Z row and the 17:00Z row — and those are **opposite situations**:
+a sampler re-drawing three unconvertible dists forever, versus a queue whose convertible half is
+genuinely done (Top Shot backlog now **381**). ⭐ **That ambiguity is exactly why the original wedge
+went unnoticed for weeks, and the fix did not remove it** — it only moved which side of it we are
+on. **The missing instrument is FAILURE MEMORY:** `pack_distributions` has no attempt or error
+column, so nothing distinguishes *"tried, empty upstream"* from *"not yet tried"* — which is also
+what would let the sampler skip the known-empty set instead of redrawing it every five minutes
+forever.
+
+⚠ **A DENOMINATOR TRAP, recorded because it would have halved the apparent result:** a naive backlog
+count reads **648**, of which **267 are not Top Shot** — this pipeline is Top-Shot-only, so its
+queue is **381**. Growth does not explain the gap either (**8 new dists in 24 h**).
+
+⛔ **Nothing shipped, deliberately: the pipeline belongs to the concurrent session that fixed it.**
+Filed to its register entry (#38) so the next reader gets the series rather than the two instants.
+
+**Revert path:** docs only — `git revert` this commit.
+
 ### 2026-08-27 · ✅ SHIPPED (code) — the ENTIRE anonymous telemetry stream was being dropped at the proxy, and the instrument that proves it is a zero
 
 **Handed off, not found here.** The Cowork weekly surface-QA pass filed
