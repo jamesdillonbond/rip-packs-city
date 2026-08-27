@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code) — the unbounded-fetch class, item 1 of 29: `candy-sales-indexer` + the shared `dasCall`, taken one route at a time as its own filing prescribed
+
+Acts on the top entry of tonight's [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md)
+triage — **not** a sweep of the other 28. `candy-sales-indexer` was named there as the highest-prior
+candidate by a distance: sibling of the route fixed an hour earlier, same Magic Eden host, same
+egress, and **the one already observed taking Cloudflare 1015 / HTTP 429 from Vercel**.
+
+**Three bounds, and each is a different guarantee:**
+
+1. **`fetchActivities`** — `AbortSignal.timeout(15_000)`. Bounds ONE call.
+2. **`dasCall` in `lib/chains/solana/das.ts`** — `AbortSignal.timeout(25_000)`. ⭐ **The highest-leverage
+   part: it is a SHARED helper used by five candy ingest routes** (`candy-listings-indexer`,
+   `candy-sales-indexer`, `ingest/candy-editions`, `ingest/candy-offers`,
+   `wallet-backfill-candy`), every one of them an `after()` route where a hang is invisible. And
+   `candy-sales-indexer` budgets **400 asset fetches per tick**, so unbounded, a single stuck call
+   could eat all 300 s by itself. ⚠ Deliberately looser than the 8 s this same file uses for
+   CoinGecko: a DAS page is real work, not a price lookup — **this bounds a HANG, it does not police
+   latency.**
+3. **`SWEEP_BUDGET_MS = 240_000`** on the activities walk. `MAX_PAGES` is 40, so per-request caps
+   alone still permit **40 × 15 s = 600 s**, twice `maxDuration`. Without the total budget the sweep
+   can still be killed before `logRun` — which IS the defect.
+
+🚨 **The bug I nearly INTRODUCED, and it is the same class I was fixing.** The route ends with:
+
+> `activitiesSeen === 0 ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"`
+
+If the new deadline fires before the first page lands, `activitiesSeen` is 0 **for a reason that has
+nothing to do with Magic Eden** — and that line would have published *"upstream fault"* about **our
+own timeout**. ⭐ **That is the honesty canon inverted: not a failed read rendering as a fact, but a
+LOCAL failure rendering as SOMEONE ELSE'S fault** — and it would have sent the next investigator
+straight at ME. The two states now carry different messages, plus `budget_exhausted` in `extra` for
+anything querying it. **Adding a bound to a loop can change what an existing error message MEANS;
+re-read the messages downstream of any early exit you add.**
+
+`budget_exhausted` was added to both routes' `extra` for the same reason it was added to the listings
+route: without it a time-truncated sweep and a genuinely short upstream answer read identically.
+
+**Tests: two added, both asserting the property on the REQUEST INIT rather than the source text** (a
+source grep is satisfied by the comment documenting the fix — the trap a sibling guard fell into
+earlier tonight). ✅ **Both proven against the offender before being trusted:** with the signals
+removed they fail with `expected [ Array(1) ] to deeply equal []` and `expected undefined to be
+defined`. Both carry a not-vacuous arm. Full suite green (**1384 files / 15177 tests**).
+
+⚠ **27 sites remain in the class and are deliberately NOT touched.** The filing's rule stands: the
+correct timeout is not a constant, and the three `*-dune` routes at `maxDuration = 800` must not gain
+retries (one ownership walk is already 87.7% of the monthly datapoint budget).
+
+**Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
+change is shared — reverting it re-exposes all five candy routes, not just this one.
+
 ### 2026-08-26 · ✅ VERIFIED (15 min later) — the pack-pool rotation ANSWERED its own open question, and the answer is the opposite of the branch I hedged for
 
 Follow-up to the `get_topshot_pool_backfill_targets` rotation shipped an hour ago. That entry left
