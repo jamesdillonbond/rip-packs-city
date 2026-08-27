@@ -149,10 +149,32 @@ BEGIN
     FROM public.saved_wallets
    WHERE wallet_addr IS NOT NULL;
 
+  -- ⚠ The 3-arg log_pipeline_run(text, boolean, jsonb) overload passes
+  -- `p_started_at := now()`. now() is TRANSACTION START, and this procedure COMMITs
+  -- per wallet, so by the time it logs, now() is the start of the tiny post-COMMIT
+  -- transaction -- NOT the start of the sweep. duration_ms is a GENERATED column
+  -- (finished_at - started_at), so it recorded the few ms since the last COMMIT.
+  -- Measured 2026-08-26: avg elapsed 27,370 ms recorded as 10 ms, worst 114,748 ms
+  -- recorded as 37 ms -- understated 2,688x. The named-arg form below passes the
+  -- real v_started (clock_timestamp() at procedure entry).
+  -- ⚠ Every other value is IDENTICAL to what the 3-arg overload derived, so nothing
+  -- that reads pipeline_runs or extra changes: it mapped p_rows_found from
+  -- extra->>'fetched' (= v_total), p_rows_written from extra->>'upserted'
+  -- (= v_refreshed), p_rows_skipped from a key this caller never set (= 0), and
+  -- p_error from extra->>'error'. The extra jsonb below is byte-identical.
+  -- ⛔ Do NOT "fix" this in the 3-arg overload itself -- 14 other callers use it and
+  -- they are all non-COMMITting FUNCTIONS, where now() IS their true start.
   PERFORM public.log_pipeline_run(
-    'reconcile-saved-wallet-stats',
-    NOT v_truncated,
-    jsonb_build_object(
+    p_pipeline     := 'reconcile-saved-wallet-stats',
+    p_started_at   := v_started,
+    p_rows_found   := v_total,
+    p_rows_written := v_refreshed,
+    p_rows_skipped := 0,
+    p_ok           := NOT v_truncated,
+    p_error        := CASE WHEN v_truncated
+                           THEN 'soft_deadline_reached_partial_sweep_committed'
+                           ELSE NULL END,
+    p_extra        := jsonb_build_object(
       'wallets_done',      v_wallets,
       'wallets_total',     v_total,
       'fetched',           v_total,

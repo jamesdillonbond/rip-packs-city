@@ -1021,8 +1021,14 @@ const PINS = [
   // transaction raises 2D000); it runs in a throwaway DATABASE instead. See the file header.
     fn: "reconcile_all_saved_wallet_stats",
     test: "supabase/tests/reconcile_all_saved_wallet_stats.sql",
+    // ⚠ Repointed 2026-08-26 from the 08-16 snapshot to the duration_ms fix. The two
+    // differ ONLY in the log_pipeline_run call's argument form: the 3-arg overload
+    // hard-codes `p_started_at := now()`, and now() is TRANSACTION start, so this —
+    // the only COMMITting caller in the database — recorded the milliseconds since its
+    // last COMMIT as the run's duration (avg 27,370 ms logged as 10 ms, 2,688x understated).
+    // The named-arg form passes the real v_started. Every logged value is unchanged.
     migration:
-      "supabase/migrations/20260816181600_audit_20260816_snapshot_reconcile_all_saved_wallet_stats.sql",
+      "supabase/migrations/20260827063500_audit_20260826_reconcile_duration_ms_measured_from_the_last_commit.sql",
   },
   {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
