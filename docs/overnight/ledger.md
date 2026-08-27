@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ VERIFIED THROUGH THE REAL CALLER — the rewritten `panini-run.bat` fired on schedule at 22:00 PT, preflight passed, runner connected
+
+The panini fix was applied and then exercised by hand. **It has now run through the Windows Task
+Scheduler job itself** — the production caller — at its scheduled 22:00 PT (05:00Z) fire:
+
+```
+==== Wed 08/26/2026 22:00:02.51 run start ====
+[panini-preflight] OK — CDP session established (1 context(s))
+[panini-runner] connected over CDP (http://localhost:9222) — using your real Chrome
+[panini-runner] auth preflight OK (202)
+```
+
+Both new pieces work: **the CDP preflight** (the check that connects rather than probing the port)
+and **the run log** at `%USERPROFILE%\panini-run.log`, which exists because Task Scheduler discards a
+task's stdout and that is why the original 22-hour failure surfaced only as `LastTaskResult 1`.
+
+⚠ **`LastTaskResult` now reads `267009`, and that is NOT an error** — `0x00041301` is
+`SCHED_S_TASK_RUNNING`. The walk takes ~50 minutes by design (its own budget: *"walk budget hit (50m)
+— stopping cleanly … shuffle means the next run covers a different subset"*), so a mid-walk read
+shows RUNNING. ⭐ **Worth recording precisely, because a future reader checking this task will see a
+large non-zero number and could easily mistake it for a failure code.** The earlier failure was
+`1`; success is `0`; `267009` means "still going".
+
+`panini-ingest` has **214 `pipeline_runs` rows in the last 3 hours**, against 22 hours of complete
+silence before the fix.
+
+⚠ **Not yet proven: a clean END-to-end scheduled run.** This confirms start, preflight, connect and
+ingest; the `run end rc=` line is what confirms completion, and it lands ~50 min in. Read
+`%USERPROFILE%\panini-run.log` for it rather than assuming.
+
+ⓘ **Cosmetic defect introduced by my own change:** the `.bat` appends under the console codepage, so
+em-dashes in the runner's output land as mojibake (`â€”`) in the log file. Content is readable and
+this changes no behaviour — noted rather than churned, since the fix is a `chcp 65001` whose blast
+radius on a Task Scheduler job is worth its own thought.
+
 ### 2026-08-26 · SHIPPED (CI) — `Install Flow CLI` reddened `main` twice tonight, and the 7-attempt retry loop was **structurally unable** to help
 
 **The symptom.** Two of the last 20 CI runs failed, both on `Cadence escrow tests (flow test)` →
