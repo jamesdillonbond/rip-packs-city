@@ -124,3 +124,108 @@ likewise updates only rows that have actually drifted past the threshold.
 ⚠ **So the honest total is ~726 MB/day of addressable WAL, not the ~1.92 GB/day this
 filing led with.** The 1.92 GB figure is correct as a measurement of what those four
 statements write; it is wrong as an estimate of what could be saved.
+
+---
+
+## ✅ SHIPPED 2026-08-26 ~20:00 PT (2026-08-27 03:00Z) — the design question above is ANSWERED BY MEASUREMENT, and `upsert_pack_ask_state` is now change-detected
+
+This filing closed with a design question rather than a fix, and it was the right call to
+leave it open:
+
+> *"is a per-call `last_checked_at` heartbeat worth 385 MB of WAL a day to maintain a 4 MB
+> table? … the answer is not a predicate — it is whether the heartbeat should be written on
+> every poll, or only on change plus a periodic keepalive."*
+
+**The answer is: not on every poll — because the poll is already recorded elsewhere and
+nothing reads the per-row copy.**
+
+### ⛔ The one factual claim that does not survive measurement
+
+> *"removing or gating `upsert_pack_ask_state`'s `last_checked_at` write would delete a
+> liveness signal — `pack_ask_state.last_checked_at` is how anything knows the ask feed was
+> polled at all."*
+
+**Nothing reads it.** Six caller sources swept:
+
+| source | result |
+|---|---|
+| repo grep (`lib`, `app`, `components`, `scripts`) | **0** |
+| `pg_proc.prosrc` | 5 functions touch `pack_ask_state`; **only `upsert_pack_ask_state` itself names the column — it is the writer** |
+| views / matviews | 3 read the table (`v_topshot_atlas_pool_targets`, `pack_table_rows`, `pack_ev_latest`); **none read the column** |
+| `cron.job.command` | 0 |
+| `pg_trigger` | 0 |
+| indexes on `pack_ask_state` | 2 (`pack_ask_state_pkey`, `idx_pack_ask_state_listed_recency`); **neither on it** |
+
+⚠ **The seventh source — a Cowork artifact — was NOT swept and cannot be from SQL.** That
+residual is exactly why the column was **kept and COMMENTed rather than dropped.**
+
+⭐ **And the liveness answer never depended on it:** `snapshot-pack-asks` writes a
+`pipeline_runs` row on **every** tick — **277 in the last 24 h**, plus 278 heartbeat rows.
+"Was the ask feed polled?" was already answerable there, at **one row per tick instead of
+2,981**. The per-row stamp was a duplicate of that answer maintained at ~3,000× the cost.
+
+⭐ **The transferable half: "this column is a liveness signal" is a claim about READERS, and
+it is cheap to check.** Both this filing and I reached for the same instinct — that gating a
+`*_checked_at` write destroys freshness — and it is a good instinct that happened to be
+false here. The discriminator is not the column's name; it is whether anything consumes it.
+
+### What shipped
+
+One `WHERE` clause on the `DO UPDATE`:
+
+```sql
+WHERE s.is_listed = false
+   OR s.lowest_ask      IS DISTINCT FROM EXCLUDED.lowest_ask
+   OR s.pack_listing_id IS DISTINCT FROM EXCLUDED.pack_listing_id
+```
+
+⚠ `pack_listing_id` is tested explicitly because it is **not** covered by the ask
+comparison — it can change while `lowest_ask` does not. Dropping it from the predicate would
+silently stop tracking **relistings at an unchanged price**.
+
+Plus a `COMMENT ON COLUMN` recording that `last_checked_at` now means *last CHANGED*, that it
+must not carry a freshness monitor (the `saved_wallets.cache_updated_at` /
+`edition_fmv_current.refreshed_at` trap), and where the real answer lives.
+
+### Equivalence, proven over the population rather than argued
+
+Both bodies were generated **mechanically from `pg_get_functiondef()`** — so the OLD one
+could not drift by transcription — repointed at two independent copies of the real table
+(3,025 rows each) and run on the same 2,000-row payload, mutated to exercise every branch:
+bulk unchanged · one changed ask · **one changed `pack_listing_id` AT THE SAME ASK** · one
+relist (`is_listed` false → true) · one brand-new dist · one drop by omission.
+
+| | |
+|---|---|
+| return values | **identical** |
+| symmetric diff EXCLUDING `last_checked_at` | **0 only-in-OLD, 0 only-in-NEW** |
+| symmetric diff INCLUDING `last_checked_at` | 1,996 of 2,000 rows differ |
+
+### Verified in production, on the pipeline's own telemetry
+
+Two real sweeps after the change: **`found=2981 written=1 ok=true`** and
+**`found=2981 written=0 ok=true`**, `is_listed` still **2,981**. `n_tup_upd` on
+`pack_ask_state` moved by **5 rows** across both, against **5,962** before.
+
+**A 99.92% cut in row writes, measured in production, with `found` unchanged** — so the
+sweep is seeing and doing identical work.
+
+### ⚠ The WAL number is NOT yet a rate, and the residual is real
+
+`shared_blks_dirtied` and `wal_bytes` over the first **4 calls / 9.3 minutes** give
+**~172 KB of WAL per call against ~680 KB before** (385.6 MB/day ÷ 567 calls/day) and
+**53 dirtied blocks per call against 99**. ⛔ **Do not turn 9 minutes into a daily rate** —
+that is the spot-rate-as-a-rate error, and I was the only meaningful load on the instance
+while measuring.
+
+⭐ **But the shape of it is a finding: row writes fell 99.9% while WAL per call fell ~75%, so
+something else in this function writes.** Leading hypothesis, offered as a hypothesis: the
+per-call `DROP TABLE IF EXISTS _fresh` + `CREATE TEMP TABLE _fresh` cycle is catalogue churn
+(`pg_class`/`pg_attribute`/`pg_type`) 562 times a day, which is WAL-logged. **The test that
+would settle it is a `wal_bytes` comparison of the same body with `_fresh` replaced by a
+CTE.** Not done, not claimed.
+
+**Falsifier for the headline, to be RUN over 24 h:** `n_tup_upd` on `pack_ask_state` should
+track the real change rate (~97/day + drops/relists), not ~1.68M/day. If `rows_found` on
+`snapshot-pack-asks` drops below ~2,981 or `is_listed` falls, the guard is excluding rows it
+should not — revert by re-applying the body without the `WHERE`.

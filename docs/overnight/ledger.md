@@ -630,6 +630,104 @@ retries (one ownership walk is already 87.7% of the monthly datapoint budget).
 **Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
 change is shared — reverting it re-exposes all five candy routes, not just this one.
 
+### 2026-08-26 · ✅ SHIPPED (DB) + VERIFIED IN PRODUCTION — `upsert_pack_ask_state` rewrote **5,962 rows every 5 minutes to move one timestamp**; change-detection cut it to **5**, and the equivalence was PROVEN rather than argued
+
+**What it was doing.** The snapshot cron calls `upsert_pack_ask_state(collection, listings)` every 5 minutes for
+two collections. Its `ON CONFLICT ... DO UPDATE` had **no `WHERE`**, so every listed row was rewritten on every
+tick — a full new tuple version for **2,981 rows × 2 collections × 288 ticks/day** — to move `last_checked_at`
+and, on the overwhelming majority of them, nothing else. `pg_stat_user_tables` on `pack_ask_state`:
+**16.7M `n_tup_upd` against 27 `n_tup_ins`**, i.e. the table's entire write history is rewrites of 3,025 rows.
+
+**The change is three lines and it is the whole change.**
+
+```sql
+  WHERE s.is_listed = false
+     OR s.lowest_ask      IS DISTINCT FROM EXCLUDED.lowest_ask
+     OR s.pack_listing_id IS DISTINCT FROM EXCLUDED.pack_listing_id;
+```
+
+The first arm is the one that is easy to leave out and would have been a silent data bug: a pack that was
+**delisted and has come back** must take the full update path (`prev_ask`, `ask_first_seen_at`, `ask_changed_at`
+all re-stamp off `s.is_listed = false`), and its `lowest_ask` may be unchanged from before it vanished.
+
+⭐ **The equivalence was proven mechanically, not reviewed.** Both function bodies were generated from
+`pg_get_functiondef()`, applied to two full 3,025-row copies of the table in a scratch schema, and
+symmetric-diffed: **0 rows only-in-OLD, 0 rows only-in-NEW**, excluding `last_checked_at`, which is the column
+whose meaning the change deliberately alters. **This is the standard the repo should hold for any guard added
+to an existing writer** — "I read it and the arms look right" is not evidence about 3,025 rows.
+
+✅ **Verified live, 2 sweeps after deploy:** `found = 2,981` both ticks, `ok = true` both ticks, `is_listed`
+still **2,981** (unchanged), and `n_tup_upd` moved **5 rows** where the same two ticks previously moved
+**5,962** — a **99.92% cut**. No board, view or route reads changed.
+
+⚠ **`last_checked_at` NO LONGER MEANS "last checked". It now means "last CHANGED"**, and that meaning shift is
+recorded in a `COMMENT ON COLUMN`, not only here. **Nothing may use it as a liveness signal.** ✅ **Checked
+before shipping, not after:** liveness is already carried by `snapshot-pack-asks-heartbeat`, which logged
+**278 runs / 278 ok in the last 24 h** and is a separate row per tick — so the instrument the change would
+have broken was never the one in use.
+
+⚠ **AND THE CHANGE HAS A MEASURED RESIDUAL, found the same night by reading the instrument instead of
+assuming the win.** At the **02:58:2xZ tick, all 2,981 listed rows in BOTH collections were rewritten anyway**,
+while the RPC reported `new: 0, changed: 0, dropped: 0` for each. Those three zeros exclude two of the three
+guard arms by construction, so **the `pack_listing_id` arm fired for every row at once**. Corroborated on the
+rows themselves: their `ask_changed_at` values are days to months old (2026-08-21, 2026-08-14, 2026-06-21),
+so no price moved. **The 15 surrounding ticks each rewrote 0–3 rows**, so this is a periodic event, not the
+steady state — the 99.92% cut is real and this rides on top of it.
+
+⛔ **Not yet diagnosed, and deliberately not guessed at.** Two hypotheses fit equally well — the upstream
+rotates listing ids in bulk (one rewrite per rotation), or one tick's feed omits `pack_listing_id` and
+`NULLIF(...,'')` writes NULLs that the next tick writes back (**two** rewrites per occurrence, and a
+transiently-NULL id in a table other code reads). **An instrument is armed rather than a fix shipped:**
+`audit_20260827_pack_listing_id_churn` (RLS on, anon revoked, 2,981-row baseline at 03:31:07Z) snapshots
+`(dist_id, pack_listing_id)` across successive ticks. **Discriminator: if the mass event coincides with ids
+that are NULL in one snapshot and restored in the next, it is the flip-flop and the fix is to skip the arm
+when the incoming id is NULL; if the ids are all non-NULL and simply different, it is a genuine rotation and
+the rewrite is correct work.** ⛔ **Do not "fix" this by dropping `pack_listing_id` from the guard** — that
+column is written to state other code reads, and a guard that ignores a column it writes is the original bug
+in the other direction.
+
+**Revert:** the prior body is in migration history; the record file is
+`supabase/migrations/20260827030000_audit_20260826_upsert_pack_ask_state_change_detect_the_no_op_rewrite.sql`.
+`DROP TABLE public.audit_20260827_pack_listing_id_churn` once the residual is settled.
+**Target metric:** `n_tup_upd` on `pack_ask_state` per 5-minute tick — was ~5,962, now ~5 plus one periodic
+full rewrite.
+
+ⓘ **Adjacent item CLOSED by measurement while here: `roll_pack_ask_hourly_low` is already change-guarded and
+already cheap.** Its final `UPDATE` carries `AND (s.low_ask_24h IS DISTINCT FROM agg.lo_24h OR s.low_ask_7d IS
+DISTINCT FROM agg.lo_7d)`, and its own `state_rows_changed` telemetry reads **0, 4, 0, 1 rows changed out of
+2,981 candidates** across the four most recent ticks. **It is not a second copy of the defect above** — worth
+recording because its shape (a 15-minute cron that touches the same 2,981 rows) makes it look like one.
+
+### 2026-08-26 · 🚨 RETRACTED IN FULL — I fit a constant to the answer on the candy indexer, and an upstream measurement falsified it the same night
+
+**Withdrawn: the claim that N+1 `wallet_moments_cache` lookups were what consumed the candy indexer's 300 s
+lambda budget.** `f11fe69` measured that leg directly: it is an **Index Only Scan at 1.39 ms / 3 buffers**, and
+its author recorded why my number was wrong — *"my first EXPLAIN used a guessed UUID and picked a different
+index — a plan measured against a fake key is not the real plan."* The real cause was two **unbounded
+`fetch()` calls** to Magic Eden with no `AbortSignal.timeout`, i.e. the failure mode `solUsd()` in
+`lib/chains/solana/das.ts` already documents one line away in the same call path.
+
+⭐ **The part worth keeping is HOW the wrong claim passed my own review.** I had exactly two numbers: a
+**hypothesised** operation count (3,626 round trips) and a **known** deadline (300,000 ms). I divided them,
+got 83 ms, observed that 83 ms is a plausible per-round-trip cost, and wrote *"the arithmetic closes
+exactly."* **It closes for any hypothesis whose operation count is near the true one — the quotient is
+determined by the deadline I already knew, so it tested nothing.** ⭐ **The rule, stated so it is reusable:
+when a hypothesised operation count and a known deadline are the only two numbers you have, their quotient
+is ARITHMETIC, NOT EVIDENCE. Measure one of the two independently or you have measured nothing.**
+
+⛔ **A batching change for the same route is written, tested (14/14) and explicitly ON HOLD, and the reason is
+evidence, not doubt about the code.** It removes every per-listing await by reading the 125-row Candy editions
+catalogue once, and it may well be a real improvement — but `f11fe69` had not yet deployed when it was
+written (`candy_listings` **44.8 h stale, 0 rows in 6 h, 0 terminal `pipeline_runs` rows in 24 h** against 8
+invocation heartbeats — still the kill signature). **If my change lands alongside an unverified fix and the
+pipeline recovers, neither of us learns which one did it.**
+
+👉 **The order that keeps the evidence: let `f11fe69` deploy and prove itself first.** If ticks then complete
+comfortably inside 240 s, the round-trip term was never dominant and my batching is a cost improvement to
+weigh on its own merits. The diff is preserved out-of-tree as `cowork-2026-08-26/candy-batching-HOLD.diff`
+and is **explicitly not ready to apply**. Filing:
+[inbox 2026-08-27T0330Z](inbox/2026-08-27T0330Z-RETRACTION-i-fit-the-constant-to-the-answer-on-the-candy-indexer.md).
+
 ### 2026-08-26 · ✅ VERIFIED (15 min later) — the pack-pool rotation ANSWERED its own open question, and the answer is the opposite of the branch I hedged for
 
 Follow-up to the `get_topshot_pool_backfill_targets` rotation shipped an hour ago. That entry left

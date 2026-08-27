@@ -116,3 +116,122 @@ repo's rule is that a freshness-vs-reliability trade on a public board is a prod
 (`app/api/og/insights/underpriced-serials/route.tsx`) is already flagged in known-issues
 **#30** as rendering a `Live deals` claim with **no age signal at all**. A board that 503s
 for its own API is exactly the case where a social card asserting liveness is worst.
+
+---
+
+## ⭐ RE-MEASURED 2026-08-27 ~02:50Z (Cowork cloud) — two remedies REFUTED, the production distribution taken, and a third option the two above did not consider
+
+**Nothing shipped.** This filing reserved the decision and that reservation stands. What was
+missing was the numbers that make it a 30-second call; here they are, plus two dead ends closed
+so nobody spends a night on them.
+
+### 1. 🚨 `VACUUM` cannot fix this board, and the reason generalises
+
+The plan's FMV leg is an `Index Only Scan` on the covering index built earlier that day — and it
+reports **`Heap Fetches: 289` out of 289 rows.** The index-only scan delivers *none* of its
+benefit, so the obvious next move is "the visibility map is stale, vacuum it."
+
+⛔ **Measured, it is not stale:** `fmv_snapshots_2026` is **96.2% all-visible**
+(`relallvisible` 26,059 / `relpages` 27,080), autovacuumed 8 h earlier.
+
+The reason the two facts coexist is the query shape. This board reads the **latest** snapshot per
+edition, and of the 273 tuples it actually lands on:
+
+| | |
+|---|---|
+| written in the last 24 h | **273 of 273 (100%)** |
+| oldest | 12 h ago |
+| newest | **4 minutes ago** |
+
+**Every row it reads lives in the write head** — inside the ~3.8% of pages that are not
+all-visible and, by construction, never will be while ingest continues.
+
+⭐ **The transferable rule: an `Index Only Scan` that selects the NEWEST row per key can never
+stop hitting the heap, however well-vacuumed the table is.** The visibility map lags the write
+head by definition. `relallvisible` percentage is the wrong instrument for this query shape, and
+a high one is not evidence the scan is index-only in practice. ⓘ Contrast the 2026-08-25
+`sales_2026` case, where a `VACUUM (INDEX_CLEANUP OFF)` *did* pay — that scan was over a 90-day
+window, not the head.
+
+### 2. ⛔ And `edition_fmv_current` is not the escape either — by this repo's own rule
+
+The FMV leg is a correlated latest-snapshot lateral, which is the exact shape a 13 MB
+`edition_fmv_current` was built to serve. **It must not be used here.** That table is for
+*ordering and bulk aggregation only, never a displayed price*, and the 2026-08-25 measurement
+behind that rule is decisive: on the recently-changed population it lags **4.7%** of editions by
+up to **7.06 days** ($74.00 published as $49.00, $11.00 as $4.50). This board renders
+`edition_fmv_usd` and derives `discount_pct` from it — a displayed price on a *deals* board, i.e.
+the worst possible place for a stale one. ⚠ And the freshness-guard that rescued the
+`refresh_wmc_fmv_changed` case does not transfer: there the caller held the snapshot's
+`computed_at` to compare against; here there is nothing to compare to.
+
+ⓘ Independently corroborated by the 2026-08-26 measurement in known-issues #30, which found
+**233 `fmv_usd` + 79 `confidence` disagreements** and 30 editions admitted that the board does not
+show.
+
+### 3. The production distribution — 550 real calls, and the mean is the finding
+
+From `pg_stat_statements` (window: reset 2026-08-12 01:34Z → 15.05 days; ⚠ a dated sample):
+
+| | |
+|---|---|
+| calls | **550** (36.5/day) |
+| **mean** | **5,092 ms** |
+| max | **23,236 ms** |
+| disk reads **per call** | **302** |
+| disk reads total | 166,636 |
+
+**5.1 s is the MEAN, not a tail.** And 302 cold random reads on *every* call confirms the
+diagnosis in §2 above: at ~36 calls/day — one per 40 minutes — the working set is evicted between
+every pair of requests, so essentially no call is ever warm.
+
+⚠ **A live probe right now returns `200` in ~1.0 s and then 0.57 s, and that is MY OWN
+CONFOUND, not a recovery** — I ran an `EXPLAIN (ANALYZE)` on the same view two minutes earlier
+and warmed exactly those buffers. Recorded rather than reported as good news; the 550-call
+distribution is the honest instrument.
+
+⭐ **The reframe that decides it: this is a LATENCY problem, not a throughput one.** 302 × 36.5 =
+~11,000 disk reads/day ≈ 86 MB — utterly negligible against the instance's ~780 GB/day. **The
+defect is not that the board is expensive; it is that its entire cost is paid by a user, one page
+load at a time, at a 5.1 s mean.** Every contention argument in the 2026-08-15 filing is about
+*work*, and this board contributes almost none.
+
+### 4. 👉 The third option: materialize it
+
+Both options in §5 above keep the board a **view** — 0 bytes stored, recomputed from base tables
+on every read — and argue about who pays to keep it warm. Neither considered removing the
+recomputation.
+
+- **The result is 7 rows.** An MV of it is a single page.
+- **A refresh is 35.7 ms / 3,415 buffers / zero disk reads warm** (measured on a genuinely quiet
+  instance: 1 active, 0 IO waiters). The refresh keeps its own working set resident, so it is the
+  buffer warmer, not an addition to one.
+- **Freshness cost is ~zero, and this is the part that resolves the trade rather than restating
+  it:** the board's input is `topshot_active_listings`, fed by a residential Scheduled Task on a
+  **PT3H** cadence (known-issues #30). A 15-minute MV is therefore *never* the binding staleness
+  term — the data is already up to 3 h old before the view is evaluated. The 2026-08-15 filing's
+  freshness-vs-reliability trade is real for the five heavy boards it analysed; **for this one the
+  freshness side of the trade is empty.**
+- Precedent exists and is exact: the `deals` board was materialised 2026-08-22, **12,905 ms →
+  1.98 ms**.
+
+⚠ **Three things it would have to get right, and they are why this is still not shipped
+unilaterally:** an MV cannot carry `security_invoker`, so grants must be set explicitly and
+diffed (the `mv_panini_squeeze` rebuild came out `anon=rxm` on 2026-08-23); it adds a job to a
+scheduler already starved for workers (`max_worker_processes = 6` vs `cron.max_running_jobs =
+32`); and it is a public **pricing** surface.
+
+⚠ **And the prediction must be labelled as one:** "the refresh keeps the set warm so the 302
+cold reads disappear" is inference, not measurement. **Falsifier: after materialising,
+`disk_reads_per_call` on the board query should collapse toward single digits, and the MV
+refresh's own `shared_blks_read` should be small and bounded.** If the refresh itself keeps paying
+~300 cold reads, the warm-loop assumption is wrong and this is no better than option 1.
+
+### 5. ⓘ One thing this filing asked for is already done — re-derived, not assumed
+
+§ above says *"the board's OG card is already flagged in known-issues #30 as rendering a `Live
+deals` claim with no age signal at all"*. **That residual was closed in `d2101312`** — the card
+computes `boardMaxAgeHours(..., 'last_seen_at')` → `boardLivenessLabel(...)` and renders it, with
+the three-state note (`null => age unknown => NO liveness claim`). #30 records the closure and
+adds the lesson verbatim: *"re-derive a residual before acting on it — this one would have sent
+someone to fix something already fixed."* It nearly sent me too.
