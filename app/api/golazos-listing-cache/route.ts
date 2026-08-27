@@ -93,7 +93,24 @@ function toNumber(v: unknown): number | null {
 }
 
 async function fetchPage(offset: number, sort?: FlowtySort) {
+  // 30s cap. `fetch()` has NO default timeout and this runs inside an `after()`
+  // body under a maxDuration, so one upstream holding the connection open
+  // consumes the whole tick — and a maxDuration kill writes NO terminal
+  // pipeline_runs row, leaving the outage invisible ("the cron never fired").
+  //
+  // ⚠ This is the FOURTH of the four listing caches, and it was nearly missed:
+  // the first sweep that found this class used a regex requiring `;` or a
+  // newline after the call, which silently skipped some formatting variants.
+  // Its three siblings were fixed and this one was not, purely because the
+  // DETECTOR was wrong. A detector validated only against the population it
+  // measures cannot report its own blind spot — see
+  // __tests__/unbounded-fetch-in-after-routes-ratchet.test.ts, which balances
+  // parens instead and is proven on synthetic fixtures.
+  //
+  // ⚠ NO whole-loop deadline, same as the siblings: 142/142 ok over 48h means
+  // it is finishing, so a budget could only truncate healthy runs.
   const res = await fetch(FLOWTY_PROXY_URL, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: {
       "Content-Type": "application/json",

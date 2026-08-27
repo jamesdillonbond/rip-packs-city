@@ -96,7 +96,19 @@ function toNumber(v: unknown): number | null {
 }
 
 async function fetchPage(offset: number, sort: FlowtySort) {
+  // 30s cap. `fetch()` has NO default timeout and this runs inside an `after()`
+  // body under maxDuration 300, so one upstream holding the connection open
+  // consumes the whole tick — and a maxDuration kill writes NO terminal
+  // pipeline_runs row, leaving the outage invisible ("the cron never fired").
+  // Same class that cost the candy board a 44h blackout (2026-08-27).
+  //
+  // ⚠ NO whole-loop deadline here, deliberately. Measured over 48h these caches
+  // ran 142/142 ok — they are FINISHING, so a budget could only truncate healthy
+  // runs. ⓘ Their maxes (topshot 361.5s, allday 344.3s) EXCEED the declared 300s
+  // ceiling, the same Fluid Compute overrun seen on candy-listings — which is
+  // precisely why a deadline must never be sized off the config value.
   const res = await fetch(FLOWTY_PROXY_URL, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: {
       "Content-Type": "application/json",
