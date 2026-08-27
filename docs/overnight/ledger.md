@@ -82,6 +82,16 @@ promise: **`tsc` clean, 11/11 green.** ✅ Replaced with one assertion that actu
 watching it go red against the defect it names.** This is CLAUDE.md's *"a test stating the contract in a
 comment and asserting something weaker"*, written by someone who had read the rule that morning.
 
+✅✅ **BOTH FIXES VERIFIED END-TO-END IN PRODUCTION.** After the `after()` deploy, **four identical
+anonymous POSTs produced FOUR rows** (against **1 of 4** before it) — the drop is gone. ⭐ **And the
+conclusive evidence is not my probes at all: two GENUINE `page-view` rows from real anonymous visitors**
+(`/moment/…` and `/insights/account-value`) landed between the two deploys. **A stream that held zero
+`anon` rows in 14 days is now capturing live anonymous traffic.** ⓘ All 6 probe rows were then deleted
+from `usage_events` (scoped by exact `feature_name`, counted before and after: 6 → 0, 289 rows remain) so
+the analytics table this fix repairs is not polluted by the test data that proved it. ⚠ The
+`DELETE … RETURNING` in a CTE reported `probes_remaining: 6` in the same statement — an MVCC snapshot
+artifact, not a failed delete; re-queried separately it is **0**.
+
 ⭐ **The transferable lesson: clause (1) of a falsifier can pass while the thing you care about is still
 broken.** "The endpoint stopped 405-ing" is a statement about the PROXY; "the row exists" is the only
 statement about the FEATURE. **Writing the second clause down before deploying is what turned a
