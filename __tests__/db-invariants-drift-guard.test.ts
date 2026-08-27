@@ -531,9 +531,19 @@ const PINS = [
     migration: "supabase/migrations/20260802203000_audit_20260802_snapshot_compute_pinnacle_serial_fmv_multipliers.sql",
   },
   {
+    // Re-pointed 2026-08-27 onto the change-detection migration, which added a
+    // WHERE to both of this function's previously-unguarded writes (measured:
+    // ~26,846 -> ~2,978 row writes/hr, symmetric difference ZERO rows over the
+    // real 499,186-row population). The pin's SECTION 2 was added in the same
+    // change because every pre-existing assertion was structurally BLIND to it:
+    // LEAST() already guarantees the stored value, so an INVERTED predicate
+    // passed the identical value assertions. Section 2 reads ROW_COUNT, which
+    // is the only thing the predicate changes, and was verified to FAIL against
+    // the old body.
     fn: "roll_pack_ask_hourly_low",
     test: "supabase/tests/roll_pack_ask_hourly_low.sql",
-    migration: "supabase/migrations/20260802204000_audit_20260802_snapshot_roll_pack_ask_hourly_low.sql",
+    migration:
+      "supabase/migrations/20260827023000_audit_20260827_roll_pack_ask_hourly_low_change_detection.sql",
   },
   {
     fn: "remap_topshot_parallel_to_base_misattributed",

@@ -6,8 +6,24 @@
 -- is best-effort (a RAISING log stub must NOT fail the roll). now() is the txn
 -- timestamp here, so the windows are deterministic.
 --
+-- ⚠ RE-POINTED 2026-08-27 onto the change-detection migration
+-- (20260827023000_audit_20260827_roll_pack_ask_hourly_low_change_detection.sql),
+-- which added a WHERE to BOTH previously-unguarded writes. That change was
+-- measured to cut this function's row writes ~26,846/hr → ~2,978/hr with a
+-- symmetric difference of ZERO rows over the real 499,186-row population.
+--
+-- 🚨 AND THE OLD ASSERTIONS COULD NOT SEE IT. Every assertion in the original
+-- pin tested a stored VALUE, and LEAST() already guarantees the stored value
+-- with or without the predicate — so an INVERTED predicate was run through the
+-- identical assertions and ALSO passed. A pin that passes for both a change and
+-- its opposite is measuring something else. What the predicate actually changes
+-- is whether a physical WRITE happens, which is observable only through
+-- ROW_COUNT. Section 2 below therefore swaps the raising log stub for a
+-- RECORDING one and asserts the counts. Do NOT "simplify" section 2 back into
+-- value assertions; that would restore the blind spot.
+--
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802204000_audit_20260802_snapshot_roll_pack_ask_hourly_low.sql);
+-- (supabase/migrations/20260827023000_audit_20260827_roll_pack_ask_hourly_low_change_detection.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -44,17 +60,24 @@ CREATE OR REPLACE FUNCTION public.roll_pack_ask_hourly_low()
  SET search_path TO 'public'
 AS $function$
 DECLARE
-  v_started timestamptz := clock_timestamp();
-  v_bucket  timestamptz := date_trunc('hour', now());
-  v_rolled  int := 0;
-  v_pruned  int := 0;
+  v_started    timestamptz := clock_timestamp();
+  v_bucket     timestamptz := date_trunc('hour', now());
+  v_candidates int := 0;
+  v_rolled     int := 0;
+  v_state      int := 0;
+  v_pruned     int := 0;
 BEGIN
+  SELECT count(*) INTO v_candidates
+  FROM public.pack_ask_state s
+  WHERE s.is_listed = true AND s.lowest_ask > 0;
+
   INSERT INTO public.pack_ask_hourly_low (collection_slug, dist_id, hour_bucket, low_ask)
   SELECT s.collection_slug, s.dist_id, v_bucket, s.lowest_ask
   FROM public.pack_ask_state s
   WHERE s.is_listed = true AND s.lowest_ask > 0
   ON CONFLICT (collection_slug, dist_id, hour_bucket)
-  DO UPDATE SET low_ask = LEAST(public.pack_ask_hourly_low.low_ask, EXCLUDED.low_ask);
+  DO UPDATE SET low_ask = LEAST(public.pack_ask_hourly_low.low_ask, EXCLUDED.low_ask)
+  WHERE public.pack_ask_hourly_low.low_ask > EXCLUDED.low_ask;
   GET DIAGNOSTICS v_rolled = ROW_COUNT;
 
   DELETE FROM public.pack_ask_hourly_low WHERE hour_bucket < now() - interval '7 days';
@@ -70,17 +93,22 @@ BEGIN
     FROM public.pack_ask_hourly_low
     GROUP BY collection_slug, dist_id
   ) agg
-  WHERE agg.collection_slug = s.collection_slug AND agg.dist_id = s.dist_id;
+  WHERE agg.collection_slug = s.collection_slug AND agg.dist_id = s.dist_id
+    AND (s.low_ask_24h IS DISTINCT FROM agg.lo_24h
+      OR s.low_ask_7d  IS DISTINCT FROM agg.lo_7d);
+  GET DIAGNOSTICS v_state = ROW_COUNT;
 
   BEGIN
     PERFORM public.log_pipeline_run(
       p_pipeline   => 'pack-ask-hourly-low-roll',
       p_started_at => v_started,
-      p_rows_found => v_rolled,
+      p_rows_found => v_candidates,
       p_rows_written => v_rolled,
       p_rows_skipped => v_pruned,
       p_ok         => true,
-      p_extra      => jsonb_build_object('bucket', v_bucket, 'pruned', v_pruned)
+      p_extra      => jsonb_build_object('bucket', v_bucket, 'pruned', v_pruned,
+                                         'candidates', v_candidates,
+                                         'state_rows_changed', v_state)
     );
   EXCEPTION WHEN OTHERS THEN
     NULL; -- monitoring log is best-effort; never fail the roll
@@ -90,6 +118,12 @@ BEGIN
 END;
 $function$;
 -- <<< END verbatim roll_pack_ask_hourly_low <<<
+
+-- ============================================================================
+-- SECTION 1 — value invariants (unchanged from the original pin).
+-- ⚠ These pass identically with or without the change-detection predicate.
+-- They pin the RATCHET CONTRACT, not the write-avoidance. See section 2.
+-- ============================================================================
 
 -- D1 listed ask 50 (rolls); D2 unlisted (excluded); D3 listed ask 0 (excluded).
 INSERT INTO pack_ask_state (collection_slug, dist_id, is_listed, lowest_ask) VALUES
@@ -106,6 +140,8 @@ INSERT INTO pack_ask_hourly_low (collection_slug, dist_id, hour_bucket, low_ask)
   ('nba_top_shot','D1', date_trunc('hour', now()) - interval '8 days',   999);
 
 -- First roll: even though the log stub RAISES, the roll must succeed.
+-- `rolled` = 1 here because the current-hour bucket does not exist yet, so this
+-- is a genuine INSERT — an insert is counted by ROW_COUNT either way.
 SELECT _assert_eq(roll_pack_ask_hourly_low()->>'rolled', '1', 'only D1 (listed + positive) rolled; best-effort log failure did not fail the roll');
 SELECT _assert_eq((SELECT jsonb_build_object('r', roll_pack_ask_hourly_low())->>'r'), (SELECT jsonb_build_object('r', roll_pack_ask_hourly_low())->>'r'), 'roll is callable repeatedly (no temp-table/txn hazard)');
 
@@ -129,6 +165,38 @@ SELECT _assert_eq((SELECT low_ask::text FROM pack_ask_hourly_low WHERE dist_id='
 UPDATE pack_ask_state SET lowest_ask = 100 WHERE dist_id='D1';
 SELECT roll_pack_ask_hourly_low();
 SELECT _assert_eq((SELECT low_ask::text FROM pack_ask_hourly_low WHERE dist_id='D1' AND hour_bucket = date_trunc('hour', now())), '40', 'higher ask does NOT raise the hourly low (LEAST ratchet holds)');
+
+-- ============================================================================
+-- SECTION 2 — the WRITE-AVOIDANCE contract (added 2026-08-27).
+-- These are the assertions an inverted or removed predicate FAILS. They read
+-- ROW_COUNT, which is the only thing the predicate changes.
+-- The raising stub is swapped for a RECORDING one so p_extra is observable;
+-- section 1 has already proved the best-effort catch.
+-- ============================================================================
+
+CREATE TABLE _log_capture (rows_found int, rows_written int, rows_skipped int, extra jsonb);
+CREATE OR REPLACE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found integer, p_rows_written integer, p_rows_skipped integer, p_ok boolean, p_extra jsonb)
+  RETURNS void LANGUAGE plpgsql AS $l$
+  BEGIN INSERT INTO _log_capture VALUES (p_rows_found, p_rows_written, p_rows_skipped, p_extra); END $l$;
+
+-- State is fully converged here (D1 ask 100, bucket 40, aggregates written).
+-- A roll that changes nothing must write NOTHING — on either table.
+TRUNCATE _log_capture;
+SELECT roll_pack_ask_hourly_low();
+SELECT _assert_eq((SELECT rows_written::text FROM _log_capture), '0', 'WRITE AVOIDANCE leg 1: a converged roll updates ZERO hourly rows (fails without the ON CONFLICT ... WHERE)');
+SELECT _assert_eq((SELECT extra->>'state_rows_changed' FROM _log_capture), '0', 'WRITE AVOIDANCE leg 2: a converged roll updates ZERO pack_ask_state rows (fails without the IS DISTINCT FROM guard)');
+SELECT _assert_eq((SELECT rows_found::text FROM _log_capture), '1', 'rows_found still reports the CANDIDATE count (D1 only), so the pre-change signal stays readable');
+
+-- A roll that DOES change something must still write, and report it.
+-- Drop D1 to 10: below the bucket low (40) and below the 7d min (20), so BOTH
+-- the hourly bucket and the pack_ask_state aggregates must move.
+TRUNCATE _log_capture;
+UPDATE pack_ask_state SET lowest_ask = 10 WHERE dist_id='D1';
+SELECT roll_pack_ask_hourly_low();
+SELECT _assert_eq((SELECT rows_written::text FROM _log_capture), '1', 'a genuine ratchet-down IS written and counted');
+SELECT _assert_eq((SELECT extra->>'state_rows_changed' FROM _log_capture), '1', 'the resulting aggregate change IS written and counted');
+SELECT _assert_eq((SELECT low_ask::text FROM pack_ask_hourly_low WHERE dist_id='D1' AND hour_bucket = date_trunc('hour', now())), '10', 'the guarded upsert still ratchets the value down to 10');
+SELECT _assert_eq((SELECT low_ask_7d::text FROM pack_ask_state WHERE dist_id='D1'), '10', 'the guarded aggregate update still writes the new 7d low');
 
 SELECT '✓ roll_pack_ask_hourly_low invariants pass' AS result;
 ROLLBACK;
