@@ -10,6 +10,93 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ✅ RESOLVED — the pack-sales revert is CONFIRMED (149 head rows, freshness restored), and the `rwfc` cost prediction is NOT
+
+**Two outcomes from yesterday's changes, one good and one that does not support the claim it
+was shipped on.**
+
+---
+
+## ✅ 1. The pack-sales revert worked, and the cycle is now fully characterised
+
+Read 2026-08-27 02:03Z, ~11.6 h after the revert:
+
+| | |
+|---|---|
+| head rows ingested since the revert | **149** |
+| newest `ingested_at` | **2026-08-27 01:04Z** |
+| newest `block_time` in the burst | **2026-08-26 23:31Z** (≈40 min old at ingest) |
+| walker | `done = false`, cursor written **1 minute** before the read — actively walking |
+
+**The complete cycle, measured end-to-end for the first time:**
+
+1. **WALK** head → floor: 14:26 → **18:38Z**, ~4.2 h, 101 runs, monotonic, ending at the
+   table's true floor (2023-10-06) with `done = true`.
+2. **PARK** at `done = true`: 18:38 → **~00:10Z**, ~5.5 h, during which ~110 cron dispatches
+   returned `{"done":true}` and did nothing.
+3. **RESTART at the head**: **82 head rows at 00:10Z**, then 29 at 00:18 and 7 at 00:19 — then
+   it resumes walking backward (00:20 onward: 08-14, 08-11, 08-03, 07-20, 07-08, 06-26, …).
+
+⛔ **MY "SECOND DEFECT" WORRY IS FALSIFIED, and it is the useful correction.** At 19:32Z I
+recorded that the walker was parked at `done = true` through 21 dispatches and flagged it as a
+possible independent defect with a ~00:30Z check. **The park is part of the cycle** — it
+self-restarted at ~00:10Z, inside the window I had set. ⭐ **I called a state a defect after
+observing it for 54 minutes of what turned out to be a 5.5-hour phase.** The check I wrote is
+what prevented that from becoming a filed finding; without it I would have escalated a healthy
+state.
+
+⭐ **And the revert is vindicated on the numbers.** Walk 4.2 h + park 5.5 h ≈ a **~10 h cycle
+under today's saturation** (historical spacing was ~6 h in quieter conditions). **Under the
+15-minute cut the WALK PHASE ALONE would be ~21 h**, so the cycle would have exceeded a day —
+against a pre-cut norm of 100–132 head rows per 7-hour window. The falsifier that tripped was
+correct and the cadence cut is correctly reverted.
+
+---
+
+## ⚠ 2. The `refresh_wmc_fmv_changed` fast path: correctness holds, the COST CLAIM does not
+
+Measured at **11.4 h**, n = **66** (pg_cron caller) and **109** (PostgREST):
+
+| caller | reads/call | dirtied/call | ms/call |
+|---|---|---|---|
+| pg_cron | 73,704 → **86,533** ⬆ | 36,604 → 33,857 | 297,406 → **219,173** |
+| PostgREST | 7,045 → **10,472** ⬆ | 2,688 → 2,955 | 18,371 → 16,858 |
+
+**Disk reads went UP for both callers.** The change was shipped on a prediction that reads would
+*fall sharply* (the correlated subquery no longer Appends across every `fmv_snapshots`
+partition for ~85% of rows). **That prediction is not visible in the data.**
+
+⚠ **Two things are true and neither is "it worked":**
+
+- ⭐ **The comparison is CONFOUNDED and I will not claim either direction from it.** BEFORE is a
+  **14.5-day lifetime average**; AFTER is **11.4 hours** during which I built a 94 MB index,
+  dropped a 120 MB one, and ran repeated 900k-buffer EXPLAINs — i.e. I deliberately churned the
+  buffer cache the whole time, plus an active saturation spell. **This is the WARM-vs-WARM rule
+  at a larger scale: the A and the B are not the same conditions.**
+- ⚠ **My earlier n=10 reading (reads 7,045 → 4,603, "1.5× better") was NOISE**, and I said so at
+  the time. At n=109 the same caller reads 10,472. **Third instance today of a small sample
+  read as a rate.**
+
+✅ **What IS established:** correctness. The freshness guard was proven over the population
+(3,439/4,028 fast path, **0 disagreements**, 28 stale rows correctly rejected), verified live in
+production (16 post-processing mismatches self-healed to 0 on the next tick), and the pin's new
+assertions **executed and passed in CI**. ⓘ Also as predicted: **dirtied is roughly flat** — the
+original filing said *"expect the READ figure to fall sharply and dirtied/WAL much less"*, and
+the dirtied half of that held.
+
+⛔ **NOT reverting on a confounded measurement** — that would repeat the mistake in the other
+direction. ⏳ **Fresh baseline laid for a clean A/B:** rows `rwfc_cron_T1_CLEAN_20260827` /
+`rwfc_rest_T1_CLEAN_20260827` in `public._rpc_waste_baseline_20260825`, captured 02:05Z **after**
+all index work settled. **Re-read those in a quiet window ≥24 h out. If reads are still not
+below the T1 per-call figures (74,159 / 7,195 lifetime), the fast path is not paying for itself
+and should be reverted** — it is a `CREATE OR REPLACE` back to
+`20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql`, and the pin + PINS entry
+move with it.
+
+⏳ **`_rpc_waste_baseline_20260825` therefore STAYS** — yesterday's note said to drop it once the
+reading was taken. The reading was taken and was inconclusive, so the table now holds the only
+clean baseline for the decision above. **Drop it when that decision is made, not before.**
+
 ### 2026-08-26 · SHIPPED (code) — Sentry stays unpaid, so: the quota guard covers the class it was missing, and `global-error` stops telling users a human has seen it
 
 **Trevor's decision: do NOT raise the Sentry subscription** — consistent with the roadmap's
