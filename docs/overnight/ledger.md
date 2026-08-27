@@ -630,6 +630,59 @@ retries (one ownership walk is already 87.7% of the monthly datapoint budget).
 **Revert path:** `git revert` the code commit. No DB or prod-state change. ⚠ Note the `dasCall`
 change is shared — reverting it re-exposes all five candy routes, not just this one.
 
+### 2026-08-26 · ⭐ MEASURED, nothing shipped — the Sentry read scope was NOT blocked here, and with it the quota guard audits at **93.8% coverage / 89.1% reduction**
+
+**A standing blocker turned out to be a statement about a TOKEN, not about ACCESS.** Commit `278c79c`
+concluded *"the Sentry watchdog is blocked on a read scope, not on money"* off a correct probe: three
+real requests with `.env.sentry-build-plugin`'s token return **403**, because it is upload-scoped.
+⭐ **That proves the credential is dead; it does not prove the capability is unreachable.** A Cowork
+session carries a **Sentry MCP connector with organisation read access**, and it answered on the
+first call. ⭐ **Transferable: "no credential" and "no access" are different findings — enumerate the
+paths, not the secrets.**
+
+⚠ **The claim is narrow and the original request STANDS.** This grants production no token, so the
+in-app *"did Sentry store anything recently"* watchdog is still unbuilt and a read-scoped token is
+still worth creating; interactively-authenticated connectors may also be absent in headless or
+scheduled runs. **What it grants is an on-demand AUDIT path** — which is exactly what has been
+missing for nine days.
+
+✅ **Result 1 — the blackout start now has a second, independent instrument.** Sentry's newest stored
+error event is **`2026-08-18T13:21:59+00:00`**, agreeing **to the second** with a figure that until
+now came only from an ingest `x-sentry-rate-limits` header. Every one of the top 20 issues carries
+`lastSeen` of 8–11 days: **the blackout is total, not partial** — no signature is trickling through.
+
+✅ **Result 2 — `lib/observability/sentry-quota-guard.ts` audited against the store it was NOT sized
+on.** Its `pg-statement-timeout` rule was deliberately sized from Vercel runtime errors *because*
+Sentry was unreadable. Over **5,336** stored events (errors dataset, 30 d window ≈ 21 d of real data):
+
+| rule | events | share |
+|---|---:|---:|
+| `rpc-deadline` | **3,427** | **64.2%** |
+| `pg-statement-timeout` | **1,578** | **29.6%** |
+| **covered** | **5,005** | **93.8%** |
+| uncovered | 331 | 6.2% |
+
+**At the shipped `rate: 0.05` that window becomes ~581 events — an 89.1% reduction — with every
+unrecognised error still arriving at full rate.** The Vercel-sized rule lands in the same order as
+its Sentry share, which is the cross-check that could not be run when it shipped.
+
+⛔ **The uncovered 6.2% should STAY uncovered, and the reason is the guard's safety property, not
+laziness.** 3.3% is the same DB degradation wearing generic messages (`TimeoutError: … aborted due
+to timeout`, `Could not query the database for the schema cache`, `Timed out acquiring connection
+from connection pool`); **every broadening of a substring test moves probability mass toward silently
+sampling a NOVEL error, and DEFAULT-IS-SEND is the one property this module exists to protect.**
+The other 2.8% is the smoke-test self-reports — the honesty layer working, not noise.
+
+⚠ **The guard's effect has never been observed** — nothing has been stored since 08-18. **Falsifier
+for when the quota resets: stored events for these signatures MUST carry `sentry_sampled_signature`
+/ `sentry_sample_rate`; if they do not, `beforeSend` is not wired into the runtime that produced
+them** — a live risk, since `sentry.client.config.ts` is already documented as never bundled by
+production's turbopack build. ⚠ **And one number in the guard's own header does not reconcile:** it
+cites *15,388 events in one week* where Sentry's store shows **2,738** across 30 days. **Different
+instruments, different windows** — the 15,388 was measured 2026-08-23, after storage had stopped, so
+it cannot be a Sentry count. ⛔ **Do not reconcile them by arithmetic**; the rule is a 5% sample
+either way. Filing: [inbox 2026-08-27T0400Z](inbox/2026-08-27T0400Z-the-sentry-read-scope-is-NOT-blocked-here-and-the-quota-guard-checks-out-at-93.8pct.md).
+
 ### 2026-08-26 · ✅ SHIPPED (DB) + VERIFIED IN PRODUCTION — `upsert_pack_ask_state` rewrote **5,962 rows every 5 minutes to move one timestamp**; change-detection cut it to **5**, and the equivalence was PROVEN rather than argued
 
 **What it was doing.** The snapshot cron calls `upsert_pack_ask_state(collection, listings)` every 5 minutes for
@@ -659,6 +712,31 @@ to an existing writer** — "I read it and the arms look right" is not evidence 
 ✅ **Verified live, 2 sweeps after deploy:** `found = 2,981` both ticks, `ok = true` both ticks, `is_listed`
 still **2,981** (unchanged), and `n_tup_upd` moved **5 rows** where the same two ticks previously moved
 **5,962** — a **99.92% cut**. No board, view or route reads changed.
+
+🚨 **AND A CONCURRENT SESSION HAD EXPLICITLY ARGUED AGAINST THIS CHANGE — I shipped without
+having read it.** `beafd66` (upstream, pushed while this session was working) concluded:
+*"`upsert_pack_ask_state` … sets `last_checked_at = v_now`, a per-call heartbeat, so the row
+genuinely changes every call and no predicate can skip it … gating the heartbeat would delete the
+signal that shows the ask feed was polled at all."* ⛔ **That process failure is mine regardless of
+who is right about the SQL**, and it yields a rule this repo did not have: **before shipping
+against an existing writer, re-read what the repo most recently RECORDED about it, not only what
+it currently DOES — a `git fetch` is not a substitute for reading the commits it brought.**
+
+⭐ **The objection is circular, and its specific harm is measurably absent.** *"The row genuinely
+changes every call"* is true of **any** unconditional write — the write is offered as its own
+justification. **The discriminating question is not whether the row changes but whether anything
+READS it**, and that took four queries: **0 other functions**, **0 views or matviews**, **0 hits
+across `app/ lib/ scripts/ components/ supabase/functions/`** (the single grep hit writes a
+*different table's* column), 1 migration — the one that created it. **`last_checked_at` has no
+consumer anywhere in the system.** The signal the objection wanted to protect already exists and
+is strictly better: `snapshot-pack-asks-heartbeat` logs **278 runs / 278 ok in 24 h**, one row per
+tick, and `snapshot-pack-asks.extra.per_collection` carries `total_listed`/`new`/`changed`/
+`dropped` **per collection per tick** — where `last_checked_at` wrote the same value whether 0 or
+2,981 rows moved. And the case the objection is really about is still covered: the **delist arm is
+outside the guard** and still stamps `last_checked_at`, so a dist that vanishes from the feed does
+not go silent. ⭐ **Falsifier, stated plainly: name one reader of that column. If one exists, this
+reverts immediately** — the column's meaning changed and any reader is now silently wrong.
+Full account: [inbox 2026-08-27T0340Z](inbox/2026-08-27T0340Z-i-shipped-a-guard-a-concurrent-session-had-argued-against-and-the-argument-was-circular.md).
 
 ⚠ **`last_checked_at` NO LONGER MEANS "last checked". It now means "last CHANGED"**, and that meaning shift is
 recorded in a `COMMENT ON COLUMN`, not only here. **Nothing may use it as a liveness signal.** ✅ **Checked
@@ -721,6 +799,24 @@ catalogue once, and it may well be a real improvement — but `f11fe69` had not 
 written (`candy_listings` **44.8 h stale, 0 rows in 6 h, 0 terminal `pipeline_runs` rows in 24 h** against 8
 invocation heartbeats — still the kill signature). **If my change lands alongside an unverified fix and the
 pipeline recovers, neither of us learns which one did it.**
+
+✅ **VERIFIED 03:41Z — THE HOLD PAID OFF AND THE ATTRIBUTION IS CLEAN.** `f11fe69` reached READY
+at 03:13:28Z; the 03:35:12Z tick ran with my change **out of tree** and produced the first terminal
+`pipeline_runs` row in over 24 hours: **`ok = true`, 1,100 found / 1,100 upserted**, and
+`candy_listings` went from **44.8 h stale to 1.7 minutes**. The public `/insights/candy-mlb` board
+is live again. **One cause, cleanly attributed — which is the entire reason the diff was held.**
+
+⭐ **And the post-fix numbers finish falsifying my hypothesis with a real denominator.** The tick
+took **252 s** and logged `budget_exhausted: true`, `sweep_complete: false`, `pages_walked: 11` —
+the designed degradation, since `f11fe69` added `SWEEP_BUDGET_MS = 240_000` so a truncated sweep
+reports itself instead of dying invisibly. Against that 240 s, the leg I blamed is **1,100 × 1.39
+ms ≈ 1.5 s — 0.6%.** ⛔ **The batching diff is NOT recommended for merge**; adding risk to a public
+pipeline that recovered twenty minutes ago for a best case of 0.6% is not a trade worth making.
+⚠ **And I am not making the argument that would rescue it** — *"1.39 ms is execution time, a real
+round trip is ~30 ms, so 1,100 × 30 ms ≈ 33 s"* is the **identical** error retracted above. The
+wall-clock round trip is unmeasured and I am not guessing it twice. **Prerequisite for revisiting:
+one line of per-phase timing in the route, which would settle in a single tick what two rounds of
+arithmetic could not.**
 
 👉 **The order that keeps the evidence: let `f11fe69` deploy and prove itself first.** If ticks then complete
 comfortably inside 240 s, the round-trip term was never dominant and my batching is a cost improvement to

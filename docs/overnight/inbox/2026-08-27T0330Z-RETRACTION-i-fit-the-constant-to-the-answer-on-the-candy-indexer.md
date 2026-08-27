@@ -109,3 +109,81 @@ ready. **The diff is preserved at `cowork-2026-08-26/candy-batching-HOLD.diff`.*
 their quotient is arithmetic, not evidence.** Dividing them will always produce something that
 looks like a plausible per-operation cost. **Measure one operation, or say the magnitude is
 unknown.**
+
+
+---
+
+## ⭐ UPDATE 2026-08-27 03:40Z — `f11fe69` IS NOW DEPLOYED, so the clean test is running
+
+The hold above was for an evidence reason, not a doubt about the code: *"if my change lands
+alongside an unverified fix and the pipeline recovers, neither of us learns which one did it."*
+**That condition has now cleared on its own.**
+
+- Vercel deployment `dpl_BREgyf7oEEdMKoiawfEawkLsQe7i` (`f11fe69`) reached **READY at 03:13:28Z**,
+  and `e8ed44b` (the same class, item 1 of 29) is production as of **03:22:17Z**.
+- The first post-deploy `candy-listings-indexer` tick started at **03:35:12Z** (heartbeat logged).
+- State at hold time, for the before-side of the comparison: `candy_listings` **44.8 h stale**,
+  **0 rows in 6 h**, **0 terminal `pipeline_runs` rows in 24 h** against 8 invocation heartbeats —
+  the documented kill signature (heartbeat present, terminal row absent).
+
+👉 **The reading, and it is a single observation, not a judgement call: does a terminal
+`candy-listings-indexer` row (`ok` either way) appear for the 03:35:12Z tick or a later one?**
+
+- **A terminal row appears** ⇒ the tick is no longer killed at 300 s ⇒ `f11fe69` is the cause,
+  cleanly attributed, and **my batching change becomes a cost question to weigh on its own merits
+  — the round-trip term was never dominant.**
+- **No terminal row appears** ⇒ the unbounded `fetch()` was not the whole story, and the hold was
+  worth keeping. ⚠ **That would NOT revive my hypothesis** — it was falsified by direct
+  measurement (1.39 ms / 3 buffers), and a fix failing to work is not evidence for a different
+  wrong cause.
+
+⚠ **One tick is thin.** `candy_listings.max(last_seen_at)` moving off 2026-08-25 06:42Z is the
+outcome that actually matters to the public board; the terminal row is the mechanism.
+
+
+---
+
+## ✅ VERIFIED 2026-08-27 03:41Z — `f11fe69` WORKS, the attribution is clean, and my change should be DROPPED not shipped
+
+**The hold paid off exactly as intended.** The first post-deploy tick ran with my batching change
+**out of tree**, so the recovery is attributable to one cause and only one.
+
+| | before | after (first post-deploy tick) |
+|---|---|---|
+| terminal `pipeline_runs` rows | **0 in 24 h** (8 heartbeats) | **1, `ok = true`** |
+| `candy_listings` staleness | **44.8 h** | **1.7 minutes** |
+| rows written | 0 in 6 h | **1,100 found / 1,100 upserted** |
+
+`f11fe69` READY 03:13:28Z → tick 03:35:12Z → finished 03:39:24Z. **The public
+`/insights/candy-mlb` board is live again after 44.8 hours.**
+
+### ⭐ And the post-fix numbers finish falsifying my hypothesis — with an actual measurement this time
+
+The tick took **252 s** and logged `budget_exhausted: true`, `sweep_complete: false`,
+`pages_walked: 11`, `activities_seen: 0`. ⓘ **That is the fix working as designed, not a new
+defect** — `f11fe69` added `SWEEP_BUDGET_MS = 240_000` precisely so a truncated sweep reports
+itself instead of being killed invisibly, and the activities loop breaks on the same budget.
+
+**So the round-trip term I blamed is now measurable against a real denominator.** At the upstream's
+measured **1.39 ms** of DB execution per `wallet_moments_cache` lookup, 1,100 listings is **~1.5 s
+of a 240 s budget — 0.6%.** ⛔ **My batching change is not the lever, and it should not be shipped
+as a performance fix.** Adding risk to a public pipeline that recovered twenty minutes ago, for a
+change whose own best case is 0.6%, is not a trade worth making.
+
+⚠ **And I am deliberately NOT making the argument that would rescue it.** The tempting move is:
+*"1.39 ms is DB execution time; a PostgREST round trip is really ~30 ms wall clock; 1,100 × 30 ms
+≈ 33 s, which IS material against 240 s."* **That is the identical error I retracted at the top of
+this file** — an assumed per-operation latency multiplied by an operation count, presented as a
+finding. The wall-clock round trip is **unmeasured**, and I am not going to guess it twice.
+
+👉 **Disposition, so this does not sit in limbo:** the batching diff is **NOT recommended for
+merge**. If anyone wants to revisit it, the prerequisite is a measurement, not a re-argument —
+**one line of per-phase timing in the route (ME fetch vs. mint resolution vs. upsert) would settle
+in a single tick what two rounds of arithmetic could not.** That needs a push, so it is a handoff
+item. `cowork-2026-08-26/candy-batching-HOLD.diff` is retained for that purpose only.
+
+⚠ **The real residual is a different one, and it is worth registering:** the listings sweep alone
+now consumes the whole 240 s budget, so **`activities_seen` went from 1,000 on the pre-outage runs
+to 0**, and `sweep_complete` from `true` to `false`. The route can no longer do in 300 s what it
+used to do in ~390 s. That is a **capacity** question about `maxDuration` and the budget split —
+not a reason to un-fix the timeout, and not something one tick can size.
