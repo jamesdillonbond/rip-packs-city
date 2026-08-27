@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED — the unbounded-fetch class gets a RATCHET, and building it proved my own sweep had been UNDERCOUNTING
+
+Rather than fix all 29 sites (unsafe — the correct timeout is not a constant) or keep filing them,
+the class now has a permanent instrument:
+**`__tests__/unbounded-fetch-in-after-routes-ratchet.test.ts`** — no NEW unbounded `fetch(` in an
+`after()` + `maxDuration` route, count **down only**, `RATCHET = 21`.
+
+## 🚨 Building it found two defects in my OWN measurement, both from the same root
+
+**1. The detector was formatting-dependent, so every count I published tonight was a floor.** The
+ad-hoc sweep used `/await\s+fetch\s*\(([\s\S]{0,400}?)\)\s*(?:;|\n)/` — requiring `;` or a newline
+after the closing paren. It matched every real file (they are formatted that way) and **missed
+`await fetch(u, {...}) })` entirely.** The guard now **balances parens** instead.
+
+⭐ **The synthetic fixture caught it; running against the repo never would have, because the repo is
+formatted agreeably. A detector validated only against the population it measures cannot report its
+own blind spot.** This is why the guard carries fixtures asserting bounded/unbounded/mixed rather
+than only a count.
+
+⭐ **And it had a real consequence, not just a numerical one:** the regex was blind to
+`support-chat`, `smoke-test` and **`golazos-listing-cache`** — so I fixed three of the four
+`*-listing-cache` siblings and left the fourth, *purely because the detector did not show it*.
+**Now fixed**, and the ratchet is 21 rather than 22.
+
+⛔ **Do not compare 21 to the "29" in the inbox filing.** They were produced by different detectors
+and count different things; only the 21 is detector-verified. The filing's triage table stands as a
+list of PLACES to look, not as a count.
+
+**2. 🚨 The SHARED comment stripper leaves a `//` line intact in one file, and it was counting my own
+comment as code.** `scripts/lib/strip-comments.mjs` (mandatory, enforced by
+`guards-use-the-shared-comment-stripper`) does **not** blank
+
+```
+// `fetch()` has no default timeout and this work runs in `after()` under
+```
+
+in `app/api/check-alerts/route.ts` — while blanking the identical line in isolation and in every
+other file swept. So a comment DOCUMENTING this very fix was being counted as an unbounded call
+site. ⚠ **This is the trap this repo has hit at least six times, arriving THROUGH the shared helper
+rather than around it** — the helper is supposed to be the protection. Probed: not backticks, not
+paired/odd delimiters, not a template in code (all blank correctly in isolation), so it is
+file-specific state, consistent with the recorded *block-first* weakness. **Filed as a separate
+finding; not fixed here** — changing that helper touches 49 importers and is its own job.
+
+**The guard was made IMMUNE rather than made to depend on the fix:** a zero-argument `fetch()` is
+never a real call site (a real one always carries a URL), so it is skipped, and the count no longer
+depends on stripping having worked. Pinned with fixtures.
+
+⚠ **One caveat on the ratchet's scope, stated so it is not over-trusted:** it walks `app/api` only.
+`lib/` helpers reached FROM an `after()` route are out of scope by construction — `dasCall` was one,
+and it was bounded tonight by hand, not by this. **The guard cannot see a hazard one import away.**
+
+**Also shipped:** `golazos-listing-cache` bounded at 30 s, completing the four-sibling family.
+
+Full suite green (**1385 files / 15188 tests**).
+
+**Revert path:** `git revert` the commit. Deleting the test file removes the ratchet; no prod state.
+
 ### 2026-08-26 · SHIPPED (code) — unbounded-fetch class items 3 & 4: the two ALERT dispatchers, which are the worst instance of the shape and were **already brushing their ceiling**
 
 Third and fourth items off tonight's triage, still one route at a time. These two are the class's
