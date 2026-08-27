@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · ⛔ MEASURED, and my own figure was OPTIMISTIC — the pack-ask roll saves **77.8%**, not the ~89% I predicted; the remainder is now 99.9% irreducible
+
+The change-detection entry filed **~89% fewer row writes (26,846 → ~2,978/hr)** as a PREDICTION and
+said to re-derive it. Re-derived from two complete post-fix hours:
+
+| hour (UTC) | ticks | hourly-table writes | pack_ask_state writes | prune deletes | **total** |
+|---|---:|---:|---:|---:|---:|
+| 03:00 | 4 | 2,984 | 5 | 2,970 | **5,959** |
+| 04:00 | 3 | 2,982 | 5 | 2,970 | **5,957** |
+
+**Before: 4 × (2,981 + 2,988) + 2,970 = 26,846/hr. After: ~5,958/hr. That is 77.8%, not 89%.**
+
+⛔ **Where my prediction was wrong, and it is a reasoning error not a measurement one.** I projected
+~2 row writes per tick from the instantaneous no-op measurement (2,981 candidates → 1 real change).
+That instant was mid-hour. **The FIRST tick of every hour must INSERT an entirely new hour bucket —
+2,981 genuine inserts — because the bucket does not exist yet.** Those are real work, not re-writes,
+and no predicate can or should skip them. I generalised a mid-hour sample across a period that has
+structure in it. ⚠ **A snapshot taken at one phase of a cycle does not describe the cycle** — the
+same lesson this repo files as *"a PHASE is not a defect"*, in its measurement form.
+
+⭐ **The upside: what remains is almost entirely irreducible.** Of ~5,958 writes/hr, **5,952 are
+structural** — one new bucket in (2,982) and one expired bucket out (2,970) — and only **~5-6 are
+actual ratchet updates**. The no-op rewrites the fix targeted are gone: `pack_ask_state` fell from
+**11,952 writes/hr to 5**. There is nothing further to win here without changing the data model
+(e.g. not materialising a row per dist per hour at all), which is a different and much larger
+question.
+
+✅ **The fix is behaving exactly as designed** — `rows_found` holds at 2,979–2,981 (the candidate
+signal, unchanged for any observer), `rows_written` is 0–1 on mid-hour ticks and ~2,981 on the
+hour-rollover tick, and `state_rows_changed` runs 5/hr against 11,952 before.
+
+⚠ **Two hours is not a week.** Ask volatility varies; re-derive from `pipeline_runs` before quoting
+77.8%, and do not read a rollover tick's 2,981 as a regression — that is the fix working.
+
 ### 2026-08-26 · SHIPPED (code) — unbounded-fetch class item 2: `sales-indexer`'s Top Shot GQL call, and a deadline deliberately NOT added
 
 Second item off tonight's [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md)
