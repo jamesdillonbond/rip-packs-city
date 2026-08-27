@@ -10,6 +10,81 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (repo + a live OPERATIONAL fix on Trevor's box) — `panini-ingest` was dead for 22 h because Chrome was HUNG, and the guard that should have restarted it passes on a hung browser
+
+⭐ **Found from the one place it was findable.** `detect_stalled_pipelines()` reported `panini-ingest`
+**1,343 min silent against a 360 min ceiling** — four missed 4-hourly bursts — with
+`/insights/panini-squeeze` PUBLIC since 2026-08-01. The runner is the residential Windows Task
+Scheduler job (the EIGHTH caller source), so this box is the only place the cause is visible.
+
+**Task Scheduler was the discriminator, and it took one read:** `RPC Panini Ingest` showed
+**`LastTaskResult = 1`** — the only non-zero result of the four RPC tasks on the box (AllDay Badge,
+Deal Board, Pinnacle Render Cache all 0). Reproduced immediately by running the runner by hand:
+
+```
+[panini-runner] fatal: browserType.connectOverCDP: Timeout 30000ms exceeded.
+  - <ws connected> ws://localhost:9222/devtools/browser/2c94d278-...
+```
+
+⭐ **Read that log carefully — the WebSocket CONNECTS and then the handshake times out.** Chrome was
+not down; it was **hung**. Up since 2026-08-25 14:00 PT (~30 h), still holding the port.
+
+## 🚨 Why it never self-healed, and why the obvious fix is ALSO wrong
+
+`scripts/panini-run.bat` relaunched Chrome only when port 9222 was not listening:
+
+```
+$c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',9222)
+```
+
+**A hung browser still ACCEPTS TCP.** The guard passed forever, Chrome was never restarted, and
+every run died the same way.
+
+🚨 **The natural upgrade — "probe the CDP HTTP endpoint instead of the raw socket" — was MEASURED
+against the actually-hung browser and PASSED: `GET /json/version` returned HTTP 200 with a full
+version payload.** I had already written that fix and it would have changed nothing. **The browser
+was serving the HTTP arm of the debug port while being unable to establish a CDP session.**
+
+⭐ **So the only honest check is the one that does WHAT THE CONSUMER DOES** — `connectOverCDP`, the
+same call the runner makes. This repo already has the rule twice over (*a control must use the
+PRODUCTION CALLER*; *probe THE ENDPOINT YOU NEED, not any endpoint it should reach*), and this is a
+clean case: **three probes of the same process disagreed — TCP said healthy, HTTP said healthy, the
+real client said dead.** A liveness probe that exercises a different code path than the consumer is
+testing something nobody depends on.
+
+## What shipped
+
+- **`scripts/panini-cdp-preflight.mjs`** — attempts a real Playwright CDP session (15 s, shorter than
+  the runner's own 30 s so it fails fast), and also rejects a browser that connects but exposes no
+  context. Exit 0/1.
+- **`scripts/panini-run.bat` rewritten**: preflight → on failure kill **only** the panini-profile
+  Chrome (WMI `CommandLine -match 'panini-cdp-profile'`, so the user's own browser is never touched)
+  → relaunch → **re-check**, and abort with `exit /b 2` rather than walking cards against a dead
+  session.
+- **The run is now logged to `%USERPROFILE%\panini-run.log`.** Task Scheduler discards a task's
+  stdout, so this fatal error was invisible on the box and surfaced only as `LastTaskResult 1` — the
+  same "the failure exists but nothing records it" shape as tonight's other work.
+
+**Operational fix applied live:** killed the 9 hung panini-profile Chrome processes and relaunched.
+✅ **Verified precisely targeted — panini procs 9 → 0, other Chrome procs 14 → 14 unchanged.** The
+login survives because it lives in the on-disk `--user-data-dir`. The runner then reported
+`connected over CDP` + `auth preflight OK (202)`, and **`panini-ingest` wrote its first
+`pipeline_runs` rows in 22 h** (03:25:59Z, 03:35:11Z, ok:true).
+
+⚠ **NOT yet declared healthy, and this is the honest part.** Those rows carry `rows_found = 0`, and
+this runner's own launcher documents *"re-login in that profile whenever a run reports 'enumerated 0'
+(session expired)"*. **A restarted browser and a live Panini SESSION are two different things** — the
+hang is fixed; whether the session is still valid needs the `enumerated N pskus` line from the walk.
+If it reports 0, the remaining step is a manual re-login in that profile and only Trevor can do it.
+
+⚠ **Control limitation, stated rather than glossed:** the preflight was proven both ways against a
+HEALTHY browser (exit 0) and a DEAD port (exit 1). I could not re-create the HUNG state, so its
+behaviour there rests on it using the same call that demonstrably failed — reasoning, not a second
+measurement.
+
+**Revert path:** `git revert` the commit restores the old `.bat` (the previous TCP-probe version is
+quoted verbatim in the new file's header). Nothing DB-side changed.
+
 ### 2026-08-26 · SHIPPED (code) — the unbounded-fetch class, item 1 of 29: `candy-sales-indexer` + the shared `dasCall`, taken one route at a time as its own filing prescribed
 
 Acts on the top entry of tonight's [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md)
