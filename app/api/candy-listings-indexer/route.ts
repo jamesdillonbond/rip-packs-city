@@ -334,6 +334,94 @@ async function handleSweep(req: NextRequest) {
           sweepComplete = true
           break
         }
+        // ── Batch-resolve this page's unseen mints BEFORE the per-listing loop ──
+        //
+        // 🚨 WHY. This sweep's cost is ROUND-TRIP COUNT, not query cost. The
+        // per-mint lookups below are individually cheap — the wmc probe is an
+        // Index Only Scan on idx_wmc_moment_collection_cover at ~1.4ms / 3
+        // buffers — but issued ONE AT A TIME they are ~1,600 sequential
+        // Vercel→Supabase round trips per sweep. Measured: every successful run
+        // on record took 375–391s against a 300s maxDuration, i.e. the sweep was
+        // OVER BUDGET BY DESIGN and only finished when the platform allowed the
+        // overrun. That is why terminal rows were rare and the PUBLIC
+        // /insights/candy-mlb board went 44h stale.
+        //
+        // ⚠ Do NOT "optimise" this by making the queries cheaper — they are
+        // already index-only. The lever is the number of trips, not the cost of
+        // each. (I falsified "the query is slow" early on and briefly took that
+        // to mean the lookups were not the cost; those are different claims.)
+        //
+        // Equivalence: identical rows, identical mapping. Each cache ends the
+        // page holding exactly what the sequential version would have put there
+        // — `false` for a mint with no wmc row (not a Candy card), the edition id
+        // or null otherwise — so the loop below is unchanged in behaviour.
+        {
+          const pageMints = [
+            ...new Set(
+              listings
+                .filter((l) => l.pdaAddress && l.tokenMint && l.price != null && l.price > 0)
+                .map((l) => l.tokenMint as string)
+                .filter((m) => !editionByMint.has(m)),
+            ),
+          ]
+          if (pageMints.length) {
+            // 1) mint → edition_key. A mint can carry rows for several wallets;
+            //    edition_key is a property of the MOMENT, so first-wins matches
+            //    the .limit(1) this replaces.
+            const keyByMint = new Map<string, string>()
+            for (let i = 0; i < pageMints.length; i += 200) {
+              const { data, error } = await (supabaseAdmin as any)
+                .from("wallet_moments_cache")
+                .select("moment_id, edition_key")
+                .eq("collection_id", CANDY_MLB_UUID)
+                .in("moment_id", pageMints.slice(i, i + 200))
+              // ⚠ THROW, do not swallow. The sequential version destructured only
+              // `data`, so a failed read left `key` undefined and the listing was
+              // silently classified "not a Candy mint" and DROPPED — a failed
+              // read rendering as a fact, on the feed behind a public board.
+              // Failing the sweep is safe: deactivation is evidence-based, so a
+              // thrown sweep deactivates nothing.
+              if (error) throw new Error(`wmc batch lookup failed: ${error.message}`)
+              for (const r of (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>) {
+                if (r.edition_key && !keyByMint.has(r.moment_id)) keyByMint.set(r.moment_id, r.edition_key)
+              }
+            }
+
+            // 2) edition_key → edition id, one trip per chunk of keys.
+            const keys = [...new Set([...keyByMint.values()])]
+            const idByKey = new Map<string, string>()
+            for (let i = 0; i < keys.length; i += 200) {
+              const { data, error } = await (supabaseAdmin as any)
+                .from("editions")
+                .select("id, external_id")
+                .eq("collection_id", CANDY_MLB_UUID)
+                .in("external_id", keys.slice(i, i + 200))
+              if (error) throw new Error(`editions batch lookup failed: ${error.message}`)
+              for (const r of (data ?? []) as Array<{ id: string; external_id: string }>) {
+                if (!idByKey.has(r.external_id)) idByKey.set(r.external_id, r.id)
+              }
+            }
+
+            for (const m of pageMints) {
+              const key = keyByMint.get(m)
+              editionByMint.set(m, key ? (idByKey.get(key) ?? null) : false)
+            }
+
+            // 3) The non-card mints may still be sealed PACKS. Same batching.
+            const notCards = pageMints.filter((m) => editionByMint.get(m) === false && !packMintCache.has(m))
+            for (let i = 0; i < notCards.length; i += 200) {
+              const chunk = notCards.slice(i, i + 200)
+              const { data, error } = await (supabaseAdmin as any)
+                .from("candy_packs")
+                .select("token_mint")
+                .in("token_mint", chunk)
+              if (error) throw new Error(`candy_packs batch lookup failed: ${error.message}`)
+              const present = new Set((data ?? []).map((r: { token_mint: string }) => r.token_mint))
+              for (const m of chunk) packMintCache.set(m, present.has(m))
+            }
+          }
+        }
+
         for (const l of listings) {
           if (!l.pdaAddress || !l.tokenMint || l.price == null || l.price <= 0) continue
 

@@ -130,8 +130,8 @@ describe("candy-listings-indexer — sweep ladder", () => {
     ]
     fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
     const spy = install({
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
       // upsert (error null) -> deactivation update (data []) -> expiry update (data []).
       candy_listings: [{ error: null }, { data: [] }, { data: [] }],
     })
@@ -219,6 +219,57 @@ describe("candy-listings-indexer — sweep ladder", () => {
 // So a listing is only deactivated on POSITIVE evidence: an explicit `delist`
 // or a fill in the activities feed, or its own expiry.
 // ---------------------------------------------------------------------------
+describe("candy-listings-indexer — mint resolution is BATCHED per page, not per listing", () => {
+  // 🚨 WHY THIS IS PINNED. This sweep's cost is ROUND-TRIP COUNT, not query cost.
+  // Each wmc probe is an Index Only Scan at ~1.4ms / 3 buffers — cheap — but
+  // issued one-per-listing it became ~1,600 SEQUENTIAL Vercel→Supabase round
+  // trips. Measured: every successful run on record took 375–391s against a 300s
+  // maxDuration, i.e. over budget by design, which is why terminal rows were rare
+  // and the PUBLIC /insights/candy-mlb board went 44 h stale.
+  //
+  // ⚠ Nothing else can catch a regression here. Reverting to per-listing lookups
+  // keeps every other test green — the DATA is identical, only the number of
+  // trips changes — so this counts the trips directly. A correctness test cannot
+  // see a performance contract.
+  it("issues ONE wallet_moments_cache query for a whole page of distinct mints", async () => {
+    const N = 25
+    const listings: MeListing[] = Array.from({ length: N }, (_, i) => ({
+      pdaAddress: `pda${i}`,
+      tokenMint: `mint${i}`,
+      price: 1 + i,
+    }))
+    fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
+    const spy = install({
+      wallet_moments_cache: { data: [], error: null }, // none are Candy cards
+      candy_packs: { data: [], error: null },
+      candy_listings: [{ data: [] }, { data: [] }],
+    })
+
+    // Count from() calls per table by wrapping the installed fixture.
+    const fromCalls: Record<string, number> = {}
+    const f = spy.fixture as { from: (t: string) => unknown }
+    const baseFrom = f.from.bind(f)
+    f.from = (t: string) => {
+      fromCalls[t] = (fromCalls[t] ?? 0) + 1
+      return baseFrom(t)
+    }
+
+    await POST(req())
+    await runDeferred()
+
+    // Not vacuous: the page really did carry N distinct mints.
+    expect(listings.length).toBe(N)
+    // One page → one wmc query. Per-listing resolution would make this N.
+    expect(
+      fromCalls["wallet_moments_cache"] ?? 0,
+      `expected ONE batched wmc query for ${N} mints, got ${fromCalls["wallet_moments_cache"]} — ` +
+        `resolution has regressed to per-listing round trips`,
+    ).toBe(1)
+    // Same contract for the sealed-pack fallback.
+    expect(fromCalls["candy_packs"] ?? 0).toBeLessThanOrEqual(1)
+  })
+})
+
 describe("candy-listings-indexer — every Magic Eden call is time-bounded", () => {
   // 🚨 WHY. `fetch()` has NO default timeout. Both ME calls were bare fetches, so
   // an upstream that accepts the connection and holds it open consumed the whole
@@ -336,8 +387,8 @@ describe("candy-listings-indexer — deactivation needs evidence, not absence", 
       jsonRoute("/activities", { error: "boom" }, { status: 500, ok: false }),
     ])
     const spy = install({
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
       candy_listings: [{ error: null }, { data: null, error: null, count: 30 }, { data: [] }],
       candy_pack_listings: [{ data: [] }],
     })
