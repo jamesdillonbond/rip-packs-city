@@ -49,6 +49,30 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 
 ---
 
+## ⭐ FLEET HEALTH — a whole-`pipeline_runs` sweep, 24 h to 2026-08-27 02:00Z (a dated sample; re-derive)
+
+**161 distinct pipelines, 15,636 runs, 1,078 of them `ok = false` (6.9%).** The point of this block is not the numbers, which move; it is that
+**four of the five worst-looking pipelines are lying about their own health in four DIFFERENT ways**, and the
+`ok` column separates none of them.
+
+| pipeline | 24 h | what the failures actually are |
+|---|---|---|
+| `topshot-pack-pool-backfill` | **1 ok / 273 failed** | 258 × the SYNTHESIZED `0/3 dists converted; 3 returned no editions` (a correct report of an empty queue, deliberately made falsifiable) + **15 × `canceling statement due to statement timeout`** — a real fault hiding inside a 94% signature. Registered as known-issues **#38**. |
+| `reconcile-saved-wallet-stats` | 1 ok / 20 failed | Every one is `soft_deadline_reached_partial_sweep_committed` — **work was done and committed**. `ok = false` here means "did not finish the sweep", not "failed". |
+| `sync-nba-projections` | **0 ok / 8 failed** | `all_upstreams_failed` on every tick — honest, and matches known-issues **#8**'s measured-dead ESPN finding. The pipeline is fine; the upstream is gone. |
+| `topshot-active-listings-ingest` | 5 ok / 4 failed | All four are `egress_blocked` — **zero DB timeouts**, where 29 of 40 were DB timeouts a week ago. The fault MOVED (#30 → #20). |
+| `allday-pack-opens-backfill` | 4 ok / 2 failed | Only **6 rows against 144 dispatches** — the interesting number is the one that is ABSENT, not the two failures (`events … status 503`). #29. |
+
+⭐ **The reusable rule: rank by `ok = false` and you get a queue sorted by nothing.** Two of these five are
+healthy, one is honestly reporting a dead upstream, one has silently changed fault class, and one is hiding a
+second fault inside a first. **Read `error` (and `extra`) before you read the count** — and note that a
+pipeline whose steady state is 99.6% red is a permanently-red instrument, which this repo has already learned
+trains readers to skim (`series_detail_rollup`, known-issues #25).
+
+ⓘ **Cron fleet at the same instant:** **99 jobs, all `active`**; **18** declare a `statement_timeout` in their
+command and **15 of those declare `600s`** — so known-issues #27's "these three are too generous" is a
+statement about a house default, not about three outliers.
+
 ## `fmv-recalc` — RE-CHARACTERIZED 2026-08-17: wasteful, not broken
 
 ⚠ **The long-standing "~66% background kill rate, un-diagnosed" line understated the rate and badly overstated the harm.** Re-measured 2026-08-17 over 24 h, using **`fmv-recalc-heartbeat` as the denominator** (the true invocation counter — `fmv-recalc` only logs on terminal completion, so filtering to that name is a SAMPLE, not a census):
@@ -61,6 +85,14 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 | **killed at the 300 s `maxDuration` wall** | **125 / 172 = 72.7%** |
 | rows written | **17,535** |
 | **distinct editions repriced** | **13,835** |
+
+⭐ **RE-MEASURED 2026-08-26 (24 h to 2026-08-27 02:00Z) with the SAME correlation instrument — the shape holds
+and the throughput is up:** heartbeats **160**, terminal rows **58** (36.3%), of those `ok` **47**, rows
+written **24,959**, **distinct editions repriced 14,665** (was 13,835). Implied kill rate **102 / 160 =
+63.8%**, against 72.7% on 08-17. ⛔ **Do NOT report that as an improvement** — two instants, nine days apart,
+on an instance whose saturation varies hour to hour; this file's own rule is that a directional claim needs a
+distribution. **What IS supportable: the characterisation "wasteful, not broken" is unchanged, and the daily
+repriced-edition count still exceeds the traded population, so the waste is still not costing accuracy.**
 
 ⚠ **The "treadmill" reading is REFUTED, and it is a trap worth naming because the evidence for it looks conclusive.** The hypothesis — *no `cursor_after` is ever persisted, so every run restarts at offset 0 and reprocesses the same 500 editions* — is supported by the route's own header warning about exactly that, by every run's `extra` carrying `has_more: true` with **no cursor keys at all**, and by every success writing a uniform 496–499 rows. **The outcome measure kills it: 13,835 DISTINCT editions in 24 h, not ~500.** The selection is staleness-ordered and therefore self-advancing; it does not need a cursor. ⛔ **Do not "fix" the cursor — it is not the defect.**
 

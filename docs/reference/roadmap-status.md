@@ -18,6 +18,61 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+## ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-26 19:00 PT (supersedes the 08-24 canonical block below)
+
+Read straight from `public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`) — **never by calling `rpc_fmv_confidence_share()`**, which blows a 60 s budget on
+the live instance and is exactly why the precompute leg exists. Leg age at read time: **15 minutes** for five
+collections, **4.1 h** for Pinnacle (its own leg, jobid 331, runs on a different quarter-day schedule).
+
+| collection | canonical-only HIGH/MEDIUM share | 08-24 15:35Z | 08-22 |
+|---|---:|---:|---:|
+| `nba_top_shot` | **57.8%** | 57.2% | 49.6% |
+| `candy_mlb` | **63.2%** | 62.4% | 59.2% |
+| `disney_pinnacle` | **43.8%** | 43.4% | 43.2% |
+| `nfl_all_day` | **26.7%** | 27.0% | 22.5% |
+| `laliga_golazos` | **0.3%** | 0.2% | 0.0% |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% |
+
+⛔ **DO NOT READ THAT AS A FOUR-DAY TREND — the columns are three instants, and this file's own rule is that a
+directional claim needs a distribution.** The honest statement is a RANGE: **the Top Shot canonical leg has
+read between 49.6% and 57.8% across 08-22 → 08-26**, on a population `/api/fmv-recalc` rewrites continuously
+(24,959 rows in the trailing 24 h). ⚠ **Still the canonical-only denominator** — not comparable to the
+**30.1% all-keys** figure below, which answers a different question over a set that excludes Pinnacle entirely.
+⛔ **UFC's 0.0% remains CORRECT and permanent** (market closed) and **Golazos' ~0% remains a liquidity ceiling,
+not a defect.** Neither is a queue.
+
+⚠ **`<collection>_fmv_pct_stale_30d` reads `0.0` for EVERY collection in the same sample, and the metric's
+NAME invites exactly the wrong reading.** A zero-everywhere metric looked like a broken leg, so it was
+re-derived from `prosrc` and from the table: **it measures the age of the FMV COMPUTATION**
+(`latest.computed_at < now() - 30 days`), **not the age of the market data underneath it.** Control run on the
+collection where the two readings must diverge most — UFC, market closed since May 2026: **518 priced
+editions, 0 computed more than 30 d ago (oldest snapshot 2026-08-24), and 381 `STALE` + 137 `NO_DATA` by
+confidence.** So `0.0` is CORRECT and simply says *the recalc sweep is reaching everything*; the 08-13 line
+below reading *"UFC 96.3% of its prices are >30 d stale"* is a **different measurement** and the two must never
+be quoted as the same series. ⭐ **The durable lesson is the naming: `pct_stale_30d` is a PIPELINE-freshness
+metric wearing a PRICE-freshness name**, and the only reason it was not filed as a broken leg is that someone
+read its source instead of its title.
+
+### Demand — re-captured 2026-08-26 (first movement since 2026-08-08)
+
+Read from `auth.users`, the same instrument as the 08-24 capture:
+
+| | 2026-08-26 | 2026-08-24 |
+|---|---:|---:|
+| accounts | **23** | 21 |
+| signups in 7 d | **2** (newest 2026-08-25) | 0 |
+| signed-in in 7 d (WAU) | **2** | 0 |
+| signed-in in 30 d (MAU) | **4** | 2 |
+
+⚠ **n = 2 is not a trend and does not move the gate** — 50+ WAU is the bar, and this is 4% of it. What it does
+change is one dated claim: *"0 signups in 7 d, newest 2026-08-08"* is **no longer true**, and a session
+quoting it would be publishing a stale zero about the reader's own product — the same class this codebase
+polices everywhere else. ⛔ **`funnel_events` sessions are still NOT users** (wrong by ~3 orders of magnitude)
+and **Vercel Web Analytics is still not enabled**, so there is still no independent corroborator for traffic.
+
+---
+
 ## ⭐ CANONICAL-LEG RE-READ, 2026-08-24 ~15:35Z (08:35 PT) — a same-day second sample, and it MOVED
 
 Read straight from `rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by

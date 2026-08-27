@@ -10,6 +10,82 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (docs only, no code / no prod state) — the memory-file refresh: every status re-READ against live systems, seven register items moved, and two live defects nobody had registered
+
+**Requested refresh of `CLAUDE.md`, the roadmap, the issue register "and anywhere else that holds
+memories".** Nothing here is quoted from another document: every claim below was re-derived from
+the live DB, `cron.job`, GitHub Actions, `git ls-remote` or `pg_proc.prosrc` in this session.
+
+⭐ **THE HEADLINE IS NOT A DOC EDIT — IT IS THAT TWO LIVE DEFECTS WERE SITTING IN INSTRUMENTS
+NOBODY WAS READING.**
+
+🚨 **NEW #37 — `/insights/underpriced-serials` throws React #418 (hydration mismatch) IN
+PRODUCTION.** `E2E DOM Smoke` failed on **two consecutive scheduled runs (13:37Z and 21:09Z), all
+three retries each**, 1 failed / 95 passed, while 07:28Z / 04:03Z / 02:11Z the same day were green
+— deterministic within a run, intermittent across the day. **Mechanism identified in code, and
+labelled as a mechanism rather than a measurement:** `UnderpricedSerialsBoardClient.tsx:341`
+computes `listingsAgeHours` from **`Date.now()` during render** and line 391 renders it two ways
+(a `>= 4` branch and a `Math.round(...)h ago` caption), on a `"use client"` component SSR'd under
+**`revalidate = 900`** — so the baked HTML and the hydrating browser disagree by construction
+whenever the rounded hour ticks over between them. ⚠ **THIS IS THE CLIENT-SIDE GAP FROM TODAY'S
+SENTRY DECISION, MADE CONCRETE ON THE SAME DAY IT WAS WRITTEN DOWN AS A RISK.** Sentry has dropped
+every event since 08-18, Vercel sees only server execution, and the repo has no `window.onerror`
+— **the scheduled workflow badge is the entire detection surface for this class**, and it is a
+badge nothing alerts on. ⛔ **Not fixed here, and deliberately not with `suppressHydrationWarning`,
+which would silence the only instrument.**
+
+🟡 **NEW #38 — `topshot-pack-pool-backfill` runs 1 ok / 273 failed per 24 h** and has since at
+least 08-25, filed to the inbox and never promoted to the register (the same class #33 exists to
+catch). **258 of the failures are the SYNTHESIZED `0/3 dists converted` string — a correct report
+of an empty queue — but 15 are `canceling statement due to statement timeout`**, a different fault
+hiding inside a 94% signature, and a pipeline whose steady state is 99.6% red is a
+permanently-unread one.
+
+**SEVEN register items re-read and moved, each against live state:**
+
+| item | was | now (2026-08-26) |
+|---|---|---|
+| #8 NBA projections | regressed 08-16 | **still regressed** — `sync-nba-projections` 0 ok / 8, `all_upstreams_failed` |
+| #27 board-MV timeouts | "these three are too generous" | unchanged — **and 15 of 99 active jobs share the 600 s default**, so it is a house default, not three outliers |
+| #29 allday-pack-opens | "writes ~1 tick in 10" | **6 rows against 144 dispatches** (~1 in 24) and the failures are upstream **503s**, not wall-kills |
+| #30 listings ingest | 29 of 40 die on a DB timeout | **9 runs: 5 ok / 4 `egress_blocked` / ZERO DB timeouts** — the fault MOVED to #20 |
+| #34 Sentry | OPEN, needs an operator | **DECIDED — no spend** (Trevor); mitigations shipped; residual gap is #37 |
+| #35 pack-sales cadence | PARTIALLY SHIPPED | **cadence cut REVERTED and confirmed**; the write-amplification half is still open |
+| #36 `refresh_wmc_fmv_changed` | OPEN, PUSH-GATED | **SHIPPED, correctness proven (0 disagreements / 28 stale rows rejected), COST CLAIM NOT** — scheduled re-read ≥24 h out |
+
+⚠ **#22 (the defeated credential purge) re-verified with its documented per-ref instrument, not by
+re-reading the entry: `ee94c8a2a` still on origin, marker control still e4tib3 2 · main 0 ·
+qi4350 0. 24 days open, no operator step taken.**
+
+⭐ **ONE CORRECTION TO A METRIC EVERYONE HAS BEEN READING WRONG.** `<collection>_fmv_pct_stale_30d`
+reads **0.0 for every collection**, which looks like a broken leg — especially for UFC, whose
+market has been closed since May. Re-derived from `prosrc`: **it measures the age of the FMV
+COMPUTATION (`computed_at`), not the age of the market data.** Control on UFC: 518 priced
+editions, **0 computed more than 30 d ago** (oldest snapshot 08-24) against **381 `STALE` + 137
+`NO_DATA` by confidence**. So 0.0 is correct and says only *"the sweep reaches everything"* —
+**a pipeline-freshness metric wearing a price-freshness name.** The 08-13 line reading "UFC 96.3%
+>30 d stale" is a different measurement and the two must never be quoted as one series.
+
+**Also re-read and re-stamped:** the canonical FMV leg (TS **57.8%**, Candy 63.2, Pinnacle 43.8,
+AllDay 26.7, Golazos 0.3, UFC 0.0 — recorded as a **RANGE 49.6–57.8 across 08-22→08-26**, never as
+a gain); demand (**23 accounts, +2 in 7 d, WAU 2, MAU 4** — the standing "0 signups / WAU 0" line
+is retired, and n=2 is explicitly not a trend); `fmv-recalc` (**63.8% kills, 14,665 editions/day**
+by the heartbeat-correlation instrument, vs 72.7% / 13,835 on 08-17 — two instants, not a trend);
+the trust board (**38 arms, 2 breached: `public_board_slow_count`, `unmapped_resolution_backlog_max`**
+— and the view ANSWERED, which does **not** retire the 60 s timeout warning, because the instance
+was quiet); `schema-truth.md` (373 tables / 136 views / 36 `editions` columns / 7 collections / all
+four security checks clean — **stamped as a SPOT-CHECK, which deliberately does not move the
+file-level regeneration date**).
+
+⚠ **CLAUDE.md was at 39,980 of 40,000 characters, so every addition displaced something.** It now
+reads **39,922** with the size guard green. **Every fragment shortened is reproduced VERBATIM in
+[claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md)** under a
+2026-08-26 heading, per that file's protocol — including three fragments that were compressed
+precisely because their numbers had gone stale (`9 of 40`, `72.7%`, the 08-24 purge date).
+
+**Revert path:** `git revert` this commit — docs only, no DB or production state was touched in
+this pass.
+
 ### 2026-08-26 · ✅ RESOLVED — the pack-sales revert is CONFIRMED (149 head rows, freshness restored), and the `rwfc` cost prediction is NOT
 
 **Two outcomes from yesterday's changes, one good and one that does not support the claim it

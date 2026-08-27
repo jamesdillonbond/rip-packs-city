@@ -1,5 +1,86 @@
 # CLAUDE.md — verbatim originals of the sections that were CONDENSED
 
+## 2026-08-26 — condensed to make room for the 08-26 refresh (VERBATIM originals)
+
+The 2026-08-26 memory-file refresh added four things CLAUDE.md did not carry (the client-side
+capture blind spot, `atlas-proxy` becoming the binding half of the listings ingest, the
+re-read `fmv-recalc` figures, and four re-verification dates). The file was at **39,980 / 40,000
+characters**, so each addition displaced text. **Every fragment shortened in CLAUDE.md that day is
+reproduced verbatim below, keyed by what it was.** Nothing here was deleted — if a detail seems
+missing from CLAUDE.md, it is in this block or in the reference file the compressed line points to.
+
+⚠ **These are the OLD texts. Where one carries a number or a status, CLAUDE.md's current line is the
+live one** — several of these were compressed precisely because their numbers had gone stale
+(`9 of 40` listing-ingest fails, `72.7%` wall-kills, the `08-24` purge re-verification).
+
+⚠ **One deviation from verbatim, and it is mechanical:** relative links inside these fragments
+carry CLAUDE.md's repo-root prefix, which is dead from `docs/reference/` — `scripts/check-memory-doc-links.mjs`
+reds on exactly that. **The `](` prefixes below are rewritten to `../../docs/reference/…`; no other
+character was changed.**
+
+### paged-read-#28
+(`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **FIXED #28** (prod-vs-DB set match, 08-24).
+
+### offlimits
+Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth & lockdown (`proxy.ts`), destructive SQL, FMV/ingest/pricing/pack-EV/concierge/sniper route logic, gated work.
+
+### recent-sessions
+Session entries live in `docs/sessions/`, one file per month — none is needed to start work. **Write new ones into
+
+### npm-ci
+# ⚠ RUN FIRST in a fresh sandbox (no node_modules); without it `npx vitest`/`npx
+                         #   tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config.
+
+### rebase-traps
+Three traps, each drawn blood: **anchor the marker check to line start**, **gate the `git add` on the resolver's exit code**, **measure a check's baseline before asserting on it**. Full recipe: [ledger-discipline.md](../../docs/reference/ledger-discipline.md).
+
+### distribution
+(`fmv-recalc`: three failed characterizations in two days from one-instant reads)
+
+### header-instruments
+(4 instruments: [tooling-gotchas.md](../../docs/reference/tooling-gotchas.md); the full case, incl. why size is ANTI-correlated with displaceability: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`)
+
+### new-bullet-trim
+ (#37). Read that badge; nothing alerts on it.
+
+### no-push
+- ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests: a PINNED SQL function is PUSH-GATED** (its `supabase/tests/` copy reds `db-pin-staleness`), and **every `apply_migration` reds the ENFORCING `migration-parity`** until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects.** `execute_sql` for SCRATCH DDL — no version row, no parity debt.
+
+### daytime
+- **`rpc-daytime-monitor`** — READ-ONLY, every ~3h. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
+
+### shared-state
+Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-suggest"** heading is Trevor's), `inbox/` (⚠ `INDEX.md` has **4 CI assertions, TWO of them COUNTS** — **archiving one deletes its entry too**), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` before a session**; the night pass will not edit files committed in the last 24–48h.
+
+### idx-trust
+- **`trust-board-and-safety.md`** — trust board (⚠ the arm count drifts, and the view still times out at 60 s — read the sentinel's `Trust Health` check, never this file's number), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
+
+### idx-honesty
+- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon, leak guards, fabricated-number shapes, OG cards, Workers table.
+
+### idx-testing
+- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation-testing categories, CI jobs (incl. the `bash -e` abort class), Playwright.
+
+### idx-cron
+- **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, saturation findings.
+
+### idx-db
+- **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, full **Security posture**.
+
+### tagline
+**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
+
+### client-bullet
+- 🚨 **A CLIENT-ONLY failure is captured by NOTHING right now** — Sentry has dropped every event since 08-18 (quota, #34, and Trevor's call is not to pay), Vercel sees only server execution, and there is no `window.onerror` in the repo. **The scheduled `E2E DOM Smoke` workflow is the ENTIRE detection surface**, and it caught a live React #418 on `/insights/underpriced-serials` (#37) — read that badge, nothing alerts on it.
+
+### isr
+- ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** — a COLD regeneration over the 8 s `BOARD_LIVE_TIMEOUT_MS` served `/insights/pack-drops` degraded for **15 min** at `x-vercel-cache: HIT` while the API answered in 1.2 s. It self-heals warm, so it is **easy to declare fixed by accident**: the test is *"does a cold pass still exceed the budget"*, never *"is the page OK now"*.
+
+### guard-runs
+- ⚠ **Ask what RUNS a guard, not only whether it passes, and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on a CI checkout and exited 0 ([testing-and-ci.md](../../docs/reference/testing-and-ci.md)).
+
+---
+
 <!-- Created 2026-08-17. CLAUDE.md was cut from 713,368 to ~39,000 chars to fit the memory-file
 char limit. Most sections moved wholesale into the other docs/reference/*.md files, VERBATIM.
 The sections below were instead REWRITTEN or SHORTENED in place, so this file preserves their

@@ -11,6 +11,15 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
+**Spot-re-verified 2026-08-26 (PT), NOT a regeneration — five drift-prone facts read live and all still match:**
+public base tables **373** (372 on 08-25 — the count creeps, as documented below), public views **136**,
+`editions` columns **36**, `public.collections` rows **7** (5 `is_active`), active `cron.job` rows **99**.
+Security invariants re-run the same minute: `check_public_security_invariants()` **0 rows**,
+`check_anon_write_surface()` **0 rows**, `check_secdef_anon_exec_drift()` **array length 0**, tables with
+`rowsecurity = false` **0**. ⚠ **A spot-check is not a regeneration and does not move the stamp above** — the
+enum tables, partition lists and column inventories below still date from 2026-08-22, and the precedence rule
+("this file wins") is only as good as THAT date. **Six facts being right does not make the other two hundred fresh.**
+
 **Last generated:** 2026-08-22 (Claude Code, interactive — re-run via Supabase MCP `execute_sql`; prior: 2026-07-28, 2026-07-16, 2026-06-30).
 
 ⚠ **THIS FILE HAS NO GENERATOR SCRIPT.** `grep -rn schema-truth scripts/ package.json .github/workflows/` returns **nothing** — "generated" means someone ran the SQL at the bottom by hand. So its authority ("this file wins") is only as good as the stamp above, and it went **25 days** without a regeneration while holding that authority. ⚠ **It was WRONG in that window and the prose was right:** it said `editions` has 32 columns; `database.md` had carried the live figure of **36** since 2026-08-14. **Read the stamp before invoking the precedence rule.**
