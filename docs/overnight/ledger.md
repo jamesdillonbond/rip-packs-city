@@ -10,6 +10,83 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-26 · SHIPPED (code + a new guard rule) — the production React #418 is FIXED, and the guard that was green while it threw now has the rule it was missing
+
+**Repo only: two component fixes' worth of behaviour in one file, three inline markers,
+one new guard rule, one new test file. No DB, no prod state.** Follows directly from
+today's refresh, which FOUND this in a badge nobody reads (known-issues #37).
+
+⭐ **FIRST, THE MEASUREMENT THAT CHANGED THE DIAGNOSIS — because my first explanation was
+insufficient and I nearly shipped on it.** The obvious story was "the listings spine goes
+stale, so the `>= 4 h` caption flips". **It does not survive the second data point:** the
+21:09Z monitor failure had a spine only **1.9 h** old (last ingest success 19:13Z), so that
+branch is false at hydration and the story predicts a PASS. What closes the gap is the
+**staleness of the CACHED HTML, not of the data**: fetched through the Vercel tool at
+**02:40Z, the served page's own server stamp read 00:12:06Z — 2.5 hours earlier.** Next
+serves the stale cached page while it regenerates, so on a near-zero-traffic site the
+server's `Date.now()` and the browser's are hours apart, **not the 900 s `revalidate`
+window everyone (including the previous fix's own docblock) reasons about.** That is why
+the error was `args[]=HTML` — a STRUCTURAL mismatch, the caption element present on one
+side and absent on the other — and not `args[]=text`.
+
+**THE FIX — the house two-phase pattern, not a suppression.** `nowMs` is anchored to the
+`initialFetchedAt` PROP for the server render and the first client render, then swapped to
+the live clock in a post-mount effect. Identical in shape to `TopSalesBoardClient` (fixed
+for the TEXT flavour of this same class on 2026-08-16) and `components/insights/FreshnessStamp`.
+⛔ **`suppressHydrationWarning` was available and is the wrong tool** — it would have kept
+the two DOMs disagreeing and silenced the only instrument that can see it.
+⭐ **The caption stays in the SERVED HTML**, so crawlers and no-JS readers still get the
+honest staleness line; a mount-gated fix would have removed it from the served page, which
+is the regression `FreshnessStamp`'s docblock records from 2026-08-01.
+
+🚨 **THE DURABLE HALF: A GUARD EXISTED FOR THIS PAGE'S EXACT FAILURE MODE AND WAS GREEN.**
+`insights-client-dates-are-hydration-safe-guard` polices date FORMATTING — Rule A (runtime
+timezone) and Rule B (runtime locale). **Reading the wall clock needs no formatting API at
+all**, so both rules were structurally blind to it while the page threw in production.
+**Rule C added:** a ban on unmarked `Date.now()` / no-argument `new Date()` in insights
+client files, with the same co-located `hydration-safe: <reason>` escape, plus a site-wide
+ratchet. ⭐ **The population was MEASURED before choosing ban-vs-ratchet, not assumed:**
+
+| scope | clock reads | after this pass |
+|---|---:|---|
+| `app/insights` + `components/insights` | **4** | **0 unmarked** — 1 was the defect (fixed), 3 are correct and now MARKED |
+| site-wide (`app` + `components`) | 61 | **57 unmarked** → a RATCHET ceiling, because 57 is not a ban population |
+
+⚠ **Three of the four were CORRECT CODE and must not be "fixed"** — a mount-gated call site
+(`PackSniperClient.relTime`, already gated at line ~177), a formatter that only ever runs on
+post-mount fetched data (`tc-report`), and the swap effect itself (`TopSalesBoardClient`).
+**Anchoring the pack-sniper one to a prop would freeze a live "listed 3m ago" chip at bake
+time — a regression dressed as a fix.** This is the fourth time this repo has recorded that
+a static hydration check cannot tell a render-path clock from a post-mount one, and the
+answer is the marker, not an allowlist.
+
+✅ **BOTH new instruments are MUTATION-CHECKED against the pre-fix source, with the counts
+recorded because "some of them red" is not a check.** Restoring `Date.now()` in the memo:
+the Rule-C **ban reds**, the **ratchet reds**, the **fix-pinning case reds**, and **4 of the
+6 behavioural cases red** (whole-render identity, the caption's TEXT, the caption's
+PRESENCE, and the no-anchor case). **The two that stay green are the two that should** — the
+anchored-value case (five minutes after bake a live clock happens to agree) and the
+post-mount case (where the live clock is the point). A test that went red on all six would
+be pinning the clock rather than the contract.
+
+⚠ **The new behavioural tests are SERVER renders (`renderToString`), deliberately.**
+`@testing-library/react`'s `render()` flushes effects and therefore shows the POST-mount
+output, where the live clock is CORRECT — it is structurally incapable of seeing this class.
+⚠ **And one trap cost a red run:** React's SSR output separates adjacent text nodes with
+`<!-- -->`, so the caption arrives as `Listings last refreshed <!-- -->10<!-- -->h ago`.
+Matching the raw HTML finds nothing — which would have made every identity assertion pass
+VACUOUSLY rather than fail. The tests strip the markers and assert non-emptiness first.
+
+⏳ **NOT VERIFIED IN PRODUCTION, and it cannot be from here:** egress to
+`www.rippackscity.com` is blocked at the agent proxy (403 on CONNECT), so no browser in this
+sandbox can hydrate the live page. **The verification is the monitor — `E2E DOM Smoke` must
+go green across SEVERAL scheduled runs**, and since the failure is intermittent (three green
+runs on the day it was failing), **one green run proves nothing.**
+
+**Revert path:** `git revert` the code commit. The guard's Rule C can be removed on its own
+by deleting the `findWallClockReads` block and its describe (its own tests name it and would
+red, which is the intent). No DB or prod-state change.
+
 ### 2026-08-26 · SHIPPED (prod DDL + repo) — the pack-pool backfill was **wedged on 3 unconvertible head rows**, burning 808 runs in 72 h to convert **one** dist; the target sample now ROTATES
 
 **The measurement, which corrects the filing that prompted it.** The 2026-08-26 daytime-monitor
