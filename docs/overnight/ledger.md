@@ -83,6 +83,23 @@ sandbox can hydrate the live page. **The verification is the monitor — `E2E DO
 go green across SEVERAL scheduled runs**, and since the failure is intermittent (three green
 runs on the day it was failing), **one green run proves nothing.**
 
+✅ **POST-SHIP, appended the same session (2026-08-27 ~03:10Z) — deployed, CI green, monitor green ONCE, and the caveat matters more than the green.**
+`dpl_BUfXXgGSNr2SiSddyqbjbpDZGxNY` is **READY** with `www.rippackscity.com` aliased and
+`lambdaRuntimeStats` present (state corroborated, not read off `state` alone), and the served
+page now carries that deployment id with a fresh server stamp — **03:02:33Z**, i.e. it
+regenerated on the new build. `CI` is **green** on both commits. A dispatched `E2E DOM Smoke`
+run is **green** — the first after two consecutive failures.
+⚠ **THAT GREEN IS WEAK EVIDENCE AND SHOULD NOT BE CITED AS THE FIX WORKING.** At run time the
+listings spine was **~1.5 h** old, so the `>= 4 h` branch is false on BOTH sides — **the
+pre-fix code would also have passed this run.** The run proves no regression, nothing more.
+**The verification is several SCHEDULED runs, ideally ones landing while the spine is stale.**
+⚠ **`Smoke Tests` is RED on `main` and it is NOT this change** — `ufc-sales-indexer silent
+272m (>240m)`, 54/55 passing, red identically on the four commits BEFORE mine. Re-read live:
+last run 22:30:11Z, **282 minutes silent**, 16 runs and **0 rows** in 24 h. A concurrent
+session has it diagnosed and filed (`inbox/2026-08-27T0250Z-…`), and its filing explicitly
+clears the commits it fails on. **Left with them rather than duplicated** — two sessions
+fixing one pipeline is the collision the shared ledger exists to prevent.
+
 **Revert path:** `git revert` the code commit. The guard's Rule C can be removed on its own
 by deleting the `findWallClockReads` block and its describe (its own tests name it and would
 red, which is the intent). No DB or prod-state change.
