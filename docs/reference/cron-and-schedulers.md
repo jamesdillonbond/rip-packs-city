@@ -351,6 +351,48 @@ terminal row), never from a `finally`. *(The `drain-fmv-cold-tail` attribution w
 CLAUDE.md's `after()` bullet on 2026-08-20; the rule itself still lives there.)* Fixed 2026-08-18 (`714f5d65`):
 the tick leaves a heartbeat when killed and stops starting work it cannot finish.
 
+### 0b. ⚠ Reading that correlation: a KILL RATE WITHOUT A RECENCY DISCRIMINATOR IS NOT A HEALTH READING
+
+**Measured the hard way 2026-08-28, by getting it wrong in a filing.** A repo-wide sweep of the
+heartbeat correlation produced a table whose only evidence columns were `killed` and `%`, and
+`candy-listings-indexer` at **14/25 = 56%** was written up as *"still killed on 56% of ticks after the
+08-26 fix — its own investigation."*
+
+⛔ **Wrong. The kills were a contiguous block that had ENDED.** Split at the deploy that landed
+2026-08-27 03:48Z (`6455fb9f9`, batching ~1,600 sequential per-page mint lookups into ~32):
+
+| era | ticks | killed | % | avg duration |
+|---|---:|---:|---:|---:|
+| PRE-fix | 16 | 14 | **87.5%** | **322 s** (of a 300 s wall) |
+| POST-fix | 9 | **0** | **0%** | **28.5 s** |
+
+11× faster, zero kills, holding at the 18:35Z peak hour. The fix had worked; the pooled rate was
+measuring its ABSENCE and reading as its FAILURE.
+
+⭐ **THE RULE: a pooled kill rate cannot tell "broken now" from "was broken, fixed, and the rate still
+carries the corpse."** Both records produce 56% — only the ORDER separates them. ⚠ **And knowing the
+boundary is not the same as splitting on it: the fix date was in the filing's own sentence.** Adding
+one column pair (`last_kill` vs `last_ok`) **flipped two of the six flagged pipelines**
+(`candy-listings-indexer`, `pinnacle-sync`); the four that stood were the four corroborated by a second
+instrument before anyone acted on them.
+
+✅ **So it lives in code now, not in a query anyone retypes.** `lib/pipeline/kill-rate.ts`
+(`classifyKillRecord`, `correlateRuns`) and `scripts/analysis/killed-after-routes.mjs`
+(`npm run pipelines:kills`). ⭐ **It does not accept a rate** — it requires the tick sequence and derives
+recency from it, so it cannot be called with the two columns that misled. Recovery is a **test, not a
+threshold** (`p = (1 − killRate) ^ cleanTicks`), because 9 clean ticks is decisive after an 87% failure
+rate and meaningless after 20%; ⚠ pooling is the **conservative** direction — it deflates the null rate,
+raising `p` — so the test can under-call a recovery but cannot manufacture one. ⚠ `recovered` means the
+kills stopped, **never that anyone knows why**: attributing a cause is a human naming a deploy.
+
+⚠ **The instrument's own limits, since it is one more thing that can lie.** `pipeline_runs` retains
+~73 h, so a pipeline absent from the report has no heartbeat in the window — un-heartbeated, idle and
+never-firing are indistinguishable, and **a short report is not a clean bill of health.** Exit codes are
+three-state on purpose (**0** nothing failing · **1** failing now · **2** could not measure): collapsing
+1 and 2 would let a read failure render as a finding, in the instrument built to detect that. And
+`intermittent`/`recovered` deliberately do **not** exit non-zero — a check that goes red on history
+stays red forever and stops being read.
+
 ### 1. A per-collection ZERO inside an otherwise-succeeding run is the shape a collection-blind filter makes
 
 `drain-fmv-cold-tail` reported `"collection_slug": "ufc_strike", "processed": 0` on every run **for months**,

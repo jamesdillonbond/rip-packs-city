@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — RETRACTION: my own kill-rate table pooled across a fix; the heartbeat correlation now lives in code with the recency test built in
+
+**What shipped:** `lib/pipeline/kill-rate.ts` (`classifyKillRecord`, `correlateRuns`),
+`scripts/analysis/killed-after-routes.mjs` (`npm run pipelines:kills`), and
+`__tests__/pipeline-kill-rate-classify.test.ts` (17 tests). No route, no schedule, no DB object.
+
+**Why.** Earlier tonight I filed a repo-wide heartbeat-correlation table whose only evidence columns
+were `killed` and `%`, and concluded that `candy-listings-indexer` was *"still killed on 58% of ticks"*
+after its 08-26 fix. ⛔ **Wrong.** The kills are a contiguous block that ended. Split at the deploy that
+landed 08-27 03:48Z (`6455fb9f9`): **PRE-fix 16 ticks / 14 killed / 87.5% / avg 322 s of a 300 s wall →
+POST-fix 9 ticks / 0 killed / 0% / avg 28.5 s** — 11× faster, holding at the 18:35Z peak hour (34.2 s).
+✅ And the user-facing question is settled: `/insights/candy-mlb` is **not** stale — `candy_listings`
+`max(last_seen_at)` 2.4 minutes, 2,025 active rows (⚠ the freshness column is `last_seen_at`).
+
+⭐ **The lesson the code now encodes: a kill rate with no recency discriminator cannot tell "broken now"
+from "was broken, fixed, and the pooled rate still carries the corpse."** Both records read 56%; only
+the order separates them. ⚠ The fix date was in my own sentence and I still averaged across it. Adding
+`last_kill` vs `last_ok` flips **two of six** flagged pipelines. ⭐ The two actions I shipped off that
+table are unaffected — and not by luck: both were corroborated by a second instrument before shipping,
+and **the two rows that flipped are the two that were not.**
+
+`classifyKillRecord` **does not accept a rate** — it takes the tick sequence and derives recency, so it
+cannot be called with the two columns that misled. Recovery is a **test, not a threshold**:
+p = (1−killRate)^cleanTicks, with pooling chosen as the **conservative** direction (it deflates the null
+rate, raising p), so it can under-call a recovery but cannot manufacture one.
+
+**Verified where it was wrong** — the correlation, not just the arithmetic: the real 25-tick record is a
+fixture; **negative control** — the same 14 kills moved to the END returns `failing` (identical count
+and rate, only order differs); **positive control** — deleting terminal rows makes all 25 read killed;
+a terminal row 60 s away does not clear a kill; a `-retry` sibling is not absorbed by its prefix. The
+failure path was exercised live: unreachable host → `could not measure`, **exit 2**. ⭐ Exit codes are
+three-state (0 nothing failing · 1 failing now · 2 could not measure) because collapsing 1 and 2 would
+let a read failure render as a finding, in the instrument built to detect exactly that.
+
+⛔ Not claimed: `pinnacle-sync` recovery (n=3, p=0.33 — the classifier refuses it), `lock-check-batch`
+(n=4 IS its whole history), `fmv-recalc` 62.3% (stands; it reproduces CLAUDE.md's 64–73% by another
+method and is the sweep's positive control). ⚠ ~73 h retention bounds it all: a short report is not a
+clean bill of health.
+
+**Filing:** `docs/overnight/inbox/2026-08-28T0350Z-RETRACTION-my-own-kill-rate-table-pooled-across-a-fix-and-two-of-six-verdicts-were-wrong.md`
+
+**Revert:** `git revert` the commit — removes the module, script, tests and the `pipelines:kills` entry.
+Nothing production-facing changes; the corrections stand regardless of the code.
+
 ### 2026-08-27 · ✅ SHIPPED (DB, no push) — corrected the jobid 55 watchlist NOTE, which had misled two consecutive monitors in opposite directions
 
 The `pipeline_cadence_watchlist.notes` text is **a live instrument annotation the next session
