@@ -75,6 +75,31 @@ const PAGINATION_CHUNK_SIZE_BY_MODE: Record<"allday" | "pinnacle", number> = {
   allday: 1000,
   pinnacle: 500,
 }
+
+// ⚠ THE NUMBERS ABOVE ARE A STARTING POINT, NOT A CEILING (2026-08-28).
+// They were fixed constants until a Cadence 1110 stopped being hypothetical:
+// `wallet-backfill-pinnacle` logged `all_pagination_chunks_failed` on 29 runs in
+// 24 h, every chunk failing with
+//   [Error Code: 1110] computation limit exceeded (used: 100001, limit: 100000)
+// measured directly against mainnet on 2026-08-28. **The ceiling is
+// WALLET-DEPENDENT**, because per-NFT cost tracks how many traits that NFT
+// carries — measured the same day on the Pinnacle range script itself:
+//
+//   0x5d4810ed7b3f7a71 (460 NFTs)  : 500 ✗  400 ✗  350 ✗  300 ✗  250 ✓
+//   0x8bc1c0249e2ebb3e (6300 NFTs) : 500 ✗  400 ✗  300 ✗  250 ✗  200 ✓
+//
+// **No single constant is correct for both**, and a constant that is correct
+// today drifts the next time a collection adds a trait — which is exactly what
+// happened to the 500 chosen on 2026-05-08. So the loop NARROWS on an 1110 and
+// retries the same offset instead of skipping it.
+//
+// ⚠ THE SEVERITY IS THAT THIS IS A FALLBACK WITH NO FALLBACK. The paginated
+// walk exists to recover wallets whose single-shot query ALREADY blew the
+// computation limit (`recovered_from: computation_limit_exceeded` on every one
+// of those 29 runs). When its chunks blow the same limit, `chunksProcessed`
+// stays 0, the run reports `all_pagination_chunks_failed`, and the wallet is
+// enriched by nothing at all.
+const PAGINATION_CHUNK_FLOOR = 25
 const PAGINATION_SOFT_DEADLINE_MS = 560_000
 
 // Resolve a raw wallet input (0x-address or Top Shot username) to a 16-hex
@@ -1463,6 +1488,15 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
   let postPassUpdated = 0
   let chunksProcessed = 0
   let chunkErrors = 0
+  // Narrowing state. `activeChunk` is STICKY: once a wallet teaches us that 200
+  // fits, every later chunk uses 200 rather than re-probing 500 and eating a
+  // failed round-trip per chunk (on a 6,300-NFT wallet that is 13 chunks x 2
+  // wasted calls). `narrowings` is logged so the incidence is measurable
+  // instead of hiding inside a silent success.
+  let narrowings = 0
+  // Declared at run scope, not loop scope: the outer error log site reports it
+  // too, and a walk that died mid-way still needs to say what size it reached.
+  let activeChunk = 0
   let onChainIds: string[] = []
   let hitSoftDeadline = false
   // checkpoint cursor — the chunk-start offset to resume from. Stays null
@@ -1498,6 +1532,11 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           pagination_chunk_errors: 0,
           pagination_total_ids: 0,
           pagination_chunk_size: chunkSize,
+          // No walk ran on this path, so these are literal values rather than
+          // the loop variables (which are not in scope here). Emitted anyway:
+          // an observer keying on them must never get NULL from this pipeline.
+          pagination_chunk_size_final: chunkSize,
+          pagination_narrowings: 0,
           pagination_elapsed_ms: Date.now() - paginationStartedMs,
           mode: fullMode,
         },
@@ -1636,7 +1675,9 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     //     callers that don't supply a budget.
     //   nextStartIndex (closure) — set to `start` when breaking on deadline so
     //     the caller can resume from this offset on the next round-trip.
-    for (let start = resumeFrom; start < onChainIds.length; start += chunkSize) {
+    activeChunk = chunkSize
+    let start = resumeFrom
+    while (start < onChainIds.length) {
       const elapsed = Date.now() - startedMs
       const hitCallerDeadline =
         softDeadlineAt !== undefined && Date.now() >= softDeadlineAt
@@ -1646,7 +1687,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         console.log(`[${config.pipelineName}] paginated soft deadline hit at chunk start=${start}/${onChainIds.length} (caller_deadline=${hitCallerDeadline})`)
         break
       }
-      const count = Math.min(chunkSize, onChainIds.length - start)
+      const count = Math.min(activeChunk, onChainIds.length - start)
       let chunkRows: Array<Record<string, unknown>> = []
       try {
         if (mode === "allday") {
@@ -1726,12 +1767,29 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           }
         }
       } catch (chunkErr) {
-        chunkErrors++
         const cmsg = chunkErr instanceof Error ? chunkErr.message : String(chunkErr)
+        // A computation limit is a statement about the WINDOW, not the wallet:
+        // the same offset succeeds with fewer ids. Narrow and retry the SAME
+        // start rather than skipping it — skipping is what turned this into
+        // "every chunk failed, wallet enriched by nothing".
+        if (isComputationLimitError(chunkErr) && activeChunk > PAGINATION_CHUNK_FLOOR) {
+          const next = Math.max(PAGINATION_CHUNK_FLOOR, Math.floor(activeChunk / 2))
+          narrowings++
+          console.warn(
+            `[${config.pipelineName}] paginated chunk start=${start} count=${count} hit the computation limit — narrowing ${activeChunk} -> ${next} and retrying the same offset`,
+          )
+          activeChunk = next
+          continue
+        }
+        // Either not a computation limit, or already at the floor. Record it
+        // and move on, so one pathological window cannot spin forever.
+        chunkErrors++
         console.warn(`[${config.pipelineName}] paginated chunk start=${start} count=${count} failed: ${cmsg.slice(0, 200)}`)
+        start += count
         continue
       }
       chunksProcessed++
+      start += count
 
       // NOTE: `chunkErrors` above counts PAGINATION-fetch failures only. Upsert
       // failures are tallied separately in chunkTally and surfaced below.
@@ -1814,6 +1872,12 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_total_ids: onChainIds.length,
         studio_custody_written: studioCustodyWritten,
         pagination_chunk_size: chunkSize,
+        // The size the walk ENDED on, and how many times it had to narrow.
+        // Without these a narrowed success and a first-try success are
+        // identical in the log, and the drift that caused this stays invisible
+        // until it breaks again.
+        pagination_chunk_size_final: activeChunk,
+        pagination_narrowings: narrowings,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         pagination_resume_from: resumeFrom,
         pagination_next_start_index: nextStartIndex,
@@ -1843,6 +1907,12 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_total_ids: onChainIds.length,
         studio_custody_written: studioCustodyWritten,
         pagination_chunk_size: chunkSize,
+        // The size the walk ENDED on, and how many times it had to narrow.
+        // Without these a narrowed success and a first-try success are
+        // identical in the log, and the drift that caused this stays invisible
+        // until it breaks again.
+        pagination_chunk_size_final: activeChunk,
+        pagination_narrowings: narrowings,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         mode: fullMode,
       },

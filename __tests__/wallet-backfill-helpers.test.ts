@@ -948,6 +948,104 @@ describe("runPaginatedDetailsBackfill", () => {
     expect(log.p_extra.pagination_chunk_errors).toBeGreaterThan(0)
   })
 
+  // ── adaptive chunk narrowing on Cadence 1110 (2026-08-28) ──────────────────
+  //
+  // The exact text mainnet returned on 2026-08-28 for
+  // GET_PINNACLE_UNLOCKED_DETAILS_RANGE(0, 250) against 0x8bc1c0249e2ebb3e.
+  // Pinned VERBATIM: `isComputationLimitError` matches /\b1110\b/, and a
+  // paraphrase would keep these tests green while the real message stopped
+  // being recognised.
+  const CADENCE_1110 =
+    "[Error Code: 1110] failed to execute script at block (e4fe6b): [Error Code: 1110] " +
+    "error caused by: 1 error occurred:\n\t* [Error Code: 1101] cadence runtime error: " +
+    "Execution failed:\nerror: computation error: [Error Code: 1110] computation limit " +
+    "exceeded (used: 100001, limit: 100000)"
+
+  it("NARROWS the window and retries the SAME offset on a computation limit", async () => {
+    // 600 ids so the WINDOW actually binds: count = min(activeChunk, remaining),
+    // so a 3-id wallet would ask for 3 no matter how wide activeChunk is and the
+    // narrowing would be untestable. allday starts at 1000, so the first window
+    // is 600 and it 1110s until the halving schedule reaches <= 250 (1000 -> 500
+    // -> 250).
+    ;(fetch as any).mockResolvedValue(
+      flowIdsResponse(Array.from({ length: 600 }, (_, i) => i + 1)),
+    )
+    const seen: number[] = []
+    H.state.fclQuery = async (arg: any) => {
+      // args: (arg, t) => [addr, start, count] — capture the width it asked for.
+      const args = arg?.args?.((v: any) => v, {}) ?? []
+      seen.push(Number(args[2]))
+      if (Number(args[2]) > 250) throw new Error(CADENCE_1110)
+      return [["1", "10", "1"]]
+    }
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    const out = await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
+    const log = lastLog()
+
+    // It recovered instead of writing the wallet off.
+    expect(out.complete).toBe(true)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.pagination_chunks).toBeGreaterThan(0)
+    // A narrowing is NOT a chunk error — the offset was retried, not skipped.
+    expect(log.p_extra.pagination_chunk_errors).toBe(0)
+    expect(log.p_extra.pagination_narrowings).toBeGreaterThan(0)
+    // ...and the size it settled on is reported, so the drift stays observable.
+    expect(log.p_extra.pagination_chunk_size_final).toBeLessThan(
+      log.p_extra.pagination_chunk_size,
+    )
+    // It narrowed rather than gave up, and every later window reused the
+    // learned width instead of re-probing the failing one.
+    expect(seen.filter((c) => c > 250).length).toBeGreaterThan(0)
+    expect(seen[seen.length - 1]).toBeLessThanOrEqual(250)
+  })
+
+  it("gives up at the floor rather than narrowing forever", async () => {
+    // Always 1110, at every width. Must terminate, and must report the failure
+    // rather than looping until maxDuration kills the route.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2]))
+    let calls = 0
+    H.state.fclQuery = async () => {
+      calls++
+      if (calls > 40) throw new Error("SAFETY: narrowing did not terminate")
+      throw new Error(CADENCE_1110)
+    }
+    const out = await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
+    const log = lastLog()
+
+    expect(calls).toBeLessThanOrEqual(40)
+    expect(out.complete).toBe(false)
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("pagination_failed")
+    expect(log.p_extra.pagination_chunk_errors).toBeGreaterThan(0)
+  })
+
+  it("does NOT narrow for an error that is not a computation limit", async () => {
+    // The control. A generic failure must keep the old behaviour — count it,
+    // skip the window — or every unrelated outage becomes a narrowing storm.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2]))
+    H.state.fclQuery = async () => { throw new Error("range call died") }
+    await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
+    const log = lastLog()
+    expect(log.p_extra.pagination_narrowings).toBe(0)
+    expect(log.p_extra.pagination_chunk_errors).toBeGreaterThan(0)
+  })
+
+  it("reports the narrowing fields even on a clean first-try run", async () => {
+    // Absent-vs-zero: an observer asking "how often are we narrowing" must get
+    // 0 from a healthy run, never NULL.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([500, 501]))
+    H.state.fclQuery = async () => [["500", "60", "1"], ["501", "61", "2"]]
+    H.state.upsertResult = { data: { written: 2 }, error: null }
+    await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
+    const log = lastLog()
+    expect(Object.keys(log.p_extra)).toEqual(
+      expect.arrayContaining(["pagination_narrowings", "pagination_chunk_size_final"]),
+    )
+    expect(log.p_extra.pagination_narrowings).toBe(0)
+    expect(log.p_extra.pagination_chunk_size_final).toBe(log.p_extra.pagination_chunk_size)
+  })
+
   it("breaks on the caller soft deadline and returns a resume cursor", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2, 3]))
     H.state.fclQuery = async () => [["1", "1", "1"]]
