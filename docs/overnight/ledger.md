@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 🟢 NIGHTLY PASS — quiet honest night (NO-PUSH cloud); post-ship watch clean, nothing safe to ship
+
+**Mode:** cloud Cowork, NO-PUSH (mount has no `remote.origin.pushurl` carrying a PAT; `git push --dry-run` → "could not read Username"). DB migrations + artifact repair available; code deploys not. ⚠ **This blocker is specific to this cloud session — Trevor's box + Claude Code push normally; commit these output files as usual.** Genuine overnight run (DB `now()` 08:04Z = 01:04 PT, inside 00:00–06:00; sales/fmv rows bound real time from below). Lock held + released.
+
+**Shipped: NOTHING.** Nothing was clearly-safe + net-positive AND not collision-hot: NO-PUSH removes code deploys, and the ~10 Claude-Code interactive ships from the 08-27 evening thread touched nearly every DB/route subsystem inside the 24–48h hot-file window. All standing queued items are operator / off-limits / needs-push. Not manufacturing work — a quiet pass is the honest outcome.
+
+**Health: GREEN** (known-structural breaches only). Security all four invariants clean. Trust breaches 2, both IMPROVED vs 08-27: `public_board_slow_count` 7→5 (candy-mlb IO class), `unmapped_resolution_backlog_max` 357→338 (AllDay structural). `trust_precompute_max_age_hours`=5.28 FRESH → breaches real, not a rollback artifact. FMV HIGH+MED rose: TS 7502→7781, AllDay 1519→1599. db_size 14004→14064 MB. Saturation: 00:10Z daytime tick was 37/37 IO-wait; at 08:04Z cleared to 1/36 (genuine quiet window).
+
+**Post-ship watch on 08-27 ships — clean, no regression, no auto-revert:**
+- pack-pool wedge (`dd4be709`): topshot-pack-pool-backfill fail-rate 93.8%→62.5%, converting again (last ok 07:58Z). Improved.
+- retire compute-laliga-pack-ev (`24f67403`): 0 runs/24h. Correctly gone.
+- rwfc freshness-fast-path revert (`a0f52694`): refresh_wmc_fmv_changed 279 runs / 222 ok / 57 fail (known wasteful class), last ok 08:03Z. Stable, restored known-good.
+- candy-editions 01:10Z move (`544f3e6c`): 0 runs = documented schedule transition; first new-slot run 08-29 01:10Z. As predicted; the ~51h transition breach is NOT a new fault.
+
+**Daytime candidate (00:10Z) re-measured in the quiet window:**
+- compute-golazos-pack-ev "stalled 1412m" → ran OK 06:38Z. Self-resolved, low-cadence + saturation artifact.
+- allday-pack-opens-backfill silence → known EarlyDrop (~94% invocations dropped pre-logRun); do not act.
+- rpc-refresh-allday-pack-realized fails → board-MV 600s class (#27), saturation collateral; operator-queued.
+
+**Still queued (unchanged, all operator/off-limits/needs-push):** ufc-sales-indexer cron-job.org trigger dead (operator/auth); 48 inert pg_cron statement_timeouts + jobid 256 daily fail (#42, decision-gated); cron-waste schedule alignment (cron_heavy + pack-EV route, off-limits); Sentry dark since 08-18 (billing); unbounded-fetch handoff (needs push); #20/#30/#38 topshot ingest (off-limits); #22 stale credential branch e4tib3 (operator).
+
+**Output (NO-PUSH):** ledger + metrics + handoff written to the mount (uncommitted; Trevor / next run commits). Inbox NOT archived (append-only, enforced by test). Revert path: none (no ship). Handoff: `docs/handoff-2026-08-28-overnight-pass.md`.
+
 ### 2026-08-27 · ✅ POST-SHIP WATCH — the `oldest_cache_h` runtime control landed, and it closes the one pending item on that fix
 
 **The entry above shipped with an explicit gap:** a bounded `CALL` returned `invalid transaction
