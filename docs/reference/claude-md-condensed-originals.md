@@ -384,3 +384,28 @@ NOT already written down in [tooling-gotchas.md](tooling-gotchas.md)** — that 
 repository-authorization-layer finding but not this two-probe discriminator, so it is preserved here in
 full: a **200** on `/user` beside a **403** on `/repos/<owner>/<repo>` proves the credential is fine and
 the block is the repo allowlist (measured 2026-08-25; a PUBLIC repo 403s too).
+
+
+## Displaced 2026-08-27 (late) — three small condensations that paid for ONE clause
+
+The clause bought: CLAUDE.md's equilibrium rule now reads **"a new durable rule must DISPLACE one, never
+merely SPEND visible room"**. ⭐ **It is the imperative form of the incident recorded two sections above** —
+two sessions each took the same 350-unit margin within ten minutes and only the MERGE was over (107 units),
+green on both sides. The full case stays there; the header carries only the instruction.
+
+⚠ **The first draft of that clause was 151 characters and would have left the file at SIX units of headroom
+— the exact state the header calls five-from-red. It was cut to the imperative rather than paid for with a
+fourth displacement.** Recorded because "promote the lesson" and "keep the file under" pull against each
+other, and the tie-break is that the case history belongs HERE and only the instruction belongs there.
+
+The three payments, none of which lost an instruction:
+
+1. **Honesty-canon instance count** — `(~24 by 08-17, ≥13 more by 08-24 — a count, so already stale)` →
+   `(37+ by 08-24 — a count, so already stale)`. The two dated sub-counts said nothing the
+   "already stale" clause does not; the sum is preserved.
+2. **Frozen-history links** — `**Links inside \`docs/archive/**\`, \`docs/health/**\`, \`docs/sessions/**\` are
+   frozen history — never rewrite them.**` → the same three paths and the same prohibition, phrased once.
+3. **Ledger post-write checks** — the three verifications (heading count rises by exactly the entries added ·
+   `find-swallowed-ledger-headings.awk` still prints **3**, a COUNT, never `| wc -l` ·
+   `find-future-dated-ledger-headings.mjs` prints **0**, dates PT vs CI's UTC) are all still stated, as a
+   semicolon list instead of three sentences. Full recipe: [ledger-discipline.md](ledger-discipline.md).

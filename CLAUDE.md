@@ -2,7 +2,7 @@
 
 > **HOW THIS FILE WORKS (restructured 2026-08-17).** The memory-file limit is `max(40000, contextWindow × 0.05 × charsPerToken)` — **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at. This file carries only what a session needs *before* it knows its topic; the rest moved **verbatim** to `docs/reference/*.md`. Nothing was deleted — a rule that feels missing is in one of those files.
 >
-> **KEEPING IT UNDER: the limit is on CHARACTERS; `wc -c` counts BYTES and this file lives inside that gap** (it once read 40,086 on a true 39,610). **Count with `node -e`, not `wc` — and not Python `len()`, which counts CODE POINTS and under-reports by one per astral emoji (4 × 🚨 here, so it reads 39,974 as 39,970)** — `.length` is what the harness and CI's guard both measure (4 instruments: [tooling-gotchas.md](docs/reference/tooling-gotchas.md); full case: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.**
+> **KEEPING IT UNDER: the limit is on CHARACTERS; `wc -c` counts BYTES and this file lives inside that gap** (it once read 40,086 on a true 39,610). **Count with `node -e`, not `wc` — and not Python `len()`, which counts CODE POINTS and under-reports by one per astral emoji (4 × 🚨 here, so it reads 39,974 as 39,970)** — `.length` is what the harness and CI's guard both measure (4 instruments: [tooling-gotchas.md](docs/reference/tooling-gotchas.md); full case: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`). ⚠ **The file is at its size EQUILIBRIUM, so a new durable rule must DISPLACE one, never merely SPEND visible room** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.**
 >
 > ⚠ **Two rules govern every number here and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life** (examples: [claude-md-condensed-originals.md](docs/reference/claude-md-condensed-originals.md)). **Re-derive; do not quote.**
 
@@ -35,7 +35,7 @@ Cowork has a push-capable clone, Supabase MCP (read+write), Vercel/Sentry, Chrom
 
 Any time you ship something that changes `main` or production DB/data state — a code push, a migration, a data mutation — append an entry to [docs/overnight/ledger.md](docs/overnight/ledger.md) **in the same turn**, short: **date · what shipped · revert path**. Newest at the top of the dated section. Skip it for pure research / Q&A / no-op turns.
 
-⚠ **RE-READ THE LEDGER FROM DISK IMMEDIATELY BEFORE WRITING IT** — it is append-at-top and sessions write it concurrently, so splice into the freshly-read file, never write back a copy you read earlier. **Splice at a line-start `^### `, never a substring match on `### `** (a substring splice buries the heading mid-sentence — five times now). After writing, `grep -c '^### '` must rise by exactly the entries you added, and `scripts/find-swallowed-ledger-headings.awk` must still print **3** — it prints a COUNT, so never `| wc -l` it. ⚠ `find-future-dated-ledger-headings.mjs` must print **0** (dates are PT; CI's clock is UTC).
+⚠ **RE-READ THE LEDGER FROM DISK IMMEDIATELY BEFORE WRITING IT** — it is append-at-top and sessions write it concurrently, so splice into the freshly-read file, never write back a copy you read earlier. **Splice at a line-start `^### `, never a substring match on `### `** (a substring splice buries the heading mid-sentence — five times now). After writing: `grep -c '^### '` must rise by exactly the entries added; `find-swallowed-ledger-headings.awk` must still print **3** (a COUNT — never `| wc -l` it); `find-future-dated-ledger-headings.mjs` must print **0** (dates are PT, CI's clock UTC).
 
 ⚠ **On a rebase conflict, do NOT hand-edit the markers** — re-splice into upstream's copy (`git show :2:…`) at the first `^### `. Three traps, each drawn blood (anchor the check to line start · gate `git add` on the resolver's exit code · measure a baseline first). Recipe: [ledger-discipline.md](docs/reference/ledger-discipline.md).
 
@@ -123,7 +123,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 
 ### Honesty — a failed read must not render as an answer
 
-**The single most productive defect class on this platform (~24 by 08-17, ≥13 more by 08-24 — a count, so already stale).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
+**The single most productive defect class on this platform (37+ by 08-24 — a count, so already stale).** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
 
 | layer | helper |
 |---|---|
@@ -292,4 +292,4 @@ Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/ref
 
 Session entries live in `docs/sessions/`, one per month; none is needed to start work. **Write new ones into [2026-08.md](docs/sessions/2026-08.md) (prepend, newest-first), never here**, and **promote every durable lesson into this file or the matching `docs/reference/*.md` — a fact left only in a session log stops being read.**
 
-**Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — never rewrite them.** Layout: [session-and-archive-conventions.md](docs/reference/session-and-archive-conventions.md).
+⚠ **`docs/archive/**`, `docs/health/**` and `docs/sessions/**` are frozen history — never rewrite their links.** Layout: [session-and-archive-conventions.md](docs/reference/session-and-archive-conventions.md).
