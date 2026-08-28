@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⭐ THE #39 INSTRUMENT READ OUT AFTER 9 HOURS — the warmer WORKS, and the defect is the 8-hour hole it leaves before the first users of the day
+
+**55 samples, 04:57:59Z → 14:10Z.** The per-interval figures the cumulative counters could not show:
+
+| interval (UTC) | calls | mean ms | reads/call | |
+|---|--:|--:|--:|---|
+| 05:10 | 2 | **307** | 433 | ← inside `*/10 14-23,0-5` |
+| 05:20 | 1 | **456** | 413 | |
+| 05:30 | 1 | **689** | 444 | |
+| 05:40 | 1 | **291** | 405 | |
+| 05:50 | 2 | **437** | 524 | |
+| 06:00 | 2 | **343** | 456 | |
+| **12:20** | 1 | **5,516** | 301 | ← **the 8-hour hole** |
+| 14:00 | 2 | **2,131** | 365 | ← window reopens |
+| 14:10 | 1 | **4,153** | 346 | |
+
+✅ **Option 1 works while it runs: 291–689 ms inside the window**, against the 4,623 ms cumulative
+mean. **The light warmer was the right call and this is the first evidence for it.**
+
+🚨 **The defect is the shape of the window, not the warmer.** `*/10 14-23,0-5` leaves hours **6–13
+UTC = 23:00–06:00 PT** unwarmed. **One real call landed in that hole and took 5,516 ms.** Worse, the
+window **reopens at 14:00Z = 07:00 PT — the same moment the first Pacific users arrive — so the first
+users of the day PAY for the re-warm**: 2,131 ms and 4,153 ms on the first three calls back.
+
+👉 **The cheap fix is neither escalation option: start the window one hour earlier,
+`*/10 13-23,0-5` in `vercel.json` (one character).** The buffers are then warm *before* the first
+business-hours user instead of *by* them. Cost: 6 extra ticks/day × ~400 ms ≈ **2.4 s/day** of DB
+time. ⛔ **Not shippable from a Cowork session — `vercel.json` is code.** Handed off.
+
+🚨 **AND A CORRECTION TO #39's OWN FRAMING, which is mine.** I wrote *"the defect is not that the
+board is expensive; it is that its entire cost is paid by a user, one page load at a time"* and sized
+it at *"302 × 36.5 = ~11,000 disk reads/day"* — **treating 36.5 calls/day as 36.5 page loads.**
+Measured: **13 executions in 9 hours, and inside the window there is a call in 6 of 6 consecutive
+10-minute intervals — the `*/10` signature.** ⚠ **Attribution is an INFERENCE from cadence, not a
+measurement** (warmer and user calls share one `pg_stat_statements` row because both go through
+`supabaseAdmin`), but it is a strong one: **most executions are the warmer, and non-warmer traffic on
+this public board is roughly 3 calls per 9 hours.** ⭐ **So the cost is mostly paid by the warmer on
+behalf of users who mostly are not arriving — which lowers the urgency of the MV and is the opposite
+of what my own entry implied.**
+
+⚠ **n is small and the verdict is NOT settled: 3 calls in the hole, 3 at the reopen.** This is a
+shape, not a distribution. **The decisive read is tomorrow's full 14:00–23:00Z window, once the
+warmer has had several cycles — if means stay above ~1 s deep inside the window, option 1 is
+insufficient and the snapshot cache is next, exactly as #39 says.** The instrument self-unschedules
+2026-08-30, so that read happens once and then it retires.
+
 ### 2026-08-28 · ⛔ CORRECTION to the entry below — my "35 s per wallet" was an ATTRIBUTION ERROR, and it pointed at the wrong lever
 
 **Correcting a number I published ~40 minutes ago, because it would send the next session at the wrong
