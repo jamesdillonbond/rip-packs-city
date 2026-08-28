@@ -75,10 +75,31 @@ const API_DIR = join(process.cwd(), "app", "api")
  * detector-verified. **A count is only as trustworthy as the detector that
  * produced it, and the ad-hoc one was never shown a known offender.**
  *
+ * **1** as of 2026-08-28, after bounding the remaining transactional senders
+ * (support-chat's HIGH escalation page ×2, weekly-digest, signup-reminder,
+ * analytics-smoke, detect-league-drift, early-access, bots/discord),
+ * seed-wallet-refresh's Top Shot GQL resolve, and queue-wallet's internal call.
+ *
+ * ⭐ None of those bounds is a fresh guess either. Every one reuses a value
+ * already measured and shipped for the SAME upstream — 10s for Resend /
+ * Telegram / Discord from `alerts-send` (276 runs over 48h, avg 1,494 ms, p95
+ * 1,644 ms, against a 58,670 ms outlier that came within 1.3 s of a kill), and
+ * 15s for the Top Shot GraphQL proxy from `lib/verify-wallet-gql.ts`. The one
+ * exception is queue-wallet, derived from that route's own `maxDuration`.
+ *
+ * 🚨 **The remaining 1 is `app/api/smoke-test/route.ts`, and it is a LEGITIMATE
+ * EXCLUSION, not a leftover.** `smokeFetch` is a wrapper that forwards its
+ * caller's `init`, and the class triage lists "inside a caller that already
+ * imposes its own deadline" as a real reason to be unbounded. ⚠ But that is a
+ * CLAIM ABOUT ANOTHER INSTRUMENT, which CLAUDE.md says must be checked rather
+ * than asserted — so it is checked, by `smoke-test-callers-are-bounded` below.
+ * If a caller ever drops its signal, that test reds; the count here would not
+ * move, because the wrapper itself is unchanged.
+ *
  * ⛔ DOWN ONLY. If this needs to go UP, the change is adding a new invisible
  * failure mode — bound the call instead.
  */
-const RATCHET = 11
+const RATCHET = 1
 
 // ⚠ `stripComments` is IMPORTED from scripts/lib/strip-comments.mjs, never re-implemented.
 // It is load-bearing here twice over: without it the comment ABOVE a bounded
@@ -262,5 +283,68 @@ describe("an after() route with a maxDuration must not make an unbounded fetch",
       total,
       `RATCHET is ${RATCHET} but only ${total} sites remain — lower RATCHET to ${total}.`,
     ).toBeGreaterThanOrEqual(RATCHET)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The exclusion above, made falsifiable.
+//
+// `smokeFetch` is the one remaining unbounded `fetch()` in the dangerous shape,
+// and it is excused because every caller passes its own `AbortSignal`. That
+// excuse is a claim about a DIFFERENT instrument, and CLAUDE.md's rule is that
+// such a claim must be checked — "an exclusion justified by ANOTHER instrument
+// is a claim about it — check that one can SEE the property". So: check it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("smoke-test-callers-are-bounded", () => {
+  const SMOKE = join(API_DIR, "smoke-test", "route.ts")
+  const code = stripComments(readFileSync(SMOKE, "utf8"))
+
+  /** Call sites of the wrapper, excluding the wrapper's own definition/self-call. */
+  function wrapperCallSites(src: string): { line: number; bounded: boolean }[] {
+    const out: { line: number; bounded: boolean }[] = []
+    const re = /smokeFetch(?:Retry)?\s*\(/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(src))) {
+      let depth = 0
+      let i = m.index + m[0].length - 1
+      let end = -1
+      for (; i < src.length; i++) {
+        const c = src[i]
+        if (c === "(") depth++
+        else if (c === ")") { depth--; if (depth === 0) { end = i; break } }
+      }
+      if (end < 0) continue
+      const args = src.slice(m.index + m[0].length, end)
+      const line = src.slice(0, m.index).split("\n").length
+      out.push({ line, bounded: /signal\s*:/.test(args) || /AbortSignal/.test(args) })
+    }
+    return out
+  }
+
+  it("finds a real population — the check is not vacuous", () => {
+    // Without this, "0 unbounded callers" would also be the answer if the
+    // matcher silently found nothing, and the exclusion would rest on a guard
+    // that inspects an empty set. Assert the count it inspected.
+    expect(wrapperCallSites(code).length).toBeGreaterThan(15)
+  })
+
+  it("every caller of smokeFetch/smokeFetchRetry passes an abort signal", () => {
+    // The wrapper's own body forwards `init` and calls smokeFetch once; that
+    // self-call is legitimately signal-less, so allow exactly the sites inside
+    // the wrapper definitions at the top of the file.
+    const unbounded = wrapperCallSites(code).filter((s) => !s.bounded && s.line > 95)
+    expect(
+      unbounded.map((u) => u.line),
+      "smokeFetch call sites with no AbortSignal — the wrapper is unbounded by " +
+        "design, so an unbounded CALLER makes it a real invisible-failure site. " +
+        "Either bound the caller, or bound the wrapper and lower RATCHET."
+    ).toEqual([])
+  })
+
+  it("NEGATIVE CONTROL — an unbounded caller is detected", () => {
+    // Proves the matcher can see the failure it exists to catch, rather than
+    // returning [] for every input.
+    const fixture = ["", ...Array(96).fill(""), 'const r = await smokeFetch(url, { method: "GET" })'].join("\n")
+    expect(wrapperCallSites(fixture).filter((s) => !s.bounded && s.line > 95)).toHaveLength(1)
   })
 })

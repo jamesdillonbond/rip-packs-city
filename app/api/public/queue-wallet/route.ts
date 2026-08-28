@@ -75,6 +75,21 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${ingestToken}`,
         },
         body: JSON.stringify({ wallet, skip_cached: true }),
+        // 45s cap, derived from this route's own `maxDuration = 60` rather than
+        // from any claim about the peer.
+        //
+        // ⚠ The peer is an INTERNAL route, which the class triage lists as a
+        // legitimate reason to be unbounded — but that reason does NOT apply
+        // here: the peer carries a much larger maxDuration than this caller, so
+        // waiting on it can outlive THIS lambda, and a kill inside `after()`
+        // runs neither the success path nor the `catch` below.
+        //
+        // ⭐ Aborting is free of consequence because the response is never read:
+        // this is fire-and-forget, the 202 has already gone back to the visitor,
+        // and the peer lambda keeps running server-side regardless of whether
+        // this side is still listening. The bound only makes THIS lambda exit
+        // cleanly instead of being killed.
+        signal: AbortSignal.timeout(45_000),
       })
     } catch {
       // Best-effort — the visitor's poll loop just keeps showing "analyzing"

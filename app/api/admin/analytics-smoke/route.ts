@@ -74,6 +74,24 @@ function buildAlertText(env: SmokeEnvelope): string {
   return body;
 }
 
+// Per-request cap on the Telegram alert below.
+//
+// `fetch()` has NO default timeout, and this work runs inside `after()` under
+// maxDuration 300 — where a kill runs neither the success path nor the catch,
+// so no terminal row is written and the outage reads as "the cron never fired".
+// 🚨 An alert dispatcher's output is SILENCE, so a hung delivery is the least
+// falsifiable failure shape there is. Class triage:
+// docs/overnight/inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-...
+//
+// ⭐ 10s is NOT a fresh guess — it is the bound already measured and shipped for
+// this SAME Telegram endpoint in app/api/check-alerts/route.ts and
+// app/api/cron/alerts-send/route.ts (276 runs, p95 1,644 ms).
+//
+// ⚠ `fireTelegram` already try/catches and returns false, so an abort is
+// RECORDED as a failed send rather than thrown — the failure becomes visible
+// instead of silent, which is the entire point.
+const TELEGRAM_TIMEOUT_MS = 10_000;
+
 async function fireTelegram(text: string): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
@@ -83,6 +101,7 @@ async function fireTelegram(text: string): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+        signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       }
     );
     return res.ok;

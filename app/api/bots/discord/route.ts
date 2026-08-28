@@ -83,7 +83,23 @@ function optionValue(body: any, name: string): string | null {
 async function followUp(applicationId: string, token: string, payload: any): Promise<void> {
   await fetch(
     `https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`,
-    { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      // 10s cap. `fetch()` has NO default timeout and this runs inside `after()`
+      // under maxDuration 90 — a kill there runs neither the success path nor
+      // the `.catch()` below, so a hung Discord would leave the user's slash
+      // command showing "thinking…" forever with nothing logged anywhere.
+      //
+      // ⭐ Not a fresh guess: the bound already measured and shipped for these
+      // same transactional APIs in app/api/cron/alerts-send/route.ts (276 runs
+      // over 48h, avg 1,494 ms, p95 1,644 ms).
+      //
+      // ⚠ An abort rejects, so the existing `.catch()` records it — a failed
+      // follow-up becomes a log line instead of a silent lambda kill.
+      signal: AbortSignal.timeout(10_000),
+    }
   ).catch((e) => console.log("[bots/discord] followUp err", e?.message));
 }
 

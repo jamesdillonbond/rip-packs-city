@@ -196,6 +196,20 @@ async function notifyTelegramAndMark(opts: {
           text,
           disable_web_page_preview: true,
         }),
+        // 10s cap. `fetch()` has NO default timeout and this runs inside
+        // `after()` under maxDuration 60, where a kill runs neither the success
+        // path nor the catch — so a hung Telegram would silently cost the
+        // operator the notification that an early-access request arrived, with
+        // no record that anything was attempted.
+        //
+        // ⭐ Not a fresh guess: this is the bound already measured and shipped
+        // for this SAME Telegram endpoint in app/api/cron/alerts-send/route.ts
+        // (276 runs over 48h, avg 1,494 ms, p95 1,644 ms).
+        //
+        // ⚠ The caller already try/catches and treats a failure as non-fatal to
+        // the submission itself, so an abort degrades to "request stored, alert
+        // not delivered" rather than losing the signup.
+        signal: AbortSignal.timeout(10_000),
       }
     )
     if (!res.ok) {

@@ -174,6 +174,27 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
   return { subject, html };
 }
 
+// Per-request cap on the outbound transactional call below.
+//
+// `fetch()` has NO default timeout, and this work runs inside `after()` under a
+// `maxDuration` — where a kill runs neither the success path nor the catch, so
+// NO terminal `pipeline_runs` row is written and the outage reads as "the cron
+// never fired". Class triage:
+// docs/overnight/inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-...
+//
+// ⭐ 10s is NOT a fresh guess. It is the bound already measured and shipped for
+// this SAME upstream in app/api/cron/alerts-send/route.ts, where 276 runs over
+// 48h gave avg 1,494 ms and p95 1,644 ms — against one outlier of 58,670 ms
+// that came within 1.3 SECONDS of a 60s maxDuration kill. Generous for an API
+// that normally answers in ~1.5s.
+//
+// ⚠ An abort THROWS, which is the shape this caller wants: the send is already
+// wrapped per-recipient in try/catch, counted as a failed delivery, and NO
+// alert_deliveries row is written — so a later run retries that recipient while
+// the rest of the batch continues, instead of one stuck recipient silently
+// costing every remaining recipient their email.
+const SEND_TIMEOUT_MS = 10_000;
+
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("RESEND_API_KEY missing");
@@ -181,6 +202,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: FROM, to, subject, html }),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }

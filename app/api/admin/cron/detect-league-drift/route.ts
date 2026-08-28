@@ -140,6 +140,17 @@ export async function GET(req: NextRequest) {
               parse_mode: "HTML",
               disable_web_page_preview: true,
             }),
+            // 10s cap. `fetch()` has NO default timeout and this runs inside
+            // `after()` under maxDuration 60, where a kill writes no terminal
+            // row at all. 🚨 This is an ALERT, whose output is silence — so a
+            // hung send is the least falsifiable failure shape there is, and
+            // "no drift detected" would be indistinguishable from "the alert
+            // never got out".
+            //
+            // ⭐ Not a fresh guess: the bound already measured and shipped for
+            // this SAME Telegram endpoint in app/api/cron/alerts-send/route.ts
+            // (276 runs over 48h, avg 1,494 ms, p95 1,644 ms).
+            signal: AbortSignal.timeout(10_000),
           }
         )
         if (!resp.ok) {

@@ -96,6 +96,19 @@ async function resolveUsernameToAddress(
         query: `query Resolve($handle: String!) { getUserByFlowHandle(flowHandle: $handle) { flowAddress } }`,
         variables: { handle: username },
       }),
+      // 15s cap. `fetch()` has NO default timeout and this runs inside `after()`
+      // under maxDuration 800 — the largest budget on the platform, so a single
+      // hang here wastes the most compute of any route in this class AND writes
+      // no terminal row, leaving the outage indistinguishable from a cron that
+      // never fired.
+      //
+      // ⭐ Not a fresh guess: 15s is the bound already shipped for this SAME
+      // Top Shot GraphQL proxy in lib/verify-wallet-gql.ts.
+      //
+      // ⚠ The caller already try/catches and returns null, so an abort reads as
+      // "username did not resolve" — the same outcome as a non-ok response,
+      // handled by the existing path rather than a new one.
+      signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) return null
     const json = (await res.json()) as any

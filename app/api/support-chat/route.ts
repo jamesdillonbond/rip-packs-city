@@ -2888,6 +2888,25 @@ async function executeTool(
               text: `\u{1F6A8} RPC Support Escalation (HIGH)\nCategory: ${category}\nSession: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\n\nIssue: ${reason}`,
               parse_mode: "HTML",
             }),
+            // 10s cap. `fetch()` has NO default timeout and this runs inside
+            // `after()` under maxDuration 60, where a kill runs neither the
+            // success path NOR the catch.
+            //
+            // 🚨 That matters more here than anywhere else in this class. This
+            // is the HIGH-urgency page, and `pageDelivered` is what stops us
+            // telling a user "you've been paged" when nobody was. A hung send
+            // burns the whole 60s budget and takes the lambda with it — so the
+            // page is not delivered AND nothing is logged, which is exactly the
+            // false-confirmation-with-no-trace failure the block above exists
+            // to prevent, arriving by a route it does not guard against.
+            //
+            // ⭐ Not a fresh guess: the bound already measured and shipped for
+            // this SAME Telegram endpoint in app/api/cron/alerts-send/route.ts
+            // (276 runs over 48h, avg 1,494 ms, p95 1,644 ms).
+            //
+            // ⚠ An abort throws into the catch below, leaving `pageDelivered`
+            // false — the honest outcome. It must never be set optimistically.
+            signal: AbortSignal.timeout(10_000),
           });
           if (res.ok) pageDelivered = true;
           else console.error("[support-chat] escalate telegram non-OK", res.status);
@@ -2904,6 +2923,11 @@ async function executeTool(
               subject: `[RPC Support] ${category} — HIGH urgency`,
               text: `Session: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\nCategory: ${category}\nUrgency: high\n\nIssue:\n${reason}`,
             }),
+            // 10s cap — the email half of the same HIGH page; see the Telegram
+            // call above for why an unbounded send here is the worst case in
+            // this class. An abort throws into the catch and leaves
+            // `pageDelivered` false, which is the honest outcome.
+            signal: AbortSignal.timeout(10_000),
           });
           if (res.ok) pageDelivered = true;
           else console.error("[support-chat] escalate email non-OK", res.status);
