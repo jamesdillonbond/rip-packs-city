@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ MONTHLY DEEP AUDIT RUN 4 — 6 sweeps, 0 P0s, 5 fixes shipped (1 migration · 2 cron ops · 1 data null-out · 4 code files); register rewritten
+
+**Full report: [docs/audits/deep-audit-2026-08-27.md](../audits/deep-audit-2026-08-27.md). Register updated in the same commit.** All 11
+VERIFIED-CLEAN security probes re-ran clean; the rendered-DOM sweep (18 surfaces, real Chrome, anonymous)
+found **zero honesty-class defects and zero console errors** — the first fully-clean browser sweep on record.
+
+**Shipped, each with its own revert path:**
+
+1. **Migration `20260828055741_audit_20260828_r38_session_id_floor_and_dune_search_path`** —
+   (a) R38 closed: `support_conversations` anon INSERT policy session_id floor 1 → **20 chars**
+   (active writers measured first: smoke = 28, clients 31–35, server default 41; only the inactive
+   13/16-char fixture writers fall below). (b) `search_path` pinned on `dune_budget_status(text)` +
+   `dune_spend_report()` — both prokind='f', **no COMMIT in body** (R14's outage class checked and
+   does not apply), no anon/auth EXECUTE, no cron caller; `ALTER … SET` preserves ACLs.
+   Revert: in the migration header.
+2. **pg_cron jobid 355** (`rpc-backfill-pinnacle-trade-acquisitions`) `23 */3` → **`23 1-22/3`** —
+   off the hours-divisible-by-3 grid that carries 72% of timeout waste (#42); same jobid, same
+   `cron_heavy` owner, 8 runs/day preserved (SET LOCAL ROLE recipe).
+   Revert: `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-backfill-pinnacle-trade-acquisitions','23 */3 * * *','SELECT public.backfill_pinnacle_trade_acquisitions(50000)');`
+3. **pg_cron jobid 256 (`rpc-thin-sale-ask-disclosure-refresh`) UNSCHEDULED** — decision re-made on
+   the 08-28T0130Z filing's corrected premises: `fmv_thin_sale_ask_disclosure_cache` has **zero readers
+   across all 7 caller sources**, the job burned ~2.4 h/30 d of `cron_heavy` ceiling time (successes
+   120 s, failures die at 600 s — saturation signature), and unscheduling is the strictly-cheaper
+   alternative to the CI-reddening `DROP FUNCTION`. Function + cache + pin all KEPT.
+   Revert: `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-thin-sale-ask-disclosure-refresh','25 9 * * *','SELECT public.fmv_thin_sale_ask_disclosure_refresh()');`
+4. **166 AllDay `badge_editions.avg_sale_price = 0` → NULL** (rowcount verified 166 before and 166
+   after) — upstream sends `averageSalePriceCents: 0` for "no sales" and an average of positive-price
+   sales can never be $0; a stored 0 is the fabricated-zero shape at rest. **No renderer currently
+   displays it** (checked: collection tab client doesn't render the field; rookie board is TS-scoped) —
+   this closes the latent trap before one does. Writer fixed in the same pass
+   (`scripts/ingest-allday-badges.mjs` + `app/api/cron/allday-badge-ingest/route.ts`, `|| null`).
+   Revert: re-run the AllDay badge ingest (the value is upstream-recoverable).
+5. **Code (tip commit):** `lightpanda` added to `BOT_UA` in track-funnel (250 Lightpanda/1.0 events/7d
+   were passing the human filter) + test case · the two badge-writer guards above · the
+   **wallet-backfill GHA backstop experiment exactly as specified by 08-28T0420Z** (`sleep 60→300` AND
+   `timeout-minutes 10→25` in the same commit, falsifier in the workflow comment — the backstop was
+   measured 73.1% killed vs the primaries' 17.0%).
+   Revert: `git revert` the code commit.
+
+**Deliberately NOT shipped, with reasons:** `topshot-stub-resolver` deploy (deployed v28 predates the
+gate-key hardening and the MCP has no secrets verb — §1 of rpc-edge-fn-deploy cannot be verified from
+here; the 40h-outage shape) · `rpc_thp_leg_impossible_parallel` collection-scoping (measured ~200 s/run
+waste, but the equivalence proof costs a 4.8M-row join AND scoping would hide a miscategorized sale's
+impossible serial — handed off with numbers) · jobid 235 `*/6→*/2` (a +2.2 busy-h/week IO trade under
+the R46 100%-budget rule — Trevor's call).
+
+**Biggest re-derivations for the register:** R8's growth (480→548) is **NOT a name-clobbering writer** —
+all 548 are NULL-player Reels; the updated_at churn is the stub-resolver's rotating no-op upserts
+(same root as the 08-27 Reels entry). R41 headline both figures ROSE: canonical TS **55.0** / all-rows
+**39.21** (was 49.7/34.3). Traction: 23 users, ~31 WAU proxy, wallet_paste **24/7d (5× spike)**,
+10 of 36 pastes/30d from AI answer engines. cron.job 93→100→99 fully attributed (+7 identified, −1 mine).
+
+**Revert path:** per item above; register/report are docs.
+
 ### 2026-08-27 · 🚨 CORRECTED (docs) — known-issues #38's "drained" reading is REFUTED, and both of its proposed dispositions would have been the wrong move
 
 **No code, no DB, no prod state.** A register correction, filed because the entry as written told the
