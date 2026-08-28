@@ -10,6 +10,90 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (prod DDL + repo) — `oldest_cache_h` now measures the population the sweep can act on; it was overstating by 76× and could never fall
+
+**Applies §5 of the 2026-08-21 filing verbatim.** That fix was correct and cheap on the day it was
+written and was deferred **twice** — both times on migration COST, never on doubt about the fix. The
+filing's own re-read says *"still correct as written and still cheap… it should ride along with the next
+migration that has its own reason to run."* Tonight had one (the rwfc revert) and, more to the point, a
+genuinely quiet instance: **1 active backend, 0 IO waiters** — the condition both deferrals named.
+⚠ Earlier this session I re-derived that blocker rather than inheriting it and **upheld it at 04:20Z on
+9 IO waiters.** The window changed; the reasoning did not.
+
+**The defect.** The queue reads one population, the metric read another:
+
+```sql
+-- QUEUE (v_pairs): only wallets that HAVE wallet_moments_cache rows
+WHERE sw.wallet_addr IS NOT NULL AND sw.user_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM wallet_moments_cache w WHERE …)
+
+-- METRIC (before): every saved_wallets row, no such filter
+SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(cache_updated_at)))/3600.0, 1) …
+```
+
+`MIN(cache_updated_at)` was therefore pinned forever by 21 rows frozen at a single 2026-08-09
+bulk-write instant — the explicit zero-pass, all with `cached_moment_count = 0` and zero wmc rows, which
+the queue excludes **by design**. The number rose +1.0/hour and **could never fall.**
+
+| | 08-21 | 08-27 | **08-28 (mine)** |
+|---|---:|---:|---:|
+| reported `oldest_cache_h` | ~308 h | 442.9 h | **456.9 h** |
+| true ELIGIBLE staleness | — | 15.1 h | **6.1 h** |
+
+⭐ **76× overstatement**, measured immediately before the apply with the queue's predicate applied
+exactly where `v_pairs` applies it. **The sweep is not behind at all** — and that is half the finding,
+because *"the metric is broken"* and *"the sweep is behind"* need opposite responses.
+
+🚨 **The consequence that actually mattered is the INVERSE one:** a genuine starvation — a QUEUED wallet
+going unreconciled for days — was **invisible**, because the figure was already pinned and climbing from
+an unrelated cause. It could not move in response to the thing it is named for. It also misled two
+separate readers, one of them to the edge of filing a user-facing alarm.
+
+**What shipped.** One SELECT gains the `EXISTS` clause, **copied VERBATIM from `v_pairs` including where
+the filter sits relative to the aggregate.** ⚠ That precision is not fussiness: the filing's own
+near-miss was re-deriving it as `bool_or()` at the WALLET level instead of `EXISTS` at the ROW level,
+which mixes the frozen rows back in and **inverts the answer**, and the difference is invisible in the
+output because both produce a tidy per-wallet age.
+
+**Controls, because this is a procedure that COMMITs per wallet:**
+- **A semantic diff of the two bodies printed the change and nothing else** — 12 lines, all in the one
+  statement. Everything else is byte-identical, extracted programmatically rather than retyped.
+- **`COMMIT` count 3 → 3**, asserted before and after. ⛔ A `SET` clause on a COMMITting procedure
+  silently stops it committing — this repo has shipped that twice — so the apply also asserts **zero**
+  `SET search_path` on the body.
+- The metric STATEMENT specifically: `EXISTS` **false → true**. ⚠ My first refusal guard read *"anything
+  after the first mention of `v_oldest_h`"*, which matched the **declaration** and swept in the unrelated
+  zero-pass and `v_pairs` clauses — it fired on a correctly-unscoped prod. Anchored to the statement.
+- `live prosrc == migration file body`; `db:pins:check` **189/189 clean**; ACL unchanged.
+
+⚠ **PENDING, and stated rather than glossed: the RUNTIME control.** I tried a bounded end-to-end
+`CALL` and got **`invalid transaction termination`** — a COMMITting procedure cannot be invoked inside
+`execute_sql`'s transaction. So the honest position is: the DDL parsed, the changed statement was
+executed standalone (returning 6.1 h), and the COMMIT structure is proven identical — but **the only
+true control is the scheduled pg_cron run at :44**, which must be read for `ok = true` and an
+`oldest_cache_h` in single digits. **Read it before calling this closed.**
+
+⭐ **THE PIN TEST CAUGHT A REAL SELF-INFLICTED BREAK, and it is the reusable part.** My first property
+assertion referenced `auth.users` and `public.pipeline_runs`. **Neither exists in that harness** — it
+builds its OWN `public.saved_wallets` and a `public._runs` capture table. It would have failed the
+DB-tests job outright, and **no local check can see that**: there is no Postgres on this box, so psql in
+CI is the first real run — the exact mechanism behind the stray-`$` that reddened main for 35 minutes.
+Rewritten against the harness's actual schema and **moved to the END of the file**, so it cannot perturb
+the sequential narrative above it.
+
+⭐ **And the assertion it replaces was a documented weak one.** The old check was
+`(extra->>'oldest_cache_h')::numeric IS NOT NULL` while its own message promised the figure *"shows
+whether the sweep is keeping up"* — it passed with the metric pinned at 456.9 h forever. Textbook *"a
+test stating the contract in a comment and asserting something weaker."* The new one inserts a row with
+no wmc presence and a **400-day-old** stamp — which would drag the OLD metric to ~9,600 h — and asserts
+the figure ignores it. **It reds against the pre-fix definition, which is the point.**
+
+Full suite **1389 files / 15261 passed**, `tsc --noEmit` clean.
+
+**Revert path:** re-apply
+`supabase/migrations/20260827063500_audit_20260826_reconcile_duration_ms_measured_from_the_last_commit.sql`,
+move the pin + PINS entry back, confirm `db:pins:check`.
+
 ### 2026-08-27 · ✅ SHIPPED (prod DDL + repo) — the `refresh_wmc_fmv_changed` fast path is REVERTED; its own pre-registered exit condition was met and the tooling blocker was environmental
 
 **This executes the disposition the 🚨 MEASURED entry earlier today specified and could not carry out.**
