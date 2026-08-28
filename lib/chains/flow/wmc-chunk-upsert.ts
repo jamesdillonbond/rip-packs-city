@@ -103,6 +103,44 @@ export const CHUNK_RETRY_RUN_BUDGET_MS = 10_000
  */
 export const CHUNK_RPC_TIMEOUT_MS = 130_000
 
+/**
+ * Smallest remaining slice of CHUNK_RPC_TIMEOUT_MS worth spending on a retry.
+ *
+ * 🚨 WHY THIS EXISTS, AND WHY THE OBVIOUS FIX WAS THE WRONG ONE (2026-08-29).
+ * The 130 s budget above is shared across all three attempts, so a chunk whose
+ * first two attempts fail SLOWLY leaves the third a few seconds. Measured over
+ * the 24 h to 2026-08-29, across the wallet-backfill family: **17 `RPC_TIMEOUT`s
+ * and not one of them 130,000 ms.** Fourteen sat at 3,046 / 4,306 / 4,352 /
+ * 4,872 / 5,195 / 5,227 / 5,229 / 5,277 / 5,350 / 5,641 / 5,655 / 6,000 /
+ * 6,033 / 6,278 ms — budget crumbs — and three at ~68,000 ms.
+ *
+ * ⛔ THE FILED MITIGATION WAS `attempts: 3 -> 2`, AND ITS OWN DATA FALSIFIES IT.
+ * Two attempts split 130 s into halves — which is exactly the ~68,000 ms
+ * cluster, and **those three attempts failed too**. Cutting the attempt count
+ * would have converted 14 crumb-labelled losses into half-budget-labelled
+ * losses and recovered nothing. The attempt COUNT was never the lever.
+ *
+ * ⭐ What is real is the mislabelling. A crumb attempt is doomed *and* it
+ * overwrites `first_chunk_error` with `rpc upsert_wmc_batch timed out after
+ * 3046ms` — our bound — when the run actually died on two pool-acquire or lock
+ * timeouts. A permanently-misattributed error column is a permanently-unread
+ * one. With this floor the loop stops and the REAL error survives.
+ *
+ * 30 s is service_role's own `statement_timeout`: below it an attempt cannot
+ * even reach the bound Postgres would have applied, so a timeout there is
+ * guaranteed to describe us rather than the database. It clears all fourteen
+ * crumbs and leaves the ~68 s slices alone — those at least had a plausible
+ * chance, and cutting them would be the `attempts: 2` mistake in another shape.
+ *
+ * ⛔ EXPECT NO ROW RECOVERY FROM THIS. The skipped attempts were doomed; the
+ * same rows are lost, a few seconds sooner. **Exit condition: `first_chunk_error`
+ * stops naming our own bound** — i.e. `timed out after` falls to ~0 outside the
+ * ~68 s cluster while pool/lock messages rise by the same count. Falsifier: if
+ * `timed out after` values in the 3–6 s range persist, the slice is being
+ * consumed somewhere this floor does not see.
+ */
+export const CHUNK_MIN_RETRY_SLICE_MS = 30_000
+
 export function newChunkTally(): ChunkFailureTally {
   return {
     chunkErrors: 0,
@@ -194,6 +232,9 @@ async function upsertWmcOneChunk(
       ? {
           attempts: 3,
           timeoutMs: CHUNK_RPC_TIMEOUT_MS,
+          // Do not issue an attempt too small to reach the DB's own bound —
+          // it is doomed and it overwrites the true cause. See the constant.
+          minAttemptSliceMs: CHUNK_MIN_RETRY_SLICE_MS,
           // 400 ms base -> 400 ms + 1600 ms of backoff. Longer than the page
           // default of 50 ms: a saturated pool does not clear in a quarter of a
           // second, and nobody is waiting on this write.

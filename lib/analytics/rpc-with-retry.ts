@@ -92,6 +92,38 @@ interface RetryOptions {
    * timeout would silently multiply by `attempts`.
    */
   timeoutMs?: number
+  /**
+   * Refuse to ISSUE an attempt that would be handed less than this much of the
+   * shared budget. Defaults to 0 — every existing caller keeps its exact
+   * behaviour — so this is opt-in for callers whose failures are SLOW.
+   *
+   * 🚨 THE DEFECT IT FIXES, MEASURED (2026-08-29). `timeoutMs` is one budget for
+   * the whole call and each attempt gets whatever REMAINS, so `attempts: 3`
+   * against slow failures fragments the budget into pieces too small to
+   * succeed. Over the 24 h to 2026-08-29 the wallet-backfill family logged 17
+   * `RPC_TIMEOUT`s against a 130 s budget and **not one was 130,000 ms**: 14 sat
+   * at **3,046–6,278 ms** (two real ~62 s failures, then a crumb) and 3 at
+   * ~68,000 ms (one real failure, then half). Every crumb was a doomed attempt.
+   *
+   * ⚠ THE WORSE HALF IS DIAGNOSTIC, AND IT IS WHY THIS IS WORTH A FLAG.
+   * A crumb attempt overwrites the real cause: the tally records
+   * `rpc upsert_wmc_batch timed out after 3046ms` — OUR bound — when what
+   * actually happened was two pool-acquire or lock timeouts. That is precisely
+   * the property `RPC_TIMEOUT_CODE` exists to protect ("a bound we imposed is
+   * greppable in logs and never mistaken for something the server reported"),
+   * inverted: the log names our bound INSTEAD of the database's problem. With a
+   * slice floor the loop breaks and returns the last REAL error instead.
+   *
+   * ⛔ THIS DOES NOT RECOVER ROWS, and must not be described as if it does. The
+   * crumb attempts measured above were all doomed; skipping them loses the same
+   * rows a few seconds sooner. What it buys is an accurate `first_chunk_error`
+   * and a few seconds back — nothing else. The rows-lost lever is the
+   * saturation itself.
+   *
+   * ⚠ NEVER blocks the FIRST attempt: with no prior error there is nothing
+   * truer to report, and the budget is by definition untouched.
+   */
+  minAttemptSliceMs?: number
 }
 
 function timeoutError(ms: number, fn: string): PostgrestError {
@@ -316,6 +348,7 @@ async function retryLoop<T>(
   const attempts = Math.max(1, opts.attempts ?? 3)
   const base = Math.max(1, opts.baseDelayMs ?? 50)
   const budget = Math.max(1, opts.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
+  const minSlice = Math.max(0, opts.minAttemptSliceMs ?? 0)
   const deadline = Date.now() + budget
 
   let lastErr: PostgrestError | null = null
@@ -327,6 +360,10 @@ async function retryLoop<T>(
       lastErr = lastErr ?? timeoutError(budget, label)
       break
     }
+    // A slice too small to be a real attempt is worse than no attempt: it is
+    // doomed AND it overwrites the true cause with our own bound. Guarded on
+    // `lastErr` so the first attempt always runs — see minAttemptSliceMs.
+    if (lastErr !== null && remaining < minSlice) break
     const { data, error } = await attempt(remaining)
     if (!error) return { data: (data as T | null) ?? null, error: null }
     lastErr = error

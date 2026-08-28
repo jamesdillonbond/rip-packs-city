@@ -345,3 +345,75 @@ describe("queryWithRetry", () => {
     expect(res.error).not.toBeNull()
   })
 })
+
+describe("rpcWithRetry — minAttemptSliceMs (the budget-crumb floor)", () => {
+  // A .rpc() that fails with a REAL transient error after `ms` of wall clock.
+  // Must consume real time: the whole defect is about how much of a shared
+  // budget an earlier attempt eats, which an instantly-settling mock cannot
+  // express.
+  function slowFailClient(ms: number, message: string) {
+    const rpc = vi.fn(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => r({ data: null, error: { code: "53300", message } }), ms),
+        ),
+    )
+    return { client: { rpc } as any, rpc }
+  }
+
+  it("is INERT by default — a caller that does not opt in is unchanged", async () => {
+    // The guard ships in a hot path shared by every entity page and board
+    // render. This is the assertion that says they did not silently inherit it:
+    // with no minAttemptSliceMs, all three attempts are still issued even
+    // though the last one is handed a crumb.
+    const { client, rpc } = slowFailClient(40, "too many connections")
+    await rpcWithRetry(client, "f", {}, { attempts: 3, timeoutMs: 100, baseDelayMs: 1 })
+    expect(rpc).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not issue an attempt handed less than the floor", async () => {
+    // Two 40ms failures eat 80 of the 100ms budget, leaving ~20ms — under the
+    // 50ms floor, so attempt 3 must never be issued.
+    const { client, rpc } = slowFailClient(40, "too many connections")
+    await rpcWithRetry(client, "f", {}, {
+      attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
+    })
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("PRESERVES THE REAL ERROR instead of overwriting it with our own bound", async () => {
+    // The point of the whole change. Without the floor the doomed crumb
+    // attempt times out and `RPC_TIMEOUT` — a bound WE imposed — replaces the
+    // database's actual complaint in first_chunk_error. Asserting the ABSENCE
+    // of the false claim, not merely the presence of some error.
+    const { client } = slowFailClient(40, "Timed out acquiring connection from connection pool.")
+    const res = await rpcWithRetry(client, "upsert_wmc_batch", {}, {
+      attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
+    })
+    expect(res.error?.message).toContain("acquiring connection")
+    expect(res.error?.code).not.toBe("RPC_TIMEOUT")
+    expect(res.error?.message).not.toContain("timed out after")
+  })
+
+  it("never blocks the FIRST attempt, even with a floor above the whole budget", async () => {
+    // A floor larger than timeoutMs must not turn the call into a no-op that
+    // reports failure without ever asking the database.
+    const { client, rpc } = fakeClient([ok({ v: 1 })])
+    const res = await rpcWithRetry(client, "f", {}, {
+      attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 10_000,
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(res.data).toEqual({ v: 1 })
+  })
+
+  it("still retries when the failure is FAST and leaves a usable slice", async () => {
+    // The floor must not disable the recovery this retry exists for: a
+    // pool-acquire that fails in milliseconds leaves nearly the whole budget.
+    const { client, rpc } = fakeClient([err("53300", "too many connections"), ok({ v: 9 })])
+    const res = await rpcWithRetry(client, "f", {}, {
+      attempts: 3, timeoutMs: 5_000, baseDelayMs: 1, minAttemptSliceMs: 1_000,
+    })
+    expect(res.data).toEqual({ v: 9 })
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+})
