@@ -372,6 +372,17 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // login bounce; the route ITSELF enforces auth (getUser -> 401) on POST/DELETE
   // and writes through the user's RLS session, so this adds no anon write access.
   if (pathname === "/api/teams/follow") return true
+  // /api/rewards/track — the ONLY client-triggerable earn (fixed event string
+  // mapped server-side to a daily-capped rule). Fired fire-and-forget from two
+  // PUBLIC surfaces (the /insights/squeeze board on mount; the profile share
+  // buttons), whose own comments assume an anon caller "just gets a 401".
+  // Without this bypass the anonymous POST was 307d to /login, which rejects
+  // POST with 405 — measured live 2026-08-28 in a clean anonymous browser:
+  // every anon squeeze view logged `POST /login?next=%2Fapi%2Frewards%2Ftrack 405`.
+  // The route ITSELF enforces auth (requireUser -> 401 JSON) and awards only to
+  // the session-resolved user id, so this adds no anon write access — same
+  // shape as /api/teams/follow above. The /api/ rate limiter still applies.
+  if (pathname === "/api/rewards/track") return true
   // /api/track-click — fire-and-forget outbound-click logger. Anon visitors on
   // the public /insights surfaces (and the marketing home) fire it when they
   // click an outbound marketplace / View Listing link, so it must bypass the

@@ -220,7 +220,7 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //       prescribes is "add a marker", so the next session working the list would
 //       have bolted a SECOND marker onto the fleet's highest-volume pipeline.
 //   ⚠ Read off the failing no-slack assertion (42), not by subtracting five.
-const BUDGET = 42
+const BUDGET = 41
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

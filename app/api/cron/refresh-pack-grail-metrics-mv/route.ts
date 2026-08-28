@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,6 +25,18 @@ async function run(request: NextRequest) {
   // refresh + log move into after(), and we return immediately so the entry
   // can never be auto-disabled on a timeout. pipeline_runs is the real signal.
   after(async () => {
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill
+    // (60 s here; REFRESH ... CONCURRENTLY routinely exceeds it under IO
+    // saturation) runs neither the success path nor the catch above, so the
+    // terminal log_pipeline_run below never fires and the tick leaves NO row.
+    // Measured 2026-08-28: the hourly :23 ticks at 10Z/12Z/13Z had no
+    // pipeline_runs row while Vercel logged this route in the 60 s timeout
+    // group — and this pipeline is on `pipeline_cadence_watchlist` (90 min),
+    // so `detect_stalled_pipelines()` read the kills as "cron_silent", which is
+    // the OPPOSITE diagnosis (fix the schedule vs. fix the route). The separate
+    // `-heartbeat` name is required: a marker under the REAL name would refresh
+    // `last_run` every tick and silence the very arm that exposes the outage.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.now() });
     const startedMs = Date.now();
     // 2026-06-11: the REFRESH RPC previously sat OUTSIDE this try/catch, so a
     // throw (CONCURRENTLY refresh timing out under saturation, not a returned
