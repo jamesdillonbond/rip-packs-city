@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — a tsc error silently switched SIX CI guards OFF, because they are steps sequenced after it in the same job
+
+**What shipped:** `if: ${{ !cancelled() }}` on the six guard steps in `.github/workflows/ci.yml`'s
+`typecheck` job.
+
+**How it was found.** While confirming the typecheck fix above, I read the failing job rather than the
+badge. Run **33142460652** (`5479b6f89`): the ONLY failure was `TypeScript` at `npx tsc --noEmit` —
+and the job report shows the next six steps **`skipped`**:
+
+`check-brand-tokens` · `check-memory-doc-links` · `check-driver-message-leaks` ·
+`check-unhandled-third-state` · `check-responsive-flex-basis` · `check-unbounded-server-reads`
+
+🚨 **So for the whole red window, six guards — four of them honesty-family — were not running at all,
+and nothing said so.** The job named the tsc error, which reads like one problem. GitHub skips every
+later step in a job once one fails, so **any** type error disables all six. A commit could have landed
+violating any of them and CI would have shown only the unrelated tsc line.
+
+⭐ **The rule, and it is the job-step twin of CLAUDE.md's `bash -e` bullet: ASK WHAT RUNS A GUARD, not
+only whether it passes — and a guard sequenced after a fallible step in the SAME job is gated on that
+step.** These six are independent of `tsc` and of each other, and are pure node with no deps, so there
+was never a reason to gate them on it.
+
+⚠ `!cancelled()` rather than `always()`, so a cancelled run still stops. ✅ Verified before shipping:
+YAML parses and all six carry the condition; **all six run clean locally (exit 0)**, so making them run
+does not red CI in a new way.
+
+**Revert:** `git revert` the commit — removes the six `if:` conditions and restores the skip-on-tsc-failure
+behaviour.
+
 ### 2026-08-27 · ✅ SHIPPED (code) — `main` was RED on typecheck for every branch; an unused `@ts-expect-error` in the new known-issues index guard
 
 **Not this session's work, fixed because it blocked everyone.** `75115cefb` added

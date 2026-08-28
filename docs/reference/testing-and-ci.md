@@ -269,6 +269,32 @@ ignore line guards directories nothing creates. Two gates run concurrently kill 
 *"Something removed the coverage directory"*. CI is safe (separate jobs); a local parallel run is not.
 **A documented invariant with no implementation and no test is the same shape as an unenforced guard.**
 
+### 🚨 The JOB-STEP twin of that rule: a guard sequenced after a fallible step in the SAME job is GATED ON IT
+
+**Measured 2026-08-28, run `33142460652` (`5479b6f89`).** The `typecheck` job's only failure was
+`npx tsc --noEmit` — one unused `@ts-expect-error`. The job report then shows the next **six** steps
+`skipped`:
+
+`check-brand-tokens` · `check-memory-doc-links` · `check-driver-message-leaks` ·
+`check-unhandled-third-state` · `check-responsive-flex-basis` · `check-unbounded-server-reads`
+
+**Four of the six are honesty-family guards.** GitHub skips every later step in a job once one fails,
+so **ANY type error switched all six off**, and nothing said so — the job named the tsc error, which
+reads like one problem with one fix. A commit could have landed violating any of the six while CI
+displayed only an unrelated line about types.
+
+⭐ **The rule is CLAUDE.md's "ask what RUNS a guard, not only whether it passes", at job-step
+granularity: a guard is gated on every fallible step ahead of it in its own job.** Reading the badge,
+or even the job's failure message, does not reveal it — only the per-step conclusions do.
+
+**Fixed** by putting `if: ${{ !cancelled() }}` on all six: they are independent of `tsc` and of each
+other, and are pure node with no deps, so nothing was ever gained by gating them. ⚠ `!cancelled()`
+rather than `always()`, so a cancelled run still stops.
+
+⚠ **This generalises past these six — audit any job that runs guards after a build or typecheck step.**
+And note the shape of the near-miss: the guards were not deleted, disabled or misconfigured. They were
+**correctly written, correctly registered, and simply never executed.**
+
 ### ⚠ A retry loop placed after a command that can fail is DEAD CODE under `bash -e` — and it reads as coverage
 
 Found 2026-08-18 in `.github/workflows/ops-monitor.yml`. The step carried an explicit, well-written

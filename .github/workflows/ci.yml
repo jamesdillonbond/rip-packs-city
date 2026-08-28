@@ -29,6 +29,15 @@ jobs:
       # regrows a hardcoded #E03A2F / 'Barlow Condensed' / 'Share Tech Mono'
       # literal instead of the var(--rpc-*) tokens. Pure node, no deps.
       - run: node scripts/check-brand-tokens.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
       # Memory-doc link guard — fails if a relative link in CLAUDE.md or
       # docs/reference/**.md stops resolving. The 2026-08-17 restructure bet the
       # memory architecture on those pointers: detail was moved OUT of CLAUDE.md
@@ -40,6 +49,15 @@ jobs:
       # which are frozen history CLAUDE.md forbids rewriting — gating those
       # would make this permanently red and therefore unreadable.
       - run: node scripts/check-memory-doc-links.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
       # Driver-message leak guard — fails if an UNGATED route handler returns a
       # raw `err.message` to the client. lib/api-error.ts exists because
       # /api/sets showed anonymous visitors Postgres's own "canceling statement
@@ -49,6 +67,15 @@ jobs:
       # ⚠ The exclusion is PER HANDLER, not per file: a gated POST does not vouch
       # for the ungated GET beside it. That exact shape was 4 live handlers.
       - run: node scripts/check-driver-message-leaks.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
       # Unhandled-third-state guard — bans `if (error) {…} else if (data) {…}`
       # with no final else. A read returning NEITHER an error nor a payload then
       # renders nothing at all. The measured instance was the sentinel's headline
@@ -58,6 +85,15 @@ jobs:
       # positive AND a negative control on synthetic fixtures before reporting, and
       # fails if it inspected nothing.
       - run: node scripts/check-unhandled-third-state.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
       # Responsive flex-basis guard — fails if an inline `flex: "1 1 300px"`
       # sits in a file that also uses a class whose flex-direction CHANGES at a
       # breakpoint. flex-basis sizes the MAIN axis, so a width-basis becomes a
@@ -75,6 +111,15 @@ jobs:
       # vacuously if the CSS parser stops seeing anything — the first cut
       # reported 3 in-scope files when the real number was 32.
       - run: node scripts/check-responsive-flex-basis.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
       # Unbounded-server-read RATCHET — the count of async server page/layout
       # files under app/** that can reach a Supabase read with no budget
       # primitive may only FALL. Fourth occurrence of one class, same error
@@ -89,6 +134,15 @@ jobs:
       # bounding those turns a slow page into an error boundary). Lower the
       # ceiling in the commit that bounds a page; never raise it. Pure node.
       - run: node scripts/check-unbounded-server-reads.mjs
+        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
+        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
+        # shows all six `skipped`. Nothing said the guards had not run; the job simply
+        # named the tsc error. They are independent of tsc and of each other, and are
+        # pure node with no deps, so there is no reason to gate them on it.
+        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        if: ${{ !cancelled() }}
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30
