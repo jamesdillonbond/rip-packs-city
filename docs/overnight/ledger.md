@@ -10,6 +10,80 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (repo only, NOT deployed) — the stub resolver re-attempts the impossible ~8.5×/day, and the counter built to notice that cannot fire
+
+**How it surfaced.** Sweeping for the "green pipeline blind to its own work" shape — `ok = true` on
+every run with `rows_written = 0` — over 48 h. Most hits were heartbeat markers (`rows_written` NULL by
+design: correct). Two had real `rows_found`. One, `pack-events-ingest-backfill`, is a **caught-up forward
+indexer** reporting honestly (`caught_up: true`, `primary_backfill.complete: true`) — **no defect, stated
+so it is not re-investigated.** The other is this.
+
+**Measured.** `resolve-topshot-stubs`: **88 runs in 48 h, every one `ok`, `rows_resolved: 0` on every
+single one.** Each run: `targets_found: 50`, `targets_processed: 50`, `rows_no_change: 50`, and **all four
+skip counters 0** — including `rows_skipped_no_player_data`. ~10.5 s and ~50 Cadence calls per run, so
+**~4,400 Flow REST round-trips per 48 h that change nothing.**
+
+⛔ **MY FIRST HYPOTHESIS WAS REFUTED BY ITS OWN CONTROL, and the refutation is the useful part.** I
+expected the queue to be grinding the same oldest 50 rows forever — `get_topshot_stub_targets` orders by
+`updated_at ASC` and its comment says *"every attempt bumps updated_at via trg_editions_updated, so this
+rotates the whole queue"*, which a no-op upsert would not do. **Wrong:** eligible total **520**, of which
+**520 were touched in the last 48 h**. The rotation works — ~8.5 full passes over the queue per 48 h.
+**The waste is not a starved head row; it is the whole population being retried.**
+
+**Root cause, sampled live off the queue head against mainnet.** The stuck editions are Top Shot
+**Reels** — multi-player highlights. Their on-chain play metadata carries `TeamAtMoment` and **no
+`FullName` at all**:
+
+| external_id | FullName | SetName | keys |
+|---|---|---|---|
+| `118:4151::8` | **null** | 2022-23 Season Rewind | 13 |
+| `101:3358` | **null** | 2023 NBA All-Star | 13 |
+| `102:3903` | **null** | Fit Check | 13 |
+| `100:9085` | "LeBron James" | The Anthology: LeBron James | 30 |
+
+(`PlayType`/`PlayCategory` are both `"Reel"` on the null ones.) **Resolving these is not slow or flaky —
+it is impossible.**
+
+🚨 **The defect is that the counter which exists to say so cannot.** `rows_skipped_no_player_data` guards
+on `!playerName && !setName` — an **AND across two different fields** — and its comment promises to
+*"track them separately so we don't conflate them with Cadence failures"*. A Reel has a perfectly good
+set name, so it sails past that guard into an upsert that COALESCEs to nothing and lands in
+`rows_no_change` — **the same bucket as an edition that was already complete.** So *"we are re-attempting
+the impossible 4,400 times a day"* and *"everything is already up to date"* are **the same number**.
+This is CLAUDE.md's *"a comment stating the contract while the code asserts something weaker"*, in a
+counter rather than a test.
+
+**What shipped (purely ADDITIVE — no existing consumer changes).**
+- `isUnresolvableMissingPlayer(hasPlayerName, resolvedPlayerName)` in
+  `supabase/functions/_shared/topshot-stub-parse.ts` — the **per-FIELD** test the AND-guard cannot
+  express.
+- `rows_no_change_no_onchain_player`, a **SUB-COUNT of** `rows_no_change` (which still increments
+  exactly as before, so nothing keying on it breaks).
+- ⚠ **Deliberately NOT a skip.** The upsert still runs: those plays can carry a circulation, team or
+  series the edition is missing, so suppressing the write would trade a real if small repair for a saved
+  round-trip. **This change makes the waste VISIBLE; it does not yet stop it.** Stopping it needs a
+  "give up" marker column — a migration and a decision, not tonight's work.
+
+**Tests.** Predicate cases + the exact mainnet Reel shape, pinning the blind spot explicitly
+(`andGuardWouldSkip === false` is asserted, so the gap is documented by a test rather than prose), plus
+a source-drift guard in the established import-or-inline style — the resolver's inline classification,
+the sub-counter declaration, and that `rows_no_change` **still** increments. **Proven non-vacuous by
+mutation:** flipping the predicate's `&&` to `||` turns 2 tests red.
+
+⛔ **NOT DEPLOYED, on purpose.** This is an edge function, and edge functions on this project are known
+to have drifted from `main` (26/37 at last count). Deploying a **telemetry-only** improvement — at
+21:45 PT, onto an instance measured at 9 IO waiters — is the wrong trade. `topshot-stub-resolver` is
+**not** one of the five gate-key-blocked functions, so it is deployable whenever a normal edge-fn deploy
+window comes up. **Until it is deployed, the new counter reads NULL in `pipeline_runs`, and the 520
+editions keep being retried.**
+
+**Falsifier for whoever deploys it:** `rows_no_change_no_onchain_player` should come back at or near 50
+per run. If it reads 0 while `rows_resolved` is still 0, the population is NOT Reels and this whole
+diagnosis is wrong.
+
+**Revert path:** `git revert <sha of "fix(stub-resolver): count the editions no Cadence call can ever resolve">`.
+Repo only — nothing deployed, no migration, no data mutation.
+
 ### 2026-08-27 · ✅ SHIPPED (docs + 2 guards) — a reference doc had carried a 46-line copy of ITSELF for two days with every guard green, and that class now has a detector
 
 **Docs + two new test guards + one generator. No route, schema, pipeline or DB change.** Tidy-up pass over
