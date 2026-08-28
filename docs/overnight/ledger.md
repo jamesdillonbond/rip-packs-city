@@ -10,6 +10,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — the wmc chunk writer never retried, and 100% of the 207,287 rows it lost in 7 days were TRANSIENT
+
+**What was wrong.** `upsertWmcChunks` in `lib/chains/flow/wallet-backfill-helpers.ts` called a bare
+`.rpc("upsert_wmc_batch", …)`. A failing chunk was tallied (correctly — the 2026-07-25 work made the
+loss visible) and then **dropped**. There was no retry and no client-side deadline of any kind.
+
+**The measurement that makes this unambiguous.** Grouping `pipeline_runs.extra->>'first_chunk_error'`
+over the `wallet-backfill%` family for the 7 days to 2026-08-28 00:00Z:
+
+| first_chunk_error | chunks | rows lost |
+|---|---|---|
+| `Timed out acquiring connection from connection pool.` | 978 | 188,521 |
+| `canceling statement due to lock timeout` | 32 | 18,766 |
+| **anything else** | **0** | **0** |
+
+**Every single lost chunk was one of two transient errors. Not one was a logic error.** Daily totals
+were 73,671 / 62,332 / 53,696 rows (08-25 / 26 / 27) across ~230 distinct wallets a day. `isTransient`
+in `lib/analytics/rpc-with-retry.ts` **already** classifies both strings as retryable — the loop simply
+never asked it.
+
+**What shipped.**
+1. **New module `lib/chains/flow/wmc-chunk-upsert.ts`.** The tally + chunk writer moved out of
+   `wallet-backfill-helpers.ts`. ⚠ **The split is load-bearing, not tidying:** the helpers module imports
+   fcl / `@onflow/types` / four Cadence modules at module scope, so `app/api/wallet-backfill/route.ts`
+   (Top Shot) could not import the shared writer — and its test suite stubs that module **wholesale**.
+   That is exactly how Top Shot came to carry its own COPY of the loop and the counters. A fix landing
+   only in the helpers would have silently missed Top Shot.
+2. **The writer retries** via `rpcWithRetry` — 3 attempts, 400 ms base (400 ms + 1600 ms of backoff,
+   vs the 50 ms page default; a saturated pool does not clear in a quarter-second and nobody is waiting
+   on this write). `upsert_wmc_batch` is an upsert and both error classes abort **before** commit, so a
+   retry cannot double-write.
+3. **A run-level EXTRA-time ceiling**, `CHUNK_RETRY_RUN_BUDGET_MS = 10_000`. It gates **whether** we
+   retry, never how long an attempt may run — slicing the per-attempt deadline as the budget drains
+   would start cancelling statements Postgres would have answered. Sized against the *tightest* caller
+   (golazos, `maxDuration = 60`), not the typical one. Once spent, chunks fall back to single-attempt,
+   i.e. exactly the old behaviour.
+4. **This adds the first client-side deadline these writes have ever had** (45 s, deliberately above
+   service_role's 30 s `statement_timeout`, so it cannot truncate a statement Postgres would have
+   finished).
+5. **`onRetry` hook on `RetryOptions`** in `rpc-with-retry.ts` — additive, so recoveries can be COUNTED
+   rather than inferred from timing.
+6. **Top Shot's route converted** to the shared tally + writer. Both of its inline `.rpc()` copies are
+   gone; a scripted assertion proves **zero** bare `.rpc("upsert_wmc_batch"` survives anywhere.
+
+**The instrument, because a fix nobody can measure is not finished.** `chunk_retry_recoveries` and
+`chunk_rows_recovered` are now in every run's `extra` — **including as 0 on a clean run**. Absent-vs-zero
+is the distinction that made 8 of 10 saturation breakers unreadable when they logged `extra: {}`; a key
+that appears only when non-zero cannot answer *"how often did retrying save us"*.
+
+⚠ **WHAT THIS DOES NOT CLAIM.** The dominant cause is the seed-wave saturation spell, in which the pool
+stays exhausted far longer than ~2 s of backoff. **PARTIAL recovery is the honest expectation, not full
+recovery.** Read `chunk_rows_recovered` against `chunk_rows_lost` over a few days before anyone calls
+this class closed. The falsifier is concrete: if `chunk_rows_recovered` stays at 0 across a saturation
+window, the backoff is too short for the spell and the answer is elsewhere (fan-out, not retry).
+
+⚠ **`rows_lost` was always an UPPER BOUND on permanent loss, not proven permanent loss** — a later wave
+re-walks the wallet. That does not weaken the case: the write is retried now instead of deferred to a
+full re-walk, and a run whose chunks all recover no longer reports `ok:false`.
+
+**Tests.** `__tests__/wallet-backfill-chunk-tally.test.ts` rewritten: 17 tests pinning the two **real
+production error strings verbatim** (a paraphrase would pass while the real strings still fell through),
+plus controls that the statement-timeout and 42xxx classes are **not** retried, and that an exhausted
+budget falls back to one attempt. **Proven non-vacuous by mutation:** setting `attempts: 3 → 1` turns 3
+tests red; restored and re-verified green. Full suite: **1384 files / 15201 passed**, `tsc --noEmit` clean.
+
+**Revert path:** `git revert <sha of "fix(wallet-backfill): retry transient wmc upsert-chunk failures">`.
+No DB half — code only, no migration, no data mutation.
+
 ### 2026-08-27 · ⚠ ADDENDUM (docs) — the memory-file equilibrium was spent TWICE in the same ten minutes, and the merge landed 107 units OVER
 
 **Docs only. Recorded because the mechanism is structural, not a slip.** Two sessions were editing CLAUDE.md
