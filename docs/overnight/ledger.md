@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ POST-SHIP WATCH RESULT — the pack-pool fix hits its stated prediction almost exactly (32.0% vs 33.3% predicted); candy cron deploy READY; parity holds
+
+**Scheduled watch `trig_018xXrbRfBDZzFyVEf6oWgnS` fired 04:43Z.** All three items answered; nothing
+reverted, nothing new shipped.
+
+**1) Pack-pool fix (`20260828025307`) — CONFIRMED, and the prediction was the point.** Over 25 ticks
+since 02:53:10Z:
+
+| | predicted | measured |
+|---|---:|---:|
+| failure rate | **~33.3%** (1 tick in 3 is the rips tier's slot) | **32.0%** (8/25) |
+| conversions/hour | ~24 | **25.6** |
+
+⭐ **And the failures land where the design says they must:** 02:53, 03:03, 03:18, 03:33, 03:48 — after
+the first, **exactly every 15 minutes**, i.e. every third tick. That is `bucket % 3 = 0` firing as
+specified, not a residual fault. Backlog **368 → 330**; TS dists with pool rows **1,715 → 1,766**,
+**exactly +51, matching `dists_ok` = 51** — an internal consistency check between two independent
+tables.
+
+⚠ **One hypothesis raised and REFUTED during the check.** The first ticks wrote only 3–4 rows per tick
+against a pre-fix ~77 rows/dist, which looked like the newly-reached dists having degenerate pools.
+Controlled against the population instead of against expectation: newly-written dists average **32.1**
+pool rows (median 1, 54% singletons) versus **35.5** (median 1, 59% singletons) for the established
+corpus. **Singleton pools are the norm in this table, not an artifact of the fix.** The coverage is
+real.
+
+⚠ **`pack_drop_pool`'s total row count is NOT a usable check** — it spans all collections and several
+writers. And ⛔ **`min(last_refreshed_at)` per dist is NOT a conversion timestamp**: it is rewritten on
+every refresh, so it reports 64–136 "conversions"/hour including hours *before* the fix. Measure the
+sampler's own `dists_ok`, not the pool table's timestamps.
+
+**2) `candy-editions-ingest` cron move — deploy READY.** `544f3e6c0` (the commit carrying
+`vercel.json`) is production READY with `lambdaRuntimeStats` present. ⚠ Nothing else is verifiable yet:
+**the first run at the new slot is 2026-08-29 01:10Z.** Expect the one-off cadence alarm described in
+known-issues #47; it is the transition plus the 08-27 kill, not a new fault.
+
+**3) `migration-parity` — holds, answered directly rather than by waiting for 07:40Z.**
+`supabase_migrations.schema_migrations` carries **`20260828025307`** /
+`audit_20260828_pool_backfill_rips_tier_cannot_consume_every_tick`, and the committed file's name
+matches. ⚠ Three other `20260828*` FILES exist with no DB row; that is **not** a parity failure —
+the check runs **DB → repo** (a DB row whose name is not committed), and its own header notes prod
+carries far more rows than the repo has versioned files.
+
+**Revert:** nothing to revert; this entry is a measurement.
+
 ### 2026-08-27 · ✅ SHIPPED (code) — a tsc error silently switched SIX CI guards OFF, because they are steps sequenced after it in the same job
 
 **What shipped:** `if: ${{ !cancelled() }}` on the six guard steps in `.github/workflows/ci.yml`'s
