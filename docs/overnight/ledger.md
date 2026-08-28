@@ -169,6 +169,8 @@ regression check passing, not a fix being verified. **Do not upgrade it.**
 
 **Verification:** `npx tsc --noEmit` exit 0 on the synced tree; targeted suites green (194 tests across the 4 touched guards); the full `npm test` exceeds the cloud tool's 10-min budget — one failure surfaced mid-run (`copies the share link … via the clipboard`, a 99 ms clipboard timing in `component-insights-clients-interaction`) and **passes in isolation on both the clean and the patched tree**, so it is load-flake, not this change. CI on `main` is the full-suite verdict; read the JOB. Vercel deploy state for the code commit checked per-commit after push (below).
 
+**✅ POST-SHIP CONTROL (15:31Z):** first post-deploy tick 15:23:06Z wrote BOTH rows — `refresh-pack-grail-metrics-mv-heartbeat` (duration 0, the helper contract) 2 ms before the terminal row (ok, 31.3 s). Heartbeat fires, deploy is serving, and the correlation query now has its first pair. Three consecutive pre-deploy kills (12/13/14Z) had left nothing; the next kill will leave a heartbeat-only row.
+
 **Not touched, stated:** the 60 s `maxDuration` on the grail route (raising it is a cost decision under IO saturation, and the heartbeat is what makes the case measurable); the anon collection-root gate (design); the player-page first-load wedge (single sighting).
 
 
