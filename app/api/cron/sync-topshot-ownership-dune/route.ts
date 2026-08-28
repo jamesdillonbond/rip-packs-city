@@ -38,6 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import { sweepDeadlineSignal } from "@/lib/http/sweep-deadline";
 import {
   readDuneBudget,
   recordDuneUsage,
@@ -64,6 +65,15 @@ const BACKOFF_BASE_MS = 4000; // 4s, 8s, 16s, ... (or Retry-After when present)
 // completion before walking. Bounded so the walk still fits the 750s budget.
 const REFRESH_BUDGET_MS = 300_000; // max wait for the execution to complete
 const REFRESH_POLL_MS = 4000; // status poll interval
+// Held back from HARD_BUDGET_MS for every per-request abort below, so a hung
+// upstream can never consume the headroom the terminal `logRun` needs. Without it
+// the last request eats the whole budget and the lambda is killed before recording
+// anything — the INVISIBLE failure shape, not merely a slow one.
+// The bound is DERIVED from the sweep budget this file already declares rather than
+// chosen for Dune: a request that would outlive the remaining budget is already
+// doomed (the loop stops on its next check), so aborting it cannot turn a working
+// call into a failing one — only a SILENT kill into a LOGGED failure.
+const DUNE_LOG_RESERVE_MS = 30_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -306,6 +316,7 @@ async function run(req: NextRequest) {
             },
             ...(executeBody ? { body: executeBody } : {}),
             cache: "no-store",
+            signal: sweepDeadlineSignal(startedMs, HARD_BUDGET_MS, { reserveMs: DUNE_LOG_RESERVE_MS }),
           });
           // An /execute buys no rows, so `rows` stays NULL — but it is the call
           // that fails with 402 when the cycle is spent, and the ledger is where
@@ -326,6 +337,7 @@ async function run(req: NextRequest) {
                 const stRes = await fetch(`${proxyUrl}/status?execution_id=${encodeURIComponent(execId)}`, {
                   headers: { Authorization: `Bearer ${proxySecret}` },
                   cache: "no-store",
+                  signal: sweepDeadlineSignal(startedMs, HARD_BUDGET_MS, { reserveMs: DUNE_LOG_RESERVE_MS }),
                 });
                 if (!stRes.ok) { refreshNote = `status HTTP ${stRes.status}`; break; }
                 const state = ((await stRes.json()) as { state?: string }).state ?? "";
@@ -388,7 +400,11 @@ async function run(req: NextRequest) {
           try {
             const probeRes = await fetch(
               `${proxyUrl}/results?query_id=${encodeURIComponent(queryId)}&limit=1&offset=0`,
-              { headers: { Authorization: `Bearer ${proxySecret}` }, cache: "no-store" }
+              {
+                headers: { Authorization: `Bearer ${proxySecret}` },
+                cache: "no-store",
+                signal: sweepDeadlineSignal(startedMs, HARD_BUDGET_MS, { reserveMs: DUNE_LOG_RESERVE_MS }),
+              }
             );
             if (probeRes.ok) {
               const pj = (await probeRes.json()) as {
@@ -451,6 +467,7 @@ async function run(req: NextRequest) {
           res = await fetch(url, {
             headers: { Authorization: `Bearer ${proxySecret}` },
             cache: "no-store",
+            signal: sweepDeadlineSignal(startedMs, HARD_BUDGET_MS, { reserveMs: DUNE_LOG_RESERVE_MS }),
           });
           if (res.status !== 429) break;
           if (attempt === MAX_429_RETRIES) break; // exhausted retries -> abort below

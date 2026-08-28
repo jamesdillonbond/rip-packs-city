@@ -34,12 +34,54 @@
 // operator, an opening bracket, a comma, or a keyword, but NOT an identifier,
 // a number, `)` or `]` (those mean division).
 //
-// ⚠ KNOWN AND DELIBERATE BOUNDARY — `${...}` inside a template literal is
-// copied verbatim, NOT re-parsed. A `//` inside an interpolation is preserved
-// rather than stripped. That is the safe direction (this stripper's failure
-// mode must be KEEPING too much, never blanking too much), and
-// strip-comments.test.mjs pins it so the boundary is visible rather than
-// silent. Do not "fix" it into recursive parsing without re-measuring.
+// ── DEFECT 3 (found 2026-08-27): the "verbatim interpolation" boundary was NOT
+//    the safe direction, and it blanked real source ─────────────────────────
+// This header used to say `${...}` was copied verbatim rather than re-parsed,
+// and called that "the safe direction (KEEPING too much, never blanking too
+// much)". 🚨 **That claim was false, and it is the reason the boundary is now
+// gone.** Copying an interpolation verbatim means a NESTED template literal
+// inside it — the single commonest shape in this repo's HTML email builders —
+// CLOSES the outer template:
+//
+//     ${a != null ? `<tr><td>${fmt(a)}</td></tr>` : ""}
+//      ^ still `tpl`   ^ read as the CLOSING backtick of the OUTER literal
+//
+// From there the machine is in `code` INSIDE HTML text, where `/` in `</td>`
+// opens a regex literal and `//` in a URL opens a line comment. The state then
+// ping-pongs `tpl -> regex -> code -> regex` for the rest of the file, and BOTH
+// failure directions occur at once:
+//
+//   * comments are left INTACT (a guard reads its own explanation as evidence —
+//     the exact trap this helper exists to prevent; measured on
+//     app/api/check-alerts/route.ts line 80, filed 2026-08-27T0500Z with the
+//     root cause NOT found and four hypotheses falsified), and
+//   * real source is BLANKED (line 100 of the same file, the Telegram
+//     sendMessage URL, cut at `https:` — so a guard sweeping for unbounded
+//     `fetch()` calls could not see the call it was looking for).
+//
+// Both symptoms are ONE desync. Measured before the fix: **9 files left the
+// machine in a non-`code` state at EOF**; after it, 8, all of them DEFECT 4
+// below. Interpolations are now parsed as code via an explicit nesting stack
+// (`tplStack`), which is what the old note meant by "recursive parsing" — done
+// with the re-measurement it asked for.
+//
+// ⚠ CONSEQUENCE, deliberate: a `//` comment inside `${...}` IS now stripped.
+// That is correct JS, and the pinned boundary test was updated (not deleted) to
+// assert the new behaviour with the old stripper kept as a negative control.
+//
+// ── DEFECT 4 (KNOWN, UNFIXED, measured 2026-08-27): JSX TEXT IS NOT JS ─────
+// ⚠ This is a JS/TS parser, and it is also run over `.tsx`. In JSX *text* an
+// apostrophe is prose, not a string delimiter — so `<p>Couldn't load</p>` opens
+// an `sq` state that runs to the next apostrophe, possibly hundreds of lines on.
+// **8 files in this repo end in a non-`code` state for this reason** (7 `sq`,
+// 1 `dq`); `__tests__/strip-comments-shared-helper.test.ts` pins the population
+// so it is visible rather than silent, and names them.
+//
+// ✅ Unlike DEFECT 3, this one fails in the SAFE direction: inside `sq`/`dq`
+// everything is copied verbatim, so the machine KEEPS too much (comments survive)
+// and never blanks code. A guard may therefore over-report on those 8 files; it
+// cannot go blind on them. Fixing it needs real JSX awareness — do not attempt
+// it without a fresh measurement and the same paired negative controls.
 //
 // Blanking rule: removed characters become spaces and newlines are preserved,
 // so byte offsets and LINE NUMBERS survive. Callers report positions.
@@ -59,6 +101,13 @@ export function stripComments(src) {
   let i = 0
   /** @type {"code"|"line"|"block"|"sq"|"dq"|"tpl"|"regex"|"class"} */
   let state = "code"
+  // Template-literal nesting. Each `${` inside a template pushes a frame and
+  // returns to `code`; the matching `}` pops back to `tpl`. Without this the
+  // machine cannot tell an interpolation's braces from ordinary ones, and a
+  // nested template literal inside `${...}` silently CLOSES the outer one.
+  // See DEFECT 3 in the header.
+  /** @type {number[]} */
+  const tplStack = []
   const BS = String.fromCharCode(92) // backslash, written this way so this
                                      // file contains no literal `\/` sequence
 
@@ -87,6 +136,15 @@ export function stripComments(src) {
       if (c === "'") state = "sq"
       else if (c === '"') state = "dq"
       else if (c === "`") state = "tpl"
+      else if (tplStack.length > 0 && c === "{") tplStack[tplStack.length - 1]++
+      else if (tplStack.length > 0 && c === "}") {
+        if (tplStack[tplStack.length - 1] === 0) {
+          // Closes the interpolation: back into the template literal that owns it.
+          tplStack.pop(); state = "tpl"
+          out += c; i++; lastSig = c; word = ""; continue
+        }
+        tplStack[tplStack.length - 1]--
+      }
 
       if (/[A-Za-z0-9_$]/.test(c)) word += c
       else if (!/\s/.test(c)) word = ""
@@ -122,6 +180,11 @@ export function stripComments(src) {
 
     // sq | dq | tpl — copy verbatim, honour escapes
     if (c === BS) { out += src.slice(i, i + 2); i += 2; continue }
+    if (state === "tpl" && c === "$" && d === "{") {
+      // Enter the interpolation as CODE, remembering the template to return to.
+      tplStack.push(0); state = "code"
+      out += src.slice(i, i + 2); i += 2; lastSig = "{"; word = ""; continue
+    }
     if ((state === "sq" && c === "'") || (state === "dq" && c === '"') || (state === "tpl" && c === "`")) {
       state = "code"; lastSig = c; word = ""
     }

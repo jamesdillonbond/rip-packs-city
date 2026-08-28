@@ -44,9 +44,28 @@ const API_DIR = join(process.cwd(), "app", "api")
 /**
  * Current count of unbounded `fetch(` sites in `after()` + `maxDuration` routes.
  *
- * **21** as of 2026-08-27, after that evening bounded candy-listings,
- * candy-sales (+ the shared `dasCall`), sales-indexer, alerts-send,
- * check-alerts, and all FOUR `*-listing-cache` routes.
+ * **11** as of 2026-08-28, after bounding all THREE `*-dune` routes (10 sites:
+ * `/execute`, `/status`, `/results` and the ownership probe) via the new shared
+ * `sweepDeadlineSignal()` in lib/http/sweep-deadline.ts.
+ *
+ * ⭐ Those bounds are DERIVED, not chosen. The filing warns that "a short cap
+ * converts working behaviour into failure", which is a real risk whenever the
+ * cap is a guess about the upstream — and there was nothing to guess FROM here:
+ * all three routes are currently drained (`windows_done: 0`), so `pipeline_runs`
+ * holds no fetch timings at all. Rather than assume an unmeasured number is
+ * small — the error the 2026-08-27 handoff names as its headline lesson — each
+ * signal is derived from `HARD_BUDGET_MS`, the sweep deadline the route already
+ * declares and already checks between iterations. A request that would outlive
+ * the remaining budget is already doomed, so aborting it cannot turn a working
+ * call into a failing one; it can only turn a SILENT kill into a LOGGED failure.
+ *
+ * **21** was the count as of 2026-08-27, after that evening bounded
+ * candy-listings, candy-sales (+ the shared `dasCall`), sales-indexer,
+ * alerts-send, check-alerts, and all FOUR `*-listing-cache` routes.
+ *
+ * ⚠ The 21 → 11 step is 10 sites, and it was corroborated by THREE independent
+ * detectors agreeing exactly (this ratchet, an ad-hoc paren-balancing walk, and
+ * the count in the diff), not by one instrument read three times.
  *
  * ⚠ Do NOT compare this to the "29" quoted in the inbox filing. That figure came
  * from the ad-hoc regex sweep this file replaced, which required `;` or a
@@ -59,7 +78,7 @@ const API_DIR = join(process.cwd(), "app", "api")
  * ⛔ DOWN ONLY. If this needs to go UP, the change is adding a new invisible
  * failure mode — bound the call instead.
  */
-const RATCHET = 21
+const RATCHET = 11
 
 // ⚠ `stripComments` is IMPORTED from scripts/lib/strip-comments.mjs, never re-implemented.
 // It is load-bearing here twice over: without it the comment ABOVE a bounded
