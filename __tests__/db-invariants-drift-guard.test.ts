@@ -913,8 +913,10 @@ const PINS = [
   // 0% high/med share reads as WORST. Pinned, not endorsed.
     fn: "rpc_thp_leg_fmv_coverage",
     test: "supabase/tests/rpc_thp_leg_fmv_coverage.sql",
+    // Re-pinned 2026-08-28 onto the R41 all-rows-denominator migration (the
+    // canonical-only filter is gone; both TS metrics changed denominator).
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260828225605_audit_20260828_r41_fmv_coverage_leg_all_rows_denominator.sql",
   },
   {
   // Parallel-only, known-circulation-only. Both filters asserted in both directions:
