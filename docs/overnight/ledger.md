@@ -10,6 +10,70 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (docs + 2 guards) — a reference doc had carried a 46-line copy of ITSELF for two days with every guard green, and that class now has a detector
+
+**Docs + two new test guards + one generator. No route, schema, pipeline or DB change.** Tidy-up pass over
+the memory system itself rather than its contents.
+
+🚨 **THE DEFECT: `docs/reference/routes-and-surfaces.md` was 42% duplicate.** A scripted insert on
+2026-08-25 (`3592f1d6d`) split a bullet **mid-token** and pasted a 46-line copy of the file's own opening —
+header comment, first `## ` section and all — into the middle of it. The file ended a sentence with
+`then a \`^[0-9]+` followed by a document header, and carried two copies of half its content. ⚠ **Every
+guard stayed green for two days:** the link guard checks link TARGETS, the retired-rule guard checks
+ABSENCES, coverage has no opinion about markdown. **It was found by eye, and "someone will notice" is not a
+detector.**
+
+✅ **REPAIRED, AND THE REPAIR IS PROVED RATHER THAN ASSERTED.** The removed block was asserted
+line-by-line identical to the copy it duplicated *before* deleting it; the split bullet was rejoined; and a
+set-difference over unique non-empty lines, pre vs post, returns **exactly two** — the two halves of the
+split line, now merged into one. **Nothing else was lost.** ⭐ **The characters destroyed at the seam were
+restored from the SOURCE, not guessed:** the bullet's regex reads `/^[0-9]+$/` in
+`lib/collections.ts:445`, and the line now cites that location.
+✅ **Second instance found by the same sweep:** `claude-md-condensed-originals.md` carried the same
+"Displaced 2026-08-23" section **twice**; removed after proving the two quotes identical under whitespace
+normalisation. 171 → 124 lines and 348 → 343 lines respectively.
+
+⭐ **NEW GUARD — `memory-docs-have-no-duplicated-blocks`.** Three signals, each a **ban at zero**: the
+extraction header appearing more than once · a repeated `## ` heading inside one file · the extraction
+header appearing anywhere but a line start. It **walks the tree** (`docs/reference`, `docs/strategy`)
+rather than a curated list, and **asserts the file count it inspected**, because a walk matching nothing
+would otherwise pass every case. ✅ **BOTH failure modes proven on the REAL tree, not a fixture** — a
+duplicate heading appended to a live doc reddens it, a fused header reddens two cases, and the tree is green
+on restore. ⚠ **The first draft was too broad and is recorded rather than quietly narrowed: "no prose before
+any `<!--`" false-positived on `testing-and-ci.md`, which documents the inline `retired-rule:allow` marker
+in running prose. A guard that fires on the thing it documents is noise.**
+
+⭐ **NEW — the register now has a STATUS INDEX (`npm run docs:issues-index`, guarded).**
+`known-issues.md` is the canonical open list and had **45 numbered items in one ~80 KB section**, **15 of
+them reading RESOLVED / CLOSED / SHELVED / RETIRED in their own first sentence while sitting under
+`### Open`**. ⛔ **Nothing was moved or renumbered** — the ledger, `focus.md`, inbox filings, CLAUDE.md and
+migration record files all cite items by number, so re-sorting breaks every citation. The index is additive
+and **derives status from each item's own first sentence**, so it cannot silently disagree with the item.
+⚠ **The closed/partial boundary is the trap it is unit-tested on: "PARTLY RESOLVED" contains "RESOLVED".**
+Guard `known-issues-index-lists-every-item` is a ban at zero in **both** directions (missing row hides an
+item; dangling row asserts one that does not exist) plus byte-identity against a fresh regeneration —
+✅ **proven able to fail: inserting a real item without regenerating turns `--check` red (exit 1).**
+⚠ **`closed` there means the item SAYS it is closed; it is not a re-verification.**
+✅ **And `### Resolved (verified 2026-05-23)` is now marked CLOSED TO NEW ENTRIES** — because moving one
+broke it: item #8 sat there while REGRESSED and *"anyone enumerating the Open list never saw it"*.
+
+**Navigability, same pass:** `roadmap-status.md` gained a *How to read this file* table and its five older
+headline blocks are now prefixed **[SUPERSEDED]** — ⚠ **its FIRST section is its OLDEST material** (the
+08-03 framing), which is now stated at the top instead of being discovered.
+
+✅ **Swept and found CLEAN, stated so the next pass does not redo it:** **158** relative links across
+`CLAUDE.md` + `docs/reference` + `docs/strategy` + `focus.md` all resolve · no conflict markers anywhere ·
+no stray `.bak`/`.orig`/scratch files tracked · **every** `docs/reference/*.md` is reachable from CLAUDE.md's
+index · `memory:retired:check` 6 retired rules absent from 33 surfaces · `skills:bundles:check` 9/9 ·
+no other doc carries its header twice.
+
+**Gates:** full suite **1,384 → 1,386 files / 15,195 → 15,208 tests, green**; primary coverage gate
+**exit 0** (statements 92.2%, branches 79.91%, functions 93.95%, lines 94.2%).
+
+**Revert:** `git revert` this commit. It restores the duplicated blocks as a side effect — if that is ever
+wanted, revert only `__tests__/`, `scripts/gen-known-issues-index.mjs` and `package.json`.
+
+
 ### 2026-08-27 · ✅ SHIPPED (code) — the Pinnacle mega-wallet recovery path blows the SAME computation limit it exists to recover from, and the ceiling is wallet-dependent
 
 **Symptom.** `wallet-backfill-pinnacle` logged **`all_pagination_chunks_failed` on 29 runs in 24 h**.

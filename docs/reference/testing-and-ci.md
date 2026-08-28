@@ -3,6 +3,57 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## Memory docs carry no duplicated blocks (`memory-docs-have-no-duplicated-blocks`, added 2026-08-27)
+
+🚨 **A scripted insert duplicated half a reference doc and NOTHING SAW IT FOR TWO DAYS.** On 2026-08-25
+(`3592f1d6d`) an edit to `routes-and-surfaces.md` split a bullet **mid-token** and pasted a 46-line copy of
+the file's own opening — header comment, first `## ` section and all — into the middle of it. The file
+carried two copies of half its content and a sentence ending `then a \`^[0-9]+` followed by a document
+header. **Every guard in the repo stayed green**: the link guard checks link TARGETS, the retired-rule guard
+checks ABSENCES, coverage has no opinion about markdown. ⭐ **It was found by eye during a tidy-up, and
+"someone will notice" is not a detector** — hence this one.
+
+**Three signals, each a BAN AT ZERO because none has a legitimate instance:** the extraction header
+appearing **more than once** in a file (the 08-25 fingerprint) · a **repeated `## ` heading** inside one
+file (how the SECOND instance was found the same day — `claude-md-condensed-originals.md` carried the same
+"Displaced 2026-08-23" section twice, its quote identical after whitespace normalisation) · the extraction
+header appearing **anywhere but the start of a line** (the seam itself).
+
+⚠ **It walks the TREE (`docs/reference/**`, `docs/strategy/**`), not a curated list**, and **asserts the
+number of files it inspected** — a walk that silently matched nothing would otherwise pass every case.
+✅ **Both failure modes proven on the real tree, not a fixture:** appending a duplicate `## ` heading to a
+live doc reddens it, and fusing the header onto a line of prose reddens two of the four cases; the tree is
+green again on restore.
+
+⚠ **THE FIRST DRAFT WAS TOO BROAD AND IS WORTH RECORDING.** The seam check originally read *"no prose before
+any `<!--` on a line"* and **false-positived on this very file**, which documents the inline
+`<!-- retired-rule:allow <id> -->` marker in running prose — a marker whose entire design is to sit at the
+END of a line. **A guard that fires on the thing it documents is noise**, so it was narrowed to the one
+comment that is structurally a document header and can never legitimately appear mid-line.
+
+## The known-issues register carries a generated STATUS INDEX (`npm run docs:issues-index`, added 2026-08-27)
+
+**The register is the canonical open list, and it had 45 numbered items in one ~80 KB section with no way to
+see them at a glance — 15 of which read RESOLVED / CLOSED / SHELVED / RETIRED in their own first sentence
+while sitting under the heading `### Open`.** ⭐ **That mismatch has already cost sessions, in the opposite
+direction: item #8's own text records that it "sat under a Resolved heading, so anyone enumerating the Open
+list never saw it".**
+
+⛔ **The fix is deliberately NOT to move or renumber anything.** The ledger, `focus.md`, inbox filings,
+CLAUDE.md and migration record files all cite items by number, so re-sorting breaks every citation. The
+index is **additive**: number → status → title, between generated markers, with the body untouched.
+
+⚠ **Status is DERIVED from each item's own first sentence**, never curated — so the index cannot silently
+disagree with the item, and a row that reads wrong means the ITEM's opening words are wrong. The
+closed/partial boundary is the trap the derivation is unit-tested on: **"PARTLY RESOLVED" contains
+"RESOLVED"**, and a re-opened item names its own resolution history while still being open.
+
+**Guard: `known-issues-index-lists-every-item`** — a ban at zero checked in BOTH directions (a missing row
+hides an item; a dangling row asserts one that does not exist), plus byte-identity against a fresh
+regeneration, plus an assertion that it inspected a non-zero population. ✅ **Proven able to fail on the real
+file:** inserting a real item without regenerating turns `--check` red (exit 1) and reddens three cases.
+⚠ **`closed` in that index means the item SAYS it is closed — it is not a re-verification.**
+
 ## Retired rules must not survive in live memory (`npm run memory:retired:check`, added 2026-08-24)
 
 ⭐ **Built because every fact corrected during the 2026-08-24 memory refresh was wrong on MORE THAN ONE

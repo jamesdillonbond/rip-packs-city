@@ -2,6 +2,28 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## How to read this file (added 2026-08-27)
+
+**Newest first, and only the FIRST dated block is current.** Every other headline block carries
+**[SUPERSEDED]** in its heading — they are kept because their *reasoning* is often still right even when
+their *values* are not, which is this file's standing convention. ⚠ **A superseded block's numbers must
+never be quoted; its cautions still apply.**
+
+⚠ **The section immediately below — "Prioritized next actions" — is the OLDEST material in this file
+(2026-08-03 framing with a 2026-08-13 update), and it sits first for historical reasons, not because it is
+current.** Its *framing* still binds (intelligence-first; read-only product; monetization tabled until 50+
+WAU); its *measurements* were superseded five times over. **For any number, scroll to the first
+`⭐ HEADLINE METRIC` block instead.**
+
+| what you want | where it is |
+|---|---|
+| the current accuracy / demand / ops numbers | the first `⭐ HEADLINE METRIC …` block below |
+| the standing product framing and gates | "Prioritized next actions", immediately below |
+| the plan itself | [docs/strategy/roadmap-2026-08-03.md](../../docs/strategy/roadmap-2026-08-03.md) |
+| open defects and their status | [known-issues.md](known-issues.md) (it now carries a STATUS INDEX) |
+
+---
+
 ## Prioritized next actions
 
 **The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](../../docs/strategy/roadmap-2026-08-03.md) (supersedes roadmap-2026-07-18).** Its thesis: **accuracy is the GATE, not a phase** — "zero users is the correct output of the current input," so every growth tactic is removed rather than demoted until the data beats the sites collectors already use. The new **headline metric is the share of prices at HIGH/MEDIUM confidence** (measured 08-03: Golazos 0.7%, AllDay 6.3%, UFC 3.2%, Top Shot 17.3%, Candy 60.8%). The $0.50 dust-floor removal (`3809425b`) was the first big accuracy lever landed under this framing — it reached only ~1,000 editions until 2026-08-03 because the `fmv-recalc` sweep cursor never advanced past page 0 (`484d08d7`), so measure any accuracy number AFTER a full sweep completes, not before. **✅ The sweep is now confirmed COMPLETE and roadmap §5.1 "dust-floor post-ship verification" is CLOSED (`cbe019fb`, 2026-08-04) — this was the only item blocking Gate 1.** In the trailing 24h **13,605 distinct editions** recalced (> the ~11,606 traded population), and the full-cohort ratios landed on the unfloored `cold-tail` control: Top Shot 4,295 eds **median 1.000 / p90 1.176 / >2× 16 (0.37%)** (was 1.110 / 2.576 / 461 floored), All Day 0.979 / 1.333 / 1.2%, Candy 1.051 / 1.151 / 0. The `fmv_apply_thin_sale_haircut` cohorts converged (TS 249→13 eds, ratio 1.800→0.717), confirming the haircut was a symptom not a second defect; this also resolves the §5.3 "9.2% of liquid TS editions >2×" item to **0.37%**. ✅ **The HIGH/MEDIUM confidence SHARES have now BEEN re-measured (2026-08-13) and the 08-03 figures above are the stale baseline, not current.** The flag this line used to carry — "still pre-sweep and genuinely due a re-measure" — is CLOSED: `cbe019fb` had re-measured the FMV-vs-median accuracy RATIOS, not this. Post-sweep: **Top Shot 17.3% → 54.5%**, **All Day 6.3% → 27.7%**, Candy 60.8% → 60.0%, Golazos 0.7% → 0.9%, UFC 3.2% → 0.0%, plus **Disney Pinnacle 30.3%** (never previously measured). Top Shot's `% priced >30d stale` also went **19.8% → 0.0%**. ⚠ **Read it from `public.rpc_trust_health_precompute`** (metrics `<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **do NOT call `rpc_fmv_confidence_share()` to refresh it**, which blows a 60 s statement budget on the live instance and is exactly why the precompute leg exists; a value of **999 is that leg's failure sentinel, not a percentage**. ⚠ **UFC's 0.0% is NOT a regression to fix** — the market closed and 96.3% of its prices are >30 d stale, so zero IS the honest confidence label; the roadmap's "the only correct product answer is a label" stands. ⚠ **And roadmap §6's target moved with the metric**: "All Day → the Top Shot band or better" is still OPEN despite All Day quadrupling, because Top Shot tripled in the same window — the gap is still ~2×. Full dated block + the denominator caveat: [roadmap §3.1](../../docs/strategy/roadmap-2026-08-03.md). Gate-1 status re-verified live 2026-08-03 evening: Candy `wmc.fmv_usd` denorm **DONE** (25,375 rows, 0 NULL); Golazos shells **draining** (4,249 → 3,905); UFC dead-market labelling is shipped for SEO (`lib/market-closed.ts` → `lib/seo.ts`) and the rendered `MarketplaceStatusBanner` covers overview/collection/sniper/edition — the residual gap is only UFC's `analytics` + `sets` tabs. Prior framing still binds where not superseded: go-live is DONE (public un-gate 2026-07-17); no paywall/Stripe until 50+ WAU; no infra spend pre-revenue; verify pages by **rendered DOM, not HTTP 200** (streaming shells always return 200).
@@ -91,7 +113,7 @@ a stale number from a re-verified one.** n = 2 is still 4% of the 50+ WAU gate a
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-08-27 09:55 PT (16:55Z) (supersedes the 08-26 block below)
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-08-27 09:55 PT (16:55Z) (supersedes the 08-26 block below)
 
 Read the documented way: straight from `public.rpc_trust_health_precompute`
 (`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
@@ -121,7 +143,7 @@ with `*_fmv_stale_hours` = 0.1 — i.e. **fresh, not a coverage loss**. Two inst
 distribution, and it is the smallest population here.** ⛔ **UFC 0.0% remains CORRECT and permanent**
 (market closed) and **Golazos ~0.3% remains a liquidity ceiling, not a defect.** Neither is a queue.
 
-## ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-26 19:00 PT (supersedes the 08-24 canonical block below)
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-26 19:00 PT (supersedes the 08-24 canonical block below)
 
 Read straight from `public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
 `rpc_thp_leg_fmv_coverage`) — **never by calling `rpc_fmv_confidence_share()`**, which blows a 60 s budget on
@@ -176,7 +198,7 @@ and **Vercel Web Analytics is still not enabled**, so there is still no independ
 
 ---
 
-## ⭐ CANONICAL-LEG RE-READ, 2026-08-24 ~15:35Z (08:35 PT) — a same-day second sample, and it MOVED
+## [SUPERSEDED] ⭐ CANONICAL-LEG RE-READ, 2026-08-24 ~15:35Z (08:35 PT) — a same-day second sample, and it MOVED
 
 Read straight from `rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
 `rpc_thp_leg_fmv_coverage`, 1.75 h old at read time) — **never by calling `rpc_fmv_confidence_share()`**,
@@ -205,7 +227,7 @@ liquidity ceiling, not a defect — do not chase either.
 
 ---
 
-## ⭐ Headline metric AND demand — measured 2026-08-24 02:00–03:35Z (supersedes 08-22 for the all-keys denominator)
+## [SUPERSEDED] ⭐ Headline metric AND demand — measured 2026-08-24 02:00–03:35Z (supersedes 08-22 for the all-keys denominator)
 
 ### The accuracy gate, all-keys denominator (`fmv_current`)
 
@@ -257,7 +279,7 @@ saw one"*, not *"human"*.
 
 ⚠ Dated samples. `fmv_current` is delete-then-insert and the LOW cohort churns ±10% over hours. Re-derive.
 
-## Headline metric — re-measured 2026-08-22 (supersedes the 08-13 figures above)
+## [SUPERSEDED] Headline metric — re-measured 2026-08-22 (supersedes the 08-13 figures above)
 
 ⚠ **The 2026-08-13 shares quoted earlier in this file are now the stale baseline.** Read live from
 `public.rpc_trust_health_precompute` (metrics `<collection>_fmv_high_med_share_pct`, written by

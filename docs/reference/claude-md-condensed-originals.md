@@ -341,11 +341,6 @@ CLAUDE.md's header keeps the rule and points here for the two shapes that taught
 > a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed
 > but UNAPPLIED" note goes stale the moment someone applies it
 
-## Displaced 2026-08-23 — the "a recorded correction has a shelf life" examples (verbatim)
-
-CLAUDE.md keeps the rule and points here for the two shapes that taught it:
-
-> a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it
 
 
 ## Displaced 2026-08-27 — the `REVOKE … FROM PUBLIC` bullet (Database section)

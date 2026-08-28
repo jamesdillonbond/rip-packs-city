@@ -59,54 +59,7 @@ dapper.market publishes a real per-EDITION page keyed by the numeric on-chain ed
   kind nobody re-checks: ONE confirmed `/nfl/edition/<id>` page closes it**, and the test file's null-case
   line must be deleted in the same edit (that deletion is the prompt to verify first).
 - **Two gates, not one:** the league seg map decides WHICH collections have an edition page, then a
-  `^[0-9]+<!-- Extracted from CLAUDE.md on 2026-08-17 to bring that file under the memory-file
-char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
-Same rules apply: every number here is a dated sample - re-measure before quoting. -->
-
-## ⚠ THREE switches mean "live", and they are DESIGNED to disagree
-
-**`collections.is_active` is NOT the public-visibility switch.** Read as one, it says the opposite of
-the truth for any partially-launched collection, and acting on it takes a live public surface dark.
-
-| switch | governs |
-|---|---|
-| `collections.is_active` (Postgres) | RLS-gated anon PostgREST reads, ~11 cross-collection rollups, the smoke freshness grader |
-| `published` on the entry in `lib/collections.ts` | nav, collection switcher, footer links, the `/<collection>/*` tab routes |
-| `*_PUBLIC` in [lib/launch-flags.ts](../../lib/launch-flags.ts) | the `/insights/<board>` page + its public JSON + its OG card, enforced in `proxy.ts` |
-
-**A partial launch — insights board shipped, collection surfaces not — is a legitimate deliberate
-state**, and as of 2026-08-22 it is the state BOTH `candy_mlb` and `panini_blockchain` are in:
-`is_active = false` in Postgres while `CANDY_MLB_PUBLIC` and `PANINI_PUBLIC` are **both `true`**, so
-both boards are reachable, indexed and in the sitemap.
-
-⚠ **The DB flag is the one you find FIRST and it answers a DIFFERENT question.** Measured 2026-08-22
-while ranking the disk-IO budget: `panini_squeeze_board` + the `candy_*` boards are **605 GB / 7.75% of
-all database disk reads**, and `is_active = false` on both collections makes "unlaunched boards nobody
-can see" the obvious conclusion. It is wrong, and a session came one step from filing it and
-recommending both be dropped from `WARM_BOARDS`. **Anyone auditing cost, dead code or "unused"
-collections walks into this.** The full go-live ordering for a partial launch is recorded in the Candy
-paragraph of [chain-strategy.md](chain-strategy.md) — accurate, but buried where a cost audit will
-never look, which is why it is restated here.
-
-## Route structure
-
-Feature pages live at `app/(collections)/[collection]/`. The layout at that level provides header, nav, and ticker — pages must NOT include standalone headers.
-
-The `[collection]` dynamic segment serves all 5 published collections: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike. Each collection's page set is its `pages: [...]` array in `lib/collections.ts`, but since the **2026-07-18 IA reorg** the TOP BAR renders `tabBarPages()` = `pages` minus `TAB_BAR_HIDDEN_PAGES` (`packs`, `pack-sniper`, `hot-floors`, `challenges`) — those stay registered pages so every gate, capability check, and collection-switch keeps working; only the tab bar hides them. Per-collection `pages` (verified 2026-07-18):
-
-- **All 5 published:** `overview`, `collection`, `sniper`, `analytics`.
-- **`market` + `packs`:** all except UFC (Pinnacle gained both in the IA reorg).
-- **`sets`:** all except Pinnacle.
-- **`pack-sniper`:** Top Shot + AllDay only.
-- **`challenges` + `hot-floors` + `play`:** Top Shot only.
-
-**How the folded pages are reached (IA reorg conventions):** the **Moments | Packs sub-toggle** (`components/collection/PackSubNav.tsx`) mounts under the Collection / Market / Sniper tabs and is URL-param driven — `?section=packs`, NOT nested routes, so sub-views stay deep-linkable and the parent tab keeps highlighting (the market page already owns `?view=` for grid/table, which is why the toggle uses `?section=`). "Moments" is relabeled "Pins" for Pinnacle. Top Shot's `play` tab is the **Play hub** (`play/` route dir) fronting Challenges, Fast Break, and Road to the Ring. `components/collection/FeatureTabGate.tsx` (used by `market/layout.tsx` + `sets/layout.tsx`) gates those routes for collections that don't list the page.
-
-**Market vs Sniper split (Trevor, 2026-07-18): Market is EDITION-level (one row per edition; AllDay via RPC `get_allday_market_editions`; Pinnacle via the render-keyed live-listings source reusing `computePinnacleSniperFeed`), Sniper is SERIAL-level (individual listings).** Market defaults to Price ascending.
-
-Top Shot's Fast Break and RTR (Road to the Ring) game features live at `fast-break/` + `road-to-the-ring/` route dirs — still not registry tabs themselves (they appear in no `pages` array; the `play` hub links to them). Entity/detail routes under `[collection]` (also not tabs): `edition`, `moment`, `set`, `series`, `player`, `team`, `pack`, `profile`. There is NO standalone `badges` tab — the page type lingers in `lib/collections.ts` but no collection lists it and `/[collection]/badges` 307-redirects to `/overview` (badges render inline on edition/moment pages via `get_edition_badges_unified`).
-
- test decides whether THIS id may sit in an `/edition/<id>` path — so a composite (Top Shot) or
+  `/^[0-9]+$/` test (`lib/collections.ts:445`) decides whether THIS id may sit in an `/edition/<id>` path — so a composite (Top Shot) or
   slug-form (UFC / Candy) external_id can never reach that path however the map grows. Mutation-checked:
   deleting the numeric gate reddens exactly one test.
 - The CTA is suppressed on a **closed market** (`isMarketClosed`), so a future map entry cannot resurrect a

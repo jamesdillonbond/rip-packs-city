@@ -29,7 +29,8 @@
     "skills:pack": "node scripts/pack-cowork-skill.mjs",
     "memory:retired:check": "node scripts/check-retired-rules.mjs",
     "inbox:index:fix": "node scripts/fix-inbox-index-counts.mjs",
-    "inbox:index:check": "node scripts/fix-inbox-index-counts.mjs --check"
+    "inbox:index:check": "node scripts/fix-inbox-index-counts.mjs --check",
+    "docs:issues-index": "node scripts/gen-known-issues-index.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
