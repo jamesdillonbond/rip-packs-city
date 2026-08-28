@@ -1,3 +1,4 @@
+-- anon-exec: intentional — snapshot re-create with the same signature; ACL preserved (SECURITY DEFINER, anon and authenticated EXECUTE both false, verified live 2026-08-28) (aggregate_saved_wallet_stats)
 CREATE OR REPLACE FUNCTION public.aggregate_saved_wallet_stats(p_user_id uuid, p_wallet_addr text)
  RETURNS integer
  LANGUAGE plpgsql

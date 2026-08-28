@@ -1,3 +1,6 @@
+-- anon-exec: intentional — snapshot re-creates with SAME signatures preserve the revoked ACLs; verified post-apply anon EXECUTE false on all three (remap_topshot_split_resolved_subeditions)
+-- anon-exec: intentional — same snapshot rationale as above (remap_topshot_realign_miskeyed_subeditions)
+-- anon-exec: intentional — same snapshot rationale as above (refresh_topshot_conflated_editions_detector_only)
 -- audit_20260828_r55_conflated_step_timeouts_beat_the_gateway
 -- R55 (deep-audit run 4): drain-conflated-subeditions has failed 4 consecutive daily
 -- ticks since 08-24 with 'upstream request timeout'. Mechanism (proven from extra.step_ms):

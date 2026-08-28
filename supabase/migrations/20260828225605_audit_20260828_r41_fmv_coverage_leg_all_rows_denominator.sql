@@ -1,3 +1,4 @@
+-- anon-exec: intentional — snapshot re-create with the SAME signature, which preserves the existing revoked ACL; verified post-apply: anon EXECUTE false, secdef drift 0 (rpc_thp_leg_fmv_coverage)
 -- audit_20260828_r41_fmv_coverage_leg_all_rows_denominator
 -- R41 consequence (Trevor decision, 2026-08-28): the accuracy-gate metric's Top Shot
 -- denominator is ALL ROWS, not canonical-only. This drops the 2026-08-04 canonical

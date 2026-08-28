@@ -1,3 +1,4 @@
+-- anon-exec: intentional — snapshot re-create, same signature, ACL preserved (SECURITY DEFINER, anon+authenticated EXECUTE false, verified post-apply) (get_topshot_pool_backfill_targets)
 -- audit_20260828_r56_known_empty_dists_get_one_daily_slot
 -- R56 (deep-audit run 4): the pool-backfill sampler re-draws PERMANENTLY-EMPTY
 -- distributions ~12x/hour forever. The 17 dists recorded in

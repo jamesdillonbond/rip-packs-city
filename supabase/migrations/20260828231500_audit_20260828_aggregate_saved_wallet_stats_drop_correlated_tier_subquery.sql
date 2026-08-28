@@ -1,3 +1,4 @@
+-- anon-exec: intentional — snapshot re-create with the same signature; ACL preserved (SECURITY DEFINER, anon and authenticated EXECUTE both false, verified live 2026-08-28) (aggregate_saved_wallet_stats)
 -- audit_20260828_aggregate_saved_wallet_stats_drop_correlated_tier_subquery
 --
 -- WHAT IS WRONG. `aggregate_saved_wallet_stats` computes `top_tier` with a
