@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ CORRECTION to the entry below — my "35 s per wallet" was an ATTRIBUTION ERROR, and it pointed at the wrong lever
+
+**Correcting a number I published ~40 minutes ago, because it would send the next session at the wrong
+thing.** The entry below states *"per-wallet cost 35,456 ms"* and concludes *"one wallet costs 35 s
+against a 50 s budget, so exactly one fits."* **Both are wrong.**
+
+**How it was wrong:** I computed `avg(elapsed_ms) / avg(wallets_done)`. `elapsed_ms` is the WHOLE
+procedure — the zeroing UPDATE, the `v_pairs` queue build, the wallet loop, the metric SELECT and the
+log write. Dividing all of it by wallets done charges the fixed per-run overhead to the wallets. **It is
+the same shape as the `rows_written`-is-not-throughput trap I recorded for rwfc earlier today, and I
+walked into it three entries later.**
+
+⭐ **THE DATA REFUTES IT OUTRIGHT, and the refutation is one query:**
+
+| wallets done | runs | avg elapsed |
+|---:|---:|---:|
+| **1** | 7 | **43,057 ms** |
+| **2** | 2 | **14,869 ms** |
+
+**Runs that did MORE work took LESS time — a third of it.** Per-wallet cost cannot be the driver.
+Single-wallet runs range **11,277 → 77,860 ms**, a 7× spread on identical work, so elapsed is dominated
+by variable fixed overhead, not by the loop.
+
+⚠ **AND THAT CHANGES THE RECOMMENDATION.** The entry below offers "halve the cadence / double
+`p_max_seconds` / make the per-wallet query cheaper". **The third option targets something that is not
+the bottleneck**, and the first two buy time for a loop that is not what is consuming it. 👉 **The
+correct next step is to find WHERE the time goes inside the procedure** — the zeroing UPDATE and the
+`v_pairs` build are both unmeasured and both run every tick regardless of queue depth. One `RAISE
+NOTICE` per phase, or per-phase `clock_timestamp()` into `extra`, would settle it.
+
+✅ **What SURVIVES from that entry, all of it read straight off the metric rather than derived:**
+`oldest_cache_h` 7.0 → 12.4 rising ~1.0/h; queue 13.6; 1.13 wallets/run; 0 of 8 `ok`; the sweep sitting
+at ~2× its 6 h target. **The problem is real; my explanation of it was not.**
+
+✅ **I ALSO CLEARED MY OWN CHANGE, which is what prompted the re-check.** A naive pre/post on
+`elapsed_ms` showed p50 **+59%** and looked like the scoping fix had added cost. **Confounded by
+time-of-day** — the "pre" window was 72 h including quiet overnight hours, the "post" only busy daytime.
+Same-hours control (06:00–13:00Z, four consecutive days):
+
+| day | runs | avg ms | **p50 ms** |
+|---|---:|---:|---:|
+| 08-25 | 1 | 42,190 | 42,190 |
+| 08-26 | 7 | 34,644 | 41,856 |
+| 08-27 | 8 | 36,419 | 42,210 |
+| **08-28 (post-fix)** | 8 | 39,888 | **31,825** |
+
+**My day has the LOWEST median of the four**, against a flat ~42 s on the three before it. The EXISTS
+adds 104 index probes on a 104-row table; it was never going to be visible against an 11–78 s spread.
+**No cost added.**
+
+⚠ **The reusable rule, and it is one this repo already had: a per-unit cost derived by dividing a TOTAL
+by a COUNT is only valid when the total is actually proportional to the count.** Check that first — here
+one query (group by `wallets_done`) falsified it immediately, and it was cheaper than the analysis it
+overturned.
+
+**Revert path:** docs only.
+
 ### 2026-08-28 · ⭐ THE FIXED `oldest_cache_h` EARNED ITS KEEP IN 8 HOURS — the sweep sits at a stable ~2× its target, and the arithmetic says it cannot self-correct
 
 **The payoff of this morning's scoping fix, and the first thing the metric could not previously say.**
