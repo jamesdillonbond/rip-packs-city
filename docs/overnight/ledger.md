@@ -58,6 +58,17 @@ legitimately end this call: the function's own 120 s declaration, and the Supaba
 cap on the PostgREST path. That restores the intended role — a last-resort backstop for a stuck socket,
 the one case with no other stop condition — instead of a competitor to the database's own limits.
 
+⭐ **MEASURED AGAINST THE PRODUCTION DISTRIBUTION AFTER THE FIX, which is stronger evidence than the
+wave that exposed it.** `extensions.pg_stat_statements` for `upsert_wmc_batch` on the `service_role`
+(PostgREST) path — the exact caller in question — reads **63,398 calls, mean 7,669 ms, max 86,940 ms**.
+**Real, successful calls run up to 86.9 seconds**: nearly DOUBLE the 45 s deadline I imposed, and
+comfortably inside the function's 120 s entitlement. ⚠ The mean of 7.7 s is why this was not obvious —
+the overwhelming majority of chunks finish fast and only the TAIL crosses 45 s, which is why the defect
+surfaced as 28 big chunks in one wave rather than as a broad failure. **130 s clears the observed max
+with margin.** ⓘ That max is cumulative since the 2026-08-12 stat reset, so it is dominated by the
+pre-deadline era — exactly the population that answers *"how long do these calls take when nothing
+truncates them"*.
+
 **Pinned so it cannot regress:** four assertions encoding the ORDERING rather than the number — it must
 exceed the function's declared `statement_timeout`, exceed the gateway cap, not be 45 s, and still be a
 real bound (< 10 min), because an unbounded write is what this module set out to fix in the first place.
