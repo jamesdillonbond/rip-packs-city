@@ -122,7 +122,7 @@ by the Cowork session; to re-apply the experiment, `SET LOCAL ROLE cron_heavy;` 
 `cron.schedule('rpc-refresh-allday-pack-realized','35 0,8,14,20 * * *', <same command>)`. Not
 recommended on the evidence above.
 
-ⓘ **PROVENANCE — this entry is NOT in a commit named for it.** A concurrent session on this box ran `git add -A` while these edits were in the working tree, so this entry and its `known-issues` #42 block were swept into **`a0ffd300d`** (*"docs(#39): FALSIFIED my own morning reading"*), whose subject describes different work. ⚠ **The `git log --grep=` recovery path CLAUDE.md relies on will not find this text by its own headline** — search the file, not the log. Recorded rather than rewritten, because rewriting a live sibling session HEAD is the more dangerous repair.
+ⓘ **PROVENANCE — this entry is NOT in a commit named for it.** A concurrent session on this box ran `git add -A` while these edits were in the working tree, so this entry and its `known-issues` #42 block were swept into **`a96b11761`** (*"docs(#39): FALSIFIED my own morning reading"*), whose subject describes different work. ⚠ **The `git log --grep=` recovery path CLAUDE.md relies on will not find this text by its own headline** — search the file, not the log. Recorded rather than rewritten, because rewriting a live sibling session HEAD is the more dangerous repair.
 
 ### 2026-08-28 · 🚨 I WAS WRONG THIS MORNING — "the warmer works" came from the QUIETEST HOUR OF THE DAY, and a full business-hours window says the opposite
 
