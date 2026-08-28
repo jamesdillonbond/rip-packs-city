@@ -661,9 +661,36 @@ count different things; only the ratchet's is detector-verified.
 `scripts/lib/strip-comments.mjs` (mandatory, `MAX_LOCAL_STRIPPERS` down-only) **does not blank** line
 80 of `app/api/check-alerts/route.ts` — while blanking the identical line in isolation and in every
 other file swept. So a comment documenting a fix was counted as code **through the mandated
-protection rather than around it**. Root cause NOT found; backtick imbalance (counted, all even),
-templates-with-URLs, regex literals carrying quotes, and comment-backticks are all **falsified** — see
+protection rather than around it**. Original filing (symptom + four falsified hypotheses):
 `docs/overnight/inbox/2026-08-27T0500Z-the-shared-comment-stripper-leaves-a-comment-line-intact-in-one-file.md`.
+
+✅ **ROOT CAUSE FOUND AND FIXED 2026-08-27** — by that filing's own recommended next step
+(instrument the state machine rather than bisect inputs further), which worked first try.
+**A nested template literal inside `${...}` desyncs the machine.** The header called copying an
+interpolation verbatim "the safe direction (KEEPING too much, never blanking too much)"; 🚨 **that
+claim was false.** The inner opening backtick is read as the OUTER literal's closing one, after which
+the machine sits in `code` **inside HTML text**, where `/` in `</td>` opens a regex and `//` in a URL
+opens a comment — and it ping-pongs `tpl → regex → code` for the rest of the file.
+
+⭐ **Both failure directions are the SAME desync, twenty lines apart in one file:** line 80's comment
+left **INTACT**, line 100's real Telegram URL **BLANKED at `https:`**. That is why neither symptom led
+to it — the recorded relative *hides code*, this one appeared to *expose comments*, and it is neither:
+**the direction observed is an artifact of the text that follows.** ⛔ **So do not reason about this
+stripper in terms of "which direction does it fail".**
+
+Fixed with an explicit `tplStack` (interpolations parsed as code; braces counted only in `code` state).
+⚠ Deliberate consequence: a `//` inside `${...}` **is** now stripped. Full suite **1,386 files /
+15,204 tests green** — but read honestly that means no guard *depended* on the bug, **not** that none
+was *misreading*. ⚠ **DEFECT 4 remains, known and unfixed: JSX text is not JS**, so an apostrophe in
+`<p>Couldn't</p>` opens an `sq` state — **8 files** end desynced, in the genuinely safe direction.
+⚠ **EOF state is a LOWER BOUND on the population** (9 before / 8 after, of 2,836): `check-alerts`
+desyncs mid-file and re-syncs, so it is in neither count. Filing:
+`docs/overnight/inbox/2026-08-28T0056Z-ROOT-CAUSE-FOUND-the-shared-stripper-desyncs-on-nested-template-literals-and-fails-BOTH-ways.md`.
+
+**Displaced from CLAUDE.md 2026-08-27 to pay for the rule above, verbatim:** *a copy-pasted stripper
+blanked 100k+ chars of real source and hid a live P0; **49** files import the shared one,
+`MAX_LOCAL_STRIPPERS` ratchets at **2**, down only; at least six guards have fired on the comment
+documenting the fix.*
 
 ⭐ **Tactic worth reusing: where a shared helper is unreliable, prefer a check that does not NEED it to
 be right over one that assumes it is.** The ratchet skips zero-argument `fetch()` (never a real call

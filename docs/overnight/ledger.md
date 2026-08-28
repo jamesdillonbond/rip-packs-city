@@ -10,6 +10,86 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — the shared comment stripper's ROOT CAUSE, found by the step the last filing asked for, and it fails BOTH ways
+
+`scripts/lib/strip-comments.mjs` — the ONE mandated stripper, imported by **49 files**, the thing every
+guard's freedom from reading-its-own-comment depends on — **desyncs on a nested template literal inside
+`${...}`** and then produces *both* failure directions at once.
+
+🚨 **The header's own claim that the boundary was "the safe direction — KEEPING too much, never blanking
+too much" was FALSE.** Copying an interpolation verbatim lets a nested literal close the OUTER one; the
+machine then sits in `code` **inside HTML text**, where `/` in `</td>` opens a regex and `//` in a URL
+opens a comment. On `app/api/check-alerts/route.ts` that leaves a comment **INTACT at line 80** and
+**BLANKS the real Telegram URL at line 100** — twenty lines apart, one desync.
+
+⭐ **That unification is why nobody found it.** [inbox 2026-08-27T0500Z](inbox/2026-08-27T0500Z-the-shared-comment-stripper-leaves-a-comment-line-intact-in-one-file.md)
+reproduced the line-80 symptom, falsified four hypotheses, and asked whether it shared a root with the
+recorded code-hiding relative. **It does not share one — it IS one**, and the symptom you see is an
+artifact of the text that follows. ✅ Its own "cheapest next step" (*instrument the state machine rather
+than bisect inputs further*) was correct and worked first try.
+
+**Fixed** with an explicit `tplStack`: `${` pushes a frame and returns to `code`, the matching `}` pops
+back to `tpl`, braces counted only in `code` state. ⚠ Deliberate consequence: a `//` inside `${...}` **is**
+now stripped (correct JS). The pinned boundary test was **updated, not deleted**, as its own note required.
+
+⭐ **The negative control was found by SEARCH, not construction — four hand-written reproducers all
+re-synced and would have made it VACUOUS**, asserting the defect was real while proving nothing.
+
+✅ **Full suite 1,386 files / 15,204 tests green.** ⚠ Read honestly that is weaker than it sounds: it means
+no guard *depended* on the bug, **not** that none was *misreading* because of it — a guard that silently
+under-counted still passes once it starts counting correctly.
+
+⚠ **DEFECT 4 recorded, KNOWN and UNFIXED: JSX text is not JS.** An apostrophe in `<p>Couldn't</p>` opens an
+`sq` state — **8 files** end desynced. ✅ This one genuinely fails safe (keeps too much, never blanks), and
+is pinned with a positive control. ⛔ But "fails safe" is only safe for a guard hunting a DEFECT; for any
+guard asserting an ABSENCE, over-reporting is a false pass. None was found; none was searched for.
+
+⚠ **EOF state is a LOWER BOUND on the population** (9 before / 8 after, of 2,836) — `check-alerts` desyncs
+mid-file and re-syncs, so it is in neither count. **A file passing that check is not a file the stripper
+read correctly.**
+
+**Revert:** `git revert` the commit, or restore the file from `415db92b5`. Docs + code only, no DB state.
+Filing: [inbox 2026-08-28T0056Z](inbox/2026-08-28T0056Z-ROOT-CAUSE-FOUND-the-shared-stripper-desyncs-on-nested-template-literals-and-fails-BOTH-ways.md).
+
+### 2026-08-27 · ✅ SHIPPED (code) — all three `*-dune` routes bounded; unbounded-fetch ratchet 21 → 11, on a DERIVED bound
+
+Took the largest-budget block of the class triaged in [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md):
+**10 unbounded `fetch()` sites across the three `maxDuration = 800` Dune routes** (`/execute`, the
+`/status` poll, the `/results` walk, the ownership stale-cache probe).
+
+⭐ **The bound is DERIVED, and that is the point.** The filing warns "a short cap converts working
+behaviour into failure", and here there was **nothing to size a cap from**: all three routes are drained
+(`extra.windows_done: 0`, `duration_ms` 116–1,347 ms) and `pipeline_runs` holds **zero** runs with real
+Dune work inside its ~73 h retention. 🚨 **Picking "60 s feels right" would have been precisely the error
+the 2026-08-27 handoff names as its own headline lesson** — *refusing to guess an unmeasured number is a
+reason to MEASURE it, never a licence to conclude it is small.* So no cap was chosen: each signal comes
+from `HARD_BUDGET_MS`, the sweep deadline the route **already declares and already checks**, less a 30 s
+log reserve. A request that would outlive the remaining budget is **already doomed** — the loop stops on
+its next check — so aborting it **cannot** turn a working call into a failing one, only a **SILENT kill**
+into a **LOGGED failure**. That property is what `__tests__/sweep-deadline.test.ts` asserts, sampled
+across the whole sweep, rather than "returns a positive number" (which a constant would pass).
+
+⭐ **New shared `lib/http/sweep-deadline.ts` rather than a fourth inline constant, because the triage
+filing's own lesson was that the FIX failed to spread** — re-derived: **20 inline `AbortSignal.timeout`
+sites in `lib/` and no shared helper at all.**
+
+✅ **21 → 11, corroborated by THREE independent detectors agreeing exactly** (the repo's ratchet, an
+ad-hoc paren-balancing walk, the diff) — not one instrument read three times. ⭐ **The ratchet's
+anti-slack arm fired and forced the lowering**, which is the job CLAUDE.md says most ratchets fail at.
+⚠ **My ad-hoc sweep first read 22; the extra was a FALSE POSITIVE from the stripper defect above** —
+fixing that is what made the detectors agree. The repo's ratchet was already immune, having been built
+not to depend on stripping succeeding.
+
+⛔ **No retries added** (one ownership walk is already 87.7% of the monthly Dune datapoint budget).
+⛔ No `maxMs` upstream cap chosen — that still needs a measurement nobody has.
+⚠ **An aborted `/execute` may still consume Dune datapoints server-side.** Only reachable once already
+past `HARD_BUDGET_MS`, so rare by construction — but not zero, and not measured.
+⚠ **NOT EXERCISED IN PRODUCTION YET** — the routes are drained, so this is proven by tests and by
+construction, not by traffic. **Exit condition: the first run with `windows_done > 0` completing normally.**
+
+**Revert:** `git revert` the commit (reverting the helper additionally requires restoring RATCHET = 21).
+No DB state, no schedule change. Filing: [inbox 2026-08-28T0100Z](inbox/2026-08-28T0100Z-the-three-dune-routes-are-bounded-by-a-DERIVED-deadline-and-the-ratchet-falls-21-to-11.md).
+
 ### 2026-08-27 · MEASURED (read-only, docs) — the edge-fn drift set is NAMED for the first time, and the risk is THREE functions, not twenty
 
 **No code, no DB, no prod state.** `Edge function deploy drift` has been red for weeks reporting a
