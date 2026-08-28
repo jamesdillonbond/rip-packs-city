@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — `main` was RED on typecheck for every branch; an unused `@ts-expect-error` in the new known-issues index guard
+
+**Not this session's work, fixed because it blocked everyone.** `75115cefb` added
+`__tests__/known-issues-index-lists-every-item.test.ts` carrying
+`// @ts-expect-error - plain .mjs script, no types` over its import of
+`scripts/gen-known-issues-index.mjs`. This repo's tsconfig resolves that import **without** error, so
+**the directive itself was the error** — `TS2578: Unused '@ts-expect-error' directive`. `npx tsc
+--noEmit` is gated by CI's `typecheck` job (`.github/workflows/ci.yml:27`), so main was red for every
+branch, not only that commit.
+
+⚠ **Verified, not assumed:** nothing newer upstream had fixed it, `tsc` is clean with the directive
+removed, and the guard's own 9 tests still pass.
+
+⭐ **The durable bit, left as a comment at the site: a suppression must be checked against the
+COMPILER, never inferred from the file extension.** An unnecessary suppression is not a harmless
+extra — it is itself a build failure.
+
+**Revert:** `git revert 24d72e4e5` restores the directive (and the red typecheck).
+
 ### 2026-08-27 · ✅ SHIPPED (code) — E5: four more `after()` routes made auditable (47 → 42), and the ratchet was counting a CORRECTLY INSTRUMENTED route as missing
 
 **What shipped:** `writeInvocationHeartbeat` in `candy-sales-indexer`, `wmc-fmv-populate`,
