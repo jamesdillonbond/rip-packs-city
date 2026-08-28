@@ -65,7 +65,13 @@ the marker work.**
 left the third.** The `PINS` entry still named the 2026-08-10 migration, so the guard compared the NEW
 all-rows test body against the OLD canonical-filtered one. Verified with the guard's OWN extractor rather
 than by eye: the test matches `20260828225605` **byte-for-byte at 3,070 chars** and differs from
-`20260810225549` (3,245). Fixed by repointing, with the mechanism recorded inline.
+`20260810225549` (3,245).
+
+⚠ **CREDIT WHERE IT IS DUE, AND THE COLLISION IS ITSELF THE RECORD: the sibling session found and fixed
+this INDEPENDENTLY, and theirs landed first.** My repoint hit a rebase conflict against an identical one
+(same target migration, shorter comment) and **I took THEIRS rather than churn the file** — so the fix on
+`main` is the sibling's. What is mine here is the pre-existing/attribution check and the mutation lesson
+below, both of which stand regardless of whose one-line edit landed.
 
 ⭐ **AND THE MUTATION CHECK IS THE LESSON HERE, because my first two attempts BOTH passed and neither
 proved anything.** (1) `COALESCE` → `COALESCE ` — the extractor normalises `\s+` to a single space by
