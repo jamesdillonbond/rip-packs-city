@@ -7,7 +7,7 @@
 --   * its only committed migration was STALE — a zero-argument FUNCTION, where live is a
 --     PROCEDURE with three arguments, a soft deadline and per-wallet COMMITs. That drift
 --     was invisible to `npm run db:pins:check`, which only reads functions already in the
---     PINS array. supabase/migrations/20260816181600_audit_20260816_snapshot_reconcile_
+--     PINS array. supabase/migrations/20260828055500_audit_20260828_oldest_cache_h_scoped_to_the_queue_population.sql (was 20260816181600_audit_20260816_snapshot_reconcile_
 --     all_saved_wallet_stats.sql captures the live body so the checker can watch it.
 --
 -- ⚠ THIS FILE DOES NOT USE THE SUITE'S USUAL BEGIN/ROLLBACK ISOLATION, AND CANNOT.
@@ -169,10 +169,41 @@ BEGIN
     COMMIT;
   END LOOP;
 
-  SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(cache_updated_at))) / 3600.0, 1)
+  -- ⚠ SCOPED TO THE QUEUE'S OWN POPULATION (2026-08-28). This used to read every
+  -- saved_wallets row, while the queue below reads only rows that HAVE wmc rows.
+  -- MIN(cache_updated_at) was therefore pinned forever by 21 rows the sweep
+  -- CANNOT touch by design -- the 2026-08-09 explicit zero-pass, all with
+  -- cached_moment_count = 0 and zero wmc rows, deliberately excluded by the
+  -- EXISTS clause. The figure rose +1.0/hour indefinitely and could never fall:
+  -- 308 h on 08-21, 442.9 h on 08-27, +1.00/hour to two decimals.
+  --
+  -- ⚠ THE CONSEQUENCE THAT MATTERS IS THE INVERSE ONE: a genuine starvation --
+  -- a QUEUED wallet going unreconciled for days -- was INVISIBLE, because the
+  -- number was already pinned and climbing from an unrelated cause. It could not
+  -- move in response to the thing it is named for. It also misled two separate
+  -- readers into near-filing a user-facing alarm.
+  --
+  -- Measured with this predicate on 2026-08-27: oldest ELIGIBLE staleness 15.1 h
+  -- (avg 10.0 h, zero over 7 days) against a reported 442.9 h -- so the metric
+  -- overstated by ~29x and the sweep is very nearly keeping up. Both halves
+  -- matter: "the metric is broken" and "the sweep is behind" need opposite
+  -- responses.
+  --
+  -- The EXISTS is copied VERBATIM from v_pairs, including its position relative
+  -- to the aggregate. Re-deriving it as bool_or() at the wallet level instead of
+  -- EXISTS at the row level mixes the frozen rows back in and inverts the answer
+  -- -- that is a different population, and the difference is invisible in the
+  -- output because both produce a tidy per-wallet age.
+  SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(sw.cache_updated_at))) / 3600.0, 1)
     INTO v_oldest_h
-    FROM public.saved_wallets
-   WHERE wallet_addr IS NOT NULL;
+    FROM public.saved_wallets sw
+   WHERE sw.wallet_addr IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+         FROM public.wallet_moments_cache w
+        WHERE w.wallet_address = sw.wallet_addr
+          AND w.collection_id  = sw.collection_id
+     );
 
   -- ⚠ The 3-arg log_pipeline_run(text, boolean, jsonb) overload passes
   -- `p_started_at := now()`. now() is TRANSACTION START, and this procedure COMMITs
@@ -289,6 +320,18 @@ SELECT _assert_eq((SELECT wallet_addr FROM public._refreshed ORDER BY seq LIMIT 
 -- (the ufc_fmv_stale_hours cry-wolf cost this repo an operator who learned to skim a red board).
 SELECT _assert_eq((SELECT ok::text FROM public._runs), 'true',
   'a sweep that reached every owed wallet reports ok = true');
+-- ⚠ THIS ASSERTION USED TO PROMISE MORE THAN IT CHECKED, and that is why it is
+-- rewritten here rather than merely re-pointed. Its message says the figure "shows
+-- whether the sweep is keeping up"; the check was only IS NOT NULL, which passes
+-- with the metric pinned at 456.9 h forever. Textbook "a test stating the contract
+-- in a comment and asserting something weaker -- the tell is the title".
+--
+-- The metric read every saved_wallets row while the QUEUE reads only rows that have
+-- wmc rows, so MIN(cache_updated_at) was held down by rows the sweep excludes by
+-- construction. It rose +1.0/hour and could never fall (308 h on 08-21 -> 442.9 h on
+-- 08-27 -> 456.9 h on 08-28), while the true eligible staleness was 6.1 h.
+-- ⚠ The consequence that mattered was the INVERSE: a genuinely starved queued wallet
+-- could not move a number already pinned by an unrelated cause.
 SELECT _assert((SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs) IS NOT NULL,
   'and carries the oldest cache age, the figure that shows whether the sweep is keeping up');
 
@@ -347,6 +390,35 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.saved_wallets
                       AND cache_updated_at > now() - interval '1 minute'), '1',
   'the one wallet the truncated sweep reached kept its refresh — per-wallet COMMIT means '
   'progress survives the deadline');
+
+-- ── The oldest_cache_h PROPERTY (2026-08-28) ────────────────────────────────
+-- Runs LAST, and inserts its own row, so it cannot perturb the narrative above.
+--
+-- The metric used to read every saved_wallets row while the QUEUE reads only rows
+-- that HAVE wallet_moments_cache rows, so MIN(cache_updated_at) was held down by
+-- rows the sweep excludes by construction. It rose +1.0/hour and could never fall:
+-- 308 h (08-21) -> 442.9 h (08-27) -> 456.9 h (08-28), against a true eligible
+-- staleness of 6.1 h — overstating by ~76x.
+--
+-- ⚠ The consequence that mattered was the INVERSE one: a genuinely starved QUEUED
+-- wallet could not move a number already pinned by an unrelated cause, so the
+-- figure could never report the thing it is named for.
+--
+-- This row has NO wmc presence and a 400-day-old cache stamp. Against the old
+-- definition it would drag oldest_cache_h to ~9,600 h; against the new one it is
+-- invisible. That is why the assertion is an upper bound rather than IS NOT NULL —
+-- an assertion that cannot fail against the bug it describes is not a test.
+INSERT INTO public.saved_wallets VALUES
+  ('99999999-9999-9999-9999-999999999999','0xnowmc','aaaaaaaa-0000-0000-0000-000000000001',
+   0, NULL, NULL, now() - interval '400 days');
+
+DELETE FROM public._runs;
+CALL public.reconcile_all_saved_wallet_stats(p_min_age_minutes => 0);
+
+SELECT _assert(
+  (SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) < 240,
+  'oldest_cache_h IGNORES a saved_wallets row with no wallet_moments_cache rows, however '
+  'ancient — it measures the population the queue reads, not every saved_wallets row');
 
 SELECT '✓ reconcile_all_saved_wallet_stats invariants pass' AS result;
 

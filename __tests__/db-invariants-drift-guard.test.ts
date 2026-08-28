@@ -1028,7 +1028,7 @@ const PINS = [
     // last COMMIT as the run's duration (avg 27,370 ms logged as 10 ms, 2,688x understated).
     // The named-arg form passes the real v_started. Every logged value is unchanged.
     migration:
-      "supabase/migrations/20260827063500_audit_20260826_reconcile_duration_ms_measured_from_the_last_commit.sql",
+      "supabase/migrations/20260828055500_audit_20260828_oldest_cache_h_scoped_to_the_queue_population.sql",
   },
   {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
