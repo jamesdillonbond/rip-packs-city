@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — E5: two `after()` routes get an invocation heartbeat, chosen on MEASURED KILL RISK; budget 49 → 47
+
+Register item **E5**. Same defect class as tonight's unbounded-`fetch()` work — **a killed tick that
+writes nothing** — from the other side. `cron/lock-check-batch` and `cron/run-insider-detectors` now
+`await writeInvocationHeartbeat()` as the first statement of their `after()` body.
+
+⛔ **The three obvious ways to choose which routes to convert are all wrong, and each was tried:**
+**by failure rate** (`run-insider-detectors` 27.7%, `lock-check-batch` 25.5% / 48 h) — ⛔ **a failing
+run WROTE A ROW**, so a high fail rate is evidence the route is logging, the opposite of the problem;
+**by cadence shortfall** against `pipeline_cadence_watchlist` — ⛔ every candidate runs at
+**133–16,363%** of its minimum, because those thresholds are loose silence alarms, not rate
+contracts. ⭐ **And no query over `pipeline_runs` can ever count kills, because a kill writes
+nothing — which is the entire reason the marker exists.** Conversion value is prospective and is not
+diagnosable in advance.
+
+✅ **The criterion that does work is proximity to the wall.** Over 7 days, p90 `duration_ms` against
+each route's own `maxDuration`: **`lock-check-batch` 241,381 ms = 80% of budget** (max 295,604 =
+98.5%), **`run-insider-detectors` 224,193 ms = 75%**; next best are 42% and 40%. **The top two are
+the ones converted** — a route whose p90 is four fifths of its wall is where "killed" and "never
+fired" actually diverge. ⚠ `lock-check-batch`'s own header still claims *"~17-20s typical"*; its p50
+is now **204,346 ms**. Noted, not rewritten.
+
+🚨 **A SEPARATE FINDING, made while ranking, and it changes how a common number is read: `duration_ms`
+on an `after()` route is NOT execution time.** Three pipelines record a duration **above** their
+route's `maxDuration` — `wmc-fmv-populate` **352,922 ms**, `offers-sweep` **339,605 ms**,
+`run-insider-detectors` **322,813 ms**, all against **300,000 ms**. ⛔ That is not a lambda outliving
+its wall: `log_pipeline_run` has **no `p_finished_at`**, so `finished_at` DEFAULTS to the INSERT and
+`duration_ms` is GENERATED from the pair — absorbing any retry/queueing delay on the terminal write,
+which several of these routes wrap in a 3× backoff. ⭐ **So it over-reports by an amount that grows
+precisely when the instance is saturated — i.e. exactly when someone is reading it to diagnose
+saturation.** The heartbeat helper documents this hazard for MARKER rows (it pins `finished_at` to
+`started_at` for it); **the same caveat applies to TERMINAL rows and was written down nowhere.**
+⚠ Including in the ranking above — those percentages are ceilings, not measurements; the ranking
+survives only because the bias runs the same way for every row.
+
+⚠ **NOT CLAIMED: no kill has been observed on either route**, and a heartbeat cannot detect its own
+kill — it records that the invocation STARTED, and the detection is the correlation query in the
+helper's header, run elsewhere. **Nothing here makes an existing kill visible retroactively.** The
+other 47 routes are untouched.
+
+Budget read off the failing no-slack assertion (**49 → 47**), never by subtracting two — that file's
+history records two sessions colliding by each subtracting their own conversions.
+
+**Revert:** `git revert` the commit (restoring either route also requires `BUDGET` back to 49). No DB
+state, no schedule change. Filing: [inbox 2026-08-28T0205Z](inbox/2026-08-28T0205Z-E5-two-after-routes-converted-on-measured-kill-risk-and-duration-ms-is-not-execution-time.md).
+
 ### 2026-08-27 · ✅ MEASURED (read-only, docs) — #41 CONFIRMED on a three-point dose–response, its confound ruled out, and the cadence cut bought 2.7× not 6×
 
 **No code, no DB, no prod state.** Closes **open reading #3** from the 2026-08-27 handoff.
