@@ -290,7 +290,19 @@ describe("topshot-fmv-populate — honest termination", () => {
     await runDeferred()
 
     expect(fetchMock.calls).toHaveLength(0)
-    expect(spy.writes.pipeline_runs ?? []).toHaveLength(0) // logged via RPC, not insert
+    // ⚠ NARROWED 2026-08-28, and INVERTED rather than deleted. This assertion's
+    // property is "the terminal run is logged through the log_pipeline_run RPC,
+    // not a raw insert". It was SPELLED as "no pipeline_runs insert at all",
+    // which the invocation heartbeat trips: `writeInvocationHeartbeat` writes its
+    // marker DIRECTLY on purpose, and after-route-heartbeat-ratchet.test.ts
+    // asserts it must never reach log_pipeline_run. Pin the property, not the
+    // spelling.
+    const inserted = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as any[]
+    expect(inserted.filter((r) => !String(r.pipeline).endsWith("-heartbeat"))).toHaveLength(0)
+    // ...and STRENGTHENED: the marker must actually be there. Without it a kill
+    // on this path is indistinguishable from a cron that never fired, which is
+    // the whole reason this route was converted.
+    expect(inserted.map((r) => r.pipeline)).toEqual(["topshot-fmv-populate-heartbeat"])
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")?.args
     expect(log).toMatchObject({ p_ok: false, p_error: "sets read failed: boom" })
     expect(log?.p_extra).toMatchObject({ stage: "sets_read" })

@@ -121,7 +121,28 @@ const ROUTES: Route[] = apiRoutes().map((full) => {
     // helper and never calls it would be vouched for — caught by mutation on
     // 2026-08-20, when deleting fmv-recalc's call left this ratchet green.
     // Assert at the property's granularity, which here means the open paren.
-    hasHeartbeat: /writeInvocationHeartbeat\s*\(/.test(code),
+    hasHeartbeat:
+      /writeInvocationHeartbeat\s*\(/.test(code) ||
+      // ⚠ THE SECOND MARKER CONVENTION, added 2026-08-28. A route that writes a
+      // `<x>-dispatch` row AND an `<x>-complete` row has hand-rolled exactly this
+      // correlation and is INSTRUMENTED, not missing.
+      // `app/api/wallet-backfill-multicollection` predates lib/pipeline/heartbeat.ts
+      // and does this; its own comment says "dispatch row with no matching complete
+      // row within ~15min = killed lambda — that's the visibility we want", and the
+      // pair is live in `pipeline_runs` (2,339 / 1,368 rows on 2026-08-28).
+      //
+      // ⚠ Counting it as MISSING is not a harmless over-count. The remedy this
+      // ratchet prescribes is "add a marker", so the next session to work the list
+      // would bolt a SECOND marker onto a route that already has one — duplicate
+      // instrumentation on the fleet's highest-volume pipeline. The exemption is
+      // therefore load-bearing, not cosmetic.
+      //
+      // ⚠ Asserted at the PROPERTY's granularity, like the rule above it: BOTH
+      // halves must be present. A `-dispatch` alone is not a marker — `alerts-dispatch`
+      // is a real pipeline whose name merely ends that way, and matching the suffix
+      // alone would silently excuse any route that logs it. Same discriminator as
+      // `lib/pipeline/kill-rate.ts` uses on the run rows.
+      (/["'`][a-z0-9-]+-dispatch["'`]/.test(code) && /["'`][a-z0-9-]+-complete["'`]/.test(code)),
   }
 })
 
@@ -181,7 +202,25 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   INSERT and the duration absorbs retry/queueing on the terminal write.
 //   **`duration_ms` on these routes is not execution time**, which is a second
 //   argument for a marker whose timestamps are pinned by the helper.
-const BUDGET = 47
+// 2026-08-27 (seventh): 47 -> 42, and it is TWO changes, recorded separately
+//   because only one of them is a conversion.
+//   (a) FOUR conversions, chosen by the ratchet's own priority rule — routes on
+//       `pipeline_cadence_watchlist WHERE is_active`, where a kill is not merely
+//       unlogged but ACTIVELY MISREAD as "never fired": `candy-sales-indexer`
+//       (HIGH, 450 min), `wmc-fmv-populate` (6,194 terminal rows, the largest
+//       population left), `offers-sweep` (120 min) and `topshot-fmv-populate`
+//       (480 min). ⚠ NOT chosen by p90 `duration_ms` this time: that signal is
+//       corrupted, as the sixth entry above warns — `topshot-active-listings-ingest`
+//       records a p90 of 959,294 ms against a 60 s wall, which is `finished_at`
+//       defaulting to the INSERT, not execution time.
+//   (b) ONE EXEMPTION, not a conversion: `wallet-backfill-multicollection` was
+//       being counted as missing while being correctly instrumented under the
+//       `-dispatch`/`-complete` convention it hand-rolled before the helper
+//       existed. ⚠ That over-count was NOT harmless — the remedy this ratchet
+//       prescribes is "add a marker", so the next session working the list would
+//       have bolted a SECOND marker onto the fleet's highest-volume pipeline.
+//   ⚠ Read off the failing no-slack assertion (42), not by subtracting five.
+const BUDGET = 42
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {
@@ -235,6 +274,34 @@ describe("after() routes that log a pipeline run must write an invocation heartb
     ]) {
       expect(compliant, `${seed} lost its heartbeat`).toContain(seed)
     }
+  })
+})
+
+describe("the -dispatch/-complete exemption is a PROPERTY, not a name", () => {
+  // Added with the exemption itself so it cannot quietly decay into a suffix
+  // match. A `-dispatch` alone must never vouch for a route: `alerts-dispatch`
+  // is a real pipeline whose name merely ends that way, and a suffix-only rule
+  // would silently excuse every route that logs it.
+  const hasMarkerPair = (code: string) =>
+    /["'`][a-z0-9-]+-dispatch["'`]/.test(code) && /["'`][a-z0-9-]+-complete["'`]/.test(code)
+
+  it("requires BOTH halves — a -dispatch alone does not vouch for a route", () => {
+    expect(hasMarkerPair('p_pipeline: "thing-dispatch"')).toBe(false)
+    expect(hasMarkerPair('p_pipeline: "thing-complete"')).toBe(false)
+    expect(hasMarkerPair('"thing-dispatch" ... "thing-complete"')).toBe(true)
+  })
+
+  it("NEGATIVE CONTROL: a route logging only `alerts-dispatch` is NOT exempted", () => {
+    expect(hasMarkerPair('const PIPELINE_NAME = "alerts-dispatch";')).toBe(false)
+  })
+
+  it("exempts exactly one route today, and it is the one that hand-rolled the pair", () => {
+    // A count assertion, so a future route silently picking up the exemption is
+    // visible rather than absorbed.
+    const exempted = QUALIFYING.filter(
+      (r) => r.hasHeartbeat && !/writeInvocationHeartbeat\s*\(/.test(readFileSync(path.join(ROOT, r.rel), "utf8")),
+    )
+    expect(exempted.map((r) => r.rel)).toEqual(["app/api/wallet-backfill-multicollection/route.ts"])
   })
 })
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { COLLECTION_UUID_BY_SLUG, COLLECTIONS } from "@/lib/collections"
 
 // ── wallet_moments_cache FMV + image populate ────────────────────────────────
@@ -293,6 +294,14 @@ async function handle(req: NextRequest): Promise<Response> {
   // The real success signal is the per-collection log_pipeline_run inside runOne
   // (unchanged); the fatal-catch below surfaces a crashed background pass.
   after(async () => {
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill
+    // runs neither the success path nor the catch, so without this marker a
+    // killed tick is indistinguishable from a cron that never fired — and this
+    // pipeline is on `pipeline_cadence_watchlist`, so the two produce the same
+    // alert and need opposite responses. The separate `-heartbeat` name is
+    // required: a marker under the REAL name would refresh `last_run` every
+    // tick and silence `detect_stalled_pipelines()` on the outage it exposes.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.now() })
     try {
       for (const t of targets) {
         await runOne(t.slug, t.collection_id, force, limit)

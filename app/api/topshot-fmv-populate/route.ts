@@ -40,6 +40,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
@@ -219,6 +220,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // insert is the real signal, and the fatal-catch surfaces a crash before it
   // (incl. the sets-read failure that used to 500).
   after(async () => {
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill
+    // runs neither the success path nor the catch, so without this marker a
+    // killed tick is indistinguishable from a cron that never fired — and this
+    // pipeline is on `pipeline_cadence_watchlist`, so the two produce the same
+    // alert and need opposite responses. The separate `-heartbeat` name is
+    // required: a marker under the REAL name would refresh `last_run` every
+    // tick and silence `detect_stalled_pipelines()` on the outage it exposes.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.now() })
     try {
       await runSweep()
     } catch (e) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top
@@ -214,6 +215,14 @@ export async function POST(req: NextRequest) {
   // immediately so the entry can never be auto-disabled on a timeout.
   // pipeline_runs (with cursor_after) remains the real success signal.
   after(async () => {
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill
+    // runs neither the success path nor the catch, so without this marker a
+    // killed tick is indistinguishable from a cron that never fired — and this
+    // pipeline is on `pipeline_cadence_watchlist`, so the two produce the same
+    // alert and need opposite responses. The separate `-heartbeat` name is
+    // required: a marker under the REAL name would refresh `last_run` every
+    // tick and silence `detect_stalled_pipelines()` on the outage it exposes.
+    await writeInvocationHeartbeat({ pipeline: "offers-sweep", startedAtMs: Date.now() })
   const startTime = Date.now()
   try {
 
