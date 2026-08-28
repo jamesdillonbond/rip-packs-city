@@ -165,7 +165,23 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   un-heartbeated routes, so the budget has to follow it down or it silently
 //   banks a slot for the next route that ships without a heartbeat. Re-derived
 //   from the failing no-slack assertion, not by subtracting one.
-const BUDGET = 49
+// 2026-08-27 (sixth): 49 -> 47. `cron/lock-check-batch` and
+//   `cron/run-insider-detectors`, converted together and chosen on MEASURED KILL
+//   RISK rather than convenience: over 7 days their p90 `duration_ms` runs at
+//   **80%** and **75%** of their own 300,000 ms ceilings (241,381 ms and
+//   224,193 ms), the two highest of any un-converted route. A route whose p90 is
+//   four fifths of its wall is the one where "killed" and "never fired" actually
+//   diverge, so it is where a marker buys the most.
+//   ⚠ Read off the failing no-slack assertion (49 -> 47), not by subtracting two.
+//   ⚠ Noted while measuring, because it changes how the number is read: three
+//   pipelines record a `duration_ms` ABOVE their route's `maxDuration`
+//   (run-insider-detectors 322,813 ms, offers-sweep 339,605 ms, wmc-fmv-populate
+//   352,922 ms, all against 300,000 ms). That is not a lambda outliving its wall
+//   — `log_pipeline_run` has no `p_finished_at`, so `finished_at` defaults to the
+//   INSERT and the duration absorbs retry/queueing on the terminal write.
+//   **`duration_ms` on these routes is not execution time**, which is a second
+//   argument for a marker whose timestamps are pinned by the helper.
+const BUDGET = 47
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

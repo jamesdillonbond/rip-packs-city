@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // On-chain lock-check pipeline.
 //
@@ -175,6 +176,26 @@ export async function POST(req: NextRequest) {
   // surfaces a crash before it. (precedent 36eee2f)
   const startedAtIso = new Date().toISOString()
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill — the platform terminates
+    // the function and takes the terminal `log_pipeline_run` with it, while the
+    // 202 above has already told cron-job.org this succeeded. Without a marker
+    // written first, a killed tick is indistinguishable from a cron that never
+    // fired, and the catch below is NOT a backstop for it.
+    //
+    // ⭐ This route was selected for conversion on measured kill RISK, not on a
+    // suspicion: over 7 days its p90 `duration_ms` is 241,381 ms against this
+    // route's 300,000 ms ceiling — **80% of budget at p90**, with a maximum of
+    // 295,604 ms (98.5%). The comment above says "~17-20s typical"; that has not
+    // been true for some time.
+    //
+    // ⚠ The marker's name carries the `-heartbeat` suffix (added by the helper,
+    // never by the caller) because this pipeline is on
+    // `pipeline_cadence_watchlist` — a marker under the REAL name would refresh
+    // `last_run` every tick and silence `detect_stalled_pipelines()` on exactly
+    // the outage it exists to expose.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAtIso) })
     try {
       await runBatch(startedAtIso)
     } catch (e) {

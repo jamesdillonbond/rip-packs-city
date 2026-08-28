@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const dynamic = "force-dynamic"
 // 2026-06-10 (DBSAT residual fix): the detector RPC + 12 candidate-count RPCs
@@ -128,6 +129,20 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(started).toISOString()
 
   after(async () => {
+  // Invocation heartbeat, written BEFORE the work and awaited. `try/catch`
+  // cannot catch a `maxDuration` kill: the platform terminates the function and
+  // takes the terminal `log_pipeline_run` with it, so without a marker written
+  // first a killed tick reads as a cron that never fired.
+  //
+  // ⭐ Selected on measured kill RISK: over 7 days this route's p90
+  // `duration_ms` is 224,193 ms against its 300,000 ms ceiling (**75% of budget
+  // at p90**), and its maximum reads 322,813 ms — ABOVE the ceiling. ⚠ That last
+  // number is not evidence the lambda ran past its wall; `log_pipeline_run` has
+  // no `p_finished_at`, so `finished_at` defaults to the INSERT time and the
+  // recorded duration includes any retry/queueing delay on the terminal write.
+  // It is a reason to distrust `duration_ms` as execution time here, and a
+  // second reason to want a marker whose timestamps are pinned.
+  await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: started })
   let ok = true
   let errMsg: string | null = null
   let result: any = null
