@@ -4,6 +4,40 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-08-28 ⚠ READ BEFORE QUOTING THE ACCURACY GATE
+
+🚨 **The gate has TWO instruments and they disagree by 9.4 points. Priority 1's 30.1% and the trust
+board's `*_fmv_high_med_share_pct` are NOT the same measurement**, and comparing one to the other
+overstates progress by ~4×.
+
+- **Priority 1's 30.1% baseline (08-23)** came from `fmv_current` with **no Top Shot filter**.
+- **The trust board / `rpc_fmv_confidence_share()`** filters Top Shot to **canonical `external_id`**
+  (`^[0-9]+:[0-9]+(::[0-9]+)?$`), excluding UUID dupe residue — deliberate, shipped 2026-08-04, but the
+  baseline was never re-based onto it.
+
+**Measured both ways on 2026-08-28 so the comparison is like-for-like:**
+
+| | 08-23 baseline | today, SAME method | today, canonical-filtered |
+|---|---:|---:|---:|
+| priced editions | 27,075 | **27,143** | 20,717 |
+| HIGH/MEDIUM | 8,140 | **8,950** | 8,787 |
+| share | **30.1%** | **33.0%** | **42.4%** |
+
+⭐ **The real five-day move is +2.9 points (30.1% → 33.0%), and it is GENUINE** — the denominator is
+stable (27,075 → 27,143, +68), so it is 810 more editions reaching HIGH/MEDIUM rather than weak ones
+leaving. Top Shot 34.3% → 37.5%.
+⛔ **Do NOT quote 54.4% against 34.3%, or 42.4% against 30.1%.** Those are cross-instrument comparisons.
+
+👉 **DECISION NEEDED (not a measurement): pick ONE basis and re-base the baseline explicitly.** The
+canonical-filtered figure is arguably more honest — pricing dupe residue is not an accuracy achievement
+— but switching silently books a **+9.4 point one-off no edition earned**, against a 50+ WAU gate whose
+history is all on the unfiltered basis.
+
+⚠ **Pinnacle is a THIRD basis and is in neither total** (`rpc_fmv_confidence_share()` returns five
+collections, Pinnacle not among them; its 44% comes from a separate leg). **Both totals cover four of
+five published collections**, exactly as the 08-23 capture warned. Full working:
+ledger 2026-08-28 "the accuracy gate has TWO instruments".
+
 ## PRIORITIES — what tonight's pass should weigh
 
 1. ✅ **CAPTURED 2026-08-23 22:05Z — the four-week gap is closed, so do not re-ask for it; re-MEASURE it.** **21 accounts** (was 20 on 07-26, so **+1 in four weeks**), **0 signups in 7 d** (newest 2026-08-08), **signed-in WAU = 0**, MAU = 2. Roadmap gate is 50+ WAU. ⛔ **Do NOT read `funnel_events` sessions as users — that instrument is wrong by ~3 orders of magnitude**: 16,463 weekly "non-bot" sessions of which **99.67% fire exactly one event and never return**, 4 `wallet_paste` sessions, 0 `signin_click`, 0 `account_created`. ⚠ **Vercel Web Analytics is NOT enabled**, so `funnel_events` is the only traffic instrument and has no independent corroborator. ⚠ **`bot_ua` is only meaningful from 2026-08-23 02:00Z forward** — before that the column exists with no UA to classify, so `false` means "never saw one", not "human". Full capture, with the accuracy gate alongside it: [inbox 2026-08-23T2205Z](inbox/2026-08-23T2205Z-priority-1-captured-wau-is-zero-and-the-accuracy-gate-is-30-percent.md). **Demand is still the gate that matters and the roadmap's answer to a 0 is ACCURACY FIRST, not growth tactics.** ⭐ **And the accuracy gate is measured too, for the first time: 30.1% HIGH/MEDIUM** (Top Shot 34.3%, All Day 21.4%, Golazos 0.0%, UFC 0.0%, Candy 61.6%) — ⚠ **excluding Pinnacle, which has ZERO rows in `fmv_current`** and prices through its own triple-keyed path, so the headline covers four of five published collections. ⛔ **Do NOT chase Golazos' 0%** — measured, every edition that sold there has **1–3 sales a month (avg 1.4)**, so a threshold change would manufacture confidence, not accuracy. ⭐ **The gate is mostly a LIQUIDITY CEILING, not an engineering defect:** on All Day, confidence tracks volume monotonically — HIGH averages 11.8 sales/30d and **100% have ≥5**, MEDIUM 5.5, LOW 2.6. 🚨 **THAT QUESTION IS ANSWERED AND IT IS BIGGER THAN IT LOOKED: ~1,000 editions estate-wide are labelled LOW while their own `sales_count_30d` is ≥5, and in EVERY collection the LOW cohort trades ~2× the MEDIUM cohort** (Top Shot 499 editions at avg 28.9 vs MEDIUM 15.2 vs HIGH 14.0; All Day 454 at 15.6 vs 9.3 vs 9.4; Candy 44 at 48.1). Controls rule out staleness (145/150 computed in 24 h), legacy algo (137/150 are `1.7.0`, same as MEDIUM) and my own query (the figure is the pipeline's own column). `computeConfidence` makes LOW the floor case, so the rule says this cannot happen. **Two readings, both defects:** the LABEL is wrong (~+2 points on the gate, and we publish our lowest confidence on the editions users look up most), or the COLUMN is wrong (`sales_count_30d` may hold the 90-day widened count — it reads 12.7 where a raw 30 d count reads 7.6). ⭐ **RESOLVED the same evening — and it is a CALIBRATION question, not a bug.** Re-measured from `sales` directly (never the column): **368 Top Shot editions publish LOW on a TRUE 39.6 sales/30 d average vs MEDIUM's 22.2**, all 352 current-algo ones computed within 24 h, `days_since_sale` 4.7, true counts 5 → **643**. The cohort is **sub-$2.50 WNBA Series 8 moments at 5/5 liquidity** — a **$0.49** FMV built from **643 trades** publishes as LOW. The demotion is **BY DESIGN**: `MEDIUM_MAX_DISPERSION = 0.35` demotes MEDIUM→LOW once count ≥7, so only high-volume editions are even eligible. ✅ **The dispersion measurement RAN in a quiet window (2 active / 1 IO waiter) and settles it: LOW avg CV **0.731** with 76% over the 0.35 ceiling, HIGH avg CV **0.222** with 10% over.** The mechanism is confirmed. 🚨 **But my sub-dollar-tick calibration story is FALSIFIED by its own prediction** — it predicts HIGH skews expensive; measured, **HIGH has the LOWEST median price ($0.31) and the MOST sub-dollar editions (72%)**, while LOW's median is $1.08. Price level does not drive the demotion. ⛔ **The "build a tick-aware dispersion measure" recommendation is WITHDRAWN — do not act on it.** ✅ **The system is behaving correctly**: 643 trades with a CV of 0.73 genuinely is an uncertain price. ⭐ **What survives is one user-facing observation: `LOW` is doing two opposite jobs** — *"we have almost no data"* and *"we have 643 sales and they disagree"*. To a collector those are opposite messages, and merging them into one badge is the honesty canon's three-states problem applied to a LABEL. Splitting it is a product decision (a new enum touches every surface, the OG cards and the concierge) — **the measurement is filed so the call can be made on it.** Filing: [inbox 2026-08-24T0225Z](inbox/2026-08-24T0225Z-a-thousand-editions-are-labelled-LOW-while-they-are-the-most-traded-on-the-platform.md).

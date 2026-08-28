@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 🚨 MEASURED (read-only, docs) — the accuracy gate has TWO instruments that disagree by 9.4 points, and reading the trust board against focus.md's baseline overstates 5 days of progress by 4×
+
+**The roadmap's headline metric is the share of prices at HIGH/MEDIUM confidence.** focus.md's Priority 1
+carries **30.1%**, captured 2026-08-23. The trust board today publishes
+`topshot_fmv_high_med_share_pct = 54.4` against that capture's **34.3%**, which reads as a
+transformational five days. **It is not, and the gap is an instrument difference, not progress.**
+
+**The two populations:**
+
+| | source | Top Shot filter |
+|---|---|---|
+| focus.md's 30.1% baseline | `fmv_current` directly | **none** |
+| trust board / `rpc_fmv_confidence_share()` | same latest-per-edition scan | **canonical `external_id` only** — `^[0-9]+:[0-9]+(::[0-9]+)?$` |
+
+The canonical filter (shipped 2026-08-04, deliberately) excludes UUID-keyed dupe residue. **focus.md's
+baseline was never re-based onto it.** So the board and the baseline have been measuring different
+populations for over three weeks, and nothing says so at either site.
+
+**Computed BOTH ways, today, so the comparison is like-for-like rather than cross-instrument:**
+
+| | 08-23 baseline | today, SAME method | today, canonical-filtered |
+|---|---:|---:|---:|
+| priced editions | 27,075 | **27,143** | 20,717 |
+| HIGH/MEDIUM | 8,140 | **8,950** | 8,787 |
+| **share** | **30.1%** | **33.0%** | **42.4%** |
+
+⭐ **THE REAL MOVE IS +2.9 POINTS (30.1% → 33.0%), NOT +12.3.** Reading the board against the baseline
+overstates five days of progress by roughly **4×**.
+
+✅ **AND THE +2.9 IS GENUINE, WHICH THE OBVIOUS CONTROL CONFIRMS.** The denominator is **stable —
+27,075 → 27,143, +68 editions**. So the gain is not a survivorship artifact: it is 810 more editions
+reaching HIGH/MEDIUM, not low-confidence editions leaving the population. Top Shot specifically:
+**34.3% → 37.5%** on a denominator that moved 19,667 → 19,735.
+
+⛔ **A FALSE ALARM I CAME ONE STEP FROM FILING, recorded because the near-miss is the reusable part.**
+The canonical-filtered count (13,309 Top Shot priced) against the **19,906** editions that exist looks
+exactly like **6,597 editions having lost their prices** — and `fmv_current` has **no recency filter**
+(it is `DISTINCT ON (edition_id) … ORDER BY computed_at DESC` over all of `fmv_snapshots`), so an
+edition can only leave it by having its snapshots DELETED, which is a real and known hazard here
+(*"FMV writes are delete-then-insert, NEVER upsert"*). Every step of that reasoning was sound and the
+conclusion was wrong: **the gap is the non-canonical residue the function deliberately excludes.**
+**Reading the function's own definition before believing its number is what stopped it.**
+
+⚠ **WHICH NUMBER SHOULD BE THE HEADLINE IS A DECISION, NOT A MEASUREMENT — and it is not mine.** The
+canonical-filtered 42.4% is arguably the more honest figure: pricing UUID dupe residue is not an
+accuracy achievement, and the 08-04 change excluded it on purpose. But **the 50+ WAU gate and every
+prior reading are stated against the unfiltered basis**, so switching silently would book a **+9.4
+point one-off** that no edition earned. 👉 **Pick one basis, state it at both sites, and re-base the
+baseline explicitly rather than letting the two drift.**
+
+⚠ **`pinnacle_fmv_high_med_share_pct = 44` is a THIRD basis and is in neither total.**
+`rpc_fmv_confidence_share()` returns five collections and Pinnacle is not among them — it prices through
+its own triple-keyed path and is computed by a separate leg (253 min old, 1,198 ms, vs the shared leg's
+6,185 ms). **Both totals above therefore cover four of the five published collections, exactly as the
+08-23 capture warned.** Do not add 44% into either number without re-deriving its denominator.
+
+**Revert path:** docs only — no code, no DB, no prod state.
+
 ### 2026-08-28 · ✅ SHIPPED — the moment-page "permanent spinner" handoff: the reported hang did NOT reproduce, but the audit it forced found a real 45s budget where every sibling read is bounded at 2.5–8s
 
 **Handoff:** `docs/handoff-2026-08-27-moment-page-permanent-spinner.md` (Cowork surface-QA), which reported
