@@ -33,6 +33,77 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Output (NO-PUSH):** ledger + metrics + handoff written to the mount (uncommitted; Trevor / next run commits). Inbox NOT archived (append-only, enforced by test). Revert path: none (no ship). Handoff: `docs/handoff-2026-08-28-overnight-pass.md`.
 
+### 2026-08-27 · ⓘ THE `tsc` RED I FOUND WAS FIXED UPSTREAM WHILE I WAS WRITING IT UP — and their fix is better than mine was
+
+Running `tsc` before writing this pass I found `main` red:
+`__tests__/known-issues-index-lists-every-item.test.ts(5,1): error TS2578: Unused '@ts-expect-error'
+directive.` — introduced by `75115ce`, i.e. **after** `fc1bd8eb`, whose verification recorded
+`tsc 0`, so that report was accurate when made.
+
+✅ **`24d72e4e` fixed it independently, minutes later, and did it better: it left a comment in place
+of the directive explaining why there must not be one** — *"Suppressions must be verified against the
+compiler, not assumed from the file extension."* **My version only deleted the line, which invites
+the next author to add it back.** ⭐ **A deletion removes the error; a comment removes the reason
+someone writes it again.** My hunk is dropped as redundant.
+
+⭐ **What is still worth keeping: the same defect appeared twice, one hour apart, from the same
+intuition.** Importing a plain `.mjs` from a `.ts` test *looks* like it needs a suppression, so it
+was written both in my `__tests__/fix-inbox-index-counts.test.ts` (where I hit TS2578 and removed it)
+and in this sibling guard. ✅ **Swept rather than spot-fixed:** `grep -B1` for
+`from "../scripts/*.mjs"` across `__tests__/` finds **no remaining directives** — none are latent.
+
+### 2026-08-27 · ✅ THE ONE UNVERIFIABLE FIGURE IS CHECKABLE AFTER ALL — I named the measurement without naming the column
+
+Claude Code could not verify the jobid-370 entry's *"4 rows changed in the last 15 minutes"* because
+`pack_ask_state` **has no `updated_at` column**. ✅ **That is correct — and the figure is still
+checkable, because the column is `last_checked_at`**, the one this change repurposed to mean *last
+CHANGED*. **My entry said "changed" and never named it**, so the reader looked for the obvious name
+and correctly reported it absent.
+
+⭐ **A measurement is only reproducible if the reader can reconstruct the QUERY. "N rows changed"
+names a quantity; it does not name the instrument** — and on this table the instrument is a column
+whose meaning was deliberately redefined the day before, which is exactly when a reader most needs it
+spelled out.
+
+**Re-measured 2026-08-28 04:43Z, and it holds:**
+
+```sql
+SELECT count(*) FILTER (WHERE last_checked_at > now() - interval '15 minutes') AS changed_15m,
+       count(*) FILTER (WHERE last_checked_at > now() - interval '60 minutes') AS changed_60m,
+       count(*) FILTER (WHERE is_listed) AS listed, count(*) AS total
+FROM public.pack_ask_state;
+```
+
+**9 in 15 min · 12 in 60 min · 2,978 listed · 3,025 total.** ⭐ **The 60-minute figure is the stronger
+one: 12 rows changed against the 12 sweeps × 2,978 = 35,736 the pre-guard code would have rewritten —
+a 0.034% write rate.** ⚠ 9-vs-4 across two readings is ask movement, not drift; both are ~0.3% of the
+listed set.
+
+### 2026-08-27 · ⛔ A 24 KB PATCH WAS RECONSTRUCTED BY HAND WHILE THE COMPLETE FILE SAT ON DISK — my APPLY.md never gave its path
+
+`git am` was reported unavailable and the patch "truncated mid-file". **The delivered file was
+intact** — 24,065 bytes at `…\Rip Packs City\cowork-2026-08-28b\`, verified this session. **What
+truncated was the copy pasted into chat.** So five files were rebuilt by hand from the intact hunks
+(correctly — the diffstat matched exactly) while a complete patch sat one folder away.
+
+⭐ **The cause is a placeholder I have written in every APPLY.md this week: `git am --3way
+"path/to/0001-….patch"`.** The reader cannot apply a file whose path they were never given, and a
+truncated paste is indistinguishable from a truncated file. **Give the EXACT absolute path, and say
+which artifact is authoritative.**
+
+✅ **Fixed where it will be re-read, not just here:** `docs/cowork-skills/rpc-handoff/SKILL.md` gains a
+**"Patch-set delivery"** section (bundle repacked; the bundle guard matches). It carries the five
+rules this week actually paid for: **the exact path + byte size + `sha256`, with the paste declared a
+preview**; **full filenames, never a `000*` glob** (one silently applied 9 of 10 and exited 0);
+**any count describing mutable state is stale on arrival — ship the derivation**; **verify by
+`git am` onto a fresh clone and run guards in the APPLIED tree, while saying which state a green
+result proves** (a clone is blind to untracked files); and **expect a ledger conflict on every
+rebase**, with the warning that a resolver re-splicing the whole block on the first conflict leaves
+later commits empty and silently squashes them.
+
+ⓘ The skill still opens with *"full file replacements, not diffs"* — true for **described** changes,
+and now scoped, because patch sets are what has actually been shipping for a week.
+
 ### 2026-08-27 · ✅ POST-SHIP WATCH — the `oldest_cache_h` runtime control landed, and it closes the one pending item on that fix
 
 **The entry above shipped with an explicit gap:** a bounded `CALL` returned `invalid transaction

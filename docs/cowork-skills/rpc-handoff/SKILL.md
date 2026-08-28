@@ -31,6 +31,38 @@ Cowork can ship DB migrations and Supabase edge functions live, but it has no gi
 4. **Let Claude Code correct false premises.** Add the line: "Claude Code's direct file inspection wins over this doc and over `project_knowledge_search` on any disagreement — adapt to the actual file shape." (A prior handoff described a wrong file shape and the fix was to let CC adapt.)
 5. **Close with** a one-line summary of expected end state (commit on main, deploy READY, metric moved).
 
+## Patch-set delivery — the mode actually in use, and five rules paid for in rework
+
+The "full file replacements" rule above is for *described* changes. In practice most Cowork handoffs
+now ship a `git format-patch` set, and every one of these rules cost real rework on Trevor's box.
+
+1. **Give the EXACT absolute path of the `.patch` file, never `path/to/…`.** ⚠ **The patch text
+   pasted into chat CAN TRUNCATE mid-file; the delivered file does not.** On 2026-08-28 a 24,065-byte
+   patch sat complete in `…\Rip Packs City\cowork-2026-08-28b\` while its pasted copy cut off inside
+   `scripts/fix-inbox-index-counts.mjs`, and it was reconstructed by hand from the intact hunks.
+   **State in APPLY.md: the file is authoritative, the paste is a preview.** Include the patch's
+   **byte size and `sha256`** so a reconstruction can be checked in one command.
+2. **Full filenames in the `git am` line — NEVER a `000*` glob.** A glob silently applied 9 of 10
+   patches and **exited 0**; it was caught only by counting commits against the manifest.
+3. **Any number in a patch that describes MUTABLE state is stale on arrival.** Deriving it correctly
+   at authoring time does not help — a patch is a snapshot. Ship the DERIVATION (e.g.
+   `npm run inbox:index:fix`) and have the applier run it. `main` moved four times during one session.
+4. **Verify by `git am --3way` onto a FRESH CLONE of `origin/main`, then run the guards IN THE
+   APPLIED TREE** — not in the authoring tree, and never quote the authoring tree's numbers.
+   ⚠ **But a clean clone is blind to untracked working-tree state:** `inbox-index-lists-every-filing`
+   read 5/5 in a clone while it was 2/5 red on the box, because an untracked filing does not clone.
+   **Say which state a green result proves.**
+5. **Expect a ledger conflict on every rebase** — both sides insert at the top of
+   `docs/overnight/ledger.md`. Resolve by re-splicing your entries above upstream's newest heading,
+   **never by hand-editing conflict markers**, and re-run `find-clobbered-ledger-headings.mjs` against
+   `origin/main` afterwards. ⚠ A resolver that re-splices the whole accumulated block on the FIRST
+   conflict leaves later commits empty and silently squashes them — check `git rev-list --count`
+   against the number of commits you expected.
+
+⛔ **Scope every no-push note.** Write: *"This blocker is specific to this cloud session. Trevor's
+machine and Claude Code push normally via the PAT in `remote.origin.pushurl`. Commit these files as
+usual."* Omitting it once left two applied migrations uncommitted for ~18 hours.
+
 ## Before writing
 
 - Skim `docs/overnight/ledger.md` so the handoff doesn't collide with queued/declined items or with the nightly autonomous pass (which won't touch files committed in the last 24-48h).
