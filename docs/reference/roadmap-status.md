@@ -9,6 +9,8 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 their *values* are not, which is this file's standing convention. ⚠ **A superseded block's numbers must
 never be quoted; its cautions still apply.**
 
+⭐ **DECIDED 2026-08-28 (Trevor, deep-audit run-4 follow-up): the accuracy-gate metric's Top Shot denominator is ALL ROWS, not canonical-only.** The gate figure is therefore **39.2%** as of 2026-08-27 (canonical was 55.0 the same day — quote it only WITH the "canonical" label). The `rpc_thp_leg_fmv_coverage` precompute still publishes canonical-only until its re-point ships (register R41 carries the owed consequences). This closes R41's standing "two figures, no denominator" ambiguity: one gate, stated denominator.
+
 ⚠ **The section immediately below — "Prioritized next actions" — is the OLDEST material in this file
 (2026-08-03 framing with a 2026-08-13 update), and it sits first for historical reasons, not because it is
 current.** Its *framing* still binds (intelligence-first; read-only product; monetization tabled until 50+
