@@ -10,6 +10,79 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (DB) — `reconcile-saved-wallet-stats` is 79% red because ONE wallet costs more than its whole soft deadline; the correlated tier subquery is now gone
+
+**The pipeline is not mislabelled — it is genuinely not draining, and the mechanism is arithmetic.**
+jobid 259 calls `reconcile_all_saved_wallet_stats(10, 40, 360)` — a **10 second** soft deadline, checked
+only BETWEEN wallets. The 2026-08-13 migration already recorded that one wallet costs **16–55 s** under
+IO saturation. So the loop does **exactly one wallet** and exits truncated, every time.
+
+| 48 h to 2026-08-28 | value |
+|---|---|
+| runs | **9 ok / 34 failed (79.1%)** |
+| `wallets_done` per run | **0–4** of **11–14** eligible |
+| `oldest_cache_h` | **12–15.2 h**, flat, against a `p_min_age_minutes` target of **6 h** |
+
+⭐ **THE COST IS A CORRELATED SUBQUERY THAT RE-SCANS ROWS THE OUTER AGGREGATE ALREADY HAS.**
+`aggregate_saved_wallet_stats` computed `top_tier` by re-querying `wallet_moments_cache` for the same
+wallet once per `collection_id`. The 08-13 migration NAMED this cost and then scheduled around it
+rather than fixing it — a decision worth re-reading, because it is the "filed decision not to act"
+shape CLAUDE.md warns about.
+
+**Measured warm on `0x4d82b07c10f1fe0f` (355 rows, 2 collections), BUFFERS not timings:**
+
+| | shared hit | read | total |
+|---|---:|---:|---:|
+| before | 213 | 302 | **515** |
+| ↳ of which SubPlan 1 alone | 183 | 178 | **361 (70%)** |
+| after | 196 | 166 | **362** |
+
+**Total buffers −30%, READS −45%** (302 → 166) — reads being the IO-bound half on the SMALL tier.
+⚠ **One wallet, 2 collections. The subquery ran once per collection, so the saving GROWS with
+collection count (up to 5). Do not generalise 30% to the fleet.** ⛔ **Timings are NOT quoted: the
+"after" run measured slower in wall clock while doing 45% fewer reads, which is exactly the confound
+CLAUDE.md says to expect during a saturation spell.**
+
+✅ **EQUIVALENCE PROVED OVER THE POPULATION, WITH A POSITIVE CONTROL.** All 22 saved wallets, split in
+two halves on `abs(hashtext(wallet_addr)) % 2`: **80 groups, 12 disagreements, ZERO outside the
+independently-counted ambiguous set — which was also 12.** Two different queries, same number.
+
+🚨 **AND THE 12 ARE A DEFECT THIS FIXES, NOT ONE IT CAUSES: `cached_top_tier` WAS ALREADY
+NON-DETERMINISTIC.** The rank lumps everything outside ULTIMATE/LEGENDARY/RARE/FANDOM/COMMON into
+`ELSE 6` **with no tiebreak**, then takes `LIMIT 1`. Unranked tiers are not rare — **UNCOMMON 60,925
+rows · STANDARD 33,225 · SILVER SPARKLE 7,074 · GOLDEN 4,519** — so in **12 of 80 groups** two or more
+distinct rank-6 tiers tie and the winner was decided by **physical row order**, on a table whose rows
+are updated constantly (`fmv_usd`, `lock_checked_at`). The same wallet could publish a different top
+tier on two consecutive runs with no data change. An explicit `, UPPER(tier)` secondary sort makes it
+stable. **Ranks 1–5 cannot move** — every row at a given rank there carries the same string.
+⛔ **Alphabetical is a STABLE tiebreak, not a claim that GOLDEN outranks UNCOMMON.** Ranking the
+Pinnacle/UFC ladders is a product decision and is deliberately not taken.
+⛔ **Do NOT "simplify" to `min(rank)` mapped back to a name** — there is no name for rank 6, and the
+original returns the tier's actual string.
+
+⛔ **I DID NOT RAISE `p_max_seconds`, AND THE NEXT SESSION SHOULD NOT EITHER WITHOUT A MEASUREMENT.**
+That would do strictly MORE IO on the instance whose binding constraint is the SMALL tier's IO budget —
+CLAUDE.md's standing rule is cut work, never raise the bound. Schedule and all three arguments are
+untouched.
+
+⏳ **NOT YET VERIFIED — the first post-change tick is 23:44Z and had not run when this was written.**
+**Exit condition: `wallets_done` per run rises and `oldest_cache_h` falls toward 6.**
+**Falsifier: if `wallets_done` stays at 1 and `oldest_cache_h` holds at 12–15 h, the per-wallet cost is
+NOT dominated by this subquery** — the remaining cost is the outer scan, and the next lever is an index
+on `(wallet_address, collection_id) INCLUDE (tier, fmv_usd)` (today's `idx_wmc_cohort_cover` INCLUDEs
+`fmv_usd` but **not** `tier`, which is why the rewrite drops to a plain Index Scan), **not** a bigger
+deadline.
+
+**Post-flight, all verified live rather than assumed:** owner `postgres`, ACL
+`{postgres=X/postgres,service_role=X/postgres}` **unchanged**, `anon`/`authenticated` EXECUTE **false**
+via `has_function_privilege` (not the acl text), SECURITY DEFINER and `search_path=public, pg_temp`
+preserved, `check_secdef_anon_exec_drift()` returns a **zero-length** jsonb array (clean — this is the
+array-LENGTH shape, not the `count(*) = 1` one).
+
+**Revert path:** re-apply the prior body — restore the correlated-subquery form of `top_tier`; nothing
+else in the function changed. Record:
+`supabase/migrations/20260828231500_audit_20260828_aggregate_saved_wallet_stats_drop_correlated_tier_subquery.sql`.
+
 ### 2026-08-28 · ✅ SHIPPED — the wmc retry's budget CRUMBS are gone, and the filed mitigation (`attempts: 3 → 2`) is FALSIFIED by its own data
 
 **The 08-28 entry below filed a cheap mitigation and a falsifier. I ran the falsifier first, and it kills
