@@ -33,6 +33,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Output (NO-PUSH):** ledger + metrics + handoff written to the mount (uncommitted; Trevor / next run commits). Inbox NOT archived (append-only, enforced by test). Revert path: none (no ship). Handoff: `docs/handoff-2026-08-28-overnight-pass.md`.
 
+### 2026-08-27 · ✅ SHIPPED (instrument, DB-only) — #39's two-day-old falsifier was UNEVALUABLE, and the reason was a missing row, not a missing measurement
+
+**Went to act on the most user-facing open item — the PUBLIC `/insights/underpriced-serials` board —
+and found the decision already had a path.** Option 1 (add it to the light warmer) **shipped
+2026-08-26**, with an explicit falsifier:
+
+> *"if `/api/public/insights/underpriced-serials` 503s or runs multi-second again during business
+> hours, the `*/10` cadence is not enough against buffer eviction and the answer is the snapshot
+> cache, NOT a shorter warm interval."*
+
+⛔ **So the lever was not mine to re-derive** — the repo had already chosen, shipped, and written down
+what would prove it wrong. ⭐ **Two days later it is still unevaluated, and the reason is not that
+nobody looked: `/api/cron/warm` writes NO `pipeline_runs` row.** It returns JSON and `console.log`s,
+so *"is the warmer keeping the board warm?"* has no DB-side answer at all.
+
+⚠ **And I nearly answered it with the wrong instrument.** `pg_stat_statements` shows **681 calls,
+mean 4,623 ms, 319 disk reads/call** — but those are CUMULATIVE since the 08-12 reset, so they
+average post-warmer behaviour together with the pre-warmer history the warmer was meant to fix.
+⛔ **A cumulative mean cannot show a change that happened inside it.** ⚠ Worse, the warmer's own
+calls land in the same statistics as users', so even a clean split would measure *board executions*,
+not user-perceived latency.
+
+✅ **Shipped instead of guessing: `audit_20260828_underpriced_board_cost` + pg_cron
+`rpc-audit-underpriced-board-cost` (`*/10`, `postgres`-owned), sampling those cumulative counters
+every ten minutes.** ⭐ **Sampling a cumulative counter makes it differenceable** — between any two
+rows, `Δtotal_ms/Δcalls` is the per-interval mean and `Δdisk_reads/Δcalls` is reads per call, which
+are exactly the two numbers the falsifier turns on. Baseline captured at 04:57:59Z. The read-out
+query is in the record file's header. **Self-unschedules 2026-08-30**;
+`check_secdef_anon_execute_violations()` → `[]`, RLS on, `anon` SELECT false.
+
+⛔ **What was deliberately NOT shipped: the materialized view (#39 option 3).** It is a public
+**pricing** surface, the decision is a product call with three named risks, a concurrent session is
+committing to the same tree several times an hour, and **the one probe that would settle it —
+hitting the live URL — is impossible from here (egress to `www.rippackscity.com` is blocked at the
+proxy, recorded in #37).** ⭐ **Shipping an MV against a falsifier I cannot evaluate is precisely the
+pattern that has cost this week two retractions. The instrument makes the call cheap for whoever can
+probe; it does not pre-empt it.**
+
+ⓘ Two implementation notes worth keeping: the function is **schema-qualified to
+`extensions.pg_stat_statements`** rather than having its `SECURITY DEFINER` `search_path` widened
+(the first version failed on exactly that, and widening would have been the wrong fix); and it
+**skips rather than writing a zero** when the view returns nothing, so a stats reset cannot forge a
+"cost collapsed" data point. **Record file:**
+`supabase/migrations/20260828050000_audit_20260828_underpriced_board_cost_instrument.sql`, whose
+cleanup block **names the exact relations** — not `audit_20260828_*`, which now spans more than one
+session's revert paths.
+
 ### 2026-08-27 · ⓘ THE `tsc` RED I FOUND WAS FIXED UPSTREAM WHILE I WAS WRITING IT UP — and their fix is better than mine was
 
 Running `tsc` before writing this pass I found `main` red:
