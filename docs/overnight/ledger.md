@@ -10,6 +10,177 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ THE jobid 211 RESCHEDULE IS REVERTED (correctly) — but the reason it failed is NOT "the hour effect does not transfer", it is 2 GB of cold heap reads, and "there is nothing to shrink" was WRONG
+
+**A Cowork session reverted `rpc-refresh-allday-pack-realized` (jobid 211) after its own 1-day
+falsifier fired, and filed the reading that hour-shape "does not transfer to this job". The revert is
+right and is VERIFIED LIVE. The reading is wrong, and re-deriving it took four queries.**
+
+✅ **Live state confirmed, not quoted from the handoff:** `jobid 211 · 35 */6 * * * · cron_heavy ·
+active=true`. Same jobid, still `cron_heavy`, so the 600 s `rolconfig` timeout survived the
+`cron.schedule` re-write (the `postgres` re-own trap did not fire).
+
+✅ **The run history is exactly as filed** — under the experimental `35 0,8,14,20 * * *`, 08:35 / 14:35
+/ 20:35Z all died at the 600 s ceiling on their first attempt and only the untouched 00:35Z succeeded
+(59 s). 3/3 kills, zero movement toward the 30–120 s band. Reverting on one day was the pre-registered
+threshold and was the correct call.
+
+⛔ **BUT THE INFERENCE DOES NOT SURVIVE A CONTROL.** The filing concludes the contention "is not the
+contention #42 measures" and that "hour selection looks exhausted". I re-derived the fleet hour table
+myself (all `cron.job_run_details`, 14 d) instead of trusting #42's week:
+
+| UTC hour | 0 | 8 | 14 | 20 |
+|---|---|---|---|---|
+| fleet fail % | 2.3 | 0.8 | 3.1 | **0.2** |
+
+⭐ **Hour 20 is the QUIETEST hour of the entire day fleet-wide (0.2%, n=2,371) and 211 died there at
+600 s.** So the experiment was not a bad draw from a noisy table — it was a fair test that the job
+failed. That is a stronger refutation than the filing claims, and it points somewhere specific:
+**whatever binds 211 is invisible to a fleet-level pg_cron statistic**, so no amount of re-ranking
+hours was ever going to find it.
+
+🚨 **THE ACTUAL MECHANISM, and it overturns the 08-27 entry's headline.** That entry concluded from the
+59 s success that the job is *"contended, not oversized — there is nothing to shrink."* Four cheap
+queries say otherwise:
+
+- The command is `SELECT public.refresh_allday_pack_realized();` — 45 chars, **no `?key=` gate secret**
+  (the filing's stated reason for not printing it is a copied caution, not a fact about this job).
+- The function is `refresh materialized view **concurrently** public.mv_allday_pack_realized`,
+  `SECURITY DEFINER`, `proconfig statement_timeout=600s`.
+- ⛔ **The MV is TINY — 3,120 rows / 376 kB** — which kills the obvious "CONCURRENTLY's diff/merge is
+  the cost" hypothesis before it gets published. At 3 k rows the diff is nothing. **Dropping
+  CONCURRENTLY is NOT the lever.**
+- The defining query is a **single-table aggregate with no joins**: `GROUP BY dist_id` over `pack_rips`
+  filtered to the AllDay `collection_id`.
+
+**The plan is the whole story.** `pack_rips` is **3,596,789 rows / 756 MB heap / 1,757 MB total**. The
+planner picks `Index Scan using idx_pack_rips_dist_id` — a partial index on `(dist_id) WHERE dist_id IS
+NOT NULL` — walks an estimated **2,687,590** rows in `dist_id` order (to feed `GroupAggregate` without a
+sort) and **heap-fetches every one of them** to test `collection_id` and read `pull_value_usd`. Neither
+column is in that index.
+
+✅ **Measured on one dist_id (`15`, 50,458 rows = 1.9% of the walk), BUFFERS not timings:**
+
+```
+GroupAggregate                                    actual time=2752.733  Buffers: shared read=5365
+  -> Bitmap Heap Scan on pack_rips  rows=50458    actual time=53.043..2741.890
+       Heap Blocks: exact=5316                    Buffers: shared read=5365 written=270
+       -> Bitmap Index Scan on idx_pack_rips_dist_id   actual time=50.496  Buffers: shared read=49
+```
+
+⭐ **5,365 buffers, every single one a `read` and not one `hit` — 99.1% of them heap, and 2,690 of the
+2,753 ms is the heap scan. The index leg is 49 buffers / 50 ms.** Scale 1.9% → 100% and the refresh
+reads on the order of **~285,000 buffers ≈ 2.2 GB** to produce 3,120 rows. ⚠ **And the real query is
+WORSE than what I measured**: the bounded probe got a *Bitmap* Heap Scan (heap visited in physical
+order); the full query gets a plain ordered `Index Scan`, i.e. ~2.7M **random** fetches.
+
+⭐⭐ **THAT EXPLAINS EVERY OBSERVATION, INCLUDING THE ONE THAT LOOKED LIKE CONTENTION.** Against the
+compute tier's **22 MB/s** IO floor, ~2.2 GB is ~100 s if perfectly sequential and unbounded if random.
+So the job is **bimodal on cache residency, not on load**: when those ~5,000+ heap pages happen to have
+survived eviction it finishes in 50–74 s; when they have not, 2.7M random fetches cannot finish in
+600 s. **Cache residency is not correlated with the fleet's pg_cron failure rate**, which is precisely
+why hour 20 — the quietest hour on the instance — bought nothing. The 59 s success was never evidence
+of right-sizing; it was evidence of a **warm buffer pool**, and reading it as "nothing to shrink" is
+the same trap as an unwarmed A/B (a DB A/B must be WARM-vs-WARM).
+
+⚠ **A SECOND, INDEPENDENT SYMPTOM OF THE SAME DEFECT, found by accident:** a bare
+`SELECT count(*) FROM pack_rips WHERE collection_id=<allday> AND dist_id IS NOT NULL`
+**timed out at `service_role`'s 30 s** during this session. The MV refresh is not a special sufferer —
+*any* reader of that predicate pays the same 2 GB.
+
+**THE LEVER, measured and ready but NOT SHIPPED (see the tradeoff — it is a real one):**
+
+```sql
+CREATE INDEX CONCURRENTLY idx_pack_rips_dist_agg
+  ON public.pack_rips (collection_id, dist_id) INCLUDE (pull_value_usd)
+  WHERE dist_id IS NOT NULL;
+```
+
+Leading `collection_id` prunes to AllDay, `dist_id` supplies the group ordering with no sort, and
+`pull_value_usd` in the payload makes it an **Index Only Scan — zero heap fetches**. Est. ~120–150 MB
+against the ~2.2 GB it removes from four refreshes a day.
+
+⛔ **Two costs, stated rather than buried.** (1) **`INCLUDE` + predicate columns BLOCK HOT UPDATES** —
+and `pull_value_usd` is exactly what the valuation backfill writes (`idx_pack_rips_stale_valued`
+exists to find rows needing it), so the write path pays for the read path. That is the genuine
+trade and it is why this is queued, not shipped. (2) The build is `CONCURRENTLY` on a 756 MB hot
+table on an **IO-bound** instance — per the recorded recipe it is reachable **only from a
+one-statement pg_cron job (libpq)**, never `execute_sql`, and it must be placed in a quiet window.
+
+⚠ **FALSIFIER for the index, stated before the fact:** after the build, `EXPLAIN (ANALYZE, BUFFERS)`
+on the full MV query must show **`Index Only Scan` with `Heap Fetches: 0`** and total buffers **under
+~20,000** (vs ~285,000). If it still heap-fetches, the visibility map is cold — `VACUUM public.pack_rips`
+and re-measure before concluding anything. **Do not judge it on wall-clock**, which is confounded by
+exactly the cache residency this entry is about.
+
+⛔ **Not claimed:** that the index fixes 211's schedule. It should make all four slots survivable, but
+the honest test is buffers, and the 08-27 entry's mistake was concluding from one fast run.
+**`35 */6 * * *` stays until that is measured.**
+
+**Revert path:** nothing shipped by this pass — docs only. The pg_cron revert it verifies was applied
+by the Cowork session; to re-apply the experiment, `SET LOCAL ROLE cron_heavy;` +
+`cron.schedule('rpc-refresh-allday-pack-realized','35 0,8,14,20 * * *', <same command>)`. Not
+recommended on the evidence above.
+
+### 2026-08-28 · 🚨 I WAS WRONG THIS MORNING — "the warmer works" came from the QUIETEST HOUR OF THE DAY, and a full business-hours window says the opposite
+
+**A change shipped on my evidence eight hours ago. Eight more hours of the same instrument
+falsifies the evidence.** Reporting it immediately because `7355fdc4` is already live.
+
+**105 samples now, 04:57Z → 22:30Z. Deep inside the warm window — 15:00–22:30Z, 44 intervals,
+46 calls:**
+
+| | |
+|---|--:|
+| **median** | **4,012 ms** |
+| mean | **5,410 ms** |
+| min / max | 122 ms / 18,932 ms |
+| **intervals under 1 s** | **3 of 44** |
+| **intervals over 4 s** | **22 of 44 — exactly half** |
+| disk reads per call | **352** |
+
+⛔ **This is not a tail. The median IS four seconds, with the warmer running every ten minutes.**
+
+🚨 **What I did wrong, and it is this repo's own rule.** My morning entry said *"the warmer WORKS —
+291–689 ms"* on the strength of **9 calls in one 50-minute band, 05:10–06:00Z = 22:10–23:00 PT: the
+quietest hour of the day.** ⭐ **The warmer's effect and the instance's quietness were confounded in
+that band, and I attributed all of it to the warmer.** The same warmed board under load is 4 s.
+**A sample from the quiet hour is not a measurement of the window.**
+
+⭐⭐ **The mechanism, now visible: the warmer cannot win this race.** It runs `*/10`, each execution
+itself costs ~5.4 s, and the next tick ten minutes later still pays **~350 disk reads** — so the
+board's working set is being evicted *between consecutive warm ticks* under business load. ⛔ **And
+shortening the interval is exactly what #39 forbids.** ✅ **So #39's escalation condition is met, as
+written:** *"if it 503s or runs multi-second again during business hours, the answer is the snapshot
+cache, NOT a shorter warm interval."*
+
+⚠ **Consequence for `7355fdc4` (warmer starts 13Z instead of 14Z), shipped this morning: NOT harmful,
+but its rationale is undercut.** The 06:00–07:00 PT hole is real and it does help there. **But "the
+first users pay the re-warm" is a small effect beside "everyone pays contention all day."** ⛔ **Do
+not revert it** — 2.4 s/day, and it is strictly an improvement to the cold edge — **but do not count
+it as addressing #39.**
+
+⭐ **And a second finding the cost figures make unavoidable: on this board the warmer does not pay for
+itself.** 46 executions × ~5.4 s ≈ **249 s of DB time in 7.5 hours ≈ 8.6 minutes/day** on the
+instance's binding constraint — and essentially all 46 are the warmer itself (6/hour against a
+`*/10` cadence), serving a board whose non-warmer traffic is far lower. **It burns the constraint and
+still leaves the board at a 4 s median.**
+
+👉 **Next decision, and it is Trevor's:** #39 option 3 (materialize) now has much stronger support
+than when it was filed — the refresh was measured at **35.7 ms warm**, and materialising would let
+the board's warmer entry be *dropped*, recovering the 8.6 min/day rather than spending it. ⛔ **I am
+not shipping it.** It is a public **pricing** surface, and **I was wrong about this exact board eight
+hours ago on a thin sample — the correct response to that is to report completely, not to ship a
+second thing on the back of it.**
+
+ⓘ **Accepted, from Claude Code, and it sharpens my own correction:** the `*/10` cadence signature
+**bounds warmer traffic**; *"~3 non-warmer calls per 9 h"* is a **residual**, not a measured user
+count. ⭐ **A residual is not a measurement — it is what is left after subtracting an estimate, so it
+carries that estimate's error and contributes no evidence of its own.** It supports *"lower the MV's
+urgency"*; it does not support any figure for real user volume, and my write-up phrased it as if it
+did.
+
+
 ### 2026-08-28 · ✅ SHIPPED (repo record) — the FOUR MCP-applied migrations prod was ahead on, recovered byte-exactly and committed; `Migration parity` was RED on `main` and is now green
 
 **`Migration parity` has been failing on `main` since 19:33Z** (run `33204431146`, head `1112ba3`) — two
