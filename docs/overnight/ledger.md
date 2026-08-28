@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · 🚨 MEASURED (read-only, docs) — R50's board latencies are all measured at the FASTEST hour, and the probe never samples the day
+
+**No code, no DB, no prod state.** Qualifies **R50** and explains why **R6**'s owed degraded-band
+re-measure cannot be served from existing history.
+
+⚠ **`public_board_liveness_history` reads like a 12-day distribution. It is FOUR FIXED HOURS**, sampled
+unevenly: **00Z 810 samples (42%)** · 06Z 562 · 18Z 296 · 12Z 248. There are no samples at any other
+hour, and **42% of everything R50 pooled comes from the quietest hour on the clock.**
+
+Latency climbs monotonically across those four slots — **p50 126 → 520 ms (×4.1), p90 5,633 → 42,441
+(×7.5), mean 2,956 → 19,994 (×6.8)**.
+
+✅ **PAIRED CONTROL, and it was necessary: the hours were sampled on different numbers of days (18 vs 8),
+so a naive hour split could simply be reading a different mix of good and bad days.** Restricted to days
+that sampled BOTH 00Z and 18Z and compared **board by board, day by day**: **296 pairs across 45 boards
+and 11 days — 273 (92.2%) SLOWER at 18Z**, 23 faster, p50 **101 ms → 520 ms**. **Within the same day and
+the same board, 18Z is slower 92% of the time.** The gradient is real.
+
+🚨 **So R50 understates its own finding**, because its pooled numbers sit between the 00Z and 06Z values:
+
+| board (budget 8,300 ms) | 00Z | 06Z | 12Z | 18Z | R50 pooled |
+|---|---:|---:|---:|---:|---:|
+| `allday_scarcity_board` p50 | 14,922 | 19,109 | 25,651 | **169,448** | 23,429 |
+| `candy_pack_market` p50 | **3,661** | 16,064 | 42,555 | 25,865 | 16,064 |
+| `topshot_set_squeeze_board` % over | 28% | 50% | 50% | **80%** | 30.8% |
+
+⭐ **`allday_scarcity_board`'s p50 at 18Z is 169 SECONDS — 20× its budget and 11× its own 00Z p50.**
+R50 named it the highest-value single target on a pooled p50 of 23.4 s; **that call is confirmed and the
+gap is far larger than the number it was made on.** ⚠ **And `candy_pack_market` is UNDER budget at 00Z
+while 90% over at 18Z — a single-hour reading of any board is not evidence of health.**
+
+✅ **Corroborates #42's "the hour decides the outcome" from a COMPLETELY INDEPENDENT instrument** — #42
+measured pg_cron busy time and timeout waste, this measures public board view latency. Two instruments,
+not one read twice. ✅ **Strengthens R50's ⛔ do-NOT-raise-the-budgets**: the same board meets its budget
+at 00Z and misses by 20× at 18Z, so no single threshold can be right for both.
+
+⛔ **Does NOT establish user-facing latency** — these are ISR pages, a visitor gets a cached render, and
+R50's deliberate refusal to claim user impact still stands. ⛔ **Does NOT answer R6**:
+`get_collection_stats` is not in this table at all and the probe never samples **16:20–18:05Z**, so that
+degraded-band re-measure still needs a live reading inside the band.
+
+⚠ **Limitations:** per-cell n is small (4–18) — the strength is the monotonicity across 4 boards × 4
+hours plus the 296-pair control, never a single cell. `err` is NULL on all 2,916 samples, so this says
+nothing about failures. And **why** 18Z is worst is not attributed here.
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0235Z](inbox/2026-08-28T0235Z-R50-is-measured-at-the-fastest-hour-the-probe-samples-4-slots-and-42pct-are-00Z.md).
+
 ### 2026-08-27 · 🚨 MEASURED (read-only, docs) — the `refresh_wmc_fmv_changed` CLEAN A/B is in, and the fast path FAILS its own exit condition on BOTH callers
 
 **No code, no DB, no prod state.** Closes **open reading #5** and the ⏳ re-read this file scheduled for
