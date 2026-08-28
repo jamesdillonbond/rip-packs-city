@@ -9,7 +9,7 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 their *values* are not, which is this file's standing convention. ⚠ **A superseded block's numbers must
 never be quoted; its cautions still apply.**
 
-⭐ **DECIDED 2026-08-28 (Trevor, deep-audit run-4 follow-up): the accuracy-gate metric's Top Shot denominator is ALL ROWS, not canonical-only.** The gate figure is therefore **39.2%** as of 2026-08-27 (canonical was 55.0 the same day — quote it only WITH the "canonical" label). The `rpc_thp_leg_fmv_coverage` precompute still publishes canonical-only until its re-point ships (register R41 carries the owed consequences). This closes R41's standing "two figures, no denominator" ambiguity: one gate, stated denominator.
+⭐ **DECIDED 2026-08-28 (Trevor, deep-audit run-4 follow-up): the accuracy-gate metric's Top Shot denominator is ALL ROWS, not canonical-only.** The gate figure is therefore **39.2%** as of 2026-08-27 (canonical was 55.0 the same day — quote it only WITH the "canonical" label). The `rpc_thp_leg_fmv_coverage` precompute still publishes canonical-only until its re-point ships (register R41 carries the owed consequences). This closes R41's standing "two figures, no denominator" ambiguity: one gate, stated denominator. ⚠ **The 39.2 is a DATED SAMPLE and has already moved — see the first `⭐ HEADLINE METRIC` block for the live figure and for the ~68.3% CEILING this basis carries.**
 
 ⚠ **The section immediately below — "Prioritized next actions" — is the OLDEST material in this file
 (2026-08-03 framing with a 2026-08-13 update), and it sits first for historical reasons, not because it is
@@ -42,7 +42,63 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-27 20:45 PT (2026-08-28 03:45Z) (supersedes the 08-27 09:55 PT block below)
+## ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-28 16:20 PT (23:20Z) (supersedes the 08-27 20:45 PT block below)
+
+**On Trevor's 08-28 ALL-ROWS decision, which is the gate basis. Every figure below is a fresh
+`fmv_current` read, not a re-quote.**
+
+| collection | priced | HIGH/MEDIUM | share |
+|---|---:|---:|---:|
+| nba_top_shot | 19,742 | 7,590 | **38.4%** |
+| nfl_all_day | 6,190 | 1,521 | 24.6% |
+| laliga_golazos | 575 | 2 | 0.3% |
+| ufc_strike | 518 | 0 | 0.0% |
+| candy_mlb | 125 | 79 | 63.2% |
+| **estate-wide** | **27,150** | **9,192** | **33.9%** |
+
+⚠ **Pinnacle is still in NEITHER total** — zero rows in `fmv_current`, priced through its own
+triple-keyed path. This covers four of five published collections, as every prior capture has warned.
+
+🚨 **NEW, AND IT IS A CEILING ON THE GATE ITSELF — the all-rows basis has a ~32.5% floor-drag that NO
+pricing work can move.** Decomposing Top Shot by the canonical predicate:
+
+| Top Shot rows | count | share of denominator | HIGH/MEDIUM |
+|---|---:|---:|---:|
+| canonical `^[0-9]+:[0-9]+(::[0-9]+)?$` | 13,316 | 67.5% | **55.8%** |
+| non-canonical (dupe residue) | 6,426 | **32.5%** | **2.5%** |
+
+⭐ **So if canonical pricing reached a PERFECT 100%, Top Shot's all-rows gate figure would read
+(13,316 + 163) / 19,742 = 68.3%, not 100%.** The residue is a third of the denominator and contributes
+163 HIGH/MEDIUM rows in total. **This is not an argument to switch bases** — Trevor's decision stands and
+the reasoning for it (pricing dupe residue is not an accuracy achievement) is sound. It is an argument
+that **the gate's practical ceiling is ~68% on this basis, and a plan that treats 100% as the target is
+mis-scaled.** Whoever sets the next accuracy milestone should set it against 68.3, not 100.
+
+⭐ **THE RESIDUE IS NOT GROWING RIGHT NOW, which changes what to do about it.** New non-canonical Top
+Shot editions by day: **27 on 08-18, 9 on 08-20, and ZERO on every one of the eight days since**
+(08-21 → 08-28, while 79 canonical editions were created). So the source is **sporadic, not continuous**
+— a de-duplication backfill would not be immediately re-polluted, and there is no active leak to chase
+first. ⛔ Do NOT read "zero for 8 days" as "fixed": two bursts in ten days is a low-frequency event, not
+an absence, and nothing here identifies what produced them.
+
+⚠ **I COULD NOT DECOMPOSE THE 39.2 → 38.4 MOVE, AND THE REASON IS A LESSON ABOUT THIS FILE.** The two
+bases moved in OPPOSITE directions since 08-27 (all-rows 39.2 → 38.4, canonical 55.0 → **55.8**).
+Arithmetically that requires the residue's share or its quality to have shifted — but **the 08-27 entry
+recorded the RATIOS and not the numerators and denominators**, so the move cannot be attributed without
+re-deriving a stock that no longer exists. ⛔ **New rule for whoever writes the next block: record
+`priced` and `high_med` alongside every percentage.** A ratio on its own cannot be differenced later —
+CLAUDE.md's "a delta between two STOCKS is neither a rate nor a sign", met in the wild. **⚠ Do not treat
+the −0.8 as a regression: with n = 1 prior point and no denominators it is not yet a direction.**
+
+**DEMAND — 23 accounts · +2 in 7 d (newest 2026-08-25) · WAU 2 · MAU 4.** ⭐ **Identical to both the
+08-26 and 08-27 readings — that is a THIRD consecutive confirmation, not a new number.** The roadmap gate
+is 50+ WAU; it has not moved. ⛔ Standing caution unchanged: `funnel_events` sessions are NOT users
+(wrong by ~3 orders of magnitude) and Vercel Web Analytics is still not enabled, so this remains an
+uncorroborated single instrument.
+
+---
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-27 20:45 PT (2026-08-28 03:45Z) (supersedes the 08-27 09:55 PT block below)
 
 Read the documented way, straight from `public.rpc_trust_health_precompute`
 (`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
