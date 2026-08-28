@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (DB) — the pack-pool wedge is FIXED: a tier of 8 can no longer consume a 3-wide window
+
+**DB only** (`CREATE OR REPLACE`, migration `20260828025307`). Acts on this morning's diagnosis; direct
+successor to `20260827030000`, which fixed a wedge one level down and left this one standing.
+
+**User cost, measured BEFORE acting rather than assumed:** 2,083 Top Shot distributions carry a uuid,
+**1,715 (82.3%) have drop-pool rows and 368 do not — a 17.7% hole in pack-EV coverage**, on the surface
+that answers *"is this re-pack worth it?"*. **349 of the 360 unreachable rows were updated in the last
+30 days**, so this is live catalogue, not residue. The backlog drained **710 → 368 in a day**, then
+**stopped dead for 11 hours and could never restart.**
+
+⭐ **ORDER BY ONLY, and that is the whole basis for shipping it.** The `WHERE` is byte-identical, so the
+eligible set is unchanged — **verified live 368 before and 368 after** — and **no computed pack-EV number
+can change.** It changes which eligible rows are tried first, never which are eligible. ⚠ `autonomous-tasks.md`
+lists "pack-EV route logic" off-limits; **that list scopes what the UNATTENDED night pass may auto-ship,
+and its concern is pricing users act on. An ORDER BY over a work queue is scheduling.** Recorded because
+the distinction is the justification.
+
+🚨 **The mechanism the previous fix could not reach: a rotation only shuffles WITHIN a tier.**
+`20260827030000` added a 5-minute rotation hash and deliberately kept `(has rips) DESC` first — *"the one
+ordering term carrying real signal, since a ripped pack is one users can actually see"*, which is sound
+and is preserved. But the tier is a **hard head of 8 against a 3-wide draw**: every tick drew all three
+from the same 8, all 8 return no editions, the tier never empties, **and the 360 behind it were
+unreachable permanently, not probabilistically.**
+
+Now `(has_rips AND (bucket % 3) = 0) DESC`, so a wedged tier is **mathematically incapable of consuming
+every tick** while ripped packs keep a dedicated slot every ~15 minutes.
+
+**Simulated over 12 consecutive buckets BEFORE applying** (as `20260827030000`'s author did):
+
+| | before | after |
+|---|---:|---:|
+| buckets drawing all 3 from the 8 | **12/12** | 4/12 |
+| buckets reaching the 360 | **0** | **8/12** |
+| progress slots per hour | **0** | **24** |
+
+At ~24 attempts/hour the backlog drains in roughly **15 hours**.
+
+ⓘ **`% 3` is a judgement, not a measurement, and it is the only number here that is** — a clear majority
+of ticks must make progress or a future wedged tier merely slows the queue instead of stopping it, while
+a ripped pack must still be picked up promptly.
+
+✅ **Verified after apply:** eligible set **368 → 368** · `anon`/`authenticated` EXECUTE **false/false**
+unchanged · `check_secdef_anon_execute_violations()` **clean** · live sampler draws 3 targets, **all
+`has_rips=false`**. ⚠ **The SECDEF check needed care: it returns jsonb, NOT SETOF, so `count(*)` is
+ALWAYS 1 and reads like one violation** — the correct read is `jsonb_array_length` = **0**. The
+mixed-return-shape trap CLAUDE.md documents fired here.
+
+⛔ **NOT failure memory**, which remains the real fix and is still unbuilt: `pack_distributions` has no
+attempt or error column, so **the 8 will keep being re-drawn in their one-in-three slot forever.** This
+stops them BLOCKING the queue; it does not stop them being retried. ⛔ **And it does not diagnose the 8** —
+they carry a uuid and have rips, so the emptiness is upstream in the Top Shot GQL walk.
+
+⚠ **EXIT CONDITION IS A CONVERSION, NOT A GREEN TICK:** watch `dists_ok > 0` and rising `pack_drop_pool`
+rows over **~20+ ticks**. One converting tick proves the sampler reaches the 360; it does not prove the
+drain rate.
+
+**Revert:** re-apply `20260827030000_audit_20260827_pool_backfill_targets_rotate_instead_of_wedging.sql`
+verbatim. No data migration, no schedule change. Filing: [inbox 2026-08-28T0255Z](inbox/2026-08-28T0255Z-SHIPPED-the-pack-pool-wedge-is-fixed-a-tier-of-8-can-no-longer-consume-a-3-wide-window.md).
+
 ### 2026-08-27 · ⚠ MEASURED (read-only, docs) — the liveness probe DIES at the busy hours, so the band cannot be cheaply instrumented; and my own ranking-bias claim is REFUTED
 
 **No code, no DB, no prod state.** Addendum to the entry above, filed an hour later.
