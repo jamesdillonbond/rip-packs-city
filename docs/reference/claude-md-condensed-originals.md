@@ -372,3 +372,20 @@ emoji of margin (a U+1F6A8 costs two units). Verbatim pre-condensation text:
 Dropped in the condensation: the `38.6 s → 0.17 s` timing pair (the bullet's own advice is to compare
 buffers, not timings), the "identical result / FIXED 08-25" note, and the `0 of 1,281,003 rows disagreed`
 control figure. All three survive in [database.md](database.md), which the condensed line now points to.
+
+
+## Displaced 2026-08-27 — the "sandbox cannot push" bullet (Development workflow)
+
+Third condensation of the 2026-08-27 pass, and this one was forced by the equilibrium rule working exactly
+as the header describes: **two sessions each spent the same headroom within minutes** (one promoted the
+pooled-rate rule from 350 → 110 units of margin; this pass had already promoted the killed-`after()` rollup
+rule against the same margin), and the merged file landed **107 over the limit**. Verbatim pre-condensation
+text:
+
+> - ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **Two tests: `git push --dry-run origin main`, and `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`. A **200** there beside a **403** on `/repos/<o>/<r>` proves the credential is FINE; the block is the repo allowlist (08-25; a PUBLIC repo 403s too).**
+
+⚠ **The `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user` probe is the half that was
+NOT already written down in [tooling-gotchas.md](tooling-gotchas.md)** — that file carries the
+repository-authorization-layer finding but not this two-probe discriminator, so it is preserved here in
+full: a **200** on `/user` beside a **403** on `/repos/<owner>/<repo>` proves the credential is fine and
+the block is the repo allowlist (measured 2026-08-25; a PUBLIC repo 403s too).

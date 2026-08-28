@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⚠ ADDENDUM (docs) — the memory-file equilibrium was spent TWICE in the same ten minutes, and the merge landed 107 units OVER
+
+**Docs only. Recorded because the mechanism is structural, not a slip.** Two sessions were editing CLAUDE.md
+concurrently. This pass promoted the killed-`after()` rollup rule against the 350-unit headroom and paid for
+it by condensing two bullets (**39,650 → 39,799**, headroom 201). A sibling promoted the pooled-rate rule
+against **the same 350**, explicitly noting it took *"headroom another session freed … not by displacing a
+rule"*. Both were individually correct and **neither could see the other**: the sibling's read of the margin
+predated this pass's unpushed commit. The rebase merged cleanly — git has no opinion about a character
+budget — and the result was **40,107, i.e. 107 over the limit, with every test that would catch it passing
+in both sessions separately.**
+
+**Fixed by a third displacement**, verbatim per the header's protocol: the *"the sandbox cannot push"* bullet
+condensed to its one-command test plus a pointer. ⚠ **Its `api.github.com/user` two-probe discriminator was
+NOT already in `tooling-gotchas.md`** — checked rather than assumed, and preserved in full in
+[claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md) rather than pointed at a
+file that does not carry it. **CLAUDE.md now 39,923 (headroom 77).**
+
+⭐ **THE DURABLE POINT, and it is about the protocol rather than this file: "take the headroom that exists"
+is safe only if the headroom cannot be spent twice, and here it can — the margin a session reads is the
+margin at ITS last fetch, not at merge.** ⛔ **So the rule "a new durable rule must DISPLACE one" should be
+followed even when the file looks like it has room**: displacing is idempotent under a concurrent merge,
+spending is not. ⚠ **And the guard cannot save you** — `claude-md-stays-under-the-memory-file-limit` is
+green on each side and only red on the MERGE, which is a state neither author's test run ever evaluates.
+
+**Also in this addendum:** three pointers added so the next reader uses the kill-rate instrument
+(`lib/pipeline/kill-rate.ts`, `npm run pipelines:kills`) that a sibling shipped the same night rather than
+re-deriving the correlation by hand — in CLAUDE.md's `after()` bullet, register **#47**, and the focus steer.
+⚠ **#47 also now states the recency verdict its 45% needs: `candy-editions-ingest`'s LAST kill is its MOST
+RECENT tick, so it reads `failing`, not `recovered`; the 45% is pooled over a window with no fix inside it
+— but from 2026-08-29 01:10Z that window starts spanning the schedule change and MUST be split at the deploy.**
+
+**Revert:** `git revert` this commit; the condensed bullet's verbatim text is in
+[claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md).
+
+
 ### 2026-08-27 · ✅ SHIPPED (docs + one DB note) — memory-refresh pass: every dated claim a live read could settle was re-read, and the one that had gone actively wrong was a watchlist note five hours old
 
 **Scope: documentation + ONE prod-data correction.** No code, no schema, no pipeline behaviour changed.
