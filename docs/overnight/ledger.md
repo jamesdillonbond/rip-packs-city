@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (migration + pin) — R41's leg re-point: the accuracy gate's TS denominator is now ALL ROWS in the producer, not just the docs
+
+**Migration `20260828225605_audit_20260828_r41_fmv_coverage_leg_all_rows_denominator`** removes the
+2026-08-04 canonical-only filter (and the editions join that existed only for it) from
+`rpc_thp_leg_fmv_coverage`. Ran once live to verify: **TS share 55.7 → 38.4 · TS stale 0.0 → 31.7**,
+other collections byte-flat (AllDay 24.6, Candy 63.2); ACLs preserved (same signature), anon EXECUTE
+false, secdef drift 0.
+
+⚠ **Both TS metrics changed denominator on purpose** — a split denominator inside one leg is a new
+two-vocabularies trap. Blast radius measured before shipping: the share metric has **no view or
+function consumer** (⚠ the sweep initially lied CLEAN-the-wrong-way: `ILIKE '%high_med%'` matches
+`HIGH/MEDIUM` because **`_` is a LIKE wildcard** — re-swept with `strpos`); the stale arm's breach_at
+50 does not fire at 31.7 and is now MORE sensitive to canonical drift (32.6% structural floor from the
+6,426-row dead residue + 0.674 × canonical_stale). Pin file
+`supabase/tests/rpc_thp_leg_fmv_coverage.sql` rewritten in the same commit — including its 999 test's
+error-injection target, which HAD to move from `editions` to `fmv_snapshots` (the leg no longer reads
+editions, so dropping it no longer errors — the old test would have failed for the right reason and
+been read as the wrong one).
+
+**Residual (text-only):** the trust-board view's family comment says "TopShot canonical 7.00d"
+(view deliberately not rewritten — reloptions-wipe risk over a comment) and any Cowork artifact
+labelling the number "canonical" (folder not grantable this session). **Watch:** next jobid 325 tick
+(`48 1,7,13,19`) should publish ~38/~32; a 999 means the leg errored.
+
+**Revert:** the previous `elig` CTE is verbatim in the migration header; re-apply it and revert the
+pin/docs commit.
+
 ### 2026-08-28 · ✅ SHIPPED (DB) — `reconcile-saved-wallet-stats` is 79% red because ONE wallet costs more than its whole soft deadline; the correlated tier subquery is now gone
 
 **The pipeline is not mislabelled — it is genuinely not draining, and the mechanism is arithmetic.**
