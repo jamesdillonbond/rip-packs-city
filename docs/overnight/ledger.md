@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (repo record) — the FOUR MCP-applied migrations prod was ahead on, recovered byte-exactly and committed; `Migration parity` was RED on `main` and is now green
+
+**`Migration parity` has been failing on `main` since 19:33Z** (run `33204431146`, head `1112ba3`) — two
+`[MISSING]` names. It is the enforcing job that exists precisely for this: `apply_migration` writes prod
+first and the file is a MANUAL follow-up, so a session that applies and then cannot (or does not) commit
+leaves prod state the repo cannot describe, and therefore **a revert path that exists only in a transcript**.
+
+**By the time I read it the drift was FOUR, not two** — two more were applied at 19:59Z, after the failing
+run sampled. That is the shape to expect: the run's finding is a SAMPLE of an open window, not the total.
+Re-query prod; do not act on the job log's list.
+
+Recovered from `supabase_migrations.schema_migrations` through the `query_sql` service-role reader (the
+`supabase_migrations` schema is not PostgREST-exposed), written byte-exactly, and each file's **on-disk**
+md5 compared against prod's `md5(array_to_string(statements, E'\n'))`. **All four match** — verified from
+disk with `md5sum`, not from the writer's own in-memory copy:
+
+| version | name | md5 (prod == disk) |
+|---|---|---|
+| 20260828110910 | `audit_20260828_resuppress_golazos_offers_cursor_stalled_lapsed` | `ca3ce0797f86c3317ed3c0b9e8cdbc43` |
+| 20260828170654 | `audit_20260828_board_mv_watchlist_note_schedule_resync` | `009720803793934dc32d05d3a2db9513` |
+| 20260828195933 | `audit_20260828_grail_mv_commit_control` | `d879b41f7d26f61c50d84a4ee8b61af5` |
+| 20260828195951 | `audit_20260828_grail_mv_commit_control_schedule` | `0e44ab5cb3b7364da4291a713261d7da` |
+
+⚠ **The recovery script crashed AFTER doing its work** — Node 24 on this box exits `127` with
+`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c` on supabase-js teardown.
+The exit code is about the teardown, not the check; the four `OK` lines and the independent `md5sum` pass
+are the verification. **A non-zero exit from a script that already printed its result is not a failed
+result — but it is also not a pass until something OTHER than that script says so**, which is why the
+md5s above were re-taken from disk.
+
+**Revert path:** `git revert <this commit>` removes the four files. It touches **no production state** —
+these are the repo's RECORD of migrations already applied, so reverting only re-opens the parity gap.
+The prod-side revert for each instrument is the named one inside its own file (the grail control
+self-unschedules 2026-08-31 12:00Z; ⛔ never a wildcard drop on the `audit_20260828_` prefix).
+
+**Target metric:** `Migration parity` green on the next run, and `npm run db:migrations:check` exit 0
+locally at a 3-day window.
+
+### 2026-08-28 · ✅ TWO DECISIONS LANDED (Trevor, live) — the accuracy gate is ALL-ROWS (39.2), and jobid 235 goes back to `*/2`
+
+**1) R41 CLOSED BY DECISION: the roadmap gate metric's Top Shot denominator is ALL ROWS — 39.2% as of
+08-27, not the 55.0 canonical figure.** Recorded in the register (R41 row, with the owed consequences)
+and at the top of `roadmap-status.md`. ⚠ **The `rpc_thp_leg_fmv_coverage` precompute still publishes
+canonical-only** — re-pointing it is handed to Claude Code with the blast radius mapped (function
+predicate + trust-board label + any doc/test quoting 49.7/55.0 as THE headline). Until then the
+precompute number must be quoted as "canonical", never as the gate.
+
+**2) jobid 235 (`rpc-refresh-market-index-daily`) rescheduled `7 */6` → `7 */2 * * *`** — jobid + owner
+(`postgres`) + command (incl. the inline 600 s timeout) preserved. Trevor delegated ("do what you think
+is best"); the displacement argument that decided it: **at `*/6`, 28.6% of runs die at the 600 s ceiling,
+so ~1.33 of its 2.99 busy-h/week are doomed runs producing nothing — 44% pure waste**; the three-point
+dose–response (08-28T0155Z filing) measured `*/2` at ~113 s p50 / 2.9% failure. Net new load ≈ +2.2
+busy-h/week gross, ~+0.9 h/week productive-equivalent, bought: 3× fresher MV and near-zero waste ratio.
+**Exit condition: over the next ~2 days, `*/2` failure rate ≤ ~5% and p50 near 113 s. Falsifier: if `*/2`
+now fails >10%, the 08-24-era dose–response no longer describes the instance — revert.**
+**Revert:** `SELECT cron.schedule('rpc-refresh-market-index-daily','7 */6 * * *', <same command>);`
+
 ### 2026-08-28 · ⭐ THE RETRY IS VALIDATED AT LAST (910 rows recovered) — and the same wave exposes a SECOND defect in my own config: 3 attempts share ONE budget, so the last one gets crumbs
 
 **The wave with real write volume finally ran, and it answers both open questions on this fix — one
