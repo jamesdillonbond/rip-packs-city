@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ RE-READ THE `compute_pack_ev_per_edition_weighted` BLOCKER AS CLAUDE.md INSTRUCTS — it is CONFIRMED REAL, and the tempting reading (mine) is wrong
+
+CLAUDE.md carries this as *"the ONE measured-but-unshipped DB fix left, blocked on a DECISION not a
+diagnosis"* and, two lines later, the standing lesson *"a sibling's stated blocker turned out to be a
+MEASUREMENT, not a decision — re-read a 'blocked' item's blocker before inheriting it."* **I re-read it.
+This one does NOT dissolve, and I am recording the reasoning because the wrong path is genuinely
+inviting.**
+
+⚠ **WHAT I INFERRED, AND WHY IT WAS WRONG.** From the live body I read:
+
+```
+LEFT JOIN fmv_current fc ON fc.edition_id = pdp.edition_id AND fc.collection_id = pdp.collection_id
+WHERE pdp.collection_id = p_collection_id
+```
+
+…and concluded the fix must be *"add the transitively-implied `fc.collection_id = p_collection_id` so the
+planner can push it down"* — which would be **EV-neutral by construction**, and therefore **incapable of
+moving a fixture assertion**, making "re-seeds a pinned fixture" a phantom blocker. That reasoning is
+internally sound and it is **not what the filed fix is.**
+
+🚨 **THE ACTUAL PROPOSAL IS A LATERAL ACCESSOR REPLACING THE VIEW JOIN** (filing:
+`inbox/2026-08-18T1410Z-pack-ev-lateral-verified-and-the-array-pushdown-does-not-transfer.md`), measured
+at **18,766 buffers vs 1,046,192**, verified value-identical against the real view (0 mismatches over all
+3,097 editions of dist 4184; sum 85.4400 both sides). **A different change entirely from the one I
+inferred, and its fixture interaction is real.**
+
+⭐ **AND THE BLOCKER'S SUBSTANCE IS SHARPER THAN "re-seeds a fixture" SUGGESTS — THE PIN MODELS AN
+IMPOSSIBLE STATE.** `supabase/tests/compute_pack_ev_per_edition_weighted.sql` seeds
+`INSERT INTO fmv_current VALUES (eA,ts,10),(eB,ts,100),(eA,other,10),(eB,other,20)` — the same editions
+under **two** collections — against a stand-in TABLE. But the production `fmv_current` is
+`DISTINCT ON (edition_id)`, i.e. **one row per EDITION, not per (edition, collection)**. So the fixture
+encodes a state the real view cannot produce, and today's join only agrees with it because the join
+carries a `collection_id` condition the view's own shape makes moot.
+
+👉 **THAT is why it is a DECISION.** Re-seeding is not clerical: it means choosing what the fixture should
+assert once it models one-row-per-edition — and D1/D3 currently distinguish `eB` at **100 under `ts`** vs
+**20 under `other`**, a discrimination the corrected fixture **cannot express**. Somebody has to decide
+what those cases mean afterwards. ⛔ **Do not treat it as a verbatim-DDL-copy update.**
+
+⚠ **Two more things the filing already settled, so nobody re-derives them:** the fixture-preserving
+`= ANY(v_ids)` alternative is **REFUTED** (it timed out exactly like the original; the pushdown is not
+fenced, so the leading — still UNCONFIRMED — explanation is a cost crossover at large arrays, which would
+make a chunked ≤500 `= ANY` a third viable shape), and `fmv_current` itself must **NOT** be replaced
+(it carries `security_invoker=true`).
+
+✅ **Net: the CLAUDE.md line is ACCURATE as written and should stay.** ⭐ **The transferable lesson is the
+inverse of the one that prompted the check: "re-read the blocker" cuts BOTH ways — it can dissolve a
+blocker, and it can confirm one. I formed a confident, coherent, wrong model of what the fix even WAS
+before finding the filing.** Read the filing the blocker points at before deciding the blocker is soft.
+
+**Nothing shipped. No revert path — this entry is a status correction to my own reasoning, not a change.**
+
 ### 2026-08-28 · ⏳ FIRST POST-FIX TICK ON THE RECONCILE AGGREGATE — ⛔ NOT VERIFIED, and the honest reading is that ONE SAMPLE HAS NO POWER HERE
 
 **The 23:44Z tick is the first to run against the rewritten `aggregate_saved_wallet_stats` (applied
