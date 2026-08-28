@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ POST-SHIP WATCH — the `oldest_cache_h` runtime control landed, and it closes the one pending item on that fix
+
+**The entry above shipped with an explicit gap:** a bounded `CALL` returned `invalid transaction
+termination` (a COMMITting procedure cannot run inside `execute_sql`'s transaction), so the only true
+control was the scheduled pg_cron run at `:44`, and I said to read it before calling the fix closed.
+**Read. It closes.**
+
+| pg_cron run | `oldest_cache_h` | `wallets_total` | `ok` |
+|---|---:|---:|---|
+| **05:44Z — last PRE-fix** | **456.8 h** | 3 | false (`soft_deadline…`) |
+| **06:44Z — first POST-fix** | **7.0 h** | 3 | false (`soft_deadline…`) |
+
+✅ **The procedure RAN and logged its own row**, which is the part a syntax check could not establish —
+the DDL parsed at CREATE time, but only an execution proves the changed `SELECT … INTO` binds. It does.
+
+⭐ **The control that makes this a fix and not a coincidence: `wallets_total` is 3 on BOTH runs.** The
+QUEUE is untouched; only the metric moved. That is precisely the intended blast radius — I scoped the
+measurement, not the work — and had the number moved too, it would have meant I had changed which
+wallets get swept.
+
+⭐ **Independent corroboration, and it is tight.** Computing the scoped value by hand at ~05:50Z gave
+**6.1 h**; an hour later the procedure's own column reports **7.0 h**. Two different instruments
+(my ad-hoc query vs the production procedure) agreeing within the elapsed hour is what rules out my
+having measured a different population than the one I shipped.
+
+⚠ **`ok = false` is UNCHANGED and is NOT a regression** — the identical
+`soft_deadline_reached_partial_sweep_committed` appears on the 05:44Z pre-fix run. That flag is
+`ok := NOT v_truncated`, and this sweep truncates most ticks; it is a documented separate item, not
+something this change touched.
+
+⚠ **NOT yet demonstrated, stated because the whole defect was a number that could only rise: that it can
+FALL.** One hour of data shows 6.1 → 7.0, which is just the oldest eligible row ageing while unswept.
+The *property* that it is now able to fall follows from the predicate, but the observation needs a tick
+where that wallet is actually refreshed. **Cheap to confirm on any later run; do not record it as
+confirmed until seen.**
+
+**Revert path:** unchanged from the entry above — docs only here, nothing shipped by this watch.
+
 ### 2026-08-27 · ✅ MONTHLY DEEP AUDIT RUN 4 — 6 sweeps, 0 P0s, 5 fixes shipped (1 migration · 2 cron ops · 1 data null-out · 4 code files); register rewritten
 
 **Full report: [docs/audits/deep-audit-2026-08-27.md](../audits/deep-audit-2026-08-27.md). Register updated in the same commit.** All 11
