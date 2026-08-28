@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⭐ THE FIXED `oldest_cache_h` EARNED ITS KEEP IN 8 HOURS — the sweep sits at a stable ~2× its target, and the arithmetic says it cannot self-correct
+
+**The payoff of this morning's scoping fix, and the first thing the metric could not previously say.**
+Eight hourly runs since 06:44Z:
+
+`oldest_cache_h`: **7.0 → 7.0 → 8.0 → 8.9 → 9.9 → 10.9 → 11.7 → 12.4**, rising ~1.0/hour.
+
+⚠ **THE VALUE IS NOT NEW AND I AM NOT CLAIMING IT IS.** The 08-27 filing already measured oldest
+eligible staleness at **15.1 h** and called it *"very nearly keeping up… with nothing starved"*. Today's
+12.4 h is the same regime. **What is new is that the number now MOVES, so this is watchable
+continuously instead of by hand.**
+
+⭐ **What IS new is the mechanism, and it makes "very nearly keeping up" too generous:**
+
+| | |
+|---|---|
+| per-wallet cost | **35,456 ms** (`aggregate_saved_wallet_stats`) |
+| budget per run | `p_max_seconds = 50` |
+| wallets completed per run | **1.13** |
+| queue size | **13.6** |
+| runs `ok` | **0 of 8** |
+| target | 6 h (`p_min_age_minutes = 360`) |
+
+**One wallet costs 35 s against a 50 s budget, so exactly one fits.** At 1.13 wallets/hour against a
+~13.6-wallet queue that needs refreshing every 6 h (~2.3/hour required), the sweep is running at **half
+the throughput it needs**. That is not a transient to wait out — **it is a stable equilibrium, and
+~12–15 h is where it settles.** The queue also grew 3 → 16 over the window.
+
+👉 **DECISION, NOT DIAGNOSIS — and deliberately not taken here, because every lever costs IO on a
+saturated instance.** Roughly 2× throughput is needed: **halve the cadence** (hourly → 30 min, doubling
+runs), **double `p_max_seconds`** (50 → 100, doubling work per run), or **make the per-wallet query
+cheaper than ~18 s**, which is the only option that does not add load and is therefore the one focus.md's
+standing steer points at (*"the lever is cutting work — never raising a timeout"*).
+
+⚠ **Do NOT read `ok = false` as the problem.** `ok := NOT v_truncated` and this sweep truncates by
+design; 0/8 is the documented soft-deadline case, not a fault. **The signal is `oldest_cache_h` and the
+queue depth, which is precisely why the metric had to be fixed before any of this was legible.**
+
+**Revert path:** docs only.
+
 ### 2026-08-28 · 🚨 MEASURED (read-only, docs) — the accuracy gate has TWO instruments that disagree by 9.4 points, and reading the trust board against focus.md's baseline overstates 5 days of progress by 4×
 
 **The roadmap's headline metric is the share of prices at HIGH/MEDIUM confidence.** focus.md's Priority 1
