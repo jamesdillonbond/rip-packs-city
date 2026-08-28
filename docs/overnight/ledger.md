@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⏳ FIRST POST-FIX TICK ON THE RECONCILE AGGREGATE — ⛔ NOT VERIFIED, and the honest reading is that ONE SAMPLE HAS NO POWER HERE
+
+**The 23:44Z tick is the first to run against the rewritten `aggregate_saved_wallet_stats` (applied
+22:59Z). It does not settle anything, and this entry exists so nobody reads it as either outcome.**
+
+| | `wallets_done` | `oldest_cache_h` | `elapsed_ms` |
+|---|---:|---:|---:|
+| pre-fix (typical) | 1 | 12.0–13.0 | 16k–78k |
+| **23:44Z, post-fix** | **1** | **10.7** | **42,782** |
+
+**Split on the 22:59Z deploy, restricted to `wallets_done = 1` so the comparison is like-for-like:**
+
+| window | n | mean | min | max |
+|---|---:|---:|---:|---:|
+| pre-fix | **23** | 38,672 ms | **3,700** | **77,860** |
+| post-fix | **1** | 42,782 ms | — | — |
+
+🚨 **THE PRE-FIX SPREAD IS 3.7 s TO 77.9 s — A 20× RANGE — SO A SINGLE POST-FIX SAMPLE HAS ESSENTIALLY
+ZERO DISCRIMINATING POWER.** 42,782 ms sits comfortably inside that distribution, near its mean. ⛔ **This
+is an UNINFORMATIVE sample, NOT a failed fix**, and it must not be recorded as either. Reporting "no
+improvement" from n = 1 against a 20× spread would be the same error as the 08-27 "the warmer works"
+reading that a sibling session falsified this morning — a number from one band presented as a measurement
+of the whole.
+
+⚠ **Against my own stated exit condition the result is genuinely MIXED, and both halves are weak:**
+`wallets_done` did NOT rise (still 1 — the falsifier's first clause), but `oldest_cache_h` did NOT hold at
+12–15 h either; it fell to **10.7**. ⛔ **And that fall is not evidence of anything**: `oldest_cache_h` is
+a MIN over the queue population, so it moves whenever any wallet is refreshed, including for reasons that
+have nothing to do with this change. **A stock, not a rate** — the trap CLAUDE.md names.
+
+👉 **RE-ARMED EXIT CONDITION, replacing the one I wrote at ship time (which was not stated sharply enough
+to be checkable): compare the `wallets_done = 1` elapsed DISTRIBUTIONS across the 22:59Z split at
+n ≥ 10 post-fix** — median and IQR, not the mean, because the pre-fix distribution is visibly skewed.
+**Falsifier: if the post-fix median is within ~10% of the pre-fix median at n ≥ 10, the correlated
+subquery was NOT the binding cost** and the remaining cost is the outer scan — in which case the next
+lever is a covering index on `(wallet_address, collection_id) INCLUDE (tier, fmv_usd)` (today's
+`idx_wmc_cohort_cover` INCLUDEs `fmv_usd` but **not** `tier`, which is exactly why the rewrite drops from
+an Index Only Scan to a plain Index Scan), **not** a bigger `p_max_seconds`.
+
+⭐ **What IS established and does not need re-testing:** the buffer reduction itself (515 → 362 total,
+302 → 166 reads, measured warm), and the equivalence proof over all 22 wallets. **Those are properties of
+the query, not of the instance's load** — a saturation spell can hide a wall-clock improvement but it
+cannot un-read 136 buffers. The open question is only whether fewer buffers convert to less wall clock
+here, and on an IO-queued instance that is genuinely not guaranteed.
+
+**Revert path:** unchanged — the one in the migration's own header. Nothing new shipped by this entry.
+
 ### 2026-08-28 · ✅ SHIPPED (CI) — main went red twice on the audit migrations and both were GUARD-REGISTRATION gaps, not code faults
 
 Two small commits (\`0b88825c\`, \`1bd203ef\`), each fixing what a guard actually asked for:
