@@ -623,3 +623,50 @@ production aliases and `lambdaRuntimeStats` — not on `state` alone, which lags
 ⓘ **Prefer a REAL non-docs change over a no-op edit** when you need a tip: the fix used here added
 `Rip Packs City/` to `.gitignore` — the untracked `format-patch` drop directory that a `git add -A` would
 otherwise commit. A genuine fix that happens to be non-docs keeps the history honest about what changed.
+
+## 🚨 `file://${process.argv[1]}` NEVER matches on Windows — a main-module guard that silently disables the whole script (2026-08-28)
+
+**Found because a test went red LOCALLY while CI was green on the same tree** — the disagreement was
+the signal, not the redness.
+
+```js
+if (import.meta.url === `file://${process.argv[1]}`) main()   // ⛔ BROKEN on Windows
+```
+
+`import.meta.url` is **always a URL**. `process.argv[1]` is an **OS path**. On Linux the two coincide,
+because a POSIX path starts with `/` and `file://` + `/home/…` is a valid file URL. On Windows argv[1]
+is `C:\Users\…\x.mjs`, so the comparison is `file:///C:/Users/.../x.mjs` vs `file://C:\Users\...\x.mjs`
+— **never equal**.
+
+🚨 **THE FAILURE IS SILENT AND TOTAL: `main()` simply never runs, the process exits 0, and nothing is
+printed.** `scripts/gen-known-issues-index.mjs` carried this for its whole life. Measured on Trevor's
+box: **both** `npm run docs:issues-index` (the **WRITER**) and `-- --check` (the **GUARD**) exited 0
+having done nothing. So a Windows session that added a register item and dutifully ran the regenerate
+command got a **no-op**, then pushed a stale index — while the guard meant to catch exactly that passed
+**vacuously on the same machine**. CI, on Linux, was green the entire time.
+
+**The correct idiom:**
+
+```js
+import { pathToFileURL } from "node:url"
+const isDirectRun = process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href
+```
+
+⚠ **THE PART WORTH INTERNALISING: THE REPO ALREADY KNEW.**
+`scripts/ingest-topshot-active-listings.mjs` carries both the correct idiom **and a comment describing
+this exact trap** ("*wrong on the maintainer's own machine*"), and `check-unbounded-server-reads.mjs`
+uses `pathToFileURL` too. **Nothing connected that knowledge to the third script.** Same shape as the
+honesty canon's *"grep for the EXPRESSION, not the file — a comment is only read by someone already in
+that file."* The fix is therefore a **ban at zero** over `scripts/**`
+(`__tests__/scripts-main-module-guard-works-on-windows.test.ts`), not a comment.
+
+⚠ **A ban is the easiest guard to get wrong, so that test pins four anti-vacuity properties:** it
+asserts the **count of files it inspected** (a walk that finds nothing looks like a clean repo); the
+banned needle is **assembled from two fragments** so the guard cannot match its own source; it proves the
+needle **against a known offender AND against the correct idiom**; and a second **behavioural** test
+spawns the script and asserts it prints a **non-zero item count** — because reading the condition is
+precisely how this stayed broken.
+
+⚠ **Sibling idiom, NOT this bug, left alone deliberately:** `scripts/fix-inbox-index-counts.mjs` uses
+`import.meta.url.endsWith(path.basename(process.argv[1]))`. That **works** on Windows, so the ban does
+not flag it — though a basename match would also fire for a same-named file in another directory.
