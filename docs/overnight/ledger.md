@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED the warm-window fix from this morning's handoff — `*/10 14-23,0-5` → `*/10 13-23,0-5`
+
+Executing the handoff Cowork wrote from the #39 instrument's first read-out (entry below). One
+character in `vercel.json`, line 22, the `/api/cron/warm` entry.
+
+**Why:** the warmer works while it runs (291–689 ms inside the window against a 4,623 ms cumulative
+mean), but its window **reopened at 14:00Z = 07:00 PT — the same minute the first Pacific users
+arrive**, so the first calls of the day paid the re-warm (2,131 ms, 4,153 ms) instead of benefiting
+from it. Starting an hour earlier warms the buffers *before* the first user. Cost: 6 extra ticks/day
+× ~400 ms ≈ **2.4 s/day** of DB time; the route adds no work per tick, only ticks.
+
+⚠ **This is NOT the escalation #39 reserves** (the snapshot cache), and it does not pre-empt it.
+⚠ **n = 3 in the hole, 3 at the reopen — a shape, not a distribution.** It is justified by the
+*mechanism* (an 8-hour cold gap ending exactly at the traffic ramp), which does not depend on n, and
+by its near-zero cost. **Do not quote the 5,516 ms as a typical figure.**
+
+**Checked, not assumed:** `vercel.json` holds exactly ONE `/api/cron/warm` entry (asserted the
+occurrence count before the scripted replace, and JSON.parse after); a full-repo grep for `14-23`
+found **no test or guard pinning the schedule string** — only prose in this ledger, the archive, the
+handoff and known-issues #39.
+
+**The decisive read is still tomorrow's full 14:00–23:00Z window**, deep inside the warm cycles. If
+means stay above ~1 s there, option 1 is insufficient and the snapshot cache is next. The instrument
+(`audit_20260828_underpriced_board_cost`) self-unschedules 2026-08-30, so that read happens once.
+
+**Revert path:** restore `"*/10 14-23,0-5 * * *"` in `vercel.json` (`git revert` the code commit —
+find it by message, not by a sha quoted here). No data, no schema, no other surface.
+
 ### 2026-08-28 · ⭐ THE #39 INSTRUMENT READ OUT AFTER 9 HOURS — the warmer WORKS, and the defect is the 8-hour hole it leaves before the first users of the day
 
 **55 samples, 04:57:59Z → 14:10Z.** The per-interval figures the cumulative counters could not show:
