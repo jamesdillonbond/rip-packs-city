@@ -36,9 +36,30 @@ import {
   type StudioHoldingsResult,
 } from "@/lib/chains/flow/allday-studio-holdings"
 import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
+import {
+  UPSERT_CHUNK,
+  newChunkTally,
+  chunkFailureError,
+  chunkFailureExtra,
+  upsertWmcChunkWithRetry,
+  CHUNK_RETRY_RUN_BUDGET_MS,
+  type ChunkFailureTally,
+} from "@/lib/chains/flow/wmc-chunk-upsert"
+
+// Re-exported so existing importers of this module keep working. The
+// implementation lives in wmc-chunk-upsert.ts — see the header there for why it
+// is not in this file.
+export {
+  UPSERT_CHUNK,
+  newChunkTally,
+  chunkFailureError,
+  chunkFailureExtra,
+  upsertWmcChunkWithRetry,
+  CHUNK_RETRY_RUN_BUDGET_MS,
+}
+export type { ChunkFailureTally }
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
-const UPSERT_CHUNK = 200
 
 // Paginated mega-wallet recovery: per-mode chunk size is the count of
 // getIDs() indices walked per Cadence call. AllDay uses 1000 — borrowNFT
@@ -312,52 +333,6 @@ async function logRun(args: {
 }
 
 /**
- * Running tally of wallet_moments_cache upsert-chunk FAILURES for one run.
- *
- * WHY THIS EXISTS (2026-07-25). Every `upsert_wmc_batch` chunk error used to be
- * `console.error`'d and then swallowed: there was no counter, `rows_skipped` did
- * not include the lost rows, and the run still logged `ok: true`. That made
- * chunk-level data loss structurally invisible — 3,497 wallet-backfill runs
- * reported 0 failures over a window in which ~37 chunks of up to 200 rows each
- * were silently dropped. (`chunkErrors` on the paginated path counted only
- * PAGINATION-fetch failures, never upsert failures.)
- *
- * The shape mirrors app/api/cron/ufc-enrichment-drain/route.ts, which already
- * surfaces its write errors correctly. Difference: the drain `break`s on the
- * first error, whereas these runs continue through the remaining chunks so
- * partial progress is still banked — hence a COUNT plus the first error message,
- * rather than a single writeError.
- */
-export interface ChunkFailureTally {
-  /** number of upsert chunks that errored */
-  chunkErrors: number
-  /** rows in those chunks — an upper bound on rows lost this run */
-  chunkRowsLost: number
-  /** first error message seen, for the pipeline_runs.error column */
-  firstChunkError: string | null
-}
-
-export function newChunkTally(): ChunkFailureTally {
-  return { chunkErrors: 0, chunkRowsLost: 0, firstChunkError: null }
-}
-
-/** Non-null pipeline_runs.error text when any chunk failed, else null. */
-export function chunkFailureError(t: ChunkFailureTally): string | null {
-  if (t.chunkErrors === 0) return null
-  return `wmc_upsert_chunk_failures=${t.chunkErrors} rows_lost=${t.chunkRowsLost}` +
-    (t.firstChunkError ? ` first=${t.firstChunkError.slice(0, 200)}` : "")
-}
-
-/** The chunk-failure fields to spread into a logRun `extra`. */
-export function chunkFailureExtra(t: ChunkFailureTally): Record<string, unknown> {
-  return {
-    chunk_errors: t.chunkErrors,
-    chunk_rows_lost: t.chunkRowsLost,
-    first_chunk_error: t.firstChunkError,
-  }
-}
-
-/**
  * Upsert `rows` to wallet_moments_cache in UPSERT_CHUNK batches via the
  * change-detecting `upsert_wmc_batch` RPC (audit_20260610_upsert_wmc_batch_change_detect:
  * skips unchanged rows — same edition_key + serial, last_seen <24h — instead of a
@@ -376,23 +351,16 @@ async function upsertWmcChunks(
 ): Promise<number> {
   let written = 0
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    const chunk = rows.slice(i, i + UPSERT_CHUNK)
-    // deno-lint-ignore no-explicit-any
-    const { data, error } = await (supabaseAdmin as any)
-      .rpc("upsert_wmc_batch", { p_rows: chunk })
-    if (error) {
-      tally.chunkErrors++
-      tally.chunkRowsLost += chunk.length
-      if (tally.firstChunkError === null) tally.firstChunkError = error.message
-      console.error(
-        `[${pipelineName}] upsert err chunk=${chunkLabelPrefix}${i}: ${error.message}`,
-      )
-    } else {
-      written += Number(data?.written ?? 0)
-    }
+    written += await upsertWmcChunkWithRetry(
+      rows.slice(i, i + UPSERT_CHUNK),
+      pipelineName,
+      tally,
+      `${chunkLabelPrefix}${i}`,
+    )
   }
   return written
 }
+
 
 async function loadCachedMomentIds(wallet: string, collectionUuid: string): Promise<Set<string>> {
   const ids = new Set<string>()

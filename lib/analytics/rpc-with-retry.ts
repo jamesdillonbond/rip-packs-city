@@ -77,6 +77,15 @@ interface RetryOptions {
   attempts?: number
   baseDelayMs?: number
   /**
+   * Called once per retry that is actually SCHEDULED (i.e. the error was
+   * classified transient and there is budget left to sleep). Lets a caller
+   * COUNT recoveries instead of inferring them from timing — without it, a
+   * retry that saves a batch write is indistinguishable from a first attempt
+   * that simply worked, and the fix is unmeasurable. Never called on the
+   * final attempt, and never for a non-transient error.
+   */
+  onRetry?: (attemptsSoFar: number, err: PostgrestError) => void
+  /**
    * TOTAL wall-clock budget for the whole call INCLUDING retries and backoff —
    * not a per-attempt allowance. rpcWithRetry always settles within roughly
    * this long, which is the property the callers actually need; a per-attempt
@@ -328,6 +337,7 @@ async function retryLoop<T>(
     // would spend the caller's time to reach a retry that cannot run.
     const delay = Math.min(base * Math.pow(4, i), Math.max(0, deadline - Date.now()))
     if (delay <= 0) break
+    opts.onRetry?.(i + 1, error)
     console.log(
       `[rpc-with-retry] transient error on ${label} attempt ${i + 1}/${attempts}: ${error.message || (error as any)?.code || "unknown"} — retrying in ${delay}ms`
     )

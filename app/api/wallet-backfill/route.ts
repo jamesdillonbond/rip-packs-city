@@ -7,6 +7,16 @@ import {
   resolveTopShotUsernameCacheAware,
 } from "@/lib/chains/flow/topshot-username-resolve"
 import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
+// Imported from the writer module directly, not re-exported through
+// wallet-backfill-helpers: this route's test suite stubs that module wholesale,
+// and going through it would put the stub — not the real chunk writer — on the
+// Top Shot path, which is exactly how the duplicate loop survived.
+import {
+  newChunkTally,
+  chunkFailureError,
+  chunkFailureExtra,
+  upsertWmcChunkWithRetry,
+} from "@/lib/chains/flow/wmc-chunk-upsert"
 import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 export const dynamic = "force-dynamic"
@@ -220,9 +230,12 @@ async function runBackfill(
   // failures across a window that dropped ~37 chunks of up to 200 rows). Mirrors
   // lib/chains/flow/wallet-backfill-helpers.ts's ChunkFailureTally and
   // app/api/cron/ufc-enrichment-drain/route.ts's write-error surfacing.
-  let chunkErrors = 0
-  let chunkRowsLost = 0
-  let firstChunkError: string | null = null
+  // Shared with lib/chains/flow/wallet-backfill-helpers.ts rather than
+  // re-declared: this route had its own copy of the counters AND its own copy of
+  // the bare .rpc() upsert, so the 2026-08-28 retry fix would have landed on the
+  // other four collections and silently missed Top Shot. One mechanism, one set
+  // of edge cases.
+  const chunkTally = newChunkTally()
   let terminatedReason:
     | "no_more_moments"
     | "safety_ceiling"
@@ -370,19 +383,12 @@ async function runBackfill(
       // totalUpserted now counts rows ACTUALLY written (insert + real update).
       if (allRows.length >= UPSERT_CHUNK) {
         const chunk = allRows.splice(0, allRows.length)
-        const { data, error } = await (supabaseAdmin as any)
-          .rpc("upsert_wmc_batch", { p_rows: chunk })
-        if (error) {
-          // Tally, don't swallow — see the chunkTally declaration above.
-          chunkErrors++
-          chunkRowsLost += chunk.length
-          if (firstChunkError === null) firstChunkError = error.message
-          console.error(
-            `[wallet-backfill] upsert err batch=${batchesFetched}: ${error.message}`
-          )
-        } else {
-          totalUpserted += Number(data?.written ?? 0)
-        }
+        totalUpserted += await upsertWmcChunkWithRetry(
+          chunk,
+          "wallet-backfill",
+          chunkTally,
+          `batch=${batchesFetched}`
+        )
       }
 
       if (totalFetched > 0 && totalFetched % 200 < BATCH_SIZE) {
@@ -394,19 +400,12 @@ async function runBackfill(
 
     // Flush whatever's still buffered. Same change-detecting RPC as above.
     if (allRows.length > 0) {
-      const { data, error } = await (supabaseAdmin as any)
-        .rpc("upsert_wmc_batch", { p_rows: allRows })
-      if (error) {
-        // Tally, don't swallow — see the chunkTally declaration above.
-        chunkErrors++
-        chunkRowsLost += allRows.length
-        if (firstChunkError === null) firstChunkError = error.message
-        console.error(
-          `[wallet-backfill] final upsert err: ${error.message}`
-        )
-      } else {
-        totalUpserted += Number(data?.written ?? 0)
-      }
+      totalUpserted += await upsertWmcChunkWithRetry(
+        allRows,
+        "wallet-backfill",
+        chunkTally,
+        "final"
+      )
     }
 
     // Post-pass JOIN UPDATE: upsert_wmc_batch is authoritative only for
@@ -441,20 +440,15 @@ async function runBackfill(
       rowsFound: idsToWalk.length,
       rowsWritten: totalUpserted,
       // Lost chunk rows were found but never written — count them as skipped.
-      rowsSkipped: totalSkippedCached + chunkRowsLost,
-      ok: chunkErrors === 0,
-      error: chunkErrors > 0
-        ? `wmc_upsert_chunk_failures=${chunkErrors} rows_lost=${chunkRowsLost}` +
-          (firstChunkError ? ` first=${firstChunkError.slice(0, 200)}` : "")
-        : null,
+      rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+      ok: chunkTally.chunkErrors === 0,
+      error: chunkFailureError(chunkTally),
       extra: {
         on_chain_count: onChainIds.length,
         pages_fetched: batchesFetched,
         total_moments_seen: totalFetched,
         skipped_cached: totalSkippedCached,
-        chunk_errors: chunkErrors,
-        chunk_rows_lost: chunkRowsLost,
-        first_chunk_error: firstChunkError,
+        ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,
