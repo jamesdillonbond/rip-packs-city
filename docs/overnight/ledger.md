@@ -10,6 +10,146 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (prod DDL + repo) — the `refresh_wmc_fmv_changed` fast path is REVERTED; its own pre-registered exit condition was met and the tooling blocker was environmental
+
+**This executes the disposition the 🚨 MEASURED entry earlier today specified and could not carry out.**
+Nothing about the measurement is re-litigated — it was independently reproduced first, then acted on.
+
+**The blocker was environmental, not a decision.** That entry declined to revert because
+`SUPABASE_SERVICE_ROLE_KEY` was absent in its sandbox, so `npm run db:pins:check` could not run and the
+pin half would have been unverified on the instance's largest writer. **This session is on Trevor's local
+box, where the key IS present.** `db:pins:check` ran: **189 pins, 189 clean** before touching anything.
+
+**The measurement was REPRODUCED before acting, not inherited.** Independent second window, taken on a
+quiet instance (**1 active backend, 0 IO waiters**, 05:05Z), computed as a FLOW (Δ between the
+`T1_CLEAN` snapshot and now ÷ calls in the interval):
+
+| caller | prior read (n) | my read (n) | threshold | verdict |
+|---|---|---|---|---|
+| pg_cron | 87,352 (143) | **89,696 (160)** | 74,159 | 🚨 FAILS |
+| PostgREST | 10,029 (222) | **10,997 (250)** | 7,195 | 🚨 FAILS |
+
+⭐ **Method validated by reproducing the prior session's own T0→T1 figure exactly** — my T0→T1 rest
+computation returns **10,472**, the number their entry states. Two analysts, two windows, same direction.
+✅ **Controls:** `pg_stat_statements.stats_reset` is **2026-08-12**, unchanged, and call counts are
+monotonic across every snapshot, so the deltas are real rather than a reset artifact.
+
+**What shipped.**
+1. `supabase/migrations/20260828053000_audit_20260828_rwfc_revert_freshness_guarded_fast_path.sql` —
+   the 08-22 body restored **VERBATIM, extracted programmatically from that migration rather than
+   retyped** (the same file's own header warns against transcription drift).
+2. `supabase/tests/refresh_wmc_fmv_changed.sql` — **restored verbatim from `fb533970`**, the last commit
+   before the fast path. ⭐ **That choice is load-bearing:** `fb533970` is also before the stray `$`
+   that the fast-path commit's assembly regex left on the terminator, which made `main` red for 35
+   minutes and which **no local check can catch** (npm test and the drift guard both pass on it; only
+   psql parsing the file sees it, and there is no Postgres on this box). Restoring a body CI has actually
+   parsed green avoids re-rolling that dice.
+3. The `PINS` entry in `__tests__/db-invariants-drift-guard.test.ts` re-pointed to the new migration.
+
+**Verification, in order, each one a real check rather than an assumption:**
+- Pin DDL **==** migration DDL (comment-stripped, whitespace-collapsed) — asserted by the script that
+  wrote it, with a first-divergence printout on failure.
+- ⭐ **Positive control on the instrument itself:** after re-pointing the pin and BEFORE applying the
+  DDL, `db:pins:check` went **red on exactly one pin — this one**. That proves the check actually reads
+  live prod rather than comparing the repo to itself.
+- BEFORE prosrc **4,730 chars** — which independently matches the "prosrc 4,730 chars" the pin's own
+  header recorded for the fast path, confirming the right body was replaced.
+- A **refusal guard** in the apply script: abort unless prod is actually on the fast path.
+- AFTER prosrc **3,648 chars**, no `edition_fmv_current`, incumbent CTE present, md5 changed, and **live
+  prosrc == the migration file body**.
+- `db:pins:check` after: **189 clean**. ACL re-read live: `anon=false, authenticated=false,
+  service_role=true` — unchanged, as `CREATE OR REPLACE` cannot reset it.
+- ⭐ **Production positive control:** post-revert ticks at 05:23 ok, 05:28 ok, **05:33 ok writing 2,382
+  rows**. ⚠ The 05:18 and 05:38 `lock timeout` failures are **the documented pre-existing class** — the
+  identical error occurred at 04:58Z **before** the revert, and `database.md` already records this
+  pipeline at a 32.6% failure rate. **Not a regression, and not claimed as one.**
+
+⚠ **CHANNEL DEVIATION, STATED BECAUSE IT MATTERS.** The documented channel is the Supabase MCP
+`apply_migration`; it was **down all session (`CONNECT_TIMEOUT`)**. The DDL went through the repo's own
+in-DB pair — `query_sql` (reader) / `execute_sql` (void writer) — the same one
+`check-db-pin-staleness.mjs` and `check-migration-parity.mjs` use, and the migration was then **recorded
+in `supabase_migrations.schema_migrations` by hand**, which is the part `apply_migration` would otherwise
+do. ⚠ **Without that row a future session cannot recover this SQL from prod**, which is exactly what
+`check-migration-parity.mjs` tells you to do. Row present: version `20260828053000`, name
+`audit_20260828_rwfc_revert_freshness_guarded_fast_path`.
+ⓘ `migration-parity` only flags **prod-ahead-of-repo**, so it was never at risk; the binding check was
+`db-pin-staleness`, and it is green.
+
+⏳ **NOT YET KNOWN, and it is the whole point of having done this:** whether reads/call actually falls
+back toward the 74,159 / 7,195 figures. **Re-read the same FLOW in a quiet window ≥24 h from now.** If it
+does NOT fall, the fast path was not the cause and this revert bought nothing — which would itself be a
+finding, because it would mean the T0 baseline is measuring something else.
+ⓘ `_rpc_waste_baseline_20260825` **still stays** until that confirming read is taken.
+
+**Revert path (re-applying the fast path):** re-apply
+`supabase/migrations/20260826143452_audit_20260826_rwfc_freshness_guarded_edition_fmv_current.sql`, move
+`supabase/tests/refresh_wmc_fmv_changed.sql` + its PINS entry back, confirm `db:pins:check`.
+⛔ **Do not do that without a NEW measurement clearing the 74,159 / 7,195 bar** — that number is the
+whole reason this landed.
+
+### 2026-08-27 · ✅ SHIPPED (code) — `docs:issues-index` never ran on Windows: `main()` was gated on a comparison that cannot be true on the maintainer's own machine
+
+**Found by a failing test I did not expect to own.** `known-issues-index-lists-every-item` went red
+locally while CI was green on the same tree — the tell that mattered, because the honest read of a red
+run is *"read the failing job first"*, and this one disagreed with CI rather than agreeing with it.
+
+**The bug, one line:**
+
+```js
+if (import.meta.url === `file://${process.argv[1]}`) main()
+```
+
+`import.meta.url` is **always a URL**; `process.argv[1]` is an **OS path**. On Linux they coincide,
+because a POSIX path starts with `/` and `file://` + `/home/...` is a valid file URL. On Windows argv[1]
+is `C:\Users\...\gen-known-issues-index.mjs`, so the compare is
+`file:///C:/Users/.../x.mjs` === `file://C:\Users\...\x.mjs` — **never true**.
+
+🚨 **So `main()` never ran on Windows, and the failure is the silent kind.** Measured on this box:
+**both** `npm run docs:issues-index` (the **WRITER**) and `-- --check` (the **GUARD**) exited **0**,
+printed **nothing**, and did **nothing**. A Windows session that added a known-issues item and dutifully
+ran the regenerate command got a **no-op**, then pushed a stale index; and the guard meant to catch that
+passed **vacuously** on the same machine. CI, on Linux, was green throughout. **This is CLAUDE.md's
+"a permanently-zero instrument is indistinguishable from a broken one" — landing on the one platform
+the maintainer actually develops on.**
+
+⭐ **THE REPO ALREADY KNEW, AND THAT IS THE DURABLE LESSON.**
+`scripts/ingest-topshot-active-listings.mjs` carries the correct idiom **and a comment explaining this
+exact trap** — *"argv[1] is an OS path (backslashes on Windows) while import.meta.url is always a URL, so
+a string compare of the two is wrong on the maintainer's own machine"* — and
+`scripts/check-unbounded-server-reads.mjs` uses `pathToFileURL` too. **Nothing connected that knowledge
+to the third script.** Same shape as the honesty canon's *"grep for the EXPRESSION, not the file — a
+comment is only read by someone already in that file"*.
+
+**What shipped.**
+- `scripts/gen-known-issues-index.mjs` uses
+  `process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href`.
+  It now runs here: **`known-issues index is current — 46 items inspected`**, where before it printed
+  nothing at all.
+- `__tests__/scripts-main-module-guard-works-on-windows.test.ts` — a **BAN AT ZERO** over every
+  `.mjs`/`.js` under `scripts/` (a tree walk, not a curated list). Swept: **exactly one offender existed**
+  and it is fixed.
+
+**The test's own anti-vacuity properties, because a ban is the easiest guard to get wrong:**
+- It **asserts the count it inspected** (>50 files), so a walk that silently finds nothing cannot read as
+  a clean repo.
+- The banned needle is **assembled from two fragments** rather than written as a literal, so the guard
+  file cannot match itself — the *"a guard satisfied by its own source"* trap.
+- It **proves the needle against a known offender** (the verbatim pre-fix line) **and against the correct
+  idiom**, so a typo'd pattern cannot leave the ban unfalsifiable.
+- A second, **behavioural** test spawns the script and asserts it prints a summary with a **non-zero item
+  count** — reading the condition is not enough, since reading it is exactly how it stayed broken.
+
+**Proven non-vacuous by mutation:** restoring the broken idiom turns **both** the ban and the behavioural
+test red. Full suite after: **1389 files / 15261 passed**, `tsc --noEmit` clean.
+
+⚠ **NOT changed, and named rather than silently left:** `scripts/fix-inbox-index-counts.mjs` detects main
+via `import.meta.url.endsWith(path.basename(process.argv[1]))`. That **works** on Windows, so it is not
+this bug and the ban does not flag it — but a basename match would also fire for a same-named file in
+another directory. Left alone deliberately rather than swept up in an unrelated change.
+
+**Revert path:** `git revert <sha of "fix(scripts): docs:issues-index never ran on Windows">`.
+Code only — no migration, no data mutation, no prod state.
+
 ### 2026-08-27 · ✅ SHIPPED (docs + 2 guards) — a reference doc had carried a 46-line copy of ITSELF for two days with every guard green, and that class now has a detector
 
 **Docs + two new test guards + one generator. No route, schema, pipeline or DB change.** Tidy-up pass over
