@@ -27,7 +27,9 @@
     "db:migrations:recover": "node scripts/recover-fileless-migrations.mjs",
     "skills:bundles:check": "node scripts/check-cowork-skill-bundles.mjs",
     "skills:pack": "node scripts/pack-cowork-skill.mjs",
-    "memory:retired:check": "node scripts/check-retired-rules.mjs"
+    "memory:retired:check": "node scripts/check-retired-rules.mjs",
+    "inbox:index:fix": "node scripts/fix-inbox-index-counts.mjs",
+    "inbox:index:check": "node scripts/fix-inbox-index-counts.mjs --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",

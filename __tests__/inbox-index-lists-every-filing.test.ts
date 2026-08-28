@@ -79,10 +79,19 @@ describe("docs/overnight/inbox/INDEX.md is a complete map of the inbox", () => {
     ).toEqual([])
   })
 
+  // ⓘ Both count assertions are MECHANICALLY REPAIRABLE — `npm run inbox:index:fix`
+  // recomputes them from this same directory using these same rules. Three patch
+  // sets in a row shipped counts that were derived correctly at authoring time and
+  // were stale on arrival, because a number in a diff is a snapshot. Run the fixer
+  // at APPLY time. It deliberately will NOT invent entries, so it cannot turn the
+  // two assertions above green.
   it("states a heading count equal to the number of filings", () => {
     const m = src.match(/^# Inbox index — (\d+) live filings/m)
     expect(m, "INDEX.md must open with '# Inbox index — N live filings'").not.toBeNull()
-    expect(Number(m![1])).toBe(onDisk.length)
+    expect(
+      Number(m![1]),
+      `header says ${m ? m[1] : "?"}, ${onDisk.length} filings on disk — run \`npm run inbox:index:fix\``,
+    ).toBe(onDisk.length)
   })
 
   it("states per-day counts equal to the entries under each day", () => {

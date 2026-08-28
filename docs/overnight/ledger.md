@@ -10,6 +10,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ jobid 370 ANSWERED ITS OWN QUESTION AND DISPOSED OF ITSELF — and my cleanup verification was a wildcard over a namespace I do not own
+
+**The 02:58Z window came, and the scheduled read-out took BRANCH B: no mass rewrite.** The armed
+instrument therefore unscheduled itself and dropped its own tables, exactly as designed. Verified
+here at 04:00Z: `audit_20260827_pack_ask_rewrite_rate` and `audit_20260827_pack_listing_id_churn`
+**gone**, pg_cron `rpc-audit-pack-ask-rewrite-rate` **gone**.
+
+⭐ **So the 2,981-row rewrite of 2026-08-27 02:58Z was a ONE-OFF, not periodic** — 174 samples across
+14.5 h plus the one window that mattered, and the maximum in any tick was 10. **The
+`upsert_pack_ask_state` change-detection saving is therefore better than its own entry claimed: there
+is no periodic full rewrite riding on the 99.92% cut.** ⚠ **One 02:58Z window rules out a DAILY period
+at that hour; it does not rule out a weekly one.** Live at 04:00Z, 27 h after shipping: `is_listed`
+**2,978** (normal drift from 2,981), total **3,025** unchanged, **4 rows changed in the last 15
+minutes** — the guard is still doing exactly its job.
+
+🚨 **AND A NEAR-MISS I CAUSED, which did not fire only because the run used better judgement than my
+instructions.** The task's verification step said *"verify no `audit_20260827_*` relations remain in
+`pg_catalog`."* **That wildcard was wrong as written.** Two legitimate, live revert paths share that
+prefix — `audit_20260827_jobid55_watchlist_note_backup` (mine, from the same night) and
+`audit_20260827_candy_editions_watchlist_note_backup` (a concurrent session's). Taken literally, that
+check either fails on healthy state or invites dropping someone's revert path. ✅ Both survive, RLS
+on, `anon` SELECT false — the run honoured the explicit DROP list instead.
+
+⭐⭐ **The rule: a cleanup verification must NAME the exact relations it expects gone, never
+wildcard a namespace you do not exclusively own.** The `audit_YYYYMMDD_` convention makes a prefix
+match *feel* scoped and it is not — **it is scoped to a DATE, and several sessions write into the
+same date on the same day.** ⚠ The failure mode is silent and asymmetric: a too-broad drop destroys a
+revert path, and a revert path is only ever needed on the day something has already gone wrong.
+
+
+### 2026-08-27 · ✅ SHIPPED (script + guard pointer) — INDEX.md's counts are now RE-DERIVABLE AT APPLY TIME, because deriving a number does not make it live
+
+**Three consecutive patch sets from this session shipped INDEX.md counts that were stale on
+arrival** — 269→270, then 275→277 against a real 281/24, then a rebase artifact leaving commit
+`498b5b1b` claiming 283 against 285. ⚠ **The third is the one that shows the shape: every one of
+those numbers was DERIVED correctly, programmatically, from the tree — and the second patch's own
+commit message warned against hard-coding them.**
+
+⭐⭐ **The rule the session was missing: deriving a value does not make it LIVE. A patch is a
+snapshot, so any number in it that describes MUTABLE state is stale the moment upstream moves. For a
+count-carrying file the deliverable must be the DERIVATION, not the derived value — and it has to run
+at APPLY time, not at authoring time.** `main` moved four times while this session worked
+(274/17 → 275/18 → 276/19 → 281/24 → 286), so no authored number could have survived.
+
+**Shipped:** `scripts/fix-inbox-index-counts.mjs` (+ `npm run inbox:index:fix` / `:check`). It
+recomputes exactly the two count assertions `inbox-index-lists-every-filing` makes, **using the same
+rules read out of the guard** — header ← files **on disk** (not entries, which is the subtlety that
+would have written a still-failing number), each `## YYYY-MM-DD — N filings` ← `- [` lines in that
+section, singular noun at one. Idempotent; touches only the count tokens.
+
+⛔ **It deliberately will NOT invent entries, and therefore cannot turn the guard green on its own.**
+Writing an entry means reading the filing and saying what it found; **an index of guessed titles is
+worse than a red guard.** When entries are missing or dangling it exits **non-zero** and says so, so
+a green run of the fixer can never be mistaken for a green guard. The guard's failure message now
+names the fixer, so a red CI run tells you the repair exists.
+
+⚠ **The tests are mutation-checked and the result is reported honestly rather than rounded up: against
+a no-op `fixCounts`, 4 of 7 go RED and 3 stay green.** The three survivors are named in the file —
+idempotency, "touches nothing but the counts", and the `linkedFilings` extractor the mutant did not
+replace. **They are INVARIANTS, not behaviour, so surviving a no-op is correct for them.** ⭐ **The
+thing to avoid is writing "mutation-checked" over a suite whose survivors were never distinguished —
+a survivor you have not named is indistinguishable from a vacuous assertion.** ⓘ I wrote exactly that
+overclaim first ("each goes red there") and corrected it after running the mutant.
+
+**Revert:** delete the script, its test, the two `package.json` entries, and the guard's comment +
+message change; the assertions themselves are unchanged.
+
+
 ### 2026-08-27 · ✅ SHIPPED (code) — the kill instrument was silent about the fleet's worst case an hour after it shipped; wallet backfill measured at 41.5% killed, and it is the REDUNDANT BACKSTOP failing
 
 **What shipped:** `-dispatch`/`-complete` support in `lib/pipeline/kill-rate.ts` + 5 tests (22 total).
