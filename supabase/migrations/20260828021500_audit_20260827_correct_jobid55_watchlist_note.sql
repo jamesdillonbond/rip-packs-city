@@ -1,0 +1,41 @@
+-- audit_20260827_correct_jobid55_watchlist_note
+--
+-- RECORD FILE for a change applied LIVE from a Cowork cloud session on
+-- 2026-08-28 ~01:45Z via `execute_sql`. No schema object; recorded so prod and
+-- repo do not drift and so the revert lives with the change.
+--
+-- ⚠ SCOPE: the session that made this change could not push (cloud git proxy,
+-- "not in this session's authorized repository set"). That is a fact about THAT
+-- session. Trevor's machine and Claude Code push normally. COMMIT THIS AS USUAL.
+--
+-- WHY. `pipeline_cadence_watchlist.notes` for `allday-pack-opens-backfill` is a
+-- live instrument annotation the next session reads, and it asserted two things
+-- that are now measurably false. Two consecutive daytime monitors were misled by
+-- it in opposite directions.
+--
+--   (1) "descending ~850,000 blocks/6h -> reaches the floor ~2026-08-14, then
+--       returns done:true". Measured 08-25/26/27: 3,750 / 75,750 / 198,220 blocks
+--       per day. Cursor 84,383,786 vs the 65,264,619 floor = 19.1M REMAINING,
+--       ETA ~96 days. The walk is NOT done, so treating this arm as a done:true
+--       false positive is wrong.
+--   (2) "silence here still means the SCHEDULER stopped". False: jobid 55
+--       dispatched 72/72 succeeded in the 12h to 01:26Z while `pipeline_runs`
+--       took 8 rows in 20h. Mechanism already diagnosed (ledger 2026-08-24):
+--       185 of 186 invocations are EarlyDropped before they can log.
+--
+-- ⛔ This does NOT suppress or retune the arm. The ledger REFUTED a suppression
+-- proposal on 2026-08-24 for a reason that still holds, and raising the 90-minute
+-- threshold has the same defect -- it would hide the EarlyDrop regression this is
+-- the only instrument for. The note is corrected; the arm is untouched.
+--
+-- The original note is preserved verbatim in
+-- public.audit_20260827_jobid55_watchlist_note_backup (RLS on, anon revoked).
+--
+-- REVERT:
+--   UPDATE public.pipeline_cadence_watchlist w SET notes = b.notes
+--     FROM public.audit_20260827_jobid55_watchlist_note_backup b
+--    WHERE w.pipeline = b.pipeline;
+--   DROP TABLE public.audit_20260827_jobid55_watchlist_note_backup;
+--
+-- The applied UPDATE appended a "CORRECTED 2026-08-27" paragraph to the existing
+-- notes text; it did not replace it. See the backup table for the prior value.
