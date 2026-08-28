@@ -1,0 +1,57 @@
+-- 2026-08-28 · idx_pack_rips_dist_agg — covering index for mv_allday_pack_realized
+--
+-- WHY. `refresh_allday_pack_realized()` (pg_cron jobid 211) refreshes a MV whose defining
+-- query is a single-table aggregate:
+--
+--     SELECT dist_id, count(*), ... FROM pack_rips
+--      WHERE collection_id = <allday> AND dist_id IS NOT NULL
+--      GROUP BY dist_id;
+--
+-- The MV is tiny (3,120 rows / 376 kB) but `pack_rips` is 3,596,789 rows / 756 MB heap.
+-- The only usable index was `idx_pack_rips_dist_id` — partial, keyed on `dist_id` ALONE —
+-- so the plan walked ~2,687,590 rows in dist_id order and HEAP-FETCHED every one to test
+-- `collection_id` and read `pull_value_usd`. Neither column was in that index.
+--
+-- MEASURED (2026-08-28), one dist_id = 50,458 rows = 1.9% of the walk:
+--     Buffers: shared read=5365   (every one a read, not one hit; 99.1% of them heap)
+--     Bitmap Heap Scan 2,690 ms of the 2,753 ms total; index leg 49 buffers / 50 ms
+-- Scaled to the full walk: ~285,000 buffers ~= 2.2 GB read to produce 3,120 rows.
+-- The real query is worse than that probe: it takes an ORDERED Index Scan (~2.7M RANDOM
+-- fetches), not the probe's physical-order Bitmap.
+--
+-- Against the compute tier's 22 MB/s IO floor that makes jobid 211 bimodal on CACHE
+-- RESIDENCY rather than on load: warm pool -> 50-74 s, cold pool -> cannot finish in the
+-- 600 s cron_heavy ceiling. That is why moving it to the quietest hour of the day
+-- (hour 20, 0.2% fleet fail rate) bought nothing and was reverted — see known-issues #42
+-- and the 2026-08-28 ledger entry.
+--
+-- This index makes the aggregate an INDEX ONLY SCAN with zero heap fetches:
+--   * leading `collection_id` prunes to AllDay,
+--   * `dist_id` supplies the GROUP BY ordering with no sort,
+--   * `pull_value_usd` rides in the INCLUDE payload,
+--   * the partial predicate matches the query's `dist_id IS NOT NULL`.
+--
+-- COST, stated rather than buried: INCLUDE + predicate columns BLOCK HOT UPDATES, and
+-- `pull_value_usd` is exactly what the valuation backfill writes (`idx_pack_rips_stale_valued`
+-- exists to find rows needing it). The write path pays for the read path. Shipped on
+-- Trevor's explicit call 2026-08-28.
+--
+-- HOW IT WAS APPLIED. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, so
+-- it is unreachable via MCP `execute_sql`/`apply_migration`. It was applied from a one-shot
+-- SINGLE-STATEMENT pg_cron job (libpq) owned by `postgres`, jobid 378
+-- `tmp-build-pack-rips-dist-agg-idx`, unscheduled immediately after it succeeded.
+-- `postgres` was used because `cron_heavy` is NOT a member of the table owner (`postgres` is
+-- a member of `cron_heavy`, not the reverse) and so cannot index this table. The cluster
+-- default `statement_timeout` is 120 s, which a CONCURRENTLY build can exceed while WAITING
+-- on concurrent transactions, so `ALTER ROLE postgres SET statement_timeout` was raised to
+-- 1800s for the build window and RESET immediately afterwards.
+--
+-- This file is the repo record of an object created outside the migration channel. It is
+-- written IF NOT EXISTS so it is a no-op on any environment that already has the index.
+--
+-- REVERT: DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_dist_agg;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_dist_agg
+  ON public.pack_rips (collection_id, dist_id)
+  INCLUDE (pull_value_usd)
+  WHERE dist_id IS NOT NULL;
