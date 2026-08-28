@@ -193,6 +193,42 @@ export type PipelineRunRow = { pipeline: string; started_at: string }
 export const HEARTBEAT_SUFFIX = '-heartbeat'
 
 /**
+ * ⚠ THE SECOND MARKER CONVENTION, and why this is not scope creep.
+ *
+ * `app/api/wallet-backfill-multicollection` predates `lib/pipeline/heartbeat.ts`
+ * and hand-rolled the same idea under different names: a `-dispatch` row written
+ * as the first statement of `after()`, and a `-complete` row written at the end.
+ * That is exactly the heartbeat correlation, and the route's own comment says so:
+ * *"dispatch row with no matching complete row within ~15min = killed lambda —
+ * that's the visibility we want."*
+ *
+ * 🚨 Keying only on `-heartbeat` made this instrument SILENT about the fleet's
+ * highest-volume killed pipeline — 2,339 dispatches, 41.5% with no complete,
+ * measured 2026-08-28 within an hour of shipping the `-heartbeat`-only version.
+ * An instrument that looks like it covers the fleet and quietly omits its worst
+ * case is the defect class this module exists for, so it is fixed rather than
+ * documented as a limitation.
+ *
+ * ⚠ THE DISCRIMINATOR IS STRUCTURAL, NOT A NAME ALLOWLIST. `alerts-dispatch` is
+ * a REAL PIPELINE whose name merely ends in `-dispatch`; treating the suffix as
+ * proof of a marker would invent a 100%-killed pipeline out of a healthy one. A
+ * `-dispatch` name is a marker only when a `-complete` sibling actually exists in
+ * the same data. That property is asserted in the tests with `alerts-dispatch`
+ * itself as the negative control.
+ *
+ * ⚠ THE PRICE OF THAT RULE, pinned in the tests rather than left to be
+ * rediscovered: with no `-complete` row anywhere in the window there is nothing
+ * to prove the `-dispatch` is a marker, so a dispatch pipeline killed on EVERY
+ * tick drops out of the report instead of reading 100%. It needs ~73 unbroken
+ * hours of kills to happen, and the script's header already states that absence
+ * from the report carries no information — but it is the worst case going quiet,
+ * so it is written down. The fix, if it ever fires, is to derive marker names
+ * from the route sources; it is NOT to add a list of names.
+ */
+export const DISPATCH_SUFFIX = '-dispatch'
+export const COMPLETE_SUFFIX = '-complete'
+
+/**
  * A terminal row counts as the same invocation as a heartbeat within this window.
  * The heartbeat is the first statement of the `after()` body and the terminal row
  * the last, so they share a start timestamp to within write latency. 5 s is
@@ -215,18 +251,47 @@ export function correlateRuns(rows: readonly PipelineRunRow[]): KillRecord[] {
   const heartbeats = new Map<string, Date[]>()
   const terminals = new Map<string, number[]>()
 
+  // A `-dispatch` name is only a marker when its `-complete` sibling exists.
+  // Derived from the data, never from a list of names — see DISPATCH_SUFFIX.
+  const completeBases = new Set<string>()
+  for (const r of rows) {
+    if (r.pipeline.endsWith(COMPLETE_SUFFIX)) {
+      completeBases.add(r.pipeline.slice(0, -COMPLETE_SUFFIX.length))
+    }
+  }
+
+  const push = (m: Map<string, Date[]>, k: string, v: Date) => {
+    const list = m.get(k)
+    if (list) list.push(v)
+    else m.set(k, [v])
+  }
+  const pushMs = (m: Map<string, number[]>, k: string, v: number) => {
+    const list = m.get(k)
+    if (list) list.push(v)
+    else m.set(k, [v])
+  }
+
   for (const r of rows) {
     const at = new Date(r.started_at)
     if (r.pipeline.endsWith(HEARTBEAT_SUFFIX)) {
-      const base = r.pipeline.slice(0, -HEARTBEAT_SUFFIX.length)
-      const list = heartbeats.get(base)
-      if (list) list.push(at)
-      else heartbeats.set(base, [at])
-    } else {
-      const list = terminals.get(r.pipeline)
-      if (list) list.push(at.getTime())
-      else terminals.set(r.pipeline, [at.getTime()])
+      push(heartbeats, r.pipeline.slice(0, -HEARTBEAT_SUFFIX.length), at)
+      continue
     }
+    if (r.pipeline.endsWith(DISPATCH_SUFFIX)) {
+      const base = r.pipeline.slice(0, -DISPATCH_SUFFIX.length)
+      // `alerts-dispatch` lands here and has no `-complete` sibling, so it falls
+      // through to be treated as an ordinary terminal row, which is what it is.
+      if (completeBases.has(base)) {
+        push(heartbeats, base, at)
+        continue
+      }
+    }
+    if (r.pipeline.endsWith(COMPLETE_SUFFIX)) {
+      const base = r.pipeline.slice(0, -COMPLETE_SUFFIX.length)
+      pushMs(terminals, base, at.getTime())
+      continue
+    }
+    pushMs(terminals, r.pipeline, at.getTime())
   }
 
   const rank: Record<KillVerdict, number> = {

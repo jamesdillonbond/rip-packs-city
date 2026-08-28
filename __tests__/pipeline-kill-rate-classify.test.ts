@@ -215,3 +215,102 @@ describe('correlateRuns — the step that was re-derived by hand and got it wron
     expect(out[1].pipeline).toBe('candy-listings-indexer')
   })
 })
+
+describe('correlateRuns — the second marker convention (-dispatch / -complete)', () => {
+  // app/api/wallet-backfill-multicollection predates lib/pipeline/heartbeat.ts and
+  // hand-rolled the same correlation under -dispatch / -complete. Verified live
+  // 2026-08-28: 1,366 of 1,370 matched pairs share started_at to within 5s
+  // (mean 1.58s), so the standard correlation window applies unchanged.
+  const pair = (t: string, complete: boolean) => [
+    { pipeline: 'wallet-backfill-multicollection-dispatch', started_at: t },
+    ...(complete
+      ? [{
+          pipeline: 'wallet-backfill-multicollection-complete',
+          started_at: new Date(Date.parse(t) + 1_580).toISOString(),
+        }]
+      : []),
+  ]
+
+  it('sees a killed dispatch — the case the -heartbeat-only version was silent about', () => {
+    const rows = [
+      ...pair('2026-08-25T00:45:00Z', true),
+      ...pair('2026-08-25T06:45:00Z', false),
+      ...pair('2026-08-25T12:45:00Z', true),
+      ...pair('2026-08-25T18:45:00Z', false),
+    ]
+    const [r] = correlateRuns(rows)
+    expect(r.pipeline).toBe('wallet-backfill-multicollection')
+    expect(r.ticks).toBe(4)
+    expect(r.killed).toBe(2)
+  })
+
+  it('🚨 NEGATIVE CONTROL: `alerts-dispatch` is a REAL pipeline, not a marker', () => {
+    // Its name ends in -dispatch and it has no -complete sibling. Treating the
+    // suffix as proof of a marker would invent a 100%-killed pipeline out of a
+    // healthy one. It must be read as an ordinary terminal row instead.
+    const rows = [
+      { pipeline: 'alerts-dispatch', started_at: '2026-08-28T01:00:00Z' },
+      { pipeline: 'alerts-dispatch', started_at: '2026-08-28T02:00:00Z' },
+      { pipeline: 'alerts-dispatch', started_at: '2026-08-28T03:00:00Z' },
+    ]
+    const out = correlateRuns(rows)
+    // No heartbeat-bearing pipeline at all: nothing to report, and crucially NOT
+    // a record claiming `alerts` is failing.
+    expect(out).toEqual([])
+    expect(out.map((r) => r.pipeline)).not.toContain('alerts')
+  })
+
+  it('the discriminator is the DATA, not the name: same rows plus a -complete sibling flip it', () => {
+    const withoutSibling = correlateRuns([
+      { pipeline: 'thing-dispatch', started_at: '2026-08-28T01:00:00Z' },
+    ])
+    const withSibling = correlateRuns([
+      { pipeline: 'thing-dispatch', started_at: '2026-08-28T01:00:00Z' },
+      { pipeline: 'thing-complete', started_at: '2026-08-28T02:00:00Z' },
+    ])
+    expect(withoutSibling).toEqual([])
+    expect(withSibling.map((r) => r.pipeline)).toEqual(['thing'])
+    // The 02:00 complete does not correlate to the 01:00 dispatch (an hour apart),
+    // so the tick reads as killed -- which is the honest reading of these rows.
+    expect(withSibling[0].killed).toBe(1)
+  })
+
+  it('⚠ KNOWN RESIDUAL, pinned rather than hidden: a dispatch pipeline killed on EVERY tick is invisible', () => {
+    // The sibling rule is what stops `alerts-dispatch` being read as a marker, and
+    // it is derived from the data rather than a name list -- deliberately, because
+    // a curated list is the shape this repo has repeatedly paid for. The price is
+    // this: with no -complete row anywhere in the window there is nothing to prove
+    // the -dispatch is a marker, so a 100%-killed pipeline drops out of the report
+    // instead of showing 100%.
+    //
+    // It is recorded here because it is the WORST case going quiet, which is the
+    // whole subject of this module. Two things bound it: the window is ~73h, so
+    // this needs 73 hours of unbroken kills; and the script's header already
+    // states that absence from the report carries no information. It is still
+    // strictly better than the -heartbeat-only version, which missed this
+    // pipeline unconditionally.
+    //
+    // If this ever fires in production, the fix is to derive marker names from
+    // the route sources rather than from the run rows -- not to add a name list.
+    const allKilled = [
+      ...pair('2026-08-25T00:45:00Z', false),
+      ...pair('2026-08-25T06:45:00Z', false),
+    ]
+    expect(correlateRuns(allKilled)).toEqual([])
+  })
+
+  it('both conventions coexist in one sweep without cross-contamination', () => {
+    const rows = [
+      ...pair('2026-08-25T00:45:00Z', false),
+      ...pair('2026-08-25T06:45:00Z', true),
+      { pipeline: 'fmv-recalc-heartbeat', started_at: '2026-08-25T00:45:00Z' },
+      { pipeline: 'fmv-recalc', started_at: '2026-08-25T00:45:01Z' },
+      { pipeline: 'alerts-dispatch', started_at: '2026-08-25T00:45:00Z' },
+    ]
+    const byName = Object.fromEntries(correlateRuns(rows).map((r) => [r.pipeline, r]))
+    expect(Object.keys(byName).sort()).toEqual(['fmv-recalc', 'wallet-backfill-multicollection'])
+    expect(byName['fmv-recalc'].verdict).toBe('healthy')
+    expect(byName['wallet-backfill-multicollection'].ticks).toBe(2)
+    expect(byName['wallet-backfill-multicollection'].killed).toBe(1)
+  })
+})
