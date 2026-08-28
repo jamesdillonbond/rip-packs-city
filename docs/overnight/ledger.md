@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · 🚨 CORRECTED (docs) — known-issues #38's "drained" reading is REFUTED, and both of its proposed dispositions would have been the wrong move
+
+**No code, no DB, no prod state.** A register correction, filed because the entry as written told the
+next session to slow down or re-label a pipeline that is now working.
+
+**#38 concluded on 2026-08-27 ~16:50Z that `topshot-pack-pool-backfill` had DRAINED** — that its
+permanent red meant *"nothing left to convert"* — and offered two dispositions: **(1) cut the cadence**,
+or **(2) let the arm report `drained: true` / `ok = true`**.
+
+⛔ **It had not drained. It was WEDGED.** A tier of 8 distributions could consume the entire 3-wide
+sampling window, so the same 3 unconvertible dists were re-drawn forever. `dd4be709` fixed it
+(2026-08-27 19:56 PT ≈ 2026-08-28 02:56Z).
+
+**Split on that change point — never pooled across it:**
+
+| phase | runs | ok | ok % | rows written |
+|---|---:|---:|---:|---:|
+| PRE-fix | 106 | 0 | **0.0%** | 0 |
+| POST-fix | 36 | 24 | **66.7%** | 70 |
+
+**Both dispositions are withdrawn, and the second is the dangerous one.**
+(1) *Cut the cadence* would have slowed a pipeline whose problem was a sampler wedge, not an empty queue.
+(2) *Let the arm say "drained"* is worse: `dists_ok = 0 AND empty_eds = processed` was **TRUE
+throughout the wedge**, so that flag would have re-labelled a **live defect** as *complete* and made it
+permanently invisible. That is the honesty canon's guard-that-fails-open, applied to an arm.
+
+⭐ **The entry predicted its own failure, in the direction nobody was watching.** It warned *"the same
+signature will mean wedged again the moment convertible dists land"* — but the signature **already**
+meant wedged at the moment the drain was declared. It guarded the future and not the present.
+
+⚠ **THE REUSABLE MEASUREMENT LESSON.** A **monotonic decline is not evidence of completion.**
+`dists_ok` 36 → 34 → 32 → 23 → 12 → 2 → 0 reads as exhaustion and is *equally consistent with a
+tightening wedge*. Worse, the figure read as corroboration — *eligible backlog 710 → 368* — was the
+wedge's own footprint, not independent confirmation. **A draining rate only means completion if the
+population it drains is counted by an instrument the suspected fault cannot move.** This is the
+`cross-instrument sampling fallacy` in time-series clothing, and it survived a careful, well-controlled
+filing.
+
+ⓘ **One thing the correction restores:** the 15 `statement timeout` residual #38 reserved became
+*unmeasurable* under the wedge (no conversions ⇒ nothing to time out). With conversions happening again,
+that exit condition is live rather than dead.
+
+ⓘ The known-issues index was regenerated — and **it actually regenerated this time**, which it could not
+have done on this box before tonight's `docs:issues-index` Windows fix a few entries above.
+
+**Revert path:** docs only — `git revert <sha>`.
+
 ### 2026-08-27 · ✅ SHIPPED (prod DDL + repo) — `oldest_cache_h` now measures the population the sweep can act on; it was overstating by 76× and could never fall
 
 **Applies §5 of the 2026-08-21 filing verbatim.** That fix was correct and cheap on the day it was
