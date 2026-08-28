@@ -54,13 +54,54 @@ describe("the home page declares its own canonical", () => {
     ).not.toMatch(/alternates\s*:/)
   })
 
-  it("⚠ the home export must not redefine openGraph/twitter — they merge SHALLOWLY", () => {
-    // Adding og:url here would REPLACE the root openGraph object and drop
-    // siteName/type/locale, which is a bigger regression than the missing tag.
+  it("⚠ a redefined openGraph must carry BOTH inherited halves — they merge SHALLOWLY", () => {
+    // ── INVERTED 2026-08-28, NOT DELETED ──────────────────────────────────
+    // This case used to read "the home export must not redefine openGraph",
+    // reasoning: "Adding og:url here would REPLACE the root openGraph object and
+    // drop siteName/type/locale, which is a bigger regression than the missing
+    // tag." The PROPERTY it protects — the root's fields must not be dropped —
+    // is unchanged and still worth pinning. Only its PROXY ("never redefine the
+    // key at all") is obsolete: that was the correct conservative spelling while
+    // no safe way to restate the block existed, and it also froze the `og:url`
+    // gap in place, since satisfying it and emitting og:url were incompatible.
+    //
+    // Two things made a safe redefinition possible: OG_INHERITED was exported
+    // (08-17), and ROOT_OG_CONTENT now holds the title/description/images half.
+    // Home spreads both, so it restates nothing and cannot drift from the root.
+    // Asserting the SPREADS rather than the absence of the key is what keeps the
+    // original regression caught — a hand-rolled block that drops siteName now
+    // fails here exactly as it did before.
     const block = home().slice(home().indexOf("export const metadata: Metadata"))
-    expect(block, "the page-level metadata export must not redefine openGraph").not.toMatch(
-      /openGraph\s*:/,
+    const og = /openGraph\s*:/.test(block)
+    if (og) {
+      expect(
+        block,
+        "home redefines openGraph but does not spread OG_INHERITED — this DROPS siteName/type/locale from the root block",
+      ).toMatch(/\.\.\.\s*OG_INHERITED\b/)
+      expect(
+        block,
+        "…and does not spread ROOT_OG_CONTENT — this DROPS the root title/description/images",
+      ).toMatch(/\.\.\.\s*ROOT_OG_CONTENT\b/)
+      expect(
+        block,
+        "…redefining openGraph without og:url gains nothing — that tag is the only reason to redefine it",
+      ).toMatch(/\burl\s*:\s*["'`]\/["'`]/)
+    }
+    // `twitter` has no equivalent per-page field to add, so the original
+    // never-redefine rule still binds there and stays as-is.
+    expect(block, "the page-level metadata export must not redefine twitter").not.toMatch(
+      /twitter\s*:/,
     )
-    expect(block, "…nor twitter").not.toMatch(/twitter\s*:/)
+  })
+
+  it("emits og:url — the 08-23 gap this file's third case used to hold open", () => {
+    // A ban that is vacuous at population zero punishes its own success, so this
+    // asserts the POSITIVE: the tag is actually declared. Without it, reverting
+    // app/page.tsx to the alternates-only export would leave every case above
+    // green (the block above is guarded on `og`) and silently reopen the gap.
+    const block = home().slice(home().indexOf("export const metadata: Metadata"))
+    expect(block, "home must declare openGraph.url so GET / emits og:url").toMatch(
+      /openGraph\s*:\s*\{[^}]*\burl\s*:\s*["'`]\/["'`]/,
+    )
   })
 })

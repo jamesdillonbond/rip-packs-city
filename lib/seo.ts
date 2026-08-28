@@ -23,6 +23,31 @@ const ROOT_DESCRIPTION =
 // one level down — rendered correctly, which is why it read as fine.
 export const BRAND_TITLE_TEMPLATE = '%s | Rip Packs City'
 
+// The CONTENT half of the root openGraph block, shared with the home page.
+//
+// ⚠ WHY THIS IS SHARED RATHER THAN RESTATED. Home ("/") is the one surface that
+// must define its own `openGraph`, because it is the only page whose `og:url`
+// cannot come from a route-specific builder — and Next merges `openGraph` at the
+// TOP-LEVEL KEY ONLY, so defining it there REPLACES this block outright. Copying
+// title/description/images across would make the homepage's unfurl drift from the
+// root's the first time either is edited; sharing the object makes that
+// impossible, so a field added here reaches home for free.
+//
+// The three INHERITED fields (type/locale/siteName) are deliberately NOT in here
+// — see the note in the openGraph block below, and OG_INHERITED further down.
+export const ROOT_OG_CONTENT = {
+  title: ROOT_TITLE,
+  description: ROOT_DESCRIPTION,
+  images: [
+    {
+      url: '/api/og/default',
+      width: 1200,
+      height: 630,
+      alt: 'Rip Packs City — Flow collectibles intelligence',
+    },
+  ],
+}
+
 export const rootMetadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
@@ -50,19 +75,14 @@ export const rootMetadata: Metadata = {
     'badge filters',
   ],
   openGraph: {
+    // ⚠ type/locale/siteName stay SPELLED OUT here rather than spreading
+    // OG_INHERITED: that const is declared far below this one, so referencing it
+    // in this initialiser is a temporal-dead-zone ReferenceError at module load.
+    // The guard asserts the two agree.
     type: 'website',
     locale: 'en_US',
     siteName: 'Rip Packs City',
-    title: ROOT_TITLE,
-    description: ROOT_DESCRIPTION,
-    images: [
-      {
-        url: '/api/og/default',
-        width: 1200,
-        height: 630,
-        alt: 'Rip Packs City — Flow collectibles intelligence',
-      },
-    ],
+    ...ROOT_OG_CONTENT,
   },
   twitter: {
     card: 'summary_large_image',
