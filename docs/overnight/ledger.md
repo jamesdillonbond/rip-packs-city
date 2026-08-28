@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ POST-SHIP AUDIT — the rwfc revert introduced no new failure mode, and one tempting number is NOT the metric it looks like
+
+**Not the ≥24 h reads re-read** — that is still pending and unchanged. This answers the narrower and more
+urgent question after finding a regression in a sibling fix from the same session: **did reverting the
+instance's largest writer break anything?** ~9 h of production, split at the deploy (05:16Z).
+
+| | runs | fail % | distinct error shapes | avg `duration_ms` | p50 |
+|---|---:|---:|---:|---:|---:|
+| PRE-revert | 132 | 18.9% | **3** | 14,539 ms | 18,486 ms |
+| POST-revert | 105 | 15.2% | **3** | 15,672 ms | 18,907 ms |
+
+✅ **Same three error shapes, byte-identical strings, on both sides** — `lock timeout`,
+`statement timeout`, and clean. **No new failure mode.** That is the whole point of this check, and it
+is the check the retry fix would have failed had anyone run it.
+
+✅ **Cursor lag 8.9 minutes against a 5-minute cadence** (`rwfc_state.last_cutoff` vs `now()`). Roughly
+two ticks behind is the normal steady state for a cursored pipeline; **it is keeping up, not falling
+behind.** ⓘ `pipeline_runs.cursor_after` is NULL on all 237 runs, so there is no historical lag SERIES —
+this is a single current reading, and a future session wanting a trend will have to add that logging.
+
+⛔ **THE TRAP, AND I NEARLY WALKED INTO IT: `rows_written` per run fell 618 → 267 and it is NOT a
+throughput regression.** `rows_written` here counts **wmc rows updated**, and one edition's FMV change
+fans out to every wallet row holding it — so the figure is dominated by WHICH editions changed, not how
+many. A popular edition held by a thousand wallets and an obscure one held by two are one snapshot each
+and a 500× difference in this column.
+⭐ **The control settles it in the opposite direction from the scare:** upstream churn measured from
+`fmv_snapshots` actually **ROSE 26% post-revert** (1,041 → 1,311 snapshots/hour). More work arrived and
+fewer wmc rows were written, which is only paradoxical if you believe the column measures throughput.
+**It does not. Do not use `rows_written` to compare rwfc across a change.**
+
+⚠ **`duration_ms` is +7.8% on the mean and +2.3% on the median — directionally consistent with the
+documented trade (the fast path bought ~26.5% wall time) but far smaller, and the instrument is
+contaminated.** `cron-and-schedulers.md` §0c records that `pipeline_runs.duration_ms` absorbs
+terminal-write queueing and is not execution time. **Quote it as a direction, never as the magnitude of
+the trade.**
+
+⏳ **UNCHANGED AND STILL THE ACTUAL POINT:** re-read the reads/call FLOW in a quiet window ≥24 h after
+2026-08-28 05:16Z, against the 74,159 / 7,195 thresholds. If reads do NOT fall back toward those, the
+fast path was never the cause and this revert bought nothing — which would itself be a finding, because
+it would mean the T0 baseline measures something else.
+
+**Revert path:** docs only — nothing shipped by this audit.
+
 ### 2026-08-28 · ✅ POST-SHIP WATCH — the Pinnacle narrowing fix IS validated in production, and the contrast with the retry fix is the useful part
 
 **Same session, same instrumentation discipline, opposite verdicts.** Both fixes shipped with a counter
