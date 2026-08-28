@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⭐ THE RETRY IS VALIDATED AT LAST (910 rows recovered) — and the same wave exposes a SECOND defect in my own config: 3 attempts share ONE budget, so the last one gets crumbs
+
+**The wave with real write volume finally ran, and it answers both open questions on this fix — one
+favourably, one not.**
+
+| | runs | rows_written | chunk_errors | rows_lost | **recoveries** | rows_recovered | my timeouts |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 12:47Z, 45 s bug live | 365 | 16,330 | 56 | 9,153 | — | — | 30 |
+| **this wave, 130 s** | 242 | 7,463 | 22 | 2,458 | **7** | **910** | 15 |
+
+✅ **THE RETRY WORKS. First non-zero recovery counter of the entire session: 7 chunks, 910 rows saved
+that would previously have been dropped.** The mechanism I shipped this morning and could not verify for
+twelve hours is now demonstrated in production. **Loss ratio fell 35.9% → 24.8%**
+(`lost / (written + lost)`).
+
+⚠ **But 15 runs still ended on a timeout, and their VALUES are the finding.** Not one is 130,000 ms:
+
+`3046 · 4306 · 4352 · 4872 · 5195 · 5227 · 5229 · 5277 · 5350 · 5641 · 5655 · 6000 · 67682 · 68020 · 68948`
+
+🚨 **Those are REMAINING-BUDGET SLICES, not my deadline.** `timeoutMs` is one budget for the whole call,
+`retryLoop` hands each attempt whatever is LEFT, and `withDeadline` reports that slice. So a chunk whose
+first two attempts fail **slowly** (~62 s each, for real reasons) leaves attempt 3 with ~3 s — **a doomed
+attempt against a function entitled to 120 s.** The ~68 s cluster is the same shape with one slow failure
+instead of two.
+
+⚠ **THE DESIGN ERROR IS MINE AND IT IS A CONFIG ERROR, NOT A MODULE BUG.** `attempts: 3` is correct when
+failures are FAST — a pool-acquire timeout fails in milliseconds, which is the class this retry was built
+for and the class it just recovered 910 rows from. **It is wrong when failures are SLOW**, because three
+attempts then fragment one budget into pieces too small to succeed. I sized the attempts for one failure
+mode and the budget for another.
+
+⚠ **THE DIAGNOSTIC COST IS THE WORSE HALF: it mislabels the cause.** `first_chunk_error` ends up reading
+`rpc upsert_wmc_batch timed out after 3046ms` when what actually happened was two real failures —
+pool-acquire or lock timeout — followed by a crumb. **The log now names MY bound instead of the
+database's problem**, which is precisely the property `RPC_TIMEOUT_CODE` exists to protect
+(*"a bound we imposed is greppable in logs and never mistaken for something the server reported"*).
+
+ⓘ **A latent inconsistency found while checking this, NOT the cause and stated so it is not
+over-read:** `RPC_TIMEOUT_CODE` is **not** in `NEVER_RETRY_CODES`, so `isTransient` falls to the message
+heuristic and matches `"timed out"`. Today that is harmless — an attempt that times out consumes its
+whole remaining allowance, so the loop breaks on budget before the classifier matters. **The terminality
+the module documents is enforced by the ACCOUNTING, not by the classifier**, and that is fragile: any
+future change that leaves budget after a timeout would start retrying our own bound.
+
+👉 **FILED, NOT FIXED, and the reason is specific.** The obvious repair — *do not issue an attempt with
+less than a useful slice left* — belongs in `retryLoop`, which is a **shared hot path used by every
+entity page and board render**. It also needs a threshold that cannot be one number: page renders sit
+under service_role's 30 s, this writer under the function's 120 s. **That is a design pass with its own
+tests, not a tail-end edit on the day I already shipped one regression into this exact file.**
+⭐ **The cheap local mitigation, if someone wants it before that pass: `attempts: 3 → 2` in
+`upsertWmcOneChunk`.** Two attempts split 130 s into halves that still clear the function's real work,
+and the class that actually recovers (fast pool failures) only ever needed one retry.
+
+**Falsifier for whoever takes it:** if `attempts: 2` lands and the timeout cluster keeps its 3–6 s tail,
+the slices are not the cause and the budget itself is too small for this wave's saturation.
+
+**Revert path:** docs only — nothing shipped by this entry.
+
 ### 2026-08-28 · ✅ SHIPPED (cron-job.org) — R54: `apply-fmv-haircut` moved 06:30 → 22:35 UTC, out of the band its TS leg dies in
 
 **Console job 7593344, Common tab only (per the rpc-cron-ops hard rule).** The crontab-field
