@@ -560,6 +560,16 @@ query separated a finding from a scare.** Both pinned tests now assert the case 
 
 ## Displaced from CLAUDE.md — measurement traps that cost a wrong conclusion (verbatim, 2026-08-22)
 
+### Displaced from CLAUDE.md 2026-08-27 (verbatim) — the directional-claim bullet, to pay for the UTF-16 clause in its header
+
+⚠ **A directional claim needs a distribution, not a snapshot** (`fmv-recalc`: 3 failed characterizations in 2 days off one-instant reads), and **compare against the series' own history before calling something a regression** — a "collapse" turned out to be its rate for three weeks. Read a current-day rollup row as PARTIAL. ⚠ **A delta between two STOCKS across an unknown interval is neither a rate nor a sign** — a burst read as a trend, retracted at the third reading; measure the FLOW (`created_at` on the same predicate). ⚠ Aggregating a `text` column (`max(cursor_after)`) is a lexicographic max — it reported `'9500' > '11500'` and made a **wedged** sweep look like an advancing one.
+
+⭐ **Why it moved:** CLAUDE.md's own header requires a new durable rule to DISPLACE one, and the rule
+being added there — that Python's `len()` counts code points, not UTF-16 units — belongs in the
+header itself, beside the `wc -c` warning it extends. This bullet's home was always the trap series
+above.
+
+
 The bullet below was condensed to a one-line rule in CLAUDE.md on 2026-08-22 to make room for the
 DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; only the cases moved.
 

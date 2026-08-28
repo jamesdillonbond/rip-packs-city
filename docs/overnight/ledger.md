@@ -10,6 +10,153 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (DB, no push) — corrected the jobid 55 watchlist NOTE, which had misled two consecutive monitors in opposite directions
+
+The `pipeline_cadence_watchlist.notes` text is **a live instrument annotation the next session
+reads**, and it asserted two things that are now measurably false — which is why one monitor read the
+arm as *"the scheduler stopped"* and another as *"done:true, false positive."* **Both came from the
+note, not from the data.** Appended a dated CORRECTED paragraph carrying the measurements (walk
+19.1 M blocks above the floor, ~96-day ETA, 72/72 dispatches against 8 rows in 20 h, the 08-24
+EarlyDrop mechanism, and the resolved 341 → ~19,800 per-run shortfall).
+
+⛔ **This does NOT suppress or retune the arm, and deliberately so.** The 2026-08-24 entry refuted a
+suppression proposal for a reason that still holds, and **raising the 90-minute threshold has the
+same defect — it would hide the EarlyDrop regression this arm is the only instrument for.** ⭐ **The
+note was the thing generating wrong reads; the arm was doing its job.** Correct the annotation, leave
+the instrument alone.
+
+**Revert:** original preserved verbatim in `public.audit_20260827_jobid55_watchlist_note_backup`
+(RLS on, anon revoked); one `UPDATE … FROM` restores it. Record file:
+`supabase/migrations/20260828021500_audit_20260827_correct_jobid55_watchlist_note.sql`.
+`check_secdef_anon_execute_violations()` → `[]`.
+
+
+### 2026-08-27 · ✅ SHIPPED (pg_cron, no push needed) — jobid 211 moved off three slots where it fails 100% of the time, and the "shrink the work" remedy is REFUTED for it by a 59-second success
+
+**Both daytime-monitor filings asked for the same thing — *re-measure in a quiet window*. The window
+came** (positive control 01:26Z: **active 1, io_wait 1, total 42**), and it answered all four
+candidates. This is the one that turned into a ship.
+
+**`rpc-refresh-allday-pack-realized` (jobid 211, `cron_heavy`), last 30 h:**
+
+| slot | outcome |
+|---|---|
+| **00:35Z** | ✅ **succeeded in 59 s** |
+| 06:35Z | ⛔ failed at 600 s |
+| 12:35Z | ⛔ failed at 600 s |
+| 18:35Z | ⛔ failed at 600 s |
+
+⭐⭐ **The 59-second success in a quiet window REFUTES the remedy the record prescribes for this
+class.** The 2026-08-24 entry says *"split or shrink the WORK, never raise the clock,"* and the
+0010Z filing's action was *"if it keeps failing in a QUIET window, the refresh is genuinely over the
+IO budget → cut its work."* **It is not over the budget. It needs ~59 seconds and gets them at
+00:35Z.** There is nothing to shrink — a job that completes in a minute at one slot and dies at ten
+minutes at three others is **contended, not oversized.** ⭐ **The rule survives for genuinely heavy
+jobs; what this adds is the discriminator — measure a success in a quiet window BEFORE concluding
+the work is too big, because "fails at the ceiling" looks identical in both cases.**
+
+**Shipped:** `35 */6 * * *` → **`35 0,8,14,20 * * *`**. Keeps the **proven** 00:35Z slot (36/37 ok
+all-time) untouched and moves only the three that produced **nothing at all today**, onto the four
+lowest-timeout hours in the measured day (**2/8/14/20 read 1.7 / 4.2 / 5.1 / 0.0 timeouts per 1,000
+runs**, against the current 0/6/12/18 at 16.0 / 25.6 / 51.0 / 21.4 — known-issues #42). **Strictly
+dominant on the three moved slots: they are currently 0-for-3.**
+
+✅ **Method, per the recorded recipe** ([2026-08-16T0030Z](inbox/2026-08-16T0030Z-cron-heavy-jobs-ARE-reschedulable-from-mcp-via-set-local-role.md)):
+`SET LOCAL ROLE cron_heavy;` + `cron.schedule(<same name>, <new schedule>, <same command>)`, the
+command read into a **local variable and never SELECTed** (the gate-key trap). **Probed first in a
+rolled-back `DO` block** with three assertions — schedule took, **owner still `cron_heavy`** (so the
+600 s `rolconfig` timeout is retained, which a `postgres`-owned re-own would have dropped), and
+**exactly one row** (in-place update, same jobid). Rollback verified before applying. Post-apply
+read-back: `35 0,8,14,20 * * *`, `cron_heavy`, active, jobid 211.
+
+⚠ **FALSIFIER, stated before the fact:** over the next 7 days jobid 211 should run **≥ 3 of 4 daily
+slots successfully**, in the 30–120 s band, against **1 of 4** now. **If 08:35 / 14:35 / 20:35 fail
+at 600 s as often as 06/12/18 did, the hour-shape hypothesis is wrong for this job and this must be
+reverted** — it would mean the contention is not hour-aligned and #42's table does not transfer to
+the individual job. ⚠ The hour table is **one week, on an instance whose week contained a saturation
+spell**; this ship rests on the within-job 00:35-vs-rest split, which does not depend on it.
+
+**Revert (one statement):** `SET LOCAL ROLE cron_heavy; SELECT cron.schedule('rpc-refresh-allday-pack-realized', '35 */6 * * *', <its current command>);`
+**Target metric:** failed runs/day at the 600 s ceiling — was **3/day ≈ 1,800 s** of the instance's
+binding constraint returning nothing.
+
+### 2026-08-27 · ⛔ TWO RECORDED CLAIMS ABOUT jobid 55 ARE BOTH WRONG TODAY, IN OPPOSITE DIRECTIONS — and one of its two stacked shortfalls has RESOLVED
+
+`allday-pack-opens-backfill` raised `detect_stalled_pipelines` again (340 min silent vs 90). Rather
+than re-derive it, the record was read first — and the record now says two contradictory things,
+neither of which matches the live system.
+
+**⛔ Claim 1, from the 2026-08-21 finding: *"walking at 0.08% of design rate, ETA 18.7 years."***
+
+| | 08-25 | 08-26 | **08-27** |
+|---|--:|--:|--:|
+| ok runs | 5 | 4 | **8** |
+| blocks walked | **3,750** | 75,750 | **198,220** |
+| **avg blocks per run** | **341** | 18,938 | **19,822** |
+
+⭐ **The per-run scan went 341 → ~19,800 between 08-25 and 08-26 — a 55× jump — and that is exactly
+the second, unquantified shortfall the 08-21 finding flagged** (*"the runs that happen scan a small
+fraction of `MAX_BLOCKS`… only the first is quantified"*). **It is gone: runs now take 19–25 k of a
+25,000 budget.** Throughput 3,750 → 198,220 blocks/day (**53×**). Cursor **84,383,786**, floor
+65,264,619 ⇒ **19.1 M remaining ⇒ ~96 days, not 18.7 years.**
+
+**⛔ Claim 2, from a later daytime filing: *"the finite walk reached `done:true` and therefore stops
+writing rows, so the `cron_silent` arm is a FALSE POSITIVE."*** **The walk is not done.** The cursor
+is **19.1 M blocks above the floor** and descending, and every run this week logged
+`progress_blocks` and a real `cursor_after`. ⛔ **Do not act on that false-positive framing** — and
+note the ledger already REFUTED suppressing this arm (2026-08-24), for a reason that still holds.
+
+✅ **What is unchanged and NOT re-derived here: the mechanism.** The 2026-08-24 entry found it —
+**185 of 186 invocations are `EarlyDrop`ped before they can log.** Tonight's dispatch→row ratio (8 ok
+rows against ~144 daily dispatches ≈ **6%**) is the same phenomenon at the same order. ⭐ **That is
+the single remaining shortfall, it is already diagnosed, and it is not mine to re-open.**
+
+⚠ **Consequence for the alert, stated but NOT acted on:** at a ~6% logging rate the *expected* gap
+between rows is ~3 hours, so a **90-minute** `max_silent_minutes` fires on entirely normal behaviour
+— which is why two consecutive daytime monitors filed it. ⛔ **The obvious remedy is REFUTED:** the
+2026-08-24 entry killed a proposal to suppress this arm while the job is active and its last
+dispatch succeeded, because *"both conditions hold right now, and the pipeline is still broken."*
+**Raising the threshold has the same defect** — it would hide the EarlyDrop regression it is the
+only instrument for. **The honest fix is to make the invisible case visible (`033c0c15e`, still
+undeployed since 08-13, still blocked on the Dashboard secret step), not to quiet the arm.**
+⚠ Cause of the 08-25→26 improvement **not attributed** — every run reports `routed: "spork"`,
+`spork_available: true`, so a spork-proxy recovery is the candidate. **Recorded as unexplained
+rather than guessed.**
+
+### 2026-08-27 · ✅ THE QUIET WINDOW ANSWERED THREE MORE MONITOR CANDIDATES — all three resolve, none needs a fix
+
+Both filings' actions were *re-measure when quiet*; measured 01:26–01:30Z at **active 1 / io_wait 1**:
+
+- **Candy standing-offer book "went dark" (1808Z, both coverage legs at the 999 sentinel).**
+  Now: **20 active offers**, `max(last_seen_at)` **00:51Z**, indexer **4/4 ok**, last run 00:50Z.
+  ⭐ **The book was genuinely empty at 18:07Z and has since refilled — so the arm fired correctly on
+  a real empty book.** ⛔ **Do NOT add the "legit-empty branch" the filing floated on this evidence:
+  the arm did its job, and a branch that suppresses an empty book is exactly what would have hidden
+  the 08-05..08 three-day outage it exists for.**
+- **`fmv-recalc` silent 278 min (1808Z).** Now **23 runs in 6 h** (one per 15.7 min, its ~18 min
+  cadence), last **01:16Z**. ✅ **Resumed — saturation collateral, as the filing predicted.** Its own
+  exit condition ("genuine ONLY if it stays silent AND `topshot_fmv_stale_hours` climbs") was never
+  met.
+- **`compute-golazos-pack-ev` stalled 1,412 min vs an 800-min threshold (0010Z).** jobid 44 is
+  `37 */6 * * *` — **8 of 8 dispatches succeeded over 48 h**, and the pipeline wrote at **00:37:30Z**,
+  on schedule. ⭐ **A 6-hourly job under a 13.3-hour threshold has only ~2.2 firings of margin, so
+  two consecutive misses trip it** — the alert is cadence-vs-threshold arithmetic, not a stall.
+
+### 2026-08-27 · ✅ CLAUDE.md headroom 11 → 350 characters, paid for by the displacement its own header prescribes
+
+**11 characters is under one emoji of margin** — and `🚨` costs **two** UTF-16 units, so the file was
+five characters from red. Displaced the directional-claim/measurement bullet **verbatim** into
+`database.md`'s existing *"Displaced from CLAUDE.md — measurement traps"* section, leaving a
+one-line pointer, exactly the protocol the header states. **39,989 → 39,650 units** (verified with
+`node -e … .length`, the binding instrument, not Python).
+
+⭐ **Bought one clause with the change, at the place where it bites:** the header already warned
+*"the limit is on CHARACTERS; `wc -c` counts BYTES"* and prescribed `node -e`. **It did not say why a
+different correct-looking tool also lies** — Python's `len()` counts CODE POINTS, so it under-reports
+by one per astral emoji (four `🚨` here: 39,974 read as 39,970). That is now in the header beside the
+`wc` warning. **Three instruments, three different answers, one of them binding.**
+
+
 ### 2026-08-27 · ✅ SHIPPED (code) — `compute-laliga-pack-ev` has written ZERO rows in its entire life; cron removed, and its BREAKAGE was protecting the honesty canon
 
 **Code only** (`vercel.json`: removed the `30 5 * * *` entry). Found by generalising tonight's candy
