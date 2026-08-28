@@ -8,42 +8,46 @@
 -- 57014 on every tick for 10+ hours (2026-08-12), the drift reached Top Shot 7%
 -- exact-match and AllDay p95 14.2x against fmv_current — with pipeline_runs
 -- showing 988 runs and ZERO failures, because the RPC's only failure signal was
--- a console.log. It is also the platform's #1 WRITER — re-measured 2026-08-26
--- over a 14.5-day pg_stat_statements window: 36.7% of every block the database
--- dirties, 33.9% of WAL, 8.9% of disk reads, 148 exec-hours (~10.2 h/day) — so
--- its churn-avoidance clause is an IO-budget property, not a micro-optimisation.
+-- a console.log. It is also the platform's #2 disk reader (112 GB), so its
+-- churn-avoidance clause is an IO-budget property, not a micro-optimisation.
+--
+-- ⚠ REVERTED 2026-08-28 off the freshness-guarded edition_fmv_current fast path,
+-- back to this (incumbent) body. The fast path shipped with a PRE-REGISTERED exit
+-- condition — "re-read in a quiet window >= 24 h out; if reads are still not below
+-- the T1 per-call figures (74,159 cron / 7,195 PostgREST) it is not paying for
+-- itself and should be reverted" — and the reading FAILED on both callers:
+-- pg_cron 87,352 (+17.8%), PostgREST 10,029 (+39.4%), confirmed by a second
+-- independent window on a quiet instance. It is a real two-resource trade
+-- (~26.5% less wall time for ~18.5% more disk reads) and reads are the right
+-- metric because this instance is IO-bound, not CPU-bound.
+-- ⛔ Do NOT restore the fast path without a NEW measurement that clears that bar.
+-- ✅ Reverting costs no correctness: the freshness guard was scaffolding for the
+-- optimisation, and rows failing it already fell through to this exact subquery.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260826143452_audit_20260826_rwfc_freshness_guarded_edition_fmv_current.sql),
--- whose body is byte-identical to live prod: prosrc 4,730 chars,
--- md5(pg_get_functiondef(...)) = 7e6c414075038f3337967910a2df13f7, read from the
--- database on 2026-08-26. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- (supabase/migrations/20260828053000_audit_20260828_rwfc_revert_freshness_guarded_fast_path.sql),
+-- which RESTORES this body verbatim from
+-- supabase/migrations/20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql.
+-- whose body is byte-identical to live prod: prosrc 3,648 chars,
+-- md5(pg_get_functiondef(...)) = 7094783150faf1b39148dc3c213d1e18, read from the
+-- database on 2026-08-24. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
--- ⚠ RE-PINNED 2026-08-26 onto the freshness-guarded edition_fmv_current fast path,
--- and the ASSERTIONS BELOW WERE RE-READ FIRST — that is the whole job, not the DDL
--- paste. Clause counts against the LIVE body, **comments stripped** (see the warning
--- below about why that matters):
---   fmv_usd IS NOT NULL              x4   (was x3; the new one is the cache-null clause)
---   IS DISTINCT FROM                 x1   (the churn guard)
---   edition_key IS NOT NULL          x1
---   rwfc_state                       x2   (cursor read + write)
---   DISTINCT ON                      x1
---   MATERIALIZED                     x2
---   edition_fmv_current              x1   (NEW — the cache join)
---   computed_at >= p.computed_at     x1   (NEW — the freshness guard)
---   RETURNING edition_id, computed_at x1  (NEW — feeds the guard)
---
--- ⚠ THE PREVIOUS HEADER'S COUNTS WERE RAW SUBSTRING COUNTS AND THREE OF THEM WERE
--- COMMENT-CONTAMINATED. Measured 2026-08-26: raw vs comment-stripped is
--- `fmv_usd IS NOT NULL` 5 vs 4, `DISTINCT ON` 3 vs 1, `MATERIALIZED` 3 vs 2 — the
--- body's own explanatory comments contain the phrases ("...a MATERIALIZED CTE so the
--- planner...", "...DISTINCT ON's ordering..."). So the old header's "DISTINCT ON x2"
--- and "MATERIALIZED went 1 -> 3" were counting prose. **Strip comments before
--- counting a clause in a function body**, exactly as the repo's guards must.
---
--- ⚠ A substring probe CANNOT check MATERIALIZED by presence — a June migration
--- already put one in the LOOP body, so `position('MATERIALIZED' in prosrc) > 0` was
--- already TRUE before the 08-22 change. Count occurrences and read the build statement.
+-- ⚠ RE-PINNED 2026-08-24, and the ASSERTIONS BELOW WERE RE-READ FIRST — that is the
+-- whole job, not the DDL paste. `db-pin-staleness` went red on 08-23/08-24 because
+-- `audit_20260822_rwfc_temp_build_materialized_cte` was applied to prod, changing the
+-- live body; the previous pin named the 08-13 migration. The check's own warning is
+-- "a stale pin usually means the assertions describe old behaviour", so every property
+-- this file asserts was re-counted against the LIVE body before re-pointing:
+--   fmv_usd IS NOT NULL      x3   (the "appears THREE times" note below still holds)
+--   IS DISTINCT FROM         x1   (the churn guard)
+--   edition_key IS NOT NULL  x1
+--   rwfc_state               x2   (cursor read + write)
+--   DISTINCT ON              x2
+-- All intact: the change is a planner-level CTE materialisation, so it moves no
+-- behaviour any assertion here depends on. MATERIALIZED went 1 -> 3.
+-- ⚠ A substring probe CANNOT check that last one — a June migration already put one
+-- MATERIALIZED in the LOOP body, so `position('MATERIALIZED' in prosrc) > 0` was
+-- already TRUE before this change. Count occurrences and read the build statement.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -72,14 +76,6 @@ CREATE TABLE public.wallet_moments_cache (
 CREATE TABLE public.rwfc_state (
   id          int primary key,
   last_cutoff timestamptz
-);
-
--- The read-side cache the fast path consults. Real shape has more columns; only
--- these three are read by this function.
-CREATE TABLE public.edition_fmv_current (
-  edition_id  uuid primary key,
-  fmv_usd     numeric,
-  computed_at timestamptz
 );
 
 -- >>> BEGIN verbatim refresh_wmc_fmv_changed (byte-identical to the migration/prod) >>>
@@ -145,35 +141,18 @@ BEGIN
        WHERE edition_id IN (
          SELECT edition_id FROM _rwfc_recent ORDER BY computed_at LIMIT v_chunk
        )
-      RETURNING edition_id, computed_at
+      RETURNING edition_id
     ),
     latest_fmv AS MATERIALIZED (
       SELECT e.collection_id, e.external_id,
-        -- FAST PATH FIRST. COALESCE evaluates left to right and stops at the first
-        -- non-null, so the SubPlan below only runs for the rows the freshness guard
-        -- rejected. That is the entire saving: no partition Append for ~85% of rows.
-        COALESCE(
-          efc.fmv_usd,
-          (SELECT f.fmv_usd
-             FROM public.fmv_snapshots f
-            WHERE f.edition_id = e.id
-              AND f.fmv_usd IS NOT NULL
-            ORDER BY f.computed_at DESC
-            LIMIT 1)
-        ) AS fmv_usd
+        (SELECT f.fmv_usd
+           FROM public.fmv_snapshots f
+          WHERE f.edition_id = e.id
+            AND f.fmv_usd IS NOT NULL
+          ORDER BY f.computed_at DESC
+          LIMIT 1) AS fmv_usd
       FROM popped p
       JOIN public.editions e ON e.id = p.edition_id
-      -- BOTH extra clauses are load-bearing and neither is a tidy-up:
-      --   computed_at >= p.computed_at  -- the cache must not be BEHIND the snapshot
-      --                                    that queued this edition (28 of 4,028 were)
-      --   fmv_usd IS NOT NULL           -- the cache's DISTINCT ON does not filter
-      --                                    nulls while the subquery does; without this
-      --                                    a NULL latest snapshot would take the fast
-      --                                    path and blank a real price
-      LEFT JOIN public.edition_fmv_current efc
-             ON efc.edition_id  = e.id
-            AND efc.computed_at >= p.computed_at
-            AND efc.fmv_usd IS NOT NULL
     ),
     updated AS (
       UPDATE public.wallet_moments_cache wmc
@@ -226,18 +205,12 @@ INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_
   ('0xD', 'dee28451-5d62-409e-a1ad-a83f763ac070', '48:1652',  NULL),   -- other collection
   ('0xE', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL,       NULL);   -- unkeyed row
 
--- edition_fmv_current is deliberately EMPTY for this whole first block. That makes
--- it the CACHE-ABSENT control: every assertion below therefore exercises the FALLBACK
--- (correlated-subquery) path, and proves the 2026-08-26 fast path did not change any
--- behaviour when the cache has nothing to offer. The fast path gets its own block at
--- the bottom of this file.
-
 -- 3 rows change: 0xA, 0xB (Top Shot 48:1652) and 0xD (AllDay 48:1652).
--- 0xC is already correct and must NOT be rewritten -- see the churn note below.
+-- 0xC is already correct and must NOT be rewritten — see the churn note below.
 SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '3',
   'only the rows whose value actually changes are updated');
 
--- The LATEST snapshot wins.
+-- ── The LATEST snapshot wins ───────────────────────────────────────────────
 -- Taking any other row would publish a superseded price as the current one, on
 -- the number a collector reads as their portfolio total.
 SELECT _assert_eq(
@@ -247,7 +220,7 @@ SELECT _assert_eq(
   (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xA'), '250.00',
   'a previously-unpriced row is filled');
 
--- The join is (collection_id, edition_key), not edition_key alone.
+-- ── The join is (collection_id, edition_key), not edition_key alone ────────
 -- external_id "48:1652" exists in BOTH collections here, deliberately: Top Shot
 -- keys are not unique across collections, so dropping the collection predicate
 -- cross-contaminates two collections' prices.
@@ -255,11 +228,11 @@ SELECT _assert_eq(
   (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xD'), '999.00',
   'the AllDay row gets the ALLDAY price for the same edition key');
 
--- Rows with a NULL edition_key are never written.
--- NOTE the explicit `wmc.edition_key IS NOT NULL` clause in the UPDATE is
+-- ── Rows with a NULL edition_key are never written ────────────────────────
+-- ⚠ NOTE the explicit `wmc.edition_key IS NOT NULL` clause in the UPDATE is
 -- REDUNDANT and is deliberately NOT asserted on its own: `wmc.edition_key =
 -- lf.external_id` already yields NULL (never true) for a NULL key, so removing
--- the clause changes nothing -- verified by mutation, which SURVIVED. The
+-- the clause changes nothing — verified by mutation, which SURVIVED. The
 -- assertion below pins the BEHAVIOUR, which is what callers depend on. It would
 -- become load-bearing again if the join ever moved to a NULL-safe operator
 -- (`IS NOT DISTINCT FROM`) or a COALESCE on either side.
@@ -267,31 +240,30 @@ SELECT _assert(
   (SELECT fmv_usd FROM public.wallet_moments_cache WHERE wallet_address='0xE') IS NULL,
   'an unkeyed wmc row is never written');
 
--- THE CHURN GUARD (IS DISTINCT FROM).
--- This is an IO-budget property on the platform's #1 writer. Without it,
--- every tick rewrites every matched row -- sustained HOT-update churn on a
--- 2.2M-row table on a disk-IO-throttled instance -- and the return value stops
+-- ⚠ THE CHURN GUARD (IS DISTINCT FROM) ────────────────────────────────────
+-- This is an IO-budget property on the platform's #2 disk reader. Without it,
+-- every tick rewrites every matched row — sustained HOT-update churn on a
+-- 2.2M-row table on a disk-IO-throttled instance — and the return value stops
 -- meaning "rows that changed", which is the only signal that the propagation is
 -- doing anything.
 DELETE FROM public.rwfc_state;
 SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
   're-running with no new snapshots updates nothing');
 
--- A NULL-priced snapshot never blanks an existing wmc price.
--- `fmv_usd IS NOT NULL` appears FOUR times: building _rwfc_recent, selecting
--- the latest snapshot, the edition_fmv_current join, and the UPDATE.
+-- ── A NULL-priced snapshot never blanks an existing wmc price ─────────────
+-- `fmv_usd IS NOT NULL` appears THREE times: building _rwfc_recent, selecting
+-- the latest snapshot, and in the UPDATE.
 --
--- MEASURED, not assumed: the three ORIGINAL ones are MUTUALLY REDUNDANT
--- defence-in-depth. Removing any ONE leaves the behaviour correct, and removing
--- any TWO still does; only removing ALL THREE blanks a real price. Each
--- single-clause mutation therefore SURVIVES this test, and no fixture can change
--- that -- with two guards standing, the third has nothing to catch. This is a
--- deliberate design property, so the assertion below pins the BEHAVIOUR rather
--- than pretending to pin each clause. A future edit that removes two of the three
--- is the dangerous one: individually harmless, and it leaves the portfolio value
--- one edit from being wiped with this test still green.
--- The FOURTH (`efc.fmv_usd IS NOT NULL`) is NOT part of that redundancy and is
--- discussed at the 0xH assertion at the bottom of this file.
+-- ⚠ MEASURED, not assumed: the three are MUTUALLY REDUNDANT defence-in-depth.
+-- Removing any ONE leaves the behaviour correct, and removing any TWO still
+-- does; only removing ALL THREE blanks a real price. Each single-clause
+-- mutation therefore SURVIVES this test, and no fixture can change that — with
+-- two guards standing, the third has nothing to catch. This is a deliberate
+-- design property of the function, so the assertion below pins the BEHAVIOUR
+-- (the thing callers depend on) rather than pretending to pin each clause.
+-- A future edit that removes two of the three is the dangerous one: it is
+-- individually harmless and leaves the portfolio value one edit from being
+-- wiped, with this test still green.
 INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at)
 VALUES ('11111111-1111-1111-1111-111111111111', NULL, now());
 DELETE FROM public.rwfc_state;
@@ -301,9 +273,9 @@ SELECT _assert_eq(
   (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xB'), '250.00',
   'and the existing price is untouched');
 
--- The cursor advances, so the next tick does not re-scan.
+-- ── The cursor advances, so the next tick does not re-scan ────────────────
 -- rwfc_state is what makes this incremental. If it stopped advancing the sweep
--- would re-read the same window forever -- which on this function means re-doing
+-- would re-read the same window forever — which on this function means re-doing
 -- the largest disk read on the instance every ten minutes.
 SELECT _assert(
   (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) IS NOT NULL,
@@ -311,84 +283,6 @@ SELECT _assert(
 SELECT _assert(
   (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) > now() - interval '1 minute',
   'a fully-drained queue advances the cursor to the run start, not backwards');
-
--- ================= THE FRESHNESS-GUARDED FAST PATH (added 2026-08-26) =============
---
--- WHY THIS BLOCK EXISTS. The fast path reads the latest FMV from
--- edition_fmv_current instead of the correlated subquery, which is where ~36.7%
--- of the instance's dirtied blocks came from. The obvious form of that fix -- a
--- bare COALESCE onto the cache -- is WRONG and was retracted before shipping:
--- measured over the population this function actually serves (4,028 editions with
--- an FMV change in 6h), the cache LAGS 28 of them, by as much as -59%/+39%, and
--- those values would have gone straight into a DISPLAYED PRICE. The function's own
--- `IS DISTINCT FROM` churn guard cannot catch that, because "stale" and "correct"
--- are both distinct from what is already stored.
---
--- Each of the three branches below is made OBSERVABLE by a fixture whose cache
--- value DISAGREES with its snapshot. That is deliberate and cannot happen in
--- production -- it is the only way to tell from the OUTPUT which branch executed.
--- Asserting only "the right price came out" would pass for all three even if the
--- LEFT JOIN were deleted entirely.
-INSERT INTO public.editions (id, collection_id, external_id) VALUES
-  ('44444444-4444-4444-4444-444444444444', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:100'),
-  ('55555555-5555-5555-5555-555555555555', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:200'),
-  ('66666666-6666-6666-6666-666666666666', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:300');
-
-INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at) VALUES
-  ('44444444-4444-4444-4444-444444444444', 500.00, now() - interval '1 minute'),
-  ('55555555-5555-5555-5555-555555555555', 700.00, now() - interval '1 minute'),
-  ('66666666-6666-6666-6666-666666666666', 800.00, now() - interval '1 minute');
-
-INSERT INTO public.edition_fmv_current (edition_id, fmv_usd, computed_at) VALUES
-  -- FRESH, and deliberately 501 rather than 500 so that taking the fast path is
-  -- visible in the output.
-  ('44444444-4444-4444-4444-444444444444', 501.00, now() - interval '1 minute'),
-  -- STALE by 7 days AND wrong. This is the retracted bug, as a fixture.
-  ('55555555-5555-5555-5555-555555555555', 100.00, now() - interval '7 days'),
-  -- FRESH but NULL -- the cache's own DISTINCT ON does not filter nulls while the
-  -- subquery does, so this row must not be allowed to serve the fast path.
-  ('66666666-6666-6666-6666-666666666666', NULL,   now() - interval '1 minute');
-
-INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, fmv_usd) VALUES
-  ('0xF', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:100', NULL),
-  ('0xG', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:200', NULL),
-  ('0xH', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '77:300', NULL);
-
-DELETE FROM public.rwfc_state;
-SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '3',
-  'exactly the three new rows change; editions 1-3 are already correct and are not rewritten');
-
--- MUTATION CAUGHT: deleting the LEFT JOIN, or the COALESCE, so every row falls back
--- to the subquery. Then 0xF reads 500.00 and this flips.
---
--- It also pins the BOUNDARY, deliberately. Edition 4's cache row and its snapshot
--- both use `now() - interval '1 minute'`, and now() is constant within a
--- transaction, so their computed_at values are EXACTLY EQUAL. That makes this the
--- test for `>=` rather than `>`: tightening the guard to a strict `>` would push
--- edition 4 onto the fallback and read 500.00 here. Equality is the common case in
--- production too -- the cache is built from the same snapshot rows -- so a strict
--- `>` would quietly disable the fast path for most editions while every value
--- stayed correct, i.e. it would cost the entire saving and nothing would notice.
-SELECT _assert_eq(
-  (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xF'), '501.00',
-  'a cache row at least as fresh as the queued snapshot IS used (the fast path runs)');
-
--- THE LOAD-BEARING ONE. MUTATION CAUGHT: removing `efc.computed_at >= p.computed_at`
--- -- i.e. the bare COALESCE that was retracted -- makes this read 100.00.
-SELECT _assert_eq(
-  (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xG'), '700.00',
-  'a STALE cache row is REJECTED and the true latest snapshot wins');
-
--- MUTATION NOT CAUGHT BY THIS ASSERTION, AND THAT IS STATED RATHER THAN IMPLIED:
--- removing `efc.fmv_usd IS NOT NULL` from the join lets the row join, but COALESCE
--- then sees a NULL first argument and still falls through to the subquery -- so the
--- VALUE is unchanged and this stays green. It is pinned here as a BEHAVIOUR (a
--- fresh-but-NULL cache row never suppresses a real price), not as a claim to catch
--- that clause's removal. The clause's real job is to stop the fast path claiming a
--- row it cannot serve, which is a plan property no output assertion can see.
-SELECT _assert_eq(
-  (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xH'), '800.00',
-  'a fresh cache row holding NULL falls through to the snapshot and never blanks a price');
 
 SELECT '✓ refresh_wmc_fmv_changed invariants pass' AS result;
 ROLLBACK;

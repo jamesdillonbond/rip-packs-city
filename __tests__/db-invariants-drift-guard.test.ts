@@ -1079,15 +1079,24 @@ const PINS = [
     // micro-optimisation.
     fn: "refresh_wmc_fmv_changed",
     test: "supabase/tests/refresh_wmc_fmv_changed.sql",
-    // ⚠ RE-POINTED 2026-08-26 onto the freshness-guarded edition_fmv_current fast
-    // path. db-pin-staleness compares THIS migration's DDL against live prosrc, so a
-    // stale target describes a body that no longer runs — which is why 08-23/08-24
-    // went red. The pin's ASSERTIONS were re-read against the live body before this
-    // was moved, and the .sql gained a whole block for the new branch: see the header
-    // of the .sql for the (comment-STRIPPED) clause counts, and note there that the
-    // previous header's counts were raw and three of them counted prose.
+    // ⚠ RE-POINTED 2026-08-28 BACK OFF the freshness-guarded edition_fmv_current
+    // fast path. db-pin-staleness compares THIS migration's DDL against live prosrc,
+    // so a stale target describes a body that no longer runs — which is why 08-23/24
+    // went red, and why this MUST move in the same push as the migration.
+    //
+    // The fast path shipped with a PRE-REGISTERED exit condition and FAILED it on
+    // both callers when it was read in the quiet window it asked for: pg_cron
+    // 87,352 reads/call vs a 74,159 threshold (+17.8%), PostgREST 10,029 vs 7,195
+    // (+39.4%), reproduced on a second independent window. It buys ~26.5% less wall
+    // time for ~18.5% more disk reads, and this instance is IO-bound.
+    //
+    // The pin's ASSERTIONS were not hand-edited: the .sql was restored VERBATIM from
+    // fb533970, the last commit before the fast path — which is also before the
+    // stray-`$` terminator that commit's assembly regex introduced, so it is a body
+    // CI has actually parsed green. Its header carries the (comment-STRIPPED) clause
+    // counts for the restored body.
     migration:
-      "supabase/migrations/20260826143452_audit_20260826_rwfc_freshness_guarded_edition_fmv_current.sql",
+      "supabase/migrations/20260828053000_audit_20260828_rwfc_revert_freshness_guarded_fast_path.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
