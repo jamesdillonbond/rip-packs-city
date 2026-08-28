@@ -346,3 +346,29 @@ CLAUDE.md's header keeps the rule and points here for the two shapes that taught
 CLAUDE.md keeps the rule and points here for the two shapes that taught it:
 
 > a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed but UNAPPLIED" note goes stale the moment someone applies it
+
+
+## Displaced 2026-08-27 — the `REVOKE … FROM PUBLIC` bullet (Database section)
+
+Shortened, not deleted, to pay for two new CLAUDE.md rules on 2026-08-27: the Sentry blackout's
+re-verification stamp, and the promotion of *"a killed `after()` run is ABSENT from
+`pipeline_runs_daily`, so that rollup reads 100% ok while the job dies nightly"*. The verbatim
+pre-condensation text:
+
+> - ⚠ **`REVOKE … FROM PUBLIC` alone is not enough, and neither is `FROM anon, authenticated` alone** — this DB carries both a PUBLIC default and `ALTER DEFAULT PRIVILEGES` grants. Revoke **`FROM PUBLIC, anon, authenticated`** in one statement, and verify with `has_function_privilege`, never the acl text. Re-run `check_secdef_anon_exec_drift()` after creating ANY function.
+
+The condensed line keeps every operative instruction — the one-statement revoke, the
+`has_function_privilege` verification, the `check_secdef_anon_exec_drift()` re-run — and drops only
+the restatement of why. Full case history remains in [database.md](database.md).
+
+
+## Displaced 2026-08-27 — the `LIMIT` bullet (Database section)
+
+Second condensation of the same 2026-08-27 pass, taken because 71 characters of headroom is under one
+emoji of margin (a U+1F6A8 costs two units). Verbatim pre-condensation text:
+
+> - ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** `drain_fmv_cold_tail` grouped the WHOLE of `fmv_snapshots` to answer a question about one collection's 518 editions — **66,499 buffers / 38.6 s → 741 / 0.17 s** off one `WHERE collection_id`, identical result (**FIXED 08-25**). Cut ITEMS per tick, not rows per item, and compare **BUFFERS** — a saturation spell confounds every timing, both ways. ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population** (0 of 1,281,003 rows disagreed); a plan comparison only shows *faster*.
+
+Dropped in the condensation: the `38.6 s → 0.17 s` timing pair (the bullet's own advice is to compare
+buffers, not timings), the "identical result / FIXED 08-25" note, and the `0 of 1,281,003 rows disagreed`
+control figure. All three survive in [database.md](database.md), which the condensed line now points to.

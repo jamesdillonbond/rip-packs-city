@@ -11,6 +11,14 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
+**Spot-re-verified again 2026-08-27 (PT) — collections registry ZERO DRIFT for a fourth consecutive read**
+(all 7 ids, chains and `is_active` flags identical to the table below, which matters more than usual now that
+this is the only in-repo copy); `public` base tables **376** (was 372 on 08-25 — the count grows most weeks and
+is informational, the invariant is the fact); tables with `rowsecurity = false` **0**, invariant holds;
+`editions` still **36** columns; `public` functions **668**. ⚠ **Still NOT a regeneration** — the enum tables,
+partition lists and column inventories below still date from the 2026-08-22 generation, and the precedence
+rule ("this file wins") is only as good as THAT stamp.
+
 **Spot-re-verified 2026-08-26 (PT), NOT a regeneration — five drift-prone facts read live and all still match:**
 public base tables **373** (372 on 08-25 — the count creeps, as documented below), public views **136**,
 `editions` columns **36**, `public.collections` rows **7** (5 `is_active`), active `cron.job` rows **99**.

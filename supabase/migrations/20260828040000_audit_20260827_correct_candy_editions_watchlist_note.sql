@@ -1,0 +1,45 @@
+-- audit_20260827_correct_candy_editions_watchlist_note
+--
+-- RECORD FILE for a change applied LIVE from a Claude Code session on
+-- 2026-08-28 ~03:50Z via `execute_sql`. No schema object beyond the backup
+-- table; recorded so prod and repo do not drift and so the revert lives with
+-- the change. Same pattern as 20260828021500 (jobid 55 note).
+--
+-- WHY. `pipeline_cadence_watchlist.notes` for `candy-editions-ingest` is a live
+-- instrument annotation the next session reads, and it had gone stale within
+-- hours of being written -- twice over:
+--
+--   (1) It still described the schedule as "10 22 * * *" (itself the 08-22
+--       correction of "40 8 * * *"). The 2026-08-27 night pass moved the Vercel
+--       cron to "10 1 * * *" (commit 544f3e6c0) after measuring ~45% kills at
+--       22:10Z. Re-verified in live vercel.json and the deploy list: the
+--       production deploy for that commit reached READY at 2026-08-28 03:11Z.
+--   (2) Its action item -- "confirm the next run appears at ~22:10Z" -- is
+--       therefore unexecutable as written, and a concurrent daytime-monitor
+--       filing (inbox 2026-08-28T0310Z) had already been written against it,
+--       asking the night pass to check a tick that will never fire.
+--
+-- The appended paragraph also records the transition arithmetic, because the
+-- alarm it produces looks exactly like a new fault: the deploy landed at 03:11Z,
+-- AFTER 01:10Z on 08-28, so the first run at the new slot is 2026-08-29 01:10Z.
+-- Against a last success of 2026-08-26 22:10Z that is ~51h of silence on an arm
+-- whose threshold is 1800 minutes.
+--
+-- ⛔ This does NOT retune or suppress the arm. severity stays `medium`,
+-- max_silent_minutes stays 1800. The arm is correct; the note was wrong.
+--
+-- The original note is preserved verbatim in
+-- public.audit_20260827_candy_editions_watchlist_note_backup (RLS enabled,
+-- anon/authenticated SELECT verified false).
+--
+-- VERIFIED after apply: notes 5,678 -> 7,680 chars; backup row count 1;
+-- relrowsecurity = true; has_table_privilege(anon|authenticated, SELECT) = false.
+--
+-- REVERT:
+--   UPDATE public.pipeline_cadence_watchlist w SET notes = b.notes
+--     FROM public.audit_20260827_candy_editions_watchlist_note_backup b
+--    WHERE w.pipeline = b.pipeline;
+--   DROP TABLE public.audit_20260827_candy_editions_watchlist_note_backup;
+--
+-- The applied UPDATE APPENDED a "CORRECTED 2026-08-27" paragraph to the existing
+-- notes text; it did not replace it. See the backup table for the prior value.

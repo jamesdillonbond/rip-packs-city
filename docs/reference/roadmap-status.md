@@ -18,6 +18,79 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ---
 
+## ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-27 20:45 PT (2026-08-28 03:45Z) (supersedes the 08-27 09:55 PT block below)
+
+Read the documented way, straight from `public.rpc_trust_health_precompute`
+(`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
+`rpc_fmv_confidence_share()`**, which blows a 60 s budget. Leg age at read time: **1.9 h** for the five
+shared collections (01:48:00Z) and **5.8 h** for Pinnacle (21:55:00Z, jobid 331's own schedule).
+
+| collection | 08-27 20:45 | 08-27 09:55 | 08-26 19:00 | 08-24 15:35Z | 08-22 | range, 5 samples |
+|---|---:|---:|---:|---:|---:|---|
+| `nba_top_shot` | **55.0%** | 55.4% | 57.8% | 57.2% | 49.6% | 49.6 – 57.8 |
+| `candy_mlb` | **63.2%** | 64.0% | 63.2% | 62.4% | 59.2% | 59.2 – 64.0 |
+| `disney_pinnacle` | **43.8%** | 43.8% | 43.8% | 43.4% | 43.2% | 43.2 – 43.8 |
+| `nfl_all_day` | **23.4%** | 25.2% | 26.7% | 27.0% | 22.5% | 22.5 – 27.0 |
+| `laliga_golazos` | **0.2%** | 0.3% | 0.3% | 0.2% | 0.0% | 0.0 – 0.3 |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% | 0.0% | 0.0% | 0.0 |
+
+⛔ **Every one of today's readings sits INSIDE its own five-sample range, so nothing here is a move.**
+The standing rule holds in both directions: a directional claim needs a distribution.
+
+⭐ **The one directional claim the 08-27 09:55 block did make is FALSIFIED at the fifth sample, and it is
+recorded here rather than quietly dropped.** That block singled out Candy as *"the only collection that has
+moved monotonically across all four samples"* (59.2 → 62.4 → 63.2 → 64.0) and named it "the one worth
+watching for a real trend". The fifth reading is **63.2** — the run is broken. ⛔ **That is not a decline
+either**; it is the same two-instants trap pointing the other way, on the smallest population on the board.
+The honest statement is the range: **Candy has read 59.2–64.0 across 08-22 → 08-27.**
+⭐ **Durable: a monotonic run over four instants is not a trend, and naming one invites the next reader to
+treat the fifth sample as news.** Do not re-open Candy on this.
+
+### The all-keys denominator, re-derived the same instant — 30.1% (08-24) → **33.4%**
+
+From `rpc_ops_snapshot()`'s `fmv_by_collection` block, which counts every key rather than the canonical
+subset — **a different instrument from the precompute leg above, and it agrees with it in direction**:
+
+| collection | keys | HIGH+MEDIUM | share | 08-24 |
+|---|---:|---:|---:|---:|
+| `nba_top_shot` | 19,735 | 7,571 | **38.4%** | 34.3% |
+| `nfl_all_day` | 6,190 | 1,461 | **23.6%** | 21.4% |
+| `laliga_golazos` | 575 | 1 | 0.2% | 0.0% |
+| `ufc_strike` | 518 | 0 | **0.0%** | 0.0% |
+| **total** | **27,018** | **9,033** | **33.4%** | 30.1% |
+
+⚠ **Candy is ABSENT from that block** (it is in `editions_by_collection` at 125 editions but carries no
+`fmv_by_collection` key), so this total covers four collections where the 08-24 all-keys total covered
+five; adding Candy at its own leg's 63.2% of 125 moves it to ~33.6%, i.e. **under 0.2 pt either way**.
+⚠ **`disney_pinnacle` reads `{}` here, exactly as documented** — it prices through the triple-keyed
+`pinnacle_catalog` path and has zero rows in the `fmv_snapshots` family. Three denominators still exist and
+**a share is meaningless without naming one**.
+
+### Demand — re-read the same instant from `auth.users`, and it CONFIRMS 08-26 rather than superseding it
+
+**23 accounts · 2 signups in 7 d (newest 2026-08-25) · WAU 2 · MAU 4** — identical on all four figures to
+the 2026-08-26 capture. ⚠ **A confirmation is worth stamping precisely because the next reader cannot tell
+a stale number from a re-verified one.** n = 2 is still 4% of the 50+ WAU gate and moves nothing.
+
+### Ops, same instant (`rpc_ops_snapshot()`, generated 2026-08-28T03:45:19Z)
+
+- **Trust board: 38 arms, 3 BREACHED.** ⭐ **Diff the SET, not the count: it was TWO on 08-26 19:10 PT**
+  (`public_board_slow_count`, `unmapped_resolution_backlog_max`) **and the third is `board_mv_refresh_stale_hours`
+  at 9.57 h against a `breach_at` of 8** — the arm [trust-board-and-safety.md](trust-board-and-safety.md)
+  records as *"all clear in this sample"* three days ago. ⛔ **It is the documented cadence-vs-threshold
+  mismatch, not a new incident:** its refresher is a **6-hourly** job against an **8-hour** threshold, so a
+  single missed cycle guarantees a breach. The other two: `public_board_slow_count` **5** (breach 1) and
+  `unmapped_resolution_backlog_max` **338** (breach 100, and the one arm still climbing — 258 → 291 → 338).
+- ✅ **Two arms this file has spent pages on are GREEN in the same sample and their history should not be
+  re-quoted as current:** `fmv_sweep_wedge_hours` **0.16** (breach 3; it read 12.17 on 08-16) and
+  `fmv_sweep_stall_pct_24h` **6.2** (breach 50; it read 50 on 08-16). `panini_sale_price_capture_dry_days`
+  is **0** (it read 19–20 breaching in mid-August).
+- **DB size 14,055 MB (14.06 GB).** ⚠ **Do NOT quote known-issues #13's "13.8 → 6.5 GB" as the current
+  size** — that is the May 2026 post-prune figure and the database has since more than doubled past it.
+- **Editions by collection:** Top Shot **19,906** · All Day 6,190 · Golazos 575 · UFC 518 · Candy 125.
+
+---
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-08-27 09:55 PT (16:55Z) (supersedes the 08-26 block below)
 
 Read the documented way: straight from `public.rpc_trust_health_precompute`

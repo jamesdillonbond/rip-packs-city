@@ -10,6 +10,46 @@
 2. **Prefer DB/artifact work that does not need a push.** Cloud-sandbox passes have repeatedly been NO-PUSH. Work that lands as a migration or an artifact ships; work that needs a git push may not. (⚠ Push from Trevor's **local** box is fine — verified 2026-08-17 — so a NO-PUSH night is a *sandbox* limitation, not a repo one.)
 3. **Do not open new investigations into disk-IO saturation symptoms.** The fmv-recalc kill rate, `public_board_slow_count`, the board-warm failures, the pg_cron statement-timeouts and the `get_collection_stats` timeout are **one root cause** (disk-IO budget on the SMALL 2 GB instance). The lever is cutting work — page size, precompute, fan-out — **never** raising a timeout and never upgrading the tier.
 
+## STEER — added 2026-08-27 (memory-refresh pass: CLAUDE.md, the register, the roadmap, the trust board and the schema stamp re-derived against live sources)
+
+1. 🚨 **THE ONE THING THAT WILL WASTE A PASS IF UNREAD: the daytime monitor's 08-28T0310Z filing asks you to
+   "check whether the next scheduled run (08-28 22:10Z) lands" — THAT TICK WILL NEVER FIRE.** The night pass
+   moved `candy-editions-ingest` `10 22 * * *` → `10 1 * * *` in the same window (`544f3e6c0`, deploy READY
+   2026-08-28 03:11Z), and because the deploy landed AFTER 01:10Z that day, **the first run at the new slot is
+   2026-08-29 01:10Z**. Against a last success of 08-26 22:10Z that is **~51 h of silence on a 30 h arm**, so
+   ⛔ **the `cron_silent` BREACH you will see is the transition plus the 08-27 kill, not a new fault** — do not
+   re-diagnose it, do not raise `max_silent_minutes`, do not suppress the arm. ✅ **The live watchlist note has
+   been corrected in place** (it still said "10 22" and carried the unexecutable verify step) — record:
+   `supabase/migrations/20260828040000_audit_20260827_correct_candy_editions_watchlist_note.sql`. **FALSIFIER,
+   and the only thing worth acting on: if 08-29 01:10Z and the ticks after it keep missing at ~45%, the HOUR is
+   not the cause — it is D8's wmc row-lock contention, and the durable fix is the `paginateGroup` chunking
+   (handoff 2026-08-04, Item 2, unshipped).** Register: **#47** (new).
+   ⭐ **Two sessions characterised this pipeline within five minutes of each other and reached compatible
+   conclusions from different instruments — but the FILING went stale before it was read.** When you file an
+   action item that names a clock time, name the schedule it depends on too.
+2. ⏳ **Pack-pool wedge fix (`20260828025307`): first post-fix reading is 6 ok / 4 failed over 10 ticks
+   (40.0%) against 131 consecutive failures before it, backlog 368 → 360, dists with pool rows 1,715 → 1,736.**
+   The ledger's prediction was *"settles near 33%, NOT 0%"* — 40% on n = 10 is inside that. ⛔ **Do NOT close
+   it on this**: the exit condition is a conversion rate over ~100+ ticks, and ⚠ **the 2-day rollup still reads
+   74.1% failed because it is dominated by the pre-fix window — that number is not the current rate.**
+3. ✅ **Re-verified live, so do not re-derive these before ~08-29 unless you are acting on them:** headline
+   metric (every collection INSIDE its own 5-sample range; **the "Candy is moving monotonically" claim broke at
+   the fifth sample — 64.0 → 63.2 — and neither the run nor its break is a trend**) · demand (**23 / 2 / WAU 2
+   / MAU 4, identical to 08-26 — a confirmation, not a new number**) · the all-keys accuracy denominator
+   (**30.1% → 33.4%**) · #22 the defeated purge (unchanged, 25 days, third instrument) · #8 the sports proxy
+   (**0 ok / 16 in 48 h**) · #34 Sentry (**newest stored event STILL 2026-08-18T13:21:59Z — the "a quota resets,
+   it will heal itself" hypothesis predicts a resumption that has not happened in 9 days**) ·
+   `compute_pack_ev_per_edition_weighted` (fix still unshipped in live `prosrc`).
+4. ⚠ **Trust board is 3 breached, up from 2 on 08-26 — diff the SET: the new arm is `board_mv_refresh_stale_hours`
+   (9.57 vs 8), the one the 08-26 entry recorded as "all clear".** ⛔ It is the documented cadence-vs-threshold
+   mismatch (a 6-hourly refresher against an 8 h threshold has 2 h of headroom), not a new incident.
+   `unmapped_resolution_backlog_max` is the one arm still climbing (258 → 291 → **338**).
+5. ⭐ **A durable lesson was promoted to CLAUDE.md this pass and is worth applying beyond the job it came from:
+   a killed `after()` run is ABSENT from `pipeline_runs_daily` rather than counted as a failure, so that rollup
+   reads `runs 1 · ok 1 · failed 0` for every recorded day while a job dies nightly.** The **47 still
+   un-heartbeated `after()` routes cannot be audited at all** by either rollup — that is the argument for
+   continuing the E5 conversions, and it is a measurement, not a preference.
+
 ## STEER — added 2026-08-26 (memory-refresh pass: CLAUDE.md, the register, the roadmap and the schema stamp re-derived against live sources)
 
 1. ✅ **FIXED THE SAME DAY (2026-08-26) — `/insights/underpriced-serials`'s React #418, plus the guard gap that let it through. ⏳ The one thing left is VERIFICATION: watch `E2E DOM Smoke` across SEVERAL scheduled runs, because the failure is intermittent and one green run proves nothing.** Detail + the mutation checks: known-issues #37. ⛔ Do not re-open the diagnosis from the ingest cadence — that hypothesis was checked and found insufficient; the cause is that the CACHED HTML can be hours old (measured 2.5 h), not that the spine is stale. **Original filing, kept because it is what a next session should recognise:** 🚨 **it was throwing in PRODUCTION and nothing but a scheduled badge could see it.** Two consecutive `E2E DOM Smoke` runs (08-26 13:37Z and 21:09Z), all retries, 1 failed / 95 passed. **This is the highest-value shippable item on the board right now**: it is user-facing, the mechanism is identified in code (`UnderpricedSerialsBoardClient.tsx:341` computes `listingsAgeHours` from `Date.now()` during render, rendered at :391, on a `revalidate = 900` ISR page — so server HTML and hydration disagree whenever the rounded hour ticks over), and the fix is local. ⛔ **Do NOT reach for `suppressHydrationWarning`** — that silences the only instrument. Compute the age in an effect after mount, or pass a server-stamped age as a prop.

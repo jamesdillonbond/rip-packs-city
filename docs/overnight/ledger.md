@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (docs + one DB note) — memory-refresh pass: every dated claim a live read could settle was re-read, and the one that had gone actively wrong was a watchlist note five hours old
+
+**Scope: documentation + ONE prod-data correction.** No code, no schema, no pipeline behaviour changed.
+
+🚨 **THE ONE ACTIVELY-WRONG ARTIFACT, and it was five hours old, not five weeks.** The live
+`pipeline_cadence_watchlist.notes` for `candy-editions-ingest` still described the schedule as
+`10 22 * * *` and told its reader to *"confirm the next run appears at ~22:10Z"*. The night pass had
+already moved that cron to `10 1 * * *` (`544f3e6c0`, production deploy READY 2026-08-28 03:11Z,
+re-verified in live `vercel.json`) — **so the action item pointed at a tick that will never fire**, and a
+concurrent daytime-monitor filing ([inbox 2026-08-28T0310Z](inbox/2026-08-28T0310Z-candy-editions-missed-its-first-tick-at-the-new-quiet-slot.md))
+had already been written against it. Corrected in place, appended not replaced.
+⭐ **AND THE TRANSITION ARITHMETIC IS NOW ON THE ROW, because the alarm it produces looks exactly like a new
+fault:** the deploy landed at 03:11Z, *after* 01:10Z that day, so the first run at the new slot is
+**2026-08-29 01:10Z** against a last success of 08-26 22:10Z — **~51 h of silence on a 30 h arm.**
+⛔ **The arm is UNTOUCHED** (severity `medium`, `max_silent_minutes` 1800): it is correct, the note was wrong.
+⭐ **Durable: when a filing names a clock time, name the schedule it depends on too** — two sessions
+characterised this pipeline within five minutes of each other, agreed, and the filing still went stale before
+anyone read it.
+
+**RE-READ LIVE, and the point of listing them is that a reader cannot tell a stale number from a re-verified
+one:** headline metric — Top Shot **55.0** · Candy **63.2** · Pinnacle **43.8** · All Day **23.4** · Golazos
+**0.2** · UFC **0.0**, ⭐ **every one INSIDE its own five-sample range, so nothing moved**; the all-keys
+denominator **30.1% → 33.4%** (a second instrument, agreeing in direction); demand **23 accounts / 2 signups
+7 d / WAU 2 / MAU 4, identical to 08-26**; trust board **38 arms, 3 breached** (⭐ **diff the SET: 2 → 3, and
+the new one is `board_mv_refresh_stale_hours` at 9.57 — the arm the 08-26 entry called clear, re-firing on
+its documented 6-hourly-job-vs-8-hour-threshold mismatch**); `cron.job` **100 / 100 active / 45 `cron_heavy`**
+(was 93/42); collections registry **zero drift for a fourth read**; `public` base tables **376**, `rowsecurity
+= false` **0**; #22 **unchanged at `ee94c8a2a`, 25 days, confirmed by a third instrument (the REST branch
+listing)**; #8 **0 ok / 16 failed in 48 h**; #34 **Sentry's newest stored event is STILL 2026-08-18T13:21:59Z**;
+`compute_pack_ev_per_edition_weighted` **still unshipped in live `prosrc`**.
+
+⛔ **ONE PRIOR DIRECTIONAL CLAIM FALSIFIED, recorded rather than dropped.** The 08-27 09:55 block named Candy
+*"the only collection that has moved monotonically across all four samples"* (59.2 → 62.4 → 63.2 → 64.0) and
+called it the one worth watching. The fifth sample is **63.2**. ⛔ **That is not a decline either** — the
+honest statement is the range **59.2–64.0**. ⭐ **A monotonic run over four instants is not a trend, and
+naming one invites the next reader to treat the fifth sample as news.**
+
+⚠ **AND ONE COUNT THAT LOOKS LIKE DRIFT AND IS NOT:** `scripts/` reads **117** files against the **103**
+recorded on 08-24, but `git log --diff-filter=A` shows **one** file added there since — **two methods, not 14
+new scripts.** The `lib/` (308 → 311, +3 added) and `components/` (161 → 158, exactly the 3 removed by
+`a44bef5c0`) deltas DO reconcile against git, which is why the scripts one is reported as a method mismatch
+rather than a change.
+
+**CLAUDE.md 39,650 → 39,799 units (headroom 201).** Two stamps refreshed in place; one rule promoted —
+**a killed `after()` run is ABSENT from `pipeline_runs_daily` rather than a failure row, so that rollup reads
+`runs 1 · ok 1 · failed 0` while a job dies nightly.** Paid for by condensing two bullets, both preserved
+**verbatim** in [claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md) per the
+header's protocol (the `REVOKE … FROM PUBLIC` bullet and the `LIMIT`-is-not-a-cost bullet; every operative
+instruction kept, and the dropped figures verified present in `database.md` before dropping them).
+
+**Touched:** `CLAUDE.md`, `docs/reference/{roadmap-status,known-issues,trust-board-and-safety,cron-and-schedulers,routes-and-surfaces,schema-truth,claude-md-condensed-originals}.md`,
+`docs/strategy/roadmap-2026-08-03.md` (status stamp only — **the plan is unchanged and nothing in it is
+re-opened**), `docs/overnight/focus.md`. Register gains **#47** (`candy-editions-ingest` kills, with its
+falsifier) and a **2026-08-27 sweep stamp naming exactly which items were touched.**
+
+**Revert:** `git revert` this commit for the docs. For the DB half —
+`UPDATE public.pipeline_cadence_watchlist w SET notes = b.notes FROM public.audit_20260827_candy_editions_watchlist_note_backup b WHERE w.pipeline = b.pipeline;`
+then `DROP TABLE public.audit_20260827_candy_editions_watchlist_note_backup;` (record file:
+`supabase/migrations/20260828040000_audit_20260827_correct_candy_editions_watchlist_note.sql`).
+
+
 ### 2026-08-27 · ✅ SHIPPED (code) — RETRACTION: my own kill-rate table pooled across a fix; the heartbeat correlation now lives in code with the recency test built in
 
 **What shipped:** `lib/pipeline/kill-rate.ts` (`classifyKillRecord`, `correlateRuns`),

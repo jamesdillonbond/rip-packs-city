@@ -2,6 +2,33 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ SCHEDULER POPULATION — re-derived live 2026-08-27 20:45 PT (supersedes every count below)
+
+Both figures below are stale and the direction is the same both times — **up**. Count them; never quote them.
+
+| surface | 2026-08-27 | previously recorded |
+|---|---:|---|
+| `cron.job` total / active | **100 / 100** | 93 active (08-16), "99 active" (08-26) |
+| `cron.job` owned by `cron_heavy` | **45** | 42 of 93 (08-22) |
+| `vercel.json` cron entries | **35** | 36 (08-22), 37 before that |
+
+⚠ **The `cron_heavy` share is the number that decides what a session can DO, not the total** — `postgres`
+may EXECUTE those jobs but does not own them, so **no session-reachable role can reschedule 45 of the 100**.
+Read `cron.job.username` before planning any `cron.alter_job`; the recipe that works (`SET LOCAL ROLE
+cron_heavy`, probe in a rolled-back `DO` block, `RESET ROLE` before `apply_migration` writes its own row)
+is recorded further down this file.
+
+⚠ **The Vercel count went DOWN by one, and that is a retirement rather than a miscount this time:**
+`compute-laliga-pack-ev` was removed on 2026-08-27 after writing **zero rows in its entire life** (20 runs,
+`sum(rows_written) = 0`) — and its being broken had been *preventing* a `fmv_usd: 0` sentinel from
+publishing $0 as a real price for hundreds of Golazos editions. ⭐ **The lesson generalises past this job:
+when a broken feature has never produced output, establish what it WOULD have produced before repairing
+it** — repair was the obvious move here and it was the wrong one.
+
+⚠ **`candy-editions-ingest` moved `10 22 * * *` → `10 1 * * *` the same night** (~45% of nights killed at
+22:10Z; production deploy READY 2026-08-28 03:11Z). **First run at the new slot is 2026-08-29 01:10Z**, so
+its cadence arm reads BREACH across ~51 h of transition — expected, not a new fault. Register: #47.
+
 ## Cron / scheduler surfaces (4 independent schedulers)
 
 Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):

@@ -160,6 +160,9 @@ curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
 
 ⚠ **Every number below is a DATED SAMPLE taken 2026-08-24. Re-derive; never quote.**
 
+> ⭐ **RE-DERIVED 2026-08-27 (PT), and the deltas are CONTROLLED rather than assumed — every one was checked against `git log --diff-filter` so drift is not confused with a change of method.** `app/` **119** `page.tsx` (unchanged) · **454** `route.ts` under `app/api/**`, **456** under `app/` (unchanged) · `lib/` **311** `.ts/.tsx` (was 308; **3 files added since 08-24** — matches exactly) · `components/` **158** `.ts/.tsx` (was 161; **the 3 removed by `a44bef5c0`**, "three production-dead components" — matches exactly) · `workers/` **17** dirs (unchanged) · `supabase/functions/` **39** (unchanged) · `supabase/migrations/` **691** files · `__tests__/` **1,384** `*.test.ts(x)`.
+> ⚠ **`scripts/` is the one figure that must NOT be read as growth: `find scripts -type f` returns **117** against the 103 recorded below, but only **ONE** file has been added there since 08-24 — so the two numbers are different METHODS, not 14 new scripts.** ⭐ **The durable point is the one this file already makes about every count: state the METHOD with the number, or the next re-derivation reads a methodology change as drift.**
+>
 > **Repo map** (2026-08-24 — re-derive, never quote): `app/` App Router — **119** `page.tsx`, **454** `route.ts` under `app/api/**` (456 under `app/`) · `lib/` **308** modules (FMV, ingest, insights, chains, concierge, og) · `components/` **161** · `workers/` **17** worker dirs (14 `*-proxy` egress + 3 ingest/backfill) + `infrastructure/spork-proxy-worker` · `supabase/functions/` **39** edge fns · `scripts/` **103** · `cadence/` contracts + tests · tests in `__tests__/`, `tests/`, `e2e/`.
 
 ⓘ Also displaced the same day, from `Frequently used commands`, so the shortened comment there does not lose its case:
