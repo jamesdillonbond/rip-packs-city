@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — `compute-laliga-pack-ev` has written ZERO rows in its entire life; cron removed, and its BREAKAGE was protecting the honesty canon
+
+**Code only** (`vercel.json`: removed the `30 5 * * *` entry). Found by generalising tonight's candy
+diagnosis into a **repo-wide heartbeat correlation** — a heartbeat with no terminal row within ±5 s means
+the `after()` body was killed — run across every heartbeated pipeline.
+
+✅ **POSITIVE CONTROL on the sweep: it reads `fmv-recalc` at 64.6%, and CLAUDE.md independently documents
+that pipeline as "64–73% wall-kills".** It reproduces a figure measured by someone else, by another
+method, so it is not inventing kills. Top of the list: **`compute-laliga-pack-ev`, 3 of 3 killed (100%)**;
+also `pinnacle-sync` 66.7%, `candy-listings-indexer` 58.3%.
+
+⛔ **My first alarm — "Golazos pack EV is dead" — was WRONG, and is recorded rather than dropped.**
+`pack_ev_history` for Golazos is **fresh: 2.6 h, 5,664 rows**, written by the pg_cron edge function
+`rpc-compute-golazos-pack-ev` (jobid 44). **Name the caller before you touch the function** — this route
+is not the writer of the thing it appears to write.
+
+🚨 **The lifetime record, from the indefinite rollup: 2026-08-02 → 08-23, 20 runs, 19 reported `ok`, and
+`sum(rows_written) = 0`, `max(rows_written) = 0`. It has NEVER written a row.** Timeline:
+**08-03→08-20** `rows_found: 0` in **49–280 ms** (pool empty, early return, logged `ok: true` — a no-op
+reporting success); **08-23** `rows_found:` **1000** — ⭐ the PostgREST cap confirmed empirically against
+a **1,958**-row pool — then `last_error: "pack_ev_history insert: Could not query the database for the…"`;
+**08-24→08-27** killed at `maxDuration=300` in the per-dist RPC loop, never reaching the insert.
+
+**Three independent defects, each proven:** (1) the `pack_drop_pool` read is a bare `.select()` with no
+`.limit()`/`.range()` → clamped at 1,000 of 1,958. ⚠ **NOT covered by `invariants-postgrest-cap`** —
+that guard's allowlist entry for this file is about a *raw `fmv_snapshots` DESC* read, a different
+statement. (2) It inserts `algo_version`, **a column `pack_ev_history` does not have** → PGRST204, which
+is the 08-23 `last_error` verbatim. (3) `confidence: "PACK_EV"` is **not a member of the
+`fmv_confidence` enum** — proven with a control (`PACK_EV` → false, `NO_DATA` → true).
+⚠ **And the sentinel failure is invisible by construction:** its error goes to `console.log`, then
+`logPipelineRun` is called with **hard-coded `ok: true, errorMsg: null`**; the only trace is
+`sentinels_written: 0` in `extra`.
+
+⭐⭐ **THE FINDING, and it inverts the obvious action: DO NOT REPAIR IT.** The sentinel writes
+**`fmv_usd: 0`**, and **507 pool editions have `sales_count_30d = 0`**. A working version would publish
+**$0 as a price** for hundreds of Golazos editions into `fmv_snapshots` → `fmv_current` → portfolio
+totals and ~34 functions — **replacing the honest `NO_DATA` (73) and `STALE` (315) those editions already
+carry.** That is this repo's single worst defect class aimed at a live pricing surface. **Three bugs have
+between them prevented a fabricated-price write for the entire life of the feature.**
+⭐ **Generalises: when a broken feature has never produced output, establish what it WOULD have produced
+before repairing it.** Repair was the obvious move and it was the wrong one.
+
+✅ **Removed the cron:** a 300 s lambda daily that died, added per-dist statement timeouts to an IO-bound
+instance, and emitted a misleading `ok` — against **20 runs and 0 rows written**, so nothing is lost, and
+its EV half is already covered by the edge function. ⛔ **Route and tests KEPT** — the fallback is a
+reasonable idea for a collection at 0% HIGH/MEDIUM and needs a **redesign**, not a repair; if a sentinel
+is wanted it must carry no `fmv_usd`, never a zero. ⛔ **`fmv-recalc` (64.6%, documented wasteful-not-broken)
+and `candy-listings-indexer` (58.3%, "fixed" 08-26 and still killed on most ticks) left alone and filed.**
+
+**Revert:** restore `{ "path": "/api/cron/compute-laliga-pack-ev", "schedule": "30 5 * * *" }` in
+`vercel.json`. Filing: [inbox 2026-08-28T0330Z](inbox/2026-08-28T0330Z-compute-laliga-pack-ev-has-written-ZERO-rows-in-its-entire-life-and-its-failure-was-protecting-us.md).
+
 ### 2026-08-27 · ✅ SHIPPED (code) — `candy-editions-ingest` is KILLED on ~45% of nights, every kill is invisible in BOTH rollups, and it is moved out of the peak band
 
 **Code only** (`vercel.json` cron schedule). Found by sweeping for dark pipelines, then settled with the
