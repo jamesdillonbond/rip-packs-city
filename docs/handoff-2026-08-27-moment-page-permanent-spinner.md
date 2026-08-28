@@ -101,3 +101,24 @@ New code only; revert = `git revert <the fix commit>` (find by message, not a pr
 ## Expected end state
 
 One commit on `main`, Vercel deploy READY, and `/moment/<id>` paints its FMV hero in a clean browser profile instead of hanging on "SCANNING THE MARKETPLACE…" — closing the recurrence the prior session flagged at `app/moment/[id]/page.tsx`.
+
+---
+
+## ADDENDUM 2026-08-27 (post-deploy re-test by Cowork surface-QA) — the remaining axis, narrowed. NOT a new chase.
+
+The badge-art budget fix is correct and effective — clean/anon reveal in 2.6–5.3s, and this was the right root cause for the SSR-time budget. **This addendum does not dispute the fix or ask for the declined refactor.** It records one narrowing so it isn't lost:
+
+Re-tested in Cowork's own browser (the only place the hang was ever seen), on a **post-fix bundle** (chunk deploy id moved `dpl_Ed…` → `dpl_3Zx…` vs the pre-fix session):
+
+- `/moment/502392c5-2b00-49e1-a47e-cf8ff28fa3bf` **still hangs on "SCANNING THE MARKETPLACE…" at 60s+** — past the new ~22.5s worst-case cap, so this session's hang is **not** the badge-art budget.
+- Content is still SSR'd correctly into a `display:none` subtree; **no console error** (no #418/#423), no thrown exception.
+- Session differentiator observed in console: this is a **logged-in wallet session** — `window.ethereum` is present (a wallet extension) and `[preloader] loaded 15132 owned moments … for 0xbd94cade097e50ac` fired. Anon sessions have neither, which is consistent with CC's clean-profile passes revealing fine.
+- **`WalletPreloader` is RULED OUT as the blocker** (my first guess, checked and wrong): `components/WalletPreloader.tsx` (mounted `app/layout.tsx:77`) is a fire-and-forget `useEffect` with a 15s `AbortSignal.timeout`, writes localStorage, and `return null` — it neither suspends nor gates the render tree. It's only a marker that the session is logged-in.
+
+**It is NOT `/moment`-specific — it's the route-level `LoadingState` fallback pattern.** Same-session re-test of `/ufc/edition/STIPE-MIOCIC-UFC-198-KO-TKO-5000` (a `/<collection>/edition/<slug>` page — the route whose fast-shell fix this handoff cites as the reference): **also stuck at 95s** on "SCANNING THE MARKETPLACE…", closure note correctly SSR'd but sitting `display:none`, no console error — identical mechanism. So in this logged-in session, **both** detail routes that ship a route-level `loading.tsx` → `components/ui/LoadingState.tsx` fallback hang on the client reveal, while routes without it (insights boards, home, `/pack/dist/*`, `/pinnacle/moment/*`) render fine. That reframes it from "a `/moment` page bug" to "the client Suspense-reveal of `LoadingState`-fallback routes never fires in this session."
+
+**In-browser disambiguation run — the logged-in path is now RULED OUT too.** I cleared `rpc_owner_key` from localStorage (the key `getOwnerKey()`/`WalletPreloader` read — `lib/owner-key.ts`), making the session anon-like, and reloaded `/moment/502392…`: **it still hangs at 35s** (`localStorage.getItem("rpc_owner_key") === null`, still "SCANNING…", 25-char body). Restored the key to its original value afterward — session left exactly as found. So the hang is **independent of login/owner-key/preloader state**.
+
+**Honest status — four hypotheses ruled out, pointing to a browser-environment artifact, most likely NOT a real-user defect.** Ruled out: (1) badge-art SSR budget (past the 22.5s cap; SSR completes and returns full content every time), (2) `WalletPreloader` (non-blocking `useEffect`), (3) logged-in owner-key state (cleared → still hangs), (4) CC's four independent axes (anonymous, extension, SSR, soft-nav) all clean. What remains as the differentiator is **this specific Cowork Chrome environment** — a wallet extension is injecting `window.ethereum` + `chrome-extension://…/pageProvider.js` into the page, and/or the automation harness — interfering with React's **streaming Suspense reveal** (the `$RC` swap). That is exactly the class of failure that would (a) hit only `LoadingState`-route-fallback pages, which depend on that reveal, (b) leave content correctly SSR'd in the hidden div, and (c) throw no console error. Anon users on normal browsers reveal fine (CC + the 2.6–5.3s post-fix reveals), so **this is almost certainly a Cowork-browser artifact, not a shippable defect.**
+
+**Recommendation: do NOT restructure any page, and the declined fast-shell refactor stays declined** — the edition route already HAS that refactor and still hangs here, which is positive evidence the SSR-shell structure is not the cause. Treat this item as **closed pending one confirmation**: open a `/moment/<id>` in a normal signed-in browser once; if it reveals (expected), this was a Cowork-browser streaming-reveal artifact and needs no code change.

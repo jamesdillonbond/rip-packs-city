@@ -1,4 +1,4 @@
-# Inbox index — 289 live filings
+# Inbox index — 290 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-08-28 — 1 filing
+
+- [Daytime monitor 18:10Z — `rpc_ops_snapshot()` times out on its `sentinel_fmv_confidence_rows` leg during the daytime IO band](2026-08-28T1810Z-daytime-monitor-rpc_ops_snapshot-fmv-sentinel-times-out-during-the-daytime-IO-band.md) — read-only sweep; platform up, no security drift, no ERROR deploys. The monitor's own baseline vector returned `57014 statement timeout` at 18:06Z (positive control: io_wait 9 / active 8 of 36 sessions, tail of the 01:00–19:00Z band) while the light indexed checks answered fast — so it is the heavy FMV-confidence sentinel under saturation, not an outage. LOW/informational, but it blinds the snapshot headline inside the band. Suggested: re-run in a quiet window (20:00–00:00Z); if it still times out OUTSIDE the band, drill `sentinel_fmv_confidence_rows` by BUFFERS; inside only = saturation collateral, no code change. ⚠ This filing was left UNTRACKED by the session that wrote it (an index.lock collision, per the 08-28 parity ledger entry) and committed by the Cowork pass on 2026-08-28 ~23:40Z.
 
 ## 2026-08-27 — 32 filings
 
