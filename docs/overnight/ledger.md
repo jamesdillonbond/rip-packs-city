@@ -10,6 +10,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — `candy-editions-ingest` is KILLED on ~45% of nights, every kill is invisible in BOTH rollups, and it is moved out of the peak band
+
+**Code only** (`vercel.json` cron schedule). Found by sweeping for dark pipelines, then settled with the
+**heartbeat correlation** — which is exactly what that marker exists for and is the first time it has
+answered a live question here.
+
+**2026-08-27 has a heartbeat and NO terminal row** → the `after()` body was killed. Vercel's log for that
+invocation names the cause outright: `wmc upsert err: canceling statement due to lock timeout` ×2,
+`wmc metadata denorm err: canceling statement due to statement timeout` ×2, then **`Task timed out after
+800 seconds`**. 🚨 **That is register item D8 — the wmc denorm's ROW-LOCK CONTENTION — killing an entire
+daily catalogue ingest, not merely slowing it.**
+
+🚨 **AND BOTH SUMMARY INSTRUMENTS CALL IT HEALTHY.** `pipeline_runs_daily` shows **22 recorded days, every
+one `runs 1 · ok 1 · failed 0`** — and 2026-08-27 is **not a failure row, it is ABSENT.** ⭐ **A killed run
+does not appear as a failure anywhere; it appears as a MISSING DAY**, because the terminal
+`log_pipeline_run` never executes and there is nothing to roll up. **So the lifetime record reads 100% ok
+while the job is failing.** Cross-referencing the heartbeat rollup against the terminal rollup — the only
+way to see it — gives **4 heartbeat-without-terminal days (08-17, 08-18, 08-20, 08-21) plus 08-27 = 5
+kills in the ~11 days the heartbeat has existed, ≈45%.** ⚠ The 16 terminal-only days predate the
+heartbeat and cannot be classified.
+
+⚠ **The cadence alarm cannot catch it either:** `max_silent_minutes` = 1800 (30 h) against a DAILY job, so
+one missed night sits at 29 h — under threshold — and the next run clears it. **A once-daily pipeline with
+a 30 h alarm can only ever alarm on two consecutive failures.**
+
+⚠ **My first read was wrong and is recorded rather than quietly fixed:** "2 runs in 30 days" is a
+**retention artifact** of `pipeline_runs`' ~73 h window, precisely what CLAUDE.md warns about. Corrected
+from the indefinite `pipeline_runs_daily`.
+
+**ACTION: `10 22 * * *` → `10 1 * * *`.** ⭐ **Hour 1, deliberately NOT the "quietest" hour 0** — hour 0 is
+quiet for external traffic but is exactly where the `*/2`, `*/3` and `*/6` pg_cron cohorts all coincide
+(#42's alignment finding); **hours not divisible by 2 or 3 avoid every one of them**, and 01:10Z is 35 min
+clear of its nearest neighbour. ⛔ **02:10Z rejected on purpose:** `topshot-catalog-backfill` runs 02:12
+and also writes `wmc`, the exact table the lock contention is on.
+
+⚠ **NOT ESTABLISHED — the hour attribution is INFERRED, not measured for this pipeline.** Every one of its
+runs has been at 22:10, so its own data contains **no hour contrast** and cannot attribute the kills to
+the hour; the mechanism comes from other instruments measured tonight. **The move is as much an experiment
+as a fix, and it creates the contrast that is missing. FALSIFIER: if kills continue at ~45% from 01:10Z,
+the cause is D8 itself and not the schedule.** ⚠ **Expect a one-off cadence alarm** — last success was
+08-26 22:10 and the next run is 08-29 01:10, so the gap crosses 30 h; that is the 08-27 kill plus the
+transition, **not a new fault**. ⛔ **D8 itself is untouched** (ingest logic; focus.md PRIORITY 3).
+
+⭐ **THE DURABLE LESSON, worth more than this pipeline: a killed `after()` route is invisible in
+`pipeline_runs_daily` as well, and there it makes the record look PERFECT rather than merely absent.**
+Any health read from that table shares the blind spot, and **the 47 still-un-heartbeated `after()` routes
+cannot be audited this way at all** — a concrete argument for continuing the E5 conversions.
+
+⭐ **Post-ship watch on tonight's pack-pool fix, with a falsifiable prediction.** First two ticks after
+`20260828025307`, against **131 consecutive failures** before it: 02:58Z **3/3 converted, 0 empty** (first
+ok in 11 h); 03:03Z 3 empty walks — a `bucket % 3 = 0` tick drawing the rips tier **by design**. Backlog
+**368 → 365**, dists with pool rows **1,715 → 1,718**. **PREDICTION so the residual is not misread as a
+regression: the failure rate should settle near 33%, NOT 0%** — one tick in three is the rips tier's
+dedicated slot and those 8 dists stay unconvertible until failure memory exists. **A rate materially above
+~33% means something else is wrong.**
+
+**Revert:** restore `"schedule": "10 22 * * *"` in `vercel.json`. Nothing else to unwind.
+Filing: [inbox 2026-08-28T0305Z](inbox/2026-08-28T0305Z-candy-editions-ingest-is-killed-45pct-of-nights-and-every-kill-is-invisible-in-both-rollups.md).
+
 ### 2026-08-27 · ✅ SHIPPED (DB) — the pack-pool wedge is FIXED: a tier of 8 can no longer consume a 3-wide window
 
 **DB only** (`CREATE OR REPLACE`, migration `20260828025307`). Acts on this morning's diagnosis; direct
