@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ MEASURED (read-only, docs) — #41 CONFIRMED on a three-point dose–response, its confound ruled out, and the cadence cut bought 2.7× not 6×
+
+**No code, no DB, no prod state.** Closes **open reading #3** from the 2026-08-27 handoff.
+
+⛔ **The falsifier as written could not have answered the question.** It asked for *"one quiet-window
+p50 read"* of jobid 235 — but **a 24 h read on this job is FOUR runs** (3 ok, p50 231 s; 1 dead at
+600 s). n = 4 is a snapshot and #41 is a directional claim. ⚠ **And the obvious wider read is a trap
+too:** a naive pre/post split at the cut date buckets **260 "pre-cut" runs at 18.7/day, where `*/2`
+predicts 12** — there were **THREE** schedules in the window, not two. Caught by reading runs-per-day
+BEFORE computing any rate.
+
+| regime | runs | fail % | **p50 (ok)** | busy h/wk |
+|---|---:|---:|---:|---:|
+| **A `*/1`** 08-02→08-08 | 168 | 7.1% | **52.5 s** | **8.03** |
+| **B `*/2`** 08-10→08-15 | 70 | **2.9%** | **113.4 s** | **5.17** |
+| **C `*/6`** 08-16→now | 49 | **28.6%** | **318.8 s** | **2.99** |
+
+⭐ **The p50 tracks the interval almost exactly — 1.0× / 2.16× / 6.07× for a 1 h / 2 h / 6 h interval.**
+That is a **dose–response across three points**, and it confirms #41's mechanism (*a `REFRESH …
+CONCURRENTLY` costs what CHANGED*) far more strongly than the two points #41 argued from. ✅ **It also
+RULES OUT the confound #41 named itself** (index-build saturation, n = 19): the effect persists over
+**12 days / 49 runs** and reproduces at an **intermediate dose #41 never measured**. #41's own figures
+(67 → 346 s) land where mine do (52.5 → 318.8 s).
+
+🚨 **What the cut bought is 2.7×, not 6×** — **8.03 → 5.17 → 2.99 busy h/week** while run count fell
+6×, because each run got ~6× dearer. ⭐ **By that mechanism, cutting the cadence of a CONCURRENTLY
+refresh CANNOT save proportionally to run count** — and the curve's shape says the next halving buys
+less still. 🚨 **What it cost is a ~10× failure rate: 2.9% → 28.6%**, with p90 pinned just under the
+600 s ceiling in both B and C (484 / 481 s), so the job now runs routinely near budget and a quarter
+of its runs die there — ~12 h of chart staleness each, per #41.
+
+⚠ **NOT CLAIMED — the fail-% column is NOT monotonic and regime A is unexplained.** `*/1` failed at
+**7.1%**, WORSE than `*/2`'s 2.9%, despite runs less than half as long — the opposite of the duration
+story, in exactly the window #41's saturation was live. **Only the p50 dose–response is solid; do not
+read fail-% as a clean function of interval.**
+
+⭐ **And #42's hour ordering does NOT reproduce here.** Its control (jobid 211) had midnight best at
+97%; jobid 235's four slots read **00h 81% · 06h 88% · 12h 73% · 18h 92%** — midnight is not best,
+18h is. **The hour effect is real for 211 and is not a constant across jobs.**
+
+👉 **On this evidence `*/2` is the optimum of the three** — 57% of the achievable saving for 10% of
+the failure rate. ⛔ **Stated, NOT shipped:** a pg_cron schedule is prod state, the job belongs to the
+workstream that cut it, and the fail-% caveat above is not clean enough to argue a one-way door from.
+⚠ It also interacts with #42 — `*/6` lands on hours divisible by 3, #42's worst cohort — so the two
+should be reconciled first.
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0155Z](inbox/2026-08-28T0155Z-41-CONFIRMED-on-a-three-point-dose-response-and-the-cadence-cut-bought-2.7x-not-6x.md).
+
 ### 2026-08-27 · 🚨 MEASURED (read-only, docs) — the pack-pool stall is a WEDGE, and the mechanism is 8 permanently-empty dists sitting in front of a 3-wide window
 
 **No code, no DB, no prod state.** Resolves the ambiguity `86ecc4687` identified this morning and
