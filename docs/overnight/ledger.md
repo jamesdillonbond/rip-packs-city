@@ -10,6 +10,109 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · 🚨 MEASURED (read-only, docs) — the `refresh_wmc_fmv_changed` CLEAN A/B is in, and the fast path FAILS its own exit condition on BOTH callers
+
+**No code, no DB, no prod state.** Closes **open reading #5** and the ⏳ re-read this file scheduled for
+**#36** on 08-26. Taken under **both** conditions the steer demanded, checked rather than assumed:
+**24.13 h** after `T1_CLEAN`, and the instance **quiet — 1 active backend, 0 IO waiters**. ⚠ Ninety
+minutes earlier it read **34 active / 31 IO waiters**; reading then would have rebuilt exactly the
+confound this window exists to remove.
+
+Measured as a **FLOW** (delta between the `T1_CLEAN` snapshot and now ÷ calls in the interval), never
+as a per-call figure off a cumulative stock:
+
+| caller | n | reads/call | threshold | verdict |
+|---|---:|---:|---:|---|
+| **pg_cron** | 143 | **87,352** | 74,159 | 🚨 **+17.8% — FAILS** |
+| **PostgREST** | 222 | **10,029** | 7,195 | 🚨 **+39.4% — FAILS** |
+
+**The stated exit condition is MET** — *"if reads are still not below the T1 per-call figures the fast
+path is not paying for itself and should be reverted."*
+
+⭐ **The control that makes this robust: the CONFOUNDED and CLEAN windows AGREE.** 86,533 → **87,352**
+(+0.9%) and 10,472 → **10,029** (−4.2%), on a sample **more than twice as large**. **Had the index
+churn been driving the earlier result, removing it would have moved the number.** ⚠ **This does not
+make the 08-26 refusal wrong** — that the two agree was only knowable afterwards, and refusing to claim
+a direction from a confounded A/B is the rule. It removes the last reason to doubt the direction.
+
+⭐ **It is a genuine two-resource trade: 26.5% less wall time (297.4 s → 218.5 s/call) for 18.5% more
+disk reads.** ⛔ **That does not reopen the decision** — the same ms/call figures sat in the 08-26
+entry's own table when its author chose reads as the exit metric, and this instance's saturation is
+**IO-bound, not CPU-bound**. The metric was right. ⓘ dirtied/call is **flat** (36,604 → 36,029), exactly
+as the original filing predicted.
+
+✅ **Reverting costs NO correctness — checked, not assumed.** The freshness guard (0 disagreements,
+28 stale rows rejected) is **scaffolding for the optimisation, not an independent improvement**: its own
+migration header says rows failing it *"fall through to the incumbent subquery and are computed exactly
+as before."* The revert target reads `fmv_snapshots` directly and is inherently fresh.
+
+⛔ **NOT REVERTED, and the reason is specific rather than cautious.** The revert is a coordinated DB +
+**pinned-file** landing: `refresh_wmc_fmv_changed` is a registered DB-invariant pin whose test carries
+the body **verbatim**. **`SUPABASE_SERVICE_ROLE_KEY` is absent in this sandbox, so `npm run
+db:pins:check` cannot run** — I would be mutating the instance's **single largest writer (36.7% of every
+block the DB dirties)** with the pin half unverified until CI saw it, `migration-parity` red in between,
+plus the 10–20 s burst of user-facing `PGRST002` 500s that every `apply_migration` costs. **Wrong order
+of risk on the highest-blast-radius object in the database.**
+
+👉 **Fully specified for whoever holds the key:** `CREATE OR REPLACE` back to
+`20260822213000_audit_20260822_rwfc_temp_build_materialized_cte.sql`, move
+`supabase/tests/refresh_wmc_fmv_changed.sql` + its PINS entry to match, land the migration file in the
+SAME push, then confirm `db:pins:check` and `migration-parity`.
+
+⏳ **`_rpc_waste_baseline_20260825` still stays** — it was retained *"until that decision is made"*. The
+reading is now taken and no longer inconclusive, so drop it when the revert lands or is declined on the
+record, **not now**.
+
+⚠ **One limitation stated rather than glossed:** `pg_stat_statements` is cumulative since reset, so I
+**cannot date** the index builds from it. The window's cleanliness rests on the ledger, not on a direct
+measurement of the window's contents.
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0215Z](inbox/2026-08-28T0215Z-rwfc-CLEAN-AB-the-fast-path-fails-its-own-exit-condition-on-both-callers.md).
+
+### 2026-08-27 · ✅ SHIPPED (code) — D30: three production-dead components removed, and a same-named LIVE sibling is why they survived
+
+Register item **D30**, open since 2026-08-09. Deleted `components/InsiderSignals.tsx`,
+`components/profile/TierBreakdownCard.tsx`, `components/profile/PortfolioSparkline.tsx` and their three
+test files.
+
+⭐ **Re-derived, because a filed finding is a hypothesis** — by resolving every `from "…"` specifier to
+an absolute module path rather than grepping a name: **0 production importers each, 1 test importer
+each.** ✅ **Positive controls, because a resolver matching nothing reports the same zeros:**
+`components/analytics/InsiderSignals.tsx` → **1** production importer, `components/InsiderSignalsPanel.tsx`
+→ **1**. No `next/dynamic`, `lazy()` or `import()` references.
+
+🚨 **Why it sat open three weeks looking closed: `components/InsiderSignals.tsx` is DEAD while
+`components/analytics/InsiderSignals.tsx` is LIVE.** Same basename, different directory. ⚠ **My own
+first pass got this wrong** — a name grep reported **seven** "importers", every one the live sibling, an
+API route whose *path* contains the word, or a type name. **Anyone spot-checking D30 that way concludes
+it is live and moves on.** ⭐ **The durable rule: for a dead-code claim, grep the RESOLVED MODULE PATH,
+never the identifier — an identifier is shared, a path is not.**
+
+⭐ **And the tests existed BECAUSE the components were at 0%**, which each header says outright. So the
+component coverage gate was satisfied by **321 lines of test driving three unmounted widgets**.
+**A coverage gate cannot tell "covered" from "covered and dead"**, and the cheapest way to raise it is
+therefore to test the dead half. ✅ The gate still passes (`test:coverage:components` exit 0).
+
+🚨 **NEW, and NOT recorded in D30: `/api/profile/tier-breakdown` is now orphaned too** — `TierBreakdownCard`
+was its only caller, while `/api/insider-signals` and `/api/profile/portfolio-history` both keep live
+callers. ⛔ **Not deleted:** repo callers can be enumerated, cron-job.org / Task Scheduler / external
+clients cannot, and CLAUDE.md counts those as the seventh and eighth sources precisely because they are
+invisible here.
+
+⚠ **Two traps, both caught by the repo's own guards rather than by me.** (1) `check-brand-tokens.mjs`
+names its protected files individually and exited **1** in CI with *"protected file missing (rename?)"* —
+CLAUDE.md's *"a guard that NAMES its instances"* firing as designed; entry removed. (2)
+`app/api/profile/portfolio-history/route.ts` justified being **DELIBERATELY PUBLIC** by naming
+`PortfolioSparkline.tsx` as its caller — a file this commit deletes. 🚨 **Leaving that would point the
+next reader at a deleted component as the sole reason a public route exists, which is how a LIVE route
+gets removed as orphaned.** The comment now names the two clients that actually fetch it.
+
+Full suite **1,384 files / 15,195 tests** green (−3 files / −21 tests, exactly the deleted ones); `tsc`
+clean; component gate green; brand guard green.
+
+**Revert:** `git revert` the commit — it restores the three components, their tests, the brand-token
+entry and the original comment. No DB state, no route deleted. Filing: [inbox 2026-08-28T0230Z](inbox/2026-08-28T0230Z-D30-three-dead-components-removed-and-a-same-named-live-sibling-is-why-they-survived.md).
+
 ### 2026-08-27 · ✅ SHIPPED (code) — E5: two `after()` routes get an invocation heartbeat, chosen on MEASURED KILL RISK; budget 49 → 47
 
 Register item **E5**. Same defect class as tonight's unbounded-`fetch()` work — **a killed tick that

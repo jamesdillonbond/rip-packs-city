@@ -47,7 +47,6 @@ const PROTECTED = [
   "components/pricing/StripeSubscribeButton.tsx",
   "components/ExplainButton.tsx",
   "components/profile/TrophyPickerModal.tsx",
-  "components/profile/PortfolioSparkline.tsx",
   "components/profile/PublicAchievements.tsx",
   "components/profile/_shared.ts",
   // Phase 2 — Batch 3 (dashboard, auth-gated)

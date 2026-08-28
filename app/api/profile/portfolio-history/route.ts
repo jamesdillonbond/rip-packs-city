@@ -4,9 +4,18 @@ import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { apiErrorResponse } from "@/lib/api-error";
 
 // GET is DELIBERATELY PUBLIC and stays unguarded: it backs the public
-// /profile/[username] card (components/profile/PortfolioSparkline.tsx) and the
-// per-collection profile pages, and proxy.ts carries an explicit GET/HEAD-only
-// public carve-out for this exact path. The data is the same portfolio total
+// /profile/[username] sparkline and the per-collection profile pages, and
+// proxy.ts carries an explicit GET/HEAD-only public carve-out for this exact
+// path.
+//
+// ⚠ The live callers are `app/profile/[username]/ProfileClient.tsx` and
+// `app/(collections)/[collection]/profile/[username]/CollectionProfileClient.tsx`,
+// which fetch this route DIRECTLY. This comment used to name
+// `components/profile/PortfolioSparkline.tsx` as the caller; that component was
+// production-dead (zero importers, one test-only importer) and was deleted
+// 2026-08-27. **Naming a deleted file as the reason a route is public is how a
+// live route gets removed as orphaned** — the two clients above are the reason,
+// and they are what to re-check before touching this. The data is the same portfolio total
 // already shown on the public showcase. Only the POST (which WRITES a snapshot
 // row keyed by a client-supplied ownerKey) is ownership-gated.
 //
