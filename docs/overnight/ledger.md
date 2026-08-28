@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⛔ TWO GREEN RESULTS OF MINE WERE BLIND, AND BOTH WERE VERIFICATIONS I HAD SINGLED OUT AS CAREFUL
+
+Trevor's apply of `d6f7bef` was clean (`git apply --check`, no 3-way needed, 111/3 matching the
+diffstat, all guards re-run in the applied tree). **Two numbers I reported were nonetheless wrong,
+and the causes are worth more than the numbers.**
+
+**(a) `inbox-index-lists-every-filing`: I reported 5/5; on the tree that matters it is 2/5 RED.**
+Both failures name an **untracked** `docs/overnight/inbox/2026-08-27T1808Z-daytime-monitor.md` —
+on disk, absent from `INDEX.md`. I verified by `git am`-ing onto a **fresh clone of `origin/main`**;
+**an untracked file does not clone**, so that run was *structurally incapable* of failing.
+⭐ **A clean-clone run proves the COMMITTED state and is silent about the LOCAL state the same guard
+fails on — a guard that reads the filesystem must be run where the files are.** ⚠ **And I had named
+that guard as "the one I ran deliberately this time," because it was the one my previous patch
+tripped. Naming a check as the one you were careful about does not make the environment you ran it
+in the right one; it only makes a blind result carry more weight than it earned.** ⓘ CI is
+unaffected (untracked ⇒ not pushed), but it leaves a real pending item: **whoever commits those
+filings owes both an `INDEX.md` entry AND the header count bump** — two separate assertions, and
+the count is the easy half to miss.
+
+⚠ **RE-MEASURED ON TREVOR'S BOX AT `3bce789c`, and the patch's stated numbers are already stale:**
+the failing count is **271 listed vs 273 on disk**, not 269 → 270, because upstream commits landed
+two more filings and a SECOND untracked one appeared
+(`2026-08-28T0010Z-saturation-spell-symptoms-allday-mv-refresh-and-two-stalls.md`). ⭐ **A pending
+item stated as a NUMBER goes stale the moment anything else lands — the two untracked filings are
+the durable fact; `271 → 273` is a dated sample. Re-run the guard, do not quote this.**
+
+**(b) CLAUDE.md: I reported 39,970; the binding number is 39,974 — and the 4 is not noise, it is
+exact.** Python's `len()` counts **code points**; Node's `String.length` counts **UTF-16 code
+units**; CLAUDE.md contains **exactly four astral characters — four `🚨` (U+1F6A8), two units each.**
+⛔ **The guard is a vitest test, so Node's number is what reds CI, and at 26 characters of headroom
+ONE `🚨` costs 2 of them.** 🚨 **The guard file already says this** — *"Node's `String.length` is the
+binding instrument"*, plus a note that `wc -c` once read 40,086 on the same file. **I ran that test
+and then measured with a different tool.** ⚠ **Headroom is now ELEVEN characters, not 26** —
+upstream took CLAUDE.md to **39,989** UTF-16 units at `3bce789c`; six more `🚨` would red it.
+
+⭐⭐ **The common shape, and it is the third time in two days: the warning was already written down in
+the artefact I was touching.** The over-general `proconfig` heading was 78 lines above *"A CONTROL
+THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL"*; this one is in the body of the very test
+I ran. **Reading a file is not the same as reading the file, and running a guard is not the same as
+running it where it binds.** Both recorded as a SIXTH *way a measurement lies* in
+[database.md](../reference/database.md).
+
+
 ### 2026-08-27 · ✅ SHIPPED (code) — the shared comment stripper's ROOT CAUSE, found by the step the last filing asked for, and it fails BOTH ways
 
 `scripts/lib/strip-comments.mjs` — the ONE mandated stripper, imported by **49 files**, the thing every

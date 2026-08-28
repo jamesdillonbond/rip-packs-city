@@ -570,6 +570,44 @@ DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; 
 >   correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample**
 >   but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
 
+### 🚨 A SIXTH way a measurement lies: A GUARD THAT READS THE WORKING TREE IS BLIND IN A FRESH CLONE (2026-08-27)
+
+⛔ **Both instances below are mine, from one session, and both were reported as green.**
+
+**(a) The untracked file a clean clone cannot see.** `inbox-index-lists-every-filing` walks
+`docs/overnight/inbox/` **on disk**. I verified a patch by `git am`-ing it onto a **fresh clone of
+`origin/main`** and running the guard there: **5/5 green.** On the working tree that matters it was
+**2/5 RED** — an untracked `2026-08-27T1808Z-daytime-monitor.md`, present on disk, absent from
+`INDEX.md`. **An untracked file does not clone**, so the clean-clone run was structurally incapable
+of failing.
+
+⭐ **The rule: a clean-clone run proves the COMMITTED state and is silent about the LOCAL state the
+same guard fails on. Any guard that reads the filesystem rather than the git index must be run where
+the files actually are.** ⚠ **And the aggravating detail: I had singled that guard out as "the one I
+ran deliberately this time," because it was the guard my previous patch tripped. Naming a check as
+the one you were careful about does not make the environment you ran it in the right one** — it just
+makes a blind result carry more weight than it earned.
+
+ⓘ Its two assertions are separate and the second is the easy half to miss: every filing must be
+listed **and** the header count must match. A new filing needs both the entry and the count bump.
+
+**(b) `len()` is not `String.length` — code points vs UTF-16 units.** I reported CLAUDE.md at
+**39,970**; the binding number is **39,974**. Neither reader is broken: Python's `len()` counts
+**code points**, Node's `String.length` counts **UTF-16 code units**, and CLAUDE.md contains
+**exactly four astral characters — four `🚨` (U+1F6A8), 2 units each.** ⭐ **So the delta was not
+noise, it was the astral count, exactly.**
+
+⛔ **The guard is a vitest test, so Node's number is the one that reds CI — and with 26 characters of
+headroom, ONE `🚨` costs 2 of them, not 1.** A Python count of 39,996 can sit under the limit while
+the guard is already over.
+
+🚨 **And the file already said so.** `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`
+carries the comment *"Node's `String.length` is the binding instrument"* — and records that `wc -c`
+once read 40,086 on the same file. **I ran that test and measured with a different tool anyway.**
+⭐ **Use the instrument the GUARD uses, not an equivalent-looking one; "characters" is three different
+quantities (bytes, code points, UTF-16 units) and they diverge on exactly the emoji this repo's docs
+are made of.**
+
 ### 🚨 A FIFTH way a measurement lies: A PARAMETERISED FUNCTION DOES NOT PLAN LIKE THE SAME TEXT INLINE (2026-08-27)
 
 ⛔ **This one was paid for in production.** `get_lock_check_batch`'s hot-wallet branch is a
