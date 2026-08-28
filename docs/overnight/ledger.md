@@ -10,6 +10,130 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · 🚨 MEASURED (read-only, docs) — the pack-pool stall is a WEDGE, and the mechanism is 8 permanently-empty dists sitting in front of a 3-wide window
+
+**No code, no DB, no prod state.** Resolves the ambiguity `86ecc4687` identified this morning and
+deliberately stopped at — *"a sampler re-drawing three unconvertible dists forever, versus a queue
+whose convertible half is genuinely done"*. ✅ **It is the first, and the redraw is DETERMINISTIC, not
+random — which is why it can never self-clear.**
+
+Read from `get_topshot_pool_backfill_targets`'s own `prosrc`: it sorts **`has_rips DESC` FIRST**, and
+the 5-minute rotation hash is only the SECOND key. ⭐ **So the rotation shuffles WITHIN a tier while
+the tier itself is a hard head.** Backlog **368** = **8 with rips** + **360 without**; the route draws
+**3** per tick. **8 > 3**, so every tick draws all three from the same 8, all 8 return no editions,
+the tier never empties, and **the 360 behind it are unreachable forever.** The rotation is working
+exactly as designed and is powerless, because it rotates *inside* the blockage rather than around it.
+The eight: **6215, 6218, 6408, 6411, 6901, 6903, 6923, 7159**.
+
+✅ **POSITIVE CONTROL, because a mechanism claim is an argument until it is simulated:** ran the
+sampler's exact `ORDER BY` across **12 different rotation buckets** — **12 of 12 drew all three
+targets from the 8; ZERO reached the 360.** If the stall were a drained queue the sampler would be
+drawing the 360 and finding them empty; **it never draws them at all.** ⭐ That is the discriminator
+the morning entry said did not exist — and it needed no new column, only reading the ordering.
+
+✅ **Open reading #4 from the 2026-08-27 handoff is ANSWERED.** Series extended to **n = 271**:
+statement-timeout residual **1 / 271 = 0.37%** against **5.5%** pre-fix. The handoff was right to
+refuse the 0-of-9 reading as an absence.
+
+🚨 **But #38's exit condition is NOT met, and the way it failed is this repo's own recorded trap.**
+The handoff recorded *"9 post-fix ticks, 9 ok, 0 failures"*; at n = 271 the failure rate is **53.9%**
+and **144 of 146 failures are the original signature**. Same shape as the 08-26 finding that a cron
+exit condition *"passes 74% of the time if the fix did nothing"* — **a 9-tick green streak taken from
+inside an 11-hour working window cannot distinguish a fix from its honeymoon.**
+
+👉 **The fix, for whoever owns it** (⛔ NOT shipped — `topshot-pack-pool-backfill` is off-limits for
+autonomous change): **failure memory**, the instrument the morning entry already named — an
+`attempts` / `last_error` column plus `AND attempts < N` in the sampler predicate, which also kills
+the identical-signature ambiguity permanently. ⛔ **Do NOT just delete the `has_rips` tier** — it
+exists so ripped packs convert first and it earned 342 conversions. ⚠ **Close the telemetry gap too:**
+`extra.dists` is **null** on all 121 stalled ticks — the pipeline records *how many* it tried, never
+*which*, so a one-query diagnosis was impossible on day one.
+
+⚠ **NOT CLAIMED: why those 8 return no editions.** They carry rips and a uuid, so they are not
+malformed in any way a query here can see; the emptiness is upstream, and it does not change the wedge.
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0145Z](inbox/2026-08-28T0145Z-the-pack-pool-stall-is-a-WEDGE-and-the-mechanism-is-8-dists-in-front-of-a-3-wide-window.md).
+
+### 2026-08-27 · ⚠ MEASURED (read-only, docs) — jobid 256's "cheapest decision" rests on two wrong premises and hides a CI-reddening ordering trap
+
+**No code, no DB, no prod state.** Re-derived §7 of [inbox 2026-08-27T0450Z](inbox/2026-08-27T0450Z-PROVEN-48-cron-jobs-declare-a-statement-timeout-that-does-nothing.md),
+which had already corrected itself once inside twenty minutes — the signal to re-measure, not inherit.
+
+✅ **The load-bearing half CONFIRMS.** `fmv_thin_sale_ask_disclosure_cache` has **zero** readers across
+`pg_proc.prosrc`, `pg_views`, `pg_matviews`, `cron.job.command`, `pg_trigger` and a full repo grep of
+`app/ lib/ scripts/ components/`; `anon` and `authenticated` SELECT are both **false**. 220 rows, 176 kB.
+
+🚨 **Both supporting numbers are WRONG, in opposite directions.** Not *"never succeeded"* (nor its
+correction, *"once, on 08-13"*) but **5 succeeded / 17 failed over 30 days, with the LATEST run —
+2026-08-27 09:25Z — SUCCEEDING**; and not *"14-day-old rows"* but **0.66 days old**. ⚠ Three different
+numbers in three readings: **do not quote any of them without re-reading `cron.job_run_details`.**
+
+⭐ **The success/failure SPLIT is the real finding:** successes average **120.3 s** (max 416), failures
+average **498.1 s** and die at **603.5 s**, the `cron_heavy` ceiling. **The same statement finishes in
+two minutes or not at all** — focus.md PRIORITY 3's shared disk-IO budget, **not** an oversized job.
+⛔ So *"it can never finish"* is falsified; it finishes whenever the instance is quiet.
+
+🚨 **And the proposed `DROP FUNCTION` would RED MAIN.** `fmv_thin_sale_ask_disclosure_refresh` is a
+**registered DB-invariant pin** (`supabase/tests/…` + `__tests__/db-invariants-drift-guard.test.ts:1130`,
+gated by CI and the `DB pin staleness` workflow) — the known-issues #0 ordering trap again, where the
+repo half must land BEFORE the DDL. "The cheapest decision on the list" is a two-commit change.
+
+⭐ **A strictly cheaper action nobody proposed: `SELECT cron.unschedule(256);`** — removes 100% of the
+waste (**~2.4 h of ceiling-bound `cron_heavy` time per 30 days**, all in the 09:00Z hour), keeps CI
+green because the pin keeps its function, and reverts in one `cron.schedule` call. ⚠ Its one real cost:
+the table then ages silently — which the migration's own `COMMENT ON TABLE` already tells every reader
+to check (*"a dead refresher ages this table rather than emptying it"*).
+
+⛔ **NOT SHIPPED, and the reason is narrower than "it's a decision":** the cache was deliberately built
+three weeks ago for a handoff feature, and **I had just falsified both premises the original
+disposition was argued from.** Acting on a decision whose stated grounds I had personally refuted,
+without surfacing the refutation, is the same error in the other direction. **Re-make the call on the
+filing, do not inherit it.**
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0130Z](inbox/2026-08-28T0130Z-jobid-256-the-cheapest-decision-rests-on-two-wrong-premises-and-hides-an-ordering-trap.md).
+
+### 2026-08-27 · ✅ SHIPPED (code) — unbounded-`fetch()` class CLOSED at 1, and the last one is a CHECKED exclusion
+
+Second push of the evening on the class triaged in [inbox 2026-08-27T0320Z](inbox/2026-08-27T0320Z-unbounded-fetch-is-a-class-29-sites-carry-the-shape-whose-failure-is-invisible.md).
+**11 → 1**, so **21 → 1 across the two pushes.** Bounded: `support-chat`'s HIGH escalation page ×2,
+`weekly-digest`, `signup-reminder`, `analytics-smoke`, `detect-league-drift`, `early-access/submit`,
+`bots/discord`, `seed-wallet-refresh`, `public/queue-wallet`.
+
+⭐ **Not one of these bounds is a new number.** The filing's warning — *a short cap converts working
+behaviour into failure* — bites when the cap is a **guess about an upstream**, so none was guessed:
+**10 s** for Resend / Telegram / Discord is the value already measured and shipped in `alerts-send`
+(**276 runs / 48 h, avg 1,494 ms, p95 1,644 ms**, against a **58,670 ms** outlier that came within
+**1.3 seconds** of a kill); **15 s** for the Top Shot GraphQL proxy comes from `lib/verify-wallet-gql.ts`;
+only `queue-wallet`'s 45 s is derived, from its own declared `maxDuration`. **That is this filing's own
+headline lesson executed — it was the FIX that failed to spread, not the defect.**
+
+🚨 **The one that mattered most: `support-chat`'s HIGH-urgency page.** Its `pageDelivered` flag exists
+so a dead token can never let us tell a user *"you've been paged"* when nobody was — *"a real HIGH
+emergency would otherwise vanish with a false confirmation and no trace."* ⭐ **An unbounded `fetch`
+defeated that guard from the side it does not watch:** under `after()` at `maxDuration = 60` a hang
+burns the whole budget and takes the lambda, so the page fails **and** the `catch` never runs **and**
+nothing is logged. An abort now throws into the existing catch, leaving `pageDelivered` **false** — the
+honest outcome.
+
+⭐ **The remaining 1 is `smoke-test`'s `smokeFetch`, left unbounded DELIBERATELY — and now CHECKED
+rather than excused.** It is a wrapper that forwards its caller's `init`, which the triage lists as a
+legitimate reason. ⚠ **But that is a claim about ANOTHER instrument**, the shape CLAUDE.md says must be
+verified (two guards have already skipped `app/api` on exactly it and been wrong). So a new
+`smoke-test-callers-are-bounded` block asserts **all 24 call sites carry an `AbortSignal`**, **asserts
+the count it inspected** (so it cannot pass on an empty set), and carries a **negative control**.
+⛔ **Do NOT "finish the job" by bounding the wrapper** — its callers pass per-attempt timeouts that the
+retry path deliberately replaces with a fresher, more generous one, so a wrapper cap would become the
+ceiling for all 24 and could fail a slow-but-passing smoke check.
+
+⚠ **NOT CLAIMED: `RATCHET = 1` is not "zero defects".** It is one checked exclusion; the **115-site**
+whole-repo population outside the `after()` + `maxDuration` shape is untouched and un-triaged. ⚠ And a
+bound does not make a failure *visible* by itself — it makes it **reachable** by the caller's existing
+error path. Each site was read to confirm that path exists; **that reading is per-site and was not
+automated.**
+
+**Revert:** `git revert` the commit (restoring any single site also requires raising `RATCHET`).
+No DB state, no schedule change. Filing: [inbox 2026-08-28T0115Z](inbox/2026-08-28T0115Z-the-unbounded-fetch-class-is-CLOSED-at-1-and-the-last-one-is-a-CHECKED-exclusion.md).
+
 ### 2026-08-27 · ⛔ TWO GREEN RESULTS OF MINE WERE BLIND, AND BOTH WERE VERIFICATIONS I HAD SINGLED OUT AS CAREFUL
 
 Trevor's apply of `d6f7bef` was clean (`git apply --check`, no 3-way needed, 111/3 matching the
