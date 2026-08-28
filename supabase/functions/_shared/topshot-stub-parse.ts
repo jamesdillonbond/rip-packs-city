@@ -109,3 +109,34 @@ export function parseResolvedMeta(meta: Record<string, string>): ResolvedMeta {
     series,
   }
 }
+
+/**
+ * TRUE when this target can never be resolved by this pipeline: the edition is
+ * missing its player name and the on-chain play has no player name to give.
+ *
+ * ⚠ WHY THIS IS A SEPARATE, PER-FIELD PREDICATE (2026-08-28). The resolver
+ * already has a guard meant to catch this — `!playerName && !setName`, whose
+ * comment promises to "track them separately so we don't conflate them with
+ * Cadence failures". It cannot keep that promise, because it is an AND across
+ * two DIFFERENT fields. A Top Shot **Reel** (a multi-player highlight) has a
+ * perfectly good set name and no player at all, so it sails past that guard into
+ * an upsert that COALESCEs to nothing, and is recorded as `rows_no_change` — the
+ * same bucket as an edition that was already complete.
+ *
+ * MEASURED: 520 eligible editions, 88 runs in 48 h, ~4,400 Cadence calls, and
+ * `rows_resolved: 0` on every run. Sampling the queue head against mainnet, the
+ * stuck rows are `PlayType: "Reel"` — "2022-23 Season Rewind", "2023 NBA
+ * All-Star", "Fit Check" — carrying `TeamAtMoment` and no `FullName`.
+ *
+ * ⚠ IT IS A SUB-COUNT, NOT A SKIP. The upsert still runs: those plays can carry
+ * a circulation, team or series this edition is missing, and suppressing the
+ * write to save a call would trade a real (if small) repair for a saved
+ * round-trip. The point is to make "re-attempting the impossible" and
+ * "everything is already correct" stop being the same number.
+ */
+export function isUnresolvableMissingPlayer(
+  hasPlayerName: boolean,
+  resolvedPlayerName: string | null,
+): boolean {
+  return !hasPlayerName && !resolvedPlayerName
+}

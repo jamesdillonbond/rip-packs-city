@@ -267,6 +267,28 @@ Deno.serve(async (req: Request) => {
     // made the pipeline read 50/50 green forever: the old code incremented
     // rows_resolved on ROW_COUNT>0, i.e. "a row matched", not "a field was filled".
     rows_no_change: 0,
+    // ── A SUB-COUNT OF rows_no_change, not a replacement (2026-08-28) ────────
+    // The subset that can NEVER be resolved by this pipeline: the edition is
+    // missing player_name and the on-chain play has no player name to give.
+    //
+    // WHY IT IS SEPARATE. `rows_skipped_no_player_data` was supposed to be this
+    // counter — its comment says "some plays legitimately lack player data on
+    // chain; track them separately so we don't conflate them with Cadence
+    // failures". It cannot do that job, because its predicate is
+    // `!playerName && !setName` (AND). A Reel has a setName, so it sails past
+    // that guard into an upsert that COALESCEs to nothing and lands in
+    // rows_no_change — the SAME bucket as a row that was already correct.
+    //
+    // MEASURED 2026-08-28: 520 eligible editions, 88 runs in 48 h, 4,400
+    // attempts, `rows_resolved: 0` on every single run. Sampling the queue head
+    // against mainnet, the stuck rows are `PlayType: "Reel"` moments —
+    // "2022-23 Season Rewind", "2023 NBA All-Star", "Fit Check" — whose play
+    // metadata carries `TeamAtMoment` and no `FullName` at all. Resolving them
+    // is not slow or flaky; it is impossible.
+    //
+    // Without this split, "we are re-attempting the impossible ~8.5 times a day"
+    // and "everything is already up to date" are the same number.
+    rows_no_change_no_onchain_player: 0,
     early_exit: false,
   }
   const errorSamples: string[] = []
@@ -373,8 +395,16 @@ Deno.serve(async (req: Request) => {
       counters.rows_skipped_upsert_err++
       continue
     }
-    if (changed === true) counters.rows_resolved++
-    else counters.rows_no_change++
+    if (changed === true) {
+      counters.rows_resolved++
+    } else {
+      counters.rows_no_change++
+      // Per-FIELD, which is the test the AND-guard above cannot express: this
+      // edition wants a player name and the chain has none.
+      if (!t.has_player_name && !resolved.playerName) {
+        counters.rows_no_change_no_onchain_player++
+      }
+    }
   }
 
   await logPipelineRun({

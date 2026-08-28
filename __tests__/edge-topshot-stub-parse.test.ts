@@ -7,6 +7,7 @@ import {
   flattenCadenceDict,
   pickPlayerName,
   parseResolvedMeta,
+  isUnresolvableMissingPlayer,
 } from "@/supabase/functions/_shared/topshot-stub-parse"
 
 // Pins topshot-stub-resolver's parse/decode core — the logic that decides what
@@ -199,4 +200,64 @@ describe("flattenCadenceDict parity — both stub resolvers match _shared/topsho
       expect(inline).toBe(shared)
     },
   )
+})
+
+describe("isUnresolvableMissingPlayer — the per-FIELD test the AND-guard cannot express", () => {
+  // MEASURED 2026-08-28: resolve-topshot-stubs ran 88 times in 48 h over 520
+  // eligible editions (~4,400 Cadence calls) with `rows_resolved: 0` on EVERY
+  // run, while `rows_skipped_no_player_data` stayed 0 — so its telemetry could
+  // not distinguish "re-attempting the impossible" from "already up to date".
+  // The stuck rows are Top Shot Reels sampled live off the queue head.
+
+  it("is TRUE when the edition needs a player and the chain has none (the stuck case)", () => {
+    expect(isUnresolvableMissingPlayer(false, null)).toBe(true)
+  })
+
+  it("is FALSE when the chain CAN supply the missing player (a real repair)", () => {
+    expect(isUnresolvableMissingPlayer(false, "LeBron James")).toBe(false)
+  })
+
+  it("is FALSE when the edition already has a player name", () => {
+    expect(isUnresolvableMissingPlayer(true, null)).toBe(false)
+    expect(isUnresolvableMissingPlayer(true, "Joel Embiid")).toBe(false)
+  })
+
+  it("catches what the resolver's own `!playerName && !setName` guard misses", () => {
+    // The exact shape measured on mainnet for external_id 118:4151::8 —
+    // PlayType "Reel", a real set name, no FullName. The AND-guard sees a
+    // setName and lets it through; this predicate sees the missing player.
+    const meta = { __SetName: "2022-23 Season Rewind", TeamAtMoment: "Philadelphia 76ers" }
+    const resolved = parseResolvedMeta(meta)
+    expect(resolved.playerName).toBeNull()
+    expect(resolved.setName).toBe("2022-23 Season Rewind")
+
+    const andGuardWouldSkip = !resolved.playerName && !resolved.setName
+    expect(andGuardWouldSkip).toBe(false) // ← the blind spot, pinned
+    expect(isUnresolvableMissingPlayer(false, resolved.playerName)).toBe(true)
+  })
+})
+
+describe("edge-fn source-drift guard — the unresolvable-player sub-count", () => {
+  const root = process.cwd()
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim()
+  const edgeSrc = norm(
+    readFileSync(path.join(root, "supabase/functions/topshot-stub-resolver/index.ts"), "utf8"),
+  )
+  const importsShared = /from\s+["'][^"']*_shared\/topshot-stub-parse/.test(edgeSrc)
+
+  it("the resolver imports _shared, or carries the inline predicate verbatim", () => {
+    // Same import-or-inline shape as the guards above. If someone rewrites the
+    // classification in index.ts without mirroring it here, this reddens.
+    const INLINE = norm("if (!t.has_player_name && !resolved.playerName) {")
+    expect(importsShared || edgeSrc.includes(INLINE)).toBe(true)
+  })
+
+  it("the resolver still declares the sub-counter it logs", () => {
+    expect(edgeSrc.includes(norm("rows_no_change_no_onchain_player: 0,"))).toBe(true)
+    expect(edgeSrc.includes(norm("counters.rows_no_change_no_onchain_player++"))).toBe(true)
+  })
+
+  it("the sub-count did NOT replace rows_no_change (existing consumers must keep working)", () => {
+    expect(edgeSrc.includes(norm("counters.rows_no_change++"))).toBe(true)
+  })
 })
