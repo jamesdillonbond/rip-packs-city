@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (CI) — main went red twice on the audit migrations and both were GUARD-REGISTRATION gaps, not code faults
+
+Two small commits (\`0b88825c\`, \`1bd203ef\`), each fixing what a guard actually asked for:
+
+1. **The drift guard compares a pin against its REGISTERED migration, not the one the pin's own header
+   cites.** The R41 re-pin updated the pin file and its header comment but not the guard's
+   \`migration:\` field, so CI compared new-pin vs 2026-08-10-migration and red-lit. Re-pointed.
+   ⭐ Lesson: re-pinning is a THREE-file change — pin, migration, and the guard's registration row.
+2. **\`migration-new-function-states-its-anon-exec-decision\` flagged all five 08-28 snapshot
+   migrations** (three from this session, two \`aggregate_saved_wallet_stats\` ones from the concurrent
+   session — marked those too rather than leave main red). All five got the
+   \`-- anon-exec: intentional\` marker, each honest: same-signature snapshot re-creates preserve the
+   revoked ACL, and every function was verified anon+authenticated EXECUTE false live before marking.
+
+**CI on \`1bd203ef\`: 11/11 success — main is green.**
+
+**Revert:** git revert either commit (restores the respective red).
+
 ### 2026-08-28 · ✅ SHIPPED — `main` un-redded: the anon-exec marker guard failed FIVE functions across TWO concurrent sessions in one hour, and a duplicate migration file was collapsed
 
 **`CI / Unit tests (vitest)` was RED on `main`** — `migration-new-function-states-its-anon-exec-decision`
