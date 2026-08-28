@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED — the wmc retry's budget CRUMBS are gone, and the filed mitigation (`attempts: 3 → 2`) is FALSIFIED by its own data
+
+**The 08-28 entry below filed a cheap mitigation and a falsifier. I ran the falsifier first, and it kills
+the mitigation.** Re-measured over the 24 h to 2026-08-28 22:50Z, across the wallet-backfill family:
+**17 `RPC_TIMEOUT`s against a 130 s budget and not one of them 130,000 ms.**
+
+| slice | values (ms) | n |
+|---|---|---:|
+| crumbs | 3046 · 4306 · 4352 · 4872 · 5195 · 5227 · 5229 · 5277 · 5350 · 5641 · 5655 · 6000 · 6033 · 6278 | **14** |
+| half-budget | 67682 · 68020 · 68948 | **3** |
+| (pre-fix 45 s era, excluded) | 45000 ×28, 26823 | — |
+
+⛔ **`attempts: 3 → 2` WOULD NOT HAVE HELPED, and the ~68 s cluster is the proof.** Two attempts split
+130 s into halves — which is *exactly* that cluster — **and those three attempts failed too.** The change
+would have converted 14 crumb-labelled losses into half-budget-labelled losses and recovered nothing.
+**The attempt COUNT was never the lever**, and the entry that proposed it did not have this table.
+
+⭐ **What is real is the MISLABELLING, which is the half that matters.** A crumb attempt is doomed *and*
+it overwrites `first_chunk_error` with `rpc upsert_wmc_batch timed out after 3046ms` — **our** bound —
+when the run actually died on two pool-acquire or lock timeouts. That inverts the exact property
+`RPC_TIMEOUT_CODE` exists to protect: the log names OUR bound instead of the database's problem.
+Classified over the same window: **pool_acquire 112 chunk errors / 15,388 rows**, **our_deadline 76 /
+11,211**, **lock_timeout 25 / 5,000** — so ~36% of the chunk errors on the board were reporting us.
+
+**Shipped:** an OPT-IN `minAttemptSliceMs` on `RetryOptions` (`lib/analytics/rpc-with-retry.ts`), and
+`CHUNK_MIN_RETRY_SLICE_MS = 30_000` wired into `wmc-chunk-upsert.ts` only.
+
+⚠ **The opt-in shape is the point, not laziness.** The prior entry declined this repair because
+`retryLoop` is *"a shared hot path used by every entity page and board render"* and the threshold
+*"cannot be one number"*. Defaulting to **0** makes it a provable no-op for every other caller —
+and `wmc-chunk-upsert.ts` is the ONLY file in the repo that passes `attempts` to `rpcWithRetry`
+(grepped across `lib/` and `app/`), so the blast radius is one call site. **30 s is service_role's own
+`statement_timeout`:** below it an attempt cannot even reach the bound Postgres would have applied, so a
+timeout there is guaranteed to describe us rather than the database. The floor never blocks the FIRST
+attempt.
+
+⛔ **EXPECT NO ROW RECOVERY, and do not let a later reader book one.** The skipped attempts were doomed;
+the same rows are lost, a few seconds sooner. What this buys is an accurate `first_chunk_error`.
+**Exit condition: `timed out after` values in the 3–6 s range fall to ~0 while pool/lock messages rise by
+the same count.** Falsifier: if 3–6 s values persist, the slice is being consumed somewhere this floor
+cannot see.
+
+⭐ **Both new assertions were mutation-tested, not merely run green** — deleting the guard fails exactly
+2 of the 5 new tests; weakening it to drop the first-attempt exemption fails exactly 1. A sixth test pins
+that a caller which does NOT opt in still issues all three attempts, so the hot-path inertness is a
+pinned property rather than a claim in a comment.
+
+**Revert path:** `git revert <this commit>` — code-only, no production state. Or narrower: delete the
+`minAttemptSliceMs` line in `upsertWmcOneChunk` (the option then defaults to 0 and behaviour is
+byte-identical to today).
+**Target metric:** `extra->>'first_chunk_error'` ILIKE `%timed out after%` drops to the ~68 s cluster only.
+
 ### 2026-08-28 · ⛔ THE jobid 211 RESCHEDULE IS REVERTED (correctly) — but the reason it failed is NOT "the hour effect does not transfer", it is 2 GB of cold heap reads, and "there is nothing to shrink" was WRONG
 
 **A Cowork session reverted `rpc-refresh-allday-pack-realized` (jobid 211) after its own 1-day
