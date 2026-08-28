@@ -229,7 +229,8 @@ Created 2026-08-09 (run 1). Last pass: **2026-08-27 (run 4)**. Full run-4 report
 | Golazos badge `updated_at` median 27.85d | `refresh_golazos_badge_low_ask()` uses `IS DISTINCT FROM`, so it is a last-**changed** stamp. Never render as "updated N days ago" | — |
 | Candy MLB wmc | Reference implementation — 0 NULLs on every column, 0 fossils, 25,375 rows = supply exactly | — |
 | TS headline confidence share appearing to fall 54.9 → 46.6 | **Measurement artifact** — the per-day repriced cohort oscillates with no trend. Quote a 7-day mean, never a single reading | — |
-| Two figures for the accuracy gate (49.7% vs 34.3%) | ⚠ **Not a disagreement** — one deliberate canonical-only Top Shot filter dated 2026-08-04 accounts for 100% of the gap; the instruments agree on the other four collections. **But state the denominator** — see R41 | §1 of the run-3 report |
+| Two figures for the accuracy gate (49.7% vs 34.3%) | ⚠ **Not a disagreement** — one deliberate canonical-only Top Shot filter dated 2026-08-04 accounts for 100% of the gap; the instruments agree on the other four collections. **But state the denominator** — see R41 (decided + producer re-pointed 2026-08-28: all-rows) | §1 of the run-3 report |
+| Email capture: 0 subscribers all-time (run-4 sweep F2) | **The path is verified functional by source, end to end**: `DealWatchCapture` renders UNCONDITIONALLY on every `/share/<wallet>` result, POSTs to `/api/subscribe` which IS in `proxy.ts` `isPublicPath` (the 307→login trap does NOT apply), and fires `email_capture_submitted` only on a confirmed-ok response. Zero conversions is an INPUT fact — ~14 human share_views/7d ≈ 2/day — not a defect. ⚠ The one untested link is the live Resend send; a 2-minute manual check (submit your own email on /share) settles it if ever doubted | source read of component + proxy, 2026-08-28 |
 
 ---
 
