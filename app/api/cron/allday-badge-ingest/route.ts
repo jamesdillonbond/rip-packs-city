@@ -120,7 +120,12 @@ function buildBadgeRow(r: RunnerRow) {
     parallel_name: r.parallel_name ?? "Standard",
     low_ask: r.low_ask ?? null,
     highest_offer: r.highest_offer ?? null,
-    avg_sale_price: r.avg_sale_price ?? null,
+    // `|| null`, not `?? null`: upstream reports averageSalePriceCents = 0 for
+    // "no sales", and an average of positive-price sales can never be $0 — so a
+    // stored 0 is the fabricated-zero shape, not a price. 166 such rows were
+    // nulled by the 2026-08-27 deep audit; this keeps the writer from re-minting
+    // them. (low_ask/highest_offer measured clean — upstream nulls those.)
+    avg_sale_price: r.avg_sale_price || null,
     circulation_count: circulation,
     effective_supply: null as number | null,
     burned,

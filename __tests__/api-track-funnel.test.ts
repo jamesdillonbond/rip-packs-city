@@ -47,6 +47,10 @@ describe("R23 — bot_ua classification", () => {
       "python-requests/2.31.0",
       "GPTBot/1.0",
       "HeadlessChrome/120.0.0.0",
+      // Deep-audit run 4 (2026-08-27): 250 Lightpanda/1.0 events in 7d were
+      // passing the human filter — a headless browser whose UA carries neither
+      // "bot" nor "headless".
+      "Lightpanda/1.0",
       "Java/1.8.0_181",
     ]) {
       expect(isBotUserAgent(ua), ua).toBe(true)

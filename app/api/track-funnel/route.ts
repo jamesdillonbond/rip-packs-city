@@ -55,7 +55,7 @@ type TrackFunnelBody = {
 // null referrer) stay in the analysis, not in this column.
 //
 // ⚠ Slice by this BEFORE slicing by time. That is the whole lesson.
-const BOT_UA = /bot|crawl|spider|slurp|bingpreview|headless|phantomjs|puppeteer|playwright|curl|wget|python-requests|httpx|axios|go-http-client|java\/|scrapy|facebookexternalhit|embedly|whatsapp|telegrambot|discordbot|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|perplexity|amazonbot|applebot|yandex|baiduspider|duckduckbot/i
+const BOT_UA = /bot|crawl|spider|slurp|bingpreview|headless|phantomjs|puppeteer|playwright|curl|wget|python-requests|httpx|axios|go-http-client|java\/|scrapy|facebookexternalhit|embedly|whatsapp|telegrambot|discordbot|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|claudebot|ccbot|perplexity|amazonbot|applebot|yandex|baiduspider|duckduckbot|lightpanda/i
 
 /** True when the User-Agent SELF-IDENTIFIES as automated. Never a certainty. */
 export function isBotUserAgent(ua: string | null | undefined): boolean {

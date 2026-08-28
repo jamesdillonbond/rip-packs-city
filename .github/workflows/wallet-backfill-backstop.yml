@@ -44,7 +44,16 @@ on:
 jobs:
   seed-wallet-refresh-cohorts:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # EXPERIMENT (deep-audit run 4, 2026-08-27; specified by inbox 2026-08-28T0420Z):
+    # this backstop was measured 73.1% killed (n=788) vs the cron-job.org primaries'
+    # 17.0% — its cohorts fire 60s apart and a batch of 30+ dispatched in one minute
+    # runs ~50-78% killed. Widening the intra-cohort sleep 60->300s is the specified
+    # experiment; timeout-minutes must rise in the SAME commit because 3x300s sleeps
+    # alone exceed the old 10-min job wall (without it the last cohorts never fire).
+    # FALSIFIER: if the backstop's kill share does not fall materially at 300s
+    # spacing, spacing is not the lever — the 14:38Z hour band dominates and the
+    # next lever is moving the schedule, not the stagger.
+    timeout-minutes: 25
     steps:
       - name: Seed wallet refresh — cohorts 0..3 (backstop trigger)
         continue-on-error: true
@@ -59,5 +68,5 @@ jobs:
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
               echo "::warning::seed-wallet-refresh cohort=$K returned $STATUS"
             fi
-            if [ "$K" != "3" ]; then sleep 60; fi
+            if [ "$K" != "3" ]; then sleep 300; fi
           done

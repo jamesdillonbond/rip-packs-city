@@ -148,7 +148,11 @@ function buildRow(e) {
     hidden_in_packs: int(e.numHiddenInPacks),
     low_ask: cents(e.lowAskCents),
     highest_offer: cents(e.highestOfferCents),
-    avg_sale_price: cents(e.averageSalePriceCents),
+    // `|| null`: upstream sends averageSalePriceCents = 0 for "no sales"; an
+    // average of positive-price sales can never be $0, so 0 here is "none", not
+    // a price. Publishing it is the fabricated-zero shape (166 rows nulled by
+    // the 2026-08-27 deep audit). lowAsk/highestOffer measured clean upstream.
+    avg_sale_price: cents(e.averageSalePriceCents) || null,
   };
 }
 
