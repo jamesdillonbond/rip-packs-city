@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — the kill instrument was silent about the fleet's worst case an hour after it shipped; wallet backfill measured at 41.5% killed, and it is the REDUNDANT BACKSTOP failing
+
+**What shipped:** `-dispatch`/`-complete` support in `lib/pipeline/kill-rate.ts` + 5 tests (22 total).
+⛔ **Nothing about wallet backfill itself was changed** — the experiment is specified, not run.
+
+**The instrument gap.** `correlateRuns` keyed on `-heartbeat` only.
+`app/api/wallet-backfill-multicollection` predates `lib/pipeline/heartbeat.ts` and hand-rolled the
+same correlation under `-dispatch`/`-complete` — correctly instrumented, and invisible to my sweep.
+It is the fleet's highest-volume killed pipeline. ⚠ **The discriminator is structural, not a name
+list:** a `-dispatch` is a marker only when a `-complete` sibling exists IN THE DATA, because
+**`alerts-dispatch` is a REAL pipeline** and a suffix rule would have invented a 100%-killed pipeline
+out of a healthy one. ✅ The 5 s window was verified first: **1,366 of 1,370 pairs share `started_at`
+within 5 s** (mean 1.58 s). ⚠ Residual pinned in a test: a dispatch pipeline killed on EVERY tick for
+~73 h drops out rather than reading 100%; the fix if it fires is to derive marker names from the route
+sources, never a name list.
+
+**The measurement: 2,339 dispatches, 971 killed = 41.5%.** ⭐ Per-attempt, and not what a user
+experiences — per wallet on the LATEST attempt, **224/254 (88.2%) completed**, so ~30 wallets are
+currently stale. ⛔ **Two hypotheses refuted:** the 5 always-failing wallets are **small** (median 1,106
+moments vs 4,004; a 155,411-moment wallet completes), so *raise the budget* was wrong; and it is not
+per-wallet — batches of 30–37 in one minute run ~50% killed, one batch 32/32.
+
+✅ **Two-way control:** at burst 1–9, QUIET 2.5% vs BUSY 58.0%; at burst 30–38, 20.0% vs 78.4%. Both
+factors real; hour dominates 4–23×. **A third independent instrument reaching tonight's hour
+conclusion.**
+
+🚨 **The finding: the hours are TRIGGERS, not load.** cron-job.org primaries **17.0%** (n=1,324); the
+GHA backstop (`:38 on 2,8,14,20Z`, cohorts 60 s apart) **73.1%** (n=788) — 4.3× worse, ~575 killed
+800 s lambdas per 3 days. **It exists to cover cron-job.org dropout and is itself mostly not
+completing.**
+
+⛔ **Not shipped, deliberately:** widening the cohort sleep is a mechanism, not a measurement, and
+14:38Z is in the worst band whatever the spacing. Experiment specified in the filing:
+`sleep 60`→`300` **and** `timeout-minutes: 10`→`25` in the same commit, with a falsifier.
+
+**Filing:** `docs/overnight/inbox/2026-08-28T0420Z-wallet-backfill-is-killed-on-41pct-of-dispatches-and-the-REDUNDANT-BACKSTOP-is-4x-worse-than-the-primary.md`
+
+**Revert:** `git revert` the commit — instrument only. No route, schedule, workflow or DB object.
+
 ### 2026-08-27 · ✅ SHIPPED (code) — the wmc chunk writer never retried, and 100% of the 207,287 rows it lost in 7 days were TRANSIENT
 
 **What was wrong.** `upsertWmcChunks` in `lib/chains/flow/wallet-backfill-helpers.ts` called a bare
