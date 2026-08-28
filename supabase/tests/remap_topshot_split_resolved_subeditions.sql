@@ -87,7 +87,7 @@ CREATE OR REPLACE FUNCTION public.remap_topshot_split_resolved_subeditions(p_lim
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
- SET statement_timeout TO '300s'
+ SET statement_timeout TO '110s'
 AS $function$
 DECLARE
   v_ts uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';

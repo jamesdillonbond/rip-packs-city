@@ -616,7 +616,7 @@ const PINS = [
     fn: "remap_topshot_split_resolved_subeditions",
     test: "supabase/tests/remap_topshot_split_resolved_subeditions.sql",
     migration:
-      "supabase/migrations/20260729030000_audit_20260729_split_resolved_subeditions_limit_binds_on_actionable.sql",
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
   },
   {
     // Realigns rows already carrying a ::N suffix onto the RIGHT parallel (or
@@ -625,7 +625,7 @@ const PINS = [
     fn: "remap_topshot_realign_miskeyed_subeditions",
     test: "supabase/tests/remap_topshot_realign_miskeyed_subeditions.sql",
     migration:
-      "supabase/migrations/20260815164000_audit_20260815_snapshot_remap_topshot_realign_miskeyed_subeditions.sql",
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
   },
   {
     // The function the rest of the family defers TO: every other remapper detects
@@ -1161,7 +1161,7 @@ const PINS = [
     fn: "refresh_topshot_conflated_editions_detector_only",
     test: "supabase/tests/refresh_topshot_conflated_editions_detector_only.sql",
     migration:
-      "supabase/migrations/20260815180000_audit_20260815_snapshot_refresh_topshot_conflated_editions_detector_only.sql",
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
   },
   {
     // pg_cron `17 */6 * * *`. Writes moment_acquisitions — the COST BASIS table

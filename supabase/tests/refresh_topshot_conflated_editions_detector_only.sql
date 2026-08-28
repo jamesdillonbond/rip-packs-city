@@ -63,7 +63,7 @@ CREATE OR REPLACE FUNCTION public.refresh_topshot_conflated_editions_detector_on
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
- SET statement_timeout TO '120s'
+ SET statement_timeout TO '110s'
 AS $function$
 DECLARE n integer;
 BEGIN

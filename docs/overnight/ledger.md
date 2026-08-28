@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (migration + pins) — R55: the conflated-drain's 5-night red streak was a TIMER RACE, and four step timeouts now beat the gateway
+
+**Migration `20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway`.** Since 08-24
+every 20:30Z tick failed 'upstream request timeout' — but `extra.step_ms` (the instrumentation the route
+shipped on 08-15 for exactly this) shows the runs STILL doing real work (knots 47–91/day, wmc_split
+1,007) while four steps sat pinned at ~120,3xx ms: **the ~120 s Supabase gateway cap, firing BEFORE each
+step's own DB statement_timeout could.** `split`/`realign` declared **300 s — structurally unreachable via
+PostgREST**, so they could never truncate cleanly and the server could keep burning up to 300 s after the
+gateway abandoned the client; `seed_miskeyed`/`conflation_guard` declared exactly 120 s, a coin-flip race
+the gateway has won every night since 08-24. The route's designed 57014→truncated_steps contract
+(non-fatal, retried next tick) never engaged because it deliberately does not reclassify gateway errors.
+
+**Fix: all four declare 110 s.** Bodies re-created VERBATIM from their pin files with only the timeout
+token changed — **whitespace-collapsed md5 proven identical to live prosrc BEFORE applying** (the
+do-not-clobber check), same signatures so ACLs preserved (anon EXECUTE false ×4, secdef drift 0 after).
+Pins + drift-guard migration pointers updated in the same commit. pg_cron jobid 62 (calls detector_only)
+is UNAFFECTED — the attached SET is inert on that path (2026-08-27 A/B).
+
+**Exit condition: the next 20:30Z tick reports ok:true, with any overrunner named in truncated_steps.
+Falsifier: another 'upstream request timeout' means 10 s of margin is not enough — the residual fix is
+work-scoping, not another timeout tweak.**
+
+**Revert:** ALTER FUNCTION ... SET statement_timeout — split/realign '300s', detector_only '120s',
+seed_topshot_miskeyed_subedition_targets(integer) '120s'; revert the pins/pointers commit.
+
 ### 2026-08-28 · ✅ SHIPPED (migration + pin) — R41's leg re-point: the accuracy gate's TS denominator is now ALL ROWS in the producer, not just the docs
 
 **Migration `20260828225605_audit_20260828_r41_fmv_coverage_leg_all_rows_denominator`** removes the
