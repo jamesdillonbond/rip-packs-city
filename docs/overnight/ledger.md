@@ -54,6 +54,7 @@ Guard `known-issues-index-lists-every-item` is a ban at zero in **both** directi
 item; dangling row asserts one that does not exist) plus byte-identity against a fresh regeneration —
 ✅ **proven able to fail: inserting a real item without regenerating turns `--check` red (exit 1).**
 ⚠ **`closed` there means the item SAYS it is closed; it is not a re-verification.**
+⭐ **AND IT EARNED ITS PLACE WITHIN MINUTES, on real drift rather than a fixture: a concurrent session added item **#48** while this pass was committing, the rebase merged it cleanly, and `--check` immediately went red — *"index is STALE (46 items parsed)"*. Regenerated to 46. **The failure mode it was built for happened before it had been pushed.**
 ✅ **And `### Resolved (verified 2026-05-23)` is now marked CLOSED TO NEW ENTRIES** — because moving one
 broke it: item #8 sat there while REGRESSED and *"anyone enumerating the Open list never saw it"*.
 
