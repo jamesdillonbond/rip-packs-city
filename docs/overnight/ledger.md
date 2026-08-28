@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — E5: four more `after()` routes made auditable (47 → 42), and the ratchet was counting a CORRECTLY INSTRUMENTED route as missing
+
+**What shipped:** `writeInvocationHeartbeat` in `candy-sales-indexer`, `wmc-fmv-populate`,
+`cron/offers-sweep`, `topshot-fmv-populate`; a `-dispatch`/`-complete` exemption in
+`__tests__/after-route-heartbeat-ratchet.test.ts` with 3 tests; `BUDGET` 47 → 42.
+
+**Why these four.** By the ratchet's OWN priority rule — routes on `pipeline_cadence_watchlist WHERE
+is_active`, where a kill is not merely unlogged but **actively MISREAD**, because
+`detect_stalled_pipelines()` alerts on a missing terminal row and a killed tick and a cron that never
+fired raise the identical alert needing opposite responses. `candy-sales-indexer` is **HIGH** severity;
+`wmc-fmv-populate` has **6,194 terminal rows**, the largest population left; `topshot-fmv-populate`
+carries a 480-min arm, so a kill hides for 8 h. ⚠ **Deliberately NOT ranked by p90 `duration_ms`** —
+that column absorbs terminal-write queueing (`log_pipeline_run` has no `p_finished_at`), confirmed in
+the worst way tonight: **`topshot-active-listings-ingest` records a p90 of 959,294 ms against a 60 s
+wall.** A ranking on it would have sorted by write contention.
+
+⭐ **The finding.** `wallet-backfill-multicollection` predates `lib/pipeline/heartbeat.ts` and
+hand-rolled the same correlation under `-dispatch`/`-complete` (live: **2,339 / 1,368 rows**). The
+ratchet greps for `writeInvocationHeartbeat(` and counted it as a gap. 🚨 **The over-count was NOT
+harmless: the remedy this ratchet prescribes is "add a marker", so the next session working the list
+would have bolted a SECOND marker onto the fleet's highest-volume pipeline.** A guard whose false
+positive prescribes a harmful action is worse than a silent one. ⚠ The exemption requires **BOTH**
+halves in the source — a `-dispatch` alone never vouches for a route, because **`alerts-dispatch` is a
+REAL pipeline** — and a count assertion names the single exempted route so a future one picking it up
+silently is visible.
+
+⚠ **One existing test was INVERTED, not deleted** (`api-topshot-fmv-populate-deep`): it asserted "no
+`pipeline_runs` insert at all" while its property is "the terminal run goes through the
+`log_pipeline_run` RPC". The heartbeat writes its marker directly **by design** — the ratchet has its
+own test forbidding it from reaching `log_pipeline_run`. Narrowed to exclude `-heartbeat` rows and
+**strengthened** to require the marker be present. Pin the property, not the spelling.
+
+**Budget read off the failing no-slack assertion (set to 0, read the live count), never by
+subtracting five.** Two changes, recorded separately: four conversions + one exemption.
+
+⛔ **This fixes no kill** — it makes kills visible on four more routes. ⛔ No data exists yet; markers
+start on the next tick, and the first readings will be tiny samples the classifier will correctly
+refuse to call recoveries.
+
+**Filing:** `docs/overnight/inbox/2026-08-28T0445Z-E5-four-more-heartbeats-and-the-ratchet-was-counting-a-correctly-instrumented-route-as-missing.md`
+
+**Revert:** `git revert` the commit — removes the four heartbeat calls + imports, the ratchet exemption
+and its 3 tests, the test narrowing, and restores `BUDGET = 47`. No schedule, migration or DB object.
+
 ### 2026-08-27 · ✅ SHIPPED (docs + 2 guards) — a reference doc had carried a 46-line copy of ITSELF for two days with every guard green, and that class now has a detector
 
 **Docs + two new test guards + one generator. No route, schema, pipeline or DB change.** Tidy-up pass over
