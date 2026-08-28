@@ -420,6 +420,23 @@ three-state on purpose (**0** nothing failing · **1** failing now · **2** coul
 `intermittent`/`recovered` deliberately do **not** exit non-zero — a check that goes red on history
 stays red forever and stops being read.
 
+### 0c. ⛔ `pipeline_runs.duration_ms` IS NOT EXECUTION TIME — do not rank kill risk on it
+
+`log_pipeline_run` has **no `p_finished_at`**, so `finished_at` defaults to the INSERT and the duration
+absorbs retry and queueing on the terminal write. The tell is unmissable once you look for it, measured
+2026-08-28: **`topshot-active-listings-ingest` records a p90 of 959,294 ms against a `maxDuration` of
+60 s.** Three other pipelines record durations above their route's wall (`run-insider-detectors`
+322,813 ms, `offers-sweep` 339,605 ms, `wmc-fmv-populate` 352,922 ms, all against 300,000 ms).
+
+⚠ **So "p90 as a fraction of the wall" — the obvious way to rank which `after()` route most needs a
+heartbeat — ranks partly by WRITE CONTENTION.** The E5 batch on 2026-08-28 was chosen by
+`pipeline_cadence_watchlist WHERE is_active` instead: the routes where a kill is not merely unlogged
+but ACTIVELY MISREAD, because `detect_stalled_pipelines()` alerts on a missing terminal row and a
+killed tick and a cron that never fired raise the identical alert while needing opposite responses.
+
+⭐ This is a second argument for the heartbeat marker generally: its timestamps are pinned by
+`lib/pipeline/heartbeat.ts`, so they mean what they say.
+
 ### 1. A per-collection ZERO inside an otherwise-succeeding run is the shape a collection-blind filter makes
 
 `drain-fmv-cold-tail` reported `"collection_slug": "ufc_strike", "processed": 0` on every run **for months**,

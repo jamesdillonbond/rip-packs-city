@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (docs) — session log written, and the four lessons that lived only in the ledger promoted into the reference docs
+
+**Wrap-up of the 2026-08-27 evening–night pass.** No code, no schedule, no DB object.
+
+- **`docs/sessions/2026-08.md`** — session entry prepended (newest-first).
+- **`docs/reference/cron-and-schedulers.md` §0c (NEW)** — ⛔ **`pipeline_runs.duration_ms` is NOT execution
+  time.** `log_pipeline_run` has no `p_finished_at`, so `finished_at` defaults to the INSERT and the
+  duration absorbs terminal-write queueing. Tell: **`topshot-active-listings-ingest` p90 959,294 ms against
+  a 60 s wall**; three more record durations above their route's wall. **So ranking `after()` routes by
+  "p90 as a fraction of the wall" ranks partly by write contention** — use the cadence watchlist instead.
+- **`docs/reference/packs.md` (NEW section)** — two `pack_drop_pool` columns that are not the instrument
+  they look like: **`min(last_refreshed_at)` per dist is not a first-conversion timestamp** (rewritten on
+  every refresh; reported 64–136 "conversions"/hour including PRE-fix hours, against a true ~25), and
+  **`count(*)` over the table is not a progress measure** (many collections, many writers). Measure
+  `extra->>'dists_ok'`, cross-checked against dists-with-pool — they agreed exactly on 08-28 (+51 /
+  1,715 → 1,766). ⚠ And read the backlog as a STOCK: it fell 368 → 330 while 51 converted, because 13 new
+  dists arrived.
+- ⓘ **Not duplicated:** the "a suppression must be checked against the COMPILER" lesson was already in
+  `testing-and-ci.md:149`, written by a sibling session that hit the same thing from the other direction.
+  Checked before adding rather than assumed.
+
+⚠ **CLAUDE.md untouched — headroom is 77 characters** and this pass's one CLAUDE.md-worthy rule (the
+pooled-rate bullet) landed earlier tonight.
+
+**Scheduled follow-up re-created as FRESH-SESSION, not session-bound.** The #47 falsifier check
+(`trig_013kgseBue6EWA5VCEV84LDy`, 2026-08-29 01:45Z) replaces a session-bound one, because
+`list_triggers` shows a prior session-bound routine in this account already dead with
+`ended_reason: auto_disabled_session_gone`. ⭐ **A routine bound to a session does not survive that session
+being archived** — bind follow-ups that must outlive the conversation to a fresh session and write the
+prompt standalone.
+
+**Revert:** `git revert` the commit — docs only.
+
 ### 2026-08-27 · ✅ SHIPPED (repo only, NOT deployed) — the stub resolver re-attempts the impossible ~8.5×/day, and the counter built to notice that cannot fire
 
 **How it surfaced.** Sweeping for the "green pipeline blind to its own work" shape — `ok = true` on

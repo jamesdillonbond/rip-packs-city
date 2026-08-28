@@ -63,6 +63,25 @@ All 7 cursors:
 - `pack_distributions.metadata.retail_price_usd` value range: `$0` for reward / quest packs and `$2+` for paid drops. `~$1M+` values would need `/1e8` satoshi conversion but no current Top Shot values exceed that, so flat numeric reading works.
 - **Quest reward / set completion packs flow through the same `PackNFT.Withdraw` / `PackNFT.Mint` events as paid drops** and get `is_primary_drop = true` correctly. UI distinguishes via `pack_distributions.metadata.retail_price_usd = 0`.
 
+### ⛔ Two `pack_drop_pool` columns that are NOT the instrument they look like (2026-08-28)
+
+Both were nearly used to verify the pool-backfill fix, and both would have given a wrong answer.
+
+- **`min(last_refreshed_at)` per `dist_id` is NOT a first-conversion timestamp.** The column is
+  rewritten on every refresh, so grouping by it reports "conversions per hour" for hours **before** the
+  change being tested — it read **64–136/hour** across a window whose true rate was ~25, including
+  pre-fix hours. The pool is written delete-then-insert, so **no first-write history survives.**
+- **`count(*)` over `pack_drop_pool` is NOT a progress measure.** It spans every collection and several
+  writers, so it moves for reasons unrelated to whatever is being watched.
+
+✅ **What to measure instead:** the sampler's own `pipeline_runs.extra->>'dists_ok'` for
+`topshot-pack-pool-backfill`, cross-checked against the count of distributions that have pool rows.
+On 2026-08-28 those agreed exactly — **`dists_ok` summed to 51 and TS dists-with-pool rose 1,715 →
+1,766** — which is the kind of two-table agreement worth building the check around.
+
+⚠ And read the backlog as a STOCK: it fell 368 → 330 while 51 converted, because 13 new distributions
+arrived in the same window. A stock moving by less than the flow is not a stalled drain.
+
 ### Cron endpoints
 
 Both endpoints use admin-auth via `INGEST_SECRET_TOKEN`:
