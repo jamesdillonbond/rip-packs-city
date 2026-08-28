@@ -10,6 +10,76 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 🚨 MY OWN REGRESSION, CAUGHT BY ITS OWN FALSIFIER — the 45 s client deadline I added truncated writes the DATABASE was entitled to finish, and the retry it shipped with recovered ZERO
+
+**I shipped this defect earlier today and this entry corrects it.** The retry fix
+(`5e9fac03`) added the first client-side deadline these writes have ever had, and I justified the value
+in that entry's own words: *"45 s is deliberately ABOVE service_role's 30 s statement_timeout, so it
+cannot cut short a statement Postgres would have finished and answered."*
+
+🚨 **That reasoning checked the ROLE and never checked the FUNCTION.** `upsert_wmc_batch` carries
+`SET statement_timeout = 120s` in its own `pg_proc.proconfig` (read live), and **this repo's own
+measured rule is that on the PostgREST path a function-level timeout HIGHER than the role's RAISES the
+limit.** The write was entitled to **120 s**. I gave it 45.
+
+**MEASURED ON THE FIRST WAVE AFTER IT SHIPPED (12:47Z, 365 runs) — and the result is unambiguous:**
+
+| post-fix chunk error | runs | rows lost |
+|---|---:|---:|
+| `rpc upsert_wmc_batch timed out after 45000ms` | 28 | 8,067 |
+| `…timed out after 26823ms` | 1 | 286 |
+| `…timed out after 6278ms` | 1 | 800 |
+| **pool-acquire timeout** (the class the retry exists for) | **0** | **0** |
+| **lock timeout** (the other class) | **0** | **0** |
+
+**100% of the rows lost in that wave were lost to a timeout I introduced.** Not one was the transient
+class the fix was written for.
+
+⚠ **AND IT COMPOUNDED, in a way I did not anticipate when I wrote it.** `timeoutMs` is a budget for the
+WHOLE call including retries, and `retryLoop` hands each attempt whatever REMAINS. So backing off spent
+the deadline that the final, most-likely-to-succeed attempt needed — that is exactly what
+`timed out after 26823ms` and `after 6278ms` are: budgets already partly consumed by a retry. **The
+retry made those two chunks worse, not better.**
+
+⭐ **THE FALSIFIER FIRED, AND IT IS THE ONLY REASON I FOUND THIS.** The shipping entry said: *"if
+`chunk_rows_recovered` stays at 0 across a saturation window, the backoff is too short for the spell and
+the answer is elsewhere."* Across **365 runs: `chunk_retry_recoveries` = 0, `chunk_rows_recovered` = 0.**
+Writing the counter that could embarrass the change is what made the change auditable — the run would
+otherwise have read as a 33% improvement in rows-lost-per-run (37.7 → 25.1) and been filed as a success.
+
+⛔ **AND THAT 33% "IMPROVEMENT" IS NOT CLAIMED.** With recoveries at zero the retry demonstrably did
+nothing, so the drop cannot be attributed to it; the two windows are different waves under different
+saturation and were never a controlled comparison. **Reporting it as a win would have been the
+pooled-rate mistake in a new costume.**
+
+**THE FIX.** `CHUNK_RPC_TIMEOUT_MS = 130_000`, passed on BOTH branches (the single-attempt fallback
+needed it too — it inherited the same 45 s default). 130 s sits above **both** bounds that can
+legitimately end this call: the function's own 120 s declaration, and the Supabase gateway's ~120 s hard
+cap on the PostgREST path. That restores the intended role — a last-resort backstop for a stuck socket,
+the one case with no other stop condition — instead of a competitor to the database's own limits.
+
+**Pinned so it cannot regress:** four assertions encoding the ORDERING rather than the number — it must
+exceed the function's declared `statement_timeout`, exceed the gateway cap, not be 45 s, and still be a
+real bound (< 10 min), because an unbounded write is what this module set out to fix in the first place.
+**Proven non-vacuous by mutation:** setting it back to 45,000 turns 3 red. Full suite
+**15,265 passed**, `tsc` clean.
+
+⚠ **WHAT IS STILL UNPROVEN, STATED PLAINLY: the retry has never once recovered a chunk.** Its class is
+real — 207,287 rows over the 7 days to 08-28, 100% pool/lock timeouts — but neither class appeared in
+this wave, so the mechanism remains untested in production. **Do not record the retry as validated until
+`chunk_retry_recoveries` is non-zero on a wave that actually contains pool timeouts.** If a later
+saturation wave produces pool timeouts AND zero recoveries, the backoff is too short and the retry
+should be reconsidered rather than tuned.
+
+⚠ **The generalisable lesson, which is not about timeouts:** a bound is only "safely above" the limits
+you actually enumerated. I enumerated the role and stopped. **`pg_proc.proconfig` is a per-object
+override that outranks the role on the PostgREST path, and nothing in the calling code hints that it
+exists** — the only way to know is to read the function's own config before choosing a client deadline.
+
+**Revert path:** `git revert <sha>` restores the 45 s default — ⛔ **do not**, that is the regression.
+To disable the deadline entirely, remove `timeoutMs` from both branches, which returns to the
+pre-`5e9fac03` unbounded behaviour.
+
 ### 2026-08-28 · 🟢 NIGHTLY PASS — quiet honest night (NO-PUSH cloud); post-ship watch clean, nothing safe to ship
 
 **Mode:** cloud Cowork, NO-PUSH (mount has no `remote.origin.pushurl` carrying a PAT; `git push --dry-run` → "could not read Username"). DB migrations + artifact repair available; code deploys not. ⚠ **This blocker is specific to this cloud session — Trevor's box + Claude Code push normally; commit these output files as usual.** Genuine overnight run (DB `now()` 08:04Z = 01:04 PT, inside 00:00–06:00; sales/fmv rows bound real time from below). Lock held + released.
