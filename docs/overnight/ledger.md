@@ -10,6 +10,75 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED — `main` un-redded: the anon-exec marker guard failed FIVE functions across TWO concurrent sessions in one hour, and a duplicate migration file was collapsed
+
+**`CI / Unit tests (vitest)` was RED on `main`** — `migration-new-function-states-its-anon-exec-decision`
+with five offenders across three migration files, mine and a sibling session's. All five are the **same
+cause**, and it is now the most common way a *correct* migration fails CI here.
+
+| file | function(s) | author |
+|---|---|---|
+| `…225925_…aggregate_saved_wallet_stats…` | `aggregate_saved_wallet_stats` | mine |
+| `…225605_…r41_fmv_coverage_leg_all_rows_denominator` | `rpc_thp_leg_fmv_coverage` | sibling |
+| `…231031_…r55_conflated_step_timeouts_beat_the_gateway` | `remap_topshot_split_resolved_subeditions` · `remap_topshot_realign_miskeyed_subeditions` · `refresh_topshot_conflated_editions_detector_only` | sibling |
+
+⭐ **Every one is a `CREATE OR REPLACE` of an EXISTING function, so the MARKER is the correct answer and a
+REVOKE would have been a REAL DEFECT** — `CREATE OR REPLACE FUNCTION` does not reset a function ACL, so a
+revoke in these files would have CHANGED production while reading as a body-only edit.
+
+✅ **All five ACLs were READ before any decision was written** — `has_function_privilege`, never the
+`proacl` text: **anon=false, authenticated=false, service_role=true** for all five (the fmv-coverage and
+detector legs additionally carry an explicit `cron_heavy` grant). No marker here states a decision that
+was not verified live.
+
+🚨 **THE TRAP THAT COST TWO EXTRA RED RUNS, and it is not in the guard's error message: the marker must put
+`anon-exec:` AND THE FUNCTION NAME ON THE SAME LINE.** The detector is `/anon-exec:\s*\S+/i` tested
+per line, with the function name matched **on that same line**. My first attempt wrapped the reason across
+a comment block with the name three lines down — it reads perfectly to a human and fails silently. The
+error message prints the offenders and the two accepted forms, but says nothing about line-locality.
+
+⭐ **PROMOTED so the next session does not re-derive it:** `docs/cowork-skills/rpc-migration/SKILL.md` gains
+rule **8** stating the file-level requirement, the one-line format, the per-function-name keying, and the
+"never state a decision you have not read" rule. **Bundle repacked (`npm run skills:pack rpc-migration`)
+and `skills:bundles:check` re-run — 9 bundles match**, because that guard exists precisely to catch a
+SKILL.md edited without its `.skill` being rebuilt.
+
+⚠ **ALSO COLLAPSED: two files existed for ONE migration.** I committed
+`20260828231500_…aggregate_saved_wallet_stats…` from the authoring side while the sibling's recovery pass
+independently wrote `20260828225925_…` byte-exactly from `supabase_migrations`. **The prod-stamped one
+wins** — its version is the one prod actually recorded — so my documented header was moved onto it and the
+20260828231500 file deleted. ⭐ **The mechanism is worth knowing: `apply_migration` assigns its OWN version
+at apply time, so an author who names the file from the clock and a recoverer who reads prod produce two
+files with the same NAME and different VERSIONS.** `check-migration-parity.mjs` matches on NAME, so it saw
+parity and was structurally incapable of reporting the duplicate.
+
+⛔ **I did not touch the sibling's SQL** — the three files' statements are byte-unchanged; only comments
+were prepended, and each marker says so in-line so a later reader is not misled about authorship.
+
+🚨 **A SECOND, UNRELATED RED FOUND WHILE VERIFYING — AND IT WAS NOT MINE.** The full suite also failed
+`db-invariants-drift-guard` → *"'rpc_thp_leg_fmv_coverage': the SQL test's copy is byte-identical
+(normalized) to its migration"*. ✅ **Established as PRE-EXISTING before touching it**, by stashing my
+whole working tree and re-running on clean `origin/main` — it failed there too. **Do not attribute it to
+the marker work.**
+
+**Cause: a pin has THREE parts — `fn`, `test`, `migration` — and R41's re-point rewrote the first two and
+left the third.** The `PINS` entry still named the 2026-08-10 migration, so the guard compared the NEW
+all-rows test body against the OLD canonical-filtered one. Verified with the guard's OWN extractor rather
+than by eye: the test matches `20260828225605` **byte-for-byte at 3,070 chars** and differs from
+`20260810225549` (3,245). Fixed by repointing, with the mechanism recorded inline.
+
+⭐ **AND THE MUTATION CHECK IS THE LESSON HERE, because my first two attempts BOTH passed and neither
+proved anything.** (1) `COALESCE` → `COALESCE ` — the extractor normalises `\s+` to a single space by
+design, so whitespace can never fail it. (2) `COALESCE` → `COALESCEX` on the FIRST occurrence — **which
+sits at char 822, inside a HEADER COMMENT, while the extracted body starts at char 3,492.** Only the
+third attempt, `DECLARE` → `DECLAREX` at char 3,680, failed the guard. ⚠ **A mutation outside the region
+a guard actually compares is indistinguishable from a dead guard** — locate the compared region first,
+then mutate inside it. Two green runs nearly had me record a live pin as vacuous.
+
+**Revert path:** `git revert <this commit>` — comments, one file deletion and a skill doc. **No production
+state.** The DB-side revert for the aggregate change remains the one in that migration's own header.
+**Target metric:** `CI / Unit tests (vitest)` green on `main`.
+
 ### 2026-08-28 · ✅ SHIPPED (migration) — R56: known-empty pack dists get ONE daily probe slot instead of twelve an hour
 
 **Migration \`20260828231417_audit_20260828_r56_known_empty_dists_get_one_daily_slot\`.** The 17 dists in
