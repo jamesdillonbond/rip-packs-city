@@ -10,6 +10,78 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ✅ SHIPPED (code) — the Pinnacle mega-wallet recovery path blows the SAME computation limit it exists to recover from, and the ceiling is wallet-dependent
+
+**Symptom.** `wallet-backfill-pinnacle` logged **`all_pagination_chunks_failed` on 29 runs in 24 h**.
+Every one carried `recovered_from: computation_limit_exceeded` — i.e. these are exactly the mega-wallets
+whose single-shot Cadence query already blew the budget and fell back to the paginated walk.
+
+**Root cause, MEASURED against mainnet rather than inferred.** Running
+`GET_PINNACLE_UNLOCKED_DETAILS_RANGE` directly from this box (a computation limit is decided on the
+execution node, so it is deterministic and independent of this box's egress — which must never be used to
+attribute a *latency* failure):
+
+```
+[Error Code: 1110] computation limit exceeded (used: 100001, limit: 100000)
+```
+
+⭐ **The ceiling is WALLET-DEPENDENT, which is the part that makes the old design wrong rather than
+merely mistuned** — per-NFT cost tracks how many traits that NFT carries:
+
+| wallet | NFTs | 500 | 400 | 350 | 300 | 250 | 200 |
+|---|---|---|---|---|---|---|---|
+| `0x5d4810ed7b3f7a71` | 460 | ✗ | ✗ | ✗ | ✗ | **✓** | — |
+| `0x8bc1c0249e2ebb3e` | 6300 | ✗ | ✗ | — | ✗ | ✗ | **✓** |
+
+**No single constant is correct for both.** The `pinnacle: 500` in `PAGINATION_CHUNK_SIZE_BY_MODE` was
+chosen on 2026-05-08 and was correct then; it drifted as the collection's trait payload grew. Re-tuning
+it to 200 would just restart the same clock.
+
+🚨 **The severity is that this is a FALLBACK WITH NO FALLBACK.** When every chunk 1110s,
+`chunksProcessed` stays 0, the run reports `all_pagination_chunks_failed`, and **the wallet is enriched by
+nothing at all** — the recovery path for computation-limit failures fails on computation limit.
+⚠ The old loop `continue`d past a failed chunk *without narrowing*, so the width that failed was the
+width every subsequent chunk used. Failure was total by construction, not incidental.
+
+**What shipped.** The chunk loop is now **adaptive** instead of fixed-stride:
+- On a Cadence **1110 only**, halve the window and **retry the SAME offset** (down to a floor of 25)
+  instead of skipping it. A narrowing is *not* counted as a chunk error — the offset was retried.
+- `activeChunk` is **sticky**: once a wallet teaches the walk that 200 fits, later chunks use 200 rather
+  than re-probing 500 and burning a failed round-trip per chunk (13 chunks × 2 wasted calls on a
+  6,300-NFT wallet).
+- **Any other error keeps the old behaviour** — count it, skip the window. Without that control an
+  unrelated upstream outage would become a narrowing storm.
+- **Termination is guaranteed**: at the floor the error branch runs and advances the cursor, and
+  `count = min(activeChunk, remaining) ≥ 1` because the floor is 25, so `start` always moves.
+- The `for (…; start += chunkSize)` head became an explicit cursor, since the stride is no longer fixed.
+
+**Instrument, at all three log sites.** `pagination_chunk_size_final` and `pagination_narrowings` —
+including literal zeros on the "no walk ran" early return, where the loop variables are not in scope.
+Without them a narrowed success and a first-try success are byte-identical in the log, and the drift that
+caused this stays invisible until it breaks again.
+
+**Tests.** Four new, pinning the **verbatim mainnet 1110 text** (`isComputationLimitError` matches
+`/\b1110\b/`; a paraphrase would stay green while the real message stopped being recognised): it narrows
+and retries the same offset; it gives up at the floor rather than looping (with a 40-call safety trip); it
+does **not** narrow for a non-1110 error; and it reports the fields as 0 on a clean run.
+⚠ **The first test needed 600 ids to be meaningful** — `count = min(activeChunk, remaining)`, so on a
+3-id wallet the window never binds and the test passes without exercising anything. **Proven non-vacuous
+by mutation:** disabling the narrowing branch turns it red. Full suite **1386 files / 15234 passed**,
+`tsc --noEmit` clean.
+
+⚠ **NOT CLAIMED: that this fixes AllDay.** `allday: 1000` is untouched and un-probed; AllDay's mega-wallet
+failure surfaces as an opaque HTTP 500 (`isAccessApiInternalServerError`), **not** a 1110, so the new
+branch does not fire for it. The mechanism is now in place if that is ever measured.
+
+⚠ **The 29 failing runs are a RATE, not a backlog** — these wallets are re-walked on the next pass, so
+the expected effect is that `all_pagination_chunks_failed` falls toward zero, not that a queue drains.
+**Falsifier:** if `pagination_narrowings` stays 0 across the next day while
+`all_pagination_chunks_failed` persists, the narrowing branch is not firing and the classifier — not the
+width — is what is wrong.
+
+**Revert path:** `git revert <sha of "fix(wallet-backfill): narrow the paginated window on a Cadence 1110">`.
+Code only — no migration, no data mutation.
+
 ### 2026-08-27 · ✅ jobid 370 ANSWERED ITS OWN QUESTION AND DISPOSED OF ITSELF — and my cleanup verification was a wildcard over a namespace I do not own
 
 **The 02:58Z window came, and the scheduled read-out took BRANCH B: no mass rewrite.** The armed
