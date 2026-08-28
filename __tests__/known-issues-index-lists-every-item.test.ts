@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { execFileSync } from "node:child_process"
-// @ts-expect-error - plain .mjs script, no types
+// ⚠ No `@ts-expect-error` here. The directive was added on the assumption that a
+// plain .mjs import is untyped, but this repo's tsconfig resolves it fine, so the
+// directive itself became the error (TS2578 "Unused '@ts-expect-error' directive")
+// and reddened `npx tsc --noEmit`, which CI gates. Suppressions must be verified
+// against the compiler, not assumed from the file extension.
 import { parseItems, renderIndex, deriveStatus, deriveTitle } from "../scripts/gen-known-issues-index.mjs"
 
 // docs/reference/known-issues.md is the canonical open list — CLAUDE.md and the
