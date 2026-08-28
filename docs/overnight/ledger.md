@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⏳ THE TIMEOUT FIX IS STILL UNVERIFIED — the post-fix window is CLEAN and that is not evidence, because it contains almost no writes
+
+**Recorded so the next clean wave is not mistaken for confirmation.** After the 130 s deadline shipped,
+the watch fired on 55 wallet-backfill runs: **0 chunk errors, 0 rows lost, 0 of my timeouts.** That looks
+like a fix landing. **It is not, yet.**
+
+| | runs | **rows_written** | chunk errors | rows lost | my timeouts | avg ms |
+|---|---:|---:|---:|---:|---:|---:|
+| 12:47Z wave, 45 s bug live | 365 | **16,330** | 56 | 9,153 | 30 | 148,125 |
+| post-fix window | 55 | **26** | 0 | 0 | 0 | 33,643 |
+
+🚨 **26 rows written against 16,330.** The window carries **0.16%** of the failing wave's write volume,
+and average run duration is a fifth. **There were essentially no large chunks in it**, and a large chunk
+is the only thing that can take 45–87 s and therefore the only thing that could ever have hit the old
+deadline. **A window with no big writes cannot falsify a big-write bug.**
+
+⚠ **This is the trap this repo keeps paying for, in its third costume today.** It is the same shape as
+the React #418 verification (*"both green runs ran against a spine minutes old, where the pre-fix code
+would also have passed"*) and as my own retry-recovery counter reading 0 because the transient class
+never appeared. **Counting RUNS instead of the CONDITION the fix addresses is what makes a green window
+meaningless.**
+
+👉 **THE EXIT CONDITION, stated so it is checkable rather than felt: a wave with `rows_written` in the
+thousands and `error like '%timed out after%'` = 0.** Until `rows_written` is within an order of
+magnitude of 16,330, the count of clean runs is irrelevant — **re-arm on WRITE VOLUME, not on run
+count.** ⓘ The 12:47Z wave is the natural comparator; the next one of that size is the test.
+
+⚠ **Separately still unproven, and unchanged: the retry has never recovered a chunk.** `recoveries = 0`
+again here, but with `chunk_errors = 0` there was nothing to recover from, so this window says nothing
+about it either way. **Both open questions need the same thing — a wave that actually contains work.**
+
+ⓘ **What the window DOES establish, narrowly:** the 130 s deadline did not introduce a new failure mode
+at low volume — 55 runs, no errors of any kind, and average duration fell 148 s → 34 s. That is a
+regression check passing, not a fix being verified. **Do not upgrade it.**
+
+**Revert path:** docs only.
+
 ### 2026-08-28 · ✅ SHIPPED (code, from the Cowork VM) — a heartbeat on the one watchlisted `after()` route the sweep found being killed, and the anonymous rewards beacon that 405'd on every public squeeze view; smoke sweep clean; #45 register corrected
 
 **Mode:** Cowork, **PUSH-CAPABLE** via the desktop-VM device-code flow (Trevor approved a GitHub device code; token per-session, never at rest, never echoed). Cloud container is still repo-set 403 — the cloud half did `tsc` + tests, the VM half pushed from a **separate clone in its own `$HOME`**, NOT from Trevor's working tree, which was live (another session landed `d57fc746`…`fbc4f428` during this pass). ⚠ **Do not commit into the mount from a VM session while Claude Code is active on the box** — push a fresh clone instead.
