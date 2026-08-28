@@ -67,6 +67,42 @@ export interface ChunkFailureTally {
  */
 export const CHUNK_RETRY_RUN_BUDGET_MS = 10_000
 
+/**
+ * Wall-clock budget for ONE chunk write, retries included.
+ *
+ * 🚨 THIS NUMBER IS A CORRECTION, AND THE MISTAKE IT FIXES IS INSTRUCTIVE
+ * (2026-08-28). The first version of this file passed no `timeoutMs`, taking
+ * `DEFAULT_RPC_TIMEOUT_MS` = 45 s, on the stated reasoning that 45 s is safely
+ * above service_role's 30 s statement_timeout so it "cannot cut short a
+ * statement Postgres would have finished and answered".
+ *
+ * **That reasoning checked the ROLE and never checked the FUNCTION.**
+ * `upsert_wmc_batch` carries its own `SET statement_timeout = 120s` in
+ * `pg_proc.proconfig`, and this repo's own measured rule is that on the
+ * PostgREST path a function-level timeout HIGHER than the role's RAISES the
+ * limit. So the function is entitled to 120 s and the 45 s client deadline was
+ * truncating writes the database was still happily executing.
+ *
+ * MEASURED IN THE FIRST WAVE AFTER IT SHIPPED (12:47Z, 365 runs): **every
+ * single chunk error was this timeout** — 30 runs, 9,153 rows lost, and NOT ONE
+ * pool-acquire or lock timeout, the two classes the retry exists for. The fix
+ * was, on that wave, the sole cause of the loss it was written to prevent.
+ *
+ * ⚠ AND IT COMPOUNDED: `timeoutMs` is a budget for the WHOLE call including
+ * retries, and `retryLoop` hands each attempt whatever REMAINS. So backing off
+ * spent the deadline that the final, most-likely-to-succeed attempt needed —
+ * visible in the log as `timed out after 26823ms` and `after 6278ms`, budgets
+ * already partly consumed.
+ *
+ * 130 s is chosen to sit ABOVE both bounds that can legitimately end this call:
+ * the function's own 120 s declaration, and the Supabase gateway's ~120 s hard
+ * cap on the PostgREST path (which answers `504 upstream request timeout`).
+ * That makes this deadline a genuine last-resort backstop for a stuck socket —
+ * the one case with no other stop condition — rather than a competitor to the
+ * database's own limits.
+ */
+export const CHUNK_RPC_TIMEOUT_MS = 130_000
+
 export function newChunkTally(): ChunkFailureTally {
   return {
     chunkErrors: 0,
@@ -157,6 +193,7 @@ async function upsertWmcOneChunk(
     mayRetry
       ? {
           attempts: 3,
+          timeoutMs: CHUNK_RPC_TIMEOUT_MS,
           // 400 ms base -> 400 ms + 1600 ms of backoff. Longer than the page
           // default of 50 ms: a saturated pool does not clear in a quarter of a
           // second, and nobody is waiting on this write.
@@ -165,7 +202,7 @@ async function upsertWmcOneChunk(
             retried = true
           },
         }
-      : { attempts: 1 },
+      : { attempts: 1, timeoutMs: CHUNK_RPC_TIMEOUT_MS },
   )
 
   // Charge the WHOLE elapsed time of any call that retried — an over-estimate,

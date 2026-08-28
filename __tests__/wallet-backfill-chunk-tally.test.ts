@@ -38,6 +38,7 @@ import {
   chunkFailureExtra,
   upsertWmcChunkWithRetry,
   CHUNK_RETRY_RUN_BUDGET_MS,
+  CHUNK_RPC_TIMEOUT_MS,
   type ChunkFailureTally,
 } from "@/lib/chains/flow/wmc-chunk-upsert"
 
@@ -237,5 +238,48 @@ describe("upsertWmcChunkWithRetry", () => {
 
     expect(H.state.rpcCalls[0].name).toBe("upsert_wmc_batch")
     expect(H.state.rpcCalls[0].params).toEqual({ p_rows: chunk })
+  })
+})
+
+describe("CHUNK_RPC_TIMEOUT_MS — the client deadline must never out-rank the DATABASE's own limits", () => {
+  // 🚨 REGRESSION PIN. The first version of this writer passed no timeoutMs and
+  // inherited DEFAULT_RPC_TIMEOUT_MS = 45s, justified as "safely above
+  // service_role's 30s statement_timeout". That checked the ROLE and never the
+  // FUNCTION: upsert_wmc_batch declares `SET statement_timeout = 120s` in its
+  // pg_proc.proconfig, and on the PostgREST path a higher function-level timeout
+  // RAISES the limit. So the write was entitled to 120s and the client gave up
+  // at 45s.
+  //
+  // Measured in the first wave after it shipped (12:47Z, 365 runs): EVERY chunk
+  // error was that timeout — 30 runs, 9,153 rows lost — and not one was a
+  // pool-acquire or lock timeout, the classes the retry exists for. The fix was
+  // the sole cause of the loss it was written to prevent.
+  //
+  // The number below is not a tuning knob. It encodes an ORDERING: the client
+  // deadline is a backstop for a stuck socket and must sit above every bound
+  // that can legitimately end the call, so the database always answers first.
+  const FUNCTION_DECLARED_STATEMENT_TIMEOUT_MS = 120_000 // pg_proc.proconfig, read live 2026-08-28
+  const SUPABASE_GATEWAY_CAP_MS = 120_000 // 504 upstream request timeout, PostgREST path
+
+  it("exceeds upsert_wmc_batch's own declared statement_timeout", () => {
+    expect(CHUNK_RPC_TIMEOUT_MS).toBeGreaterThan(FUNCTION_DECLARED_STATEMENT_TIMEOUT_MS)
+  })
+
+  it("exceeds the Supabase gateway's hard cap, so the gateway answers before the client gives up", () => {
+    expect(CHUNK_RPC_TIMEOUT_MS).toBeGreaterThan(SUPABASE_GATEWAY_CAP_MS)
+  })
+
+  it("is NOT the 45s page default — that value is what caused the regression", () => {
+    // Pinned as an explicit inequality rather than a range: if someone later
+    // removes the explicit timeoutMs, the call silently falls back to 45s and
+    // this is the assertion that catches it.
+    expect(CHUNK_RPC_TIMEOUT_MS).not.toBe(45_000)
+    expect(CHUNK_RPC_TIMEOUT_MS).toBeGreaterThan(45_000)
+  })
+
+  it("stays a real bound rather than being effectively infinite", () => {
+    // The point is a backstop, not "never give up" — an unbounded write is what
+    // this module set out to fix. Ten minutes is far past any legitimate answer.
+    expect(CHUNK_RPC_TIMEOUT_MS).toBeLessThan(600_000)
   })
 })
