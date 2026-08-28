@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (migration) — R56: known-empty pack dists get ONE daily probe slot instead of twelve an hour
+
+**Migration \`20260828231417_audit_20260828_r56_known_empty_dists_get_one_daily_slot\`.** The 17 dists in
+\`topshot_atlas_no_pool_dists\` (bundle box/case, empty on both id forms) were re-drawn ~12x/hour forever —
+the measured 74% wasted-tick state once the fresh backlog drains. They now admit in exactly ONE
+hash-spread 5-minute bucket per day. **Simulated first** (backlog 98 = 17 empty + 81 fresh; each empty
+gets exactly 1 of 288 daily buckets; 0 pass the current bucket) and **verified live after** (draw of 3 =
+3 fresh, 0 empties; anon EXECUTE false; secdef drift 0).
+
+⚠ **This changes the WHERE — a stated departure from 20260828025307's ORDER-BY-only safety property**:
+over a day the eligible population is unchanged, within a tick only known-futile probes are excluded;
+conversions only ever ADD pool rows, and the gate self-heals through the pool-row NOT EXISTS. Scheduling,
+not pricing. ⛔ **The real failure-memory is still owed** — nothing has written
+\`topshot_atlas_no_pool_dists\` since 07-17, so NEW permanent empties retry at full rate until the
+edge-function/column half ships (a deploy).
+
+**Revert:** re-apply \`20260828025307_..._rips_tier_cannot_consume_every_tick.sql\` verbatim.
+
 ### 2026-08-28 · ✅ SHIPPED (migration + pins) — R55: the conflated-drain's 5-night red streak was a TIMER RACE, and four step timeouts now beat the gateway
 
 **Migration `20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway`.** Since 08-24
