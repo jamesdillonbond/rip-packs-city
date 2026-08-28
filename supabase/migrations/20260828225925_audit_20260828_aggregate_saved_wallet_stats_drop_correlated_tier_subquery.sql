@@ -1,4 +1,68 @@
--- anon-exec: intentional — snapshot re-create with the same signature; ACL preserved (SECURITY DEFINER, anon and authenticated EXECUTE both false, verified live 2026-08-28) (aggregate_saved_wallet_stats)
+-- audit_20260828_aggregate_saved_wallet_stats_drop_correlated_tier_subquery
+--
+-- WHAT IS WRONG. `aggregate_saved_wallet_stats` computes `top_tier` with a
+-- CORRELATED SUBQUERY that re-scans `wallet_moments_cache` for the SAME wallet
+-- once per collection_id — rows the outer aggregate has already scanned. The
+-- 2026-08-13 migration that lowered the reconcile soft deadline named the cost
+-- ("the top-tier correlated subquery does a Bitmap Heap Scan + Sort per
+-- collection", 16-55 s per wallet under IO saturation) but treated it as a
+-- constraint to schedule around rather than a query to fix.
+--
+-- WHY IT MATTERS NOW. `rpc-reconcile-saved-wallet-stats` (jobid 259, `44 * * * *`)
+-- calls `reconcile_all_saved_wallet_stats(10, 40, 360)` — a TEN SECOND soft
+-- deadline, checked only BETWEEN wallets. When one wallet costs more than that,
+-- the loop does exactly one wallet and exits truncated, so the run logs
+-- ok=false / 'soft_deadline_reached_partial_sweep_committed' EVERY TIME. Measured
+-- over 48 h to 2026-08-28: 9 ok / 34 failed (79.1%), wallets_done 0-4 out of
+-- 11-14 eligible, and `oldest_cache_h` pinned at 12-15.2 h against a
+-- `p_min_age_minutes` target of 360 (6 h). This is CLAUDE.md's permanently-red
+-- instrument: a pipeline that is always failing is one nobody reads.
+--
+-- ⚠ THE LEVER IS CUTTING WORK, NOT RAISING THE DEADLINE. Raising p_max_seconds
+-- would do strictly MORE IO on an instance whose binding constraint is the
+-- SMALL tier's disk-IO budget. This migration leaves the schedule and every
+-- argument alone and makes one wallet cheaper instead; whether 10 s is then
+-- enough is a MEASUREMENT to take afterwards, not an assumption to ship on.
+--
+-- ── MEASURED, warm, on wallet 0x4d82b07c10f1fe0f (355 rows, 2 collections) ──
+--   before: Buffers shared hit=213 read=302  (total 515)
+--           of which SubPlan 1 alone: hit=183 read=178  (361 = 70% of the query)
+--   after:  Buffers shared hit=196 read=166  (total 362)
+--   => total buffers -30%, and READS -45% (302 -> 166), which is the IO-bound
+--      half. Per CLAUDE.md, BUFFERS is the comparison; timings under a
+--      saturation spell are confounded in both directions and are not quoted.
+--   ⚠ This is ONE wallet with 2 collections. The subquery runs once per
+--      collection, so the saving GROWS with collection count (saved_wallets
+--      rows go up to 5 per wallet). Do not generalise the 30% to the fleet.
+--
+-- ── EQUIVALENCE, proved over the population rather than argued ──────────────
+-- Old and new were compared for every (wallet, collection) group across all 22
+-- saved wallets, split into two halves by abs(hashtext(wallet_addr)) % 2:
+--   80 groups compared, 12 disagreements, 0 disagreements OUTSIDE the
+--   independently-counted ambiguous set (also 12). The two counts were derived
+--   by different queries and agree exactly — that is the positive control.
+--
+-- 🚨 THE 12 ARE NOT A REGRESSION. THEY ARE A DEFECT THIS FIXES.
+-- The old ORDER BY ranks ULTIMATE/LEGENDARY/RARE/FANDOM/COMMON and lumps
+-- EVERYTHING ELSE into `ELSE 6` with NO tiebreak, then takes LIMIT 1. Unranked
+-- tiers are not rare — UNCOMMON (60,925 rows), STANDARD (33,225), SILVER SPARKLE
+-- (7,074), GOLDEN (4,519) and more — so in 12 of 80 groups two or more DISTINCT
+-- rank-6 tiers tie and the winner is decided by PHYSICAL ROW ORDER. Those rows
+-- are updated constantly (fmv, lock_checked_at), so `cached_top_tier` could
+-- change between two runs with no underlying data change. It was already
+-- non-deterministic; this adds `, UPPER(tier)` as an explicit secondary sort so
+-- it is stable. Ranks 1-5 are untouched and cannot move: every row at a given
+-- rank there carries the same string.
+-- ⛔ Alphabetical is a STABLE tiebreak, not a claim that GOLDEN outranks
+--    UNCOMMON. Ranking the Pinnacle/UFC tier ladders properly is a product
+--    decision and is deliberately NOT taken here.
+--
+-- ⚠ DO NOT "simplify" this to min(rank) mapped back to a name. That is wrong
+--    for exactly the rank-6 rows above: the original returns the tier's actual
+--    string, and a rank->name table has no entry for 6.
+--
+-- anon-exec: unchanged (aggregate_saved_wallet_stats) — CREATE OR REPLACE of an EXISTING function, and
+-- -- anon-exec: intentional — snapshot re-create with the same signature; ACL preserved (SECURITY DEFINER, anon and authenticated EXECUTE both false, verified live 2026-08-28) (aggregate_saved_wallet_stats)
 CREATE OR REPLACE FUNCTION public.aggregate_saved_wallet_stats(p_user_id uuid, p_wallet_addr text)
  RETURNS integer
  LANGUAGE plpgsql

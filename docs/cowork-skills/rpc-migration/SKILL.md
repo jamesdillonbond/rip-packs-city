@@ -21,6 +21,13 @@ Work through every applicable item before applying, and the verification items a
 5. **`CREATE OR REPLACE FUNCTION` with a new/changed signature creates a NEW overload with default `PUBLIC EXECUTE`.** This silently re-grants what a prior `REVOKE` removed. After any signature change: `REVOKE EXECUTE ON FUNCTION <f>(<args>) FROM PUBLIC, anon, authenticated;` then `GRANT EXECUTE ... TO postgres, service_role;` and `DROP FUNCTION` the old overload.
 6. **Destructive/maintenance SECDEF functions must NOT have anon/authenticated EXECUTE.** SECDEF bypasses RLS and TRUNCATE isn't governed by RLS at all, so an anon EXECUTE on a DELETE/TRUNCATE/refresh function is an anon-wipe vector. Re-check with `SELECT * FROM check_secdef_anon_execute_violations();` (expect `[]`).
 7. **`execute_sql(query text) RETURNS void`** is SECDEF, service_role only — don't widen it.
+8. 🚨 **THE MIGRATION FILE ITSELF MUST STATE THE anon-EXECUTE DECISION, OR CI REDS `main`.** `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` walks every migration from version `20260817000000` forward and fails on any file containing `CREATE [OR REPLACE] FUNCTION public.X(` that neither revokes nor states why not. **This reddened `main` FIVE TIMES on 2026-08-28 alone, across two concurrent sessions** — it is currently the most common way a correct migration fails CI.
+   - **For a `CREATE OR REPLACE` of an EXISTING function the answer is the MARKER, never a REVOKE** — `CREATE OR REPLACE FUNCTION` does *not* reset a function ACL, so adding a revoke would silently CHANGE production while the file reads as a body-only edit.
+   - ⚠ **The marker must put `anon-exec:` AND the function name on the SAME LINE** — the detector is `/anon-exec:\s*\S+/i` tested per line, then the function name matched on that same line. Splitting them across a wrapped comment fails, and the error message does not say so. One line per function:
+     `-- anon-exec: unchanged (my_fn) — CREATE OR REPLACE of an existing fn; ACL preserved, verified anon=false.`
+   - ⚠ **It is keyed PER FUNCTION NAME, not per file** — a file touching three functions needs three markers.
+   - ⚠ **A `REVOKE ... FROM PUBLIC` alone does NOT satisfy it** (nor production): this DB carries `ALTER DEFAULT PRIVILEGES` rows for anon + authenticated that survive a PUBLIC-only revoke. Name all three.
+   - ⛔ **Never state a decision you have not READ.** Verify with `has_function_privilege('anon', oid, 'EXECUTE')` — never the `proacl` text — and quote that in the marker.
 
 ## Views
 
