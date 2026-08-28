@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-27 · ⚠ MEASURED (read-only, docs) — the liveness probe DIES at the busy hours, so the band cannot be cheaply instrumented; and my own ranking-bias claim is REFUTED
+
+**No code, no DB, no prod state.** Addendum to the entry above, filed an hour later.
+
+🚨 **The obvious next move after that entry — "add a probe slot inside R6's 16:20–18:05Z band and both
+R6 and R50 are served" — was MEASURED before being proposed, and it is wrong.** `rpc-public-board-liveness-sweep`
+(jobid 288, `28 */6 * * *`, `statement_timeout='900s'`) over 14 days costs **161 s at 00Z and 679 s at
+18Z (4.2×)**, and it hits its own ceiling: **14/14 succeed at 00Z, 10/13 at 06Z, 6/11 at 12Z, 8/12 at
+18Z.**
+
+⭐ **And the truncation is visible in the data it leaves behind: views recorded per sweep is 45.0 at 00Z
+and 26.9 at 18Z.** At the busy hours the sweep records **60% of the boards and dies** — so the history
+is not merely SAMPLED at four hours, it is **TRUNCATED mid-sweep, and the missing observations are
+missing for a reason correlated with what is being measured.**
+
+⛔ **So do NOT add a fifth slot.** It would put **~11 minutes of query time into the worst hour of the
+day** on an instance whose binding constraint is disk IO — the exact opposite of focus.md PRIORITY 3's
+lever — and on this evidence it would probably time out anyway, buying a truncated sample at maximum
+cost. ⚠ **The cheap way to measure the bad hour does not exist. That is the finding, not an oversight.**
+
+⛔ **REFUTED — my own escalation.** Having found the truncation, the natural next claim is *"late-order
+boards are dropped more at busy hours, so boards have different hour mixes and R50's RANKING compares
+unlike things."* **Tested: across all 45 boards the share of samples drawn from 00Z spans only 36–46%
+(mean 42.6) — near-uniform.** ✅ **R50's ORDERING is sound; only its LEVELS are understated, exactly as
+the previous entry claimed and no further.** ⚠ Recorded because the stronger version is easy to invent
+later from the truncation fact alone — **the previous entry did not make that claim, and this is why.**
+
+⭐ **One residual, small and in the UNFLATTERING direction:** the slowest boards carry the LOWEST 00Z
+share (`allday_scarcity_board` 36%, `candy_pack_market` 37%) while faster ones carry the highest
+(`topshot_set_squeeze_board` 46%) — so if anything the **fast-looking** boards are the more understated.
+⚠ A 10-point spread is too small to rank on; stated as a direction, not a correction.
+
+⭐ **Free signal nobody is reading:** the probe's own success rate (14/14 at 00Z vs 6/11 at 12Z) is a
+saturation instrument already being collected, in a table that already exists.
+
+**Revert path:** docs only. Filing: [inbox 2026-08-28T0245Z](inbox/2026-08-28T0245Z-ADDENDUM-the-liveness-probe-DIES-at-the-busy-hours-so-do-not-add-a-slot-and-my-ranking-claim-is-refuted.md).
+
 ### 2026-08-27 · 🚨 MEASURED (read-only, docs) — R50's board latencies are all measured at the FASTEST hour, and the probe never samples the day
 
 **No code, no DB, no prod state.** Qualifies **R50** and explains why **R6**'s owed degraded-band
