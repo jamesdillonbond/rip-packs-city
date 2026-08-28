@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ POST-SHIP WATCH — the Pinnacle narrowing fix IS validated in production, and the contrast with the retry fix is the useful part
+
+**Same session, same instrumentation discipline, opposite verdicts.** Both fixes shipped with a counter
+whose job was to say whether the mechanism actually fired. One counter said **zero** and exposed a
+regression (entry above). This one says the mechanism fired and worked. **That is what the counters were
+for, and it is why neither result had to be argued.**
+
+**Measured over the 12:47Z wave, split at the deploy (2026-08-28 04:35Z), never pooled across it:**
+
+| | runs | `all_pagination_chunks_failed` | `pagination_narrowings` | chunks OK | smallest final chunk |
+|---|---:|---:|---:|---:|---:|
+| PRE-narrowing | 53 | **29 (54.7%)** | — | 17 | — |
+| POST-narrowing | 12 | **0** | **10** | **47** | **125** |
+
+⭐ **P(0 failures in 12 runs | the fix did nothing) = 0.0074%**, against the pre-fix rate of 54.7%.
+Computed rather than eyeballed, because this repo has been burned by exit conditions the null already
+satisfied — the retry fix's own "improvement" a few hours ago was exactly that trap.
+
+⭐ **AND THE EVIDENCE IS MECHANISTIC, NOT MERELY CORRELATIONAL, WHICH MATTERS MORE THAN THE p-VALUE.**
+`pagination_narrowings = 10` means the new branch **executed**; `pagination_chunk_size_final = 125`
+means it walked 500 → 250 → 125 and succeeded there. A pure outcome comparison could not distinguish
+"my fix worked" from "the wave was easier this time" — the narrowing counter can, and it is the reason
+this entry does not need the caveat the retry entry does.
+
+⭐ **Throughput, the number a user would feel:** successful chunks per run **0.32 → 3.92, a 12× rise.**
+These are the mega-wallets whose single-shot query already blew the computation limit and fell back to
+the paginated walk; before the fix that fallback failed **entirely** on 29 of 53 runs, enriching those
+wallets with nothing at all.
+
+⚠ **The 125 is a fact worth keeping, because it falsifies the obvious cheap alternative.** The tempting
+one-line fix was to lower the `pinnacle: 500` constant to 250. **125 is half of that** — a wallet in
+this wave needed a window one quarter of the original, which the mainnet probe (250 ✓ on one wallet,
+200 ✓ on another) had already hinted at but not bounded. **Any fixed constant would have been wrong for
+someone**; only narrowing adapts.
+
+⚠ **n = 12 is small and the window is one wave.** The direction is not in doubt at p = 0.0074%, but the
+FLOOR has not been exercised — nothing yet has narrowed all the way to 25 and still failed, so the
+give-up path is untested in production. **If a future wave shows `pagination_narrowings` rising while
+`all_pagination_chunks_failed` returns, that is the floor being hit and the answer is a smaller floor,
+not more attempts.**
+
+**Revert path:** docs only — nothing shipped by this watch.
+
 ### 2026-08-28 · 🚨 MY OWN REGRESSION, CAUGHT BY ITS OWN FALSIFIER — the 45 s client deadline I added truncated writes the DATABASE was entitled to finish, and the retry it shipped with recovered ZERO
 
 **I shipped this defect earlier today and this entry corrects it.** The retry fix
