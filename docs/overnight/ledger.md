@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (cron-job.org) — R54: `apply-fmv-haircut` moved 06:30 → 22:35 UTC, out of the band its TS leg dies in
+
+**Console job 7593344, Common tab only (per the rpc-cron-ops hard rule).** The crontab-field
+`execCommand('insertText')` recipe synced the whole form (the day-time selects and next-execution
+preview followed), Save fired a real POST (watched on api.cron-job.org), and **server truth verified on
+the jobs LIST page: next execution reads 22:35 UTC.** Minute chosen from measurement, not taste:
+22:35 is in the free set {19,31,35,49,55} against every pg_cron job firing at hour 22, and outside the
+stagger ban-list. `docs/operations/cron-schedule.md` updated in the same commit (the skill's rule: the
+doc must follow the dashboard).
+
+**Why:** R54 — 6 of the last 8 daily runs failed `1/7 legs failed: nba_top_shot: upstream request
+timeout` at ~06:30Z; the other 6 legs commit, so specifically the TS haircut had not applied for 3+ days.
+**Exit condition: the first 22:35Z run (tonight) writes `ok` with 7/7 legs. Falsifier: a TS-leg timeout at
+22:35Z means the band was not the cause and the residual fix is splitting/scoping the leg — do not move
+the schedule again on that evidence.**
+
+**Revert:** set job 7593344 back to daily 06:30 UTC in the console (same recipe), and revert the
+schedule-doc line.
+
+### 2026-08-28 · ✅ SHIPPED (edge deploy) — `topshot-stub-resolver` v29 from repo source; the Reels falsifier CONFIRMS on the first tick (48/50) — plus deep-audit run-4 loose ends closed
+
+**Deep-audit run 4 follow-up, Trevor present ("handle what you can"); push credential minted via the
+device flow (per-session, ~60 s of Trevor's time, token never echoed).**
+
+1. **The two run-4 commits are ON origin and DEPLOYED.** `0a4ed158` (docs+migration) + `1de79b1a` (code)
+   are ancestors of remote main; the deploy at `d57fc746` is READY and contains the code commit
+   (ancestry checked, not assumed). CI on tip `399ecf7a`: **11/11 success**. migration-parity is safe —
+   `20260828055741`'s file is committed.
+2. **`topshot-stub-resolver` deployed: v28 → v29 (2026-08-28 14:33:48Z), byte-identical to repo
+   (md5 `75f00cb2…` both sides), `verify_jwt:false` confirmed, import map supplied** (the repo file's bare
+   `@supabase/supabase-js` specifier is the documented boot-fail trap without it). ⚠ **§1 of
+   rpc-edge-fn-deploy was VERIFIED, not assumed, and WITHOUT reading deployed source into this
+   transcript**: a redacted-report subagent confirmed v28 uses the identical `INGEST_SECRET_TOKEN`
+   env auth with boot-throw and carries **no hardcoded credential** — since v28 boots and answers its
+   cron, the secret is proven set. Verbatim v28 backup saved to the session outputs folder as the revert.
+   ✅ **Real-caller control: first post-deploy cron tick 14:39:15Z, `ok:true` — and the 08-27 entry's
+   stated falsifier ANSWERED: `rows_no_change_no_onchain_player = 48 of rows_no_change = 50`,
+   `rows_resolved = 0`. The Reels diagnosis stands.** The ~4,400 wasted Flow calls/48h are now VISIBLE;
+   stopping them (the "give up" marker migration) is the follow-on decision.
+   ⚠ **Instrument note: each tick writes TWO `pipeline_runs` rows — `resolve-topshot-stubs` AND
+   `topshot-stub-resolver` — and only the latter carries the counters.** A watcher keyed on the former
+   would read "no counter" forever.
+3. **pg_cron 355's new off-grid schedule verified by outcome:** 3/3 ticks succeeded at 07:23 / 10:23 /
+   13:23Z — the first evidence at the new slots, not just the schedule string.
+
+**Revert paths:** v29 → redeploy the v28 backup index.ts (URL specifier; no import-map dependency) —
+backup path in the run-4 session outputs; everything else per the run-4 entry below.
+
 ### 2026-08-28 · ⏳ THE TIMEOUT FIX IS STILL UNVERIFIED — the post-fix window is CLEAN and that is not evidence, because it contains almost no writes
 
 **Recorded so the next clean wave is not mistaken for confirmation.** After the 130 s deadline shipped,

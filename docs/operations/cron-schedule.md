@@ -22,7 +22,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | Title | Path | Schedule |
 |---|---|---|
 | RPC Analytics Smoke | /api/admin/analytics-smoke | 13,43 — ✅ FIXED (was >30s failing) |
-| RPC Apply FMV Haircut | /api/admin/apply-fmv-haircut?mode=live | daily 06:30 UTC |
+| RPC Apply FMV Haircut | /api/admin/apply-fmv-haircut?mode=live | daily 22:35 UTC — moved from 06:30 on 2026-08-28 (deep-audit R54: the TS leg died on `upstream request timeout` 6 of 8 days inside the degraded band; 22:35 is a measured-free minute in the healthy 20:00–00:00Z window). Falsifier: if the TS leg still times out at 22:35Z, the band was not the cause — split the leg |
 | RPC Pinnacle Catalog Backfill | /api/admin/backfill-pinnacle-catalog | daily 09:37 UTC — ⚠ also in vercel.json as `?floors_only=1` (45 1,7,13,19) |
 | RPC Backfill TopShot Buyers (TEMP) | /api/admin/backfill-topshot-buyers | 4,34 ⟨exec-derived⟩ — **TEMP; do NOT retire yet (buyer coverage 66.79%, 230k NULL)** |
 | RPC Backfill TopShot Buyers Historical | /api/admin/backfill-topshot-buyers?mode=historical | 12,42 ⟨exec-derived⟩ — TEMP sibling |
