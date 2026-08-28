@@ -48,7 +48,7 @@
    a killed `after()` run is ABSENT from `pipeline_runs_daily` rather than counted as a failure, so that rollup
    reads `runs 1 · ok 1 · failed 0` for every recorded day while a job dies nightly.** The **47 still
    un-heartbeated `after()` routes cannot be audited at all** by either rollup — that is the argument for
-   continuing the E5 conversions, and it is a measurement, not a preference.
+   continuing the E5 conversions, and it is a measurement, not a preference. ✅ **And the correlation is no longer a hand-derivation: `npm run pipelines:kills` (`lib/pipeline/kill-rate.ts`, shipped the same night) does it with the recency test built in — use it, and split any candy-editions rate at the 08-28 03:11Z deploy from 08-29 onward.**
 
 ## STEER — added 2026-08-26 (memory-refresh pass: CLAUDE.md, the register, the roadmap and the schema stamp re-derived against live sources)
 
