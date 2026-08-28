@@ -10,6 +10,103 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED — the moment-page "permanent spinner" handoff: the reported hang did NOT reproduce, but the audit it forced found a real 45s budget where every sibling read is bounded at 2.5–8s
+
+**Handoff:** `docs/handoff-2026-08-27-moment-page-permanent-spinner.md` (Cowork surface-QA), which reported
+`/moment/<id>` stuck on "SCANNING THE MARKETPLACE…" for 133 s on 3 moments and proposed porting the
+edition page's fast-shell + streamed-tail refactor to `app/moment/[id]/page.tsx`.
+
+**⛔ The refactor was NOT done, and the reported P0 is REFUTED on four independent axes.** The handoff's
+own step 1 was "reproduce in a clean profile before fixing"; it does not reproduce.
+
+| probe | n | result |
+|---|---:|---|
+| clean anon Chromium, hard load | 3 | 3/3 revealed, **1.0 / 1.9 / 4.2 s**, zero console errors |
+| **with the box's real wallet extensions loaded** (MetaMask + `hpclkef…`, `window.ethereum` present) | 2 | 2/2 revealed, **1.3 / 3.1 s** |
+| raw SSR HTML timing, incl. the platform's largest edition (239,882 circulation) | 14 | all complete + carry `CURRENT FMV`; TTFB 231–396 ms, **worst total 4.6 s**, every one `x-vercel-cache: MISS` |
+| **soft navigation** (in-app link click, the path Cowork's browser actually used) | 4 | 4/4 settled in **1.6–3.7 s** |
+
+⭐ **The soft-nav probe explains the observation that drove the whole filing.** Cowork's tell was "the
+content IS in the DOM but inside a `display:none` wrapper, with no console error." That is not a
+pathology — it is **exactly what React does on a post-mount suspension**: it hides the already-rendered
+tree and shows the fallback. Every soft nav I measured entered that state (spinner first seen ~590 ms)
+and left it 1–3 s later. The state was real; "permanent" was not reproducible.
+
+**⚠ The one variable I could NOT control: Cowork's browser was LOGGED IN.** I have no session and did not
+fabricate one. So this is *not* "there is no bug" — it is "the bug is not in the anonymous path, not in
+the extension path, not in SSR latency, and not in soft nav." Recorded so the next session inherits the
+bound, not a verdict.
+
+**⛔ Why the proposed refactor was declined (a decision, stated with numbers rather than a vibe):** it
+targets SSR fan-out latency that does not exist — worst observed 4.6 s over 14 samples, against a
+restructure of a **1,912-line** file on the platform's most-shared URL. The edition route's own fast-shell
+carries a ⚠ that its shell reads have **no per-member `.catch()`**, so any throw takes an ISR page to an
+unbranded 500. Trading a measured 4.6 s for that is a bad trade. **Re-open only with a measurement, not
+with the recurrence narrative.**
+
+---
+
+**✅ What DID ship — `fetchBadgeArt` inherited a 45 s budget on a page-blocking read.**
+
+Auditing every read behind that Suspense boundary (which is what the handoff was actually worth) found
+the page bounded everywhere but one place:
+
+| read | budget |
+|---|---:|
+| layout gate `resolveMomentId` | 8.0 s |
+| `fetchMomentDetail` | 4.0 s |
+| the 8-RPC `Promise.all` | 4.0 s |
+| `resolveUsernames` | 2.5 s |
+| **`fetchBadgeArt`** | **45.0 s** ← 71% of a 63.5 s worst case |
+
+`lib/badges/server-art.ts` was routed through `rpcWithRetry` on 2026-08-13 *for its wall-clock bound* —
+but with **no `timeoutMs`**, so it silently inherited `DEFAULT_RPC_TIMEOUT_MS = 45_000`, whose own comment
+says the 45 s default is kept on purpose *for callers that pass a tighter one*. It is the **last
+sequential `await`** on `/moment/[id]` and sits in the edition page's shell `Promise.all`, so it blocks
+exactly the "SCANNING THE MARKETPLACE…" fallback this handoff was filed about.
+
+⭐ `lib/moment-detail/fetchers.ts` states the page ceiling as "4 + 4 = 8s" and warns: *"Anyone making a
+second sequential await must redo that arithmetic."* **Two were added after it. The arithmetic was redone
+for `resolveUsernames` and not for this one** — the warning was correct and was half-followed.
+
+**Sized off the OBSERVED success band, not off the config:** `pg_stat_statements` over **39,286**
+production calls of `get_badge_display_metadata` reads **mean 47 ms, max 2,292 ms**. `BADGE_ART_TIMEOUT_MS
+= 4_000` clears the slowest recorded success by ~1.7×, so it cannot truncate a healthy run — and matches
+`MOMENT_READ_TIMEOUT_MS`, i.e. badge art is worth exactly as much page-blocking time as the moment data.
+The bound rejects into the `catch` that already returns an empty Map → the caller falls back to a text
+pill, the designed degraded state. **No new failure policy.** Page worst case **63.5 s → 22.5 s**.
+
+**✅ Also shipped — home page `og:url`, by re-checking a recorded decision NOT to act.**
+
+The 08-23 pass closed the canonical half and left `og:url` open on the stated cost that *"adding og:url
+means restating the whole root openGraph block, which is not worth it for one tag"* — **a cost stated with
+no number in it**, the exact tell CLAUDE.md names for a decision-not-to-act worth re-deriving. It was true
+when written and is now obsolete: `OG_INHERITED` was exported 08-17, and `ROOT_OG_CONTENT` (new here)
+carries the title/description/images half, so `app/page.tsx` restates **nothing** — it spreads both and
+adds `url`. A field added at the root now reaches home for free. Kept scoped to the page, not
+`rootMetadata`: a root-level `og:url` would be inherited by every descendant with no `openGraph` of its
+own, unfurling deep pages as the homepage.
+
+**⚠ Both new guards were proven against a KNOWN OFFENDER, not merely observed green:**
+- deleting the `timeoutMs` argument → `badges-server-art` goes red (`expected true, got false` on the
+  hung-RPC case, under fake timers). It asserts the BEHAVIOUR, so re-tuning the number keeps it green.
+- an `openGraph` block that drops the spreads → `home-page-declares-its-canonical` goes red.
+
+**⚠ `__tests__/home-page-declares-its-canonical.test.ts` case 3 was INVERTED, not deleted.** It read *"the
+home export must not redefine openGraph"* — a correct conservative PROXY that also **froze the `og:url`
+gap in place**, since satisfying it and emitting the tag were incompatible. The property it protects (the
+root's fields must not be dropped) is unchanged and now pinned directly: *if* `openGraph` is redefined it
+must spread `OG_INHERITED` **and** `ROOT_OG_CONTENT` **and** carry `url`. A 4th case asserts the tag is
+actually present, so reverting `app/page.tsx` cannot leave the guarded cases vacuously green.
+
+**Verification:** `npx tsc --noEmit` exit 0 · full `npm test` green (`api-allday-listings-indexer` hook-
+timed-out once under full-suite load and passes standalone — unrelated to these files) · both guards
+proven red against a planted offender.
+
+**Revert path:** `git revert <this code commit>` — find by message (`git log --grep='badge-art budget'`),
+never by a pre-recorded sha. Code-only: **no migration, no DB/data mutation, no cron, no auth, no hot
+wallet, no pricing surface.** Reverting restores the 45 s inherit and drops `og:url`.
+
 ### 2026-08-28 · ✅ POST-SHIP AUDIT — the rwfc revert introduced no new failure mode, and one tempting number is NOT the metric it looks like
 
 **Not the ≥24 h reads re-read** — that is still pending and unchanged. This answers the narrower and more
