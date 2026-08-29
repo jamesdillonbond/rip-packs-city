@@ -961,4 +961,66 @@ describe("POST /api/sentinel — records its own run durably", () => {
     expect(args.p_rows_written).toBe(0)
     expect(args.p_rows_skipped).toBe(0)
   })
+  /**
+   * The off-hour counterpart to onScheduledHour(). Added 2026-08-29 alongside the
+   * clock fix rather than instead of it: pinning to ONE notifying hour proves the
+   * assertions are stable, but says nothing about what the route does in the
+   * twenty hours that are not a scheduled report — which is where the sentinel
+   * spends 83% of its life.
+   */
+  async function atUtcHour<T>(hour: number, run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 1, hour, 30, 0)))
+    try {
+      return await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it("writes the row in the twenty hours when a green sentinel sends nothing", async () => {
+    // Sending nothing is CORRECT outside the six-hourly window — but the ROW must
+    // exist anyway. If it did not, the sentinel's invocation cadence would be
+    // invisible five hours in six, and making that cadence visible is the entire
+    // reason the row was added (GitHub is currently shedding most of this
+    // workflow's hourly ticks).
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await atUtcHour(19, () => POST(post()))
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged).toHaveLength(1)
+    const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+    expect(extra.status).toBe("ALL CLEAR")
+    expect(extra.notifications).toEqual([])
+  })
+
+  it("behaves identically at every hour of the day", async () => {
+    // THE CONTROL THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT. These tests shipped
+    // green-fixture notification assertions against the real clock, were
+    // mutation-checked at 18:xx UTC — one of the four hours where that works —
+    // and reddened main at 19:05Z on someone else's commit.
+    //
+    // The transferable part is not "use fake timers": A MUTATION CONTROL INHERITS
+    // EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES. All four controls passed
+    // inside the same lucky window and certified nothing about the other twenty
+    // hours. When an assertion could depend on ambient state, the control has to
+    // vary THAT, not only the code under test — which is what this sweep does.
+    for (let hour = 0; hour < 24; hour++) {
+      const spy = install(greenFixtures())
+      stubFetch([sniperOk, telegramOk, resendOk])
+
+      await atUtcHour(hour, () => POST(post()))
+
+      const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+      expect(logged, `hour ${hour}: the row is written unconditionally`).toHaveLength(1)
+      const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+      expect(extra.status, `hour ${hour}`).toBe("ALL CLEAR")
+      expect(
+        (extra.notifications as string[]).length > 0,
+        `hour ${hour}: notified`,
+      ).toBe(hour % 6 === 0)
+    }
+  })
 })
