@@ -59,6 +59,77 @@ The gap between 1.63 and 4.30 is itself the signal: runs were completing between
 - ⚠ **n is one afternoon.** A 90-minute completion gap on a pipeline that completes ~59×/24 h
   (~1 per 24 min) is roughly 4× its mean interval. **That classifies; it does not rate.**
 
+---
+
+## 🚨 CORRECTED 20:3xZ — I HAD THE MECHANISM WRONG, AND THE REAL ONE IS SHARPER AND WORSE
+
+**Everything above is a correct set of readings and a WRONG diagnosis. Kept, not rewritten, because the
+correction is the useful part.**
+
+⛔ **It is NOT being killed.** The runs COMPLETE and log themselves `ok:false`. Every terminal row since
+17:57Z reads:
+
+```
+ok=false  rows_written=0
+extra = {"stage":"step1b_refetch_empty","algo_version":"1.7.0","sales_fetch_errors":1}
+```
+
+⛔ **And my first instinct — the dead Top Shot legacy endpoint, which is salient today — is WRONG.**
+The "sales fetch" is **a DATABASE query**, not an HTTP call. Vercel logs give the literal error:
+
+```
+[FMV-RECALC] Sales fetch error for edition slice 0-500 range 0:
+    canceling statement due to statement timeout
+[FMV-RECALC] Edition page returned 500 ids but no in-window sales survived re-fetch — skipping
+```
+
+⭐⭐ **THE CHANGE POINT IS ~17:56Z AND IT IS VISIBLE IN THE RANGE OFFSET.**
+
+| runs | error at | what the run still achieved |
+|---|---|---|
+| 17:08Z, 17:15Z | `range 13000`, `range 16000` | fetched 13–16k sales, **processed ~1,460 editions**, widened 129–616 thin editions |
+| **17:56Z onward** | **`range 0`** | **nothing — the FIRST chunk times out, `salesPage` is empty, the page is skipped** |
+
+**So this is not a degradation, it is a step change: the first 1,000-row page of the sales re-fetch went
+from succeeding to exceeding the statement timeout.** Confirmed still failing at 20:28Z, **on an instance
+measured `io_wait 0–4`** — so ⛔ **the "saturation-class" label the code itself applies to this path does
+NOT fit the current occurrence.**
+
+⭐ **WHY THE CURSOR NEVER MOVES — it is BY CONSTRUCTION, not a wedge in the usual sense.** That branch logs
+`p_cursor_before: String(offset)` and **`p_cursor_after: String(offset)`** — deliberately identical. So
+every one of these runs is, to `fmv_sweep_wedge_hours`, a completed run that advanced nothing. **The arm is
+behaving exactly as designed and is the only instrument that can see this**, which is what its own
+description claims and is now demonstrated.
+
+🚨 **AND `sales_fetch_errors: 1` IS NOT "one of many" — it is the WHOLE PAGE.** The route's own comment
+says so: `IN_CHUNK` equals `DEFAULT_LIMIT` (both **500**), so a full page is exactly ONE chunk, and a single
+failed chunk empties `salesPage`, skips the page and pins the cursor. **The same code comment records this
+mechanism taking the sweep dark for 12.4 h on 2026-08-16 (14 of 17 consecutive runs).** ⭐ **So this is a
+RECURRENCE of a documented failure mode, with a new and sharper signature — `range 0` rather than a
+mid-page offset.**
+
+## ⛔ What I could NOT establish, and one probe I refuse to quote
+
+The failing statement is:
+
+```sql
+SELECT edition_id, collection_id, price_usd, sold_at, serial_number FROM sales
+ WHERE sold_at >= <30d> AND price_usd > 0 AND collection_id <> <pinnacle>
+   AND edition_id IN (<500 literal uuids>)
+ ORDER BY id ASC LIMIT 1000 OFFSET 0
+```
+
+⚠ **I ran an `EXPLAIN` of that shape and it came back CHEAP (cost 15,409, Nested Loop, partition pruning
+working, `Subplans Removed: 6`) — and I am NOT quoting it as evidence.** I substituted
+`edition_id IN (SELECT id FROM editions LIMIT 500)` for the literal 500-UUID list PostgREST actually sends,
+and **this repo has a standing, paid-for finding that this exact substitution changes the plan** (*literal
+`IN` = 335 buffers; JOIN/subquery = 1.05M*), plus a second that a parameterised call does not plan like
+inline text. **A cheap plan from the wrong shape is not evidence that production's shape is cheap.**
+
+👉 **The faithful measurement is to `EXPLAIN (ANALYZE, BUFFERS)` this statement with a REAL 500-UUID literal
+list, in a quiet window.** ⛔ Until then, **why the first page crossed the timeout at ~17:56Z is UNKNOWN** —
+I have the symptom, the exact error and the change point, and no cause.
+
 ## 👉 Falsifier, cheap and dated
 
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next

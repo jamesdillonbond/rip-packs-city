@@ -33,7 +33,19 @@ Windows split at each fix's deploy time (a raw 24h window pools pre-fix failures
 **No shipped change correlates with a regression. No auto-revert warranted.**
 
 ## Shipped
-None. (Off-hours + no-push + human actively pushing.)
+Initial pass shipped nothing (off-hours). Then Trevor asked me to act on what I safely could, so I shipped **one verified DB-only fix** (no push needed):
+
+**`sentinel_fmv_confidence_rows` filter-pushdown — restores the `rpc_ops_snapshot()` baseline.**
+- **Problem:** it read `fmv_current` (`DISTINCT ON (edition_id)` over all 3 `fmv_snapshots` partitions) and filtered the view's *output* by collection, so the cross-partition sort ran before the filter and spilled — timing out in the daytime IO band. `rpc_ops_snapshot()` calls it per-collection via LATERAL, so the monitor's fast baseline died ~half the day (known, inbox 08-28T1810Z). Not a missing index — the ideal indexes already exist.
+- **Fix:** rewrote it (plpgsql, NULL/non-NULL branches) to push the collection filter *inside* the `DISTINCT ON` against `fmv_snapshots` directly. Non-NULL branch plans as per-partition Index-Only Scan + Merge Append, no external sort (EXPLAIN verified). NULL path unchanged.
+- **Migrations:** `20260829202655_..._sentinel_fmv_confidence_pushdown` + `20260829202944_..._fix_ambiguity` (first apply had an OUT-column/table-column ambiguity on `confidence`; fixed by aliasing). Applied via MCP.
+- **Verified:** (1) `rpc_ops_snapshot()` now returns all 11 keys, no timeout. (2) Per-collection output matches an independent inline measurement exactly (TS HIGH 2247/MED 5362, AllDay HIGH 170/MED 1335, Golazos MED 2, UFC 0, Pinnacle {}). (3) Security unchanged: `check_secdef_anon_execute_violations()`=`[]`, anon & authenticated cannot EXECUTE, SECURITY DEFINER + STABLE preserved. (4) Not pinned -> no db-invariants drift. (5) Equivalence: edition->collection 1:1; summed distinct-edition currents 27,025 < 27,321 total editions (no double-count).
+- **Revert (one statement):** CREATE OR REPLACE back to the prior SQL body reading `FROM public.fmv_current` (LANGUAGE sql STABLE SECURITY DEFINER, search_path public,pg_temp).
+- **Target metric:** `rpc_ops_snapshot()` completes < statement_timeout during the daytime IO band.
+
+**-> ACTION FOR TREVOR / Claude Code:** two migration files are staged (uncommitted) at `supabase/migrations/20260829202655_*.sql` and `20260829202944_*.sql` — both idempotent, both containing the final function. Commit them to clear the daily migration-parity reminder (normal apply-then-commit flow; parity is a daily reminder, not a push gate).
+
+**Bonus — FMV accuracy KPI measured** (the metric the timeout was hiding): HIGH+MEDIUM per collection — TS **7,609** (08-28: 7,781, -172), AllDay **1,505** (08-28: 1,599, -94), Golazos 2, UFC 0. Both declines track the ~24h Top Shot legacy-endpoint outage.
 
 ## Queued — needs a decision or an access I lack
 1. **Top Shot legacy-endpoint decommission (`public-api.nbatopshot.com`).** ~24h+ dead. Migrate `lib/chains/flow/topshot.ts`, `topshot-graphql.ts`, `topshot-badges.ts` to the Studio endpoint **only if** it exposes equivalents for `getUserProfile` / `getMintedMoment` / marketplace-edition search — schemas differ, so this is deliberate work, not a rename. Operator / Claude Code (needs push). *Why not auto: route-logic on FMV/ingest clients (off-limits), needs upstream-schema verification, and no push this run.*

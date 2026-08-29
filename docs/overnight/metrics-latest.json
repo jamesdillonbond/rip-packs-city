@@ -2,17 +2,17 @@
   "run": "nightly-20260829T1732Z-cloud-OFFHOURS-NOPUSH",
   "captured_at_utc": "2026-08-29T17:40Z",
   "captured_at_pt": "2026-08-29T10:40 PT",
-  "mode": "OFF-HOURS (real local time ~10:31-10:40 PT, outside 00:00-06:00; DB now() confirmed shell clock, no skew) + NO-PUSH (mount has no authenticated remote.origin.pushurl; git push --dry-run -> 'could not read Username'). MONITOR-MODE: full health triage + post-ship watch done; QUEUED everything, shipped nothing. Also origin/main actively advancing mid-run (commit f8d8f90f BUILDING at ~17:39Z) => queue-only independently confirmed.",
+  "mode": "OFF-HOURS (real local time ~10:31-10:40 PT, outside 00:00-06:00; DB now() confirmed shell clock, no skew) + NO-PUSH (mount has no authenticated remote.origin.pushurl; git push --dry-run -> 'could not read Username'). MONITOR-MODE: full health triage + post-ship watch done; QUEUED most; then Trevor asked me to act, so shipped ONE verified DB-only fix (no push needed). Also origin/main actively advancing mid-run (commit f8d8f90f BUILDING at ~17:39Z) => queue-only independently confirmed.",
   "genuine_overnight": false,
   "clock_check": "shell date -u 17:31:20Z == DB now() 17:31:33Z (agree, no skew). max(ingested_at) sales 17:23Z + max(computed_at) fmv 17:30Z bound real time from below. Real local = ~10:31 AM PDT => OFF-HOURS.",
-  "shipped_to_prod_state": "NOTHING. No DB migration, no code deploy (off-hours + no-push + human actively pushing), no data mutation, no edge-fn, no artifact change. Post-ship watch clean; no auto-revert warranted.",
+  "shipped_to_prod_state": "ONE DB fix: sentinel_fmv_confidence_rows rewritten to push the collection filter into the DISTINCT ON (was reading fmv_current, timing out in the IO band). rpc_ops_snapshot() baseline restored. Applied via MCP apply_migration; files staged on mount for commit. Reversible. No code deploy (no push). Post-ship watch on prior ships clean; no auto-revert.",
   "security": {
     "invariants": "clean ([])",
     "anon_write_holes": "clean ([])",
     "rls_off_base_tables": "clean ([])",
     "secdef_anon_violations": "clean ([])"
   },
-  "rpc_ops_snapshot_note": "rpc_ops_snapshot() TIMED OUT inside sentinel_fmv_confidence_rows (known daytime IO-band timeout, inbox 2026-08-28T1810Z). Ran component checks individually instead.",
+  "rpc_ops_snapshot_note": "FIXED this run. Was timing out inside sentinel_fmv_confidence_rows (fmv_current cross-partition DISTINCT ON). Rewrote to filter-pushdown; rpc_ops_snapshot() now returns all 11 keys.",
   "post_ship_watch": {
     "note": "Watched the 08-28/08-29 Claude Code ships. NO regressions, NO auto-revert. Post-fix windows split at each fix's deploy time, not the raw 24h window (raw window pools pre-fix failures).",
     "refresh_wmc_fmv_changed_8bdfa596": "R57 two-caller skip-lock. Post-fix (>02:50Z): 163/169 ok = 96.4%. Latest 17:33Z ok, 21.6s. Healthy; earlier 32/32-failed reading was the pre-fix slice.",
@@ -30,7 +30,14 @@
   "topshot_legacy_endpoint_outage": {
     "state": "ONGOING ~24h+. public-api.nbatopshot.com returns Cloudflare 530 code 1033 (Argo tunnel not connected) / 503 since ~18:00-18:22Z on 2026-08-28. Shape closer to decommissioning than transient outage.",
     "studio_endpoint": "HEALTHY. snapshot-pack-asks 566/566 ok (api.production.studio-platform.dapperlabs.com). Confirms fault is the LEGACY endpoint only.",
-    "affected": ["offers-sweep (last ok 08-28 16:42Z)", "topshot-moments-hydrator (last ok 08-28 18:12Z)", "topshot-fmv-populate", "topshot-badge-set-backfill", "topshot-pack-pool-backfill", "wallet-username-resolver (upstream leg)"],
+    "affected": [
+      "offers-sweep (last ok 08-28 16:42Z)",
+      "topshot-moments-hydrator (last ok 08-28 18:12Z)",
+      "topshot-fmv-populate",
+      "topshot-badge-set-backfill",
+      "topshot-pack-pool-backfill",
+      "wallet-username-resolver (upstream leg)"
+    ],
     "user_facing": "/insights/deals stamps cross-collection-deals-mv refresh time over Top Shot asks last verified ~24h ago (diagnosis committed a589c65e; fix blocked because MV blends 3 ask_updated_at branches). Packs column honesty already fixed today (3d566bd2).",
     "actionable_in_repo": "Migrate dead-endpoint clients (lib/chains/flow/topshot.ts, topshot-graphql.ts, topshot-badges.ts) to the Studio endpoint IF equivalents exist -- NOT a find-and-replace (searchPackNftAggregation vs searchMarketplaceEditions/getUserProfile/getMintedMoment). Needs verification + push -> operator/Claude Code."
   },
@@ -47,7 +54,17 @@
     "candy_mlb": 125
   },
   "total_editions": 27321,
-  "fmv_high_plus_medium_by_collection": "UNMEASURED this run -- sentinel_fmv_confidence_rows timed out in the daytime IO band. Raw fmv_snapshots row counts are NOT comparable to the snapshot's per-edition figure, so no delta computed. Last-known (08-28): TS 7781, AllDay 1599, Golazos 2, UFC 0.",
+  "fmv_high_plus_medium_by_collection": {
+    "MEASURED_2026-08-29T18Z_via_pushdown_fix": {
+      "nba_top_shot": 7609,
+      "nfl_all_day": 1505,
+      "laliga_golazos": 2,
+      "ufc_strike": 0,
+      "disney_pinnacle": "own table"
+    },
+    "delta_vs_0828": "TS 7781->7609 (-172), AllDay 1599->1505 (-94); both track the ~24h Top Shot legacy-endpoint outage aging editions into STALE",
+    "note": "Now measurable again after the sentinel fix; total distinct editions with a current FMV 27,025 < 27,321 total editions (no cross-collection double-count)."
+  },
   "sentinel_ts_uuid_editions_48h": "not re-measured (snapshot timed out); no signal it moved",
   "vercel": "Actively deploying. 08-29 daytime Claude Code ships all READY (8fd80727 username-resolver, 3d566bd2 packs, 90510112 promote-guard, 211b5329 telemetry). f8d8f90f (deal-floor-serials) BUILDING at capture. No non-saturation error class introduced.",
   "sentry_new_issues_48h": 0,
@@ -60,5 +77,8 @@
     "snapshot-institutional-wallets OFFSET->keyset (edge-fn deploy; R21 territory).",
     "Standing operator blockers: cloud-Cowork git push creds, Sentry dark since 08-18, atlas-proxy, sports-proxy ESPN 403, #22 stale public branch e4tib3."
   ],
-  "ledger_write_note": "OFF-HOURS + NO-PUSH: metrics + handoff + ledger entry + session note written to the MOUNT (uncommitted; Trevor/next run commits). Ledger spliced at first ^### heading after re-reading from disk."
+  "ledger_write_note": "OFF-HOURS + NO-PUSH: metrics + handoff + ledger entry + session note written to the MOUNT (uncommitted; Trevor/next run commits). Ledger spliced at first ^### heading after re-reading from disk.",
+  "shipped_this_run": [
+    "sentinel_fmv_confidence_rows filter-pushdown (migrations 20260829202655 + _202944). Verified: rpc_ops_snapshot() completes; per-collection output matches independent inline measurement; check_secdef_anon_execute_violations()=[]; anon/auth cannot EXECUTE; SECURITY DEFINER+STABLE preserved; not pinned. REVERT: CREATE OR REPLACE prior SQL body reading FROM public.fmv_current. Files staged on mount for commit (clears daily migration-parity)."
+  ]
 }
