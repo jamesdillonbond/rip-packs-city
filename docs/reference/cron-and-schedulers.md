@@ -29,6 +29,33 @@ it** — repair was the obvious move here and it was the wrong one.
 22:10Z; production deploy READY 2026-08-28 03:11Z). **First run at the new slot is 2026-08-29 01:10Z**, so
 its cadence arm reads BREACH across ~51 h of transition — expected, not a new fault. Register: #47.
 
+## 🚨 GITHUB ACTIONS IS ONE OF THE FOUR, AND IT HONOURS ROUGHLY 5 RUNS PER WORKFLOW PER DAY (2026-08-29)
+
+Read this before planning ANY cadence on a `.github/workflows/*.yml` schedule, and before trusting a
+figure derived from one.
+
+Measured across 17 scheduled workflows in a single 24 h window: **observed ≈ `min(expected, 5)`**.
+Eight workflows asking for **24–96 runs/day all received 4–6 (mean 5.0)**, with no relationship to
+whether they asked for 24 or 96. `offer-fill-backfill` asks for **96 ticks and gets 5**.
+
+⛔ **So raising a GHA cadence buys nothing above ~5/day, and a cron that states more is a FALSE DOCUMENT**
+the next reader will trust. Either move the schedule to cron-job.org — which is not subject to this and
+already drives the production pipelines reliably — or rewrite the cron to state what it actually gets.
+
+⛔ **"~92% shed" is the wrong summary statistic**: it is 95% for a 96/day cron and **0% for a daily one**,
+and the three 1/day workflows measured got 1 of 1. Daily schedules survive; that is why
+`scheduler-liveness.yml` runs daily rather than hourly — an hourly liveness check would be shed by the
+very thing it watches.
+
+⚠ **A dropped tick emits NO run, NO badge and NO email.** The workflow still reads `active` and its last
+run still reads `success`. Nothing anywhere says the alarm did not fire.
+
+👉 The mechanism is NOT established: a per-workflow cap and a per-repo budget (the repo requests 561
+runs/day) are indistinguishable in one window. **Discriminator:** disable a few high-frequency workflows
+and see whether the others RISE (budget) or hold at ~5 (cap).
+
+Derivation, the gap distribution, and the detector: [testing-and-ci.md](testing-and-ci.md).
+
 ## Cron / scheduler surfaces (4 independent schedulers)
 
 Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):

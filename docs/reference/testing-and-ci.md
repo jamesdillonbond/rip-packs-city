@@ -1343,3 +1343,71 @@ it("does NOT claim Updated when the recompute POST failed", …)          // now
 
 **This generalises past this file: `queryByText(...)`, `not.toBeInTheDocument()` and `toHaveLength(0)` are
 all green against a harness that renders nothing at all.**
+
+---
+
+## The 2026-08-29 CI/testing audit — six lessons, promoted from the filing
+
+Full filing: [`docs/overnight/inbox/2026-08-29T1741Z-ci-testing-audit-…`](../overnight/inbox/2026-08-29T1741Z-ci-testing-audit-the-gates-are-strong-the-detectors-are-not-firing.md). What follows is only the part that generalises.
+
+### 🚨 A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES
+
+The most useful thing this repo learned that day, and it cost a red `main` on someone else's commit.
+
+New tests asserted `extra.notifications` contains `telegram` on a GREEN fixture. `/api/sentinel` only notifies when `hasCritical || hasWarn || (UTC hour % 6 === 0)`, so on a green run those assertions hold **in 4 hours out of 24**. They were written and mutation-checked at **18:xx UTC** — one of those four. **All four mutation controls passed, and every one of them inherited the same lucky window**, so they certified nothing about the other twenty hours. CI 4196 (18:52Z) passed; 4197 (19:05Z) failed.
+
+⭐ **Proving a test reds when the code is broken says nothing about whether it is green for the RIGHT REASON.** When an assertion could depend on ambient state — clock, timezone, network, row counts, physical row order — the control has to vary **that**, not only the code under test. This is the ambient-state sibling of the vacuous-assertion rule already recorded above.
+
+⛔ **And the fix NOT to make:** switching the affected tests to a fixture that notifies unconditionally (a CRITICAL one) passes at every hour **by testing a different thing** — it drops coverage of the scheduled GREEN report, the one path where nobody is already looking at a page. Pin the clock instead (`vi.useFakeTimers({ toFake: ["Date"] })` — `Date` only, or faking `setTimeout` hangs awaited fetch mocks), and add a sweep over all 24 hours asserting the contract holds at each.
+
+⚠ **Second instance the same day, different author and subsystem** (`analytics-rpc-with-retry`'s budget-crumb block). One root: *a test that reads real time and asserts an exact outcome.* **There is still no suite-level detector, and a grep cannot be one** — `new Date()` appears in hundreds of legitimate fixtures. The sound version varies the ambient state: a scheduled job running the suite with the runner clock moved to one hour from each `% 6` residue class. ⚠ **`TZ` alone would have read clean through BOTH defects**, because the predicate is `getUTCHours()`, which a timezone does not move.
+
+### 🚨 "Flaky" is not a diagnosis — the 720×-vs-15% discriminator
+
+`api-og-cards-render-sweep` timed out at **60,000 ms** on a card that renders in **83 ms** locally. The tempting read is a slow runner. But the whole run was only **~15% slower** than local (453 s vs 395 s) while that one test was **~720× slower**.
+
+⭐ **General slowness moves everything by the same factor. A lone 720× excursion is a HANG.** That ratio is what makes this repo's standing "flake is not a root cause" rule checkable rather than a slogan.
+
+The cause was `lib/og/brand-fonts.ts` fetching two `.ttf` files from the LIVE SITE with **no timeout**, escaping the sweep's stub (its allowlist was `/api/` and `/rest/v1/`; 0 of 2 matched). ⚠ **The loader memoises at module scope, so the FIRST card to render pays the fetch** — which is why exactly ONE test hangs and why WHICH one varies with execution order. That is what made it present as random.
+
+⚠ **`catch` cannot catch a hang.** The file's header guaranteed "THIS NEVER REJECTS", which was true and beside the point. CLAUDE.md's *"Bound every `fetch` — no default timeout"* covers this; the fetch had none.
+
+⭐ **Mutation-check a bound with a signal that NEVER FIRES.** "Does it pass an `AbortSignal`?" is satisfied by `AbortSignal.timeout(2_147_483_647)` — the unbounded case wearing a signal.
+
+👉 Closing the sweep's passthrough (throw on any unmatched http(s) call, delegate non-http so `next/og` can still load its WASM) immediately surfaced a **second** escape nobody had recorded: `next/og` fetches Twemoji SVGs from `cdn.jsdelivr.net` **at render time**, on 6 of 44 OG routes, in production, on the path a social crawler waits on. ⛔ No central fix: `ImageResponseOptions` exposes only `emoji?: EmojiType` and every preset is remote — there is no `loadAdditionalAsset` hook. Guarded by `og-cards-do-not-silently-acquire-a-cdn-dependency` rather than fixed.
+
+### 🚨 A workflow that CAPTURES a status, ECHOES it, and never TESTS it
+
+`pipeline-sentinel.yml` did exactly that with `HTTP_CODE`. The only branch that could fail the job was `STATUS = "CRITICAL"`, so a 500, a 504, or a 401 from a rotated token all left `STATUS` as `PARSE_ERROR` — which is not "CRITICAL" — and the step exited **0**. **A sentinel that was completely down reported GREEN**, on the one workflow whose badge is the fleet alarm's only signal to anyone not watching Telegram.
+
+⭐ **Grep for the shape, not the file: a variable assigned from a response, printed, and never compared.** A 200 whose body will not parse must also fail — "unreadable" must never resolve to "not CRITICAL".
+
+⚠ **Pin a workflow's decision by EXECUTING the shipped bash against response fixtures, not by grepping it.** A grep for `if [ "$HTTP_CODE" != "200" ]` passes against a script that tests the code and then swallows the result, and dies on a harmless reformat. ⚠ **Harness trap:** `${{ secrets.… }}` is **not inert text to bash** — it is a bad substitution, so `RESPONSE=$(curl …)` fails, `|| RESPONSE=""` swallows it, and every fixture arrives EMPTY. The first harness reported "unreachable" for every case *including the healthy ones*, which reads exactly like the guard working.
+
+### ⚠ 10,483 lines of edge-function code CANNOT enter the JS coverage gates, and extraction is the only path
+
+Measured 2026-08-29: **38 edge functions, 10,483 code lines, median 246** — and **all 38 use `Deno.*` globals or `serve()`**, so none is importable by vitest. A coverage `include` over `supabase/functions/*/index.ts` is not achievable without a second (Deno) coverage toolchain.
+
+⚠ **Only 6 of 38 import from `_shared/`** — and `supabase/functions/_shared/**` **IS** in the primary gate (29 modules). So the path to measuring this code already exists, is established, and is taken by six.
+
+⛔ **Do not read one well-factored example as the architecture.** `edge-atlas-pool-normalize.test.ts` imports from `_shared/` and its comment says *"edge fns are outside the coverage measure"*, which reads like a considered design — and generalising from it understates the gap by 32 functions. The census is the tree walk, not the exemplar.
+
+### ⚠ A missing tool is not automatically a gap — measure the distribution before calling it one
+
+`npm run lint` had never run in CI and ci.yml said so. Filed as a plain gap; **measuring it changed the finding.** Over 2,857 files: **6,474 violations across 20 rules, of which 5,757 (89%) are `@typescript-eslint/no-explicit-any`** — a documented convention here. A gate would be a 6,000-error wall switched off within a day. **It was a rule-set mismatch, not neglect.**
+
+⭐ **The shippable form is a RATCHET over the part that is NOT conventional** (`eslint-ratchet`, 717 violations / 19 rules, several of them correctness: `react-hooks/set-state-in-effect` 59, `@next/next/no-html-link-for-pages` 114). ⚠ **Exclude at the RULE's granularity, never the plugin's** — muting `@typescript-eslint` wholesale would also silence `no-unused-expressions`, `no-require-imports` and `no-empty-object-type`, which are not conventional here. ⚠ **A rule absent from the baseline that APPEARS must fail**, or the ratchet goes blind the day a plugin upgrade adds one. ⚠ **And it must refuse an all-clear on a missing or empty report**, because "eslint found nothing" and "eslint did not run" produce the same zero.
+
+⚠ **A message with no `ruleId` is an unused `eslint-disable` directive, not a parse failure.** Reading those 24 as "files eslint cannot parse" was a much more alarming finding than the truth, and it was wrong.
+
+### 🚨 GitHub caps this repo at ~5 scheduled runs per workflow per day — any cron above that is fiction
+
+Measured across 17 scheduled workflows in one 24h window: **observed ≈ `min(expected, 5)`**. Eight workflows asking for 24–96/day all received **4–6 (mean 5.0)**, with no relationship to whether they asked for 24 or 96; 8/day got 4–6, 4/day got 3, and all three 1/day workflows got **1 of 1**.
+
+⛔ **It is NOT a constant fraction, so "~92% shed" is the wrong summary statistic** — it is 95% for a 96/day cron and **0%** for a daily one. ⛔ **And total load is not obviously the cause:** the repo requests 561 runs/day, but a per-workflow cap and a per-repo budget are indistinguishable in one window. 👉 **Discriminator:** disable a few high-frequency workflows and see whether the others RISE (budget) or hold at ~5 (cap).
+
+👉 **Consequence: raising a cadence buys nothing** — `offer-fill-backfill` asks for 96 ticks and gets 5, so its cron is a false document the next reader will trust. Move high-frequency schedules to cron-job.org, which is not subject to this, or rewrite the cron to state what it actually gets.
+
+⚠ **A dropped tick emits NO run, NO badge and NO email**, so the workflow reads `active`, its last run reads `success`, and nothing says the alarm did not fire — *an instrument that never RUNS is indistinguishable from one that ran and found nothing.* `scheduler-liveness.yml` (daily, because daily schedules are the ones surviving) catches **total silence only**; ⛔ at a 12.7h observed max gap **no silence bound both clears today's steady state and catches an hourly job that stopped an hour ago**, and saying so is the point.
+
+⚠ **Compute inter-run gaps over CONTIGUOUS pages only.** A union across paginated API pages straddles an unsampled hole and reported a bogus 31.8h maximum where the true figure was 12.7h.

@@ -113,7 +113,13 @@ Coverage `include` globs, counted against the tree:
 | **`supabase/functions/*/index.ts`** | **38** | **0** |
 | **`scripts/**`** | **93** | **0** |
 
-⛔ **Not "untested" — unmeasured.** 23 test files import an edge-function `index.ts` and 24 import a `scripts/` module, so tests exist. What does not exist is any number saying how much of those 131 files is exercised, or any ratchet stopping it from falling. Only **5** test files import an `app/**/page.tsx`.
+⛔ **Not "untested" — unmeasured.** 23 test files reference an edge-function `index.ts` and 24 a `scripts/` module, so tests exist. What does not exist is any number saying how much is exercised, or a ratchet stopping it falling. Only **5** test files import an `app/**/page.tsx`.
+
+⭐ **UPDATE 2026-08-29 — the edge-function half is now measured properly, and I got it wrong TWICE on the way.** **38 functions, 10,483 code lines, median 246**, and **every one of them uses `Deno.*` globals or `serve()`**, so **none is importable by vitest**. A coverage `include` over `supabase/functions/*/index.ts` is therefore **not achievable** without standing up a second, Deno, coverage toolchain.
+
+⛔ **First wrong reading (too pessimistic):** I filed it as "38 files in no gate", which frames it as an oversight. ⛔ **Second wrong reading (too generous):** I then read `edge-atlas-pool-normalize.test.ts` — which imports from `_shared/` and whose comment says *"edge fns are outside the coverage measure"* — and concluded the logic is extracted by design. **Generalising from that one exemplar understates the gap by 32 functions:** only **6 of 38** import from `_shared/`. ⭐ *A plausible architecture inferred from one file is not a census; the tree walk is.*
+
+👉 **The path to measuring this code already exists and is taken by six.** `supabase/functions/_shared/**` **IS** in the primary gate (29 modules). Extraction is the lever, not a new gate — and `compute-topshot-pack-ev` alone is **1,273 un-extracted lines** computing the product's headline number. ⛔ Not attempted here: moving logic out of a deploy-only edge function is a change to production ingest, and the `edge-fn-drift` check already reports 19 of these as drifted from what is deployed, so the source and the running code do not currently agree.
 
 ⚠ **Only 4 test files use `renderToString`** — against CLAUDE.md's own rule that the server-seeded-prop class (`initial={rows}` arriving `[]` with no provenance, 7 instances by 08-24) **must** be asserted by SSR, because a mount effect corrects the state before jsdom looks.
 

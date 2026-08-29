@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📚 PROMOTED — the day's six durable lessons out of the filing and into the reference docs
+
+CLAUDE.md's rule is that **a fact left only in a session log stops being read**, and today produced a lot of them. Promoted to [testing-and-ci.md](../reference/testing-and-ci.md) (+8.2 KB) and [cron-and-schedulers.md](../reference/cron-and-schedulers.md), keeping only the parts that generalise:
+
+1. ⭐ **A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES.** Proving a test reds when the code is broken says nothing about whether it is green for the RIGHT REASON — vary the ambient state (clock, timezone, network, ordering), not only the code. Two instances in one day, two authors. ⚠ With the fix NOT to make recorded: a fixture that passes at every hour by testing a different thing.
+2. ⭐ **"Flaky" is not a diagnosis — the 720×-vs-15% discriminator.** General slowness moves everything by one factor; a lone 720× excursion is a hang. Plus: mutation-check a bound with a signal that NEVER FIRES.
+3. ⭐ **A workflow that captures a status, echoes it and never tests it** — grep the shape, and pin a workflow's decision by EXECUTING the shipped bash against fixtures, never by grepping it. ⚠ Includes the harness trap that `${{ … }}` is not inert text to bash.
+4. ⚠ **10,483 lines of edge-function code cannot enter the JS gates** — all 38 use Deno globals, so extraction to `_shared/` is the only path, and only 6 of 38 take it. ⛔ With the warning that generalising from one well-factored exemplar understated the gap by 32 functions.
+5. ⚠ **A missing tool is not automatically a gap** — measure the distribution first; eslint's absence was a rule-set mismatch (89% a documented convention), and the shippable form is a ratchet over the part that is not conventional.
+6. 🚨 **GitHub honours ~5 scheduled runs per workflow per day** — any GHA cron above that is a false document. Given its own section in `cron-and-schedulers.md`, since that is where someone plans a cadence, with the derivation left in `testing-and-ci.md` rather than duplicated (the no-duplicated-blocks guard is live).
+
+⚠ **CLAUDE.md itself was NOT touched** — it sits at 39,903 of its 40,000-char limit, and its reference index already points at both files, so a new section there is reachable without displacing anything.
+
+Also corrects **finding F** in the filing, which I had wrong twice: first too pessimistic ("38 files in no gate", framing a toolchain limit as an oversight), then too generous (inferring from one `_shared/`-importing test that the logic was extracted by design, which understates it by 32 functions).
+
+**Verification:** full suite **1402 files / 15392 tests** green, including the memory-doc link guard (150 links across 24 files) and the no-duplicated-blocks guard.
+
+**Revert path:** `git revert` this commit — docs only, no code, no prod state.
+
 ### 2026-08-29 · ✅ SHIPPED (CI) + ⛔ CORRECTION — "no eslint in CI" was a RULE-SET MISMATCH, not neglect
 
 **The morning filing recorded it as a plain gap. Measuring it changed the finding.** Over 2,857 files: **6,474 violations across 20 rules, of which 5,757 (89%) are `@typescript-eslint/no-explicit-any`** — which CLAUDE.md documents as a convention here (*"Supabase client typed `any` in API routes"*). Enabling eslint as a gate would be a 6,000-error wall that gets switched off within a day, so the absence was a decision the repo had effectively already made without writing down.
