@@ -4,6 +4,17 @@
 The rendering half shipped in the same session (`212f974ac`); this is the remainder,
 recorded rather than quietly dropped.**
 
+---
+
+## ✅ UPDATE ~00:45Z — THREE OF THE FOUR ARE SHIPPED, and one of my own claims here was WRONG
+
+- **(1) `lib/fmv-confidence.ts` — SHIPPED** (`c537b390d`). ⚠ **The threshold is 7 days, NOT the 12 h this filing implied by pointing at the display marker.** Measured first: **12,121 of 12,259 Top Shot asks (98.9%) were older than 12 h**, against 155 (1.3%) older than 7 days. A 12 h gate would have demoted the catalogue out of MEDIUM and emptied the deals board over a transient outage — **the "honesty fix" would have been the bigger regression.** The two constants answer different questions and a test now keeps them apart.
+- **(2) `lib/seo.ts` — SHIPPED** (`323ee41eb`), and **not the way this filing proposed.** Dropping the `Offer` deletes the Product rich-result from thousands of NO_DATA pages during any outage, with no honesty gain. It now emits `priceValidUntil` measured from when the ask was **confirmed** — in the future when fresh, already elapsed when stale — and withholds the Offer only past the 7-day bound. The FMV branch is deliberately ungated.
+- **(3) the "% below FMV" chip — SHIPPED** (`1740a39ec`). 🚨 **"Structurally unqualifiable" was WRONG, and it was my own claim.** `get_edition_insight_links` returns no timestamp, which reads that way — but `topshot_deals_vs_fmv.discount_pct` is computed from `edition_offers.low_ask` joined on the same `(external_id, collection_id)`, i.e. **the row the page already holds**. One query on the view definition refuted it; no RPC change, no migration, two lines. ⭐ *A filed finding is a hypothesis even when it is your own and six hours old.*
+- **(4) `/api/best-offers` — STILL OPEN, and MORE serious than ranked below.** This filing guessed the bid side was "probably fresher" via three other indexers. ⛔ **Refuted:** `topshot-offers-indexer` writes `public.offers`, **not** `edition_offers` — so `edition_offers.highest_offer` has the same single writer as the ask and is equally 30 h stale. ⚠ The route returns a `bestOfferSource` discriminator over **four** legs (Top Shot Edition / Top Shot Serial / Flowty Serial / Dapper Offer) with different writers, so one `updated_at` column is the wrong shape — **it needs a per-leg age**, which is why it was not folded into this pass.
+
+**Still open: item 4 and the methodology prose. Everything else here is done.**
+
 ## The condition
 
 `edition_offers` has ONE writer for the ask side — `offers-sweep` — and it has been
