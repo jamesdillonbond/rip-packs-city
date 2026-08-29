@@ -212,6 +212,8 @@ functions, the payload type and the renderer all carry `ask_updated_at` and none
 
 **Revert path:** `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_collection_time ON public.pack_rips (collection_id, sealed_at DESC);` then `DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_collection_time_pv;` — both via the same one-shot pg_cron recipe. ⛔ No schema change, no cron schedule change, no data mutation.
 
+✅✅ **FALSIFIER PASSED, ON THE REAL JOB, 43 MINUTES AFTER THE INDEX LANDED. The 20:42Z tick SUCCEEDED IN 25 SECONDS.** Today's ticks in order: **12:42 140 s · 14:42 132 s · 16:42 175 s · 18:42 263 s · 20:42 → 25 s.** ⭐ **A 10.5× cut against the immediately preceding tick, and the first tick after the index** (built 20:04Z). The pre-index ticks were also TRENDING WORSE through the day (140 → 132 → 175 → 263) as the IO band deepened, which is exactly the exposure the covering index removes. ⚠ **Read the 25 s honestly: the QUERY is 982 ms, so ~24 of those 25 seconds are the `REFRESH … CONCURRENTLY` machinery — temp-table build, diff and apply — not the scan.** The index fixed the part it was aimed at; the rest is the refresh itself and is not a defect. ⚠ **n = 1 tick.** It is a decisive step against a same-day baseline of 132–263 s, but a single observation: **the honest claim is that the fix works on the production caller, not that 25 s is now the job's rate.** ⛔ **This closes the falsifier registered above; nothing about this entry is left pending.**
+
 ### 2026-08-29 · ✅ SHIPPED (code, 2 items) — a 100%-failing backfill that could not say WHY, and a sibling session's new test that reddens `main` for 5 hours in every 6
 
 **Revert:** `git revert <sha of the commit named below>` — two routes/libs + one new
