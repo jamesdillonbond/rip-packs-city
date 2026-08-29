@@ -46,7 +46,7 @@ jobs:
             echo "Response: $BODY"
 
             if [ "$HTTP_CODE" = "200" ]; then
-              STATUS=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','UNKNOWN'))" 2>/dev/null) || STATUS="PARSE_ERROR"
+              STATUS=$(echo "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const d=JSON.parse(s);console.log(String(d.status??'UNKNOWN'))})" 2>/dev/null) || STATUS="PARSE_ERROR"
               break
             fi
 
