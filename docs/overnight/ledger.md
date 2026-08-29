@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (DB) — the leaderboard collection push-down, measured 18.9× cheaper on the failing shape, and the 13-migration drift pile committed
+
+**`/api/analytics/sales/leaderboard` had failed 3 of its last 4 ten-wide sweeps** (5 collections × 2 roles, every request `cache=MISS`) on `statement timeout`. The 16:25 PT handoff had measured the mechanism — the collection predicate went through `analytics_sales`' CASE-mapped `collection`, which can never be an `Index Cond`, so **a zero-row collection (ufc) cost 41,361 buffers / 25.8 s** and topshot 162,717 (+6,665 temp) / 43.6 s against `service_role`'s 30 s ceiling — but declined to ship without git. This session has git (device-flow token, VM push), so it shipped.
+
+✅ **`20260829234203_audit_20260829_leaderboard_collection_pushdown_and_per_row_returning_probe`** rewrites `analytics_sales_leaderboard(...)` (same signature, ACLs untouched, still `SECURITY DEFINER`) to read the base tables: short-form names map back to long-form `sales.collection` (`idx_sales_2026_pulse_window` now serves it as an **Index Only Scan**), Pinnacle stays on `pinnacle_sales`, unmapped names (`candy_mlb`) pass through exactly like the view's `ELSE`; `is_returning` becomes ≤ `p_limit` EXISTS probes on the address indexes instead of a DISTINCT over every prior sale.
+
+⭐ **Measured, same instance, same afternoon (buffers are the durable figure; wall is contention-confounded):**
+
+| call (l30, limit 10) | before | after |
+|---|---:|---:|
+| `ufc` buyer | 41,361 buf · 25.8 s | **2,194 buf · 59 ms** |
+| `topshot` buyer | 162,717 (+6,665 temp) · 43.6 s | **27,642 buf · 11.6 s** |
+| `NULL` (all) seller | — | 94,726 buf · 29.6 s ⚠ |
+
+⚠ **The two-predicate form was measured and REFUTED**: adding `collection_id = ANY(...)` alongside the text predicate made the planner pick the non-covering `collection_id` index (86k buffers, heap fetches) — so the function pushes the TEXT predicate only. The `collection_id` route is what the first draft used; it was 88,912 buffers on topshot, 3.2× worse than the covering index.
+
+⚠ **Two honest limits.** (1) The all-collections (`NULL`) call still reads ~95k buffers — it is not on the sweep's path (the UI fires per-collection tabs) but it is not fixed. (2) 27,642 buffers still carries **16,759 heap fetches** on the 2026 partition — that is thread #9's visibility map, and it is why the topshot call is 11.6 s and not ~3 s. The push-down and the vacuum are complementary, not alternatives.
+
+⭐ **The `prior_addrs` correlated-EXISTS rewrite, recorded as REFUTED on 08-28 (16.3 → 13.1 s), is now the shipped shape** — the refutation measured it while the agg leg was still reading the whole window through the view; with the push-down the EXISTS probes are ≤10 index lookups. The function comment (20260829090940 / 171156) still says "do not revive" — corrected by a dated addendum in the same migration set.
+
+✅ **Equality proven before apply**, old `EXCEPT` new = 0 and new `EXCEPT` old = 0, `is_returning` in the row comparison: (seller, l7, allday) 5 rows · (buyer, l30, pinnacle+candy_mlb, include_contracts=true) 25 rows · (buyer, l30, topshot) 10 rows, 9 returning. **Post-apply from outside:** anon/authenticated EXECUTE false, service_role true, one overload, `check_secdef_anon_exec_drift()` length 0, `check_secdef_anon_execute_violations()` = `[]`, scratch function dropped, live ufc seller call 45 ms.
+
+✅ **The 13 drifted Cowork migrations (20260829050847 … 202158) are committed** — recovered byte-exact with `scripts/recover-fileless-migrations.mjs` (14/14 md5-verified against prod, this one included), not transcribed. `migration-parity` should go green on this.
+
+**Watch (exit condition + falsifier):** the next ten-wide sweep in Vercel runtime logs. Exit: 10 × 200. Falsifier: any 500 on `statement timeout` with the map fresh (< ~5,000 heap fetches on the shape-matched probe) means contention, not this function, and the next lever is the NULL-collections leg above.
+
+**Revert path:** DB — re-create the prior body (recorded verbatim in the Project doc `claude/leaderboard-prior-body-2026-08-29.sql`; it is the `analytics_sales`-reading version with the DISTINCT `prior_addrs` LEFT JOIN); one `CREATE OR REPLACE`, same signature, no ACL change. Repo — `git revert` the migration commit (the DB half is unaffected by that).
+
 ### 2026-08-29 · 📋 REGISTER — the audit's eight still-open findings get rows, each with an exit condition AND a falsifier
 
 **A process gap in my own pass, caught by loading `rpc-audit-drain`.** I had been writing ledger entries and inbox filings all day and never touched `docs/audits/deep-audit-register.md` — which CLAUDE.md names as **the canonical open list** ("an item that matters and is still open should have a register row, and if it does not, that gap is the finding"). An inbox filing is a listing, not a status.
