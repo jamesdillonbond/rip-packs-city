@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED — `searchTopShotMarketplaceHistory` EXISTS, and a June decision deferred it on a premise that died yesterday
+
+Docs only; no code, no DB. Filing:
+`docs/overnight/inbox/2026-08-29T1810Z-the-studio-endpoint-has-searchTopShotMarketplaceHistory-and-a-june-decision-deferred-it-on-a-now-dead-premise.md`.
+
+My 1630Z entry closed with *"whether the Studio endpoint exposes equivalents is NOT
+established and is the first thing to check."* **It was already established, in this
+repo, and needed no network probe.**
+`docs/archive/handoffs/handoff-2026-06-24-studio-platform-gql-deep-history.md` line 34
+enumerates the studio-platform root fields and **`searchTopShotMarketplaceHistory` is
+among them**.
+
+🚨 **Line 97 of the same doc says why we never used it:** *"TopShot is optional here — the
+existing `topshot-sales-history-backfill` already drains via the (different, **also-live**)
+public-api marketplace GQL; studio-platform is a fallback/cross-check."* That was right in
+June and is **false now** — `public-api.nbatopshot.com` has answered 530/1033 for ~24 h.
+⭐ **CLAUDE.md's rule firing precisely: "a filed DECISION NOT TO ACT is a hypothesis too,
+and that is the one nobody re-checks." The tell it names is a cost stated with no number in
+it — here it is a dependency stated as "also-live" with no expiry.**
+
+⭐ **The work is smaller than it looks.** `lib/studio-sales-history.ts` is already
+collection-generic — `StudioHistoryConfig.queryName` is literally documented as
+`searchXMarketplaceHistory` — and the two routes that pass it
+(`allday-studio-sales-history-backfill`, `golazos-studio-sales-history-backfill`) are
+**8/8 ok each in 24 h, straight through the outage**. A Top Shot lane is a config object
+plus the per-collection `progressTable` / `seedFn` / `sourceTag`, inheriting the module's
+rails: synchronous (no silently-dying `after()` tail), ~200 s self-budget under the ~300 s
+cap, self-throttle at >15 recent failures, `transaction_hash` dedup, one-`DELETE` revert.
+
+⛔ **THE LIMIT IS THE IMPORTANT HALF — it covers SALES HISTORY ONLY.** The same list names
+`searchAllDayEditions` / `searchGolazosEditions` / `searchPinnacleEditions` and **no
+`searchTopShotEditions`**, so the four needs that actually hurt have no confirmed
+equivalent: `searchMarketplaceEditions` (asks + offers — `offers-sweep`,
+`topshot-fmv-populate`), `getUserProfile`, `getMintedMoment`, and `searchEditions`
+(badges/catalog). ⚠ **`offers-sweep` is the one that matters** — sole writer of
+`edition_offers.updated_at`, hence the ~24 h stale Top Shot low-asks in today's 1605Z
+filing — **and a sales-history migration does not touch it.** Saying "we migrated off the
+dead endpoint" after this slice alone would be false.
+
+⛔ **NOT established, and stated as weak evidence rather than proof:** absence from that
+list does not prove absence from the schema — it is explicitly non-exhaustive ("+ EPL,
+AthleteStudio, Seeds, Pack, Team/Seasonal variants"). 👉 **Re-introspect studio-platform
+for Top Shot editions/asks/profile root fields first** — one query, and it decides whether
+the dead endpoint is REPLACEABLE or only SUPPLEMENTABLE. ⚠ It needs egress this sandbox
+lacks: the agent proxy denies `public-api.nbatopshot.com` outright, and I did not probe the
+studio host either — treat both as unprobed from here, not as tested-and-working.
+
+⚠ When migrating anything, copy the healthy client's headers — `Origin:
+https://nbatopshot.com`, `Referer`, and a real product User-Agent. The module's own comment
+says studio-platform is reachable unauthenticated from Vercel egress **"with an Origin
+header"**, while the dead-endpoint client sends `User-Agent: sports-collectible-tool/0.1`
+and nothing else. ⛔ That did not cause this outage (the proxy path failed identically) but
+it is a gratuitous difference from the configuration we know works.
+
 ### 2026-08-29 · 📦 FILED — `migration-parity` is RED on 11 files, and the QUEUED anon-TRUNCATE revoke is scoped too narrowly to close the hole
 
 Docs only; no code, no DB. Filing:
