@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — a day-old ask was being asserted to Google as `InStock`, and the honest fix keeps the rich result rather than deleting it
+
+**The hole.** `editionJsonLd` publishes a schema.org `Offer` with `availability: InStock` and no expiry, and its signature had **no timestamp at all** — so a stale ask was structurally unqualifiable. ⚠ **The function was already careful about every OTHER kind of staleness** (it refuses a `STALE`-confidence FMV as a price source; a closed market emits no Offer at all) and stated its premise outright four lines up: *"a live low ask is still a real, reliable price even on STALE."* **That sentence was true of a feed that re-checked hourly and false of one that had stopped** — and on 2026-08-29 `offers-sweep` had not confirmed an ask in **31 hours** while every one of them went to search engines as buyable now. Filed at 2230Z as item 2 of the ask-staleness remainder.
+
+⭐⭐ **The fix is GRADUATED, and the middle rung is the part worth keeping.** The obvious move — drop the Offer past the boards' 12 h marker — is **worse for readers**: it deletes the Product rich-result from thousands of NO_DATA edition pages during any upstream outage, an SEO cost with **no honesty gain**. `priceValidUntil` is schema.org's own field for *"we vouch for this price until X"*, and Google reads an elapsed one as a reason to distrust the price rather than to trust it. So:
+
+- **fresh ask** → Offer with an expiry in the future (accurate),
+- **31-hour-old ask** → Offer with an expiry **already elapsed** (also accurate — the price is a real observation, we just no longer stand behind it today),
+- **past the corroboration bound** (7 d, the same measured constant as the FMV gate) → **no Offer**, because there the ask has stopped being evidence at all.
+
+⚠ **The expiry is measured from when we CONFIRMED the ask, not from now** — a `now`-based expiry would renew itself every render and never elapse, which is the same manufactured-freshness shape as the `new Date()` board stamp retired earlier today.
+
+⚠ **The FMV branch is deliberately NOT gated**, and a control pins it: when `fmvUsable`, the published price is a modelled FMV and the ask's age says nothing about it. Gating that branch would suppress Offers on most priced editions for no reason — the over-correction, and it reds exactly one test.
+
+**Verification.** 10 new tests, incl. four controls (FMV branch ungated; closed market still emits nothing; no price still emits nothing; an age-unaware caller keeps prior behaviour and invents no expiry). ⚠ Three states again: an **undatable** ask is treated as ancient, stricter than an **omitted** timestamp — same rule as `lib/fmv-confidence.ts`, for the same reason. Mutation-checked three ways: revert to pre-fix → 5 red; gate the FMV branch too → the FMV control reds; drop at 12 h instead of expiring → the elapsed-expiry test reds. Full suite **1404 files / 15414 tests green**, `tsc` 0.
+
+⏱ **Falsifier:** fetch a NO_DATA Top Shot edition page and read the JSON-LD — while the feed is down, `offers.priceValidUntil` must be a date in the past, and an edition whose ask predates the 7-day bound must carry no `offers` key at all.
+
+**Revert path:** `git revert <sha of "fix(seo): a price we have not confirmed in a day is not an InStock claim">`. Code only, no DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — FMV ask-corroboration had NO age bound, and the obvious 12h threshold would have emptied the deals board
 
 **The hole.** `escalateConfidence` lifts an edition **LOW → MEDIUM** when "an independent **live** ask" agrees with the sales median — and had no age bound at all. `edition_offers` carries Top Shot rows up to **87 days old (83 over 30 days)**, every one of them able to make that promotion. **MEDIUM is not cosmetic: it is what gates the public Below-FMV board**, so a dead ask could inject a row onto a board whose per-row staleness markers only exist *downstream* of this decision. Filed at 2230Z as the widest-blast-radius item of the ask-staleness sweep; shipped now.
