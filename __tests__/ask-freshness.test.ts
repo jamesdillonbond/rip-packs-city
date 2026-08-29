@@ -134,3 +134,49 @@ describe("edition page is wired to the provenance helper", () => {
     expect(src).not.toMatch(/askAgeHours\(\s*highOffer/)
   })
 })
+
+// ── The edition page's "% below FMV" chip is dated by the same timestamp ────
+//
+// 🚨 `deal_pct` comes from `topshot_deals_vs_fmv`, whose `discount_pct` is
+// `(fmv - edition_offers.low_ask) / fmv` — computed from THE SAME `edition_offers`
+// row the page already holds as `highOffer`. On 2026-08-29 the chip asserted a flat
+// "18% below FMV" while /insights/deals marked that identical row
+// `⚠ ask unconfirmed 31h`: one product disagreeing with itself across a hyperlink.
+//
+// ⚠ A first read of this called the chip "structurally unqualifiable" because
+// `get_edition_insight_links` returns no timestamp — which pointed at an RPC payload
+// change. Reading the VIEW DEFINITION refuted that: it joins `edition_offers` on the
+// same `(external_id, collection_id)`, so the timestamp was already in scope. A filed
+// finding is a hypothesis; the cheap check beat the tidy story again.
+describe("edition page dates its below-FMV chip from the ask it is derived from", () => {
+  const src = readFileSync(
+    path.join(path.resolve(__dirname, ".."), "app/(collections)/[collection]/edition/[slug]/page.tsx"),
+    "utf8",
+  )
+
+  it("is not vacuous: the chip is still rendered from deal_pct", () => {
+    expect(src).toContain("insightLinks.deal_pct != null")
+    expect(src).toContain("% below FMV")
+  })
+
+  it("the chip is qualified by askAge, not left as a bare discount claim", () => {
+    // Pinned as the PROPERTY — the chip's own JSX references the ask age — rather
+    // than the exact caption, so a reword cannot slip past it.
+    // ⚠ Anchor on the CHIP, not on the first mention: `insightLinks.deal_pct != null`
+    // also appears in the `hasInsightLinks` section gate far above, and slicing from
+    // there measured the wrong block entirely. Caught by writing the assertion first.
+    // ⚠ ANCHOR ON THE RENDERED EXPRESSION, and both looser anchors were tried and
+    // failed in the obvious ways this repo keeps recording:
+    //   - `insightLinks.deal_pct != null` also appears in the `hasInsightLinks`
+    //     SECTION GATE far above, so slicing from it measured the wrong block;
+    //   - a bare `"% below FMV"` first matches the FIX'S OWN COMMENT, which quotes
+    //     `"18% below FMV"` to explain what was wrong — a guard firing on the
+    //     documentation of the bug it prevents, live, on the third attempt.
+    // The interpolation below can only be the render.
+    const at = src.indexOf("insightLinks.deal_pct)}% below FMV")
+    expect(at, "the chip render moved; this guard is measuring nothing").toBeGreaterThan(0)
+    const chipSrc = src.slice(at, at + 600)
+    expect(chipSrc).toMatch(/askAge !== null && askAge >= ASK_STALE_HOURS/)
+    expect(chipSrc).toMatch(/fmtAskAge\(askAge\)/)
+  })
+})

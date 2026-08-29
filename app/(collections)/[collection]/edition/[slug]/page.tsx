@@ -967,8 +967,34 @@ export default async function EditionPage(
               </Link>
             )}
             {insightLinks.deal_pct != null && (
-              <Link href="/insights/deals" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
-                {Math.round(insightLinks.deal_pct)}% below FMV →
+              // 🚨 THIS CHIP AND THE BOARD IT LINKS TO WERE CONTRADICTING EACH OTHER.
+              // `deal_pct` comes from `topshot_deals_vs_fmv`, whose `discount_pct` is
+              // `(fmv - edition_offers.low_ask) / fmv` — computed from THE SAME
+              // `edition_offers` row this page already holds as `highOffer`. So on
+              // 2026-08-29 the chip asserted a flat "18% below FMV" while
+              // /insights/deals marked that identical row `⚠ ask unconfirmed 31h`:
+              // one product disagreeing with itself across a hyperlink, and the
+              // sharpest single artifact of the offers-sweep outage.
+              // ⚠ NO RPC CHANGE WAS NEEDED, and the first read of this said there was.
+              // `get_edition_insight_links` does not return a timestamp, which reads
+              // like "structurally unqualifiable" — but the view joins
+              // `edition_offers` on the same (external_id, collection_id), so the
+              // timestamp already in scope IS the one that dates this number.
+              // ⚠ `askAge === null` renders the chip UNMARKED: unknown age is not
+              // stale, and it is not fresh either.
+              <Link
+                href="/insights/deals"
+                className="rpc-mono"
+                style={INSIGHT_CHIP_STYLE}
+                title={askAge !== null && askAge >= ASK_STALE_HOURS ? askAgeTitle(askAge) : undefined}
+              >
+                {Math.round(insightLinks.deal_pct)}% below FMV
+                {askAge !== null && askAge >= ASK_STALE_HOURS && (
+                  <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }}>
+                    {" "}· ask {fmtAskAge(askAge)} old
+                  </span>
+                )}{" "}
+                →
               </Link>
             )}
             {insightLinks.first_mint_x != null && (
