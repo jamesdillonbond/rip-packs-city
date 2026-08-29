@@ -87,6 +87,19 @@ const PINS: Array<[string, string, string, string]> = [
   ["pinnacle-mint-parse", "extractDeposit", "pinnacle-owner-discovery-forward", "mint recipient / owner discovery"],
   // Positive-serial coercion (0/negative/NaN → null) on the AllDay serial backfill.
   ["cdc-reduced", "toSerial", "backfill-allday-listing-serials", "serial coercion; a bad 0/NaN pollutes serials"],
+  // Added 2026-08-28 when R21 committed allday-unmapped-resolver's source. Both
+  // reasons were read from the call sites, not guessed:
+  //   toSerial  -> index.ts:178 `serial_number: toSerial(node.serialNumber)` and
+  //                index.ts:238 `serial_number: toSerial(serialStr)` — it writes
+  //                serial_number onto resolved unmapped sales, so a drift that
+  //                stopped rejecting 0/negative/NaN pollutes the same column the
+  //                backfill pin above exists to protect.
+  //   clampInt  -> index.ts:481 `clampInt(body.batch_size ?? DEFAULT_BATCH_SIZE, 1,
+  //                MAX_BATCH_SIZE)` — it is the ONLY bound on a CALLER-SUPPLIED
+  //                batch size, so a drift lets a request pick 0 (a tick that does
+  //                nothing while reporting ok) or a huge batch (a wall-clock kill).
+  ["cdc-reduced", "toSerial", "allday-unmapped-resolver", "serial coercion on resolved unmapped sales; a bad 0/NaN pollutes serial_number"],
+  ["topshot-subedition-parse", "clampInt", "allday-unmapped-resolver", "sole bound on a caller-supplied batch_size; drift gives a no-op tick or a killed run"],
   // Transient-vs-fatal classification of a spork fetch failure — the retry/abort decision.
   ["spork-cursor", "isTransient", "ingest-allday-pack-opens", "retry-vs-abort on a spork fetch failure"],
   // Cadence dict flatten — the UFC stub thumbnail resolver's whole read.
