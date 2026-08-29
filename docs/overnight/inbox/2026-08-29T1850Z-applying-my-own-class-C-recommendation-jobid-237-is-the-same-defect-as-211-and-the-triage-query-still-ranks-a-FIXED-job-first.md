@@ -5,8 +5,7 @@
 ⛔ **Nothing measured under load was turned into a cost.** This filing was written as a PREDICTION at
 18:5xZ while the band was active (`io_wait 13 / active 13 of 48`) — **and then §4b measured it at
 18:5xZ as the band lifted to `6 / 6 of 47`.** ✅ **The prediction is CONFIRMED by a controlled pair
-(the projection is the only variable) — see §4b.** ⛔ **Still not measured: `BUFFERS` / `Heap
-Fetches`.** The sections are left in the order they were written, because the order is the method.
+(the projection is the only variable) — see §4b.** ✅ **And then §4c measured it properly at `io_wait 0 / active 1 of 42`: the full MV query is 77,514 ms in a completely idle window, and the base scan is 99.66% of it.** The sections are left in the order they were written, because the order is the method.
 
 ---
 
@@ -89,8 +88,9 @@ measurement when the band lifted.**
   CONTROL that completed beside it under the same conditions.** A timeout alone never became proof.
 - ~~**The 60-day row count is unknown.**~~ ✅ **Now measured: 88,576**, against a planner estimate of
   21,960 — so the window is 4× larger than the planner believes and the fix is not unsized.
-- ⛔ **STILL open: no `BUFFERS` or `Heap Fetches` count**, because `EXPLAIN (ANALYZE, BUFFERS)` on the
-  control timed out at 45 s moments after the bare query completed. **Plan + behaviour, not buffers.**
+- ~~**STILL open: no `BUFFERS` or `Heap Fetches` count.**~~ ✅ **Closed by §4c once the band cleared:**
+  control 13,155 buffers / **3** reads / 36 ms against payload 45,164 buffers / **18,540** reads / 7,022 ms,
+  and the full MV query 77,514 ms with **99.66% in the base scan**.
 - jobid **4** (`rpc-ccm-step2`, ratio **3%** — 10 s success vs 300 s failure) is the most extreme
   bimodality on the board and **was not investigated at all here.** ⓘ Note its command uses the
   working two-statement form (`SET statement_timeout = '300s'; SELECT …`), so unlike #43's population
@@ -130,7 +130,55 @@ missing payload, heap fetch per row, bimodal outcome.
 - ⛔ **Not proven that the fix takes jobid 237 under its ceiling** — only that the mechanism is present
   and is the one that was fixed on 211. **Predicted, not demonstrated.**
 
-## 5. 👉 The measurement that would still add something — quiet window (≥ 20:00Z)
+## 4c. ✅✅ THE QUIET-WINDOW MEASUREMENT — taken at `io_wait 0 / active 1 of 42`, and it is stronger than §4b
+
+The band cleared completely at ~19:16Z. **All three numbers below are from that window, so none of them is spell collateral.**
+
+**(i) The real MV defining query — the full CTE + six `UNION ALL` branches, exactly as `pg_matviews` stores it:**
+
+```
+Append  (actual time=77399.680..77509.350 rows=6)
+  CTE rips
+    -> Index Scan using idx_pack_rips_collection_time  (actual time=16.610..77250.934 rows=88553)
+         Buffers: shared hit=26142 read=19017 written=571
+  -> Aggregate (actual time=77399.679..77399.681)      <- first branch, pulls the CTE
+  -> Aggregate (actual time=24.816..24.817)            <- branches 2..6, ~21-25 ms each
+Execution Time: 77513.627 ms
+```
+
+⭐⭐ **The base scan is 77,251 ms of 77,514 ms — 99.66% of the query. The six aggregate branches together
+are ~130 ms, 0.17%.** ⭐ **This is an INTRA-PLAN attribution, which is the robust kind** — it does not
+depend on comparing two runs, and it is exactly the reading this repo endorsed on 2026-08-29 (*"within one
+plan, total buffers ranks legs by work"*).
+
+**(ii) The controlled pair, same predicate, same index, same window — the projection is the only variable:**
+
+| leg | plan | buffers | disk reads | time |
+|---|---|---:|---:|---:|
+| `count(*)` only | **Index Only Scan** (Heap Fetches 10,332) | 13,155 | **3** | **35.98 ms** |
+| `+ pull_value_usd` | **Index Scan** (heap) | 45,164 | **18,540** | **7,021.76 ms** |
+
+**195× on time, 6,180× on disk reads, from adding one column to the SELECT list.**
+
+## 👉 What this means, sized
+
+**jobid 237's query costs 77.5 s in a COMPLETELY IDLE window, and ~99.7% of that is a scan whose entire
+expense is fetching `pull_value_usd` from the heap.** Against a 303 s best observed success and a 602 s
+ceiling, that is a job with **~4× headroom on an idle instance and none at all under load** — precisely the
+bimodality, now with a number under it.
+
+⚠ **Do NOT quote "77.5 s → 36 ms" as the expected fix.** The 36 ms control *counts*; it does not materialise
+88,553 `numeric` values into the CTE's tuplestore, which the real query must do regardless of the index.
+**The honest prediction is that the fix removes the heap access — 99.66% of the query's time — leaving
+scan-plus-materialise, which is seconds at most, not 77.**
+
+⚠ **One thing I could not explain and am not hiding: the same payload scan measured 7,022 ms in (ii) and
+77,251 ms in (i), both in the quiet window, at near-identical read counts (18,540 vs 19,017).** The queries
+differ — (ii) aggregates in place, (i) materialises a `numeric` CTE — so they are not a contradiction, but
+**the 11× is unexplained and I did not isolate it.** ⭐ **The conclusion does not rest on it:** the
+intra-plan 99.66% and the 3-vs-18,540 disk-read pair are each sufficient on their own.
+
+## 5. 👉 The measurement that would still add something
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
