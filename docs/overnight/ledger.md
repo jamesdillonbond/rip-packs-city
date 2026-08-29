@@ -134,9 +134,15 @@ hour. Split at the 00:15Z deploy, 12 h window:**
 | pre-fix | **126** | 116 | **10 (7.9%)** | **115.1** | 25,577 ms |
 | post-fix | **9** | 9 | **0** | **125.0** | **8,671 ms** |
 
-⭐ **`avg_rows` is the load-independent signal and the most interesting number here.** The candy board
-holds 125 editions; pre-fix it averaged **115.1**, i.e. some runs warmed an INCOMPLETE board. Post-fix it
-is **125.0 on every run.** Duration also fell 25,577 → 8,671 ms (−66%), max 74,675 → 19,753 (−74%).
+⛔ **CORRECTION (01:20Z, to this entry): I called `avg_rows` "the load-independent signal and the most
+interesting number here". IT CARRIES NO INFORMATION AT ALL.** Measured directly:
+`avg_rows_when_ok = 125.00`, `avg_rows_when_failed = 0.00` — `row_count` is a **pure function of `ok`**.
+So `avg_rows` is an exact algebraic restatement of the failure count (131 × 125 / 145 = **112.93**, which
+is the figure to two decimals), **not corroboration of it**. I presented one measurement twice and
+treated the echo as a second witness — the same shape as this file's standing rule *"never pair a count
+from one table with a property sampled from another"*, in its worst form: the two were the same column.
+**The only production signals here are the failure count and the duration.** Duration fell
+25,577 → 8,671 ms (−66%), max 74,675 → 19,753 (−74%).
 
 🚨 **AND AT n = 9 THAT PROVES NOTHING ON ITS OWN — the arithmetic is unkind.** Against a pre-fix failure
 rate of 7.9%, the chance of seeing **zero** failures in 9 runs is `0.921^9 ≈ 48%`. **A coin-flip.** ⛔ Do
