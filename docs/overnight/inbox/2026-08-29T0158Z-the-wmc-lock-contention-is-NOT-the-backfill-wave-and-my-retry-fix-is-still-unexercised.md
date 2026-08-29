@@ -54,3 +54,36 @@ wallet 306 645  0  0  0  0  0  0  0  0  0  0 191 614 616  0  0  0  0  0  0  0  0
 - ⛔ **Why hour 13 lost 9,153 rows and hour 23 lost none.** Not investigated.
 - ⛔ **Whether `rows_lost` is permanent.** `wallet-backfill` re-sweeps wallets periodically, so a lost chunk may simply be re-upserted on the next pass — in which case the number overstates the harm. **Nobody has checked, and the metric is quoted as loss in several places.** This is the question that decides whether any of this is worth fixing.
 - ⛔ **Whether the 51 lock timeouts cost anything.** `refresh_wmc_fmv_changed` is resumable and its cutoff advances only over what it drained, so a lock timeout may be a clean no-op rather than a loss.
+
+---
+
+## UPDATE 2026-08-29 ~15:50Z — both open questions answered
+
+**1. ✅ The retry-slice floor's exit condition is MET.** Re-measured across the whole
+`wallet-backfill` family (not one wave), 24 h either side of the 23:10Z deploy: runs whose
+`first_chunk_error` names our own bound below 30,000 ms went **15 → 0**
+(P(0 | Poisson 12.1) ≈ 5.5e-6), while the ~68 s cluster (31 → 10) and the pool/lock messages
+the retry exists for (76 → 69 pool) both persisted. The stated falsifier — crumbs in the
+3–6 s range persisting — did **not** fire. As predicted, **no rows were recovered**; the
+losses simply keep their real error text now.
+
+**2. ⛔ `rows_lost` is NOT permanent — this filing's own "NOT established" is now settled,
+and it settles against the loss reading.** Direct check, 131 AllDay wallets scanned in the
+last 72 h with `last_found_count > 50`: **zero** hold fewer `wallet_moments_cache` rows than
+their recorded found-count (0 missing of 234,235 claimed). Positive control: six wallets
+chosen for having lost >200 rows in one run were each re-scanned **2–7 times** since, and all
+six are whole or over-complete. Per-wallet `scan_count` runs 234–654, i.e. every seeded wallet
+is re-enumerated several times a day, so a lost chunk is re-upserted within hours.
+
+⚠ **This does not make the number harmless, it re-files it.** ~93,000 rows / 72 h are still
+re-done on AllDay alone (33.7% of what that pipeline writes), and only 5.7% of that is credited
+to the retry — on an instance whose binding constraint is disk IO. **It is an IO-waste story,
+not a data-integrity one, and the two need opposite responses.** `chunk_rows_lost` has been
+quoted as data loss in several places including CLAUDE.md-adjacent notes; the module's own
+docstring calls it "an upper bound on rows lost this run", which is the accurate wording.
+
+⚠ One residual is now named rather than guessed: the two PGRST002 losses ARE retried
+(`isTransient` classifies PGRST002 correctly, deliberately, since 08-13) — they fail because
+the retry spread is ~2 s of backoff against a schema-cache re-introspection window an order of
+magnitude longer. 511 rows, 0.5% of the 72 h loss. **Not worth a change**, recorded so the
+next reader does not re-derive it as a missing classification.

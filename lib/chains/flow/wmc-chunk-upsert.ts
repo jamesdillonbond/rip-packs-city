@@ -37,7 +37,25 @@ export const UPSERT_CHUNK = 200
 export interface ChunkFailureTally {
   /** number of upsert chunks that errored (AFTER retries — a recovered chunk is not counted) */
   chunkErrors: number
-  /** rows in those chunks — an upper bound on rows lost this run */
+  /**
+   * rows in those chunks — an upper bound on rows lost this run.
+   *
+   * ⚠ IT IS WASTED WORK, NOT PERMANENT LOSS, AND IT HAS BEEN READ AS LOSS
+   * (measured 2026-08-29). Every seeded wallet is re-enumerated several times a
+   * day (`scan_count` 234-654 per wallet), so a dropped chunk is re-upserted on
+   * the next pass. Checked directly: of 131 AllDay wallets scanned in 72 h with
+   * `last_found_count > 50`, ZERO hold fewer `wallet_moments_cache` rows than
+   * their recorded found-count (0 missing of 234,235). Positive control — six
+   * wallets picked for losing >200 rows in one run were each re-scanned 2-7
+   * times since and are whole.
+   *
+   * The cost is still real and still worth cutting: ~93,000 rows / 72 h re-done
+   * on `wallet-backfill-allday` alone, 33.7% of what it writes, of which the
+   * retry recovers 5.7%. But it is an IO-waste number on an IO-bound instance,
+   * NOT an integrity number — and the two need opposite responses, which is why
+   * the distinction is recorded on the field itself rather than in a filing
+   * nobody in this file will open.
+   */
   chunkRowsLost: number
   /** first error message seen, for the pipeline_runs.error column */
   firstChunkError: string | null

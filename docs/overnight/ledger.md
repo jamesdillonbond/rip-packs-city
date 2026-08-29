@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ VERIFIED at n ≫ 1 — three self-armed exit conditions answered, one of them a REFUSAL to credit a fix
+
+No code or DB shipped in this entry. Three claims from earlier today rested on n = 1 or on
+an exit condition nobody had gone back to read. All three are now measured; one says the fix
+did NOT work, and it is recorded here rather than quietly dropped.
+
+**1. `promote_unmapped_sales` advisory lock (`20260829134500`) — CONFIRMED, both directions.**
+Same-slug overlapping runs, real runs only, split on the 13:47Z change point:
+
+| | real runs | span | same-slug overlaps |
+|---|---:|---:|---:|
+| before | 309 | 24.1 h | **77** (3.19/h) |
+| after | 16 | 1.5 h | **0** |
+
+Expected under the null: 3.19 × 1.48 ≈ 4.7 overlaps; P(0 | Poisson 4.7) ≈ **0.9%**. And the
+positive control is in the same table — **8 `skipped_concurrent_run` rows appeared in exactly
+the window the overlaps vanished from** (1 ms each). A lock that fires and an overlap that
+disappears are two independent observations of one mechanism; neither alone would settle it.
+
+**2. Sales-indexer log/promote reorder (`39ce05041`) — CONFIRMED at n = 6 each.**
+`duration_ms − extra.elapsed_ms`, 20 h window, split on the 13:50Z deploy:
+
+| pipeline | before | after |
+|---|---:|---:|
+| `allday-sales-indexer` | **43,325 ms** foreign (57 runs) | **59 ms** (6 runs) |
+| `golazos-sales-indexer` | **4,535 ms** foreign (57 runs) | **60 ms** (6 runs) |
+
+⚠ `avg elapsed_ms` also fell (7,233 → 1,911 on AllDay) and that is **NOT** claimed as an
+effect — it is hour-of-day and saturation. The inflation figure is the deterministic one.
+
+**3. `CHUNK_MIN_RETRY_SLICE_MS` (`f20e79602`) — its exit condition is MET.**
+It was written to stop doomed budget-crumb retries mislabelling the cause, and stated:
+*"`first_chunk_error` stops naming our own bound … Falsifier: if `timed out after` values in
+the 3–6 s range persist, the slice is being consumed somewhere this floor does not see."*
+Across the whole `wallet-backfill` family, 24 h either side of the 23:10Z deploy:
+crumb runs (`timed out after <30,000 ms`) **15 → 0** (P(0 | Poisson 12.1) ≈ 5.5e-6), while the
+~68 s cluster and the pool/lock messages the retry exists for both persisted (76 → 69 pool).
+**The falsifier did not fire.** ⛔ As that constant's own comment predicted, **no rows were
+recovered** — the losses moved a few seconds earlier and kept their real error text. That was
+the point.
+
+**4. ⛔ `20260828225925`'s exit condition is answered and the answer is NO** — filed as
+`docs/overnight/inbox/2026-08-29T1545Z-reconcile-10s-deadline-measured-not-enough.md`. Cutting
+`aggregate_saved_wallet_stats`'s correlated subquery (−30% buffers) did **not** move
+`reconcile-saved-wallet-stats`: avg `wallets_done` 1.27 → 1.20, avg `elapsed_ms` 25,764 →
+26,331. 10 s is not enough and cannot rise (the 120 s cumulative `statement_timeout` minus a
+105 s worst-case wallet leaves 15). The untried lever, its three costs, and the two things
+that are **not** wrong here (the `ok = NOT v_truncated` labelling; the queue, which is at
+equilibrium) are in the filing.
+
+⭐ **The correction worth keeping from this pass: `chunk_rows_lost` is WASTED WORK, not
+permanent data loss** — and it has been quoted as loss in several places, including an
+08-29T0158Z filing that flagged the question as open. Checked directly: of 131 AllDay wallets
+scanned in 72 h with `last_found_count > 50`, **zero** have fewer `wallet_moments_cache` rows
+than their recorded found-count (0 missing of 234,235 claimed). Six wallets picked for having
+lost >200 rows in a single run were each re-scanned 2–7 times since and are whole. The sweep
+re-enumerates each wallet several times a day, so a lost chunk is re-upserted within hours.
+⚠ The cost is real and unchanged — ~93k rows/72 h re-done on AllDay alone, on an IO-bound
+instance — but it is an IO story, not an integrity one, and the two need opposite responses.
+
 ### 2026-08-29 · ✅ SHIPPED (code) + 📦 QUEUED (DB, deliberately) — three sales indexers were billing another pipeline's work to themselves: **87.1% of `allday-sales-indexer`'s recorded duration was not its own**
 
 **Found by following a live `pg_stat_activity` snapshot, not a dashboard.** At 13:21Z the instance showed 30 of 36 backends in IO wait and **two concurrent instances of `promote_unmapped_sales`, one at 281 seconds**.
