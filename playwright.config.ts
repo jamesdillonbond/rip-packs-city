@@ -20,7 +20,20 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : 1,
-  reporter: [["list"], ["json", { outputFile: "e2e-results.json" }]],
+  // ⚠ The `html` reporter is LOAD-BEARING, not a nicety. e2e-smoke.yml uploads
+  // `playwright-report/` on failure, and nothing was writing that directory —
+  // every failing run ended with `No files were found with the provided path:
+  // playwright-report/`. This is the repo's ONLY client-side detection surface
+  // (Sentry has dropped every event since 08-18, #34), so a failure that keeps
+  // no evidence is a red badge nobody can act on. Measured on run 111
+  // (2026-08-26): a REAL React #418 hydration failure on
+  // /insights/underpriced-serials, through two retries, 0 bytes retained.
+  // `open: "never"` so a local failing run does not try to spawn a browser.
+  reporter: [
+    ["list"],
+    ["json", { outputFile: "e2e-results.json" }],
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+  ],
   use: {
     baseURL,
     ignoreHTTPSErrors: true,
@@ -44,6 +57,9 @@ export default defineConfig({
     // UTC, which silently disarms the check.
     timezoneId: process.env.PW_TIMEZONE || "America/Los_Angeles",
     locale: "en-US",
+    // Retries are already on in CI; a trace on the first retry costs nothing on
+    // a green run and is the whole diagnostic payload on a red one.
+    trace: "on-first-retry",
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
     proxy: process.env.PW_PROXY_SERVER

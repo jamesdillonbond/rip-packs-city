@@ -45,10 +45,23 @@ jobs:
           # workflow_dispatch input wins; otherwise production.
           SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
         run: npx playwright test smoke.spec.ts entity-smoke.spec.ts smoke-selfcheck.spec.ts mobile-layout.spec.ts hydration-clock.spec.ts
+      # ⚠ Until 2026-08-29 this uploaded nothing. playwright.config.ts declared
+      # only the list + json reporters, so `playwright-report/` was never
+      # written and every failing run logged `No files were found with the
+      # provided path`. Eight of the previous thirty runs failed — including a
+      # REAL React #418 on /insights/underpriced-serials (run 111) that survived
+      # two retries — and not one kept a byte of evidence. The html reporter is
+      # now declared; `test-results/` carries the traces the report links to and
+      # e2e-results.json is the machine-readable summary. `if-no-files-found:
+      # error` so this can never silently regress to uploading nothing again.
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
+            e2e-results.json
+          if-no-files-found: error
           retention-days: 7
