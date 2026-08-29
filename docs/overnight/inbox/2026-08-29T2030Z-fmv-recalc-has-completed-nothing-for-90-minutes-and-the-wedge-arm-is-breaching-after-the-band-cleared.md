@@ -231,6 +231,20 @@ that**, so if `v2` was aimed at this outage it may not have fixed it — which w
 survive. 👉 **The step-1b shape is `(edition_id, sold_at) INCLUDE (collection_id, price_usd,
 serial_number)`.** ⚠ Inference from the two definitions, not from watching the build.
 
+## ⏱ SEVERITY UPDATE 22:0xZ — this is now the WORST recorded stall, not an elevated one
+
+**The wedge reads 5.92 h and is rising roughly an hour per hour.** The arm's own calibration — taken over a
+72 h window that INCLUDED the 2026-08-05 incident — is gap p50 **0.20 h**, p95 **0.55 h**, max **6.00 h**.
+
+⛔ **So the "a real breach, but below the arm's 6.00 h historical max" qualifier written above at 4.30 h is
+now expired.** At 5.92 h this is level with the worst gap ever recorded for this arm and will pass it
+within the hour. **Treat it as the worst observed sweep stall, not a bad afternoon.**
+
+ⓘ Everything else is unchanged and previously filed: the two `public_board_*_count = 999` arms are the
+known jobid-288 rotation oscillation (they clear on its next sweep), and `unmapped_resolution_backlog_max`
+is **draining** (317 → 310). ✅ Security clean, **0 invalid indexes database-wide, 0 leftover `tmp-*` cron
+jobs.**
+
 ## 👉 Falsifier, cheap and dated
 
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next
