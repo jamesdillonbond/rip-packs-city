@@ -10,6 +10,95 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ⛔ CORRECTION + ✅ SHIPPED (code) — it is not a "Top Shot outage", and `ok: true` through a total failure is why I read it wrong
+
+**Revert (code half):** `git revert <sha of the commit named below>` — one route + two
+tests, no DB, no migration. **Filing:**
+`docs/overnight/inbox/2026-08-29T1630Z-CORRECTION-it-is-not-a-topshot-outage-and-five-pipelines-report-ok-through-it.md`.
+
+⛔ **My earlier entry today called this "a ~22-hour Top Shot upstream outage; nothing in
+this repo can shorten it." The second half is false and it is the half that mattered** —
+it made the whole thing un-actionable. Trevor pushed back; he was right.
+
+**Dapper's GraphQL is UP.** `snapshot-pack-asks` is **282/282 ok** and fetched **1,996 live
+NBA Top Shot pack listings at 15:58:21Z** through
+`api.production.studio-platform.dapperlabs.com`, with `new`/`changed`/`dropped` moving
+between runs — live data, not a warm cache. What is dead is **one legacy endpoint**:
+`public-api.nbatopshot.com`, answering Cloudflare **530 / 1033** (*Argo Tunnel not
+connected*) and **503 nginx**. 22 hours, zero recovery, not one partial success — a shape
+closer to **decommissioning than to an outage.**
+
+⛔ **Not an egress/IP block, and I checked rather than assumed.** Several routes carry the
+comment *"Cloudflare blocks Vercel egress to public-api.nbatopshot.com, so the GQL MUST go
+through TS_PROXY_URL"*, which makes that the tempting explanation. Refuted:
+`wallet-username-resolver` goes **through the proxy** and fails every lookup, and
+`topshot-fmv-populate` (also `TS_PROXY_URL ||` direct) records the identical
+`http 530: error code: 1033`. **Proxy and direct fail the same way, so the fault is at the
+origin.** ⛔ Not rate limiting either — `topshot-deal-floor-serials` retries 429/5xx with
+bounded backoff and logs `throttled_giveups: 10 of 10`, i.e. exhaustion against a 5xx that
+never clears.
+
+🚨 **THE ROOT OF MY ERROR, and it is the more valuable half: five pipelines report
+`ok: true` straight through a 100% failure.** I trusted `pipeline_runs.ok` and the
+per-pipeline aggregates. A **self-discovering** sweep — every numeric `extra` key whose
+NAME matches `error|fail|lost|denied|blocked|timeout|miss|reject|abort|kill`, no curated
+list — over 48 h of runs where `ok = true`:
+
+| pipeline | key | total inside GREEN runs | green runs writing 0 rows |
+|---|---|---:|---:|
+| `topshot-moments-hydrator` | `graphql_failures` | **43,832** | 67 |
+| `topshot-buyer-backfill-historical` | `decode_failed` | 5,398 | 44 |
+| `topshot-onchain-art-backfill` | `resolver_misses` | 4,750 | 12 |
+| `topshot-deal-floor-serials` | `gql_errors` | 210 | **21 of 21** |
+| `ufc-enrichment-drain` | `cadence_errors` | 178 | 81 |
+| `wallet-username-resolver` | `errored` | 304 | 6 |
+
+⭐ **`topshot-deal-floor-serials` is the row that caught me out.** I cited it hours earlier
+as evidence that direct calls still work — *"23 runs, 22 ok, 4.3% failure."* Its actual
+rows read `gql_errors: 10`, `throttled_giveups: 10`, `listings_found: 0`,
+`rows_written: 0`, `ok: true` — **every hour, 21 runs running.** Same shape:
+`topshot-sales-history-backfill`'s four "successes" are `note: queue_empty` no-ops.
+
+⚠ **THE CURATED VERSION OF THIS SWEEP FOUND 2 OF THE 17.** I wrote it first against a
+hand-listed set of key names and it returned two pipelines; widening it to any
+failure-shaped key name returned seventeen. **CLAUDE.md's "prefer a tree walk over a
+curated list", reproduced exactly** — the curated result would have closed this as a nit.
+⛔ **And the sweep DISCOVERS, it does not diagnose** — its own output proves it:
+`pinnacle-trades-indexer.first_failed_chunk` totals **422,165,253** because that key holds
+a BLOCK HEIGHT, not a count. Classify every hit before acting.
+
+✅ **SHIPPED — `wallet-username-resolver`.** `ok` was initialised `true` and lowered ONLY by
+the Supabase RPC that fetches the queue, so per-address upstream failures never reached it:
+six consecutive runs logged `errored` = `found` (19/19 → 63/63), all green,
+`rows_written: 0`. ⭐ **It is on `pipeline_cadence_watchlist` and ACTIVE**, so the
+sentinel's Success Coverage arm (zero successes AND zero rows written) was pointed straight
+at it and could never fire. Now `ok = ok && !(found > 0 && errored === found)`;
+`lookupUsername` carries its HTTP status out instead of a bare `{status:"error"}`; the
+cause lands in `error` and `extra.first_error_reason`. Pinned with three CONTROLS — partial
+failure, empty queue and all-misses each stay green — and **mutation-checked in both
+directions**: the old predicate fails the first test, the naive `errored === 0`
+over-correction fails a different one.
+
+👉 **Resilience, concrete: we already run working code against the healthy endpoint.**
+`lib/packs/live-pack-listings.ts`, `lib/chains/flow/allday-studio-holdings.ts` and
+`lib/studio-sales-history.ts` all target the Studio endpoint and every pipeline behind them
+is green. The dead-endpoint clients are `lib/chains/flow/topshot.ts`,
+`lib/chains/flow/topshot-graphql.ts` and `lib/topshot-badges.ts`. ⚠ **NOT a find-and-replace
+— the schemas differ** (`searchPackNftAggregation` vs `searchMarketplaceEditions` /
+`getUserProfile` / `getMintedMoment`), so **whether the Studio endpoint exposes equivalents
+is NOT established and is the first thing to check.**
+
+⭐ **Sentinel item `snapshot-institutional-wallets` is an unrelated root cause.**
+`wmc load page 178: canceling statement due to statement timeout` is OFFSET paging in
+`supabase/functions/snapshot-institutional-wallets/index.ts`: `PAGE_SIZE = 250` with
+`.range(from, to)`, so page 178 is `LIMIT 250 OFFSET 44500` — Postgres sorts and discards
+44,500 rows to return 250, quadratic across the walk (~4M row-visits for that one wallet).
+That is why it dies at a HIGH page rather than page 3. **The file's own comment already
+names keyset as the more robust option and argues only correctness, never cost**, and
+`(collection_id, moment_id)` is already the `ORDER BY` — so keyset is a drop-in that is
+O(1) per page and strictly safer. ⛔ Not shipped: it is an **edge function** (deploy-only,
+R21 territory) and needs a deliberate deploy, which is Trevor's to sequence.
+
 ### 2026-08-29 · 📦 FILED (not shipped) — `/insights/deals` stamps the MV's refresh time over Top Shot asks last verified **23 hours** ago, and the alert path has no freshness gate at all
 
 Docs only; no code, no DB. Filing:

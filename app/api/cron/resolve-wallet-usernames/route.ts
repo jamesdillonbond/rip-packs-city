@@ -52,7 +52,13 @@ function delay(ms: number) {
 type LookupResult =
   | { status: "hit"; username: string }
   | { status: "miss" }
-  | { status: "error" }
+  // ⚠ `reason` added 2026-08-29. It used to be a bare `{ status: "error" }`, so
+  // when EVERY lookup failed the run had nothing to report but a count — and it
+  // reported that count as a success (see the `ok` derivation below). A tally
+  // without a cause cannot be triaged: on 2026-08-29 six consecutive runs logged
+  // errored 19 → 50 → 55 → 57 → 60 → 63, all `ok: true`, and identifying the
+  // cause required reading a DIFFERENT pipeline's error column.
+  | { status: "error"; reason: string }
 
 async function lookupUsername(addr: string): Promise<LookupResult> {
   // getUserProfile's flowAddress lookup wants the bare hex (no 0x prefix).
@@ -68,7 +74,7 @@ async function lookupUsername(addr: string): Promise<LookupResult> {
       signal: AbortSignal.timeout(15_000),
     })
     // Transport/HTTP failure (incl. GQL validation 422) — treat as transient.
-    if (!res.ok) return { status: "error" }
+    if (!res.ok) return { status: "error", reason: `http ${res.status}` }
     const body: any = await res.json()
     const username: unknown = body?.data?.getUserProfile?.publicInfo?.username
     if (typeof username === "string" && username.trim()) {
@@ -77,8 +83,13 @@ async function lookupUsername(addr: string): Promise<LookupResult> {
     // HTTP 200 with no profile: not-found surfaces as errors[].status_code=5.
     // No username + no error is also a clean miss. Either way, negative-cache it.
     return { status: "miss" }
-  } catch {
-    return { status: "error" }
+  } catch (e) {
+    // Name + message, not the whole error: this string reaches `pipeline_runs.error`,
+    // and an upstream body can carry markup or a token. AbortSignal.timeout surfaces
+    // as TimeoutError, which is the one worth telling apart from a transport fault.
+    const name = e instanceof Error ? e.name : "unknown"
+    const msg = e instanceof Error ? e.message : String(e)
+    return { status: "error", reason: `${name}: ${msg}`.slice(0, 120) }
   }
 }
 
@@ -98,6 +109,7 @@ export async function POST(req: NextRequest) {
     let resolved = 0
     let missed = 0
     let errored = 0
+    let firstErrReason: string | null = null
     let ok = true
     let errMsg: string | null = null
 
@@ -121,6 +133,7 @@ export async function POST(req: NextRequest) {
         if (result.status === "error") {
           // Transient — leave the address for the next tick (no row written).
           errored++
+          if (firstErrReason === null) firstErrReason = result.reason
         } else if (result.status === "hit") {
           const { error: upErr } = await (supabaseAdmin as any)
             .from("wallet_usernames")
@@ -172,9 +185,40 @@ export async function POST(req: NextRequest) {
           rows_found: found,
           rows_written: resolved,
           rows_skipped: missed,
-          ok,
-          error: errMsg ? errMsg.slice(0, 500) : null,
-          extra: { resolved, missed, errored, batch: BATCH, duration_ms: Date.now() - startedAt },
+          // 🚨 A RUN IN WHICH EVERY LOOKUP FAILED IS NOT A SUCCESS (2026-08-29).
+          // `ok` starts true and used to be lowered ONLY by the Supabase RPC that
+          // fetches the queue. Per-address upstream failures just incremented
+          // `errored`, so a total outage of Top Shot's GQL logged `ok: true`,
+          // `rows_written: 0` — and the sentinel's Pipeline Success Coverage arm
+          // (zero successes AND zero rows written) could never see it, because the
+          // run claimed a success. Measured that day: six consecutive runs at
+          // errored = found (19/19 … 63/63), every one green, while
+          // `public-api.nbatopshot.com` had been answering 530/1033 for 22 hours.
+          //
+          // ⚠ THE PREDICATE IS "EVERY ATTEMPT ERRORED", NOT "ANY ERRORED".
+          // A single flaky address must not redden a run that resolved 299 others —
+          // that is the noisy form this repo has already rejected once for the
+          // cadence arms. `found > 0` keeps an EMPTY QUEUE green: nothing was
+          // attempted, so nothing failed, and a drained backlog is the healthy
+          // steady state for this pipeline.
+          // ⚠ `missed` is deliberately NOT counted as a failure — a wallet with no
+          // Top Shot profile is a real answer, and it is the reason this lookup is
+          // tri-state rather than boolean.
+          ok: ok && !(found > 0 && errored === found),
+          error:
+            errMsg
+              ? errMsg.slice(0, 500)
+              : found > 0 && errored === found
+                ? `all ${errored} username lookups failed; first: ${firstErrReason ?? "unknown"}`.slice(0, 500)
+                : null,
+          extra: {
+            resolved,
+            missed,
+            errored,
+            first_error_reason: firstErrReason,
+            batch: BATCH,
+            duration_ms: Date.now() - startedAt,
+          },
         })
       } catch {
         /* logging best-effort */
