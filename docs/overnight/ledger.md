@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · MIGRATION PARITY FULLY CLOSED — the covering-index record + 5 recovered prod-applied migrations, and a lapsed `statement_timeout` reset caught
+
+- **Migration parity fully closed for 2026-08-28 + a lapsed timeout reset caught** (Cowork,
+  pushed from the device VM as `dc2284b` — `chore(migrations): land the covering-index record
+  and recover 5 prod-applied migrations`).
+  1. **`20260828225200_idx_pack_rips_dist_agg_covering.sql` landed** — the repo record of the
+     CONCURRENTLY-built covering index. Verified in prod before landing: `indisvalid=true`,
+     170 MB, definition matches the file; one-shot jobid 378 gone. Its `schema_migrations` row
+     was MISSING (built outside the channel) — inserted with the file's exact bytes
+     (md5 `aeac09ce…` both sides), so parity agrees in both directions.
+  2. ⚠ **The build window's `ALTER ROLE postgres SET statement_timeout=1800s` was never
+     RESET** — the migration file claims "RESET immediately afterwards"; `pg_roles.rolconfig`
+     still carried it. Now `ALTER ROLE postgres RESET statement_timeout` (verified gone;
+     postgres back to the 120 s cluster default). *Verify-the-fix strikes again: the claim was
+     in the record, the state said otherwise.*
+  3. **Five more prod rows had NO repo file** (silent parity reds beyond the one CC's tree
+     sweep could see): `225146` grail_watchlist_note_backup, `225210` …note_kills_commit,
+     `225243` …timestamp_fix, `225258` …timestamp_exact, `225925`
+     aggregate_saved_wallet_stats_drop_correlated_tier_subquery. All five recovered
+     byte-exactly from `supabase_migrations.schema_migrations` (md5-verified each) and landed
+     in the same commit.
+  - **Revert:** `git log --grep='land the covering-index record'` → revert that commit; the
+    channel row: `DELETE FROM supabase_migrations.schema_migrations WHERE version='20260828225200'`;
+    the index itself: `DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_dist_agg;`
+  - ⓘ Push flow: fresh `$HOME` clone on the VM (never the mount), one `pull --rebase` when
+    main moved mid-flight (the desktop session was landing R41 concurrently), no tree contact.
+  - ⓘ NOT touched: the four repo files with no prod rows (`20260828020000/021500/040000/050000`)
+    — the reverted jobid-211 batch; pre-existing, deliberate.
+
 ### 2026-08-28 · ⏳ THE RETRY-SLICE FIX IS UNEXERCISED — 803 post-deploy runs, ZERO chunk errors, and ⛔ that zero is NOT evidence for it
 
 **Checking my own exit condition ~65 minutes after the `minAttemptSliceMs` deploy (22:57Z). The window
