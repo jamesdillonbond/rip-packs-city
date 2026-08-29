@@ -302,6 +302,43 @@ random reads removes this statement's exposure to IO pressure entirely, which is
 sweep down for 3.5 h. ⛔ **But it is NOT an emergency fix, the collision warning above still stands, and
 nobody should ship it tonight on my say-so.**
 
+## ⛔ FOURTH CORRECTION, 23:1xZ — "THE OUTAGE HAS ENDED" WAS TOO STRONG. IT IS INTERMITTENT, AND THE SWEEP STILL HAS NOT ADVANCED
+
+**I based "the outage is over" on two Vercel logs (22:28Z, 22:35Z) that cleared step 1b. Two runs is not
+a state.** The terminal rows since say otherwise:
+
+```
+23:08  ok=false  rows=0  cursor 0 -> 0
+22:48  ok=false  rows=0  cursor 0 -> 0
+21:28  ok=false  rows=0  cursor 0 -> 0
+```
+
+**Last 60 minutes: 6 invocations, 2 terminal rows, ZERO successes.** The four with no terminal row were
+killed at the 300 s lambda cap; the two that logged failed at step 1b again.
+
+⭐⭐ **BOTH OUTCOMES LEAVE THE CURSOR AT 0, which is why the wedge has never stopped climbing —
+4.30 → 4.51 → 5.92 → 6.52 → 7.10 h across this session.** A step-1b failure writes
+`cursor_after = cursor_before` by construction; a 300 s kill writes nothing at all. **Neither advances
+anything, so the catalogue has gone 7.1 hours without being repriced and still is not being repriced.**
+
+⭐ **The accurate statement, replacing both earlier ones:** step 1b no longer fails *consistently* — it is
+a **coin flip**, exactly as the 5 s / 48 s spread predicts against a 30 s ceiling. **Intermittent, not
+resolved.** ⛔ **Do not read the THIRD CORRECTION's "the outage has ended" as current: it was true of two
+runs and false of the hour.**
+
+⚠ **Now well past precedent: 7.10 h against the arm's calibrated max of 6.00 h**, from a window that
+already included the 2026-08-05 incident.
+
+👉 **This sharpens the remedy rather than changing it.** The covering index is not tidy-up: **it is the
+only proposal on the table that takes this statement out of the 30 s coin flip**, because it removes the
+~10k random reads that make the cost hostage to instance IO. ⛔ **The collision warning stands** — another
+session attempted an index here — **so it is a coordination question, not a shipping one.**
+
+## 👉 Falsifier, cheap and dated
+
+✅ **ANSWERED 23:1xZ, and it reads the second way:** terminal rows DO appear now, but **the cursor has not
+advanced in 7.1 h on a largely quiet instance** — so **it is NOT simply a tail of the 08-29 band.**
+
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next
 monitor tick.**
 - **Cursor advances and a terminal row appears ⇒ this was a long tail of the 08-29 band; close it.**
