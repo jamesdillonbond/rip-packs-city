@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the edition page and the deals board were contradicting each other across a hyperlink, and the fix needed NO payload change
+
+**The artifact.** The edition page's chip asserted a flat *"18% below FMV →"* while `/insights/deals`, one click away, marked that **identical row** `⚠ ask unconfirmed 31h`. One product disagreeing with itself across a link — the sharpest single symptom of the offers-sweep outage.
+
+⭐⭐ **AND MY OWN FILING SAID IT WAS STRUCTURALLY UNFIXABLE WITHOUT AN RPC CHANGE.** `get_edition_insight_links` returns only `squeeze_pct, deal_pct, first_mint_x` — no timestamp — which reads exactly like "cannot be qualified where it renders", and I filed it that way at 2230Z. **Reading the VIEW DEFINITION refuted it in one query:** `topshot_deals_vs_fmv.discount_pct` is `(fmv - edition_offers.low_ask) / fmv` joined on the same `(external_id, collection_id)` — **the very `edition_offers` row the page already holds as `highOffer`**. The timestamp was in scope the whole time. ⚠ **A filed finding is a hypothesis, and this one was MINE, six hours old.** No migration, no schema-cache blip, no `apply_migration` — two lines.
+
+**Shipped.** The chip now carries `· ask {age} old` past the 12 h display threshold, with the shared tooltip. ⚠ `askAge === null` renders it UNMARKED: unknown age is not stale, and it is not fresh either.
+
+⭐ **THE GUARD FIRED ON ITS OWN DOCUMENTATION, LIVE, ON THE THIRD ATTEMPT** — the exact failure CLAUDE.md records six prior instances of. Anchoring on `"% below FMV"` matched the **fix's own comment**, which quotes `"18% below FMV"` to explain what was wrong; anchoring on `insightLinks.deal_pct != null` matched the `hasInsightLinks` SECTION GATE 470 lines above and measured the wrong block entirely. The working anchor is the rendered interpolation `insightLinks.deal_pct)}% below FMV`, which cannot appear in prose. **Both wrong anchors PASSED-then-FAILED loudly rather than silently, only because the assertion was written before the code was believed correct.**
+
+**Verification.** 2 new guard arms (one not-vacuous, one property-pinned — the chip's JSX must reference the ask age, not a fixed caption). Mutation-checked: strip the marker from the chip → the guard reds. Full suite **1404 files / 15416 tests green**, `tsc` 0.
+
+⏱ **Falsifier:** open a Top Shot edition that appears on `/insights/deals` while the feed is down — the chip and the board row must now agree about the ask's age.
+
+**Revert path:** `git revert <sha of "fix(edition): the below-FMV chip agrees with the board it links to">`. Code only, no DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (DB) — the leaderboard collection push-down, measured 18.9× cheaper on the failing shape, and the 13-migration drift pile committed
 
 **`/api/analytics/sales/leaderboard` had failed 3 of its last 4 ten-wide sweeps** (5 collections × 2 roles, every request `cache=MISS`) on `statement timeout`. The 16:25 PT handoff had measured the mechanism — the collection predicate went through `analytics_sales`' CASE-mapped `collection`, which can never be an `Index Cond`, so **a zero-row collection (ufc) cost 41,361 buffers / 25.8 s** and topshot 162,717 (+6,665 temp) / 43.6 s against `service_role`'s 30 s ceiling — but declined to ship without git. This session has git (device-flow token, VM push), so it shipped.
