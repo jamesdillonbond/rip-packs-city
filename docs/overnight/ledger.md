@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📋 REGISTER — the audit's eight still-open findings get rows, each with an exit condition AND a falsifier
+
+**A process gap in my own pass, caught by loading `rpc-audit-drain`.** I had been writing ledger entries and inbox filings all day and never touched `docs/audits/deep-audit-register.md` — which CLAUDE.md names as **the canonical open list** ("an item that matters and is still open should have a register row, and if it does not, that gap is the finding"). An inbox filing is a listing, not a status.
+
+**R61–R68 added**, in the file's own 6-column shape, each carrying what shipped, what is owed, an exit condition and a falsifier:
+
+- **R61 · P1 · Trevor** — GitHub honours ~5 scheduled runs per workflow per day; every GHA cron above that is a false document. Falsifier: disable a few high-frequency workflows — if the others RISE it is a repo budget, not a per-workflow cap, and the remedy changes.
+- **R62 · P1 · Trevor** — the ops EMAIL channel is unset in production; all alerting rests on one Telegram token. Falsifier: a row showing `email-FAILED` instead of nothing would mean the vars ARE set and Resend is failing — a different fix.
+- **R63 · P2** — `edge-fn-drift` tier 2 has never run (38/38 eszip failures); root cause named, fix unverifiable without the Management PAT.
+- **R64 · P2 · Trevor** — 19 edge functions deployed without their import map. ⚠ A lower bound, because R63's census is dark.
+- **R65 · P2** — 10,483 lines of edge code cannot enter the JS gates; extraction to `_shared/` is the only lever and 6 of 38 take it. Both of my wrong readings recorded so nobody repeats them.
+- **R66 · P2** — `next/og` fetches Twemoji from a third-party CDN at render time on 6 of 44 cards. No central fix exists; guarded, not repaired.
+- **R67 · P3** — wall-clock tests have no suite-level detector and a grep cannot be one. ⚠ `TZ` alone would have read clean through both of the day's instances.
+- **R68 · P3** — `rpc-pipeline.yml` cannot fail (6/6 `continue-on-error`). ⚠ Records that `stale-fmv-monitor`/`data-integrity`'s warn-then-`exit 0` is DELIBERATE and I filed those as defects wrongly.
+
+⚠ **Every P1 here is Trevor's, and neither has a code fix** — one is a scheduler the repo does not control, one is a credential.
+
+⚠ **The register has no guard of its own** (no test or script references it), so unlike the ledger and the inbox INDEX nothing detects a row rotting or being clobbered. Not filed as a finding this pass — recorded here so the next session that wants one knows it is absent by observation, not by assumption.
+
+**Verification:** all 8 rows parse at 6 columns; full suite **1402 files / 15392 tests**; memory-doc link guard 150 links / 24 files.
+
+**Revert path:** `git revert` this commit — docs only, no code, no prod state.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — a day-old ask was being asserted to Google as `InStock`, and the honest fix keeps the rich result rather than deleting it
 
 **The hole.** `editionJsonLd` publishes a schema.org `Offer` with `availability: InStock` and no expiry, and its signature had **no timestamp at all** — so a stale ask was structurally unqualifiable. ⚠ **The function was already careful about every OTHER kind of staleness** (it refuses a `STALE`-confidence FMV as a price source; a closed market emits no Offer at all) and stated its premise outright four lines up: *"a live low ask is still a real, reliable price even on STALE."* **That sentence was true of a feed that re-checked hourly and false of one that had stopped** — and on 2026-08-29 `offers-sweep` had not confirmed an ask in **31 hours** while every one of them went to search engines as buyable now. Filed at 2230Z as item 2 of the ask-staleness remainder.
