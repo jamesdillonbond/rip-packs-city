@@ -1,79 +1,64 @@
 {
-  "run": "nightly-20260828T0804Z-cloud-NOPUSH",
-  "captured_at_utc": "2026-08-28T08:05Z",
-  "captured_at_pt": "2026-08-28T01:05 PT",
-  "mode": "NO-PUSH (cloud Cowork; mount has NO remote.origin.pushurl with a PAT; git push --dry-run -> 'could not read Username for https://github.com'). DB migrations + verification + artifact repair available; nothing clearly-safe + net-positive AND not collision-hot to ship. Blocker specific to this cloud session; Trevor's box + Claude Code push normally.",
-  "genuine_overnight": true,
-  "clock_check": "DB now() 08:04:49Z = 01:04 PT (inside 00:00-06:00). max(ingested_at) sales 07:52Z + max(computed_at) fmv 07:55Z bound real time from below. Genuine overnight run.",
-  "shipped_to_prod_state": "NOTHING. No DB migration, no code deploy (NO-PUSH), no data mutation, no edge-fn, no artifact change. Quiet honest night; post-ship watch clean.",
+  "run": "nightly-20260829T1732Z-cloud-OFFHOURS-NOPUSH",
+  "captured_at_utc": "2026-08-29T17:40Z",
+  "captured_at_pt": "2026-08-29T10:40 PT",
+  "mode": "OFF-HOURS (real local time ~10:31-10:40 PT, outside 00:00-06:00; DB now() confirmed shell clock, no skew) + NO-PUSH (mount has no authenticated remote.origin.pushurl; git push --dry-run -> 'could not read Username'). MONITOR-MODE: full health triage + post-ship watch done; QUEUED everything, shipped nothing. Also origin/main actively advancing mid-run (commit f8d8f90f BUILDING at ~17:39Z) => queue-only independently confirmed.",
+  "genuine_overnight": false,
+  "clock_check": "shell date -u 17:31:20Z == DB now() 17:31:33Z (agree, no skew). max(ingested_at) sales 17:23Z + max(computed_at) fmv 17:30Z bound real time from below. Real local = ~10:31 AM PDT => OFF-HOURS.",
+  "shipped_to_prod_state": "NOTHING. No DB migration, no code deploy (off-hours + no-push + human actively pushing), no data mutation, no edge-fn, no artifact change. Post-ship watch clean; no auto-revert warranted.",
   "security": {
     "invariants": "clean ([])",
     "anon_write_holes": "clean ([])",
     "rls_off_base_tables": "clean ([])",
     "secdef_anon_violations": "clean ([])"
   },
-  "saturation_state": "00:10Z daytime tick was in a spell (io_wait 37/37 active). At capture 08:04Z the spell had CLEARED (io_wait 1, active 1, total 36) -> this was a genuine quiet window for re-measurement.",
-  "post_ship_watch_prev": {
-    "note": "Watched the ~10 08-27 Claude Code interactive ships (pack-pool wedge, laliga-pack-ev retire, rwfc revert, candy-editions 01:10Z move, jobid 211 move, wallet-backfill window narrow + backstop experiment #48). All behaving as predicted or improved; no regression, no auto-revert.",
-    "pack_pool_wedge_dd4be709": "topshot-pack-pool-backfill fail-rate 93.8% -> 62.5% (175/280); converting again; last ok 07:58Z. Improved.",
-    "retire_compute_laliga_pack_ev_24f67403": "0 runs/24h. Correctly retired.",
-    "rwfc_revert_a0f52694": "refresh_wmc_fmv_changed 279 runs / 222 ok / 57 fail (known wasteful class); last ok 08:03Z. Stable, revert restored known-good.",
-    "candy_editions_0110Z_544f3e6c": "0 runs = documented schedule transition; first new-slot run 08-29 01:10Z. As predicted; ~51h breach across transition is NOT a new fault.",
-    "security": "clean; Sentry still dark (billing); no new non-saturation Vercel error class."
+  "rpc_ops_snapshot_note": "rpc_ops_snapshot() TIMED OUT inside sentinel_fmv_confidence_rows (known daytime IO-band timeout, inbox 2026-08-28T1810Z). Ran component checks individually instead.",
+  "post_ship_watch": {
+    "note": "Watched the 08-28/08-29 Claude Code ships. NO regressions, NO auto-revert. Post-fix windows split at each fix's deploy time, not the raw 24h window (raw window pools pre-fix failures).",
+    "refresh_wmc_fmv_changed_8bdfa596": "R57 two-caller skip-lock. Post-fix (>02:50Z): 163/169 ok = 96.4%. Latest 17:33Z ok, 21.6s. Healthy; earlier 32/32-failed reading was the pre-fix slice.",
+    "refresh_wmc_fmv_drift_active_ecb2563c": "changed-set materialisation. Post-fix: 144/167 ok = 86.2%. Latest 17:33Z ok, 27.1s. Healthy (known wasteful drift class).",
+    "promote_unmapped_sales_90510112": "self-overlap advisory-lock guard. Latest 17:36Z ok with extra.note=skipped_concurrent_run (guard firing as designed). 4 pre-fix failures only.",
+    "wallet_username_resolver_8fd80727": "ok-predicate fix DEPLOYED READY. Last run 15:08Z PRE-deploy (deploy ~16:15Z). First post-deploy run not yet observed -> CARRY to tomorrow's watch. Its residual failures are honest now (legacy-endpoint 530 + queue-fetch statement timeout).",
+    "packs_column_3d566bd2": "UI three-state fix, deployed READY. No regression surface (client render).",
+    "log_pipeline_run_643eb26a + telemetry 211b5329": "deployed READY; duration_ms contamination fix verified in ledger (foreign duration 43,325ms -> 59ms). No regression."
   },
-  "daytime_candidate_remeasure": {
-    "compute-golazos-pack-ev": "was 'stalled 1412m' under the spell -> ran OK 06:38Z in the quiet window. Self-resolved; low-cadence + saturation artifact, not a genuine stall.",
-    "allday-pack-opens-backfill": "silence = known EarlyDrop (~94% invocations dropped pre-logRun); do not act, do not raise threshold.",
-    "rpc-refresh-allday-pack-realized": "board-MV 600s statement-timeout class (#27); saturation collateral; operator-queued."
+  "stalled_pipelines": "4 arms, all known/documented: weekly-db-maintenance (info housekeeping), panini-ingest (info, residential box ~15% drop by design), allday-pack-opens-backfill (medium, EarlyDrop ~94% -- honest fix 033c0c15e undeployed), refresh-pack-grail-metrics-mv (info, killed-ticks-are-LOGGING-ONLY, n=2 positive control). None new.",
+  "pipeline_alerts_high": [
+    "snapshot-institutional-wallets 57.1% fail -- wmc OFFSET paging statement timeout (page 178 = OFFSET 44500). Keyset fix queued (edge-fn/R21 deploy).",
+    "topshot-pack-pool-backfill 67.9% fail -- HTTP 530/1033 legacy-endpoint outage (+ known wasteful #38)."
+  ],
+  "topshot_legacy_endpoint_outage": {
+    "state": "ONGOING ~24h+. public-api.nbatopshot.com returns Cloudflare 530 code 1033 (Argo tunnel not connected) / 503 since ~18:00-18:22Z on 2026-08-28. Shape closer to decommissioning than transient outage.",
+    "studio_endpoint": "HEALTHY. snapshot-pack-asks 566/566 ok (api.production.studio-platform.dapperlabs.com). Confirms fault is the LEGACY endpoint only.",
+    "affected": ["offers-sweep (last ok 08-28 16:42Z)", "topshot-moments-hydrator (last ok 08-28 18:12Z)", "topshot-fmv-populate", "topshot-badge-set-backfill", "topshot-pack-pool-backfill", "wallet-username-resolver (upstream leg)"],
+    "user_facing": "/insights/deals stamps cross-collection-deals-mv refresh time over Top Shot asks last verified ~24h ago (diagnosis committed a589c65e; fix blocked because MV blends 3 ask_updated_at branches). Packs column honesty already fixed today (3d566bd2).",
+    "actionable_in_repo": "Migrate dead-endpoint clients (lib/chains/flow/topshot.ts, topshot-graphql.ts, topshot-badges.ts) to the Studio endpoint IF equivalents exist -- NOT a find-and-replace (searchPackNftAggregation vs searchMarketplaceEditions/getUserProfile/getMintedMoment). Needs verification + push -> operator/Claude Code."
   },
-  "trust_health_breaches": [
-    "public_board_slow_count=5 (was 7 on 08-27, 5 on 08-26; candy-mlb IO-saturation class; do NOT characterize direction from a ~1-day window)",
-    "unmapped_resolution_backlog_max=338 (was 357 on 08-27; All Day standing residual; 47,241 actionable, net-draining; known-structural, do NOT raise breach_at)"
+  "trust_breaches_known": [
+    "unmapped nfl_all_day 47,276 actionable open (was ~47,241 on 08-28; steady-state structural residual, ~1477d to clear, do NOT raise breach_at)",
+    "snapshot-institutional-wallets OFFSET paging (queued keyset fix)"
   ],
-  "trust_precompute_max_age_hours": 5.28,
-  "trust_precompute_note": "FRESH (5.28h vs 13h breach) -> the two breaches above are REAL, not a stale-refresher rollback artifact.",
-  "pgcron_recent_failures": [
-    "rpc-refresh-allday-pack-realized statement timeout on REFRESH MV CONCURRENTLY mv_allday_pack_realized (board-MV 600s cron class, #27)",
-    "jobid 256 rpc-thin-sale-ask-disclosure-refresh (inert-proconfig-timeout class, #42) still daily-failing"
-  ],
-  "db_size_mb": 14064,
+  "db_size_mb": 14327,
   "editions_by_collection": {
-    "nba_top_shot": 19906,
+    "nba_top_shot": 19913,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 518,
     "candy_mlb": 125
   },
-  "total_editions": 27314,
-  "fmv_high_plus_medium_by_collection": {
-    "nba_top_shot": 7781,
-    "nfl_all_day": 1599,
-    "laliga_golazos": 2,
-    "ufc_strike": 0,
-    "candy_mlb": "prices through own path; not in fmv_by_collection this snapshot",
-    "disney_pinnacle": "own table (pinnacle_fmv_stale_hours=9.5 ok)"
-  },
-  "sentinel_ts_uuid_editions_48h": 0,
-  "vercel": "Not separately re-pulled this run; last-night baseline was 50 runtime error groups all saturation-class. No new deploy since 5b4e25cf (docs-only tip). No indication of a new non-saturation class.",
+  "total_editions": 27321,
+  "fmv_high_plus_medium_by_collection": "UNMEASURED this run -- sentinel_fmv_confidence_rows timed out in the daytime IO band. Raw fmv_snapshots row counts are NOT comparable to the snapshot's per-edition figure, so no delta computed. Last-known (08-28): TS 7781, AllDay 1599, Golazos 2, UFC 0.",
+  "sentinel_ts_uuid_editions_48h": "not re-measured (snapshot timed out); no signal it moved",
+  "vercel": "Actively deploying. 08-29 daytime Claude Code ships all READY (8fd80727 username-resolver, 3d566bd2 packs, 90510112 promote-guard, 211b5329 telemetry). f8d8f90f (deal-floor-serials) BUILDING at capture. No non-saturation error class introduced.",
   "sentry_new_issues_48h": 0,
-  "sentry_caveat": "SENTRY STILL DARK (org error quota exhausted since 08-18; operator/billing). 0 issues is a dark-reporter, NOT a clean bill.",
-  "artifacts": "11 present, none flagged broken/stale in inbox, none updated since 08-16; fresh-on-open. No recent schema change affects them. No repair needed.",
+  "sentry_caveat": "SENTRY STILL DARK (org error quota exhausted since 08-18; operator/billing). 0 is a dark reporter, NOT a clean bill.",
+  "artifacts": "11 present, none flagged broken/stale in inbox, none updated since 08-16; fresh-on-open. No daytime schema-breaking change. No repair needed.",
+  "inbox_archiving_note": "DID NOT ARCHIVE (append-only, REFUTED 2026-08-24, enforced by __tests__/inbox-is-append-only-since-the-rule.test.ts).",
   "queued_this_run": [
-    "ufc-sales-indexer cron-job.org trigger dead -> recreate the UFC entry (operator; auth-gated). Smoke alarm correct; do not silence.",
-    "48 pg_cron jobs declare an inert statement_timeout; jobid 256 fails daily at 600s (#42). Decision-gated; raising a timeout cuts against focus P3.",
-    "cron waste 22.6% is schedule alignment (#42/inbox 08-27T0430Z); top burners cron_heavy-owned + pack-EV route logic (off-limits).",
-    "Sentry ingestion dark (org error-quota; operator/billing).",
-    "unbounded-fetch handoff (code; needs push; CLAUDE-CODE-HANDOFF 2026-08-27T0420Z).",
-    "topshot-active-listings-ingest / topshot-pack-pool-backfill #20/#30/#38 (ingest+FMV-route logic; off-limits/operator).",
-    "#22 defeated credential-purge branch claude/todo-implementation-e4tib3 still live (operator: triage ee94c8a2a -> GitHub-UI delete -> GC -> rotate)."
+    "Top Shot legacy-endpoint decommission -> Studio-endpoint client migration (operator/Claude Code; verification + push).",
+    "/insights/deals stale-ask freshness stamp (blocked on the 3-branch MV blend; diagnosis a589c65e).",
+    "snapshot-institutional-wallets OFFSET->keyset (edge-fn deploy; R21 territory).",
+    "Standing operator blockers: cloud-Cowork git push creds, Sentry dark since 08-18, atlas-proxy, sports-proxy ESPN 403, #22 stale public branch e4tib3."
   ],
-  "operator_blockers_unchanged": [
-    "git push credentials in cloud Cowork (blocks all autonomous code deploys; Trevor's box + Claude Code unaffected)",
-    "Sentry ingestion dark since 08-18",
-    "atlas-proxy wrangler deploy (partial)",
-    "sports-proxy 403 (ESPN, measured dead)",
-    "#22 stale public branch e4tib3"
-  ],
-  "inbox_archiving_note": "DO NOT ARCHIVE inbox filings (REFUTED 2026-08-24, enforced by __tests__/inbox-is-append-only-since-the-rule.test.ts). This run archived nothing.",
-  "ledger_write_note": "NO-PUSH: ledger + metrics + handoff written to the MOUNT (uncommitted; Trevor/next run commits). Splice anchored on the first ^### heading; verified ^### count rose by exactly 1."
+  "ledger_write_note": "OFF-HOURS + NO-PUSH: metrics + handoff + ledger entry + session note written to the MOUNT (uncommitted; Trevor/next run commits). Ledger spliced at first ^### heading after re-reading from disk."
 }
