@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) + ✅ VERIFIED — edge-fn-drift could exit 0 with its authoritative tier dead, and the sentinel row found a missing alert channel on its first use
+
+**SHIPPED — `check-edge-fn-drift.mjs` exit code.** `process.exitCode = drifted.length > 0 ? 1 : 0` disagreed with the report printed immediately above it, which already says *"no PROVEN drift — but the content census did not run, so this is NOT an all-clear."* CI reads the exit code, not the prose. The bug is LATENT: today tier 1 proves 19 drifted so the run is red anyway, but the moment those 19 are redeployed with their import maps `drifted.length` goes to 0 while tier 2 has failed on all 38 bodies since 08-09 — the badge would go green and the natural reading is "fixed". Decision extracted to an exported `driftExitCode()`, pinned by 4 cases and mutation-checked in 3 directions (drop the census guard · red on the `--tier1` opt-out too · always-fail, which the positive control catches). `--tier1` deliberately unaffected: a guard that reds on its own documented opt-out is a guard people delete.
+
+**Tier 2's root cause is now named, and deliberately NOT fixed blind.** `api()` calls `r.json()` unconditionally, and `/functions/{slug}/body` now serves an eszip bundle — hence `Unexpected token 'E', "ESZIP2.3"`. The two candidate fixes (parse the eszip, or negotiate a files-JSON response) are both unverifiable from a session without the Management PAT, and `get_edge_function` is a secret-safety hazard on a fleet where 5 functions carry unrotated `rpc_pls_` literals. Filed with the line named rather than guessed at.
+
+**VERIFIED — this morning's sentinel ship, against the outcome table.** Deployment READY with aliases attached; run 1732 succeeded on attempt 1; two `pipeline_runs` rows landed where there had never been one: `ok=t`, `status=WARN`, `checks_run=15`, `critical=[]`, `warn=[6 named checks]`, `duration_ms` 134,211 and 161,776.
+
+🚨 **The row found something on its first use: the EMAIL channel did not run.** `notifications` reads `["telegram","github-actions-native"]` — neither `email` nor `email-FAILED`. Both are pushed from inside `if (RESEND_API_KEY && ALERT_EMAIL)`, so the absence of both means the branch never executed; one of those two env vars is unset in production. The same consts gate `sendEmail` in `lib/ops-alert.ts`, so `stale-fmv-monitor` and `data-integrity` are almost certainly the same. **Every ops alert on this platform currently rests on a single Telegram bot token.** ⛔ Not established which var, and not investigated: reading them is a secret-safety hazard and Trevor's call.
+
+⚠ **Expected consequence of the sentinel guard, stated now so the first red is not misread:** the route runs 134–162 s against its own `maxDuration = 180`, so it will start reding on SLOW days, not only broken ones. That state existed before and was hidden by `exit 0`. Falsifier: reds on runs whose `pipeline_runs` row shows `ok=true` with a normal status mean the retry budget is wrong, not the route.
+
+**Verification:** tsc clean · full suite 1393 files / 15310 tests green · primary coverage gate unaffected (`scripts/**` is in no gate — itself a finding in the same filing).
+
+**Revert path:** `git revert` the code commit — restores the inline `drifted.length > 0 ? 1 : 0` and drops `driftExitCode` with its 4 pinned cases. No DB half.
+
 ### 2026-08-29 · 📦 FILED (no prod change) — I ran my own Class C recommendation instead of leaving it as advice, and the first thing it found was that #42's triage query still ranks the job I fixed yesterday FIRST
 
 **Following up [the 1815Z correction](inbox/2026-08-29T1815Z-CORRECTION-my-own-jobid-211-dosimeter-filing-is-superseded-an-index-fixed-it-and-42s-class-C-signature-is-wrong.md), which told the next reader to "re-test the remaining Class C members for a missing index." This is that test.**

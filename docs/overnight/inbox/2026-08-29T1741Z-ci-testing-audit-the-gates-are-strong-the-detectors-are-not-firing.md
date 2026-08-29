@@ -150,6 +150,26 @@ The sentinel is the more important of the two and was missed. It now writes a `p
 
 ⛔ **Deliberately NOT paired with a `pipeline_cadence_watchlist` row.** The sentinel is the thing that reads that table, so an entry for itself is a guard that cannot fire exactly when it is needed — the tick that would notice the silence is the tick that did not happen.
 
+## ✅ K. POST-SHIP VERIFICATION — and the new row found something on its first use
+
+Verified against the outcome table, not the self-report. Deployment `dpl_8pPUjix…` READY with aliases attached and `lambdaRuntimeStats` present; sentinel dispatched at 18:42:06Z; run 1732 **succeeded on attempt 1** (step 18:42:13 → 18:44:57Z). Two `pipeline_runs` rows landed where there had never been one:
+
+```
+18:42:15  ok=t  161,776ms  0/0/0  status=WARN  checks_run=15
+          notifications=["telegram","github-actions-native"]
+          critical=[]  warn=["Sales Ingest (2h)","FMV Confidence (canonical TS)",
+                             "Edition Coverage","Pipeline Silence","Trust Health","Sniper Feed"]
+18:45:52  ok=t  134,211ms  0/0/0  status=WARN  checks_run=15   (same shape)
+```
+
+🚨 **THE EMAIL CHANNEL DID NOT RUN.** `notifications` carries `telegram` and neither `email` nor `email-FAILED`. Those two are pushed from inside `if (RESEND_API_KEY && ALERT_EMAIL)`, so the absence of BOTH means the branch never executed — **one of those two env vars is unset in production**, and the same two consts gate `sendEmail` in `lib/ops-alert.ts`, so `stale-fmv-monitor` and `data-integrity` are almost certainly in the same state.
+
+⭐ **This is the whole argument for the row, demonstrated on its first use.** The delivery outcome was always computed; it just went to a response body nobody stored. It is now one query. ⛔ **NOT established: which of the two vars is missing, or why.** Reading them is a secret-safety hazard and is Trevor's call — the observable is only that the guarded branch did not execute. ⚠ **Consequence worth stating plainly: every ops alert on this platform currently rests on a single Telegram bot token, with no second channel and nothing watching the first.**
+
+⚠ **Second thing the rows show, and it is a real risk from my own change.** The sentinel takes **134–162 s against its own `maxDuration = 180`** — 75–90% of budget, and its header already records 504s under disk-IO saturation. Before today a 504 exited 0; now it reds after 3 attempts. That is the correct semantics, but it means **this badge will start going red on slow days, not only broken ones**, and the first such red will look like a regression from this change. It is not — it is the state that was previously hidden. 👉 The right response is to cut the route's cost (15 checks, several of them heavy reads) rather than to widen the timeout, and ⛔ **not** to revert the guard. **Falsifier:** if reds appear on runs whose `pipeline_runs` row shows `ok=true` with a normal `status`, the retry/timeout budget is wrong rather than the route being slow.
+
+---
+
 ---
 
 ## ⚠ I. Naming what CI structurally is here
