@@ -2,7 +2,11 @@
 
 **2026-08-29 11:5x PT / 18:5xZ · Claude Code (Trevor's box)**
 **Follow-on to [2026-08-29T1815Z](2026-08-29T1815Z-CORRECTION-my-own-jobid-211-dosimeter-filing-is-superseded-an-index-fixed-it-and-42s-class-C-signature-is-wrong.md), which recommended re-testing Class C members for a missing index. This is that test, run rather than left as a filing.**
-⛔ **NOTHING MEASURED UNDER LOAD WAS TURNED INTO A COST — the daytime IO band was still active (`io_wait 13 / active 13 of 48` at 18:44Z, i.e. 100% of active sessions in IO wait). This files a prediction and the exact query that settles it, not a result.**
+⛔ **Nothing measured under load was turned into a cost.** This filing was written as a PREDICTION at
+18:5xZ while the band was active (`io_wait 13 / active 13 of 48`) — **and then §4b measured it at
+18:5xZ as the band lifted to `6 / 6 of 47`.** ✅ **The prediction is CONFIRMED by a controlled pair
+(the projection is the only variable) — see §4b.** ⛔ **Still not measured: `BUFFERS` / `Heap
+Fetches`.** The sections are left in the order they were written, because the order is the method.
 
 ---
 
@@ -74,19 +78,59 @@ numbers in front of him. **It should not ship on this filing's evidence alone**,
 
 ## 4. ⛔ What is NOT established
 
-- **No `EXPLAIN` was run.** The band was active and this repo's own rule is not to measure a cost
-  inside a spell. **The claim is a SHAPE match, not a measurement.**
-- A bounded `count(*)` over that exact 60-day window **timed out at 25 s** during the band. ⚠ **That
-  is consistent with the prediction and is NOT evidence for it** — a timeout inside a spell is
-  spell collateral, and this repo has a standing rule against reading one as a cost.
-- **The 60-day window's row count is therefore unknown**, so the fix is unsized. If the window is
-  small the heap fetches are cheap and the whole prediction is wrong.
+⚠ **This section was written BEFORE §4b and is superseded on its first three bullets — kept, not
+edited away, because the sequence is the point: the claim started as a shape match and only became a
+measurement when the band lifted.**
+
+- ~~**No `EXPLAIN` was run.**~~ ✅ **Superseded by §4b** — plans obtained, and the projection is a
+  clean discriminator. The original caution was right at the time: the band was active.
+- ~~A bounded `count(*)` timed out at 25 s and is **not** evidence.~~ ⚠ **Still true as written** —
+  that first timeout remains spell collateral. **What made §4b evidence is not the timeout, it is the
+  CONTROL that completed beside it under the same conditions.** A timeout alone never became proof.
+- ~~**The 60-day row count is unknown.**~~ ✅ **Now measured: 88,576**, against a planner estimate of
+  21,960 — so the window is 4× larger than the planner believes and the fix is not unsized.
+- ⛔ **STILL open: no `BUFFERS` or `Heap Fetches` count**, because `EXPLAIN (ANALYZE, BUFFERS)` on the
+  control timed out at 45 s moments after the bare query completed. **Plan + behaviour, not buffers.**
 - jobid **4** (`rpc-ccm-step2`, ratio **3%** — 10 s success vs 300 s failure) is the most extreme
   bimodality on the board and **was not investigated at all here.** ⓘ Note its command uses the
   working two-statement form (`SET statement_timeout = '300s'; SELECT …`), so unlike #43's population
   its ceiling is real. **n = 7 runs; classify before rating.**
 
-## 5. 👉 The measurement that settles it — one query, quiet window (≥ 20:00Z)
+## 4b. ✅ MEASURED AT 18:5xZ AS THE BAND LIFTED — the prediction is CONFIRMED by a controlled pair
+
+Load had fallen to `io_wait 6 / active 6 of 47` (from 41 active at 18:06Z), so a bounded probe became
+defensible. ⭐ **The discriminator is the PROJECTION, and nothing else: same table, same predicate,
+same index, same `Index Cond`, same row estimate.**
+
+| projection | plan | planner cost | behaviour |
+|---|---|---:|---|
+| `count(*)` only | **Index Only Scan** using `idx_pack_rips_collection_time` | **616.64** | **completed — 88,576 rows** |
+| `count(*) FILTER (WHERE pull_value_usd IS NULL), count(*)` | **Index Scan** (same index, heap access) | **13,374.49** | **timed out at 45 s, twice** |
+
+⭐⭐ **Adding one column to the SELECT list flips Index Only Scan → Index Scan on the same index and
+multiplies the planner's cost 21.7×.** That column is `pull_value_usd` — exactly the payload the index
+does not carry, and exactly the column the MV's CTE projects
+(`SELECT COALESCE(pull_value_usd, 0) AS pv FROM pack_rips WHERE <this predicate>`). **My probe's
+payload variant IS that CTE's base scan.**
+
+🚨 **And the real cost is worse than the plan says: the planner estimates 21,960 rows; the actual count
+is 88,576 — a 4× underestimate**, so the true number of heap visits is ~88.5k random fetches into a
+756 MB table, not ~22k. Against the tier's 22 MB/s floor that is comfortably the difference between a
+303 s success and a 602 s kill.
+
+**This is the same defect as jobid 211, confirmed rather than asserted**: correct leading columns,
+missing payload, heap fetch per row, bimodal outcome.
+
+⛔ **What is still NOT measured — the honest boundary:**
+- **No `BUFFERS`/`Heap Fetches` figure.** `EXPLAIN (ANALYZE, BUFFERS)` on the control **itself timed
+  out at 45 s** moments after the bare count completed — ⚠ **two runs of the same query, opposite
+  outcomes**, which is the contention confound this repo already documents. **So the evidence here is
+  PLAN + BEHAVIOUR, not a buffer count.**
+- ⚠ **Planner cost is an ESTIMATE, not a measurement.** The 21.7× is a cost ratio, not a speedup.
+- ⛔ **Not proven that the fix takes jobid 237 under its ceiling** — only that the mechanism is present
+  and is the one that was fixed on 211. **Predicted, not demonstrated.**
+
+## 5. 👉 The measurement that would still add something — quiet window (≥ 20:00Z)
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
