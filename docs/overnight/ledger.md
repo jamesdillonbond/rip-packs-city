@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ RECOVERED (repo record only) — the `pack_purchases` autovacuum migration a no-push session applied had NO file, and therefore no revert path anywhere
+
+**Not my change, and I did not re-apply it.** `20260829010609_audit_20260829_pack_purchases_insert_autovacuum_keeps_visibility_map_warm` was applied live at 01:06Z by a Cowork session that cannot push. The entry above it flagged the parity gap; this closes it.
+
+⭐ **The parity gap was the visible half. The real cost was that the change had no revert path in the repo OR this ledger** — its author could write neither. A prod DDL whose only record is a session transcript is precisely what `scripts/check-migration-parity.mjs` was built to catch, and its own header prescribes this recovery.
+
+**Recovered byte-exactly from `supabase_migrations.schema_migrations`, verified rather than eyeballed:** md5 of the committed file, less its trailing newline, is `110fb6aad0b3e6a36388f55d8224f657` — equal to prod's `md5(array_to_string(statements, E'\n'))`. Committed at `4e405c39c`.
+
+**What that migration actually did (transcribed from its header so the number survives here):** `public.pack_purchases` carried no insert-driven autovacuum settings, so the default `1000 + 0.2 × n_live_tup` = 66,705 inserts gated an insert-triggered autovacuum; the newest slice stayed not-all-visible for weeks and every Index Only Scan over a recent window degraded to a heap scan. In `wallet_usernames_unresolved()`: heap fetches **28,203 / 29,658 → 0 / 0**, buffers **51,124 → 30,079**, execution **28,851 → 15,624 ms**. Now `autovacuum_vacuum_insert_threshold = 2000`, `insert_scale_factor = 0.01`, matching `sales_2026`.
+
+**REVERT (its, now on record):** `ALTER TABLE public.pack_purchases RESET (autovacuum_vacuum_insert_threshold, autovacuum_vacuum_insert_scale_factor);`
+
+⚠ **If its author later commits their own copy, delete one of the two files — parity matches on NAME, so a duplicate passes silently and nothing will point it out.**
+
+⚠ **Re-checked every other prod migration back to 2026-08-27 against `git ls-tree HEAD`: this was the ONLY gap.** 14 names checked, 13 already committed.
+
 ### 2026-08-28 · ✅ SHIPPED (prod DB) — `topshot-fmv-populate` had gone 17.7h without a success and the RPC was scanning the sales it had already decided to throw away
 
 **Found by following my OWN filing from 40 minutes earlier** (`detect_stalled_pipelines reported ALL CLEAR through a 7-hour outage`), which flagged this pipeline as *"the one to look at FIRST and it is NOT part of the outage"* and listed *why* it had not succeeded under **Not established**. This entry establishes it.
