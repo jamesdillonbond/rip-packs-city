@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📥 LANDED ON ANOTHER SESSION'S BEHALF (repo record of a prod change that was already applied) — the `sentinel_fmv_confidence_rows` pushdown, plus TWO register rows deliberately left alone
+
+**Committed two migration files a Cowork NO-PUSH session applied to prod and staged on the mount for exactly this.** Their headers say so in as many words — *"Applied to prod via Supabase MCP apply_migration … Staged on the mount for Trevor/Claude Code to commit (normal apply-then-commit-later flow)"* — and ⭐ **the claim was VERIFIED, not trusted: both versions exist in `supabase_migrations.schema_migrations` with matching names, and their FILENAMES match their recorded versions exactly** (`20260829202655`, `20260829202944`) — unlike the hand-stamped class recorded earlier this week.
+
+**What they do:** `sentinel_fmv_confidence_rows` stops reading `fmv_current` and pushes the collection filter INSIDE the `DISTINCT ON`, so the per-partition `(collection_id, edition_id, computed_at DESC)` indexes drive a Merge Append instead of computing `DISTINCT ON` over all three partitions before filtering. **That is the leg that had been killing `rpc_ops_snapshot()` about half the day** — the same timeout the 18:06Z daytime-monitor filing reported. The second file is the corrected definition after an OUT-column/table-column ambiguity on `confidence`; **both together reproduce the final function**, both are idempotent `CREATE OR REPLACE`, and each carries its own REVERT line.
+
+⛔ **TWO register rows from the same session are deliberately NOT recovered: `20260829202017 audit_20260829_pool_spells_need_wave_and_long_vacuum_together` and `20260829202158 audit_20260829_pack_reality_top_ev_is_draining_and_both_arms_read_greener` have NO FILE on disk at all.** ⭐ **They are ~25 minutes old, and this repo's own rule is that drift measured in MINUTES is someone's OPEN TURN, not drift to fix** — recovering a "missing" migration by hand is how you duplicate in-flight work that its author is about to stage. **That session is demonstrably still writing (it staged the two above at 20:36).** 👉 **Leave them; re-check on the next pass, and only recover if they are HOURS old with their author gone.**
+
+**Revert path:** `git revert <this sha>` removes the two FILES only. ⛔ **It does NOT revert the prod change, which was applied by that session before I saw it** — each file's own REVERT line is the DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the badge sweep that feeds the FALLBACK Top Shot ask wrote no run row at all, and asserted `ok: true` over a sweep that wrote nothing
 
 **Revert:** `git revert <sha of the commit named below>` — one route + three tests. No DB.
