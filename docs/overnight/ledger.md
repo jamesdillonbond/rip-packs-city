@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (prod DB + code) — `refresh_wmc_fmv_changed` has TWO callers running the same non-reentrant drain, and one of them holds `wallet_moments_cache` row locks for FOUR MINUTES
+
+🚨 **The whole 19–29% failure rate on this pipeline is one function fighting itself on a ten-minute cycle.**
+
+- pg_cron **jobid 303** `rpc-refresh-wmc-fmv-changed`, schedule `7-57/10` → :07 :17 :27 :37 :47 :57
+- `app/api/wmc-fmv-populate/route.ts` via cron-job.org, every 5 min → :03 :08 :13 :18 :23 …
+
+**Measured from `cron.job_run_details` (48 h, n = 284 succeeded): jobid 303 runs a MEDIAN of 240.8 s, mean 210.6 s, max 463.4 s.** It is still draining when the route's tick **one minute later** calls the same function, so that tick blocks on wmc row locks and dies.
+
+**The signal is exact.** `refresh_wmc_fmv_changed` runs over 48 h, bucketed by MINUTE:
+
+| minute | lock timeouts / runs | | minute | lock timeouts / runs |
+|---|---|---|---|---|
+| **:58** | **28 / 47 (59.6%)** | | :03 | 0 / 42 |
+| **:38** | **27 / 45 (60.0%)** | | :13 | 0 / 46 |
+| **:18** | **22 / 45 (48.9%)** | | :23 | 0 / 44 |
+| :28 | 7 / 43 (16.3%) | | :33 | 1 / 46 |
+| :08 | 5 / 45 (11.1%) | | :43 | 0 / 43 |
+| :48 | 5 / 45 (11.1%) | | :53 | 0 / 45 |
+
+⭐ **83 of 84 lock timeouts land on the six minutes that follow a jobid-303 firing. The six even-decade minutes are clean.**
+
+⚠ **THIS IS WHY MY EARLIER HYPOTHESIS FAILED, AND THE LESSON IS ABOUT BUCKET WIDTH.** Two hours earlier I tested *"the wallet-backfill waves are fighting the refreshers"* and the HOURLY distribution refuted it flat — 11 of 51 in the four wave hours, 40 in the twenty hours with zero backfill runs. **It looked uniform across hours because it IS: the collision is on the MINUTE hand, and an hourly histogram is structurally blind to a ten-minute period.** ⭐ **Bucket to the period you suspect, and when a distribution comes back suspiciously flat, suspect the bucket before you accept the refutation.**
+
+⭐ **The asymmetry between the two callers is built into the function.** It derives its loop budget from `pg_settings.statement_timeout × 0.6`. Over PostgREST as `service_role` that is 30 s → an **~18 s** budget. **Under pg_cron the setting is unset, so the function's own `ELSE` branch hands it `interval '300 seconds'`.** The 300 s caller starves the 18 s caller by construction, every ten minutes, forever.
+
+⛔ **SHIFTING THE SCHEDULE WAS CONSIDERED AND REJECTED ON THE NUMBERS, not on taste:** jobid 303 occupies ~4 minutes of every 10 and the route ticks every 5, so **exactly one route tick lands inside that window at ANY offset.** The observed ~50% (three bad minutes of six) is the structural rate, not a tuning artifact.
+
+**1. DB — `20260829030000_audit_20260828_rwfc_two_callers_collide_every_ten_minutes`.** `pg_try_advisory_xact_lock` at the top; if another instance is already draining, **return immediately instead of blocking ~18 s and dying.** No work is lost — the other caller is draining the same `rwfc_state` cursor, which is the entire point of the resumable design. ⚠ **`_xact_` is load-bearing: Supabase pools connections, so a leaked SESSION-level advisory lock would be inherited by an unrelated later request and wedge this function permanently.** A transaction-scoped lock is released on every path including a `statement_timeout` kill.
+
+🚨 **It returns NULL, not 0, and that is the honesty canon, not a style choice.** `rows_written = 0` on this pipeline already carries three incompatible meanings; *"another instance is doing it"* must not become a fourth. ⛔ **Do not "simplify" this to `RETURN 0`** — `Number(data ?? 0) || 0` in the route collapses the two again, which is exactly what the code did before.
+
+**2. Code — `app/api/wmc-fmv-populate/route.ts`.** `runRefresh` now discriminates on `data === null` (⚠ **NOT a falsy check — `0` is a real, measured drain of nothing**) and records the skip as `ok = true`, **`rows_found` / `rows_written` / `rows_skipped` all NULL**, `extra.note = 'skipped_concurrent_refresh'`.
+
+⭐ **Three tests, and the third is the one that matters: a NEGATIVE CONTROL asserting a REAL drain of zero still logs `0` and carries no note.** Without it, `p_rows_written: null` could be satisfied by making every run NULL and would read as coverage while proving nothing. ✅ **Both halves mutation-tested:** disabling the skip branch fails the test, and forcing `p_rows_skipped: 0` fails it too — so neither assertion is vacuous.
+
+⭐ **This also cleans an instrument, not just a pipeline.** `app/api/sentinel/route.ts` documents that it CANNOT use `fail_count > 0` because *"`refresh_wmc_fmv_changed` runs at a 32.6% failure rate and writes 409,110 rows"* — that pipeline is the named reason a weaker sentinel predicate was rejected. The noise it was designed around was this collision. ⚠ **Checked for masking in the other direction: a skip is a SUCCESS row, but skips only happen while another instance IS working, and if jobid 303 died the route's calls would stop skipping and run normally — so the arm cannot be silenced by this.**
+
+⚠ **Caller sweep before touching the return value, six sources**: `pg_proc.prosrc` (only `refresh_wmc_fmv_drift_active`, and only in a comment I added tonight), `pg_views`, `cron.job.command` (jobid 303, which **discards** the value), `pg_trigger`, full-repo grep (one call site). **Return TYPE unchanged**, so no signature changes anywhere.
+
+⚠ Parameter defaults (`p_since_minutes DEFAULT 30, p_limit DEFAULT 50000`), `SECURITY DEFINER` and `SET search_path = public, pg_temp` restated verbatim, re-read from `pg_get_function_arguments` rather than remembered. ACL re-verified unchanged. **Route deployed BEFORE the migration applied**, so no window records a NULL as a zero.
+
+**REVERT: re-create the function without the `pg_try_advisory_xact_lock` guard (delete the IF block at the top of BEGIN), and `git revert` the route commit.** No data is written or destroyed by either half.
+
+**EXIT CONDITION:** `canceling statement due to lock timeout` on `refresh_wmc_fmv_changed` falls from **84 in 48 h / 51 in 24 h** toward 0, replaced by `skipped_concurrent_refresh` notes on roughly the same minutes. **FALSIFIER: if lock timeouts persist on :08/:18/:28/:38/:48/:58, the blocker is NOT another instance of this function — look at pg_cron jobid 302 (`backfill_wmc_fmv_confidence`, `2-59/5`), which also writes `wallet_moments_cache` and fires at :07 alongside 303.**
+
+⛔ **NOT DONE, and both are decisions rather than diagnoses:** (1) **whether TWO schedules for one drain is right at all** — the route's 18 s call and jobid 303's 240 s call do the same job, and 🚨 **jobid 303 writes NOTHING to `pipeline_runs`, so the fleet's telemetry attributes this pipeline's entire behaviour to the minority caller.** (2) **Why 303 gets 300 s** — the `ELSE interval '300 seconds'` branch is a fallback for "no statement_timeout", not a considered pg_cron budget.
+
 ### 2026-08-28 · 📝 CORRECTED (repo record only, no prod change) — the jobid-211 slot move was applied, lost all three of its ticks, and was reverted; nothing in the repo said so, and it refutes one of #42's prescriptions
 
 **Found by re-deriving the Cowork handoff's §8 migration-drift list rather than inheriting it.** The handoff flagged two repo files with no register row and called `20260828050000` (the underpriced-board instrument) the dangerous one because it schedules a pg_cron job. **Both halves of that are wrong, and the file it did not flag is the one that mattered.**
