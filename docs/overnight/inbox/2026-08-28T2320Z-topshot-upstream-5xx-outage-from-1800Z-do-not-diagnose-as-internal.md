@@ -81,3 +81,37 @@ hour(Z)  runs  upstream_5xx  ok
 - ⚠ `topshot-fmv-populate` was fixed on 2026-08-28 for an unrelated `statement timeout` in `upsert_topshot_marketplace_fmv` (migration `20260829020000`). **That fix is UNEXERCISED and will stay so until the feed returns** — its 01:38Z tick died on `http 530: error code: 1033` before reaching any SQL. Do not read its continued failure as the fix not working.
 
 ⛔ **Still not established:** whether our retry/backoff is appropriate for a now nine-hour upstream outage — unchanged from the original filing, and still a different question.
+
+---
+
+## UPDATE 2026-08-29 13:48Z — **twenty hours, zero successes** — and the blast radius is SMALLER than "Top Shot is down"
+
+Second re-measure by the same later pass. Same five pipelines, hourly:
+
+```
+hour(Z)  06:00 07:00 08:00 09:00 10:00 11:00 12:00 13:00
+runs        21    22    21    12    21    21    20    15
+5xx         21    22    21    10    21    21    19    12
+ok           0     0     0     0     0     0     0     0
+```
+
+**Zero successes in any hour since 18:00Z on 2026-08-28. This is now a ~20-hour total upstream outage, not a spell.**
+
+⭐ **BUT THE SCOPE IS NARROWER THAN THE PIPELINE LIST SUGGESTS, AND THIS IS THE PART TO ACT ON.** Top Shot **sales are 0.1 hours stale** — six minutes. The sales spine does not go through Top Shot's GraphQL at all; it reads Flow on-chain events. What is dark is the **GraphQL-dependent enrichment layer only**:
+
+| still fresh | dark since 18:00Z 08-28 |
+|---|---|
+| `sales` (0.1 h stale) — the pricing spine | moments metadata (`topshot-moments-hydrator`) |
+| `fmv-recalc` 1.7.0, which prices off `sales` | offers (`offers-sweep`) |
+| everything downstream of those | pack pools (`topshot-pack-pool-backfill`) |
+| | marketplace FMV (`topshot-fmv-populate`) |
+| | catalog (`topshot-catalog-backfill`) |
+
+⚠ **So "NBA Top Shot data is 20 hours old" would be WRONG and is the wrong thing to escalate.** Prices and sales are current; new moments, live asks, offers and pack contents are not.
+
+**What this changes:**
+- ⛔ The confounding window is now **~20 hours wide** and covers a full day of R56 / conversion-rate / jobid-303 evidence on any Top Shot pipeline. **Do not evaluate a Top Shot fix against data from this window.**
+- ⚠ `topshot-fmv-populate`'s statement-timeout fix (`20260829020000`) is **still unexercised at 20 hours** — 4 runs in 24 h, 4 failed, every one on `http 530: error code: 1033` or `503` **before reaching any SQL**. Its continued failure says nothing about the fix.
+- ⭐ **A twenty-hour upstream outage with no recovery is a Trevor-facing fact, not an engineering one.** Nothing in this repo can shorten it, and the honest options are (a) wait, (b) ask Top Shot, (c) decide whether any surface should say "live marketplace data unavailable" rather than silently showing yesterday's. **(c) is the only one that is ours**, and it is a product decision — the honesty canon says a stale read presented as current is the defect class this platform counts, and a 20-hour-old ask list is exactly that.
+
+⛔ **Still not established:** whether our retry/backoff is appropriate for an outage of this length (unchanged, and now much more pointed — five pipelines have retried into a wall ~450 times); and whether any user-facing surface currently labels Top Shot marketplace data with its age.
