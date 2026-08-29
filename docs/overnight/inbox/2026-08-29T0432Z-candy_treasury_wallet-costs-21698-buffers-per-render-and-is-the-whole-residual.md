@@ -71,3 +71,34 @@ Proposal: a one-row table (⚠ **a table, not a materialized view** — an MV ca
 - **What `candy_pack_market` costs.** It was not EXPLAINed — it is included here only because it is the other view referencing `candy_treasury_wallet`, and because it fails in the same second.
 - **Whether the 8-partition `sales` probe is fixable without changing semantics.** "The most recent sale for this serial, ever" genuinely has no time bound.
 - ⚠ **Whether 02:40:19Z is representative.** It is the LAST event, not a rate — a batch that fails once an hour and one that fails every render produce the same `last=` field. **Bucket the events before sizing this.**
+
+---
+
+## ⛔ CORRECTION, same session — an EARLIER measurement of this same view exists, it ranked the legs the OTHER WAY, and by this repo's own rule it was more nearly right than mine
+
+After filing the above I found a prior ledger entry measuring `candy_special_serials_board` live at **5,355 ms · 54,524 buffers**, with this ranking:
+
+| leg | buffers (theirs) | buffers (mine) |
+|---|---:|---:|
+| per-serial last-sale `sales` LATERAL | **36,433** | 36,552 |
+| `candy_treasury_wallet` InitPlan | 15,517 | 21,698 |
+
+**The two buffer counts agree to within noise. The CONCLUSIONS do not.** They wrote: *"the MATERIALIZED-CTE rewrite would save ~15,517 of 54,524 buffers (28%) and leave the real problem untouched … the real cost is a CORRELATED lookup … an index-shape problem `(edition_id, serial_number)`."* I wrote that the treasury leg is 94% of the cost.
+
+⛔ **I ranked by WALL CLOCK. They ranked by BUFFERS. CLAUDE.md is explicit that buffers are the durable comparison and that timings mislead in both directions — so on the stated rule, their ranking stands and my "94%" does not.** I am withdrawing that framing.
+
+⭐ **But the two runs are not actually in conflict, and the reconciliation is a better rule than either.** Split the buffers by hit vs read:
+
+| leg | hit | **read (cold)** | dirtied | time |
+|---|---:|---:|---:|---:|
+| `candy_treasury_wallet` | 16,429 | **5,269** | 1,415 | **42,817 ms** |
+| `sales` LATERAL | 36,410 | **142** | 0 | 2,229 ms |
+
+**2.0 ms per buffer against 0.06 ms per buffer — a 33× difference, and the cold-read column explains all of it.** The `sales` leg touches more buffers but they are almost entirely already in cache; the treasury leg touches fewer and pays **37× the cold reads**, plus dirtying 1,415 pages.
+
+👉 **The durable rule this yields, and it is worth more than either finding:** ⚠ **on an IO-bound instance, TOTAL buffers ranks legs by work while `read` buffers ranks them by COST. Quote the split, not the total** — a leg with 36k warm hits and one with 5k cold reads are not comparable numbers, and either single figure picks a different winner.
+
+**What this changes about the recommendation above:**
+- ⛔ The precompute proposal is **no longer clearly the first move**, and the earlier entry's `(edition_id, serial_number)` index may beat it on total work.
+- ⭐ **The "one measurement to take first" named above is now the deciding one, and it should be taken with the hit/read split, warm-vs-warm, on BOTH legs** — not on wall clock, which is what led me astray here.
+- ⚠ Both measurements are single cold-ish samples on a shared instance, taken hours apart. **Neither is a distribution.**
