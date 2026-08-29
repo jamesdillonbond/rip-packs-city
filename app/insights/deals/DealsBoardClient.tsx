@@ -89,12 +89,68 @@ function fmtInt(n: number | null): string {
   return Number(n).toLocaleString("en-US")
 }
 
+// ── Ask staleness ───────────────────────────────────────────────────────────
+//
+// 🚨 `ask_updated_at` DOES NOT MEAN THE SAME THING IN ALL THREE BRANCHES of
+// mv_cross_collection_deals, and treating it uniformly publishes a false claim
+// for a third of the board:
+//   • nba_top_shot   — edition_offers.updated_at        → last VERIFIED by offers-sweep
+//   • disney_pinnacle— pinnacle_catalog.floor_ask_updated_at → last VERIFIED
+//   • nfl_all_day    — allday_edition_floor_ask.floor_ask_listed_at
+//                      → when the listing was CREATED. A 90-day-old value there
+//                        means a long-standing listing, NOT an unchecked one, and
+//                        `allday_edition_floor_ask` has no verification column to
+//                        use instead — so All Day is deliberately EXCLUDED rather
+//                        than mislabelled.
+//
+// WHY THIS EXISTS (2026-08-29). `offers-sweep` is the only writer of
+// edition_offers.updated_at. It normally completes 8–18 full wraps a day (every
+// edition re-checked about every 80 minutes); during the public-api.nbatopshot.com
+// outage it managed ZERO for 24h+, taking the median Top Shot ask age to 27.9 h
+// while 9 of the 10 Top Shot rows on this board sat over 12 h unverified — and the
+// page said "Updated 9 minutes ago" beside "Asks refresh continuously", because
+// that stamp reads the MV's refresh time, not the age of the asks in it.
+//
+// A stale "deal" is the single thing this board can do that wastes a collector's
+// trip, and its own lede already warns about "a low-serial / stale listing".
+const ASK_STALE_HOURS = 12
+
+// ⚠ TAKES `nowMs` RATHER THAN READING THE CLOCK, AND THAT IS NOT STYLE.
+// This component is imported directly by a server page (no `dynamic({ssr:false})`),
+// so it is server-rendered for crawlability and then hydrated. A `Date.now()` here
+// would be read once on the server and again in the browser, and a row sitting near
+// the ASK_STALE_HOURS boundary would render the caveat on one side and not the other
+// — React #418, the exact defect `insights-client-dates-are-hydration-safe-guard`
+// exists for. It caught this in the full suite; the marker escape would have
+// SUPPRESSED a real bug rather than fixed one.
+//
+// Callers pass a post-mount clock that is `null` during SSR, so nothing
+// server-renders and there is no text to mismatch. The staleness marker therefore
+// appears on hydration rather than in the initial HTML, which is the right trade:
+// a human sees it immediately, and a crawler indexing the board is not the audience
+// for "we haven't re-checked this ask".
+function askVerifiedAgeHours(r: Row, nowMs: number | null): number | null {
+  if (nowMs === null) return null
+  // Only the two branches where the column means "verified" can answer this.
+  if (r.collection_slug === "nfl_all_day") return null
+  if (!r.ask_updated_at) return null
+  const t = Date.parse(r.ask_updated_at)
+  if (Number.isNaN(t)) return null
+  return (nowMs - t) / 3_600_000
+}
+
+function fmtAge(h: number): string {
+  return h < 48 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`
+}
+
+
 // Fee-net cell. Shows what you'd keep reselling at FMV after the published
 // seller fee, and the resulting margin on the money you'd put in (the ask) —
 // not on FMV, which would flatter it the same way the gross discount already
 // does. A row whose gross discount does NOT survive fees is called out
 // explicitly, because that is the case this column exists to catch.
 function netCell(r: Row) {
+
   const d = feeNetDeal(r.low_ask, r.fmv_usd, r.collection_slug)
   if (!d) return <span className="rpc-dl-net-none">—</span>
   const sign = d.netMarginUsd >= 0 ? "+" : "−"
@@ -155,6 +211,12 @@ export default function DealsBoardClient({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // Post-mount clock: null through SSR so ask-age output cannot differ between the
+  // server render and hydration. See askVerifiedAgeHours.
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    setNowMs(Date.now()) // hydration-safe: set in an effect, so it is null at SSR and nothing server-renders
+  }, [])
 
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [collection, setCollection] = useState<CollectionFilter>("ALL")
@@ -223,6 +285,26 @@ export default function DealsBoardClient({
     return () => ctrl.abort()
   }, [sort, tier, collection, strictBasis, setFilter, playerFilter])
 
+  // ⚠ "Asks refresh continuously" USED TO BE FIXED COPY, and it is a claim about
+  // system behaviour, not a slogan. It is TRUE in steady state (offers-sweep
+  // completes 8–18 full wraps a day) and was FALSE for 24h+ during the
+  // 2026-08-29 public-api.nbatopshot.com outage, while the stamp beside it read
+  // "Updated 9 minutes ago" — that stamp is `readMvAsOf("deals")`, i.e. when the
+  // MATERIALIZED VIEW last refreshed, which says nothing about the age of the asks
+  // inside it. A successful MV refresh over a dead feed looks BEST precisely when
+  // the data is worst.
+  //
+  // So the claim is now DERIVED from the rows on screen instead of asserted, and
+  // only over the collections whose column means "verified" (see askVerifiedAgeHours).
+  const askFreshness = useMemo(() => {
+    const ages = rows
+      .map((r) => askVerifiedAgeHours(r, nowMs))
+      .filter((a): a is number => a !== null)
+    if (ages.length === 0) return null
+    const stale = ages.filter((a) => a >= ASK_STALE_HOURS).length
+    return { stale, total: ages.length, oldest: Math.max(...ages) }
+  }, [rows, nowMs])
+
   const kpis = useMemo(() => {
     if (rows.length === 0) {
       return { count: 0, big: 0, medianDiscount: 0 }
@@ -269,10 +351,19 @@ export default function DealsBoardClient({
         </p>
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            Board rebuilt <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-dl-meta-sep">·</span>
-          <span className="rpc-dl-meta">Asks refresh continuously</span>
+          {askFreshness && askFreshness.stale > 0 ? (
+            <span
+              className="rpc-dl-meta rpc-dl-meta-warn"
+              title={`The ask feed re-checks every edition about hourly when healthy. ${askFreshness.stale} of ${askFreshness.total} asks on this board have not been re-confirmed recently — the oldest is ${fmtAge(askFreshness.oldest)}. Rows carry their own age; open the listing before acting.`}
+            >
+              ⚠ {askFreshness.stale} of {askFreshness.total} asks unconfirmed (oldest {fmtAge(askFreshness.oldest)})
+            </span>
+          ) : (
+            <span className="rpc-dl-meta">Asks refresh continuously</span>
+          )}
           <span className="rpc-dl-meta-sep">·</span>
           <span className="rpc-dl-meta">No signup</span>
         </div>
@@ -486,7 +577,23 @@ export default function DealsBoardClient({
                         the Discount column ("thin data — FMV uncertain").
                         Do NOT reintroduce. (2026-07-25) */}
                     <td className="rpc-dl-td-num">{fmtUsd(r.fmv_usd)}</td>
-                    <td className="rpc-dl-td-num">{fmtUsd(r.low_ask)}</td>
+                    <td className="rpc-dl-td-num">
+                      {fmtUsd(r.low_ask)}
+                      {(function () {
+                        const age = askVerifiedAgeHours(r, nowMs)
+                        if (age === null || age < ASK_STALE_HOURS) return null
+                        // REPORTS, never concludes: it does not say the listing is
+                        // gone, only that we have not re-checked it.
+                        return (
+                          <span
+                            className="rpc-dl-thin-caveat"
+                            title={`We last confirmed this ask ${fmtAge(age)} ago; normally every edition is re-checked about hourly. It may already be sold or repriced — open the listing before acting.`}
+                          >
+                            ⚠ ask unconfirmed {fmtAge(age)}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className={`rpc-dl-td-num ${r.low_confidence_fmv ? "" : "rpc-dl-td-emph"}`}>
                       {fmtPct(r.discount_pct)}
                       {r.low_confidence_fmv ? (
@@ -634,6 +741,7 @@ const CSS = `
   color: var(--rpc-text-muted);
 }
 .rpc-dl-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-dl-meta-warn { color: var(--rpc-warning); font-weight: 600; }
 
 .rpc-dl-active-filter {
   max-width: 1180px;

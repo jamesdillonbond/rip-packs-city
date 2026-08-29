@@ -10,6 +10,70 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — `/insights/deals` stops implying a 28-hour-old Top Shot ask is live
+
+**Revert:** `git revert <sha of the commit named below>` — one client component + one
+test file. No DB, no migration. Closes the user-facing half of the 1605Z filing.
+
+**Why this and not something else:** it is the largest LIVE harm I could find. The board
+is **public, no-signup**, and its premise is "listed BELOW fair value **right now**". A
+stale "deal" is the one thing it can do that wastes a collector's trip — and its own lede
+already warns about "a low-serial / **stale listing**" while the header asserted freshness.
+
+**Measured at 19:4xZ, and still worsening:** `offers-sweep` (the only writer of
+`edition_offers.updated_at`) has had **0 successes since 2026-08-28 16:42Z**. Top Shot
+median ask age **23.8 h → 27.9 h** across today, growing ~1 h/h. **9 of the 10 Top Shot
+rows on the board are over 12 h unverified**, under a header reading *"Updated 9 minutes
+ago · Asks refresh continuously"* — because that stamp is `readMvAsOf("deals")`, the
+**MV's** refresh time, and the MV is a healthy 47/47.
+
+**Shipped:**
+- Per-row `⚠ ask unconfirmed 28h` on the **Floor ask** cell (the number that is stale),
+  following the existing `thin data — FMV uncertain` precedent. Copy **REPORTS, never
+  concludes** — it does not claim the listing is gone, only that we have not re-checked it.
+- The header claim is now **derived from the rows** instead of asserted:
+  `⚠ 9 of 10 asks unconfirmed (oldest 28h)`. ⚠ **"Asks refresh continuously" is TRUE in
+  steady state** (8–18 full wraps/day ≈ every edition hourly), so it is kept for the
+  healthy case rather than deleted — deleting it would remove accurate information.
+- `Updated` → **`Board rebuilt`**, so the stamp names what it actually measures.
+
+🚨 **ALL DAY IS DELIBERATELY EXCLUDED, and this is the part that would have been a NEW
+false claim.** `ask_updated_at` does not mean the same thing across the MV's three UNION
+branches: Top Shot and Pinnacle carry *last VERIFIED*, but All Day carries
+`floor_ask_listed_at` — **when the listing was CREATED**. A 90-day-old All Day value means
+a long-standing listing, not an unchecked one, and `allday_edition_floor_ask` has **no
+verification column** to use instead. Labelling it "unconfirmed 90d" would have put a fresh
+falsehood on a third of the board. **Pinned as a named control test.**
+
+⭐ **THE REPO'S OWN GUARD CAUGHT A REAL BUG IN MY FIRST VERSION, and the escape hatch would
+have hidden it.** `insights-client-dates-are-hydration-safe-guard` reds on a `Date.now()`
+in an insights client component (Rule C). This board is imported directly by a server page
+— server-rendered for crawlability, then hydrated — so a row near the 12 h boundary would
+render the caveat on one side and not the other: **React #418**, the exact defect that
+guard exists for. It offers an inline `hydration-safe: <reason>` marker; using it here
+would have **suppressed a real bug rather than fixed one**. Rewritten to the post-mount
+pattern the guard's four legitimate sites use: a `nowMs` state that is `null` through SSR,
+so nothing server-renders and there is no text to mismatch.
+
+⚠ **Proved by SSR, not by jsdom** — CLAUDE.md's standing rule is that a mount effect
+corrects the state before jsdom looks, so a client-only test passes either way. The pinning
+test calls `renderToString` and asserts the marker is **absent** from the server HTML while
+the row itself still renders (the fix must not cost crawlability). **Mutation control:
+seeding `nowMs` with `Date.now()` instead of `null` fails exactly that SSR test.**
+
+Four mutations, four different tests: dropping the All Day exclusion fails the All Day
+control; flagging every row regardless of age fails the fresh-ask control; restoring the
+unconditional header claim fails the header test; reading the clock during render fails the
+SSR test. Full suite **1,395 files / 15,323 tests green**.
+
+⛔ **What this does NOT do:** it does not make the asks fresher. `offers-sweep` is dead
+until `public-api.nbatopshot.com` returns or we migrate off it, and **the marker will clear
+itself the moment the feed recovers** because it is derived, not stored. ⛔ It also does
+not touch the alert path, which still has **no freshness gate at all** (2 views, 3
+functions, the payload type and the renderer all carry `ask_updated_at` and none reads it)
+— latent at 2 subscriptions, and the reason the fix belongs in the shared
+`cross_collection_deals_board` eventually.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — a scheduler-liveness detector, and the honest statement of what it cannot do
 
 **The gap it closes.** GitHub silently drops scheduled runs, and a dropped tick produces no run, no badge and no email — the workflow reads `active`, its last run reads `success`, and nothing anywhere says the alarm did not fire. Nothing in this repo could see it.
