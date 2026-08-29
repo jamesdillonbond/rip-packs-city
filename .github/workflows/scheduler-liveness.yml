@@ -1,0 +1,72 @@
+name: Scheduler liveness
+
+# WHY THIS EXISTS
+# ---------------
+# GitHub silently DROPS scheduled workflow runs, and a dropped tick produces NO
+# run, NO badge and NO email. Measured 2026-08-29 over contiguous pages of run
+# history, on three independent workflows:
+#
+#   Pipeline Sentinel  (24/day)  median gap 1.4h, MAX 12.7h  ->  4 ticks that day
+#   RPC Ops Monitor    (49/day)  median gap 1.2h, MAX 12.3h  ->  4
+#   RPC Data Pipeline  (72/day)  median gap 1.1h, MAX 11.4h  ->  3
+#
+# On 08-23/24, before it began, the sentinel's max gap was 2.3h. The repo asks
+# GitHub for 560 scheduled runs a day across 17 workflows, which is the most
+# likely reason it is being shed.
+#
+# Nothing detected this. The workflow reads `active`, its last run reads
+# `success`, and no instrument anywhere says "the alarm did not fire" — an
+# instrument that never RUNS is indistinguishable from one that ran and found
+# nothing.
+#
+# ⛔ WHAT THIS CANNOT DO. It does not detect the shedding, and it cannot: at a
+# 12.7h observed max gap, no silence bound both clears today's steady state and
+# catches an hourly job that stopped an hour ago. The shedding has ALREADY
+# destroyed the ability to detect a stopped scheduler, and saying so is the
+# point. The real fix is moving the high-frequency crons to cron-job.org, which
+# is not subject to this and already drives the production pipelines reliably.
+#
+# ✅ WHAT IT DOES DO: catch TOTAL silence — a workflow GitHub disabled (it does
+# this after 60 days of repo inactivity), one renamed or deleted out from under
+# its schedule, a cron edited into a shape that never fires, and a day-long
+# Actions outage. Every one of those is silent today. It also PRINTS
+# observed-vs-expected per workflow on every run, so the shedding stays a
+# visible number even though it is deliberately not the failure condition.
+#
+# ⚠ DAILY ON PURPOSE. Daily schedules are the ones still surviving the shedding
+# (db-pin-staleness and edge-fn-drift have both run every day since 08-08). An
+# hourly liveness check would be shed by the very thing it watches.
+#
+# 08:17 UTC is clear of every other daily slot here: 06:40 edge-fn-drift,
+# 06:41 ops-monitor's daily arm, 07:20 db-pin-staleness, 07:29 snapshot-
+# institutional-wallets, 07:40 migration-parity, 12:11 smoke-tests.
+on:
+  schedule:
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  liveness:
+    name: Did the scheduled workflows actually fire
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # No `npm ci`: the script is pure node with no dependencies, and this job
+      # must not be able to fail for a reason unrelated to what it measures.
+      - name: Check scheduler liveness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The detector excludes ITSELF by identity. A detector cannot witness
+          # its own silence: if this workflow stops it never runs, and before its
+          # first scheduled tick a manual dispatch would see zero scheduled runs
+          # and manufacture a failure.
+          SELF_WORKFLOW_FILE: scheduler-liveness.yml
+        run: node scripts/check-scheduler-liveness.mjs
