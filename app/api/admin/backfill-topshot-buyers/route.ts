@@ -124,6 +124,13 @@ export async function POST(req: NextRequest) {
       let execResolved = 0
       let sellersFilled = 0
       let decodeFailed = 0
+      // ⚠ SPLIT BY REASON (2026-08-29). `decode_failed` alone cannot distinguish
+      // "this era is gone" from "our credential broke", and this lane sat at 100%
+      // decode_failed for 36 runs with no way to tell. A 404 is the spork floor —
+      // expected and permanent. Anything else is ours to fix.
+      let decode404 = 0
+      let decodeOtherStatus = 0
+      let firstBadStatus: number | null = null
       let bailedEarly = false
       let ok = true
       let errMsg: string | null = null
@@ -176,7 +183,13 @@ export async function POST(req: NextRequest) {
             if (!row.seller_address && dec.seller) patch.seller_address = dec.seller
 
             if (Object.keys(patch).length === 0) {
-              decodeFailed++ // pre-mainnet19 (404) or transient — stays null, retried next pass
+              decodeFailed++ // stays null, retried next pass
+              if (dec.status === 404) {
+                decode404++
+              } else if (typeof dec.status === "number") {
+                decodeOtherStatus++
+                if (firstBadStatus === null) firstBadStatus = dec.status
+              }
             } else {
               const { error: upErr } = await (supabaseAdmin as any)
                 .from("sales").update(patch).eq("id", row.id).is("buyer_address", null)
@@ -205,8 +218,18 @@ export async function POST(req: NextRequest) {
             rows_found: found,
             rows_written: buyersResolved,
             rows_skipped: decodeFailed,
-            ok,
-            error: errMsg ? errMsg.slice(0, 500) : null,
+            // ⚠ A run whose every lookup failed for a reason that is OURS is not a
+            // success. The spork floor is NOT such a reason — it is the expected
+            // end of the resolvable range — so it stays green and is reported via
+            // `spork_floor` instead. Anything else at 100% (auth, proxy down) is a
+            // real failure that was previously indistinguishable from the floor.
+            ok: ok && !(found > 0 && buyersResolved === 0 && decodeOtherStatus > 0 && decode404 === 0),
+            error:
+              errMsg
+                ? errMsg.slice(0, 500)
+                : found > 0 && buyersResolved === 0 && decodeOtherStatus > 0 && decode404 === 0
+                  ? `resolved 0 of ${found}; ${decodeOtherStatus} spork lookups failed with status ${firstBadStatus ?? "unknown"} (NOT the mainnet19 floor)`
+                  : null,
             extra: {
               lane: "historical",
               cursor_sold_at: cursorAfter,
@@ -215,6 +238,17 @@ export async function POST(req: NextRequest) {
               exec_accounts_resolved: execResolved,
               sellers_filled: sellersFilled,
               decode_failed: decodeFailed,
+              // Always emitted, including as 0 — an absent key cannot answer "how
+              // many were the floor vs our fault", which is the whole point.
+              decode_404: decode404,
+              decode_other_status: decodeOtherStatus,
+              first_bad_status: firstBadStatus,
+              // ⭐ The floor signal the AllDay sibling already has
+              // (`reached_spork_floor_hint`) and this lane did not: every row
+              // attempted, none resolved, and every failure a 404. That is the
+              // cursor having walked past mainnet19, not a fault — and it means
+              // further passes over this range can only ever write zero.
+              spork_floor: found > 0 && buyersResolved === 0 && decode404 === found,
               wrapped: cursorAfter === null,
               bailed_early: bailedEarly,
               duration_ms: Date.now() - startedAt,

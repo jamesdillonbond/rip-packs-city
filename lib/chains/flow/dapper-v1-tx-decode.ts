@@ -209,6 +209,28 @@ export interface TopShotSaleTxDecode {
   payer: string | null
   proposer: string | null
   ok: boolean
+  /**
+   * HTTP status of the upstream lookup when one was made, else null.
+   *
+   * ⚠ ADDED 2026-08-29 BECAUSE `ok: false` CONFLATED THREE ANSWERS THAT NEED
+   * OPPOSITE RESPONSES, and the spork path's own comment named all three before
+   * treating them identically: a **404** (the transaction predates mainnet19 —
+   * genuinely unresolvable, stop asking), an **auth failure** (401/403 — the
+   * `SPORK_PROXY_SECRET` is wrong or expired), and a **5xx** (the proxy is down —
+   * retry later).
+   *
+   * Measured that day: `topshot-buyer-backfill-historical` ran 36 times at
+   * `decode_failed` = `rows_found` = 100%, writing zero rows, reporting `ok: true`
+   * — and NOTHING in the row could say which of the three it was. The era-floor
+   * reading was only establishable from OUTSIDE, by noticing the failure rate
+   * tracked the cursor's DATE (0% above 2023-11-17, 29.8% across 11-08→11-17,
+   * 100% below 11-08) rather than wall-clock. An auth failure would have flipped
+   * at a time instead, and would have looked identical in every logged field.
+   *
+   * ⛔ Optional and additive on purpose: every existing caller destructures only
+   * buyer/seller/payer/proposer and is unaffected.
+   */
+  status?: number | null
 }
 
 // Shared parser for the /v1/transactions/{id}?expand=result envelope — used by
@@ -298,7 +320,10 @@ export async function decodeTopShotSaleTxViaSpork(
       headers: { Authorization: `Bearer ${sporkProxySecret}` },
       signal: AbortSignal.timeout(fetchTimeoutMs),
     })
-    if (!res.ok) return out // 404 = pre-mainnet19, or worker/auth error — leave null
+    // Carry the status out so the caller can tell a pre-mainnet19 404 (stop) from
+    // an auth or proxy fault (fix / retry). Still returns nulls either way — the
+    // row stays unresolved — but the REASON is no longer lost.
+    if (!res.ok) return { ...out, status: res.status }
     const json = (await res.json()) as Parameters<typeof parseTopShotSaleTxJson>[0]
     return parseTopShotSaleTxJson(json, nftId)
   } catch {

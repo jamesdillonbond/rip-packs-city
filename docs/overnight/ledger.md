@@ -10,6 +10,80 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code, 2 items) — a 100%-failing backfill that could not say WHY, and a sibling session's new test that reddens `main` for 5 hours in every 6
+
+**Revert:** `git revert <sha of the commit named below>` — two routes/libs + one new
+test + one clock pin. No DB, no migration.
+
+## 1 · `topshot-buyer-backfill-historical`: the floor and our own fault were the same row
+
+**Found via the corrected discriminator** (green · faulted · wrote nothing over the
+WINDOW). ⚠ **This corrects my own earlier verdict**: I cleared this pipeline as "honest"
+off a 48 h `rows_written` of 4,860 — over the last **30 h it has written ZERO** while
+`decode_failed` equalled `rows_found` on **every run**, all `ok: true`. The 48 h window
+straddled its productive period; the shorter window is what exposed it.
+
+**Root cause, established by dose-response rather than asserted:** the failure rate tracks
+the CURSOR'S DATE, not wall-clock —
+
+| day | cursor range | found | written | decode_failed |
+|---|---|---:|---:|---:|
+| 08-26 | 2023-11-27 → 11-30 | 840 | 705 | **0%** |
+| 08-27 | 2023-11-17 → 11-27 | 4,920 | 4,488 | **0%** |
+| 08-28 | 2023-11-08 → 11-17 | 5,640 | 3,915 | **29.8%** |
+| 08-29 | 2023-11-06 → 11-08 | 4,320 | **0** | **100%** |
+
+That monotonic, date-keyed transition is the **mainnet19 spork floor** — the route's own
+comment already said `pre-mainnet19 (404)`. ⛔ **It REFUTES the two tempting alternatives:**
+it is not the Top Shot GraphQL outage (this lane decodes Flow transactions via
+`decodeTopShotSaleTxViaSpork`, not GQL), and it is not an expired `SPORK_PROXY_SECRET` —
+**an auth failure would flip at a TIME and be 100% regardless of cursor position.**
+
+⭐ **The defect: `if (!res.ok) return out` collapsed three outcomes needing opposite
+responses** — 404 (permanent floor, stop), 401/403 (our credential), 5xx (proxy down). The
+comment named all three and then counted them identically, so at 100% failure **nothing in
+the row could say which it was.** The floor reading was only obtainable from OUTSIDE, by
+noticing the date correlation. Had the secret expired, it would have looked identical.
+
+**Fixed:** `TopShotSaleTxDecode` carries an optional `status` (additive — every existing
+caller destructures only buyer/seller/payer/proposer); the route tallies `decode_404` vs
+`decode_other_status` + `first_bad_status`, and emits `spork_floor` — the signal the AllDay
+sibling already had as `reached_spork_floor_hint` and this lane lacked. ⚠ **`ok` goes false
+ONLY for the non-404 case**: the floor is the expected end of the resolvable range and
+stays green, reported via `spork_floor`. Mutation-checked both ways — reverting the decoder
+fails 3 tests, and the naive "any zero-row run reddens" fails the floor control.
+
+## 2 · ⛔ `main` was RED when I arrived — diagnosed independently; the fix is NOT mine
+
+`npm test` failed 2 of 15,314. Confirmed not mine by stashing my work and re-running.
+**Bisected to `59e8869b9`**, which added 4 tests to `api-sentinel-deep.test.ts`, 2 failing.
+
+🚨 **Flaky BY CONSTRUCTION, on the clock.** Both feed GREEN fixtures on purpose, so
+`hasCritical`/`hasWarn` are false and the only thing deciding whether the route notifies is
+`isScheduledReport = new Date().getUTCHours() % 6 === 0`. **Green in UTC hours 0/6/12/18,
+red in the other twenty** — authored green at 18:5xZ, red at 19:00Z. Confirmed by varying
+the ambient dependence rather than the code: pinning the clock to 12:00Z turns them green,
+re-pinning to 13:00Z reds exactly those two again.
+
+⛔ **NOTHING OF MINE SHIPS FOR THIS ITEM.** `d1a221a76` landed the clock fix while my
+rebase was in flight; I took that file wholesale and dropped my version. Its
+`vi.useFakeTimers({ toFake: ["Date"] })` is the better form — it scopes the fake to `Date`
+rather than replacing every timer. ⚠ **I am deliberately NOT naming whose session that
+was**: the entry above mine attributes it to a third party, I cannot verify that from here,
+and the commit sha is the only durable fact. **Three independent bisects reached the same
+mechanism and the same hour arithmetic within one hour** — that agreement is worth more
+than any of the three fixes.
+
+⚠ **What I deliberately did NOT do:** touch `app/api/sentinel/route.ts`. The intent (the
+durable row must carry the DELIVERY outcome) is right and the `% 6` gating is correct —
+only the harness was non-deterministic. Two sessions editing that route at once is the
+collision this ledger exists to prevent, and tonight is the evidence: **three of us were in
+the same test file inside the same hour**, and this entry needed re-splicing onto upstream
+twice while being written.
+
+Full suite after item 1: **1,394 files / 15,314 tests green**, run at 19:2xZ — the hour
+that was failing.
+
 ### 2026-08-29 · 🚨 SELF-INFLICTED — I shipped a wall-clock-dependent test that reddened main on someone else's commit; another session fixed it first
 
 **My defect.** The `records its own run durably` block I added to `__tests__/api-sentinel-deep.test.ts` this evening asserted `extra.notifications` contains `telegram`/`email` on a GREEN fixture. The route notifies only when `hasCritical || hasWarn || (UTC hour % 6 === 0)`, so on a green run those assertions hold **only in UTC hours 0, 6, 12 and 18**. CI **4196 (18:52Z) passed; 4197 (19:05Z) failed** on `Unit tests (vitest)` — **on another session's commit, not mine.**
