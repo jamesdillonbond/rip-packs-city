@@ -121,3 +121,57 @@ costs it. `(collection_id, moment_id)` is already a total order per wallet and a
 `ORDER BY`, so keyset is a drop-in that is O(1) per page **and** strictly safer.
 ⛔ **Not shipped here: it is an edge function** (deploy-only, R21 territory), so it needs a
 deliberate deploy rather than a push, and that is Trevor's call to sequence.
+
+
+---
+
+# ⛔ SECOND CORRECTION, to the table above — 2026-08-29 ~17:10Z
+
+**I classified the sweep's output too fast. Four of the six rows are NOT offenders,
+and the two that are have now been fixed.** The caveat *"the sweep DISCOVERS, it does
+not diagnose"* is in this very filing, and I then published the raw output as if it
+were a defect list. Checked one at a time:
+
+| row | verdict | evidence |
+|---|---|---|
+| `wallet-username-resolver` | ⛔ **real** | 6 runs, `errored` = `found`, 0 written, all green |
+| `topshot-deal-floor-serials` | ⛔ **real** | 21 runs, `gql_errors` 10 of 10, `listings_found: 0`, 0 written, all green |
+| `topshot-moments-hydrator` | ✅ **honest** | split on `ok`: the 135 **failing** runs carry `hard_chunk_failures: 810` / `graphql_failures: 0`; the 37 green runs carry `graphql_failures: 10,885` / `hard_chunk_failures: 0` **and wrote 215 rows**. The 530s ARE classified as transport faults and DO flip `ok=false`. `graphql_failures` is a per-moment *null data* condition, not a transport error. Working exactly as its `computeOk` comment documents. |
+| `topshot-buyer-backfill-historical` | ✅ **honest** | 58 green runs, **6,960 found / 1,276 written**. `decode_failed` is a permanent property of 2023-era transactions, not a live failure. |
+| `ufc-enrichment-drain` | ✅ **honest** | 59 green runs, **2,313 found / 2,203 written** — 95%. `cadence_errors` is 110 Flow `1101` script faults on the tail. |
+| `topshot-onchain-art-backfill` | ✅ **honest** | `resolver_misses` = "this edition genuinely has no on-chain art"; the route's own comment says it re-scans those harmlessly. |
+
+⭐ **The correction is worth more than the original claim, because it names the
+discriminator: `rows_written`.** Every honest row above is WRITING. The two real ones
+resolved **nothing at all**. "Green with a nonzero error tally" is not the defect;
+**"green, faulted, and resolved nothing"** is — which is precisely the predicate both
+fixes now use.
+
+## ⚠ And the obvious predicate was wrong on the second route — the test caught it
+
+For `wallet-username-resolver`, `errored === found` is correct: one lookup per address.
+I reached for the same form on `topshot-deal-floor-serials` and it is **wrong there**:
+that route fetches **one price-sorted page per `(set_uuid, play_uuid)`**, serving the
+base edition and all its `::` parallel siblings from it. So `gqlErrors` counts *fetch
+groups* while `editionsTargeted` counts *editions* — different denominators, and a
+single failed fetch can wipe out several editions while `gqlErrors` never reaches
+`editionsTargeted`. The two-edition test produced `gql_errors: 1` against
+`editionsTargeted: 2` and failed, which is how it was caught.
+
+Shipped predicate there is outcome-based and needs no denominator:
+`editionsTargeted > 0 && listingsFound === 0 && gqlErrors > 0`. The `gqlErrors > 0`
+conjunct is load-bearing — a deal board whose editions genuinely have no live listing
+resolves nothing **without faulting**, and must stay green.
+
+⚠ **A second test-fixture trap, same root cause.** The existing test *"a 429 GQL fault
+… but the run stays ok"* used **one** edition, so "one of several failed" and "every one
+failed" were the same input — it pinned the correct intent and the wrong behaviour
+together. It was **rewritten, not deleted** (per the standing rule), into two editions in
+**different** `set:play` groups plus a total-wipeout case and an empty-board control. And
+failing by call index does not work: `fetchFloorWithRetry` retries a 429 with backoff and
+`CONCURRENCY = 2` interleaves the workers, so "fail the first call" is absorbed — that is
+the backoff working correctly. The fixture now fails by `set_uuid`, which fails every
+attempt for one group and none for the others.
+
+Both fixes are mutation-checked in **both** directions: the old predicate fails the
+total-wipeout test, the naive `gqlErrors === 0` over-correction fails the partial test.

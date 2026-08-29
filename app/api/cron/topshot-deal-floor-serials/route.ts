@@ -167,6 +167,7 @@ export async function POST(req: NextRequest) {
     let upserted = 0
     let skippedNoListing = 0
     let gqlErrors = 0
+    let firstGqlError: string | null = null
     let throttledGiveUps = 0
     let budgetHit = false
 
@@ -273,6 +274,9 @@ export async function POST(req: NextRequest) {
             await flush()
           } catch (err) {
             gqlErrors++
+            if (firstGqlError === null) {
+              firstGqlError = (err instanceof Error ? err.message : String(err)).slice(0, 160)
+            }
             if (is429(err)) throttledGiveUps++
             console.log(`[${PIPELINE_NAME}] floor fetch ${t.external_id} err:`, err instanceof Error ? err.message : String(err))
           }
@@ -292,13 +296,45 @@ export async function POST(req: NextRequest) {
         p_rows_found: editionsTargeted,
         p_rows_written: upserted,
         p_rows_skipped: skippedNoListing,
-        p_ok: fetchError === null,
-        p_error: fetchError,
+        // 🚨 EVERY EDITION FAILING IS NOT A SUCCESS (2026-08-29).
+        // `fetchError` is set only by a FATAL error in the outer try, so
+        // per-edition GQL failures never reached `ok`. Measured that day: 21
+        // consecutive hourly runs logged `gql_errors: 10` of
+        // `deal_editions_total: 10`, `listings_found: 0`, `rows_written: 0` —
+        // every one green, while `public-api.nbatopshot.com` had been answering
+        // 530/1033 for 22 hours. Worse, the aggregate ("23 runs, 22 ok") is what
+        // an operator reads, so this pipeline actively argued the endpoint was
+        // healthy while resolving nothing.
+        //
+        // ⚠ THE PREDICATE IS "WE TRIED, FAULTED, AND RESOLVED NOTHING".
+        // ⛔ NOT `gqlErrors === editionsTargeted`, which is the obvious form and is
+        // WRONG HERE: one price-sorted page is fetched per (set_uuid, play_uuid)
+        // and serves the base edition AND all its `::` parallel siblings, so the
+        // two counters have different denominators — a single failed fetch can
+        // wipe out several editions and `gqlErrors` never reaches
+        // `editionsTargeted`. Caught by the two-edition test below, which shares
+        // one set:play and produced gql_errors 1 against editionsTargeted 2.
+        //
+        // `listingsFound === 0` is the outcome-based test and needs no denominator
+        // at all: nothing was priced. Pairing it with `gqlErrors > 0` is what keeps
+        // the honest-degradation case green — a board whose editions genuinely have
+        // no live listing resolves nothing WITHOUT faulting, and must stay ok.
+        // `editionsTargeted > 0` keeps an empty deal board green: nothing attempted
+        // is not a failure.
+        p_ok:
+          fetchError === null &&
+          !(editionsTargeted > 0 && listingsFound === 0 && gqlErrors > 0),
+        p_error:
+          fetchError ??
+          (editionsTargeted > 0 && listingsFound === 0 && gqlErrors > 0
+            ? `resolved 0 of ${editionsTargeted} deal editions; ${gqlErrors} fetch errors; first: ${firstGqlError ?? "unknown"}`.slice(0, 500)
+            : null),
         p_collection_slug: "nba_top_shot",
         p_extra: {
           deal_editions_total: dealEditionsTotal,
           listings_found: listingsFound,
           gql_errors: gqlErrors,
+          first_gql_error: firstGqlError,
           throttled_giveups: throttledGiveUps,
           budget_hit: budgetHit,
           duration_ms: Date.now() - startTime,

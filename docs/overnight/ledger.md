@@ -10,6 +10,61 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ⛔ SECOND CORRECTION + ✅ SHIPPED (code) — my own `ok: true` table was wrong on 4 of 6 rows, and the obvious predicate was wrong on the route it did apply to
+
+**Revert:** `git revert <sha of the commit named below>` — one route + one rewritten test
+file, no DB. Corrects the table published ~40 minutes earlier in the 1630Z entry/filing.
+
+⛔ **I published the sweep's raw output as if it were a defect list, in a filing that
+says in its own text "the sweep DISCOVERS, it does not diagnose."** Classified one at a
+time, only **2 of 6** are real:
+
+| row | verdict | evidence |
+|---|---|---|
+| `wallet-username-resolver` | ⛔ real | `errored` = `found`, 0 written, 6 green runs |
+| `topshot-deal-floor-serials` | ⛔ real | `gql_errors` 10 of 10, `listings_found: 0`, 0 written, 21 green runs |
+| `topshot-moments-hydrator` | ✅ honest | its 135 FAILING runs carry `hard_chunk_failures: 810 / graphql_failures: 0`; its 37 green runs carry `graphql_failures: 10,885 / hard_chunk_failures: 0` **and wrote 215 rows**. The 530s are classified as transport faults and DO flip `ok=false`, exactly as its `computeOk` comment documents. |
+| `topshot-buyer-backfill-historical` | ✅ honest | 6,960 found / **1,276 written**; `decode_failed` is a property of 2023-era rows |
+| `ufc-enrichment-drain` | ✅ honest | 2,313 found / **2,203 written** (95%) |
+| `topshot-onchain-art-backfill` | ✅ honest | `resolver_misses` = genuinely artless editions, by design |
+
+⭐ **The correction names the discriminator the first pass lacked: `rows_written`.**
+Every honest pipeline above is WRITING; both real offenders resolved **nothing**. So the
+defect is not "green with a nonzero error tally" — it is **"green, faulted, and resolved
+nothing"**, which is what both shipped predicates now test.
+
+✅ **SHIPPED — `topshot-deal-floor-serials`.** `p_ok: fetchError === null` was lowered
+only by a fatal error in the outer try, so 21 consecutive hourly runs logged
+`gql_errors: 10` of `deal_editions_total: 10`, `listings_found: 0`, `rows_written: 0`,
+all green. ⚠ Worse than silent: the resulting aggregate ("23 runs, 22 ok") is what an
+operator reads, and **I quoted it earlier today as evidence the endpoint was healthy.**
+
+⚠ **The obvious predicate was WRONG here and the test caught it.** `errored === found`
+works for the username resolver (one lookup per address) but not here: this route fetches
+**one price page per `(set_uuid, play_uuid)`**, serving the base edition and all its `::`
+siblings, so `gqlErrors` counts fetch GROUPS while `editionsTargeted` counts EDITIONS —
+one failed fetch can wipe out several editions while the counters never meet. Shipped
+predicate is outcome-based and needs no denominator:
+`editionsTargeted > 0 && listingsFound === 0 && gqlErrors > 0`; the `gqlErrors > 0`
+conjunct is load-bearing, because a board whose editions genuinely have no live listing
+resolves nothing **without faulting** and must stay green.
+
+⚠ **Test-fixture trap, twice.** The existing test *"a 429 GQL fault … run stays ok"* used
+ONE edition, so "one of several failed" and "every one failed" were the same input — it
+pinned the right intent and the wrong behaviour together. **Rewritten, not deleted**, into
+two editions in DIFFERENT groups + a total-wipeout case + an empty-board control. And
+failing by call INDEX does not work: `fetchFloorWithRetry` retries 429 with backoff and
+`CONCURRENCY = 2` interleaves the workers, so the throw is absorbed — that is the backoff
+working. The fixture now fails by `set_uuid`. Mutation-checked both ways: the old
+predicate fails the wipeout test, the naive `gqlErrors === 0` fails the partial test.
+
+⭐ **Sentinel triage, from the same pass.** `Golazos 0 sales/24h` is **the market, not a
+pipeline** — `golazos-sales-indexer` is 75/76 ok, and Golazos recorded sales on only
+**13 of the last 30 days** (51 sales / 30 d), so that arm fires on ~57% of days by
+construction. `Candy MLB last 12.1h ago` had already self-cleared: newest sale **2.7 h**
+old, 69 in 24 h against a 48.4/day average. Neither needs work; both are noise the
+sentinel will keep emitting.
+
 ### 2026-08-29 · ⛔ CORRECTION + ✅ SHIPPED (code) — it is not a "Top Shot outage", and `ok: true` through a total failure is why I read it wrong
 
 **Revert (code half):** `git revert <sha of the commit named below>` — one route + two

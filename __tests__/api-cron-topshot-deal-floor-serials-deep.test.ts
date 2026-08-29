@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   gql: null as unknown,
   gqlThrow: null as string | null,
+  failGroup: null as string | null,
+  gqlCalls: 0,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -31,8 +33,17 @@ vi.mock("@/lib/supabase", () => ({
   ),
 }))
 vi.mock("@/lib/chains/flow/topshot", () => ({
-  topshotGraphql: async () => {
+  // ⚠ KEYED ON THE GROUP BEING FETCHED, NOT ON CALL ORDER. `fetchFloorWithRetry`
+  // retries a 429 up to MAX_RETRIES with backoff, and CONCURRENCY=2 interleaves
+  // the workers — so "fail the Nth call" is absorbed by the retry (that is the
+  // backoff working) and cannot express "this group is down". Failing by set_uuid
+  // fails every attempt for that group and none for the others.
+  topshotGraphql: async (_q: unknown, vars?: unknown) => {
+    state.gqlCalls += 1
     if (state.gqlThrow) throw new Error(state.gqlThrow)
+    if (state.failGroup && JSON.stringify(vars ?? {}).includes(`set-uuid-${state.failGroup}`)) {
+      throw new Error("429 Too Many Requests")
+    }
     return state.gql
   },
 }))
@@ -47,11 +58,16 @@ function floorPage(moments: Array<{ flowId: string; flowSerialNumber: string; pr
   return { searchMintedMoments: { data: { searchSummary: { data: { data: moments } } } } }
 }
 
-function target(external_id: string, opts: { serial?: number | null } = {}) {
+// ⚠ `group` matters: the route fetches ONE price page per (set_uuid, play_uuid)
+// and serves every edition in that group from it. Two targets in the SAME group
+// are one fetch; in different groups they are two. A test that wants "one fetch
+// failed, another succeeded" MUST put them in different groups.
+function target(external_id: string, opts: { serial?: number | null; group?: string } = {}) {
+  const g = opts.group ?? "1"
   return {
     external_id,
-    set_uuid: "set-uuid-1",
-    play_uuid: "play-uuid-1",
+    set_uuid: `set-uuid-${g}`,
+    play_uuid: `play-uuid-${g}`,
     low_ask_serial: opts.serial ?? null,
     updated_at: null,
   }
@@ -90,6 +106,8 @@ beforeEach(() => {
   state.afterCbs.length = 0
   state.gql = floorPage([])
   state.gqlThrow = null
+  state.failGroup = null
+  state.gqlCalls = 0
 })
 
 describe("topshot-deal-floor-serials — floor capture", () => {
@@ -140,20 +158,71 @@ describe("topshot-deal-floor-serials — floor capture", () => {
 })
 
 describe("topshot-deal-floor-serials — degradation + auth", () => {
-  it("a 429 GQL fault increments gql_errors + throttled_giveups but the run stays ok", async () => {
-    state.gqlThrow = "429 Too Many Requests"
+  // ⚠ REWRITTEN 2026-08-29, NOT DELETED. This test's INTENT — "a per-edition fault
+  // does not fail the whole run" — is correct and still pinned below. But its
+  // fixture had ONE edition, so "one of several failed" and "every single one
+  // failed" were the same input, and it therefore also pinned the second, wrong
+  // thing: that a TOTAL wipeout stays green. Production showed what that costs —
+  // 21 consecutive hourly runs logged gql_errors 10 of 10, listings_found 0,
+  // rows_written 0, all ok:true, while the upstream had been 530ing for 22 hours,
+  // and the resulting "23 runs, 22 ok" aggregate actively argued the endpoint was
+  // healthy. Two editions is the smallest fixture that can tell the cases apart.
+  it("a per-edition GQL fault increments gql_errors + throttled_giveups and the run STAYS ok when another edition resolved", async () => {
+    // Two DIFFERENT set:play groups ⇒ two fetches. Group 1 fails every attempt
+    // (so the retry cannot rescue it); group 2 returns a page. listings_found is
+    // therefore 1 — the run is working, not failing.
+    state.gql = floorPage([{ flowId: "n1", flowSerialNumber: "7", price: "10", parallelID: 0 }])
+    state.failGroup = "1"
     const spy = install({
-      "rpc:get_topshot_deal_external_ids": { data: ["3:45"], error: null },
-      edition_offers: { data: [target("3:45")], error: null },
+      "rpc:get_topshot_deal_external_ids": { data: ["3:45", "9:99"], error: null },
+      edition_offers: {
+        data: [target("3:45", { group: "1" }), target("9:99", { group: "2" })],
+        error: null,
+      },
     })
 
     await POST(req())
     await runDeferred()
 
     const log = terminalLog(spy.rpcCalls)
-    expect(log.p_ok).toBe(true) // per-edition faults don't fail the whole run
+    expect(log.p_ok, "one failed group out of two must not redden a run that priced the other").toBe(true)
+    expect(log.p_extra).toMatchObject({ gql_errors: 1, throttled_giveups: 1, listings_found: 1 })
+    expect(log.p_error ?? null).toBeNull()
+  })
+
+  it("a run where EVERY edition's fetch failed is NOT ok, and says so", async () => {
+    state.gqlThrow = "429 Too Many Requests"
+    const spy = install({
+      "rpc:get_topshot_deal_external_ids": { data: ["3:45", "9:99"], error: null },
+      edition_offers: { data: [target("3:45"), target("9:99")], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok, "2 of 2 fetches failed and the run still claimed success").toBe(false)
     expect(log.p_rows_written).toBe(0)
-    expect(log.p_extra).toMatchObject({ gql_errors: 1, throttled_giveups: 1 })
+    expect(log.p_extra).toMatchObject({ gql_errors: 2, throttled_giveups: 2 })
+    // The cause must survive into the row: identifying the 2026-08-29 outage from
+    // this pipeline was impossible because the error column was always null.
+    expect(log.p_error).toBeTruthy()
+    expect(log.p_error).toContain("429")
+    expect(log.p_extra.first_gql_error).toContain("429")
+  })
+
+  it("CONTROL — an EMPTY deal board stays ok (nothing attempted is not a failure)", async () => {
+    const spy = install({
+      "rpc:get_topshot_deal_external_ids": { data: [], error: null },
+      edition_offers: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok, "an empty deal board is the healthy steady state").toBe(true)
+    expect(log.p_error ?? null).toBeNull()
   })
 
   it("a deal-board read error flips ok=false via the fatal path", async () => {
