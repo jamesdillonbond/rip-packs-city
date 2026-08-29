@@ -143,6 +143,43 @@ low-cost maintenance op, rather than the diagnostic `DISABLE_PAGE_SKIPPING`.
 back above ~10,000 with the nightly job running, a plain `VACUUM` is insufficient — escalate to
 `DISABLE_PAGE_SKIPPING` and re-open why autovacuum leaves the recent slice dirty.
 
+
+---
+
+## Verified from outside, 2026-08-29 00:53–00:57Z (Cowork) — plus one item the fix left behind
+
+A separate session re-read the outcome without touching the DB state that produced it:
+
+- `sales_2026` / `sales_2025` / `pinnacle_sales` — **all 100% all-visible** (`relallvisible = relpages`).
+- Vercel production, `/api/analytics/sales/leaderboard`: **10 × 200 and ZERO 500s since 23:13Z.**
+  ⚠ The 10 × 500 still sitting in the 6 h bucket are the **pre-fix 22:38Z burst** — read the
+  timestamps, not the bucket total, or the fix reads as a failure.
+- **`ANALYZE public.sales_2026` run at 00:54Z.** The manual `VACUUM` in item 1 left `last_analyze`
+  at 08-26, so the planner was on three-day-old stats for the hot partition immediately after the
+  work that changed it. Jobid 380 keeps it current from here.
+
+### 5. Unscheduled the spent one-shot — `57 22 28 8 *` IS NOT A ONE-SHOT
+
+⚠ pg_cron jobid **379 `tmp-vacuum-pack-rips`**, created during this investigation, carried
+day-of-month 28 **and** month 8. That is not "once": it re-fires at 22:57Z on **28 August every
+year**, indefinitely, as an unannounced `VACUUM (ANALYZE) public.pack_rips` owned by `postgres`,
+in a slot nobody will remember allocating. It was already spent — `cron.job_run_details` shows
+exactly ONE run (2026-08-28 22:57Z, `succeeded`, 33.6 s, `VACUUM`) and nothing pending.
+
+Migration `20260829005435`, applied 00:54:35Z, committed as
+`supabase/migrations/20260829005435_audit_20260829_unschedule_spent_tmp_vacuum_pack_rips.sql`
+(byte-exact to the applied statement: md5 `c953d610b6adf76c5628ae6bc4da6358` over `statements[1]`,
+2,694 chars). It is **guarded** — it refuses unless the schedule and command are exactly what was
+measured, and it asserts a **positive control** that jobid 380 survives, so a repurposed job of the
+same name is rejected rather than silently unscheduled.
+
+Post-flight, read from outside the migration: `tmp-vacuum-pack-rips` rows = **0**;
+`maint-vacuum-sales-hot-partition` = **jobid 380 · `20 10 * * *` · `VACUUM (ANALYZE) public.sales_2026` · active**.
+
+**Revert:** `SELECT cron.schedule('tmp-vacuum-pack-rips', '57 22 28 8 *', 'VACUUM (ANALYZE) public.pack_rips');`
+⛔ Do not re-apply the migration to this project — it is already recorded and would `RAISE EXCEPTION`
+by design, the job being gone.
+
 ---
 
 ## Deliberately NOT shipped

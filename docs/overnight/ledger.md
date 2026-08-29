@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (prod pg_cron + repo) — the leaderboard fix left a "one-shot" VACUUM that re-fires EVERY 28 AUGUST; unscheduled, its migration committed, and `sales_2026` re-ANALYZEd
+
+⚠ **`57 22 28 8 *` IS NOT A ONE-SHOT.** pg_cron jobid **379 `tmp-vacuum-pack-rips`**, created during
+the 2026-08-28 visibility-map work behind `c26ae1981`, carried day-of-month 28 **and** month 8 — so it
+would re-fire at 22:57Z on **28 August every year**, indefinitely, as an unannounced
+`VACUUM (ANALYZE) public.pack_rips` owned by `postgres`. It was already spent: `cron.job_run_details`
+shows exactly ONE run (2026-08-28 22:57Z, `succeeded`, 33.6 s, `VACUUM`), nothing pending.
+
+**Applied to prod 00:54:35Z (17:54 PT) via MCP `apply_migration`, version `20260829005435`.** The file
+is committed here **byte-exact to the applied statement** — md5 `c953d610b6adf76c5628ae6bc4da6358` over
+`statements[1]`, 2,694 chars — as
+`supabase/migrations/20260829005435_audit_20260829_unschedule_spent_tmp_vacuum_pack_rips.sql`.
+The migration is **guarded**: it refuses unless the job's schedule AND command are exactly what was
+measured, and it asserts a **positive control** that jobid 380 is still present, so a renamed or
+repurposed job of the same name is rejected rather than silently unscheduled.
+
+**Verified from outside the migration** (00:54:40Z, and re-read on Trevor’s box 18:05 PT): `cron.job`
+rows for `tmp-vacuum-pack-rips` = **0**; `maint-vacuum-sales-hot-partition` = **jobid 380 ·
+`20 10 * * *` · `VACUUM (ANALYZE) public.sales_2026` · active** — the deliberate daily hedge shipped
+with `c26ae1981` is untouched.
+
+⚠ **Also done in that pass: `ANALYZE public.sales_2026` at 00:54Z.** The manual `VACUUM` had left
+`last_analyze` at 08-26, so the planner was on three-day-old stats for the hot partition immediately
+after the work that changed its shape. Jobid 380 keeps it current from here.
+
+Write-up extended in
+[finding-2026-08-29-sales-leaderboard-timeout-was-a-stale-visibility-map.md](../finding-2026-08-29-sales-leaderboard-timeout-was-a-stale-visibility-map.md)
+(new section "Verified from outside").
+
+**Revert:** `SELECT cron.schedule('tmp-vacuum-pack-rips', '57 22 28 8 *', 'VACUUM (ANALYZE) public.pack_rips');`
+⛔ **Do NOT re-apply the migration to this project** — it is already recorded as version
+`20260829005435` and would `RAISE EXCEPTION` by design, the job being gone.
+
+⚠ **The parent fix's falsifier is still OPEN** — if `Heap Fetches` on the leaderboard plan is back
+above ~10,000 in 24–48 h, a plain nightly `VACUUM` is insufficient and the escalation is
+`VACUUM (DISABLE_PAGE_SKIPPING)`. Jobid 380 is a hedge, not a proven mechanism fix.
+
 ### 2026-08-28 · ⚠ CORRECTED — the 18-source fleet commit was REVERTED into docs/ staging the same hour: four guards demand per-function integration, and their demands are now the handoff
 
 \`2e4bbb88\` put 18 verbatim deployed sources into \`supabase/functions/\` and FOUR vitest guards
