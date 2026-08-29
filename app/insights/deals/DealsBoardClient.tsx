@@ -662,8 +662,18 @@ export default function DealsBoardClient({
             A big discount is <em>not</em>{" "}
             a guaranteed flip — it can be a low-serial listing priced below the edition average, or a stale ask
             that hasn&apos;t been pulled. Always open the actual listing before
-            acting. FMV from the RPC pricing models; asks and floors from
-            continuous on-chain marketplace ingestion.
+            acting.
+          </p>
+          {/* ⚠ THIS ENDED "asks and floors from CONTINUOUS on-chain marketplace
+              ingestion" — the sibling of the sentence retired from the bid-vs-floor
+              footer the same day, and one of six copies of a single claim about a feed
+              that had not confirmed an ask in over 30 hours. State the target, and let
+              the per-row markers report what actually happened. */}
+          <p>
+            FMV comes from the RPC pricing models; asks and floors from on-chain
+            marketplace ingestion, which re-checks every edition roughly hourly when
+            healthy. That is the target, not a guarantee — any ask we have not
+            re-confirmed recently carries its age beside it.
           </p>
           <p>
             <strong>Net of fees</strong> is the number that actually decides a

@@ -53,8 +53,13 @@
 //   sort=discount|fmv|ask|circulation             default discount (biggest %)
 //   limit=<1..200>                                default 50
 //
-// CACHE: 5-minute s-maxage. asks/floors refresh continuously; fmv-recalc runs
-// daily — both well inside a 5m window.
+// CACHE: 5-minute s-maxage; fmv-recalc runs daily, so 5m is well inside that.
+// ⚠ THIS USED TO ADD "asks/floors refresh continuously" as the other half of the
+// justification. The cache window is still right; that half was a dependency stated
+// with no expiry — `offers-sweep` is the ask side's ONLY writer, and when its upstream
+// died the column froze for 30 h at a median age of 30.0 h. `ask_updated_at` ships in
+// every row so the reader can tell the cache age from the data age; see
+// lib/market/ask-freshness.ts.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";

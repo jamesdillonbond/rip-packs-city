@@ -10,6 +10,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+<<<<<<< Updated upstream
 ### 2026-08-29 · ✅ SHIPPED (guard) — an emoji in an OG card is a third-party CDN dependency, and nothing said so
 
 Follow-up to this evening's OG finding, now SIZED rather than estimated. Tree walk over all **44** OG routes with comments stripped: **6 render a hardcoded emoji** — `collection`, `deal`, `insights/serial-premiums`, `pack`, `pack/lifecycle`, `profile/[username]` — and **none sets an explicit `maxDuration`** (5 `runtime=edge`, 1 `nodejs`). Codepoints observed escaping to `cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2`: 🎯 `1f3af`, 🎴 `1f3b4`, 📦 `1f4e6`.
@@ -25,6 +26,25 @@ Follow-up to this evening's OG finding, now SIZED rather than estimated. Tree wa
 **Verification:** tsc clean · full suite **1397 files / 15356 tests** green.
 
 **Revert path:** `git revert` this commit deletes the guard and its 4 cases. No production behaviour changes — this ships no runtime code.
+=======
+### 2026-08-29 · ✅ SHIPPED (code) — the retired "Refreshes continuously" claim was still in the DEPLOYED HTML twice, in the place it can never be withdrawn from
+
+**Found by fetching the deployed page, not by a test.** Both boards' component tests asserted the ABSENCE of the claim and both were green. The live document still contained it — because it also lives in each board's **sibling `layout.tsx`**, in the JSON-LD `description` AND the route metadata. ⭐⭐ **A component test cannot see a sibling layout, so *"the page no longer says it"* was true of the page and false of the DOCUMENT.** Six copies of one sentence, and the grep that would have found all six was never run: CLAUDE.md's own rule — *when you find one, grep for the EXPRESSION, not the file* — applied to the fix, not just the diagnosis.
+
+⛔ **AND THE LAYOUT IS THE WORST PLACE FOR IT.** Visible copy can be DERIVED from the rows on screen, which is exactly what both boards now do. Static metadata and JSON-LD are emitted **before any row is known** and are **read by machines**, so a freshness claim there is unconditional by construction: it cannot be falsified, cannot be withdrawn when the feed dies, and is asserted to search engines as a fact about the product. It was being asserted while `offers-sweep` had not confirmed an ask in **over 30 hours**.
+
+**Shipped.** Both board layouts' JSON-LD + metadata descriptions now say what the board IS (*"Every ask carries the time we last confirmed it"*). The two footer prose copies and two code-comment copies are corrected the same way — *state the target, let the per-row markers report what actually happened*.
+
+**New ban: `__tests__/board-metadata-makes-no-freshness-claim.test.ts`.** Tree-walks every `app/**/layout.tsx`, extracts `description:` values, and bans eight PHRASINGS of "the data is current" — a property, not the one spelling that shipped.
+
+⭐ **It reads STRING LITERALS, not stripped source, and that is the design decision worth keeping.** The fix's own comments quote the banned sentence to explain why it was wrong; guards in this repo have fired on the comment documenting the fix at least six times, and `stripComments` has itself been measured blind three times. **A `description:` value cannot be a comment — extracting the literal sidesteps the stripper rather than depending on it being right.** Guards-the-guard covers both halves: one case proves the extractor ignores a comment while catching the literal beside it, another proves every banned pattern matches the copy it was written for AND that the replacement text stays clean. The not-vacuous check asserts on the WALK and on the EXTRACTOR (a broken regex would otherwise leave the ban passing forever while reading nothing), and stays satisfiable at a population of zero.
+
+**Verification.** Mutation-checked: restoring the claim to the deals layout reds the ban and nothing else. Full suite **1399 files / 15376 tests green**, `tsc` 0. ⏱ **Falsifier: re-fetch the deployed `/insights/offer-spread` and `/insights/deals` HTML and grep the phrase; it must be absent from both, `<script type="application/ld+json">` included.**
+
+ⓘ **Noticed while verifying and NOT chased:** the live bid-vs-floor board reads **192 of 200 asks unconfirmed, oldest 87d**, with per-row markers up to `46d`. The 30 h outage explains 30 h, not 87 days — `topshot_offer_ask_spread` is carrying rows whose asks predate it by months, and whether those are real long-standing listings or abandoned rows is **unmeasured**. The marker is doing its job either way; the population behind it is a separate question.
+
+**Revert path:** `git revert <sha of "fix(insights): retire the freshness claim from the two board layouts">` (find by message). No DB half.
+>>>>>>> Stashed changes
 
 ### 2026-08-29 · ✅ SHIPPED (code) — the ask-staleness honesty now covers the EDITION PAGE and BID-VS-FLOOR, and the second board was asserting the false claim in THREE places
 

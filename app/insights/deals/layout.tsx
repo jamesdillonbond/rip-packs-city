@@ -71,8 +71,17 @@ export default function DealsLayout({ children }: { children: React.ReactNode })
     "@type": "WebApplication",
     name: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
     url: `${SITE_URL}/insights/deals`,
+    // ⚠ THIS DESCRIPTION ENDED "Refreshes continuously." and it was the LAST copy of a
+    // claim retired everywhere else on 2026-08-29 — the fifth and sixth instances of one
+    // sentence, in the two board layouts, found only by fetching the DEPLOYED HTML after
+    // the component tests went green. Component tests cannot see a sibling layout, so
+    // "the page no longer says it" was true of the page and false of the document.
+    // ⛔ It is also the WORST place for it: this is structured data, so the claim is
+    // machine-read by search engines rather than merely displayed. On the day it was
+    // removed, `offers-sweep` had not confirmed an ask in over 30 hours.
+    // The boards now report per-row ask ages; the description says what the board IS.
     description:
-      "Ranks NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value priced from recent corroborated sales, by discount. Refreshes continuously.",
+      "Ranks NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value priced from recent corroborated sales, by discount. Every ask carries the time we last confirmed it.",
     applicationCategory: "FinanceApplication",
     operatingSystem: "Any",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

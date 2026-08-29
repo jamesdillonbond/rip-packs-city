@@ -61,8 +61,17 @@ export default function OfferSpreadLayout({ children }: { children: React.ReactN
     "@type": "WebApplication",
     name: "Bid vs Floor — Top Shot Offer/Ask Spread",
     url: `${SITE_URL}/insights/offer-spread`,
+    // ⚠ THIS DESCRIPTION ENDED "Refreshes continuously." and it was the LAST copy of a
+    // claim retired everywhere else on 2026-08-29 — the fifth and sixth instances of one
+    // sentence, in the two board layouts, found only by fetching the DEPLOYED HTML after
+    // the component tests went green. Component tests cannot see a sibling layout, so
+    // "the page no longer says it" was true of the page and false of the document.
+    // ⛔ It is also the WORST place for it: this is structured data, so the claim is
+    // machine-read by search engines rather than merely displayed. On the day it was
+    // removed, `offers-sweep` had not confirmed an ask in over 30 hours.
+    // The boards now report per-row ask ages; the description says what the board IS.
     description:
-      "Ranks NBA Top Shot editions by how tightly the top standing offer meets the floor ask. Refreshes continuously.",
+      "Ranks NBA Top Shot editions by how tightly the top standing offer meets the floor ask. Every floor ask carries the time we last confirmed it.",
     applicationCategory: "FinanceApplication",
     operatingSystem: "Any",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
