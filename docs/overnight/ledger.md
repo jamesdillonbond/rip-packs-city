@@ -10,6 +10,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ TWO CORRECTIONS TO MY OWN R21 WORK — the cursor defects are DORMANT not live, and my guard fix COLLIDED with a better one
+
+**Both corrections are to entries I wrote tonight, and both matter to anyone triaging off them.**
+
+## 1. The cursor-advance defects are REAL but DORMANT. I said "live in production". That was wrong.
+
+| checkpoint | last written | age |
+|---|---|---:|
+| `storefront_audit` | 2026-05-06 20:52Z | **114 days** |
+| `flowty_loans_indexer` | 2026-05-12 04:40Z | **108 days** |
+
+⭐ **The staleness is PROOF, not a hint, and the reason is the defect itself.** Both functions upsert
+`scan_checkpoint` **unconditionally at the end of every run** — that is the bug. So a checkpoint idle for
+108 days cannot be hiding runs: **if either had executed once, its own bad write would have moved it.**
+The instrument that makes them broken is what proves them idle.
+
+**Invoker sweep, all clean:** no `cron.job` command, nothing in `.github/workflows/`, `app/`, `lib/`,
+`scripts/`, `vercel.json`, `docs/operations/cron-schedule.md`. ⚠ Two of CLAUDE.md's eight sources are
+unreachable from here (cron-job.org, Task Scheduler), so the grep alone would be incomplete — **the stale
+checkpoints close that gap**, which is why they are the load-bearing evidence.
+
+⭐ **The dates corroborate independently:** `flowty_loans_indexer` stops **2026-05-12**, and CLAUDE.md
+already records Flowty shutting its marketplace **~2026-05-13** and `flowty_loan_events` going cold
+2026-05-11 as *expected behaviour*. **The indexer went quiet with the market it indexed. I had that in
+the memory file and did not connect it before writing "live".**
+
+⛔ **NOT actively losing data.** ✅ The code analysis stands, and either would ship the defect on day one
+if revived — so it travels with the staged sources.
+⚠ **The lesson in a new costume: "deployed" is not "running."** The discriminator was ONE query against
+`scan_checkpoint` — the same shape as *"name the caller before you touch the function"*, which I applied
+carefully to `aggregate_saved_wallet_stats` earlier tonight and skipped here.
+
+## 2. My guard fix collided with the sibling's, and THEIRS IS BETTER
+
+**We fixed the same problem in opposite directions within the hour.** I updated five guards to accept the
+18 committed fleet sources (`ab7207f02`, `13214213f`). The sibling instead **moved the sources OUT** into
+`docs/audits` staging (`ba511f6ca`), because *"four guards demand per-function integration first"*.
+
+🚨 **With both in the tree, `main` went RED with 7 failures** — every one of my edits pointed at files
+that no longer existed: the walker inventory expected 12 and found 10, `inapplicable` expected 21 and
+found 3, `BUDGET = 27` tripped the *"not stale, only downward"* assertion at 27 − 10 = 17, and my two
+pins plus two `CHECKPOINT_KEY` suppressions became stale entries the guards' own honesty tests reject.
+**Every guard I edited caught my edit going stale. That is the guards working exactly as designed.**
+
+✅ **Restored all five to `13214213f^` (`b83bc9221`); full suite green, 1,389 files / 15,279 tests.**
+
+⭐ **AND THEIR RESOLUTION IS THE RIGHT ONE, which is the part worth keeping.** The guards were correct to
+demand per-function integration. Staging the sources until that work is done **respects** them; my
+`BUDGET 10 → 27` **talked one of them into accepting a population it was built to reject** — I even wrote
+"the one defensible re-baseline" in the file, which should have been the tell. **A ratchet arguing with
+you is usually right.**
+
+⛔ **What survives, in the ledger rather than the code:** the two cursor-advance defects (real, dormant,
+per §1) and the `CHECKPOINT_KEY` false positives. **Both apply to the STAGED sources and must travel with
+them** — the staging README is where they belong when those functions are integrated.
+
+**Revert path:** `git revert b83bc9221` restores my guard edits — ⛔ **do not, unless the 18 sources come
+back into `supabase/functions/` in the same commit**, or `main` reds again exactly as above.
+
 ### 2026-08-28 · ✅ SHIPPED (prod pg_cron + repo) — the leaderboard fix left a "one-shot" VACUUM that re-fires EVERY 28 AUGUST; unscheduled, its migration committed, and `sales_2026` re-ANALYZEd
 
 ⚠ **`57 22 28 8 *` IS NOT A ONE-SHOT.** pg_cron jobid **379 `tmp-vacuum-pack-rips`**, created during
