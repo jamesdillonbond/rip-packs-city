@@ -347,10 +347,21 @@ describe("queryWithRetry", () => {
 })
 
 describe("rpcWithRetry — minAttemptSliceMs (the budget-crumb floor)", () => {
-  // A .rpc() that fails with a REAL transient error after `ms` of wall clock.
-  // Must consume real time: the whole defect is about how much of a shared
-  // budget an earlier attempt eats, which an instantly-settling mock cannot
-  // express.
+  // A .rpc() that fails with a REAL transient error after `ms` on the clock.
+  // It must CONSUME TIME: the whole defect is about how much of a shared budget
+  // an earlier attempt eats, which an instantly-settling mock cannot express.
+  //
+  // ⚠ THE CLOCK IS FAKED, AND THAT IS THE POINT — see `underFakeClock` below.
+  // These tests originally consumed REAL wall clock and were flaky by
+  // construction: 40ms + 40ms against a 100ms budget leaves a ~20ms margin, so
+  // on a loaded machine two attempts overrun the budget and the third is never
+  // issued. Measured 2026-08-29: the full suite went red on exactly these
+  // assertions ("expected 3 times, got 2") while each passed in isolation —
+  // the signature of a wall-clock race, not a defect.
+  //
+  // ⛔ Do NOT "fix" a recurrence by widening the budget. A bigger margin makes
+  // the race rarer and slower, never absent, and this file already asserts
+  // EXACT call counts — the one shape a probabilistic timing test cannot hold.
   function slowFailClient(ms: number, message: string) {
     const rpc = vi.fn(
       () =>
@@ -361,13 +372,37 @@ describe("rpcWithRetry — minAttemptSliceMs (the budget-crumb floor)", () => {
     return { client: { rpc } as any, rpc }
   }
 
+  // Runs `run()` with vitest's fake timers installed and then drives the clock
+  // far past the budget, so every `setTimeout` and every `Date.now()` inside
+  // retryLoop advances in lock step and in chronological order.
+  //
+  // This preserves the property under test EXACTLY — the loop still measures
+  // elapsed time against `deadline`, and the arithmetic is identical — while
+  // removing the machine from the result. `advanceTimersByTimeAsync` drains
+  // microtasks between timers, which is what lets the awaited attempt chain
+  // (attempt → backoff sleep → next attempt) actually progress.
+  async function underFakeClock<T>(run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers()
+    try {
+      // Start the call first: the first attempt registers its timer
+      // synchronously, before there is anything to advance.
+      const pending = run()
+      await vi.advanceTimersByTimeAsync(5_000)
+      return await pending
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
   it("is INERT by default — a caller that does not opt in is unchanged", async () => {
     // The guard ships in a hot path shared by every entity page and board
     // render. This is the assertion that says they did not silently inherit it:
     // with no minAttemptSliceMs, all three attempts are still issued even
     // though the last one is handed a crumb.
     const { client, rpc } = slowFailClient(40, "too many connections")
-    await rpcWithRetry(client, "f", {}, { attempts: 3, timeoutMs: 100, baseDelayMs: 1 })
+    await underFakeClock(() =>
+      rpcWithRetry(client, "f", {}, { attempts: 3, timeoutMs: 100, baseDelayMs: 1 })
+    )
     expect(rpc).toHaveBeenCalledTimes(3)
   })
 
@@ -375,9 +410,11 @@ describe("rpcWithRetry — minAttemptSliceMs (the budget-crumb floor)", () => {
     // Two 40ms failures eat 80 of the 100ms budget, leaving ~20ms — under the
     // 50ms floor, so attempt 3 must never be issued.
     const { client, rpc } = slowFailClient(40, "too many connections")
-    await rpcWithRetry(client, "f", {}, {
-      attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
-    })
+    await underFakeClock(() =>
+      rpcWithRetry(client, "f", {}, {
+        attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
+      })
+    )
     expect(rpc).toHaveBeenCalledTimes(2)
   })
 
@@ -387,9 +424,11 @@ describe("rpcWithRetry — minAttemptSliceMs (the budget-crumb floor)", () => {
     // database's actual complaint in first_chunk_error. Asserting the ABSENCE
     // of the false claim, not merely the presence of some error.
     const { client } = slowFailClient(40, "Timed out acquiring connection from connection pool.")
-    const res = await rpcWithRetry(client, "upsert_wmc_batch", {}, {
-      attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
-    })
+    const res = await underFakeClock(() =>
+      rpcWithRetry(client, "upsert_wmc_batch", {}, {
+        attempts: 3, timeoutMs: 100, baseDelayMs: 1, minAttemptSliceMs: 50,
+      })
+    )
     expect(res.error?.message).toContain("acquiring connection")
     expect(res.error?.code).not.toBe("RPC_TIMEOUT")
     expect(res.error?.message).not.toContain("timed out after")
