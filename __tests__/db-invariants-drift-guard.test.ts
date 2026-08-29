@@ -287,9 +287,18 @@ const PINS = [
     // Re-pinned 2026-07-31: the pin still pointed at the 2026-04-27 migration
     // long after 20260727170000 replaced the function, so the DB test was
     // validating a superseded definition. It now tracks the live DDL.
+    // Re-pinned again 2026-08-29 onto the self-overlap guard. ⚠ Before editing,
+    // the committed body and live prosrc were normalised and md5-compared
+    // (146cd31ded32d5a1db3d554ef428904e, 9,031 chars) — they matched, so this
+    // pin was current and the new DDL is a true successor rather than a
+    // reconstruction. Do that check first; two pins were found stale earlier the
+    // same night precisely because nobody had.
     fn: "promote_unmapped_sales",
     test: "supabase/tests/promote_unmapped_sales.sql",
-    migration: "supabase/migrations/20260731190000_audit_20260731_promote_unmapped_sales_classify_cross_source_dedup.sql",
+    // ⚠ Keep this comment ABOVE `migration:` — check-db-pin-staleness.mjs matches
+    // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
+    migration:
+      "supabase/migrations/20260829134500_audit_20260829_promote_unmapped_sales_does_not_overlap_itself.sql",
   },
   {
     // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is

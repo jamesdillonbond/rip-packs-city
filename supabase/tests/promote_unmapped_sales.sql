@@ -273,6 +273,51 @@ DECLARE
   -- public.sales, and it fires for this collection alone.
   c_allday       constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
 BEGIN
+  -- ── CONCURRENCY GUARD (2026-08-29) ─────────────────────────────────────────
+  -- This drain is NOT claim-based: the `candidates` CTE selects `resolved_at IS
+  -- NULL ... LIMIT 1000` with no FOR UPDATE SKIP LOCKED and no in-flight marker,
+  -- so two concurrent instances pick the SAME rows and both do the whole scan.
+  -- The work is idempotent (ON CONFLICT DO NOTHING + `AND us.resolved_at IS
+  -- NULL`), so an overlap is SAFE -- it is simply 100% duplicated IO on an
+  -- instance whose binding constraint is disk IO.
+  -- Measured 24 h to 2026-08-29 13:25Z: 307 runs, avg gap 278 s, p95 duration
+  -- 196,353 ms, max 297,164 ms, and **76 runs still executing when the next one
+  -- started -- 74 of them the same collection against itself**.
+  -- ⚠ The key is SCOPED TO p_collection_id on purpose: `nfl_all_day` (229 runs,
+  -- avg 65,864 ms) and `laliga_golazos` (78 runs, avg 959 ms) touch disjoint
+  -- rows and must NOT serialise against each other. Golazos recorded ZERO
+  -- overlaps; a function-wide key would have made it wait on AllDay for nothing.
+  -- ⛔ KNOWN GAP, stated rather than hidden: an all-collections call
+  -- (p_collection_id IS NULL) overlaps every scoped call and this key does not
+  -- see that. There were ZERO such calls in the measured window, and all eight
+  -- repo call sites pass an explicit collection id.
+  IF NOT pg_try_advisory_xact_lock(
+       hashtext('promote_unmapped_sales:' || COALESCE(p_collection_id::text, 'ALL'))::bigint) THEN
+    -- Record the skip HONESTLY. rows_* are NULL, not 0: nothing was measured,
+    -- and `log_pipeline_run` only stopped coalescing NULL to 0 on 2026-08-29
+    -- (migration 20260829040000) -- before that this shape was not expressible.
+    PERFORM public.log_pipeline_run(
+      'promote_unmapped_sales', v_started_at,
+      p_rows_found := NULL,
+      p_rows_written := NULL,
+      p_rows_skipped := NULL,
+      p_ok := true,
+      p_collection_slug := (SELECT slug FROM public.collections WHERE id = p_collection_id),
+      p_extra := jsonb_build_object(
+        'note', 'skipped_concurrent_run',
+        'scope', COALESCE(p_collection_id::text, 'ALL'))
+    );
+    -- Explicit NULLs rather than absent keys so a caller inspecting the object
+    -- can tell a skip from a drain of nothing. ⚠ app/api/admin/recover-v1-budget-
+    -- exhausted/route.ts reads `pr?.promoted ?? 0`, so it still sees 0 either
+    -- way; that route is manually invoked and cannot realistically race.
+    RETURN jsonb_build_object(
+      'skipped', 'concurrent_run',
+      'scope', COALESCE(p_collection_id::text, 'ALL'),
+      'eligible', NULL,
+      'promoted', NULL);
+  END IF;
+
   WITH candidates AS (
     SELECT us.id, us.collection_id, us.nft_id, us.resolution_hint,
            us.price_usd, us.price_native, us.currency,
@@ -498,7 +543,36 @@ BEGIN
   RETURN v_run;
 END;
 $function$;
+
+-- The tx-hash-collision class no longer exists (idx_sales_tx_nft_sold, aa609eb1),
+-- so every surviving marker is stale by construction. Clearing it (and the
+-- 30-day recheck horizon it carries) lets the next tick reclassify these rows
+-- through the new `merged_cross_source` arm instead of leaving them parked.
+UPDATE public.unmapped_sales
+   SET resolution_hint = resolution_hint - 'promote_blocked' - 'promote_blocked_at' - 'promote_recheck_after'
+ WHERE resolved_at IS NULL
+   AND resolution_hint->>'promote_blocked' = 'sales_tx_hash_unique_collision';
 -- <<< END verbatim promote_unmapped_sales <<<
+
+-- ⚠ WHAT THIS FILE CANNOT COVER, SAID PLAINLY RATHER THAN FAKED.
+-- The 2026-08-29 concurrency guard (`pg_try_advisory_xact_lock`, scoped to
+-- p_collection_id) has a SKIP branch that no assertion below reaches, and none
+-- can: this runner gives each test file a single psql session inside a single
+-- transaction, and an advisory lock is RE-ENTRANT within one transaction — a
+-- second acquisition of the same key by the same xact SUCCEEDS. Forcing the skip
+-- needs a genuinely concurrent session, which this harness has no way to open.
+-- Shadowing the builtin is also impossible: pg_catalog is searched first
+-- implicitly, so a `public.pg_try_advisory_xact_lock` would never be chosen.
+--
+-- ⛔ So do NOT add an assertion here that LOOKS like it covers the skip — a test
+-- whose title promises more than it checks is the vacuous shape this repo counts.
+-- What actually covers it is production: the guard writes a `pipeline_runs` row
+-- with `extra->>'note' = 'skipped_concurrent_run'` and rows_* NULL, exactly like
+-- refresh_wmc_fmv_changed's `skipped_concurrent_refresh`. Query for those rows.
+--
+-- ✅ What the assertions below DO establish is the other half and it is not
+-- nothing: that the guard does not break the normal path — every pre-existing
+-- invariant still holds with the lock acquired at the top of BEGIN.
 
 -- Unscoped drain so both collections are exercised in one run.
 SELECT public.promote_unmapped_sales() AS run \gset

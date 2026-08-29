@@ -1138,16 +1138,18 @@ export async function POST(req: NextRequest) {
       errorMsg = err instanceof Error ? err.message : String(err)
       console.log(`[allday-sales-indexer] fatal:`, errorMsg)
     } finally {
-      try {
-        await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
-          p_collection_id: ALLDAY_COLLECTION_ID,
-        })
-      } catch (e) {
-        console.log(
-          `[allday-sales-indexer] promote_unmapped_sales err:`,
-          e instanceof Error ? e.message : String(e)
-        )
-      }
+      // ⚠ ORDER IS LOAD-BEARING: log_pipeline_run FIRST, promote_unmapped_sales
+      // AFTER. `pipeline_runs.duration_ms` is GENERATED from
+      // (finished_at - started_at) and `log_pipeline_run` stamps finished_at at
+      // INSERT time, so anything awaited before it is billed to THIS pipeline.
+      // Measured 24 h to 2026-08-29 with the promote call first:
+      // `allday-sales-indexer` recorded avg 50,450 ms against a true 6,491 ms
+      // (`extra.elapsed_ms`) — **87.1% of its recorded duration was another
+      // pipeline's work**, max inflation 125,972 ms; `golazos-sales-indexer`
+      // 7,544 vs 4,202 ms (44.3%). ufc-sales-indexer logs no elapsed_ms, so it is
+      // unmeasured — reordered for the same structural reason, not a number.
+      // ⭐ Logging first also makes the row survive a maxDuration kill during the
+      // promote, where previously such a kill lost both.
       try {
         await (supabaseAdmin as any).rpc("log_pipeline_run", {
           p_pipeline: PIPELINE_NAME,
@@ -1165,6 +1167,16 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.log(
           `[allday-sales-indexer] log_pipeline_run err:`,
+          e instanceof Error ? e.message : String(e)
+        )
+      }
+      try {
+        await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
+          p_collection_id: ALLDAY_COLLECTION_ID,
+        })
+      } catch (e) {
+        console.log(
+          `[allday-sales-indexer] promote_unmapped_sales err:`,
           e instanceof Error ? e.message : String(e)
         )
       }
