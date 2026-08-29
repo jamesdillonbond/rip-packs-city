@@ -190,6 +190,65 @@ describe("badge-sync — tag sweep mode", () => {
     expect(fetchMock!.calls.some((c) => c.url.includes("seed-allday"))).toBe(false)
   })
 
+  // 🚨 THE TAG SWEEP WROTE NO pipeline_runs ROW AT ALL until 2026-08-29, while its
+  // CATALOG sibling always did. So "is badge-sync running?" returned rows for the
+  // catalog walk and nothing for the six-hourly lane that maintains
+  // `badge_editions.low_ask` — and I nearly read that absence as "it is dead"
+  // when it only meant UNOBSERVABLE. What IS measurable is the output: on
+  // 2026-08-29 All Day's `badge_editions` asks had a median age of 0.4 h (it has a
+  // dedicated `allday-badge-low-ask-refresh`), while Top Shot's were **107.2 h**
+  // with all 1,651 ask-bearing rows over 12 h and no Top Shot equivalent of that
+  // refresher. `badge_editions` is the FALLBACK ask for readers the offers sweep
+  // has not reached, so watchlist / badges / set-plan serve Top Shot asks a median
+  // 4.5 days old. The row does not fix that; it makes the lane answerable.
+  it("writes a durable pipeline_runs row for the TAG sweep, not just the catalog walk", async () => {
+    state.gqlPages[RY] = [gqlPage([edition({ id: "e1", playTagIds: [RY] })], null)]
+    const spy = install({})
+
+    await POST(post())
+
+    const runs = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as Record<string, unknown>[]
+    const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
+    expect(row, "the tag sweep logged no pipeline_runs row — its health is unobservable").toBeTruthy()
+    expect(row!.ok).toBe(true)
+    expect(row!.rows_found).toBe(1)
+    expect(row!.rows_written).toBe(1)
+    expect(row!.collection_slug).toBe("nba_top_shot")
+    expect((row!.extra as Record<string, unknown>).upsert_errors).toBe(0)
+  })
+
+  it("a sweep whose upserts ALL failed is not reported as ok", async () => {
+    state.gqlPages[RY] = [gqlPage([edition({ id: "e1", playTagIds: [RY] })], null)]
+    // Upsert path errors; the delete path stays clean so the sweep still reaches its tail.
+    const spy = install({ badge_editions: { data: null, error: { message: "upsert boom" }, count: 0 } as never })
+
+    const res = await POST(post())
+    const body = await res.json()
+
+    // `ok` in the RESPONSE was hardcoded true regardless of upsert outcome.
+    expect(body.ok, "the response asserted success over a sweep that wrote nothing").toBe(false)
+
+    const runs = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as Record<string, unknown>[]
+    const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
+    expect(row!.ok).toBe(false)
+    expect(row!.error).toMatch(/upsert_errors/)
+  })
+
+  it("CONTROL — an EMPTY sweep stays ok (nothing collected is not a failure)", async () => {
+    // No pages configured ⇒ every tag sweep returns zero editions.
+    const spy = install({})
+
+    const res = await POST(post())
+    const body = await res.json()
+    expect(body.ok, "a sweep with nothing to do must not redden").toBe(true)
+    expect(body.collected).toBe(0)
+
+    const runs = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as Record<string, unknown>[]
+    const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
+    expect(row!.ok).toBe(true)
+    expect(row!.rows_found).toBe(0)
+  })
+
   it("derives three-star rookie + rookie-mint scoring, and drops editions that cannot form an int-pair key", async () => {
     state.gqlPages[RY] = [
       gqlPage(

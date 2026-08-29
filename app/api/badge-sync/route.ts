@@ -762,8 +762,57 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const durationMs = Date.now() - startedAt
+  // ⚠ `ok` WAS HARDCODED `true` HERE, including on a sweep whose every upsert
+  // failed. The GHA caller only checks the HTTP status (never `body.ok`), so
+  // nothing read it — but it is the value this route asserts about itself, and a
+  // sweep that collected rows and wrote none is not a success.
+  const ok = upsertErrors === 0 && !(rows.length > 0 && upserted === 0)
+
+  // ── Durable run record (2026-08-29) ──────────────────────────────────────
+  // 🚨 THIS LANE WROTE NO `pipeline_runs` ROW AT ALL. Its CATALOG sibling
+  // (`topshot-badge-catalog`, ?mode=catalog) has always logged one, so a query
+  // for "is badge-sync running?" returned rows for the catalog walk and NOTHING
+  // for the six-hourly tag sweep — the lane that actually maintains
+  // `badge_editions.low_ask`. That is not "it is dead"; it is UNOBSERVABLE, and
+  // I nearly recorded the former from the latter.
+  //
+  // ⚠ WHAT IS MEASURABLE WITHOUT IT, AND WHY THIS MATTERS: the OUTPUT says the
+  // asks are not being refreshed regardless of run status. Measured 2026-08-29,
+  // `badge_editions` age by collection — All Day median 0.4 h (it has a dedicated
+  // `allday-badge-low-ask-refresh`, 143 runs), Top Shot median **107.2 h** with
+  // **all 1,651 ask-bearing rows over 12 h** and **no Top Shot equivalent of that
+  // refresher**. `badge_editions` is the FALLBACK ask for readers the
+  // `edition_offers` sweep has not reached, so those surfaces (watchlist, badges,
+  // set-plan) serve Top Shot asks a median 4.5 days old.
+  //
+  // The row cannot fix the staleness. It makes the lane answerable — "did it run,
+  // and did it write?" — which is the precondition for anyone noticing.
+  // In a try/catch so telemetry can never break the sweep it measures.
+  try {
+    await (supabaseAdmin as any).from("pipeline_runs").insert({
+      pipeline: "topshot-badge-sync",
+      collection_slug: "nba_top_shot",
+      started_at: new Date(startedAt).toISOString(),
+      finished_at: new Date().toISOString(),
+      rows_found: rows.length,
+      rows_written: upserted,
+      rows_skipped: skippedNoKey,
+      ok,
+      error: upsertErrors > 0 ? `upsert_errors=${upsertErrors}` : null,
+      extra: {
+        upsert_errors: upsertErrors,
+        deleted_stale_rows: deletedStaleRows,
+        sweep_counts: sweepCounts,
+        duration_ms: durationMs,
+      },
+    })
+  } catch (e) {
+    console.log(`[badge-sync] pipeline_runs insert failed: ${e instanceof Error ? e.message : e}`)
+  }
+
   return NextResponse.json({
-    ok: true,
+    ok,
     collected: rows.length,
     upserted,
     upsertErrors,
@@ -771,7 +820,7 @@ export async function POST(req: NextRequest) {
     deletedStaleRows,
     sweepCounts,
     seedResults,
-    durationMs: Date.now() - startedAt,
+    durationMs,
   })
 }
 

@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the badge sweep that feeds the FALLBACK Top Shot ask wrote no run row at all, and asserted `ok: true` over a sweep that wrote nothing
+
+**Revert:** `git revert <sha of the commit named below>` — one route + three tests. No DB.
+
+**Found by following the deals-board fix to the other surfaces that read an ask.** The
+watchlist, badges and set-plan read `badge_editions.low_ask`, which is the **fallback** ask
+for any edition the `edition_offers` sweep has not reached — a different table from the one
+the board uses, and also stale for Top Shot.
+
+**Measured 2026-08-29, `badge_editions` ask age by collection:**
+
+| collection | rows with an ask | median age | over 12 h | dedicated refresher |
+|---|---:|---:|---:|---|
+| `nfl_all_day` | 4,204 | **0.4 h** | 0 | ✅ `allday-badge-low-ask-refresh` (143 runs) |
+| `laliga_golazos` | 77 | 839.9 h | 73 | ✅ `golazos-badge-low-ask-refresh` (142 runs) |
+| `nba_top_shot` | 1,651 | **107.2 h (4.5 days)** | **1,651 — all of them** | ⛔ **none exists** |
+
+⚠ **Golazos' 839.9 h is the MARKET, not a broken pipeline** — its refresher runs fine
+(142/142 ok) and Golazos recorded sales on 13 of the last 30 days. Reading that row as a
+failure would be the same error as the earlier Golazos ingest alarm.
+
+⭐ **Top Shot is the outlier: it is the only collection with no `*-badge-low-ask-refresh`,
+and it predates the outage** — 4.5 days is far older than the 24 h the dead endpoint
+explains.
+
+🚨 **AND THE LANE THAT MAINTAINS IT WAS UNOBSERVABLE.** `/api/badge-sync` has two lanes.
+The **catalog** lane (`?mode=catalog`) has always written a `pipeline_runs` row
+(`topshot-badge-catalog`). The **six-hourly tag sweep — the one that upserts `low_ask` —
+wrote none.** So a query for "is badge-sync running?" returns catalog rows and silence for
+the lane that matters.
+
+⛔ **I nearly recorded "badge-sync has not run in 14 days" from that silence. That would
+have been a null instrument read as a fact** — the same shape I corrected twice today. What
+is measurable WITHOUT the telemetry is the OUTPUT, and the output is what the table above
+shows: whatever its run status, that lane is not refreshing Top Shot asks against a
+six-hourly schedule.
+
+**Shipped, and it is observability, not a staleness fix:**
+- The tag sweep now writes `pipeline_runs` as **`topshot-badge-sync`** with
+  `rows_found`/`rows_written`/`rows_skipped`, `upsert_errors`, `deleted_stale_rows` and
+  `sweep_counts`. In a `try/catch` so telemetry can never break the sweep it measures.
+- ⚠ **`ok` in the RESPONSE was hardcoded `true`** — including on a sweep whose every
+  upsert failed. Now `upsertErrors === 0 && !(collected > 0 && upserted === 0)`.
+  ⚠ **The empty sweep stays green**: nothing collected is not a failure, and pinning that
+  as a control is what stops the naive `upserted > 0` form. ⛔ Safe to change: the GHA
+  caller reads only the HTTP status, never `body.ok` — checked, not assumed.
+
+Three mutations, three different tests: removing the row fails all three new tests,
+re-hardcoding `ok: true` fails the all-upserts-failed test, and the naive `upserted > 0`
+fails the empty-sweep control. Full suite **1,396 files / 15,345 tests green**.
+
+👉 **The staleness itself is NOT fixed and needs a decision:** Top Shot has no
+`topshot-badge-low-ask-refresh` while All Day and Golazos both do, and the two that exist
+are the working template. ⛔ Not built here — it is a new scheduled pipeline, and the right
+time to size it is once `topshot-badge-sync` has a few days of rows to say whether the tag
+sweep is running at all.
+
 ### 2026-08-29 · 📦 FILED (no prod change) — `fmv-recalc` completed nothing for 90 minutes and `fmv_sweep_wedge_hours` is BREACHING, and it kept killing after the IO band cleared
 
 **Found by a closing health sweep, not by looking for it.** `fmv_sweep_wedge_hours` **4.30 h and rising against a breach at 3**; last terminal `fmv-recalc` row **18:48:06Z**; **8 heartbeats and ZERO terminal rows in 90 minutes**; 24 h totals **146 heartbeats / 59 terminal (59.6% killed) / 25,515 rows written**. Every heartbeat reads `{"phase":"started","offset":0}`.
