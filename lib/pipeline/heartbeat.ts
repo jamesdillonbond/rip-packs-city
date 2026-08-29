@@ -36,6 +36,14 @@
 // `log_pipeline_run` has no `p_finished_at` parameter and `finished_at` DEFAULTS
 // TO `now()` while `duration_ms` is GENERATED from the pair.
 //
+// ⚠ UPDATE 2026-08-28: HALF OF THAT IS NOW FIXED AT THE SOURCE, so do not inherit
+// the whole rationale. `log_pipeline_run` no longer COALESCEs an explicit NULL
+// counter to 0 (migration 20260829040000) — it had been overwriting two callers
+// that deliberately passed NULL, which is the same fabrication this comment names.
+// **The remaining reason to write the table directly is `finished_at`**: the RPC
+// still has no `p_finished_at`, so it cannot pin a marker's duration to 0, and that
+// alone is why this helper does not delegate.
+//
 // Both were survivable only because every reader knew the caveat. That is the
 // failure mode: a contract whose correctness lives in five comments is a
 // contract that drifts, and "read `extra`/`ok`, never the duration" is not
