@@ -628,6 +628,12 @@ export async function POST(req: NextRequest) {
     // All Day). TS external_ids carry a colon so they never collide with All
     // Day's bare-integer keys, making the external_id lookup unambiguous.
     const editionAskById = new Map<string, number>()
+    // ⚠ AGE, CARRIED ALONGSIDE THE ASK. Until 2026-08-29 the corroboration had NO age
+    // bound, so an ask nobody had confirmed in 87 days could still lift an edition to
+    // MEDIUM — and MEDIUM is what gates the public Below-FMV board. The threshold lives
+    // in lib/fmv-confidence.ts (7 days, MEASURED — see the comment there for why it is
+    // deliberately NOT the boards' 12 h display marker).
+    const editionAskAgeHoursById = new Map<string, number | null>()
     try {
       const extIdToEditionIds = new Map<string, string[]>()
       for (const [edId, meta] of editionMetaById.entries()) {
@@ -642,7 +648,7 @@ export async function POST(req: NextRequest) {
         const slice = extIds.slice(i, i + ASK_CHUNK)
         const { data: askRows, error: askErr } = await supabaseAdmin
           .from("edition_offers")
-          .select("external_id, low_ask")
+          .select("external_id, low_ask, updated_at")
           .in("external_id", slice)
           .gt("low_ask", 0)
         if (askErr) {
@@ -652,8 +658,16 @@ export async function POST(req: NextRequest) {
         for (const row of askRows ?? []) {
           const ask = Number((row as any).low_ask)
           if (!(ask > 0)) continue
+          // edition_offers.updated_at is NOT NULL in the schema, so null here means an
+          // UNPARSEABLE value rather than a missing one — and it is passed through
+          // rather than coalesced, because escalateConfidence treats "I could not date
+          // this ask" as NOT corroborating. Substituting 0 would publish it as fresh.
+          const rawAskAt = (row as any).updated_at
+          const askAtMs = rawAskAt ? Date.parse(String(rawAskAt)) : NaN
+          const askAgeHours = Number.isNaN(askAtMs) ? null : (Date.now() - askAtMs) / 3_600_000
           for (const edId of extIdToEditionIds.get(String((row as any).external_id)) ?? []) {
             editionAskById.set(edId, ask)
+            editionAskAgeHoursById.set(edId, askAgeHours)
           }
         }
       }
@@ -1000,7 +1014,11 @@ export async function POST(req: NextRequest) {
       // serials enable the serial-residual HIGH dispersion gate; the live ask
       // (when present) enables ask-corroboration LOW->MEDIUM (see lib/fmv-confidence.ts).
       let confidence: string = escalateConfidence(
-        baseConfidence, sales.length, prices, serials, editionAskById.get(editionId) ?? null,
+        baseConfidence, sales.length, prices, serials,
+        editionAskById.get(editionId) ?? null,
+        // ⚠ `?? null` NOT `?? undefined`: an ask we hold but could not date must not
+        // corroborate, and undefined is the legacy "caller is not age-aware" path.
+        editionAskAgeHoursById.get(editionId) ?? null,
       )
       // Volume-tier gate (Trevor 2026-08-07): the 90d widening above lifts a
       // thin edition's effective count so it can price + earn MEDIUM off the

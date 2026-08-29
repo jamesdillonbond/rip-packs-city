@@ -52,6 +52,28 @@ export const MEDIUM_MAX_DISPERSION = 0.35
 export const MIN_SALES_ASK_CORROBORATION = 3
 export const ASK_CORROBORATION_BAND = 0.25 // sales median within +/-25% of the ask
 
+// 🚨 THE ASK HAD NO AGE BOUND AT ALL until 2026-08-29, so "an independent LIVE ask"
+// could be an ask nobody had confirmed in three months. `edition_offers` holds rows
+// up to 87 days old, and 83 Top Shot rows were over 30 days — each of them able to
+// lift an edition to MEDIUM, which in turn is what gates the public Below-FMV board.
+//
+// ⚠⚠ THE THRESHOLD IS 7 DAYS AND NOT 12 HOURS, AND THAT IS A MEASUREMENT, NOT A
+// PREFERENCE. The obvious move is to reuse `ASK_STALE_HOURS` (12 h) from
+// lib/market/ask-freshness.ts, which is what the boards mark a row unconfirmed at.
+// Measured before shipping: of 12,259 Top Shot asks, **12,121 (98.9%) were older than
+// 12 h** during the offers-sweep outage, **168 (1.4%) older than 3 days, 155 (1.3%)
+// older than 7, 83 (0.7%) older than 30**. A 12 h gate would therefore have demoted
+// essentially the whole catalogue out of MEDIUM — and off the deals board — because
+// of a transient upstream failure. A 7-day gate touches ~1.3% and removes only asks
+// that have genuinely stopped being evidence.
+//
+// ⭐ THE TWO THRESHOLDS ANSWER DIFFERENT QUESTIONS AND MUST NOT BE UNIFIED.
+// `ASK_STALE_HOURS` (display): "we have not re-checked this, so look before you act."
+// `MAX_ASK_AGE_HOURS_CORROBORATION` (pricing): "this ask is so old it is no longer
+// evidence about the price." A 30-hour-old ask that agrees with the recent sales
+// median is still corroboration; it just is not something to trade on unseen.
+export const MAX_ASK_AGE_HOURS_CORROBORATION = 24 * 7
+
 function medianPrice(prices: number[]): number {
   if (prices.length === 0) return 0
   const s = [...prices].sort((a, b) => a - b)
@@ -151,6 +173,19 @@ export function escalateConfidence(
   prices: number[],
   serials?: (number | null | undefined)[],
   liveAsk?: number | null,
+  /**
+   * Age of `liveAsk` in hours. THREE STATES, and they are not interchangeable:
+   *   - a number  → dated; corroborates only under MAX_ASK_AGE_HOURS_CORROBORATION
+   *   - `null`    → the caller HAD an ask and could not date it → does NOT corroborate
+   *   - omitted   → the caller is not age-aware at all (legacy path)
+   * ⚠ The null case is deliberately stricter than the omitted case. An undatable ask
+   * is exactly the shape this gate exists to catch, and treating "I could not tell"
+   * as "recent enough" is the failed-read-as-answer defect one layer down.
+   * ⚠ The omitted case preserves the pre-2026-08-29 behaviour so a caller that passes
+   * no ask is unaffected — `__tests__` pins that fmv-recalc, the only caller that DOES
+   * pass an ask, supplies the age, so the legacy path cannot quietly become production.
+   */
+  liveAskAgeHours?: number | null,
 ): FmvConfidence {
   let confidence = base
 
@@ -186,10 +221,14 @@ export function escalateConfidence(
   // LOW edition to MEDIUM (covers both the thin-but-confirmed 3-4 sale editions
   // and the count>=7 editions the dispersion gate demoted). Corroborate only —
   // the ask is a floor and is never used to lower confidence.
+  const askIsDatedAndCurrent =
+    liveAskAgeHours === undefined ||
+    (liveAskAgeHours !== null && liveAskAgeHours < MAX_ASK_AGE_HOURS_CORROBORATION)
   if (
     confidence === "LOW" &&
     liveAsk != null &&
     liveAsk > 0 &&
+    askIsDatedAndCurrent &&
     salesCount30d >= MIN_SALES_ASK_CORROBORATION &&
     prices.length > 0
   ) {
