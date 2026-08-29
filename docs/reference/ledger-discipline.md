@@ -124,3 +124,34 @@ index called two closed items open. Both were caught by
 `__tests__/inbox-index-lists-every-filing.test.ts` (ban at zero, both directions) on the next CI run,
 neither by a reader. ⚠ **Archiving a filing means deleting its entry in the same commit** — and if the
 archive decision is later reversed, the entry has to come back with it.
+
+## 🚨 The trap none of the above catches: `git add -A` in the same command as a stash pop
+
+**2026-08-29** — a `git stash pop` after `git pull --rebase` conflicted on the ledger, and the
+`git add -A` **in the same shell command** staged the conflicted file. Three line-anchored markers
+reached `main` (`211428ef7`). Every rule above was followed: the entry was re-read from disk, spliced
+at a line-start `^### `, and all four guards were run and green — **before** the pull. The failure was
+in the COMMAND SHAPE, not the splice, and it happened at the one moment none of the guards re-run.
+
+Three things follow, and the third is the one that had been missing for months:
+
+- ⛔ **Never `git add -A` in the same command as a `stash pop`, a `pull --rebase`, or a `merge`.**
+  Stage by name, and only after checking for markers. A compound command hides the conflict notice
+  above its own output.
+- ⚠ **`git stash pop` on a conflict KEEPS the stash entry** (`git stash list` still shows it) — which
+  reads like a safety net and is not one, because the working tree is already conflicted and `add -A`
+  will happily commit it. Drop the stash only after the file is verified clean.
+- 🚨 **The repo had extensive written guidance about this exact trap and ZERO instruments for it.**
+  Nothing in 1,399 test files checked for conflict markers. `__tests__/no-conflict-markers-on-main.test.ts`
+  now does, over every tracked non-binary file from `git ls-files`. **Written guidance is not an
+  instrument: it fires only on someone who remembers to read it, at the moment they are least likely to.**
+
+⚠ **The guard is line-anchored and requires BOTH an opening and a closing marker**, because an
+unanchored grep for these strings returns hits on this repo's own prose describing the incident (that
+false positive is recorded above), and because a Markdown setext H1 underline is a line of `=`.
+Its positive control is not synthetic — it runs against `211428ef7:docs/overnight/ledger.md`, the
+actual bad commit, and reds.
+
+**Recovery, when markers do reach `main`:** both sides are usually intact and complete. Verify that
+each side starts at a `^### ` heading, keep BOTH (newest first), and delete only the three marker
+lines — programmatically, with the ordering asserted. Then re-run all four guards before committing.

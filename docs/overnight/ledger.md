@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (guard) — I pushed conflict markers to `main`, and nothing in 1,401 test files would have caught it
+
+**What happened.** A `git stash pop` after `git pull --rebase` conflicted on the ledger, and the `git add -A` **in the same shell command** staged the conflicted file. Three line-anchored markers reached `main` in `211428ef7`. ⚠ **Every ledger rule was followed** — entry re-read from disk, spliced at a line-start `^### `, all four guards run green — **before the pull**. The failure was in the COMMAND SHAPE, at the one moment none of the guards re-run, and a compound command hid the conflict notice above its own output. Repaired in `a4489cec6`: both sides were intact, so both were kept (newest first) and only the three marker lines deleted, programmatically with the ordering asserted.
+
+🚨 **The finding is not the mistake, it is that the repo had EXTENSIVE WRITTEN GUIDANCE about this exact trap and ZERO INSTRUMENTS for it.** CLAUDE.md carries a hand-written re-splice recipe and the words *"three traps, each drawn blood"*; `ledger-discipline.md` carries the full case history. None of it fires on anyone who does not stop and read it — **at the moment they are least likely to.** ⭐ *Written guidance is not an instrument.*
+
+**Shipped: `__tests__/no-conflict-markers-on-main.test.ts`.** Enumerates every tracked non-binary file from `git ls-files` (a tree walk, not a curated list — the suppression list is about file FORMAT, never about which code is trusted) and bans committed conflict markers.
+
+⚠ **Line-anchored, and it requires BOTH an opening and a closing marker.** An unanchored grep for these strings returns hits on this repo's own PROSE describing this incident — that false positive is already recorded in `ledger-discipline.md`, and a guard that reds on the documentation of the bug it prevents trains people to delete the documentation. Requiring both markers also makes a Markdown setext H1 underline (a line of `=`) structurally unable to trip it.
+
+⭐⭐ **Its positive control is not synthetic: it runs against `211428ef7:docs/overnight/ledger.md`, the actual bad commit, and reds.** CLAUDE.md's rule is *prove a watcher can see a FAILURE before relying on it* — here the failure was available, so it was used rather than a hand-written fixture. The not-vacuous arm asserts on the WALK (>500 files, and the two files this session touched are in it), never on a dirty count, so it stays satisfiable at a population of zero.
+
+**Also recorded** in [ledger-discipline.md](../reference/ledger-discipline.md): never `git add -A` in the same command as a stash pop, rebase, or merge — stage by name, after checking for markers; and ⚠ **`git stash pop` on a conflict KEEPS the stash entry, which reads like a safety net and is not one** — the working tree is already conflicted and `add -A` will commit it.
+
+**Verification.** Full suite **1401 files / 15383 tests green**, `tsc` 0.
+
+**Revert path:** `git revert <sha of "test: ban committed conflict markers, proven against the commit that shipped them">`. Guard + docs only, no runtime code, no DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the retired "Refreshes continuously" claim was still in the DEPLOYED HTML twice, in the place it can never be withdrawn from
 
 **Found by fetching the deployed page, not by a test.** Both boards' component tests asserted the ABSENCE of the claim and both were green. The live document still contained it — because it also lives in each board's **sibling `layout.tsx`**, in the JSON-LD `description` AND the route metadata. ⭐⭐ **A component test cannot see a sibling layout, so *"the page no longer says it"* was true of the page and false of the DOCUMENT.** Six copies of one sentence, and the grep that would have found all six was never run: CLAUDE.md's own rule — *when you find one, grep for the EXPRESSION, not the file* — applied to the fix, not just the diagnosis.
