@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (DB) — `candy_scarcity_board` now scans `wallet_moments_cache` ONCE: **8,424 ms → 114 ms**. This is the falsifier from the previous entry, closed.
+
+**The entry above shipped the FMV scoping and predicted its own residual:** *"the boards are now
+`wallet_moments_cache`-bound … the same 25,375 Candy rows are scanned twice … that is the next lever,
+not a bigger statement_timeout."* **That prediction was correct and this closes it.**
+
+The two passes: the `treas` CTE spent **23,082 buffers** to return ONE wallet address, and the `h`
+group-by spent **23,079** on the same rows — because `candy_treasury_wallet` is a *view* over the same
+table with the same predicate, so referencing it forced a second full scan.
+
+**Fix: one `AS MATERIALIZED` CTE scans those rows once; both the treasury wallet and the per-edition
+split derive from that single result.** ⚠ `AS MATERIALIZED` is load-bearing — PG12+ inlines a CTE
+referenced once, and inlining would re-plan the scan per reference and silently undo the fix.
+
+| `candy_scarcity_board` | wall clock | buffers |
+|---|---:|---:|
+| before the FMV fix | (timing out in prod) | — |
+| after FMV scoping only | **8,424.9 ms** | 46,636 |
+| **after this** | **114.2 ms** | **23,550** |
+
+**~74× on wall clock, buffers halved**, and the treasury lookup drops **23,082 → 3 buffers**.
+⚠ **Single samples on a shared instance. The BUFFER halving is the durable claim; the 74× ratio will
+move with load and must not be quoted as a guarantee.**
+
+✅ **EQUIVALENCE PROVED AGAINST THE LIVE VIEW, ATOMICALLY** — rewritten output FULL OUTER JOINed to the
+then-current view in ONE query, so concurrent `wallet_moments_cache` writes cannot confound it:
+**125 rows · sealed 0 diffs · circulating 0 diffs · holders 0 diffs · fmv_usd 0 diffs.**
+
+⚠ **THE ONE SEMANTIC RISK WAS MEASURED, NOT ARGUED.** `candy_treasury_wallet` is
+`ORDER BY count(*) DESC LIMIT 1` with **no tiebreak**, so a tie makes it arbitrary — and the inlined
+`treas` inherits exactly that arbitrariness. Live top holders: **2,129 · 1,821 · 741 · 655**, a margin of
+308. No tie exists, so the two forms cannot diverge today. ⛔ **If Candy holdings ever converge at the
+top, BOTH forms become non-deterministic — that is a pre-existing property of the view, not something
+this migration introduced.** Do not record it as a regression here.
+
+⚠ **DELIBERATELY ONE VIEW.** `candy_pack_market` and `candy_special_serials_board` also reference
+`candy_treasury_wallet` and probably carry the same double scan. They are untouched so this ships as a
+**measured pilot with its own before/after**, rather than three simultaneous rewrites whose effects
+nobody could attribute. **That is the obvious next step and it now has a proven recipe.**
+
+**Post-flight, read live:** `security_invoker=on` preserved, `anon` SELECT **false**, 2 MATERIALIZED
+CTEs present, `candy_treasury_wallet` references now **0**, 125 rows.
+
+**Revert:** re-run the `candy_scarcity_board` statement from `20260829003000` (the two-scan form),
+keeping `WITH (security_invoker = on)`. Record:
+`supabase/migrations/20260829004500_audit_20260828_candy_scarcity_board_scans_wmc_once.sql`.
+**Exit condition:** the `candy_scarcity_board … statement timeout` group stops accruing events.
+**Falsifier:** if it keeps accruing at 114 ms warm, the timeouts are contention on the shared
+`Promise.all` in `lib/insights/candy-board.ts`, not this query.
+
 ### 2026-08-28 · ⭐ The grail-MV **hour-parity** hypothesis is REFUTED the same day it was filed — and the argument used to caution against it could not have been measured
 
 The 22:52Z pass wrote a falsifier into the watchlist note: *"if the alternation still holds after a
