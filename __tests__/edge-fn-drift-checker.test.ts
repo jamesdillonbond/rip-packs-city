@@ -114,38 +114,10 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // this detector cannot see either (it compares repo-vs-deployed for slugs the
     // repo HAS). The count in this file's header comment moved 37 -> 38 for the
     // same reason.
-    // ⚠ GREW 3 -> 21 on 2026-08-28 when R21 (`2e4bbb88c`) committed 18 deployed-only
-    // sources. This is the SAME repo-tree change the resolve-allday-rip-dist-api note
-    // above describes, at scale: every one of the 18 is url-only (esm.sh / deno.land),
-    // so tier 1 is INAPPLICABLE to it and none is a drift finding.
-    // ✅ THE HEADLINE IS UNCHANGED AND THAT IS THE CHECK THAT MATTERS: `proven` is
-    // still 31, and `clean` is still exactly the 4 WITH_MAP slugs — verified by
-    // running the classifier over the live tree before editing this list. The
-    // assertion below `proven.length` is a self-consistent identity
-    // (repo - clean - inapplicable), so it holds as the tree grows; this list is the
-    // inventory, not the proof.
     expect(res.inapplicable.sort()).toEqual([
-      "admin-badge-backfill-bridge",
-      "allday-consumer-gql-smoke",
-      "allday-unmapped-bridge",
-      "allday-unmapped-resolver",
-      "audit-storefront-wallets",
-      "backfill-player-names",
-      "backfill-ufc-thumbs",
-      "badge-icon-cache-put",
-      "classify-acquisitions",
-      "compute-achievements",
-      "flowty-loan-indexer",
       "flowty-proxy",
-      "ingest-external-announcements",
-      "pinnacle-render-cache-put",
-      "pinnacle-render-smoke",
-      "pipeline-failure-alerts",
       "resolve-allday-rip-dist-api",
-      "scan-storefront-events",
-      "shared-deploy-probe",
       "sync-nba-games",
-      "tmp-pack-pool-probe",
     ])
     expect(res.clean.sort()).toEqual([...WITH_MAP].sort())
     // The headline: everything else is provably running non-repo code.

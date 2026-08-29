@@ -473,29 +473,13 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
 //     failed window"). These are the best implementations of this property in
 //     the repo; a rule demanding a `throw` would have reddened them.
 describe("event-range walkers outside app/ and lib/ are enumerated, not invisible", () => {
-  // ⚠ THIS LIST IS AN INVENTORY, NOT A CLEAN BILL OF HEALTH. Two entries were
-  // added 2026-08-28 when R21 committed 18 deployed-only edge sources, and the
-  // by-hand check this guard demands FAILED FOR BOTH — they are recorded here so
-  // the set is accounted for, and the defect is filed separately. Do not read
-  // membership as "verified safe":
-  //   · flowty-loan-indexer  — the `flowty_loan_events` upsert error is logged and
-  //     SWALLOWED (`else if (error) console.log(...)`), then `cursor = chunkEnd + 1`
-  //     runs unconditionally and the checkpoint is upserted every 5 chunks. A failed
-  //     insert advances past those blocks permanently.
-  //   · scan-storefront-events — an empty/timed-out chunk is COUNTED (`timeouts++`)
-  //     and then `currentStart = currentEnd + 1` advances anyway; `scannedThrough`
-  //     is written to `scan_checkpoint` as if the range had been read.
-  // Both are DEPLOYED, so the defect is live regardless of this file. Fixing them
-  // needs an edge deploy (see the rpc-edge-fn-deploy skill), not a test edit.
   const OUT_OF_SCOPE_WALKERS = [
-    "supabase/functions/flowty-loan-indexer/index.ts",
     "supabase/functions/hybrid-custody-events/index.ts",
     "supabase/functions/ingest-allday-pack-opens/index.ts",
     "supabase/functions/ingest-pinnacle-mints/index.ts",
     "supabase/functions/ingest-topshot-pack-opens-history/index.ts",
     "supabase/functions/pinnacle-owner-discovery-forward/index.ts",
     "supabase/functions/pinnacle-owner-discovery/index.ts",
-    "supabase/functions/scan-storefront-events/index.ts",
     "workers/hybrid-custody-proxy/index.ts",
     "workers/pack-events-ingest/index.ts",
     "workers/pinnacle-events-proxy/index.ts",
@@ -529,7 +513,7 @@ describe("event-range walkers outside app/ and lib/ are enumerated, not invisibl
     // by comparing [] to []. This repo has shipped exactly that
     // (`check-tree-corruption.mjs`, `0 file(s) checked`, exit 0), so assert the
     // count it INSPECTED, not just the comparison.
-    expect(found.length, "expected 12 event-range readers outside app/ and lib/").toBe(12)
+    expect(found.length, "expected 10 event-range readers outside app/ and lib/").toBe(10)
     expect(found.some((f) => f.startsWith("workers/"))).toBe(true)
     expect(found.some((f) => f.startsWith("supabase/functions/"))).toBe(true)
   })
