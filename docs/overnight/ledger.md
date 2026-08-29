@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ WATCH RESULTS — five run-4 exit conditions answered on real callers; one upstream outage found and correctly filed as ONE incident
+
+All read ~04:13Z 2026-08-29 (21:13 PT 08-28); nothing below is a re-quote of a prediction — each is the
+production caller's own record.
+
+1. **R41 leg re-point: CLOSED on the real caller.** jobid 325's 01:48Z tick succeeded and published
+   **share 38.1 / stale 31.7** — the all-rows denominator is live on the cron path, values within noise
+   of the predicted 38.4/31.7.
+2. **jobid 235 at \`*/2\`: 3/3 ticks ok (00:07 / 02:07 / 04:07Z) at 24–34 s** — far under the 113 s p50
+   the dose–response predicted, 0% failure so far (n=3; the 2-day exit window continues).
+3. **candy-editions-ingest first run at the 01:10Z slot: ok, 25,260 rows** — the #47 schedule-transition
+   watch PASSES; the 08-27 missed-tick question resolves as the old slot, not the pipeline.
+4. **stub-resolver v29: five consecutive ticks all read \`rows_no_change_no_onchain_player = 50\` of 50** —
+   the Reels diagnosis is now continuous fact, and the give-up/backoff decision has all the data it needs.
+5. **Wallet-backfill backstop experiment: first post-change run (the 20:38Z schedule, GHA-delayed to
+   23:40Z) dispatched 121 wallets with 300 s cohort spacing — 121/121 completed, 0% killed** vs the
+   73.1% baseline. ⚠ **HOUR-CONFOUNDED, stated before anyone quotes it: the delayed start landed in the
+   quiet band, and the same night's primaries also ran 0%.** Consistent with improvement; the
+   discriminating datapoint is a 14:38Z-band run. (Today's 02:38Z run has not fired at +1.6h — the
+   documented GHA drop-vs-delay ambiguity.)
+
+🚨 **ONE new incident, filed once, not as N bugs: Top Shot's Atlas/GQL upstream has been down since
+21:28Z (HTTP 530 / Cloudflare error 1033 — a tunnel failure on the provider side).** Blast radius by the
+same error string: \`topshot-pack-pool-backfill\` ×82, \`topshot-moments-hydrator\` ×41, \`offers-sweep\`
+×20, plus 4 one-offs — all Atlas consumers, all self-healing when upstream returns; Flow-REST-fed sales
+ingest is unaffected (TS sales flowing normally). ⚠ The outage started 1h46m BEFORE the R56 migration —
+timeline exonerates it — but it CONFOUNDS R56's waste-share watch, noted in the register. Not fixable
+from here; if it passes ~24h the atlas-proxy/#20 lens applies.
+
+**Revert:** nothing to revert; this entry is measurements.
+
 ### 2026-08-28 · ✅ SHIPPED (prod DB + pins) — `log_pipeline_run` was fabricating a measured ZERO for every caller that said "I did not measure this", and TWO stale pins were found on the way
 
 🚨 **The fleet's own logging function carried the `?? 0` shape this repo bans.** `log_pipeline_run` wrote `COALESCE(p_rows_found,0), COALESCE(p_rows_written,0), COALESCE(p_rows_skipped,0)`, so an explicit NULL — a caller saying *"I did not measure this"* — landed as a measured 0 in the one function whose entire job is to make failure legible.
