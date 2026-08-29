@@ -1,0 +1,71 @@
+-- 2026-08-29 · idx_pack_rips_collection_time_pv — covering index for mv_topshot_pack_reality_dist
+--
+-- WHY. pg_cron jobid 237 `rpc-refresh-pack-reality-dist` refreshes an MV whose defining query is
+-- a single-table aggregate over a 60-day window:
+--
+--     WITH rips AS (
+--       SELECT COALESCE(pull_value_usd, 0) AS pv
+--       FROM pack_rips
+--       WHERE collection_id = '95f28a17-…'::uuid
+--         AND sealed_at >= now() - '60 days'::interval
+--     )  -- then six UNION ALL bucket branches + a total, all scanning `rips`
+--
+-- `idx_pack_rips_collection_time (collection_id, sealed_at DESC)` already had exactly the right
+-- LEADING COLUMNS and no INCLUDE payload, so every matching row was heap-fetched to read
+-- `pull_value_usd`. That is the same defect `idx_pack_rips_dist_agg` fixed for jobid 211 on
+-- 2026-08-28 — right key, missing payload — one table over.
+--
+-- MEASURED 2026-08-29 in a genuinely IDLE window (io_wait 0 / active 1 of 42), so none of this is
+-- saturation collateral:
+--
+--   Full MV defining query, EXPLAIN (ANALYZE, BUFFERS):   77,514 ms
+--     └─ Index Scan materialising the CTE:                77,251 ms  = 99.66% of the query
+--        Buffers: shared hit=26142 read=19017, rows=88,553
+--     └─ the six aggregate branches, together:               ~130 ms = 0.17%
+--
+--   Controlled pair, same window, PROJECTION the only variable:
+--     count(*) only      -> Index Only Scan  13,155 buffers      3 reads     35.98 ms
+--     + pull_value_usd   -> Index Scan       45,164 buffers  18,540 reads  7,021.76 ms
+--                                                            (195x time, 6,180x reads)
+--
+-- Against jobid 237's 303 s best observed success and its 602 s ceiling, 77.5 s IDLE means ~4x
+-- headroom when the instance is quiet and none at all under load — which is exactly the observed
+-- bimodality (79 ok / 4 dead-at-the-ceiling in 7 days, ~2,430 s/7d thrown away).
+--
+-- USER-FACING, which is why this was worth doing rather than merely worth filing: the MV backs the
+-- view `topshot_pack_reality_dist`, which carries SELECT to `anon` AND `authenticated` and is read
+-- by `/api/public/insights/pack-reality` and `/insights/pack-reality`. A refresh that cannot finish
+-- under load serves a stale public board.
+--
+-- COST, stated rather than buried — and it is SMALLER than the 08-28 decision, not equal to it.
+-- `INCLUDE` and predicate columns block HOT updates, and `pull_value_usd` is what the valuation
+-- backfill writes. But `pack_rips` is ALREADY at **hot_pct = 0.00%** (119,046 updates, 0 HOT), so
+-- there is no HOT left to lose: `idx_pack_rips_dist_agg` (08-28) already carries `pull_value_usd`,
+-- and HOT is all-or-nothing. The marginal cost here is ONE extra index tuple per row update on a
+-- table taking ~119k updates in its tracked lifetime, plus the index's own size.
+--
+-- This is a REPLACE, not an ADD: the leading columns `(collection_id, sealed_at DESC)` are
+-- unchanged, so every one of the old index's 421 recorded scans is still served, and the index
+-- COUNT on the table stays at ten.
+--
+-- HOW IT WAS APPLIED. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, so it is
+-- unreachable via MCP `execute_sql`/`apply_migration`. Applied from a one-shot SINGLE-STATEMENT
+-- pg_cron job (libpq) owned by `postgres`, jobid 381 `tmp-build-pack-rips-colltime-pv-idx`,
+-- unscheduled immediately after it succeeded. `postgres` is used because `cron_heavy` is not a
+-- member of the table owner. `ALTER ROLE postgres SET statement_timeout` was raised to 1800s for
+-- the build window and RESET immediately afterwards. The superseded index was dropped the same
+-- way, also CONCURRENTLY.
+--
+-- This file is the repo record of objects created outside the migration channel. Written
+-- IF NOT EXISTS / IF EXISTS so it is a no-op on any environment already in this state.
+--
+-- REVERT (both halves, and they must be run in this order):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_collection_time
+--     ON public.pack_rips (collection_id, sealed_at DESC);
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_collection_time_pv;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_collection_time_pv
+  ON public.pack_rips (collection_id, sealed_at DESC)
+  INCLUDE (pull_value_usd);
+
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_collection_time;
