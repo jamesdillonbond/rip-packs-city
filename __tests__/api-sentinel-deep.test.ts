@@ -847,11 +847,41 @@ describe("POST /api/sentinel — full battery", () => {
  * they assert the row's CONTENT rather than merely that some rpc was called.
  */
 describe("POST /api/sentinel — records its own run durably", () => {
+  /**
+   * ⚠ THE CLOCK IS PINNED, AND IT HAS TO BE. The route only sends anything when
+   * `hasCritical || hasWarn || isScheduledReport`, and `isScheduledReport` is
+   * `now.getUTCHours() % 6 === 0` (route.ts). The two assertions below drive a
+   * GREEN fixture on purpose — the scheduled all-clear report is precisely the
+   * case where a silently-dead channel is invisible — so on a green run the
+   * notification block is reachable ONLY in UTC hours 0, 6, 12 and 18.
+   *
+   * Unpinned, these tests therefore passed 4 hours in 24 and FAILED THE OTHER
+   * 20, deterministically, everywhere — CI included. Observed 2026-08-29 at
+   * 19:2xZ as `expected [] to include 'telegram'` (19 % 6 = 1).
+   *
+   * ⛔ Do NOT "fix" a recurrence by switching these to a CRITICAL fixture. That
+   * makes them pass at every hour by testing a different thing: the scheduled
+   * GREEN report would stop being covered, which is the one path where nobody
+   * is already looking at a page.
+   *
+   * Only `Date` is faked — `setTimeout` stays real, so the route's awaited
+   * fetch mocks still settle normally.
+   */
+  async function onScheduledHour<T>(run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-01-01T06:00:00Z"))
+    try {
+      return await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
   it("writes a pipeline_runs row carrying the verdict and the alert-delivery outcome", async () => {
     const spy = install(greenFixtures())
     stubFetch([sniperOk, telegramOk, resendOk])
 
-    await POST(post())
+    await onScheduledHour(() => POST(post()))
 
     const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
     expect(logged, "the sentinel must record its own run exactly once").toHaveLength(1)
@@ -907,7 +937,7 @@ describe("POST /api/sentinel — records its own run durably", () => {
     const spy = install(greenFixtures())
     stubFetch([sniperOk, jsonRoute("api.telegram.org", { ok: false }, { status: 500 }), resendOk])
 
-    await POST(post())
+    await onScheduledHour(() => POST(post()))
 
     const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
     expect(logged).toHaveLength(1)
