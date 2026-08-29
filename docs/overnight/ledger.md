@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (repo + edge deploy) — R21: 18 of the 29 ghost edge functions committed after a two-layer credential scan; the other 11 carry hardcoded keys; and an OPEN anonymous write endpoint is closed
+
+**Commit \`2e4bbb88\`: 18 deployed-only edge-function sources committed VERBATIM** — fetched by
+redacted-report subagents, scanned for every credential shape (zero hits), then independently re-grepped
+over the staged bytes before commit. They are now inside the credential guards and the drift detector.
+Set: 7 retired 410 stubs + 11 live env-gated functions.
+
+🚨 **THE 11 NOT COMMITTED, for cause — hardcoded credentials in the deployed builds** (report carries
+lengths + first-4 only, never values): 5 × unrotated \`rpc_pls_\` gate literals (21–24 chars) —
+backfill-allday-dist-opened / backfill-allday-pack-sales / backfill-topshot-pack-sales /
+resolve-allday-pack-dist / resolve-allday-pull-editions, ⚠ **three of them invoked 350–460×/day**
+(function_edge_logs 24h, positive control passed), so those literals are LIVE production auth ·
+5 × ONE SHARED 16-char brand-shaped bearer (first4 \`ripp\` — guessable) — backfill-golazos-series /
+scan-allday-wallet / scan-golazos-wallet / seed-allday-editions / seed-golazos-editions ·
+1 × 48-char hex literal compared via substring includes() — ipfs-catalog-loader.
+**Remediation is the D2b workflow per function (env secret + redeploy + caller repoint); the 5 sharing
+one bearer rotate together.** Register R21 carries the census.
+
+✅ **AND ONE REAL EXPOSURE CLOSED: \`classify-acquisitions\` v37 was \`verify_jwt:false\` with NO auth of
+any kind in front of service-role writes to \`moment_acquisitions\` (arbitrary \`?wallet=\`).** Orphan
+status proven, not assumed: 0 invocations/24h while sibling fns logged 200–3,000 (the positive control),
+no pg_cron caller, no repo caller, superseded by the authed hourly multicollection route. **Stubbed to a
+410 with \`verify_jwt:true\` (v38, the established RETIRED pattern); anonymous probe now 401 — it was an
+open write.** Revert: redeploy the committed v37 source with verify_jwt:false. Watch its
+function_edge_logs 7 days for 410s from any slow-cadence caller.
+
+**Revert paths:** \`git revert 2e4bbb88\` (removes the 18 sources); classify-acquisitions per above.
+
 ### 2026-08-28 · ✅ `main` IS GREEN — all six R21 guard failures resolved; **1,389 files / 15,281 tests, 0 failing**
 
 **Completes `13214213f`.** The previous entry left three red deliberately, pending R21's author. They did
