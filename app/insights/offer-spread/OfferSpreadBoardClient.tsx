@@ -15,6 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, fmtAskAge } from "@/lib/market/ask-freshness"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -94,6 +95,15 @@ function tierColor(tier: string | null): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /**
+   * The SERVER's clock, serialised. Both halves are deliberate: reading the clock
+   * during a client render is React #418 (the hydration guard catches it), while a
+   * post-mount-only clock would leave the ask-age markers OUT of the raw HTML —
+   * so a reader with JS off, and every crawler, would still see the board's
+   * unqualified numbers. Bounded by the page's `revalidate`; the markers are
+   * hour-granular, and the client refreshes this on mount anyway.
+   */
+  initialNowMs?: number | null
   /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
   initialDegraded?: DegradedSummary | null
 }
@@ -101,6 +111,7 @@ type Props = {
 export default function OfferSpreadBoardClient({
   initialRows,
   initialFetchedAt,
+  initialNowMs = null,
   initialDegraded = null,
 }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
@@ -111,6 +122,26 @@ export default function OfferSpreadBoardClient({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // Seeded from the server so SSR renders the same markers the browser will, then
+  // refreshed once after hydration. Setting it in an effect is hydration-safe: the
+  // effect runs after the first client render, so it cannot differ from the server's.
+  const [nowMs, setNowMs] = useState<number | null>(initialNowMs ?? null)
+  useEffect(() => {
+    setNowMs(Date.now())
+  }, [])
+
+  // 🚨 THE HEADER USED TO ASSERT "Refreshes continuously" AS FIXED COPY, and on
+  // 2026-08-29 that was false for a day and a quarter: `edition_offers` has ONE
+  // writer for the ask side and it had been failing against a dead upstream, so the
+  // whole column froze at a median age of 30 h. A claim about a feed's health has to
+  // be DERIVED from the rows on screen, never typed into the markup — a hardcoded
+  // one is unfalsifiable and reads as reassurance exactly when it is wrong.
+  const askFreshness = useMemo(() => {
+    const ages = rows.map((r) => askAgeHours(r.updated_at, nowMs)).filter((a): a is number => a !== null)
+    if (ages.length === 0) return null
+    const stale = ages.filter((a) => a >= ASK_STALE_HOURS).length
+    return { stale, total: ages.length, oldest: Math.max(...ages) }
+  }, [rows, nowMs])
 
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [bidMeetsOnly, setBidMeetsOnly] = useState(false)
@@ -222,10 +253,22 @@ export default function OfferSpreadBoardClient({
         </p>
         <div className="rpc-os-meta-row">
           <span className="rpc-os-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            {/* This board queries the live view, so the stamp is when WE looked —
+                not how old the asks are. Those are two different numbers and the
+                gap between them is the whole point of the marker beside it. */}
+            Board queried <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-os-meta-sep">·</span>
-          <span className="rpc-os-meta">Refreshes continuously</span>
+          {askFreshness && askFreshness.stale > 0 ? (
+            <span
+              className="rpc-os-meta rpc-os-meta-warn"
+              title={`The ask feed re-checks every edition about hourly when healthy. ${askFreshness.stale} of ${askFreshness.total} asks on this board have not been re-confirmed recently — the oldest is ${fmtAskAge(askFreshness.oldest)}. Every spread here is bid minus ask, so a stale ask moves the whole row. Open the listing before acting.`}
+            >
+              ⚠ {askFreshness.stale} of {askFreshness.total} asks unconfirmed (oldest {fmtAskAge(askFreshness.oldest)})
+            </span>
+          ) : (
+            <span className="rpc-os-meta">Refreshes continuously</span>
+          )}
           <span className="rpc-os-meta-sep">·</span>
           <span className="rpc-os-meta">No signup</span>
         </div>
@@ -364,7 +407,20 @@ export default function OfferSpreadBoardClient({
                       </span>
                     </td>
                     <td className="rpc-os-td-num rpc-os-td-emph">{fmtUsd(r.highest_offer)}</td>
-                    <td className="rpc-os-td-num">{fmtUsd(r.low_ask)}</td>
+                    <td className="rpc-os-td-num">
+                      {fmtUsd(r.low_ask)}
+                      {(function () {
+                        const age = askAgeHours(r.updated_at, nowMs)
+                        if (age === null || age < ASK_STALE_HOURS) return null
+                        // REPORTS, never concludes: not "sold", not "delisted" —
+                        // only that we have not re-checked it since.
+                        return (
+                          <span className="rpc-os-thin-caveat" title={askAgeTitle(age)}>
+                            ⚠ ask unconfirmed {fmtAskAge(age)}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className="rpc-os-td-num rpc-os-td-emph">
                       {fmtPct(r.offer_pct_of_ask)}
                       {r.bid_meets_ask ? <span className="rpc-os-meets-chip">≥ floor</span> : null}
@@ -398,8 +454,20 @@ export default function OfferSpreadBoardClient({
           <p>
             A bid that <em>meets or beats</em> the floor is not automatically a
             free trade — it can be a serial-mismatched or stale cheap listing.
-            Always check the actual listing before acting. Offer + ask data
-            refreshes continuously from on-chain marketplace ingestion.
+            Always check the actual listing before acting.
+          </p>
+          {/* ⚠ THIS PARAGRAPH ENDED "Offer + ask data refreshes continuously from
+              on-chain marketplace ingestion" — a SECOND hardcoded health claim, in
+              prose, that the header's new derived one did not cover. It was found by a
+              test asserting the ABSENCE of the false claim rather than the presence of
+              the warning: the page was making both statements at once, which still
+              leaves the reader believing the feed is live. Say what the pipeline is
+              FOR, and let the per-row markers report what it actually did. */}
+          <p>
+            Offer and ask data come from on-chain marketplace ingestion, which re-checks
+            every edition roughly hourly when healthy. That is the target, not a
+            guarantee — any ask we have not re-confirmed recently carries its age in the
+            Floor ask column, and the header says how many are outstanding.
           </p>
         </div>
 
@@ -660,6 +728,22 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+.rpc-os-meta-warn {
+  color: var(--rpc-warning);
+  font-weight: 600;
+}
+.rpc-os-thin-caveat {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--rpc-warning);
+  font-weight: 600;
+  margin-top: 2px;
+  white-space: normal;
+  max-width: 150px;
+  margin-left: auto;
+  cursor: help;
 }
 .rpc-os-meets-chip {
   display: inline-block;

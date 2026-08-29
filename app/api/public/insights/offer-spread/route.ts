@@ -26,9 +26,14 @@
 //   sort=par|spread|offer|ask|pct                 default par (tightest first)
 //   limit=<1..200>                                default 50
 //
-// CACHE: 5-minute s-maxage. edition_offers refreshes continuously via the
-// offers-sweep cron, so 5m is well inside the freshness window and protects
-// the DB from a viral OG-share spike.
+// CACHE: 5-minute s-maxage, which protects the DB from a viral OG-share spike.
+// ⚠ THIS USED TO JUSTIFY ITSELF WITH "edition_offers refreshes continuously via the
+// offers-sweep cron, so 5m is well inside the freshness window." The cache window is
+// still right; the JUSTIFICATION was a dependency stated with no expiry. offers-sweep
+// is the ONLY writer of the ask side, and when its upstream died the column froze for
+// 30 h at a median age of 30.0 h — the cache was five minutes fresh over data a day
+// old. `updated_at` ships in every row precisely so the reader can tell the two
+// apart; see lib/market/ask-freshness.ts.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";

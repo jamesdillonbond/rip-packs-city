@@ -49,6 +49,7 @@ import {
   fmtUsd,
   relTime,
 } from "@/components/entity/_shared"
+import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askVerifiedAt, fmtAskAge } from "@/lib/market/ask-freshness"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import EditionActivity from "@/components/entity/EditionActivity"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
@@ -579,6 +580,22 @@ export default async function EditionPage(
   // badge_editions.low_ask is null). Label is collection-aware.
   const askValue = highOffer?.low_ask ?? fmv?.cross_market_ask ?? null
   const askLabel = ASK_LABEL[collection] ?? "Floor ask"
+  // ⚠ WHEN DID WE LAST CONFIRM THAT ASK? The cell below rendered a bare number
+  // with no age while its NEIGHBOUR — the best-offer cell, twenty lines down —
+  // already stamped `relTime(highOffer.updated_at)`. Same row, same object, same
+  // timestamp: the offer side was qualified and the ask side was not. On
+  // 2026-08-29 that unqualified number was a MEDIAN of 30.0 h old across 12,259
+  // Top Shot editions, because `offers-sweep` (the ask column's only writer) had
+  // been failing against a dead upstream for a day and a quarter.
+  // ⚠ THE PROVENANCE CHECK IS LOAD-BEARING, NOT DEFENSIVE. `askValue` falls back
+  // to `fmv.cross_market_ask`, which `highOffer.updated_at` says NOTHING about —
+  // stamping that fallback with this timestamp would attach a real-looking age to
+  // a different number, which is worse than no age at all. So the age is derived
+  // ONLY from the branch the timestamp actually describes, and every other branch
+  // renders no marker. Server component: the default clock is fine here (this is
+  // never hydrated), same arrangement `relTime` itself uses.
+  const askAt = askVerifiedAt(highOffer)
+  const askAge = askAgeHours(askAt)
   // Best-offer cell (H1): only render when there's a real positive offer.
   // edition_offers is Top-Shot-only today, so an em-dash here would be a
   // permanent placeholder on every other collection.
@@ -758,7 +775,23 @@ export default async function EditionPage(
           // On a parallel printing the floor ask is suppressed (the edition
           // floor is a different printing's listing) — say so rather than leave
           // a bare em-dash. Per-printing listing keying is a follow-up.
-          sub={currentSibling?.subedition_name && askValue == null ? "per-printing floor not yet indexed" : undefined}
+          sub={
+            currentSibling?.subedition_name && askValue == null
+              ? "per-printing floor not yet indexed"
+              : askAge === null
+                // Age UNKNOWN (no timestamp, or the cross-market fallback). No
+                // marker — an unknown age must never render as a fresh one.
+                ? undefined
+                : askAge >= ASK_STALE_HOURS
+                  ? (
+                    // REPORTS, never concludes: it does not say the listing is gone,
+                    // only that we have not re-checked it.
+                    <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }} title={askAgeTitle(askAge)}>
+                      ⚠ ask unconfirmed {fmtAskAge(askAge)}
+                    </span>
+                  )
+                  : relTime(askAt)
+          }
         />
         <StatCell
           label="% Listed"

@@ -17,7 +17,12 @@ import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import OfferSpreadBoardClient, { type Row } from "./OfferSpreadBoardClient"
 
-// Match the API route's 5-minute edge cache; edition_offers refreshes continuously.
+// Match the API route's 5-minute edge cache.
+// ⚠ THIS COMMENT USED TO END "edition_offers refreshes continuously" and that premise
+// is what the page was built on. It is a claim about the offers-sweep cron, not about
+// this cache, and on 2026-08-29 it was false for 30 hours. The 5-minute window still
+// bounds how stale THIS RENDER is; how stale the ASKS are is a separate number the
+// board now reports per row.
 export const revalidate = 300
 
 // Returns `ok:false` on a failed read so the page can say so. Before this the
@@ -51,6 +56,14 @@ export default async function OfferSpreadPage() {
       initialRows={rows}
       initialDegraded={summarizeDegraded([boardStatus("Bid vs Floor", ok)])}
       initialFetchedAt={new Date().toISOString()}
+      // ⚠ THE SERVER'S CLOCK, PASSED AS A PROP. The ask-age markers need a "now";
+      // reading it in the client during render is React #418 (the hydration guard
+      // catches it). Passing it serialised is hydration-SAFE — server and first
+      // client render use the identical number — and it puts the honesty INTO THE
+      // RAW HTML, which a post-mount-only clock cannot: without this, a reader with
+      // JS disabled and every crawler still saw "Refreshes continuously" beside asks
+      // that had not been re-checked in thirty hours.
+      initialNowMs={Date.now()}
     />
   )
 }
