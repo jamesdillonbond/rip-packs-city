@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // 800s ceiling (Vercel Pro Lambda hard cap — see the maxDuration note in
 // wallet-backfill-multicollection). The orchestrator returns 202 in <5s per
@@ -298,11 +299,80 @@ export async function GET(req: NextRequest) {
     (req.nextUrl.searchParams.get("force") ?? "").toLowerCase()
   )
   const utcHour = new Date().getUTCHours()
-  if (
+  const gateSkips =
     !forceWave &&
     process.env.SEED_WALLET_REFRESH_EVERY_WAVE !== "1" &&
     utcHour % 12 >= 2
-  ) {
+
+  // ── Invocation record, BOTH branches (2026-08-28) ─────────────────────────
+  // ⚠ Until this landed the gate above `return`ed before ANY pipeline_runs
+  // write, so a gated invocation and a dead cron were byte-identical in the
+  // telemetry: measured 2026-08-28, ZERO of 11,012 wallet-backfill* rows over
+  // 72h carried any skip record. The observable consequence was that the six
+  // `wallet-backfill*` cadence arms sat at max_silent_minutes=420 against a
+  // measured max inter-run gap of 677 min — arms that CANNOT be green, on the
+  // top severity band, which is how a genuinely missed wave gets skipped past.
+  //
+  // ⚠ WHY THE **REAL** NAME AND NOT `-heartbeat`. lib/pipeline/heartbeat.ts
+  // warns that a marker under the real name refreshes `last_run` and silences
+  // `detect_stalled_pipelines()`. That warning is about an INCOMPLETE run — a
+  // heartbeat written before `after()` work that may still be killed. This row
+  // is different in kind: for the gated branch the invocation is COMPLETE and
+  // its entire job was to decline, so a terminal row is the honest shape and
+  // refreshing `last_run` is the correct outcome. Silencing is exactly what we
+  // want here and only here: this route is the only component in the family
+  // with a ~6h heartbeat (cron-job.org cohorts at hours 0,1,6,7,12,13,18,19),
+  // so it is the right layer to watch for trigger dropout. The CHILD pipelines
+  // keep their own separate arms at their true 12h design cadence, and this row
+  // does not touch them — a killed `after()` wave still shows up there.
+  //
+  // ⚠ rows_* are NULL, never 0: this row measures nothing, and a 0 here is the
+  // fabricated-measurement shape this repo bans. `finished_at` is pinned to
+  // `started_at` so `duration_ms` (GENERATED) reads a hard 0 sentinel rather
+  // than publishing this INSERT's own latency as a run duration.
+  //
+  // Never fatal: a failed telemetry write must not take down the wave.
+  const invocationStartedAt = new Date().toISOString()
+
+  // `finishedAt` defaults to the invocation start, making `duration_ms`
+  // (GENERATED from the pair) a hard 0 sentinel rather than publishing this
+  // INSERT's own latency as a run duration. The wave's terminal row passes a
+  // REAL finish time, because there a duration is a measurement someone took.
+  async function logInvocationRow(
+    pipeline: string,
+    extra: Record<string, unknown>,
+    finishedAt: string = invocationStartedAt
+  ): Promise<void> {
+    try {
+      const { error: logErr } = await getSupabase()
+        .from("pipeline_runs")
+        .insert({
+          pipeline,
+          started_at: invocationStartedAt,
+          finished_at: finishedAt,
+          ok: true,
+          rows_found: null,
+          rows_written: null,
+          rows_skipped: null,
+          extra: { utcHour, cohort: cohortK, of: cohortN, forced: forceWave, ...extra },
+        })
+      if (logErr) {
+        console.warn(
+          `[seed-wallet-refresh] ${pipeline} log failed: ${logErr.code ?? "?"}: ${logErr.message ?? String(logErr)}`
+        )
+      }
+    } catch (thrown) {
+      console.warn(
+        `[seed-wallet-refresh] ${pipeline} log threw: ${thrown instanceof Error ? thrown.message : String(thrown)}`
+      )
+    }
+  }
+
+  if (gateSkips) {
+    // A COMPLETE run whose entire job was to decline. Terminal row under the
+    // real name, so it refreshes `last_run` — which is the intended outcome
+    // here and nowhere else in this route.
+    await logInvocationRow("seed-wallet-refresh", { reason: "12h_cadence_gate" })
     console.log(
       `[seed-wallet-refresh] skipped — 12h cadence gate (utcHour=${utcHour}, cohort=${cohortK}/${cohortN})`
     )
@@ -317,6 +387,28 @@ export async function GET(req: NextRequest) {
 
   const origin = new URL(req.url).origin
   const ingestToken = process.env.INGEST_SECRET_TOKEN!
+
+  // ⚠ The wave path is a `after()` route, so a `maxDuration` kill takes the
+  // terminal row with it and `try/catch` cannot see it. The marker written
+  // BEFORE the work is the only evidence — a heartbeat with no terminal row
+  // sharing its `started_at` is a kill; neither row is a cron that never fired.
+  // Separate `-heartbeat` name deliberately: under the real name it would
+  // refresh `last_run` and silence the very alert it exists to raise. The
+  // suffix and the row shape come from the shared helper, never hand-rolled.
+  await writeInvocationHeartbeat(
+    {
+      pipeline: "seed-wallet-refresh",
+      startedAtMs: Date.parse(invocationStartedAt),
+      extra: {
+        reason: "wave_dispatch",
+        utcHour,
+        cohort: cohortK,
+        of: cohortN,
+        forced: forceWave,
+      },
+    },
+    getSupabase()
+  )
 
   after(async () => {
     const supabase = getSupabase()
@@ -451,6 +543,18 @@ export async function GET(req: NextRequest) {
         walletsWithAddress.length + walletsWithoutAddress.length
       } low_priority_skipped=${lowPrioritySkipped} lowpri_interval_h=${LOW_PRIORITY_INTERVAL_HOURS} backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
     )
+
+    // Terminal row, keyed to the INVOCATION start so it pairs with the
+    // heartbeat above under the ±5s correlation query. Reached only if the
+    // wave was not killed at the wall — that absence is the whole signal.
+    await logInvocationRow("seed-wallet-refresh", {
+      reason: "wave_dispatch",
+      phase: "complete",
+      processed: walletsWithAddress.length + walletsWithoutAddress.length,
+      backfill_fired: backfillFired,
+      low_priority_skipped: lowPrioritySkipped,
+      errors: errors.length,
+    }, new Date().toISOString())
   })
 
   return NextResponse.json(
