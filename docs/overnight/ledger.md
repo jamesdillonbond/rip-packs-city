@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the badge sweep reported `ok: true` through a TOTAL upstream outage, and the run row I added hours earlier is what caught it
+
+**What shipped.** `app/api/badge-sync/route.ts` — `sweep()` now carries its fetch failures out to the caller (`SweepFailures = {count, first}`, threaded through all five call sites), and the run's `ok` gains a third failure mode: `blindSweep = sweepFailures.count > 0 && rows.length === 0`. `pipeline_runs.error` names it; `extra` gains `sweep_failures` and `first_sweep_error`, **always emitted, including as 0** — an absent key cannot answer "empty, or blind?", which is the only question they exist for.
+
+**⭐ How it was found — by the instrument, one lane down.** Earlier today I gave this lane its first `pipeline_runs` row (see the 08-29 entry above). Its **first live row** (`20:56:19Z`) read `ok: true`, `rows_found: 0`, and all five `sweep_counts` at **zero** — written *during* the total `public-api.nbatopshot.com` outage. The telemetry was honest about what it could see; what it could see was already corrupted one layer down. `sweep()` caught each GQL failure, logged to `console`, and `break`ed — so a blind sweep and a genuinely empty one were the same empty array. CLAUDE.md names this exact shape: *a PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one — the tell is the control-flow keyword.* The `break` stays (it banks partial progress, which was right); what was missing is the caller knowing the list is incomplete.
+
+**⚠ The `rows.length === 0` term is load-bearing in the OTHER direction.** A run that collected editions despite one tag failing made real progress and stays green, with the failure recorded. Mutation-checked both ways: dropping `&& !blindSweep` reds only the blind test; widening it to `sweepFailures.count > 0` reds only the partial-progress control. Full suite 1396 files / 15352 tests green, `tsc` 0.
+
+**⚠ What this does NOT fix.** Top Shot's `badge_editions` asks still had a **median age of 107.2 h** on 08-29 (All Day: 0.4 h, it has a dedicated refresher). This makes the lane *answerable*, not fresh — the missing `topshot-badge-low-ask-refresh` is still filed, not shipped.
+
+**Revert path:** `git revert <sha of "fix(badge-sync): a blind sweep is not an empty sweep">` (find by message — pre-08-03 shas no longer resolve; this one is post-purge). No DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the OG render path had an UNBOUNDED fetch to the live site, found by root-causing a "flake"
 
 CI run 4202 failed `api-og-cards-render-sweep` with *Test timed out in 60000ms* on a card that renders in **83 ms** locally. ⭐ **The discriminator that made it worth chasing rather than re-running: the whole run was only ~15% slower than local (453 s vs 395 s) while that one test was ~720× slower.** General slowness moves everything by the same factor; a lone 720× excursion is a HANG.
