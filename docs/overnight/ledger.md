@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 📝 CORRECTED (repo record only, no prod change) — the jobid-211 slot move was applied, lost all three of its ticks, and was reverted; nothing in the repo said so, and it refutes one of #42's prescriptions
+
+**Found by re-deriving the Cowork handoff's §8 migration-drift list rather than inheriting it.** The handoff flagged two repo files with no register row and called `20260828050000` (the underpriced-board instrument) the dangerous one because it schedules a pg_cron job. **Both halves of that are wrong, and the file it did not flag is the one that mattered.**
+
+⭐ **The register-absent class is FOUR files, not two** (`20260828020000`, `20260828021500`, `20260828040000`, `20260828050000` — none has a row under any version OR name). ⭐ **And the risk ranking inverts once you read them:** `021500` and `040000` are **100% comment, zero executable lines** (replay is inert); `050000`'s effect is LIVE (jobid 373 active at `*/10`) and its replay is idempotent (`CREATE TABLE IF NOT EXISTS` · `CREATE OR REPLACE FUNCTION` · `cron.schedule` on the same jobname). ⛔ **The only file whose replay would change production is `20260828020000`, which the handoff never mentioned.**
+
+⚠ **Also: the handoff's "hand-stamp mismatch" drift class is a NON-FINDING.** `scripts/check-migration-parity.mjs` matches on **NAME, not version, by explicit design** — because `apply_migration` assigns its own version stamp at apply time. All three "mismatches" (`20260829001636`/`003000`, `20260829002200`/`004500`, `20260829013927`/`020000`) are name-identical, so the guard is correctly silent. Parity in the recent window is CLEAN. ⓘ And `db push` appears nowhere in CI or `scripts/` — only in comments — so the "a replay would re-run these" hazard has **no live automated pathway**; it needs a human running it by hand.
+
+🚨 **THE ACTUAL FINDING.** `cron.job_run_details` for jobid 211 discriminates the schedule cleanly: through 08-27 18:35Z it ran 0/6/12/18:35 (`35 */6`); on **08-28 it ran 08:35 / 14:35 / 20:35** (`35 0,8,14,20`, the migration's schedule, and 06:35Z is absent — corroborating the file's own "applied ~01:35Z" header); from 08-29 00:35Z it is back on `35 */6`. So the move **was applied ~08-28 01:35Z and reverted between 08-28 20:35Z and 08-29 ~01:00Z.** Neither the apply nor the revert has a register row (both `execute_sql`), and **no committed file recorded the outcome** — the repo's only record of jobid 211 was a file describing an intervention as live, with a falsifier still reading as pending.
+
+**The three ticks the move actually got: 08:35Z failed 600 s · 14:35Z failed 614 s · 20:35Z failed 600 s. 0 of 3, every one at the `cron_heavy` ceiling,** against a falsifier asking for ">= 3 of 4 slots succeeding in the 30–120 s band".
+
+⭐ **This corrects known-issues #42, whose action (2) was literally "move jobid 211 off multiples of 3": hour 20 is rated 0.0 statement timeouts per 1,000 runs in #42's own table and still burned the full 600 s ceiling.** The fleet-wide hour ranking does not transfer to this job. #42's jobid-211 SLOT table (00:35Z 97% ok vs 42–54% elsewhere) is untouched and still stands; what fails is the inference that the winning HOURS are interchangeable.
+
+⚠ **Strength stated rather than oversold — 3 ticks classify, they do not rate.** P(3 of 3 fail | the new slots were as good as the proven 00:35Z slot) = **2.7e-5**, so the hoped-for outcome is decisively rejected. But against the old slots' own ~51% mean failure rate, **P(3 of 3 fail | the move did nothing at all) = 0.13** — the null comfortably produces this, so ⛔ **"the move made it worse" is NOT supportable in either direction.** The falsifier specified SEVEN DAYS; the revert was taken on day one. Defensible on 0/3 at the exact ceiling, but a classification, not a measured rate.
+
+**Shipped:** an OUTCOME block appended to `supabase/migrations/20260828020000_...sql` (⛔ "DO NOT REPLAY — production runs `35 */6`") + the correction appended to #42. **No prod DB write, and none is needed — production is already on the correct schedule.**
+
+**Revert path:** `git revert <this sha>` — docs/comment only; touches no schema, no cron job, no data.
+
+👉 **Left for Trevor, unchanged:** the four register-absent files stay unregistered. Inserting register rows is cosmetic (no automated replay path exists), and for `20260828020000` it would be actively misleading — it would assert as "applied" a change that is deliberately NOT in production.
+
+
 ### 2026-08-28 · ✅ SHIPPED (prod DB) — the SAME defect a 2026-08-22 migration fixed was still sitting in the sibling function two definitions away, and it was walking a whole index 288× a day
 
 ⭐ **`20260822213000_audit_20260822_rwfc_temp_build_materialized_cte` fixed this exact query in `refresh_wmc_fmv_changed` seven days ago and wrote the lesson into that function's body as a comment. `refresh_wmc_fmv_drift_active` carries a byte-identical query and never got it** — because, as CLAUDE.md already says, *a comment is only read by someone already in that file.* The rule that would have caught it is the one in the honesty section: **grep for the EXPRESSION, not the file.** I found it by cost, not by that rule; the rule now has a sixth instance.
