@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) + 📦 QUEUED (DB, deliberately) — three sales indexers were billing another pipeline's work to themselves: **87.1% of `allday-sales-indexer`'s recorded duration was not its own**
+
+**Found by following a live `pg_stat_activity` snapshot, not a dashboard.** At 13:21Z the instance showed 30 of 36 backends in IO wait and **two concurrent instances of `promote_unmapped_sales`, one at 281 seconds**.
+
+⚠ **FIRST, A NEAR-MISS WORTH RECORDING MORE THAN THE FIX.** Three probes in a row (`candy_treasury_wallet`, its `EXPLAIN`, and a bare `count(*)` over 25k rows) each exceeded 60 s, and I was one step from filing *"`candy_treasury_wallet` exceeds 60 s standalone"* as a finding. ⛔ **It would have been a saturation artifact.** The positive control was one query away and said 30 of 36 backends were IO-waiting with an autovacuum on `wallet_moments_cache` running 18 minutes. ⭐ **A timeout is not a measurement of the thing you timed; it is a measurement of the instance.** The session had also resumed after an ~8.5-hour gap into the middle of the daytime IO band and the 12–13Z wallet-backfill wave — **I assumed it was still 04:45Z and it was 13:21Z.** Check the clock and the load before believing a slow query.
+
+---
+
+**1. SHIPPED — `log_pipeline_run` now runs BEFORE `promote_unmapped_sales` in all three sales indexers.**
+
+`pipeline_runs.duration_ms` is GENERATED over `(finished_at - started_at)` and `log_pipeline_run` stamps `finished_at` at INSERT time, so everything awaited before it is billed to that pipeline. All three indexers awaited the promote first, inside the same `finally`.
+
+| pipeline | recorded avg | true avg (`extra.elapsed_ms`) | foreign |
+|---|---:|---:|---:|
+| `allday-sales-indexer` | **50,450 ms** | **6,491 ms** | **87.1%** (max inflation 125,972 ms) |
+| `golazos-sales-indexer` | 7,544 ms | 4,202 ms | 44.3% |
+| `ufc-sales-indexer` | — | logs no `elapsed_ms` | unmeasured, same structure |
+
+⭐ **The honest number was already in the same row, next to the wrong one** — each route sets `extra.elapsed_ms` before the `finally`. That is what makes this class dangerous: nothing looks broken, and any duration-ranked board reading `allday-sales-indexer` at ~50 s was reading `promote_unmapped_sales`. ⭐ **Logging first also makes the row survive a `maxDuration` kill during a 297-second promote, where previously such a kill lost both.**
+
+**Guard: `__tests__/indexers-log-before-promote-ratchet.test.ts`, and the tree walk earned its keep on the first run.** It immediately flagged a **fourth** file my hand-picked list had missed — `app/api/admin/recover-v1-budget-exhausted/route.ts`. ⭐ **But that one is not a defect: draining newly-promotable rows IS that route's purpose, so billing the promote to it is correct.** ⚠ Exempting it BY NAME would have been the fragile move this file records dying three times. **The discriminator is structural instead — a promote awaited inside a `finally` is cleanup and must not be billed; a promote in the main body is the route's own work** — and `recover-v1-budget-exhausted` drops out because it has no `finally` at all, by what it IS rather than by being listed. Both counts asserted (calls-both ≥ 4, cleanup-path ≥ 3, and cleanup-path **strictly less than** calls-both, so a broken exemption is visible). Mutation-checked: putting golazos' promote back first fails the guard. ⚠ It matches the CALL EXPRESSION `rpc("name"` rather than the bare name, so it needs **no** comment-stripping pass — including past the new comments at each call site, which mention both RPCs. `strip-comments.mjs` has been blind three times; a check that does not need it cannot inherit that.
+
+**REVERT: `git revert` the indexer commit** — it moves two adjacent try/catch blocks and changes nothing else.
+
+---
+
+**2. QUEUED, NOT APPLIED — `20260829134500_audit_20260829_promote_unmapped_sales_does_not_overlap_itself`.**
+
+🚨 **`promote_unmapped_sales` runs concurrently with itself on a quarter of its runs, and every overlap is 100% duplicated work.** The `candidates` CTE is `WHERE resolved_at IS NULL … LIMIT 1000` with **no `FOR UPDATE SKIP LOCKED` and no in-flight marker**, so two instances select the SAME rows. The writes are idempotent, so an overlap is *safe* — it is simply the whole scan, done twice, on the instance's binding constraint.
+
+**Measured 24 h to 13:25Z:** 307 runs · avg gap between starts **278 s** · p95 **196,353 ms** · max 297,164 ms · **76 runs (24.8%) still executing when the next started.** Split by collection, and the split is what picks the lock key:
+
+| scope | runs | avg | overlaps (same slug) |
+|---|---:|---:|---:|
+| `nfl_all_day` | 229 | **65,864 ms** | **74** |
+| `laliga_golazos` | 78 | 959 ms | **0** |
+
+⚠ **A function-wide lock would make Golazos — which never overlaps and finishes in under a second — queue behind a 66-second AllDay run for nothing.** The key is `hashtext('promote_unmapped_sales:' || COALESCE(p_collection_id::text,'ALL'))`, covering 74 of the 76. ⛔ **Stated gap: an all-collections call would overlap every scoped one and this key cannot see it. Zero such calls in the window, and all eight repo call sites pass an explicit collection id.**
+
+⭐ **The skip is logged with `rows_* NULL` and `extra.note = 'skipped_concurrent_run'` — a shape that was NOT EXPRESSIBLE until earlier this session**, when `log_pipeline_run` stopped coalescing NULL to 0. That fix paying off within hours is the argument for it.
+
+⚠ **Pin re-pointed, and this time the freshness was PROVEN before editing**: the committed body and live `prosrc` normalise to the same md5 (`146cd31ded32d5a1db3d554ef428904e`, 9,031 chars). Two pins were found stale earlier the same night precisely because nobody had checked. All **180** DB-invariant tests pass against the new DDL. ⛔ **The test file now says plainly that it CANNOT reach the skip branch** — one psql session, one transaction, and an advisory lock is re-entrant within a transaction — rather than carrying an assertion that looks like coverage.
+
+📦 **NOT APPLIED YET, and the reason is my own rule from a few hours earlier:** it is 13:33Z, inside the 12–13Z `wallet-backfill` wave (70 runs in the last five minutes) and the daytime IO band. `apply_migration`'s `PGRST002` burst lands inside those waves as `rows_lost` — measured last night at 511 rows from one migration nine seconds earlier. **The file is committed; the apply waits for 14:00Z+.**
+
+⛔ **WHAT THIS DOES NOT FIX, and it is the bigger number:** AllDay carries **104,913 permanently unresolved rows**, and every run re-evaluates four resolution paths across them to promote **~1.5 sales an hour** — roughly **four hours of database time a day**, and `still_unresolved` moved **104,933 → 104,913 in thirteen hours**. ⚠ **`ok` is TRUE throughout**, because the honest-signal guard is `IF v_eligible > 0 AND v_promoted = 0 …`, which cannot fire when `eligible` is 0 or 1. **The advisory lock removes the duplicate quarter of that cost and nothing else.** The cadence question — whether `allday-sales-indexer`'s every-tick `finally` call is justified when pg_cron jobid 215 covers the same ground hourly — is a decision, and is filed rather than taken.
+
 ### 2026-08-28 · ✅ WATCH RESULTS — five run-4 exit conditions answered on real callers; one upstream outage found and correctly filed as ONE incident
 
 All read ~04:13Z 2026-08-29 (21:13 PT 08-28); nothing below is a re-quote of a prediction — each is the
