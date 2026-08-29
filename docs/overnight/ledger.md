@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⏳ CANDY BOARDS, FIRST POST-FIX WINDOW — the mechanism is PROVEN, the production signal is consistent, and at n = 9 it still cannot beat chance
+
+**`refresh-insights-cache` runs every 5 minutes, so the exit condition had a real denominator within the
+hour. Split at the 00:15Z deploy, 12 h window:**
+
+| | runs | candy board ok | **failed** | **avg rows** | avg duration |
+|---|---:|---:|---:|---:|---:|
+| pre-fix | **126** | 116 | **10 (7.9%)** | **115.1** | 25,577 ms |
+| post-fix | **9** | 9 | **0** | **125.0** | **8,671 ms** |
+
+⭐ **`avg_rows` is the load-independent signal and the most interesting number here.** The candy board
+holds 125 editions; pre-fix it averaged **115.1**, i.e. some runs warmed an INCOMPLETE board. Post-fix it
+is **125.0 on every run.** Duration also fell 25,577 → 8,671 ms (−66%), max 74,675 → 19,753 (−74%).
+
+🚨 **AND AT n = 9 THAT PROVES NOTHING ON ITS OWN — the arithmetic is unkind.** Against a pre-fix failure
+rate of 7.9%, the chance of seeing **zero** failures in 9 runs is `0.921^9 ≈ 48%`. **A coin-flip.** ⛔ Do
+not close the error groups on this window.
+
+⚠ **AND THE ERROR-CESSATION EVIDENCE IS WEAKER THAN IT LOOKS — I checked the timeline rather than
+assuming.** Vercel's last `candy_*_board … statement timeout` is **00:00:19Z**; my first fix landed
+**~00:15Z**. So the errors had already been quiet for ~15 minutes and 3 job runs BEFORE the change. At
+~148/day for the scarcity board (≈ one per 10 min against a 5-min job), three clean runs in a row is
+a ~12% coincidence. **The stop does not attribute cleanly to the fix on timing alone.**
+
+✅ **WHAT IS NOT IN DOUBT, because it was measured directly rather than inferred from production:** the
+FMV leg went from **1,289,541 rows to 4,256** and `candy_scarcity_board` from **8,424 ms / 46,636 buffers
+to 114 ms / 23,550**, with equivalence proved atomically both times. **The mechanism is established; what
+n = 9 cannot yet establish is the size of the production effect.**
+
+⭐ **A SEPARATE FINDING FROM THE SAME QUERY, and it corrects something I assumed:** I expected the
+pipeline to be blind to its own board failures. **It is not.** `extra->'boards'` carries a per-board
+`{ok, key, row_count}`, and it recorded **10 genuine candy-board failures** pre-fix — so the run-level
+`ok = true` on all 126 runs is not a swallow, it is a deliberate best-effort warm whose per-board detail
+is honest. ⛔ **Read `extra->'boards'`, never the run-level `ok`, when judging this pipeline.**
+
+👉 **Exit condition, re-armed on the CONDITION rather than the clock: ~40 more post-fix runs
+(≈ 3.5 h) so that zero failures would be a `0.921^49 ≈ 2%` event rather than a coin-flip.** Falsifier:
+any candy board `ok:false`, or `avg_rows` dropping below 125, in that window.
+
+**Nothing shipped by this entry — verification status only.**
+
 ### 2026-08-28 · ✅ SHIPPED (repo + edge deploy) — R21: 18 of the 29 ghost edge functions committed after a two-layer credential scan; the other 11 carry hardcoded keys; and an OPEN anonymous write endpoint is closed
 
 **Commit \`2e4bbb88\`: 18 deployed-only edge-function sources committed VERBATIM** — fetched by
