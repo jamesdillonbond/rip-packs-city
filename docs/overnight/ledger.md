@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — FMV ask-corroboration had NO age bound, and the obvious 12h threshold would have emptied the deals board
+
+**The hole.** `escalateConfidence` lifts an edition **LOW → MEDIUM** when "an independent **live** ask" agrees with the sales median — and had no age bound at all. `edition_offers` carries Top Shot rows up to **87 days old (83 over 30 days)**, every one of them able to make that promotion. **MEDIUM is not cosmetic: it is what gates the public Below-FMV board**, so a dead ask could inject a row onto a board whose per-row staleness markers only exist *downstream* of this decision. Filed at 2230Z as the widest-blast-radius item of the ask-staleness sweep; shipped now.
+
+⚠⚠ **THE THRESHOLD IS 7 DAYS AND NOT 12 HOURS, AND THAT IS THE ACTUAL FINDING.** The obvious fix — the one the audit implied and the one I was about to write — is to reuse `ASK_STALE_HOURS` (12 h) from the module I created three hours earlier. **Measured first:** of **12,259 Top Shot asks, 12,121 (98.9%) were older than 12 h** during the outage, against **168 (1.4%) older than 3 days, 155 (1.3%) older than 7, 83 (0.7%) older than 30.** A 12 h gate would have demoted essentially the whole catalogue out of MEDIUM and emptied the public deals board — **over a transient upstream failure, as a "honesty fix."** 7 days touches ~1.3% and removes only asks that have genuinely stopped being evidence.
+
+⭐⭐ **The transferable part: the two constants answer DIFFERENT QUESTIONS and unifying them is the bug.** `ASK_STALE_HOURS` (display) = *we have not re-checked this, so look before you act.* `MAX_ASK_AGE_HOURS_CORROBORATION` (pricing) = *this ask is no longer evidence about the price.* A 30-hour-old ask that agrees with the recent sales median is still corroboration; it is just not something to trade on unseen. **Sharing a name would have made them look like one idea.** A test asserts the pricing bound stays >4× the display marker, so a future tidy-up reds instead of shipping.
+
+⚠ **Three states on the age, and the null case is stricter than the omitted one.** A number → gated; `null` (caller held an ask it could not date) → **does not corroborate**, because "I could not tell" as "recent enough" is the failed-read-as-answer defect one layer down; omitted → legacy behaviour, so `fmv-backfill` (which passes no ask) is untouched. A guard pins that `fmv-recalc` — the only caller that DOES pass an ask — selects `updated_at` and supplies the age, so the legacy path cannot quietly become production.
+
+**Verification.** 12 new tests, incl. four controls: the gate only ever WITHHOLDS a lift and never demotes (the ask is a floor, and an ancient ask must not drag a MEDIUM/HIGH down); a fresh-but-disagreeing ask still fails the band; the sales-count floor still applies; and a not-vacuous case proving corroboration still fires. Mutation-checked three ways: remove the gate → 3 red; unify to 12 h → the threshold test reds; treat undatable as fresh → the null test reds. Full suite **1403 files / 15404 tests green**, `tsc` 0.
+
+⏱ **Falsifier:** after the next `fmv-recalc` wrap, editions whose only MEDIUM support was an ask older than 7 days should read LOW. Expected population ~1.3% of ask-bearing Top Shot editions — **if it moves substantially more than that, the gate is wrong, not the catalogue.**
+
+ⓘ Legacy endpoint still `530 / error code: 1033` at 23:14Z, ~31 h.
+
+**Revert path:** `git revert <sha of "fix(fmv): an ask nobody has confirmed in three months is not corroboration">`. Code only; the next recalc wrap restores prior confidences.
+
 ### 2026-08-29 · 📚 PROMOTED — the day's six durable lessons out of the filing and into the reference docs
 
 CLAUDE.md's rule is that **a fact left only in a session log stops being read**, and today produced a lot of them. Promoted to [testing-and-ci.md](../reference/testing-and-ci.md) (+8.2 KB) and [cron-and-schedulers.md](../reference/cron-and-schedulers.md), keeping only the parts that generalise:
