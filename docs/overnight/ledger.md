@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ⭐ TRIAGE NOTE — seven pipelines, seven different-looking "connection pool" errors, ONE cause; do not investigate them separately
+
+No code, no DB. Recorded here rather than as a filing because the value is triage
+guidance, not a proposal.
+
+At ~18:40Z a fresh sweep showed **seven pipelines whose newest error is `Timed out
+acquiring connection from connection pool`** — `sales-counterparty-backfill`,
+`pinnacle-listings-retry`, `golazos-sales-indexer`, `hybrid_custody_events`,
+`topshot-stub-resolver`, `sales-seller-recovery-dune`, plus statement timeouts on
+`compute-topshot-pack-ev` and `refresh-error-triage`. Read individually they look like
+eight bugs. They are one spell.
+
+**It is EPISODIC, not a background rate** — pool errors by hour over 14 h:
+`09:00Z 91/1393 (6.5%)` · `13:00Z 9/974 (0.9%)` · `18:00Z 48/787 (6.1%)` · **and exactly
+ZERO in the other twelve hours.** ⚠ Not a volume artifact either: 13:00Z had 974 runs and
+9 errors while 18:00Z had 787 runs and 48.
+
+**Live state at 18:42Z:** 18 backends `active` in `wait_event_type = IO`, and the oldest is
+`autovacuum: VACUUM ANALYZE public.wallet_moments_cache` at **3,012 s and still running**.
+
+⚠ **Correcting my own first read of that:** `pg_stat_user_tables.last_autovacuum` for wmc
+is **17:36:28Z**, which is the last COMPLETED one — the in-flight vacuum started ~17:52Z,
+so wmc was vacuumed, finished, and re-entered vacuum within ~16 minutes. Its `n_dead_tup`
+is **95,094** against its own trigger of `0.02 × 2,539,124 ≈ 50,800`, i.e. **already ~1.9×
+over threshold while the vacuum is still running** — so the next one fires as soon as this
+finishes. `autovacuum_count` is **572**.
+
+⭐ **That is the mechanism behind the spell:** a long vacuum on the hottest table
+(2.5 M rows, ~1.99 GB of indexes, three FMV writers rewriting its columns around the clock)
+consumes the SMALL tier's IO budget, every other query queues behind it, and the connection
+pool exhausts. The 0432Z filing already established wmc is "perpetually hot"; **the new
+part is the linkage to the pool-exhaustion spells and the fact that it is now
+back-to-back.**
+
+⛔ **NOT a recommendation to change `autovacuum_vacuum_scale_factor`.** The 0.02 is
+deliberate and in `reloptions`; raising it means fewer but LONGER vacuums (worse spikes),
+lowering it means more frequent ones. Which is better is a measurement nobody has taken,
+and it is the hottest table on the instance. ⛔ **NOT established:** whether the 09:00Z and
+13:00Z spells had the same cause — `pg_stat_activity` is a live view and those windows
+cannot be reconstructed, so the correlation is **one observed case**, not a rate.
+
+👉 **What this is for:** when several pipelines simultaneously report pool timeouts, check
+`pg_stat_activity` for a long-running autovacuum FIRST. Eight separate investigations was
+the alternative.
+
 ### 2026-08-29 · ✅ VERIFIED in production — `topshot-deal-floor-serials` told the truth for the first time in 22 hours
 
 No new code; this records the first post-deploy run of `f8d8f90fc` (deploy
