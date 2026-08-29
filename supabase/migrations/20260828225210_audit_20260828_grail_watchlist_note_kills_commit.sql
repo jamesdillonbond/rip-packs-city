@@ -1,8 +1,16 @@
--- Record the 2026-08-28 commit-control result on the grail-MV watchlist note, so the next
--- reader does not re-derive it. Guarded: anchors on the pipeline key (not a substring),
--- idempotent, and RAISEs if it does not match exactly one row.
+-- APPLIED LIVE 2026-08-28 22:52:10Z from Cowork (cloud, NO-PUSH session). COMMIT ONLY — DO NOT RE-APPLY.
+-- Version recorded by apply_migration: 20260828225210
 --
--- Revert:
+-- Record the 2026-08-28 commit-control result on the grail-MV watchlist note, so the next reader
+-- does not re-derive it. Guarded: anchors on the pipeline KEY (not a bare substring), idempotent
+-- via the NOT LIKE clause, and RAISEs unless it matches exactly one row.
+--
+-- ⚠ REPRODUCED VERBATIM AS APPLIED. It contains the placeholder string "22:5xZ", which I failed to
+--   fill in. Migrations 20260828225243 and 20260828225258 correct it (to 22:53Z, then to the exact
+--   22:52Z). Replay all four in order; do not "tidy" this one, or the two fixups will no-op and the
+--   register will disagree with the note.
+--
+-- REVERT:
 --   UPDATE public.pipeline_cadence_watchlist w SET notes = b.notes
 --     FROM public.audit_20260828_grail_watchlist_note_backup b
 --    WHERE w.pipeline = b.pipeline;
@@ -53,3 +61,7 @@ BEGIN
     RAISE EXCEPTION 'guarded splice matched % rows, expected exactly 1 (already applied, or the pipeline key moved)', n;
   END IF;
 END $$;
+
+-- POST-FLIGHT, verified from OUTSIDE the migration:
+--   note length 115 -> 2370 · marker present · exactly ONE row in pipeline_cadence_watchlist
+--   carries the marker · backup row intact at 115 chars · check_secdef_anon_execute_violations() = []

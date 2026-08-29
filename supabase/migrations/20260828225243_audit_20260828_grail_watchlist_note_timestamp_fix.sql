@@ -1,5 +1,14 @@
--- Replace the placeholder "22:5xZ" left in the previous migration's annotation with the real
--- apply time. Guarded: asserts the placeholder is present exactly once before replacing.
+-- APPLIED LIVE 2026-08-28 22:52:43Z from Cowork (cloud, NO-PUSH session). COMMIT ONLY — DO NOT RE-APPLY.
+-- Version recorded by apply_migration: 20260828225243
+--
+-- Fixup #1 of 2 for my own defect in 20260828225210: that migration's annotation shipped the
+-- placeholder string "22:5xZ" instead of a real time. Superseded in the same minute by
+-- 20260828225258, which corrects 22:53Z -> the exact 22:52Z. Both are kept because both APPLIED;
+-- collapsing them would leave the register disagreeing with the note.
+--
+-- REVERT: none needed in isolation — reverting 20260828225210 (restore from
+--   public.audit_20260828_grail_watchlist_note_backup) undoes this too.
+
 DO $$
 DECLARE n int;
 BEGIN

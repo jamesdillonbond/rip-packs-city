@@ -1,7 +1,11 @@
--- Verbatim backup of the refresh-pack-grail-metrics-mv watchlist note, taken BEFORE the
--- 2026-08-28 commit-control annotation. Named exactly; NEVER wildcard audit_20260828_*.
+-- APPLIED LIVE 2026-08-28 22:51:46Z from Cowork (cloud, NO-PUSH session). COMMIT ONLY — DO NOT RE-APPLY.
+-- Version recorded by apply_migration: 20260828225146
 --
--- Revert path for the annotation that follows:
+-- Verbatim backup of the refresh-pack-grail-metrics-mv watchlist note, taken BEFORE the
+-- 2026-08-28 commit-control annotation (20260828225210). Named exactly; NEVER wildcard audit_20260828_*
+-- (several sessions write into that date prefix and two live revert-path backups already share it).
+--
+-- REVERT PATH for the annotation this backs:
 --   UPDATE public.pipeline_cadence_watchlist w SET notes = b.notes
 --     FROM public.audit_20260828_grail_watchlist_note_backup b
 --    WHERE w.pipeline = b.pipeline;
@@ -28,3 +32,8 @@ BEGIN
     RAISE EXCEPTION 'expected exactly 1 backed-up watchlist row, found %', n;
   END IF;
 END $$;
+
+-- POST-FLIGHT, verified from OUTSIDE the migration 2026-08-28 22:52Z:
+--   backup_rows = 1 · backup_note_len = 115 (the pre-annotation note) · relrowsecurity = true
+--   grantees = {postgres, service_role} (no anon, no authenticated)
+--   check_secdef_anon_execute_violations() = []
