@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 🚨 SELF-INFLICTED — I shipped a wall-clock-dependent test that reddened main on someone else's commit; another session fixed it first
+
+**My defect.** The `records its own run durably` block I added to `__tests__/api-sentinel-deep.test.ts` this evening asserted `extra.notifications` contains `telegram`/`email` on a GREEN fixture. The route notifies only when `hasCritical || hasWarn || (UTC hour % 6 === 0)`, so on a green run those assertions hold **only in UTC hours 0, 6, 12 and 18**. CI **4196 (18:52Z) passed; 4197 (19:05Z) failed** on `Unit tests (vitest)` — **on another session's commit, not mine.**
+
+⚠ **The nastier half is the controls.** I wrote and mutation-checked it at 18:xx UTC, inside the one hour in six where it works. All four mutation controls passed, and every one inherited the same lucky window, so they certified nothing about the other twenty hours.
+
+⛔ **I did NOT ship the fix — `d1a221a76` (Trevor's session) landed first and I took it as the base rather than my own.** Theirs pins the clock with a scoped `onScheduledHour()` faking `Date` only, and is right on a point mine got wrong: I had switched the dead-channel and breaching-names tests to a CRITICAL fixture, which passes at every hour **by testing a different thing** — it drops coverage of the scheduled GREEN report, the one path where nobody is already looking at a page. Their comment says exactly that, and it stands.
+
+**What I added on top, both mutation-checked at 19:xx UTC:** an `atUtcHour()` counterpart, a test that the row is written **in the twenty hours when a green sentinel sends nothing** (its absence would make the sentinel's cadence invisible five hours in six — the whole reason the row exists), and a **24-hour sweep** asserting the row is unconditional and `notifications` is non-empty **iff** `hour % 6 === 0`. Controls: gating the write on `shouldNotify` reds 3; forcing `isScheduledReport = true` reds 2.
+
+⭐ **The transferable rule, and it is not "use fake timers": A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES.** Proving a test reds when the code is broken says nothing about whether it is green for the right reason. When an assertion could depend on ambient state — clock, timezone, network, row counts, ordering — the control must vary THAT, not only the code under test. Trevor's session notes this was the **second** wall-clock test defect found today (the first in `analytics-rpc-with-retry`), two authors, two subsystems, one root.
+
+**Verification:** full suite green at 19:xx UTC, the hour that was failing.
+
+**Revert path:** `git revert` this commit removes the two added controls and the `atUtcHour` helper; the clock fix itself is `d1a221a76` and is not mine to revert. No DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (test) — the new sentinel durability tests passed 4 hours in 24 and failed the other 20, everywhere, CI included — the SECOND wall-clock test defect found today
 
 **Found by running the full suite after the `pipeline-sentinel.yml` fix, not by looking for it.** `__tests__/api-sentinel-deep.test.ts` was **2 failed / 38 passed**, reproducing deterministically in isolation, with `origin/main` in sync — so `main` was genuinely red, and it was not the workflow change (that file matches `pipeline-sentinel|python3` **zero** times; my one-line edit cannot reach it).
