@@ -130,6 +130,73 @@ inline text. **A cheap plan from the wrong shape is not evidence that production
 list, in a quiet window.** ⛔ Until then, **why the first page crossed the timeout at ~17:56Z is UNKNOWN** —
 I have the symptom, the exact error and the change point, and no cause.
 
+---
+
+## ✅✅ CAUSE MEASURED 20:5xZ — the faithful plan, and the subquery probe WAS lying
+
+I said the faithful measurement needed a **real 500-UUID literal list**, because a subquery plans
+differently here. **Done — and the caution was justified.** The 500 ids came from calling the route's own
+`fmv_recalc_edition_page(window_start, pinnacle_id, 500, 0)`, i.e. exactly the page production feeds into
+step 1b. Run on an **idle** instance:
+
+| | plan | time |
+|---|---|---:|
+| my earlier **subquery** probe | `Nested Loop` + per-partition Index Scans, cost 15,409 | (never ran to completion) |
+| **the real literal `IN` list** | **`Bitmap Heap Scan on sales_2026`**, cost 12,707 | **48,268 ms** |
+
+⭐⭐ **48.3 SECONDS ON AN IDLE INSTANCE, AGAINST `service_role`'s 30 s STATEMENT TIMEOUT. That is the
+outage — the statement cannot finish inside its ceiling, so it is killed every single run.**
+
+**The node detail:**
+
+```
+Bitmap Heap Scan on sales_2026  (actual time=8201.518..48232.770 rows=27025)
+  Heap Blocks: exact=9471
+  Buffers: shared hit=1147 read=9882 written=164
+  -> Bitmap Index Scan on sales_2026_edition_id_sold_at_idx
+       (actual time=8186.569..8186.570 rows=27080)
+```
+
+⭐ **8.2 s is the bitmap index scan (500 separate probes). The remaining ~40 s is HEAP FETCHING: 9,471
+heap blocks, of which 9,882 buffer accesses are DISK READS against only 1,147 hits.**
+
+🚨 **AND IT IS THE SAME DEFECT CLASS AS THE TWO I FIXED EARLIER TODAY.** `sales_2026_edition_id_sold_at_idx`
+is keyed `(edition_id, sold_at)` — **exactly right for the predicate, and it carries none of the
+projection.** The query selects `collection_id, price_usd, serial_number`, so **every one of the 27,025
+matching rows must be visited in the heap.** Right index, missing payload, heap fetch per row — the third
+instance today after jobid 211 and jobid 237.
+
+⚠ **A SECOND, INDEPENDENT PROBLEM IN THE SAME STATEMENT, and an index does not fix it.** The query is
+`ORDER BY id ASC … LIMIT 1000 OFFSET <from>`, and the plan is `Limit → Sort → Bitmap Heap Scan`. **It
+materialises and sorts all 27,025 rows to return 1,000 — and then the NEXT page does it again.** At
+~27 pages that is O(n) work per page for a full drain. **Even with a covering index this shape re-scans
+per page**; keyset pagination on `(id)` would not.
+
+## ⛔ Still NOT established — the honest boundary
+
+**What changed at ~17:56Z is still unknown.** 48.3 s idle explains why it fails *now*, but not why the
+same statement was reaching `range 13000`–`16000` a few hours earlier. Candidates, none tested: a plan
+flip into the bitmap shape, buffer-pool eviction that never recovered (the `read=9882` vs `hit=1147` split
+is a very cold cache), or the visibility map/heap growing past a threshold after the 10:20Z vacuum plus a
+day of writes. ⚠ **Do not present the 48 s as "the regression" — it is the CURRENT cost. The step change
+needs a before/after the timing of which I cannot reconstruct from retained data.**
+
+## ⛔ Why I did NOT ship the obvious fix
+
+The shape that worked twice today — add the payload to the covering index — points at
+`sales_2026 (edition_id, sold_at) INCLUDE (collection_id, price_usd, serial_number)`. **I did not build
+it, deliberately:**
+- **`sales` is the hottest table on the platform** and is PARTITIONED; an index there is a materially
+  bigger decision than `pack_rips`, with per-partition and write-amplification questions I have not sized.
+- **It only fixes half.** The `ORDER BY id` + `OFFSET` pagination re-sorts the full match set per page, so
+  a covering index makes each page cheaper without removing the O(n)-per-page shape.
+- **The trigger is unknown** (above), and fixing the symptom without it risks masking a real regression.
+- I have already shipped one index today; **a second, larger one on the hottest table at short notice is
+  how a 5-hour outage becomes a longer one.**
+
+👉 **The next step is a decision, not a diagnosis: size that covering index (or the keyset rewrite) against
+`sales_2026`'s write path.** Everything needed to start is in this section.
+
 ## 👉 Falsifier, cheap and dated
 
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next
