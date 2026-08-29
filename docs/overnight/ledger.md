@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — a scheduler-liveness detector, and the honest statement of what it cannot do
+
+**The gap it closes.** GitHub silently drops scheduled runs, and a dropped tick produces no run, no badge and no email — the workflow reads `active`, its last run reads `success`, and nothing anywhere says the alarm did not fire. Nothing in this repo could see it.
+
+**Measured first, contiguous pages only** (a union across paginated pages straddles an unsampled hole and reported a bogus 31.8h): Pipeline Sentinel median gap **1.4h / max 12.7h** against a 1h cron; Ops Monitor 1.2h / 12.3h against 30 min; RPC Data Pipeline 1.1h / 11.4h against 20 min. On 08-23/24, before the shedding, the sentinel's max gap was **2.3h**. ⭐ **And the load is bigger than I previously wrote: the tree walk counts 17 scheduled workflows asking GitHub for 561 runs a day**, not the ~250 I estimated in the morning filing.
+
+**Shipped:** `scripts/check-scheduler-liveness.mjs` + `.github/workflows/scheduler-liveness.yml` (daily 08:17Z — daily schedules are the ones still surviving; an hourly liveness check would be shed by the very thing it watches).
+
+⛔ **What it CANNOT do, stated in the workflow header rather than discovered later: it does not detect the shedding.** At a 12.7h observed max gap, no silence bound both clears today's steady state and catches an hourly job that stopped an hour ago. **The shedding has already destroyed the ability to detect a stopped scheduler**, and that loss is the finding. ✅ **What it DOES catch:** total silence — a workflow GitHub disabled, one renamed or deleted out from under its schedule, a cron edited into a shape that never fires, a day-long Actions outage. All silent today.
+
+**Design decisions, each pinned:** the watchlist is a **tree walk** over `.github/workflows`, so a new scheduled workflow is covered the day it lands, and the cron expander **refuses loudly** (exit 2) on a shape it cannot read rather than scoring it zero. The rate is **reported, never failed on** — failing on it would be permanently red with no code fix available, which is the class this detector was written during an audit OF. `MAX_SILENT_HOURS = 24` is **derived**: 1.9× the worst gap ever measured. An absent workflow (a rename) is a **config error, not a pass**. A non-2xx **throws** rather than reading as nothing-to-report. It **excludes itself by identity** — a detector cannot witness its own silence, and before its first scheduled tick a dispatch would otherwise manufacture a failure.
+
+**9 mutations, all biting:** accept an unexpandable cron · silently skip a renamed workflow · loosen the bound 10× · collapse a null cron to 0 · ignore config errors in the exit code · swallow a 500 · fabricate a healthy row from a 404 · drop the sort on run timestamps · query its own history.
+
+⭐ **An existing guard caught me:** `scripts-main-module-guard-works-on-windows` rejected my `import.meta.url === \`file://${process.argv[1]}\`` entrypoint — the shape where `main()` silently never runs on Windows and exits 0. Re-pointed to `pathToFileURL`, with a positive control that the entrypoint now actually fires.
+
+**Verification:** tsc clean · full suite **1395 files / 15335 tests** green.
+
+**Revert path:** `git revert` the code commit — deletes the workflow, the script and its 19 tests. No DB half; the workflow reads only the Actions API with `actions: read`.
+
 ### 2026-08-29 · ✅ SHIPPED (prod DB, index REPLACE) — jobid 237's MV refresh goes 77,514 ms → 982 ms, and the cost objection that made it Trevor's call turned out to be already paid
 
 **Shipped on Trevor's explicit delegation (*"do what you think is best… keep going on anything still unresolved"*).** This is the fix predicted, then measured, earlier today: `rpc-refresh-pack-reality-dist` (pg_cron jobid 237) was Class C — 79 ok / 4 dead at the 602 s ceiling in 7 days, ~2,430 s/7d thrown away — because its MV's defining query heap-fetched `pull_value_usd` for every row in a 60-day window.
