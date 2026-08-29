@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (prod DB) — the SAME defect a 2026-08-22 migration fixed was still sitting in the sibling function two definitions away, and it was walking a whole index 288× a day
+
+⭐ **`20260822213000_audit_20260822_rwfc_temp_build_materialized_cte` fixed this exact query in `refresh_wmc_fmv_changed` seven days ago and wrote the lesson into that function's body as a comment. `refresh_wmc_fmv_drift_active` carries a byte-identical query and never got it** — because, as CLAUDE.md already says, *a comment is only read by someone already in that file.* The rule that would have caught it is the one in the honesty section: **grep for the EXPRESSION, not the file.** I found it by cost, not by that rule; the rule now has a sixth instance.
+
+**THE DEFECT.** `SELECT DISTINCT ON (edition_id) … FROM fmv_snapshots WHERE computed_at > cutoff ORDER BY edition_id, computed_at DESC` lets the planner satisfy the ORDER BY for free from `fmv_snapshots_2026_edition_id_computed_at_idx`. That index **leads on `edition_id` while the predicate is on `computed_at`**, so there is no range to seek — it walks the entire 2026 index, every run, 288 runs a day, on an instance whose binding constraint is disk IO.
+
+⚠ **`idx_fmv_snapshots_2026_computed_at_desc` ALREADY EXISTED and is exactly the right index. Nothing needed to be created.** It was simply unreachable while the ORDER BY sat in the same query. ⛔ **I did not know that for the first half of this investigation, and the reason is an instrument blind spot worth recording: it is a PARTITION-LOCAL index, and `pg_indexes WHERE tablename = 'fmv_snapshots'` does not list it.** I built a scratch BRIN, measured a whole alternative (1,879 buffers), and only then saw the planner naming an index I had concluded did not exist. **The BRIN was dropped; no index ships with this change** (`leftover_brin = 0` verified).
+
+**MEASURED, ANALYZE + BUFFERS, warm-vs-warm, same cutoff, same 12,600 output rows, back to back:**
+
+| form | buffers |
+|---|---|
+| as written (DISTINCT ON inline) | **21,291** |
+| wrapped in a MATERIALIZED CTE | **956** (−96%) |
+
+⚠ **Wall clock is NOT the evidence here and must not be quoted.** The incumbent measured **85 ms fully warm and 2,392 ms cold for the SAME 21,291 buffers**. Had I compared timings across those two samples I would have reported a 28× win from doing nothing at all. **The buffer count is the load-independent number** — this is the third time this session that rule has changed a conclusion.
+
+**EQUIVALENCE — both directions, in ONE atomic query** so concurrent `fmv_snapshots` writes cannot confound it: `old_n 12600 · new_n 12600 · only_old 0 · only_new 0`.
+
+**WHY IT MATTERS BEYOND THE BUFFERS.** `rwfd_state.last_cutoff` was **858 minutes (14.3 h) behind with 12,320 editions queued**, and **48 of 283 runs in 24 h (17.0%)** died on `canceling statement due to statement timeout`. ⭐ **`v_deadline` is set BEFORE the build, so every second the build cost was a second the drain did not get — the further behind it fell, the less budget was left to catch up.** That is the shape of a stall that looks like a load problem.
+
+⚠ **Only the `_rwfd_changed` BUILD changed.** Chunk size (25), the 15-second loop budget, the deviation predicate, the resumable cutoff arithmetic and the return value are untouched, so this is attributable on its own.
+
+⭐ **A DDL guard caught a real mistake before it shipped, and it is worth knowing which one.** My first `CREATE OR REPLACE` omitted the parameter defaults and Postgres refused it: `42P13 cannot remove parameter defaults from existing function`. **Omitting them is loud; restating them WRONG would have been silent** — `p_deviation_pct DEFAULT 25, p_limit DEFAULT 20000`, both re-read from `pg_get_function_arguments` rather than remembered. ⚠ Note the asymmetry with `proconfig`, which `CREATE OR REPLACE` drops SILENTLY; `SECURITY DEFINER` + `SET search_path = public, pg_temp` were re-declared verbatim and re-verified after apply, as was the ACL (`anon=false · authenticated=false · service_role=true`).
+
+**REVERT: re-create the function with the `_rwfd_changed` build as a single `SELECT DISTINCT ON (fs.edition_id) … FROM public.fmv_snapshots fs WHERE … ORDER BY fs.edition_id, fs.computed_at DESC` (no CTE).** Nothing else differs. Migration `20260829023000_audit_20260828_rwfd_temp_build_materialized_cte`.
+
+**EXIT CONDITION:** the statement-timeout rate falls from **17.0% (48/283 in 24 h)** and the `rwfd_state.last_cutoff` lag falls from **858 min**. **FALSIFIER: if the lag does not close, the DRAIN — not the build — is the bottleneck, and the next lever is `v_chunk = 25` or the 15 s budget, neither of which this touches.**
+
+⛔ **NOT DONE, deliberately:** `refresh_wmc_fmv_changed`'s **51 `canceling statement due to lock timeout`** failures in the same 24 h are a DIFFERENT problem — contention on `wallet_moments_cache`, not query cost — and this change does not address them. Stated so nobody reads the drift fix as covering both.
+
 ### 2026-08-28 · ✅ RECOVERED (repo record only) — the `pack_purchases` autovacuum migration a no-push session applied had NO file, and therefore no revert path anywhere
 
 **Not my change, and I did not re-apply it.** `20260829010609_audit_20260829_pack_purchases_insert_autovacuum_keeps_visibility_map_warm` was applied live at 01:06Z by a Cowork session that cannot push. The entry above it flagged the parity gap; this closes it.
