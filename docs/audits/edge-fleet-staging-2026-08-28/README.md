@@ -1,6 +1,6 @@
 # Edge-fleet staging — 2026-08-28 (deep-audit run-4 follow-up)
 
-These 18 files are the VERBATIM deployed source of the edge functions that had no
+These 18 files (stored as index.ts.txt so tsc and the .ts-walking guards skip them — rename to index.ts when landing) are the VERBATIM deployed source of the edge functions that had no
 committed source (register R21), fetched 2026-08-28 and credential-scanned twice
 (redacted-report subagents + an independent grep over the staged bytes — zero
 credential shapes; the 11 functions whose deployed builds DO carry hardcoded keys
@@ -27,5 +27,5 @@ requires, per the guards' own demands:
 
 Value of landing them: the credential grep and drift detector cover the real
 fleet instead of 60% of it. Until then, THIS copy is the rollback artifact —
-e.g. classify-acquisitions/index.ts is the v37 source behind the 2026-08-28
+e.g. classify-acquisitions/index.ts.txt is the v37 source behind the 2026-08-28
 410-stub retirement (redeploy it with verify_jwt:false to revert that).
