@@ -178,6 +178,34 @@ differ — (ii) aggregates in place, (i) materialises a `numeric` CTE — so the
 **the 11× is unexplained and I did not isolate it.** ⭐ **The conclusion does not rest on it:** the
 intra-plan 99.66% and the 3-vs-18,540 disk-read pair are each sufficient on their own.
 
+## 4d. ✅✅ THE SWEEP IS COMPLETE — and ALL FOUR Class C entries are already healthy
+
+I recommended re-testing the remaining Class C members for a missing index. Done, all of them:
+
+| jobid | job | verdict | mechanism |
+|---|---|---|---|
+| **211** | `rpc-refresh-allday-pack-realized` | ✅ fixed 08-28 | missing payload → covering index |
+| **4** | `rpc-ccm-step2` | ✅ fixed ~08-25 | **NOT an index** — a Nested Loop over a 927 MB table, already fixed with `SET LOCAL enable_nestloop = off` |
+| **237** | `rpc-refresh-pack-reality-dist` | ✅ fixed 08-29 | missing payload → covering index (this filing) |
+| **325** | `rpc-thp-leg-fmv-coverage` | ✅ healthy | **NOT an index** — already an `Index Only Scan` on #30's `fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx` |
+
+**Recent-failure counts settle it:**
+
+| jobid | last failure | fails, last 3d | ok, last 3d |
+|---|---|---:|---:|
+| 4 | 2026-08-24 23:25Z | **0** | 3 |
+| 325 | 2026-08-24 19:48Z | **0** | 12 |
+| 211 | 2026-08-28 20:35Z | 6 | 6 *(all four of 08-29 succeeded)* |
+| 237 | 2026-08-28 14:42Z | 1 | 35 |
+
+⭐⭐ **So #42's Class C list is CURRENTLY EMPTY OF LIVE PROBLEMS, and the 7-day triage advertises ~15,345 s of "reclaimable waste" (10,214 + 2,430 + 1,801 + 900) across four jobs that are now healthy.** §1 of this filing found that artifact on ONE job; the sweep finds it on **all four**. It is not a quirk of jobid 211 — **the window straddles at least three independent fixes (jobid 4 and 325 on ~08-24, 211 on 08-28) plus this one.**
+
+⭐ **Two useful NEGATIVE results, which is what a recommendation is supposed to produce:**
+- **jobid 4 is a join-shape problem, not a missing index** — and its own function body already documents the diagnosis and the `enable_nestloop` remedy. **Class C is heterogeneous; "check for a missing index first" is a cheap first hypothesis, not a diagnosis.**
+- **jobid 325 is already index-only.** Its cost is inherent: an unbounded `DISTINCT ON (collection_id, edition_id)` merge-appends **1,305,802** index entries to yield ~52,920 rows — a 25:1 amplification with no heap access to remove. 👉 **There is no index to add; it wants R52's precomputed latest-FMV-per-edition, and R52 is already decided *DO NOT BUILD IT YET*.** ⛔ Do not re-open it on this filing.
+
+👉 **The concrete action this leaves is on the INSTRUMENT, not on any job: #42's triage must split on the change point.** As written it is currently 0-for-4.
+
 ## 5. 👉 The measurement that would still add something
 
 ```sql
