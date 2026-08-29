@@ -39,9 +39,15 @@ correctly set above it. Next expected 21:08Z. ⛔ Do not read the missed slot as
 regression from the fix; the fix touches only `ok`/`error` derivation inside the `after()`
 body and cannot prevent an invocation.
 
-⚠ The 18:37 run took **88,187 ms** — retry backoff against a dead endpoint, unchanged by
-this fix and not caused by it (pre-fix runs ran 27–38 s; the difference is upstream latency
-under the outage, not new work). Worth watching only if it approaches `maxDuration`.
+⛔ **CORRECTION to my own first reading of this run.** I flagged its **88,187 ms** as
+elevated and worth watching, on a remembered pre-fix range of "27–38 s". **That range was
+wrong.** The eight hourly runs before the fix are 12,195 / 68,270 / 31,699 / 27,903 /
+**90,142** / 37,816 / 38,904 ms — so the pre-fix maximum (90,142 ms at 13:00Z) is *higher*
+than the post-fix run, and 88 s is ordinary variance in retry backoff against a dead
+endpoint. `SOFT_BUDGET_MS` is 270,000 against `maxDuration = 300`, and `budget_hit` is
+**false on every run in the window**. **There is nothing to watch here**, and the flag was
+a one-point comparison against a misremembered baseline — the same shape as reading a
+snapshot for a distribution.
 
 ### 2026-08-29 · ✅ SHIPPED (code) + ⛔ CORRECTION — the sentinel reported GREEN while completely down, and two of my own audit findings were wrong
 
