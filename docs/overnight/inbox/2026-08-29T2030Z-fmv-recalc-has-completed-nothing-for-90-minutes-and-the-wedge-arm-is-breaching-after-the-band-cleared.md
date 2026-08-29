@@ -197,6 +197,40 @@ it, deliberately:**
 👉 **The next step is a decision, not a diagnosis: size that covering index (or the keyset rewrite) against
 `sales_2026`'s write path.** Everything needed to start is in this section.
 
+## 🔎 CHASING THE 17:56Z TRIGGER — one hypothesis REFUTED, and a collision found instead
+
+**Hypothesis tested: a stats refresh flipped the plan into the bitmap shape.** ⛔ **REFUTED.**
+`pg_stat_user_tables` for `sales_2026`: `last_analyze` **2026-08-29 07:04:43Z**, `last_autoanalyze`
+**2026-08-28 18:13:45Z**, `last_autovacuum` 2026-08-29 15:45:02Z. **Nothing at or near 17:56Z**, and the
+only nearby event (an autovacuum at 15:45Z) would *improve* the heap, not degrade it. **The tidy
+explanation is wrong and the trigger is still unidentified.**
+
+🚨 **BUT `pg_stat_statements` turned up something that changes what anyone should DO next:**
+
+```
+CREATE INDEX CONCURRENTLY idx_sales_2026_fmv_recalc_window_v2
+  ON public.sales_2026 USING btree (sold_at DESC) INCLUDE (edition_id, collection_id) WHERE …
+    calls=1   mean_exec_time=195,824 ms   shared_blks_read=80,999
+```
+
+⭐⭐ **Another session has already ATTEMPTED an fmv-recalc index fix on this exact table — a 195-second
+`CREATE INDEX CONCURRENTLY` — and the index DOES NOT EXIST.** Verified: `v2_exists = 0`, **0 invalid
+indexes database-wide**, 0 `CREATE INDEX` currently running, 0 `tmp-*` cron jobs. **So the attempt left no
+debris; it was dropped or rolled back cleanly.** `idx_sales_2026_fmv_recalc_window` (the v1, 60 MB) is
+still present and valid.
+
+⛔ **THIS UPGRADES "I chose not to ship" TO "SHIPPING WOULD NOW COLLIDE."** Building a covering index on
+`sales_2026` while another session is actively iterating on one is exactly the concurrent-work hazard this
+repo already records. **Do not ship one without coordinating.**
+
+⚠ **AND A SUBSTANTIVE OBSERVATION ABOUT THAT ATTEMPT, offered rather than asserted: `v2` is keyed
+`(sold_at DESC) INCLUDE (edition_id, collection_id)` — that is the shape STEP 1A needs (the edition-page
+window scan). The failure is in STEP 1B**, whose predicate is `edition_id IN (…) AND sold_at >= …` and
+whose projection is `collection_id, price_usd, serial_number`. **A `sold_at`-leading index does not serve
+that**, so if `v2` was aimed at this outage it may not have fixed it — which would explain why it did not
+survive. 👉 **The step-1b shape is `(edition_id, sold_at) INCLUDE (collection_id, price_usd,
+serial_number)`.** ⚠ Inference from the two definitions, not from watching the build.
+
 ## 👉 Falsifier, cheap and dated
 
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next
