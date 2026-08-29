@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (prod DB + code) — the six 420-min `wallet-backfill*` arms CANNOT be green, and the reason is a gate that returns before it writes anything
+
+**Inherited as "Trevor's open decision" from the 08-28 Cowork close. Re-derived rather than acted on, and the premise it rested on was half wrong.**
+
+⭐ **The 11-hour nightly "silence" is not a fault — it is `app/api/seed-wallet-refresh/route.ts` gating on `utcHour % 12 >= 2`** (the 2026-07-18 Phase 2 cost lever, ~56 lambda-hours/day). Waves execute ONLY in UTC hours 0, 1, 12, 13. 🚨 **That `return` sits BEFORE the `after()` block and before any `pipeline_runs` write, so a gated invocation and a dead cron were BYTE-IDENTICAL in telemetry.** Measured: **ZERO of 11,012 `wallet-backfill*` rows in 72h carried any skip record** (`extra ? 'note'` = 0 on every one of the seven pipelines).
+
+⚠ **The handoff recorded non-wave runs as "gated no-ops [that] still fire". The CRON fires; the PIPELINE records nothing.** That distinction is the whole finding — it is why the gap exists at all, and it was one grep away.
+
+**Re-derived numbers (72h window, `max()` in SQL, not streamed to the client):** max inter-run gap **677 / 673 / 677 / 677 / 677 / 677** min across the six. ⚠ **The handoff's "12-hour wave cadence" is the FLOOR, not the shape:** there were **five** gaps over 420 min in 72h, not one per day — 474 (08-26 16:09→08-27 00:03), 677, 676, 533 (08-28 14:46→23:40) — and only the two 677/676 are the 01:29→12:45 hole. Scattered runs outside hours 0/1/12/13 come from the GHA backstop (`38 2,8,14,20`, which carries `&force=1` precisely to bypass the gate) and user-triggered `profile/verify-challenge`.
+
+⚠ **"Seven arms" in the handoff prose vs "all six pipelines" in its own proposed `UPDATE`: SIX is correct.** `wallet-backfill%` matches seven pipelines; `wallet-backfill-multicollection-complete` was never on 420.
+
+**1. DB — `20260829012854_audit_20260828_wallet_backfill_cadence_arms_cannot_be_green`.** Six arms **420 → 800**, named explicitly (⛔ never `wallet-backfill%` — that wildcard also captures `-complete`), guarded on `= 420` so a re-run is a no-op. Severity deliberately UNCHANGED at `high`. ⭐ **800 is NOT a number picked to get green:** `wallet-backfill-multicollection-complete` has been at 800 since before this pass — someone previously reached the identical conclusion and fixed one row of seven. Structural worst case with no wave missed at all (wave ends 00:05, next starts 12:59) is **~774 min**, so nothing under ~780 can ever be green. A genuinely skipped wave still produces a 24h+ gap and still fires. **REVERT: set `max_silent_minutes = 420` for the six named pipelines** (prior value was uniformly 420; no backup table — a single uniform scalar recorded in the migration and here IS the backup, and an RLS-less `bak_*` in `public` would trip the advisors for nothing).
+
+**2. Code — `app/api/seed-wallet-refresh/route.ts` now writes on BOTH branches.** Gated skip → a **terminal row under the real name** (a complete run whose entire job was to decline; refreshing `last_run` is the intended outcome here and nowhere else). Wave → **`seed-wallet-refresh-heartbeat` before `after()`** via the shared `writeInvocationHeartbeat()`, plus a terminal row at the end keyed to the invocation start so the ±5s correlation query pairs them. `rows_*` NULL never 0; `finished_at` pinned for markers, REAL for the wave's terminal row (there a duration is a measurement someone took).
+
+🚨 **`after-route-heartbeat-ratchet` CAUGHT THIS MID-CHANGE and was right.** My first cut logged a terminal row on both branches and the count went **41 → 42**: the route had just entered the ratchet's population (`calls after(` AND `writes a terminal pipeline_runs row`) — the set where a `maxDuration` kill is invisible. The fix was to CONVERT the route in the same commit, not raise BUDGET; count returned to 41, **BUDGET untouched**. ⚠ A second guard then rejected a hand-rolled `-heartbeat` name and forced the shared helper. Both guards did exactly what they were written to do.
+
+⛔ **DELIBERATELY NOT DONE: `seed-wallet-refresh` was NOT added to the watchlist.** It is the only component in the family with a real ~6h heartbeat (cron-job.org cohorts at hours 0,1,6,7,12,13,18,19 → max gap ~318 min) and so is the RIGHT layer to watch for trigger dropout — but it has never written a row, so **there is no measured cadence to set a threshold from.** Setting one now would be taste, and taste is what produced the 420. ⭐ Independently corroborated by the sibling session's `2026-08-29T0130Z` filing, which reaches the same rule from the other side: *"seed it from data, never by taste"*. **Owed: after 48h of the new rows, set the arm from the measured invocation-gap distribution.**
+
+⚠ **Relation to that sibling filing (`detect_stalled_pipelines()` reported ALL CLEAR through a 7h outage):** complementary, not overlapping. It shows `last_run` has no `ok` filter, so a pipeline that runs-and-fails is never "silent". This entry is the mirror case — a pipeline that is silent BY DESIGN and had no way to say so. Its "not established" list includes *"that the 85 arms are individually correct"*; six of them now are. ✅ **I did not touch `detect_stalled_pipelines()`** — that filing's warning that changing it is unsafe stands.
+
+**Verification:** `npx tsc --noEmit` EXIT=0. Route + guard suites 46/46 green. ⚠ **Full `npm test` shows 8 assertion failures — CONTROLLED, not mine:** all 8 reproduce on a clean `origin/main` with my change stashed (edge-fn / indexer guards churning under the sibling's in-flight R21 staging revert). 2 further errors were vitest pool-worker startup timeouts, an environment artifact of this box.
+
+⚠ **Unrelated parity gap noticed, NOT fixed (not mine, sibling is active):** `20260829010609_audit_20260829_pack_purchases_insert_autovacuum_keeps_visibility_map_warm` is applied in prod with **no file in `supabase/migrations/`** — `migration-parity` will red until its author commits it.
+
 ### 2026-08-28 · ⛔ TWO CORRECTIONS TO MY OWN R21 WORK — the cursor defects are DORMANT not live, and my guard fix COLLIDED with a better one
 
 **Both corrections are to entries I wrote tonight, and both matter to anyone triaging off them.**
