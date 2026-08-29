@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED — the saturation breaker counts failures that touch NO database, so a Top Shot API outage is throttling sales-history backfills for FOUR collections
+
+Docs only; no code, no DB. Filing:
+`docs/overnight/inbox/2026-08-29T1830Z-the-saturation-breaker-counts-failures-that-touch-no-database-and-a-topshot-outage-throttles-four-collections.md`.
+
+`lib/studio-sales-history.ts` self-throttles on
+`count(pipeline_runs WHERE NOT ok AND pipeline <> self AND finished_at > now() - 30 min) > 15`
+— **every pipeline's failures fleet-wide**, read as a proxy for database pressure.
+
+**Measured over 49 half-hour windows in 24 h, replicating the breaker's own query:**
+
+| | |
+|---|---:|
+| windows where it fires (`> 15`) | **17 of 49 — 34.7%** |
+| windows that would fire with the dead-endpoint pipelines removed | **4 — 8.2%** |
+| mean failures per window | 17.8 |
+| …from the 9 `public-api.nbatopshot.com` pipelines | **10.3 (58%)** |
+
+**An outage in one collection's upstream is the difference between a breaker that fires 8%
+of the time and one that fires 35%.**
+
+🚨 **Six routes share this module and skip together** — `allday-`/`golazos-`/`pinnacle-`/
+`topshot-` sales-history and studio-sales-history. **Five of the six wrote ZERO rows in
+48 h**, each logging `{"skipped":"saturation","recent_fails":16}` with **`ok: true`**, so
+nothing reports it.
+
+⭐ **Why this is a defect and not the valve working as designed: the breaker exists to
+protect the DATABASE, and the failures inflating it never reach the database.** A
+`530 error code: 1033` dies at the network layer — `topshot-fmv-populate`'s own row reads
+`duration_ms: 483`, `pages_fetched: 0`. **So it throttles hardest in the one situation
+where the database is least loaded**, because the pipelines that would otherwise be
+hammering Postgres are failing instantly upstream instead.
+
+⛔ **This is NOT the fail-OPEN bug already fixed in this file** (`count ?? 0` reading a
+statement timeout as "no recent failures"). That is fixed and its comment is in place.
+This is the opposite direction: the guard FIRES when it should not, because its input
+conflates two unrelated kinds of failure.
+
+👉 **Proposal: narrow the input, do not raise the threshold.** Count only DB-pressure
+signatures — `statement timeout`, `connection pool`, `lock timeout`, `too many clients`,
+`PGRST002`. ⛔ Raising `SATURATION_FAIL_THRESHOLD` is the wrong lever: it would slow the
+breaker during genuine saturation too, which is the case it was built for.
+
+⚠ **Filed rather than shipped, for stated reasons:** it makes a safety breaker fire LESS
+often on an IO-bound instance; the signature list is a positive allowlist and therefore
+**incomplete by construction** (derive it from the real `error` values over a saturation
+spell before shipping, not from what reads right); and six routes share the blast radius.
+
+⚠ **A second, independent problem in the same block.** `allday-sales-history-backfill` at
+18:07:30Z logged `{"skipped":"throttle_error"}` with **`duration_ms: 61265`** — the
+breaker's own `count: "exact"` over `pipeline_runs` timed out after 61 s, exactly as the
+file's own comment predicts (*"likeliest to fail during the very saturation it exists to
+detect"*). Fail-closed handling is correct, but a tick can burn 61 s of a 300 s budget to
+learn nothing. ⛔ **Do NOT swap to `pipeline_runs_daily`** — it refreshes six-hourly and
+this needs a 30-minute window, so the swap would silently read a stale number.
+
+⛔ **NOT established, and nobody should escalate this as data loss:** these are historical
+backfills whose queues persist, so a skipped tick is **deferred work, not lost work**. The
+cost is that the 2023-11 → 2026 coverage gap closes ~35% slower than intended.
+
 ### 2026-08-29 · 📦 FILED + ✅ SHIPPED (code) — CI/testing audit: the gates are strong, the detectors are not firing
 
 **Filed:** `docs/overnight/inbox/2026-08-29T1741Z-ci-testing-audit-the-gates-are-strong-the-detectors-are-not-firing.md` (INDEX regenerated, 08-29 section 6 → 7).
