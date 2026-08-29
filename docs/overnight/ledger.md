@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (test) — a brand-new OG guard could never pass on Windows, and the bug was two `.replace()` calls in the wrong order
+
+**Found by the closing full-suite run, on a guard added ~25 minutes earlier by the concurrent session (`74151b7e3`).** `og-cards-do-not-silently-acquire-a-cdn-dependency` reported **all six of its own RECORDED routes as unrecorded** — 2 of 4 cases red, **deterministic 2 of 2 in isolation**, so `main` was genuinely red and had been for ~25 minutes across 7 intervening commits.
+
+⭐⭐ **THE BUG IS ORDER, NOT LOGIC.** `slugOf()` did `.replace(/\/route\.(tsx?|jsx?)$/, "")` **then** `.replace(/\/g, "/")`. **`path.relative` returns the PLATFORM separator**, so on Windows it hands back `collection\route.tsx`; the strip looks for a FORWARD slash, matches nothing, and the backslash conversion afterwards yields **`collection/route.tsx`** — against a `RECORDED` set holding **`collection`**. **The two can never match, so the guard could not pass on this box at all.** ⭐ **Green on Linux CI, red on Windows, for a path-separator reason and not a code one** — the second instance of that class today after the `python3` fleet-alarm script, and the same family as the recorded `process.cwd() + "/"` trap.
+
+**Proven before fixing, not assumed:** `path.relative()` = `"collection\route.tsx"`; old order → `"collection/route.tsx"` (no match); corrected order → `"collection"` (match).
+
+⭐ **Fixed with the idiom the rest of the suite already uses — `.split(path.sep).join("/")` — not a hand-rolled backslash replace.** A `path.relative` sweep of `__tests__` shows **six other guards normalise exactly that way** (`after-route-heartbeat-ratchet`, `api-route-tsx-test-completeness`, `component-gate-include-completeness`, `helpers-client-directive`, …); **this file was the ONLY one hand-rolling it, and the hand-rolled version is what broke.** ⛔ The comment records why the order is load-bearing, so it is not silently reordered back.
+
+✅ **Verified, and not vacuously: 4/4 on three consecutive runs; then MUTATED — removing `"collection"` from `RECORDED` reds exactly the one case it should, 1 failed / 3 passed — and restored.** ⓘ The guard's own substance is untouched: it still records six emoji-bearing OG routes as a deliberate CDN dependency, and it still only permits that set to GROW deliberately.
+
+**Revert path:** `git revert <this sha>` — test-only; touches no route, no schema, no workflow. ⚠ The revert restores a guard that cannot pass on Windows.
+
 ### 2026-08-29 · ✅ SHIPPED (guard) — I pushed conflict markers to `main`, and nothing in 1,401 test files would have caught it
 
 **What happened.** A `git stash pop` after `git pull --rebase` conflicted on the ledger, and the `git add -A` **in the same shell command** staged the conflicted file. Three line-anchored markers reached `main` in `211428ef7`. ⚠ **Every ledger rule was followed** — entry re-read from disk, spliced at a line-start `^### `, all four guards run green — **before the pull**. The failure was in the COMMAND SHAPE, at the one moment none of the guards re-run, and a compound command hid the conflict notice above its own output. Repaired in `a4489cec6`: both sides were intact, so both were kept (newest first) and only the three marker lines deleted, programmatically with the ordering asserted.
