@@ -437,6 +437,39 @@ killed tick and a cron that never fired raise the identical alert while needing 
 ⭐ This is a second argument for the heartbeat marker generally: its timestamps are pinned by
 `lib/pipeline/heartbeat.ts`, so they mean what they say.
 
+⭐ **AND THE SIZE OF THE LIE IS MEASURABLE IN ONE QUERY, because many routes already record their own
+honest timing as `extra.elapsed_ms`. Diff the two** (2026-08-29):
+
+```sql
+select pipeline, count(*) as runs,
+       round(avg(duration_ms))                               as avg_recorded,
+       round(avg((extra->>'elapsed_ms')::int))               as avg_true,
+       round(avg(duration_ms - (extra->>'elapsed_ms')::int)) as avg_inflation,
+       max(duration_ms - (extra->>'elapsed_ms')::int)        as max_inflation
+from pipeline_runs
+where started_at >= now() - interval '24 hours'
+  and extra ? 'elapsed_ms' and duration_ms is not null
+  and (extra->>'elapsed_ms') ~ '^[0-9]+$'   -- extra is free-form; one non-numeric aborts the aggregate
+group by 1 having avg(duration_ms - (extra->>'elapsed_ms')::int) > 500 order by avg_inflation desc;
+```
+
+**It found two DIFFERENT classes, and the obvious ranking picks the wrong winner:**
+
+- **Foreign WORK billed to the pipeline** — `allday-sales-indexer` recorded **50,114 ms against a true
+  6,155 ms (87.7%)**, `golazos-sales-indexer` 7,168 vs 3,248 (54.7%): both awaited
+  `promote_unmapped_sales` (up to 297 s) *before* their own log write. Fixed 2026-08-29 by reordering,
+  guarded by `__tests__/indexers-log-before-promote-ratchet.test.ts`.
+- **Terminal-write LATENCY** — the `wallet-backfill*` family at 6.8–13.1% with `max_inflation` 57–61 s.
+  That is the class this section already describes, and it is **not a defect to fix**: it is real time
+  the invocation spent, and removing it needs the `p_finished_at` this RPC does not have.
+
+⛔ **`ufc-stub-thumbnail-resolver` reads 53.6% foreign and is NOT the first class** — its `elapsed_ms`
+is computed inline at the call, so the gap is pure round trip; it only looks like half the duration
+because the job itself is 978 ms. ⭐ **Rank on ABSOLUTE inflation, never the percentage: a high
+percentage on a short pipeline is contention.** ⚠ And the blind spot is exact — **`ufc-sales-indexer`
+does not appear at all because it records no `elapsed_ms`**, despite having the identical structure.
+Full table + method: [inbox 2026-08-29T1353Z](../overnight/inbox/2026-08-29T1353Z-duration_ms-vs-elapsed_ms-is-a-fleet-wide-contamination-detector-nobody-was-running.md).
+
 ### 1. A per-collection ZERO inside an otherwise-succeeding run is the shape a collection-blind filter makes
 
 `drain-fmv-cold-tail` reported `"collection_slug": "ufc_strike", "processed": 0` on every run **for months**,
