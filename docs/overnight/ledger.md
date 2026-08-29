@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 🔎 OPERATOR ITEM — `net._http_response` can NEVER be autovacuumed, because pg_net's worker writes without reporting tuple stats. 41 MB of heap for 709 live rows.
+
+**Found via `get_advisors(performance)`'s single `table_bloat` lint, which names the table and stops
+there. The mechanism underneath it is the finding, and it is a closed causal chain with a control.**
+
+⚠ **This table is not incidental — CLAUDE.md relies on it:** *"For a pg_cron `net.http_get` pipeline,
+`net._http_response` splits dispatched / killed / answered with NO deploy."* It is a diagnostic
+instrument this project reaches for, and it is quietly degrading.
+
+| measured | value |
+|---|---|
+| total / heap size | **49 MB / 41 MB** |
+| live rows | **709** |
+| retention window | ~6 h (oldest 18:04Z, newest 00:04Z) |
+| `autovacuum_count` | **0** |
+| `last_autovacuum` | **NULL** |
+| `age(relfrozenxid)` | **3,260,615** |
+| `reloptions` | **NULL** (autovacuum NOT explicitly disabled) |
+
+## 🚨 The mechanism, and the one query that proves it
+
+```
+seq_scan      135        seq_tup_read  84,165     ← READS are tracked
+n_tup_ins       0        n_tup_del          0
+n_live_tup      0        n_dead_tup         0     ← WRITES are NOT tracked
+```
+
+⭐ **Reads are recorded and writes are not, on a table that demonstrably gains ~709 rows every six
+hours.** pg_net's background worker inserts through a C path that never reports tuple-level statistics.
+**Autovacuum triggers on `n_dead_tup > threshold + scale_factor × n_live_tup`, and `n_dead_tup` is
+permanently 0 — so the trigger condition is unreachable BY CONSTRUCTION.** pg_net's own retention keeps
+deleting old rows; nothing ever reclaims the dead space; the heap only extends.
+
+✅ **POSITIVE CONTROL, same schema and same extension:** `net.http_request_queue` is also UNLOGGED and
+also owned by `supabase_admin`, yet shows **741 autovacuums**, `last_autovacuum` 23:41Z, and
+`age(relfrozenxid)` of **5,392** against `_http_response`'s **3,260,615**. So this is **not** "the `net`
+schema is excluded from autovacuum" — it is specific to the response table's write path.
+
+## ⛔ I cannot fix it, and neither can Trevor from SQL
+
+`net._http_response` is owned by **`supabase_admin`**; the session runs as **`postgres`**, and
+`pg_has_role(current_user, relowner, 'USAGE')` is **false**. VACUUM requires ownership, and `ALTER TABLE
+… SET (autovacuum_freeze_max_age = …)` — the one setting that WOULD fire regardless of tuple stats —
+needs the same. **This is a Supabase-support / extension-level action, not a migration.**
+
+⚠ **HONEST BOUND, so this is not over-sold: it is not unbounded forever.** Anti-wraparound autovacuum
+ignores tuple stats and fires on `age(relfrozenxid) > autovacuum_freeze_max_age`, which is
+**200,000,000** here. At **3.26M** the table is ~1.6% of the way there, so a freeze vacuum will
+eventually reclaim it — on a horizon of many months, during which the heap keeps extending.
+
+**Honest severity: LOW-to-MODERATE and slowly worsening.** 41 MB is small in absolute terms; the cost is
+that every diagnostic read of this table scans the full 41 MB to reach 709 rows, on the instance whose
+binding constraint is disk IO. ⛔ **Do NOT file this as an outage or let it displace real work** — the
+reason to record it is that it is invisible, self-reinforcing, and will be re-discovered from scratch by
+whoever next reads that `table_bloat` lint.
+
+**Nothing shipped — no lever exists at this privilege level. No revert path.**
+
 ### 2026-08-28 · ⛔ TWO SUPABASE ADVISOR WARNINGS ARE UNFIXABLE AS ADVISED — proven by A/B with a control, and "fixing" them would break per-wallet durability
 
 **Ran `get_advisors(security)` — a source this project's notes do not routinely quote. 220 lints, and the
