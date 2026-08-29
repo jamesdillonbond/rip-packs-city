@@ -1114,10 +1114,15 @@ const PINS = [
     // stray-`$` terminator that commit's assembly regex introduced, so it is a body
     // CI has actually parsed green. Its header carries the (comment-STRIPPED) clause
     // counts for the restored body.
+    // ⚠ RE-POINTED AGAIN 2026-08-28 onto the two-caller advisory-lock fix. The
+    // note above says this MUST move in the same push as the migration; it did
+    // not, and a full DB-invariant run is what caught it.
+    // ⚠ KEEP THE COMMENT ABOVE `migration:`, NEVER BETWEEN IT AND THE STRING —
+    // scripts/check-db-pin-staleness.mjs matches `migration:\s*"..."`, so a comment
+    // in that gap drops this pin from the LIVE drift check silently. Two pins were
+    // invisible for exactly that reason until 2026-08-08, and
+    // __tests__/db-pin-staleness-parser-coverage.test.ts caught this one at 188/189.
     migration:
-      // ⚠ RE-POINTED AGAIN 2026-08-28 onto the two-caller advisory-lock fix. The
-      // note above says this MUST move in the same push as the migration; it did
-      // not, and a full DB-invariant run is what caught it.
       "supabase/migrations/20260829030000_audit_20260828_rwfc_two_callers_collide_every_ten_minutes.sql",
   },
   {
