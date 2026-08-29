@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⏳ RECONCILE, SECOND POST-FIX TICK: the first `ok = true` and the queue fully drained — ⚠ but a pre-fix control says this is NOT yet outside the envelope
+
+**00:44Z is the first `ok = true` this pipeline has produced in the window, and the first time
+`wallets_done` equalled `wallets_total`.**
+
+| 00:44Z tick | value |
+|---|---|
+| ok | **true** (first) |
+| wallets_done / total | **4 / 4** — queue fully drained |
+| `oldest_cache_h` | **6.0** — exactly the `p_min_age_minutes` target |
+| elapsed | 13,606 ms → **3,401 ms per wallet** |
+
+⚠ **AND THE CONTROL THAT STOPS ME CALLING IT PROVEN.** Split at the 22:59Z deploy over 72 h:
+
+| window | runs | ok | avg done | **max done** | best `oldest_cache_h` |
+|---|---:|---:|---:|---:|---:|
+| pre-fix | 62 | **9** | 1.21 | **7** | 7.0 |
+| post-fix | **2** | 1 | 2.50 | 4 | **6.0** |
+
+🚨 **Pre-fix ALREADY produced `ok` runs, and one did SEVEN wallets — more than tonight's four.** So
+"ok = true with the queue drained" is **not** a state only the fix can reach; it is what happens whenever
+the queue is short and the instance is quiet. ⛔ **Do not record this as proof.**
+
+⭐ **What IS new, narrowly:** `oldest_cache_h` reached **6.0**, better than the pre-fix best of **7.0**
+across 62 runs, and it is the design target rather than the 12–15 h the pipeline had been pinned at all
+day. Average queue depth 11.0 → 7.5. **Those are the numbers to watch, not the ok flag.**
+
+⚠ **My own per-wallet figure is a two-sample average and misleads:** post-fix `ms_per_wallet` reads
+23,092, which is just the mean of one uninformative run (42,782 ms for 1 wallet) and one good one
+(3,401 ms for 4). The pre-fix distribution's *minimum* was 3,700 ms, so **3,401 ms/wallet is comparable
+to the pre-fix BEST, not clearly beyond it.**
+
+👉 **The re-armed exit condition from the previous entry still stands and is still unmet: the
+`wallets_done = 1` elapsed DISTRIBUTIONS across the split at n ≥ 10, median and IQR.** n = 2.
+**Falsifier unchanged:** if the post-fix median lands within ~10% of the pre-fix median, the correlated
+subquery was not the binding cost and the next lever is a covering index including `tier`.
+
 ### 2026-08-28 · ⭐ The sales-leaderboard's 77% failure rate was a STALE VISIBILITY MAP, not the SQL — shipped, and production went 0/10 → 10/10
 
 The 23:00Z Cowork pass measured `/api/analytics/sales/leaderboard` at **20 of 26 requests failing
