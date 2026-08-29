@@ -45,6 +45,15 @@ describe("edge functions carry no hardcoded gate keys", () => {
   const NON_CREDENTIAL_KEY_CONSTANTS: Record<string, string> = {
     "backfill-topshot-base-parallel-probe: CURSOR_KEY":
       "event_cursor row id ('backfill-topshot-base-parallel-probe'), used as .eq('id', …) — a table key, not an auth key",
+    // Added 2026-08-28 when R21 committed 18 deployed-only edge sources. BOTH were
+    // read before being suppressed: each is the `key` COLUMN of a `scan_checkpoint`
+    // row, reached as `.eq("key", CHECKPOINT_KEY)` and written back via
+    // `upsert({ key: CHECKPOINT_KEY, block_height, … })`. They name a cursor row,
+    // they authorize nothing, and neither appears in any auth path.
+    "flowty-loan-indexer: CHECKPOINT_KEY":
+      "scan_checkpoint row key ('flowty_loans_indexer'), used as .eq('key', …) and upsert({key}) — a table key, not an auth key",
+    "scan-storefront-events: CHECKPOINT_KEY":
+      "scan_checkpoint row key ('storefront_audit'), used as .eq('key', …) and upsert({key}) — a table key, not an auth key",
   }
 
   it("assigns no gate/key/secret/token constant from a string literal", () => {
