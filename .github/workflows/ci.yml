@@ -153,6 +153,41 @@ jobs:
   # exits 0 (0 errors, 2 allowed string-template warnings). This job is now a
   # true BLOCKING regression gate — any future type error in the production
   # transaction fails the build. Revert: re-add `continue-on-error: true`.
+  eslint-ratchet:
+    name: ESLint ratchet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # ⚠ THIS REPO DELIBERATELY DOES NOT GATE ON ESLINT, and the comment in the
+      # typecheck job says so. Measured 2026-08-29 over 2,857 files: 6,474
+      # violations, of which 5,757 (89%) are `@typescript-eslint/no-explicit-any`
+      # — a DOCUMENTED CONVENTION here ("Supabase client typed `any` in API
+      # routes"). Turning eslint on as a gate would be a 6,000-error wall that
+      # gets switched off within a day, so the absence was a rule-set mismatch
+      # rather than neglect.
+      #
+      # What ships instead is a RATCHET over the other 717 violations in 19
+      # rules — the repo's own answer to this shape, as with the coverage gates
+      # and the fabricated-divisor ratchet. Counts may only shrink; a regression
+      # is loud on the commit that introduces it. Several of the ratcheted rules
+      # are correctness rather than style: react-hooks/set-state-in-effect (59),
+      # @next/next/no-html-link-for-pages (114), react-hooks/purity (6).
+      #
+      # ⚠ `|| true` is required, not sloppy: eslint exits 1 whenever it reports
+      # an error, which is the normal state here, and this is `bash -e`. It does
+      # NOT hide a crash — if eslint fails to start, the report file is absent
+      # and the checker exits 2 rather than reporting an all-clear, because
+      # "eslint found nothing" and "eslint did not run" produce the same zero.
+      - name: Lint and compare against the ratchet
+        run: |
+          npx eslint . --format json -o /tmp/eslint-report.json || true
+          node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+
   cadence-lint:
     name: Cadence lint
     runs-on: ubuntu-latest
