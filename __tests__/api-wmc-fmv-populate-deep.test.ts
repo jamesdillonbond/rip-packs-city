@@ -258,6 +258,56 @@ describe("wmc-fmv-populate — params + refresh degradation", () => {
     expect(perColl.every((r) => r.p_ok !== false)).toBe(true)
   })
 
+  // 2026-08-28. refresh_wmc_fmv_changed has TWO callers running the same
+  // non-reentrant drain: pg_cron jobid 303 (`7-57/10`, MEDIAN 240s measured over
+  // n=284) and this route (every 5 min, ~18s budget). The route's tick one minute
+  // after each 303 firing blocked on wallet_moments_cache row locks and died --
+  // 83 of 84 lock timeouts in 48h landed on :08/:18/:28/:38/:48/:58, and the six
+  // even-decade minutes were clean. The RPC now returns NULL instead of blocking.
+  //
+  // These three tests pin the DISCRIMINATION, not the message: a skip and a
+  // measured drain of zero must never collapse into the same row. That collapse is
+  // one `Number(data ?? 0) || 0` away, which is what the code did before.
+  it("records a NULL return as a SKIP with rows_* NULL, never as a measured zero", async () => {
+    const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: null } })
+    await POST(req())
+    await runDeferred()
+
+    const rows = logsFor("refresh_wmc_fmv_changed", spy.rpcCalls).map((c) => c.args as any)
+    expect(rows).toHaveLength(1)
+    // A skip is not a failure: the other instance is draining the same cursor.
+    expect(rows[0].p_ok).toBe(true)
+    expect(rows[0].p_error).toBeNull()
+    // The whole point. `0` here would be a fabricated measurement.
+    expect(rows[0].p_rows_written).toBeNull()
+    expect(rows[0].p_rows_found).toBeNull()
+    expect(rows[0].p_rows_skipped).toBeNull()
+    expect(rows[0].p_extra?.note).toBe("skipped_concurrent_refresh")
+  })
+
+  it("a REAL drain of zero stays a measured zero and carries no skip note", async () => {
+    // The negative control for the test above. Without it, `p_rows_written: null`
+    // could be satisfied by making every run NULL, and the assertion would read as
+    // coverage while proving nothing.
+    const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: 0, error: null } })
+    await POST(req())
+    await runDeferred()
+
+    const rows = logsFor("refresh_wmc_fmv_changed", spy.rpcCalls).map((c) => c.args as any)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].p_ok).toBe(true)
+    expect(rows[0].p_rows_written).toBe(0)
+    expect(rows[0].p_rows_skipped).toBe(0)
+    expect(rows[0].p_extra?.note).toBeUndefined()
+  })
+
+  it("a skip does not stop the drift sweep that follows it", async () => {
+    const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: null } })
+    await GET(req())
+    await runDeferred()
+    expect(rpcNames(spy.rpcCalls)).toContain("refresh_wmc_fmv_drift_active")
+  })
+
   it("a refresh_wmc_fmv_changed error does not stop the drift sweep", async () => {
     const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: { message: "refresh down" } } })
     await GET(req())

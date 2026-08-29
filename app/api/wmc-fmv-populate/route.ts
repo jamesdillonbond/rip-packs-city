@@ -247,13 +247,30 @@ async function handle(req: NextRequest): Promise<Response> {
     const t0 = Date.now()
     let ok = true
     let errorMessage: string | null = null
-    let rowsWritten = 0
+    let rowsWritten: number | null = 0
+    // Set when the RPC DECLINED rather than ran. A skip is not a drain of zero:
+    // `rows_written = 0` on this pipeline already carries three incompatible
+    // meanings, and adding a fourth is the defect class this repo counts. So a
+    // skip is recorded with rows_* NULL and this note, never as a measured zero.
+    let note: string | null = null
     try {
       const { data, error } = await (supabaseAdmin as any).rpc(fn, args)
       if (error) {
         ok = false
         errorMessage = error.message
         console.log(`[wmc-fmv-populate] ${fn} rpc error: ${error.message}`)
+      } else if (data === null || data === undefined) {
+        // refresh_wmc_fmv_changed returns NULL when pg_try_advisory_xact_lock finds
+        // another instance already draining — pg_cron jobid 303 (`7-57/10`) runs a
+        // median of 240s, so the route's tick one minute later used to block ~18s on
+        // wallet_moments_cache row locks and die. 83 of 84 lock timeouts in 48h landed
+        // on :08/:18/:28/:38/:48/:58, one minute after each 303 firing. Skipping loses
+        // nothing: the other instance drains the same rwfc_state cursor.
+        // ⚠ Discriminate on `data === null`, NOT on a falsy check — `0` is a real,
+        // measured drain of nothing and must stay distinguishable from this.
+        rowsWritten = null
+        note = "skipped_concurrent_refresh"
+        console.log(`[wmc-fmv-populate] ${fn} skipped: another instance holds the lock`)
       } else {
         rowsWritten = Number(data ?? 0) || 0
       }
@@ -268,13 +285,18 @@ async function handle(req: NextRequest): Promise<Response> {
         p_started_at: startedAtIso,
         p_rows_found: rowsWritten,
         p_rows_written: rowsWritten,
-        p_rows_skipped: 0,
+        // NULL, not 0, on a skip — the same reason rows_written is NULL above.
+        p_rows_skipped: note === null ? 0 : null,
         p_ok: ok,
         p_error: errorMessage,
         p_collection_slug: null,
         p_cursor_before: null,
         p_cursor_after: null,
-        p_extra: { ...args, duration_ms: Date.now() - t0 },
+        p_extra: {
+          ...args,
+          duration_ms: Date.now() - t0,
+          ...(note === null ? {} : { note }),
+        },
       })
     } catch (e) {
       console.log(
