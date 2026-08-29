@@ -1,0 +1,43 @@
+-- Applied to prod via Supabase MCP apply_migration on 2026-08-29 (Cowork, no-push
+-- session). Staged on the mount for Trevor/Claude Code to commit (normal
+-- apply-then-commit-later flow; clears the daily migration-parity reminder).
+-- Fix: sentinel_fmv_confidence_rows no longer reads fmv_current; pushes the
+-- collection filter into the DISTINCT ON so rpc_ops_snapshot() stops timing out.
+-- Idempotent CREATE OR REPLACE; re-running against prod is a no-op.
+-- REVERT: CREATE OR REPLACE the prior SQL body reading FROM public.fmv_current.
+CREATE OR REPLACE FUNCTION public.sentinel_fmv_confidence_rows(p_collection_id uuid DEFAULT NULL::uuid)
+ RETURNS TABLE(confidence text, count bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- Push the collection filter INSIDE the DISTINCT ON so the per-partition
+  -- (collection_id, edition_id, computed_at DESC) indexes drive a Merge Append
+  -- (Index Only Scan, no external sort). Reading fmv_current instead computed
+  -- DISTINCT ON over all 3 partitions BEFORE filtering, which spilled and timed
+  -- out in the daytime IO band -- killing rpc_ops_snapshot()'s fmv leg ~half the day.
+  -- edition_id -> collection_id is 1:1, so filtering before vs after DISTINCT ON
+  -- selects the same latest-per-edition rows. NULL (all) path preserved.
+  IF p_collection_id IS NULL THEN
+    RETURN QUERY
+      SELECT d.conf::text, count(*)::bigint
+      FROM (
+        SELECT DISTINCT ON (fs.edition_id) fs.confidence AS conf
+        FROM public.fmv_snapshots fs
+        ORDER BY fs.edition_id, fs.computed_at DESC
+      ) d
+      GROUP BY d.conf;
+  ELSE
+    RETURN QUERY
+      SELECT d.conf::text, count(*)::bigint
+      FROM (
+        SELECT DISTINCT ON (fs.edition_id) fs.confidence AS conf
+        FROM public.fmv_snapshots fs
+        WHERE fs.collection_id = p_collection_id
+        ORDER BY fs.edition_id, fs.computed_at DESC
+      ) d
+      GROUP BY d.conf;
+  END IF;
+END;
+$function$;
