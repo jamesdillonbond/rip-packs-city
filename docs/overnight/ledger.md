@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the OG render path had an UNBOUNDED fetch to the live site, found by root-causing a "flake"
+
+CI run 4202 failed `api-og-cards-render-sweep` with *Test timed out in 60000ms* on a card that renders in **83 ms** locally. ⭐ **The discriminator that made it worth chasing rather than re-running: the whole run was only ~15% slower than local (453 s vs 395 s) while that one test was ~720× slower.** General slowness moves everything by the same factor; a lone 720× excursion is a HANG.
+
+**Cause, probed rather than inferred.** `lib/og/brand-fonts.ts` fetches `${BASE_URL}/fonts/{BarlowCondensed-Black,ShareTechMono-Regular}.ttf` with `BASE_URL` defaulting to `https://www.rippackscity.com`. The sweep's `isAppApiRequest` allowlisted only `/api/` and `/rest/v1/`, so **0 of 2 matched** and both hit the real network on every CI run — against that file's own header, *"No card in this sweep may touch the network."* The loader **memoises at module scope**, so the first card to render pays the fetch: exactly ONE test hangs and WHICH one varies with execution order, which is why it presented as a random flake.
+
+✅ **Production fix: the fetch is now bounded** (`AbortSignal.timeout(5_000)`). ⚠ **It had no timeout at all**, against CLAUDE.md's explicit *"Bound every `fetch` — no default timeout."* The header's *"THIS NEVER REJECTS"* guarantee was true and irrelevant: **`catch` cannot catch a hang**, and 39 call sites await this memoised promise, so one stalled connection takes the whole OG surface to `maxDuration`. Pinned structurally (every font fetch carries an `AbortSignal`) and behaviourally (an abort degrades to `undefined`, like a 404); **mutation-checked three ways including a signal that never fires** — the unbounded case wearing a signal, which a "does it pass a signal?" assertion alone would wave through.
+
+✅ **Test fix:** fonts are served from `public/fonts`, and the sweep now **throws on any unmatched http(s) call** rather than passing it through, so its contract is enforced instead of aspirational. Non-http(s) still delegates — `next/og` loads its Satori/resvg WASM through the same global fetch.
+
+🚨 **FILED NOT FIXED — closing the passthrough immediately surfaced a second escape nobody had recorded:** `next/og` fetches **Twemoji SVGs from `cdn.jsdelivr.net` at RENDER time**, so `og/collection`, `og/deal`, `og/pack` and `og/pack/lifecycle` reach a third-party CDN on every uncached production render. Same unbounded shape, on a host we do not control, in the path X's crawler waits on. Needs satori's `loadAdditionalAsset` pointed at local assets.
+
+⭐ **The reusable part: "flaky" was never the diagnosis.** One re-run would have gone green and both dependencies would still be live in production.
+
+**Verification:** tsc clean · full suite **1396 files / 15346 tests** · primary gate 92.23 / 80.00 / 94.00 / 94.22 against 91.8 / 79.4 / 93.6 / 93.85.
+
+**Revert path:** `git revert` the code commit — restores the unbounded `fetch(u)` and the network passthrough in the sweep. No DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the deals-board honesty now works WITHOUT JavaScript, found by verifying the live page instead of trusting the deploy
 
 **Revert:** `git revert <sha of the commit named below>` — the server page, the client

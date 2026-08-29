@@ -218,6 +218,24 @@ The sentinel case is the instructive one because of how it passed review:
 
 ---
 
+## 🚨 N. THE OG RENDER PATH FETCHES TWO THIRD-PARTY-ISH URLS, UNBOUNDED — one fixed, one filed
+
+**Found by root-causing a CI "flake" instead of re-running it.** Run 4202 (2026-08-29) failed `api-og-cards-render-sweep` on `app/api/og/insights/squeeze-check/route` with *Test timed out in 60000ms*. Measured locally, that same test takes **83 ms** and the slowest test in the file takes 950 ms.
+
+⭐ **The discriminator that made it worth chasing: the whole run was only ~15% slower than local (453 s vs 395 s), but that one test was ~720× slower.** General slowness moves everything by the same factor. A single 720× excursion is a HANG.
+
+**Root cause, proven with a probe rather than inferred.** `lib/og/brand-fonts.ts` fetches `${BASE_URL}/fonts/BarlowCondensed-Black.ttf` and `.../ShareTechMono-Regular.ttf`, where `BASE_URL` defaults to `https://www.rippackscity.com`. The sweep's `isAppApiRequest` allowlisted only `/api/` and `/rest/v1/`, so **0 of 2 matched and both fell through to the real network on every CI run** — against the file's own header, which says *"No card in this sweep may touch the network."* The loader **memoises at module scope**, so the first card to render pays the fetch; that is why exactly ONE test hangs and why WHICH one varies with execution order, i.e. why it read as a random flake.
+
+✅ **FIXED (production):** the fetch is now bounded — `AbortSignal.timeout(5_000)`. ⚠ **It had no timeout at all**, against CLAUDE.md's explicit *"Bound every `fetch` — no default timeout."* The header's *"THIS NEVER REJECTS"* guarantee was true and beside the point: **`catch` cannot catch a hang.** 39 call sites await this promise, so one stalled connection takes the entire OG surface to `maxDuration`. Pinned by a structural assertion (every font fetch carries an `AbortSignal`) plus a behavioural one (an abort degrades to `undefined`, same as a 404). ⭐ Mutation-checked three ways, including **a signal that never fires** — the unbounded case wearing a signal, which a "does it pass a signal?" test alone would wave through.
+
+✅ **FIXED (test):** the sweep serves the fonts from `public/fonts` and now **throws on any unmatched http(s) call** rather than passing it through, so its stated contract is enforced instead of aspirational. Non-http(s) still delegates — `next/og` loads its Satori/resvg WASM through the same global fetch, and a blanket stub kills every card with `expected magic word 00 61 73 6d`.
+
+🚨 **FILED, NOT FIXED — closing the passthrough immediately surfaced a second escape nobody had recorded.** `next/og` fetches emoji SVGs from **`https://cdn.jsdelivr.net/gh/twitter/twemoji/...` at RENDER time**, so four cards (`og/collection`, `og/deal`, `og/pack`, `og/pack/lifecycle`) reached a third-party CDN on every run of the suite — **and do so in production on every uncached render.** That is the same unbounded-external-fetch shape as the fonts, on a host we do not control, in the path X's crawler is waiting on. ⛔ Not fixed here: it needs satori's `loadAdditionalAsset` wired to local assets, which is a real change to how every emoji-bearing card renders and wants its own measurement of which cards actually carry emoji. Stubbed in the sweep so the suite is hermetic.
+
+⭐ **The reusable part: "flaky" was never the diagnosis.** One re-run would have gone green and the dependency on the live site — and on jsdelivr — would still be there, in production, unbounded. This repo's own rule is that *"flake" is not a root cause*; the 720×-vs-15% split is what makes that checkable rather than a slogan.
+
+---
+
 ---
 
 ## ⚠ I. Naming what CI structurally is here
