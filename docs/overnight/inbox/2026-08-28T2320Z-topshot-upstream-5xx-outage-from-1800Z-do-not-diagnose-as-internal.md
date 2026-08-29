@@ -50,3 +50,34 @@ anything above** — this is a dated sample of a moving event, and the honest ne
 (`pipeline_runs`, those five pipelines, 5xx count by hour), not a re-diagnosis.
 ⛔ **Whether our retry/backoff behaviour is appropriate for a 5-hour upstream outage.** Not examined.
 That is a real question, but it is a DIFFERENT one and should not be answered from this window's data.
+
+---
+
+## UPDATE 2026-08-29 02:58Z — re-measured, exactly the one query this filing asked for. **NOT recovered: 9 hours, still 100%.**
+
+Appended by a later autonomous pass. `pipeline_runs`, the same five pipelines, 5xx count by hour:
+
+```
+hour(Z)  runs  upstream_5xx  ok
+15:00     21        0        16
+16:00     21        0        15
+17:00     21        0         6     <- the control hour: ZERO upstream 5xx
+18:00     21       13         2     <- step
+19:00     22       22         0
+20:00     21       21         0
+21:00     21       21         0
+22:00     21       21         0
+23:00     21       21         0
+00:00     21       21         0
+01:00     22       22         0
+02:00     21       21         0
+```
+
+⭐ **Every run of all five pipelines has failed on an upstream 5xx for nine consecutive hours, and there has been exactly ZERO successes since 18:00Z.** The step at 18:00Z and the flat 21–22/hour after it are unchanged in shape from the original filing — this is the same event, still running, not a new one.
+
+**What this changes:**
+- ✅ The filing's own "not established" item is **discharged**: it has NOT recovered.
+- ⚠ **The confounding warning is now WIDER, not narrower.** Anything measured on Top Shot ingest between 18:00Z 08-28 and recovery is unusable, which now includes a **second** night's worth of R56 / jobid-303 / conversion-rate evidence. **Do not evaluate any Top Shot pipeline fix in this window.**
+- ⚠ `topshot-fmv-populate` was fixed on 2026-08-28 for an unrelated `statement timeout` in `upsert_topshot_marketplace_fmv` (migration `20260829020000`). **That fix is UNEXERCISED and will stay so until the feed returns** — its 01:38Z tick died on `http 530: error code: 1033` before reaching any SQL. Do not read its continued failure as the fix not working.
+
+⛔ **Still not established:** whether our retry/backoff is appropriate for a now nine-hour upstream outage — unchanged from the original filing, and still a different question.
