@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (CI) + ⛔ CORRECTION — "no eslint in CI" was a RULE-SET MISMATCH, not neglect
+
+**The morning filing recorded it as a plain gap. Measuring it changed the finding.** Over 2,857 files: **6,474 violations across 20 rules, of which 5,757 (89%) are `@typescript-eslint/no-explicit-any`** — which CLAUDE.md documents as a convention here (*"Supabase client typed `any` in API routes"*). Enabling eslint as a gate would be a 6,000-error wall that gets switched off within a day, so the absence was a decision the repo had effectively already made without writing down.
+
+⚠ **And I misread the report on the first pass.** I classified 24 messages as *"files eslint could not parse"* — which would have been a much more alarming finding. They are **unused `eslint-disable` directives**; a message with no `ruleId` is a dead suppression, not a parse failure. **Zero files fail to parse.** Corrected before it reached the filing, and the distinction is now pinned by a test.
+
+✅ **SHIPPED: an eslint RATCHET rather than a gate** — `eslint-ratchet` job in ci.yml, `scripts/check-eslint-ratchet.mjs`, committed `eslint-ratchet.json`. This is the repo's own answer to this shape (the coverage gates, the fabricated-divisor ratchet, the local-stripper population ratchet that caught me earlier today).
+
+⭐ **Design points, each pinned and mutation-checked:**
+- **`no-explicit-any` is excluded at the RULE's granularity, not the plugin's.** Muting `@typescript-eslint` wholesale would also silence `no-unused-expressions`, `no-require-imports` and `no-empty-object-type`, which are not conventional here and are in the baseline precisely so they stay bounded.
+- **A rule NOT in the baseline that appears is a FAILURE.** An unmeasured rule is not a pass — that is exactly how a ratchet goes blind after a plugin upgrade adds a rule.
+- **It refuses an all-clear on a missing or empty report**, because *"eslint found nothing"* and *"eslint did not run"* produce the same zero. `|| true` on the eslint step is required (eslint exits 1 whenever it reports an error, and this is `bash -e`) and does not hide a crash: an absent report exits 2.
+- A rule reaching **zero is surfaced** so its baseline entry gets deleted; a baseline that describes the past is worse than none.
+
+The residual it bounds is **717 across 19 rules**, several correctness rather than style: `react-hooks/set-state-in-effect` (59), `@next/next/no-html-link-for-pages` (114), `react-hooks/static-components` (15), `react-hooks/purity` (6).
+
+**Verified end-to-end exactly as CI runs it, three ways:** clean → exit 0 (717 == 717); an injected `var` + unused expression → exit 1 naming both grown rules with before/after; missing report → exit 2. Five mutations, each landing on one test.
+
+⚠ **Baseline reproducibility checked, not assumed:** eslint lints 3 files under `coverage*/` locally that will not exist in CI, and they contribute **0** ratcheted violations, so the count is stable across environments. Re-measure with `--write` before quoting 717 as current.
+
+**Verification:** tsc clean · full suite **1401 files / 15389 tests** green · eslint job ~2m18s, parallel with the existing ten.
+
+**Revert path:** `git revert` the code commit — removes the CI job, the script, the baseline, the npm script and 9 tests. No production behaviour changes; this ships no runtime code.
+
 ### 2026-08-29 · ✅ SHIPPED (test) — a brand-new OG guard could never pass on Windows, and the bug was two `.replace()` calls in the wrong order
 
 **Found by the closing full-suite run, on a guard added ~25 minutes earlier by the concurrent session (`74151b7e3`).** `og-cards-do-not-silently-acquire-a-cdn-dependency` reported **all six of its own RECORDED routes as unrecorded** — 2 of 4 cases red, **deterministic 2 of 2 in isolation**, so `main` was genuinely red and had been for ~25 minutes across 7 intervening commits.
