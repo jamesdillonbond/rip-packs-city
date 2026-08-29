@@ -190,6 +190,34 @@ The sentinel case is the instructive one because of how it passed review:
 
 ---
 
+## 🚨 M. FINDING A, SHARPENED AND PARTLY CORRECTED — it is a CAP at ~5 runs/day, not a percentage
+
+✅ **SHIPPED:** `scripts/check-scheduler-liveness.mjs` + `.github/workflows/scheduler-liveness.yml` (daily 08:17Z; daily schedules are the ones surviving). Tree walk over `.github/workflows`, 19 tests, 9 mutations. ⛔ **Its header states what it cannot do:** at a 12.7h observed max gap no silence bound both clears today's steady state and catches an hourly job that stopped an hour ago, so it does **not** detect the shedding — it catches TOTAL silence (a workflow GitHub disabled, renamed, a cron edited into a shape that never fires, a day-long outage), all of which are invisible today.
+
+⭐ **Its first live run produced a better measurement than my sampling did, and it corrects me twice.**
+
+| cron asks | observed in 24h | ratio |
+|---|---|---|
+| 96/day (offer-fill-backfill, topshot-sales-history-backfill) | **5**, 5 | 5% |
+| 72/day (allday-ingest, pinnacle-owner-discovery, rpc-pipeline) | **5**, 5, 5 | 7% |
+| 49/day (ops-monitor) · 48/day (sales-indexers-backstop) | **6**, 5 | 10–12% |
+| 24/day (pipeline-sentinel) | **4** | 17% |
+| 8/day | 4, 6 | 50–75% |
+| 4/day | 3, 3 | 75% |
+| 1/day (×3) | 1, 1, 1 | **100%** |
+
+**Observed is not a constant FRACTION of expected — it is approximately `min(expected, 5)`.** Eight workflows asking for 24–96/day all received 4–6, mean **5.0**, with no relationship to whether they asked for 24 or 96.
+
+⛔ **Correction 1 — my stated cause was wrong.** I wrote that 561 scheduled runs/day was "the most likely reason it is being shed", implying a per-repo budget. The cross-section does not support that framing, and it changes the remedy: **reducing total load would not help if the limit is per-workflow.**
+
+⛔ **Correction 2 — "~92% shed" understates and overstates at once.** It is 95% for a 96/day cron and **0% for a daily one**. A single percentage across a fleet whose crons span 1–96/day is the wrong summary statistic; the cap is.
+
+🚨 **The actionable consequence: any cron above ~5/day in this repo is fiction, and raising a cadence buys nothing.** `offer-fill-backfill` asks for 96 ticks and gets 5. Every high-frequency GHA schedule here should either move to cron-job.org or have its cron rewritten to state what it actually gets, because a `9,24,39,54 * * * *` that yields 5 runs is a false document.
+
+⚠ **ONE 24-hour window, n=17.** The cap value ~5 is a point estimate — re-derive from this check's own output, which now prints it on every run. 👉 **Discriminator this window cannot settle:** disable a few high-frequency workflows and see whether the others' counts RISE (a per-repo budget) or hold at ~5 (a per-workflow cap).
+
+---
+
 ---
 
 ## ⚠ I. Naming what CI structurally is here

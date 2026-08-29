@@ -10,9 +10,24 @@ name: Scheduler liveness
 #   RPC Ops Monitor    (49/day)  median gap 1.2h, MAX 12.3h  ->  4
 #   RPC Data Pipeline  (72/day)  median gap 1.1h, MAX 11.4h  ->  3
 #
-# On 08-23/24, before it began, the sentinel's max gap was 2.3h. The repo asks
-# GitHub for 560 scheduled runs a day across 17 workflows, which is the most
-# likely reason it is being shed.
+# On 08-23/24, before it began, the sentinel's max gap was 2.3h.
+#
+# ⭐ CORRECTED 2026-08-29 20:24Z BY THIS CHECK'S OWN FIRST RUN. I had written that
+# the repo asking for 561 runs/day was "the most likely reason it is being shed",
+# implying a per-repo budget. The cross-section refutes the framing: observed is
+# not a constant FRACTION of expected, it is approximately min(expected, 5).
+# Eight workflows asking for 24-96/day all received 4-6 (mean 5.0) — 96 -> 5,
+# 72 -> 5, 24 -> 4 — while the 1/day workflows received 1/1.
+#
+# ⛔ SO ANY CRON ABOVE ~5/DAY HERE IS FICTION, and raising a cadence buys nothing:
+# offer-fill-backfill asks for 96 and gets 5. That is a different fix from
+# "reduce total load".
+#
+# ⚠ ONE 24h WINDOW, n=17. The cap value ~5 is a point estimate — re-derive from
+# this check's own output before quoting it. Discriminator between a per-WORKFLOW
+# cap and a per-REPO budget, which this window cannot separate: disable a few
+# high-frequency workflows and see whether the others' counts RISE (budget) or
+# hold at ~5 (per-workflow cap).
 #
 # Nothing detected this. The workflow reads `active`, its last run reads
 # `success`, and no instrument anywhere says "the alarm did not fire" — an

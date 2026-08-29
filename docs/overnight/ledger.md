@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ⛔ CORRECTION — the shedding is a CAP at ~5 runs/day, not a percentage, and my stated cause was wrong
+
+**The liveness detector I shipped an hour ago corrected its own filing on its first live run**, which is the best argument for it I could have made.
+
+Cross-section, 24h window, n=17. Observed is **not** a constant fraction of expected — it is approximately **min(expected, 5)**: 96→5, 96→5, 72→5, 72→5, 72→5, 49→6, 48→5, 24→**4** (eight workflows, mean **5.0**, no relationship to whether they asked for 24 or 96), while 8/day→4 and 6, 4/day→3 and 3, and all three **1/day workflows got 1 of 1**.
+
+⛔ **My stated CAUSE was wrong.** Both the morning filing and this workflow's own header said 561 scheduled runs/day was "the most likely reason it is being shed", implying a per-repo budget. The cross-section does not support that framing, and it changes the remedy — **reducing total load would not help if the limit is per-workflow.** Corrected in the workflow header too, not only here: a correction that lands in a dated entry while the canonical text stays stale is how the stale claim keeps being quoted.
+
+⛔ **"~92% shed" is also the wrong summary statistic** — it is 95% for a 96/day cron and **0%** for a daily one. A single percentage across crons spanning 1–96/day hides the shape; the cap is the shape.
+
+🚨 **Actionable consequence: any cron above ~5/day here is fiction, and raising a cadence buys nothing.** `offer-fill-backfill` asks for 96 ticks and receives 5. Every high-frequency GHA schedule should either move to cron-job.org or have its cron rewritten to state what it actually gets, because a `9,24,39,54 * * * *` that yields 5 runs is a false document that the next reader will trust.
+
+⚠ **One 24-hour window, n=17. The ~5 is a POINT ESTIMATE** — re-derive from the check's own output, which now prints it daily. 👉 **Discriminator this window cannot settle:** disable a few high-frequency workflows and see whether the others' counts RISE (a per-repo budget) or hold at ~5 (a per-workflow cap).
+
+**Revert path:** docs + one workflow comment block; `git revert` this commit. No DB half, no behaviour change.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — `/insights/deals` stops implying a 28-hour-old Top Shot ask is live
 
 **Revert:** `git revert <sha of the commit named below>` — one client component + one
