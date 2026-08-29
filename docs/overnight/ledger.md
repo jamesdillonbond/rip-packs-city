@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ VERIFIED in production — `topshot-deal-floor-serials` told the truth for the first time in 22 hours
+
+No new code; this records the first post-deploy run of `f8d8f90fc` (deploy
+`dpl_5JNhAMmEfVMfYqo6CkKjUPZN14ye`, READY 17:41:16Z; the 17:37 run was still pre-fix).
+
+**18:37:03Z — the first honest row:**
+
+| field | before (21 runs) | 18:37:03Z |
+|---|---|---|
+| `ok` | **true** | **false** |
+| `error` | `null` | `resolved 0 of 10 deal editions; 10 fetch errors; first: Top Shot GraphQL failed with 530…` |
+| `extra.first_gql_error` | *absent* | the 530 body |
+| `gql_errors` / `listings_found` / `rows_written` | 10 / 0 / 0 | 10 / 0 / 0 (unchanged) |
+
+⭐ **The counters did not move — only the honesty did**, which is the point: the run was
+always failing, and now says so. ⭐ **And the `error` column now names the ROOT CAUSE.**
+Identifying this outage earlier today required reading a *different* pipeline's error
+column, because this one wrote `null` while reporting success; the aggregate it produced
+("23 runs, 22 ok") is what I quoted as evidence the endpoint was healthy. Both are fixed by
+the same row.
+
+⚠ **`wallet-username-resolver` is NOT yet verified and may not be for hours.** Its 18:08Z
+slot did not fire. Checked before treating that as a symptom: over 14 days its inter-run
+gap is **p50 180 min, p95 360 min, max 360 min**, against a `max_silent_minutes` arm of
+**450** — so **skipping a slot entirely is normal for this pipeline** and the arm is
+correctly set above it. Next expected 21:08Z. ⛔ Do not read the missed slot as a
+regression from the fix; the fix touches only `ok`/`error` derivation inside the `after()`
+body and cannot prevent an invocation.
+
+⚠ The 18:37 run took **88,187 ms** — retry backoff against a dead endpoint, unchanged by
+this fix and not caused by it (pre-fix runs ran 27–38 s; the difference is upstream latency
+under the outage, not new work). Worth watching only if it approaches `maxDuration`.
+
 ### 2026-08-29 · ✅ SHIPPED (code) + ⛔ CORRECTION — the sentinel reported GREEN while completely down, and two of my own audit findings were wrong
 
 Follow-up to today's CI/testing audit. Two shipped fixes and two corrections to the filing.
