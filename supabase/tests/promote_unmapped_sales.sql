@@ -543,15 +543,6 @@ BEGIN
   RETURN v_run;
 END;
 $function$;
-
--- The tx-hash-collision class no longer exists (idx_sales_tx_nft_sold, aa609eb1),
--- so every surviving marker is stale by construction. Clearing it (and the
--- 30-day recheck horizon it carries) lets the next tick reclassify these rows
--- through the new `merged_cross_source` arm instead of leaving them parked.
-UPDATE public.unmapped_sales
-   SET resolution_hint = resolution_hint - 'promote_blocked' - 'promote_blocked_at' - 'promote_recheck_after'
- WHERE resolved_at IS NULL
-   AND resolution_hint->>'promote_blocked' = 'sales_tx_hash_unique_collision';
 -- <<< END verbatim promote_unmapped_sales <<<
 
 -- ⚠ WHAT THIS FILE CANNOT COVER, SAID PLAINLY RATHER THAN FAKED.
