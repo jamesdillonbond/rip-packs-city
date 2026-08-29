@@ -3,6 +3,8 @@ import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
 import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { collectionHasPage, type CollectionPage } from "@/lib/collections"
+import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
+import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -784,7 +786,41 @@ export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValu
 // Edition → Product (+ BreadcrumbList). detail = get_edition_detail payload.
 // lowAsk (edition_offers.low_ask, threaded from the page) lets NO_DATA editions
 // still satisfy the Product-snippet "offers/review/aggregateRating" requirement.
-export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk?: number | null): LdValue {
+//
+// 🚨 lowAskUpdatedAt ADDED 2026-08-29, and it closes a hole the rest of this function
+// was already careful about. The signature had NO timestamp at all, so a stale ask was
+// structurally unqualifiable — and on 2026-08-29 `offers-sweep` had not confirmed an
+// ask in 31 hours while this function published every one of them to Google as
+// `availability: InStock`, with no expiry. The premise is written down four lines
+// below: *"a live low ask is still a real, reliable price even on STALE."* **That is
+// the sentence that broke** — it was true of a feed that re-checked hourly and false
+// of one that had stopped.
+/**
+ * Hours since an ask was last confirmed. `undefined` when the caller supplied no
+ * timestamp at all (legacy), `null` when it supplied one we cannot read.
+ */
+function askAgeHoursFrom(iso: string | null | undefined): number | null | undefined {
+  if (iso === undefined) return undefined
+  if (iso === null) return null
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return null
+  return (Date.now() - t) / 3_600_000
+}
+
+export function editionJsonLd(
+  detail: Payload,
+  collectionUrlSlug: string,
+  lowAsk?: number | null,
+  /**
+   * When `lowAsk` was last CONFIRMED (edition_offers.updated_at). Three states:
+   *   - an ISO string → dated; drives the expiry / suppression below
+   *   - `null`        → we hold an ask we cannot date → treated as ANCIENT, no Offer
+   *   - omitted       → caller is not age-aware (legacy path, prior behaviour)
+   * ⚠ The null case is stricter than the omitted case, for the same reason as in
+   * lib/fmv-confidence.ts: an undatable ask is exactly what this gate exists to catch.
+   */
+  lowAskUpdatedAt?: string | null,
+): LdValue {
   const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const slug = s(detail, "route_slug") ?? s(detail, "external_id") ?? ""
   const url = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(slug)}`
@@ -840,14 +876,44 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
       : lowAsk != null && Number.isFinite(lowAsk) && lowAsk > 0
         ? lowAsk
         : null
-  if (priceUsd !== null) {
-    product.offers = {
+  // ⚠ THE ASK BRANCH IS THE ONLY ONE THAT NEEDS AN AGE. When `fmvUsable`, the price
+  // is a modelled FMV and the ask's age is irrelevant to it — gating that branch would
+  // suppress Offers for no reason. So the age only bites where the ask IS the price.
+  const priceFromAsk = priceUsd !== null && !fmvUsable
+  const askAgeHours = priceFromAsk ? askAgeHoursFrom(lowAskUpdatedAt) : undefined
+  // ⛔ Beyond the corroboration bound an ask has stopped being evidence (see
+  // lib/fmv-confidence.ts for the measurement behind that number), so publish nothing
+  // rather than a price we cannot stand behind. `null` — an ask we hold and cannot
+  // date — lands here too.
+  const askTooOldToPublish =
+    priceFromAsk && (askAgeHours === null || (askAgeHours ?? 0) >= MAX_ASK_AGE_HOURS_CORROBORATION)
+  if (priceUsd !== null && !askTooOldToPublish) {
+    const offer: Payload = {
       "@type": "Offer",
       price: Math.round(priceUsd * 100) / 100,
       priceCurrency: "USD",
       availability: "https://schema.org/InStock",
       url,
     }
+    // ⭐ `priceValidUntil` RATHER THAN DROPPING THE OFFER, for the merely-stale case.
+    // schema.org has a field for exactly this claim, and it is the honest one: we
+    // vouch for the price until ASK_STALE_HOURS past the last time we CONFIRMED it,
+    // and no further. A fresh ask therefore carries a future expiry (accurate); a
+    // 31-hour-old one carries a past expiry (also accurate, and Google reads an
+    // elapsed priceValidUntil as a reason to distrust the price rather than to trust
+    // it). ⚠ Dropping the Offer outright at 12 h was the alternative and is worse for
+    // readers: it deletes the Product rich-result from thousands of NO_DATA edition
+    // pages during any upstream outage — an SEO cost with no honesty gain over an
+    // accurate expiry.
+    if (priceFromAsk && typeof askAgeHours === "number") {
+      const confirmedAtMs = Date.parse(String(lowAskUpdatedAt))
+      if (!Number.isNaN(confirmedAtMs)) {
+        offer.priceValidUntil = new Date(confirmedAtMs + ASK_STALE_HOURS * 3_600_000)
+          .toISOString()
+          .slice(0, 10)
+      }
+    }
+    product.offers = offer
   }
   return {
     "@context": "https://schema.org",
