@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED (no prod change) — the Studio endpoint CANNOT replace the dead Top Shot API, and the schema check alone would have shipped a data-destroying migration
+
+**What was measured.** The 1810Z filing left one open step: re-introspect studio-platform for a Top Shot editions/asks root field, "from an environment with egress". The sandbox proxy denies both hosts, so the probes were dispatched **from the database** via `net.http_post` and read back from `net._http_response` — ⭐ **an egress path that is neither the sandbox nor a deploy, and this repo had not used it for schema work.**
+
+**Two results.** (1) EXHAUSTIVE introspection — 63 root fields — and **Top Shot is the one collection with no `search*Editions`** (AllDay, Golazos, Pinnacle all have one). (2) 🚨 **`searchTopShotNftAggregation` LOOKED like a complete substitute** — `listing.price { min }` grouped by `edition.id`, and `TopShotNftFilter` even accepts `tags: TopShotTagListFilter`, the badge sweep's filter by name — **and every field validated live.** ⛔ **The index is empty: `searchTopShotNft` and `searchTopShotNftAggregation` both return `totalCount: 0` WITH NO FILTERS AT ALL.**
+
+**Controls in both directions** (a null result needs a positive control): `searchPackNftAggregation` **1,998** rules out endpoint/headers/mechanics; `searchAllDayNft` **338,533** rules out the query shape — same shape, sibling index; `searchTopShotMarketplaceHistory` **34** rules out "Studio does not serve Top Shot".
+
+⭐⭐ **The transferable lesson, and the reason this is in the ledger rather than only the inbox: it answers `{"totalCount":0,"edges":null}` under a `200`.** A migration written off the validated schema would have run **green on its first tick** and rewritten every Top Shot ask to "no listings" — this platform's most expensive defect class, pointed at its own database. **A schema is a claim about what CAN be asked, never about what is there. Probe the DATA before migrating to a field, not the type.**
+
+⛔ **Closes:** moving `offers-sweep` / `topshot-fmv-populate` / `topshot-badge-sync` / `topshot-moments-hydrator` to studio-platform. ✅ **Leaves open:** the `searchTopShotMarketplaceHistory` sales-history lane — **a cross-check, not outage relief.** 👉 Falsifier costs one query: re-probe `searchTopShotNft` unfiltered; non-zero voids this.
+
+⚠ **Needs Trevor (unrelated, found while probing):** selecting `net.http_request_queue.url` to check queue depth printed a **live pg_cron gate key** for `backfill-topshot-pack-sales` into a session transcript (value deliberately not recorded anywhere). **Rotate it**, and treat that column like `get_edge_function` — select `id`/`count(*)`, or `split_part(url,'?',1)`.
+
+**Revert path:** docs only — `git revert <sha of "docs(inbox): no Studio replacement for Top Shot moment asks">`. No code, no DB.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the badge sweep reported `ok: true` through a TOTAL upstream outage, and the run row I added hours earlier is what caught it
 
 **What shipped.** `app/api/badge-sync/route.ts` — `sweep()` now carries its fetch failures out to the caller (`SweepFailures = {count, first}`, threaded through all five call sites), and the run's `ok` gains a third failure mode: `blindSweep = sweepFailures.count > 0 && rows.length === 0`. `pipeline_runs.error` names it; `extra` gains `sweep_failures` and `first_sweep_error`, **always emitted, including as 0** — an absent key cannot answer "empty, or blind?", which is the only question they exist for.
