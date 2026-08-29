@@ -64,6 +64,8 @@ export const OG_CACHE_HEADERS = {
   "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
 } as const;
 
+export const FONT_FETCH_TIMEOUT_MS = 5_000;
+
 let fontsPromise: Promise<ArrayBuffer[] | null> | null = null;
 
 function loadBrandFontBytes(): Promise<ArrayBuffer[] | null> {
@@ -74,7 +76,26 @@ function loadBrandFontBytes(): Promise<ArrayBuffer[] | null> {
           `${BASE_URL}/fonts/BarlowCondensed-Black.ttf`,
           `${BASE_URL}/fonts/ShareTechMono-Regular.ttf`,
         ];
-        const res = await Promise.all(files.map((u) => fetch(u)));
+        // ⚠ BOUNDED. CLAUDE.md: "Bound every `fetch` — no default timeout."
+        // This one had none, and it is the whole render path's critical section:
+        // 39 call sites await it, the promise is memoised at module scope, so a
+        // single stalled connection hangs EVERY card until the lambda's
+        // maxDuration — and `catch` cannot catch a hang, only a rejection. The
+        // header below says "THIS NEVER REJECTS"; that was true and beside the
+        // point, because the failure mode is a hang, not a throw.
+        //
+        // Observed 2026-08-29 in CI, which is where an unbounded fetch shows up
+        // first: `api-og-cards-render-sweep` timed out at 60,000 ms on a test
+        // that takes 83 ms locally — a ~720x excursion on a run only 15% slower
+        // overall, so not general slowness. The memo is why exactly ONE test in
+        // the file hangs and why WHICH one varies with execution order.
+        //
+        // 5s is generous for two small static files served from our own origin;
+        // an abort lands in the catch below and degrades to undefined fonts,
+        // which is already the documented, tested behaviour.
+        const res = await Promise.all(
+          files.map((u) => fetch(u, { signal: AbortSignal.timeout(FONT_FETCH_TIMEOUT_MS) })),
+        );
         if (res.some((r) => !r.ok)) return null;
         const bufs = await Promise.all(res.map((r) => r.arrayBuffer()));
         // Validate the bytes, not the response — see (1) and (2) above.

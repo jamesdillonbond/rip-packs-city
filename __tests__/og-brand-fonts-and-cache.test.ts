@@ -104,6 +104,45 @@ describe("brandFonts", () => {
     await expect(brandFonts()).resolves.toBeUndefined()
   })
 
+  it("BOUNDS the fetch — an unbounded one hangs every card until maxDuration", async () => {
+    // The failure mode is a HANG, not a rejection, so the "never rejects"
+    // guarantee above says nothing about it: `catch` cannot catch a stall. The
+    // promise is memoised at module scope and 39 call sites await it, so one
+    // stalled connection takes the whole OG surface down until the lambda dies.
+    //
+    // Observed in CI on 2026-08-29 before this was bounded: the OG render sweep
+    // timed out at 60,000 ms on a card that renders in 83 ms locally.
+    stubFetch("font")
+    const { brandFonts, FONT_FETCH_TIMEOUT_MS } = await freshModule()
+    await brandFonts()
+
+    const calls = (globalThis.fetch as any).mock.calls
+    expect(calls.length).toBeGreaterThan(0)
+    for (const [, init] of calls) {
+      expect(init?.signal, "every font fetch must carry an abort signal").toBeInstanceOf(AbortSignal)
+    }
+    // A bound that is not actually a bound is the thing to guard against: a
+    // signal that never fires is the unbounded case wearing a signal.
+    expect(FONT_FETCH_TIMEOUT_MS).toBeGreaterThan(0)
+    expect(FONT_FETCH_TIMEOUT_MS).toBeLessThanOrEqual(15_000)
+  })
+
+  it("degrades to undefined when the bound fires, exactly as a 404 does", async () => {
+    // What a real timeout produces at the call site. Asserted behaviourally
+    // rather than by waiting 5 real seconds — the point is that an abort lands
+    // in the same catch as every other failure, not that the clock works.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("The operation was aborted due to timeout"), {
+          name: "TimeoutError",
+        })
+      }),
+    )
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+  })
+
   it("memoizes, so a warm invocation pays the fetch once", async () => {
     stubFetch("font")
     const { brandFonts } = await freshModule()

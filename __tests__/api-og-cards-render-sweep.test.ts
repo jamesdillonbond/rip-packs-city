@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
+import { readFileSync, existsSync } from "node:fs"
+import { join } from "node:path"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OG card render sweep — every /api/og/** card must emit REAL PNG BYTES.
@@ -345,12 +347,76 @@ function isAppApiRequest(input: RequestInfo | URL): boolean {
   // Without this the card's fetches escaped to the real network, failed, and it
   // rendered its FALLBACK — which is a valid PNG, so the sweep stayed green
   // while the whole data branch (11 of 15 functions) never ran.
-  return url.includes("/api/") || url.includes("/rest/v1/")
+  // `/fonts/*.ttf` is the RENDERER's, not the card's — but it is still an
+  // http(s) call to our own origin, and it was falling through to the real
+  // network on every CI run. Measured 2026-08-29: the loader fetches
+  // https://www.rippackscity.com/fonts/{BarlowCondensed-Black,ShareTechMono-
+  // Regular}.ttf, and 0 of 2 matched this predicate. The file's own header says
+  // no card in this sweep may touch the network; it did, ~every run.
+  //
+  // The consequence was not just impurity. `loadBrandFontBytes` memoises at
+  // module scope, so the FIRST card to render paid that fetch — and when the
+  // connection stalled on a CI runner, that one test hung to vitest's 60,000 ms
+  // timeout against an 83 ms local render (run 4202, 2026-08-29). Which card it
+  // was varied with execution order, which is why it read as a random flake.
+  // ⭐ AND TWEMOJI. Closing the passthrough surfaced a second escape nobody had
+  // recorded: `next/og` fetches emoji SVGs from
+  // https://cdn.jsdelivr.net/gh/twitter/twemoji/... at RENDER time, so four
+  // cards (collection, deal, pack, pack/lifecycle) reached a third-party CDN on
+  // every run of this suite — and, more importantly, do so IN PRODUCTION on
+  // every uncached card render. Filed separately; stubbed here so the suite is
+  // hermetic and cannot hang on someone else's CDN.
+  return (
+    url.includes("/api/") ||
+    url.includes("/rest/v1/") ||
+    url.includes("/fonts/") ||
+    url.includes("twemoji")
+  )
+}
+
+/** A minimal valid SVG, so an emoji renders as a shape rather than failing. */
+function twemojiStubResponse(): Response {
+  return new Response(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16"/></svg>',
+    { status: 200, headers: { "content-type": "image/svg+xml" } },
+  )
+}
+
+/**
+ * Real bytes from `public/fonts`, so intercepting the font fetch changes nothing
+ * about what the cards render — only where the bytes come from. Serving JSON
+ * here instead would fail `isSupportedFontBuffer`, silently drop the brand fonts
+ * from every card in the sweep, and quietly weaken what these renders assert.
+ */
+function localFontResponse(url: string): Response {
+  const name = url.split("/fonts/")[1]?.split("?")[0] ?? ""
+  const file = join(__dirname, "..", "public", "fonts", name)
+  if (!existsSync(file)) return new Response("not found", { status: 404 })
+  const bytes = readFileSync(file)
+  return new Response(new Uint8Array(bytes), {
+    status: 200,
+    headers: { "content-type": "font/ttf" },
+  })
 }
 
 function stubFetch(respond: (url: string) => Promise<Response>) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (!isAppApiRequest(input)) return originalFetch(input as never, init)
+    if (!isAppApiRequest(input)) {
+      const raw =
+        typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url
+      // ⛔ AN UNMATCHED http(s) CALL IS A FAILURE, NOT A PASSTHROUGH. The header
+      // says no card in this sweep may touch the network; before 2026-08-29 that
+      // was aspirational — the font fetch escaped here every run and hung one
+      // test to 60s in CI. Non-http(s) still delegates, because next/og loads
+      // its Satori/resvg WASM through this same global fetch.
+      if (/^https?:/i.test(raw)) {
+        throw new Error(
+          `sweep escaped to the network: ${raw}. Add it to isAppApiRequest and serve it a stub, ` +
+            `or the suite depends on prod being up and can hang on a slow upstream.`,
+        )
+      }
+      return originalFetch(input as never, init)
+    }
     const url =
       typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url
     return respond(url)
@@ -367,6 +433,8 @@ beforeEach(() => {
   // may touch the network: an unstubbed fetch would make the suite dependent on
   // prod being up, and on a slow/500 upstream it would assert the WRONG card.
   stubFetch(async (url) => {
+    if (url.includes("/fonts/")) return localFontResponse(url)
+    if (url.includes("twemoji")) return twemojiStubResponse()
     const body = url.includes("/rest/v1/") ? restRowsFor(url) : UNIVERSAL_JSON
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -410,6 +478,31 @@ function assertRealPng(buf: Buffer, res: Response, path: string) {
   expect(buf.readUInt32BE(16)).toBe(size.w)
   expect(buf.readUInt32BE(20)).toBe(size.h)
 }
+
+describe("the sweep is hermetic", () => {
+  // Added 2026-08-29 after run 4202 timed out at 60,000 ms on a card that
+  // renders in 83 ms locally. Cause: `loadBrandFontBytes` fetched
+  // /fonts/*.ttf from the LIVE SITE — 0 of 2 matched isAppApiRequest, so both
+  // fell through to the real network on every run — and the loader memoises at
+  // module scope, so the first card to render paid it and hung when that
+  // connection stalled. Which card varied with execution order, which is why it
+  // read as a random flake rather than a dependency.
+  //
+  // Closing the passthrough immediately surfaced a SECOND escape nobody had
+  // recorded: next/og fetches Twemoji SVGs from cdn.jsdelivr.net at render time.
+  //
+  // ⚠ This pins the GUARD, not the two URLs. Listing them would pass just as
+  // happily with the passthrough reopened.
+  it("throws on an unmatched http(s) call instead of reaching the network", async () => {
+    await expect(fetch("https://example.invalid/anything")).rejects.toThrow(/escaped to the network/)
+  })
+
+  it("still delegates non-http(s) URLs, which is how next/og loads its WASM", async () => {
+    // The load-bearing exception. A blanket stub hands the JSON envelope to
+    // WebAssembly.instantiate and every card dies for an unrelated reason.
+    await expect(fetch("data:text/plain,hello").then((r) => r.text())).resolves.toBe("hello")
+  })
+})
 
 describe("OG card render sweep — real PNG bytes, never a 0-byte 200", () => {
   for (const card of CARDS) {
