@@ -10,23 +10,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
-<<<<<<< Updated upstream
-### 2026-08-29 · ✅ SHIPPED (guard) — an emoji in an OG card is a third-party CDN dependency, and nothing said so
-
-Follow-up to this evening's OG finding, now SIZED rather than estimated. Tree walk over all **44** OG routes with comments stripped: **6 render a hardcoded emoji** — `collection`, `deal`, `insights/serial-premiums`, `pack`, `pack/lifecycle`, `profile/[username]` — and **none sets an explicit `maxDuration`** (5 `runtime=edge`, 1 `nodejs`). Codepoints observed escaping to `cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2`: 🎯 `1f3af`, 🎴 `1f3b4`, 📦 `1f4e6`.
-
-⚠ **Two of the six never appeared in the render sweep's escapes** (`insights/serial-premiums`, `profile/[username]`) because their emoji sit on branches its fixtures do not take. **So the sweep and this source scan are two DIFFERENT lower bounds, and neither is a census** — `og/collection` renders `collection?.icon ?? "🎴"`, so a collection whose icon is an emoji reaches the CDN through DATA, which no source scan can see.
-
-⛔ **No central fix exists, which is why this is a guard and not a repair.** `ImageResponseOptions` exposes exactly one knob, `emoji?: EmojiType`, and every preset (`twemoji`, `openmoji`, `blobmoji`, `noto`) is a remote URL; there is **no `loadAdditionalAsset` hook on the public API**. Moving to local assets means leaving `ImageResponse`. Stripping the emoji from six cards is a design call, not a cleanup, and I did not make it unasked.
-
-✅ **Shipped: `og-cards-do-not-silently-acquire-a-cdn-dependency`.** Records the six and reds when a SEVENTH appears, so acquiring a CDN dependency on the path a social crawler waits on becomes a visible decision. The recorded set may shrink freely and only grows deliberately; a second case reds if the list names a route that no longer renders one, so it cannot rot into a description of the past. **Three mutations: a new emoji is caught; a dropped one reds the anti-rot case; and a false-positive control proves an emoji in a COMMENT does not trip it.**
-
-⭐ **A third existing guard caught me mid-build** — `guards-use-the-shared-comment-stripper` reddened because I had rolled my own stripper (CLAUDE.md's rule, enforced as a ratchet). Re-pointed at `scripts/lib/strip-comments.mjs`; and since that file also records that USING the shared stripper is not proof it stripped — it has been blind three times — the comment-only case is kept as a control on the stripping rather than as a formality. Today's tally: the Windows main-module guard, the vitest-config gate guard, and this one all caught me before CI did.
-
-**Verification:** tsc clean · full suite **1397 files / 15356 tests** green.
-
-**Revert path:** `git revert` this commit deletes the guard and its 4 cases. No production behaviour changes — this ships no runtime code.
-=======
 ### 2026-08-29 · ✅ SHIPPED (code) — the retired "Refreshes continuously" claim was still in the DEPLOYED HTML twice, in the place it can never be withdrawn from
 
 **Found by fetching the deployed page, not by a test.** Both boards' component tests asserted the ABSENCE of the claim and both were green. The live document still contained it — because it also lives in each board's **sibling `layout.tsx`**, in the JSON-LD `description` AND the route metadata. ⭐⭐ **A component test cannot see a sibling layout, so *"the page no longer says it"* was true of the page and false of the DOCUMENT.** Six copies of one sentence, and the grep that would have found all six was never run: CLAUDE.md's own rule — *when you find one, grep for the EXPRESSION, not the file* — applied to the fix, not just the diagnosis.
@@ -44,7 +27,23 @@ Follow-up to this evening's OG finding, now SIZED rather than estimated. Tree wa
 ⓘ **Noticed while verifying and NOT chased:** the live bid-vs-floor board reads **192 of 200 asks unconfirmed, oldest 87d**, with per-row markers up to `46d`. The 30 h outage explains 30 h, not 87 days — `topshot_offer_ask_spread` is carrying rows whose asks predate it by months, and whether those are real long-standing listings or abandoned rows is **unmeasured**. The marker is doing its job either way; the population behind it is a separate question.
 
 **Revert path:** `git revert <sha of "fix(insights): retire the freshness claim from the two board layouts">` (find by message). No DB half.
->>>>>>> Stashed changes
+
+### 2026-08-29 · ✅ SHIPPED (guard) — an emoji in an OG card is a third-party CDN dependency, and nothing said so
+
+Follow-up to this evening's OG finding, now SIZED rather than estimated. Tree walk over all **44** OG routes with comments stripped: **6 render a hardcoded emoji** — `collection`, `deal`, `insights/serial-premiums`, `pack`, `pack/lifecycle`, `profile/[username]` — and **none sets an explicit `maxDuration`** (5 `runtime=edge`, 1 `nodejs`). Codepoints observed escaping to `cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2`: 🎯 `1f3af`, 🎴 `1f3b4`, 📦 `1f4e6`.
+
+⚠ **Two of the six never appeared in the render sweep's escapes** (`insights/serial-premiums`, `profile/[username]`) because their emoji sit on branches its fixtures do not take. **So the sweep and this source scan are two DIFFERENT lower bounds, and neither is a census** — `og/collection` renders `collection?.icon ?? "🎴"`, so a collection whose icon is an emoji reaches the CDN through DATA, which no source scan can see.
+
+⛔ **No central fix exists, which is why this is a guard and not a repair.** `ImageResponseOptions` exposes exactly one knob, `emoji?: EmojiType`, and every preset (`twemoji`, `openmoji`, `blobmoji`, `noto`) is a remote URL; there is **no `loadAdditionalAsset` hook on the public API**. Moving to local assets means leaving `ImageResponse`. Stripping the emoji from six cards is a design call, not a cleanup, and I did not make it unasked.
+
+✅ **Shipped: `og-cards-do-not-silently-acquire-a-cdn-dependency`.** Records the six and reds when a SEVENTH appears, so acquiring a CDN dependency on the path a social crawler waits on becomes a visible decision. The recorded set may shrink freely and only grows deliberately; a second case reds if the list names a route that no longer renders one, so it cannot rot into a description of the past. **Three mutations: a new emoji is caught; a dropped one reds the anti-rot case; and a false-positive control proves an emoji in a COMMENT does not trip it.**
+
+⭐ **A third existing guard caught me mid-build** — `guards-use-the-shared-comment-stripper` reddened because I had rolled my own stripper (CLAUDE.md's rule, enforced as a ratchet). Re-pointed at `scripts/lib/strip-comments.mjs`; and since that file also records that USING the shared stripper is not proof it stripped — it has been blind three times — the comment-only case is kept as a control on the stripping rather than as a formality. Today's tally: the Windows main-module guard, the vitest-config gate guard, and this one all caught me before CI did.
+
+**Verification:** tsc clean · full suite **1397 files / 15356 tests** green.
+
+**Revert path:** `git revert` this commit deletes the guard and its 4 cases. No production behaviour changes — this ships no runtime code.
+
 
 ### 2026-08-29 · ✅ SHIPPED (code) — the ask-staleness honesty now covers the EDITION PAGE and BID-VS-FLOOR, and the second board was asserting the false claim in THREE places
 
