@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⏳ THE RETRY-SLICE FIX IS UNEXERCISED — 803 post-deploy runs, ZERO chunk errors, and ⛔ that zero is NOT evidence for it
+
+**Checking my own exit condition ~65 minutes after the `minAttemptSliceMs` deploy (22:57Z). The window
+looks spectacular and means almost nothing, so it is recorded before anyone books it.**
+
+| window (12 h) | runs | rows_written | avg duration | runs w/ chunk errors | rows lost |
+|---|---:|---:|---:|---:|---:|
+| pre-fix | 1,421 | 32,038 | 152,760 ms | **50** | **12,611** |
+| **post-fix** | **803** | **6,974** | **88,954 ms** | **0** | **0** |
+
+🚨 **MY FIX COULD NOT HAVE CAUSED THIS, AND SAYING OTHERWISE WOULD BE PLAINLY WRONG.**
+`minAttemptSliceMs` does not prevent a chunk from failing — it declines to issue a doomed third attempt
+and preserves the REAL last error instead of overwriting it with `RPC_TIMEOUT`. **It changes which error
+is reported, never whether one occurs.** A drop from 50 error-runs to 0 is therefore evidence about the
+DATABASE, not about this change.
+
+⭐ **And the confound is visible in the same table: average duration fell 152,760 → 88,954 ms (−42%).**
+The post-fix window is both **lower-volume** (8.7 rows/run vs 22.5) **and less saturated**. That is the
+same shape a sibling session falsified this morning on the board warmer — *"the warmer works" came from
+the quietest hour of the day* — and the same shape the 08-28 entry recorded for the 130 s deadline
+(*"a window with no big writes cannot falsify a big-write bug"*). **Third time this trap has appeared in
+this file in two days; it is the house speciality.**
+
+👉 **STATUS: the fix's stated exit condition is UNTESTABLE in this window, not met and not failed.**
+It was *"`timed out after` values in the 3–6 s range fall to ~0 while pool/lock messages rise by the same
+count"* — a statement about the MIX of chunk errors. **With zero chunk errors of any kind, there is no
+mix to read.** ⛔ Do not upgrade this to "verified"; ⛔ do not downgrade it to "no effect" either.
+
+**Re-arm on the CONDITION, not the clock:** the next window in which `chunk_errors > 0` occurs at all.
+Then read `extra->>'first_chunk_error'`: **PASS** = pool-acquire / lock-timeout messages dominate and the
+3–6 s `timed out after` cluster is gone. **FAIL** = 3–6 s values persist, meaning the slice is being
+consumed somewhere the floor cannot see.
+
+ⓘ **What the window DOES establish, narrowly:** 803 runs at a 130 s budget with the new floor introduced
+**no new failure mode** — no timeouts, no lost rows, duration down. That is a regression check passing.
+⛔ **It is not the fix being verified. Do not upgrade it**, which is the exact sentence the 08-28 entry
+had to write about the previous change to this same file.
+
+**Nothing shipped by this entry — verification status only. Revert path unchanged.**
+
 ### 2026-08-28 · 🔎 OPERATOR ITEM — `net._http_response` can NEVER be autovacuumed, because pg_net's worker writes without reporting tuple stats. 41 MB of heap for 709 live rows.
 
 **Found via `get_advisors(performance)`'s single `table_bloat` lint, which names the table and stops
