@@ -39,17 +39,27 @@ const PINS = [
   {
     // Added 2026-08-11. 129 call sites — more than any other RPC in the repo —
     // and the write path behind pipeline_runs, which detect_stalled_pipelines(),
-    // get_pipeline_alerts(), the sentinel and the daily rollup all read. Pins
-    // the COALESCE-to-0 counters: a NULL reaching the column would poison every
-    // downstream SUM and make a broken pipeline read as healthy-but-empty.
+    // get_pipeline_alerts(), the sentinel and the daily rollup all read.
+    // ⚠ THE COUNTER PIN WAS INVERTED 2026-08-28, and the rationale it carried
+    // here was factually wrong. It read: "Pins the COALESCE-to-0 counters: a NULL
+    // reaching the column would poison every downstream SUM and make a broken
+    // pipeline read as healthy-but-empty." SUM() IGNORES NULLs — it goes NULL only
+    // for an all-NULL group — and every *-heartbeat pipeline has written NULL
+    // counters into this same table for months via lib/pipeline/heartbeat.ts's
+    // direct insert, which rollup_pipeline_runs aggregates without incident.
+    // What the COALESCE actually did was publish a measured zero for callers that
+    // had measured nothing, in the one function whose job is to make failure
+    // legible — and two callers were passing NULL deliberately and being
+    // overwritten. The pin now asserts BOTH halves: an explicit NULL survives,
+    // an omitted counter still defaults to 0.
     fn: "log_pipeline_run",
     test: "supabase/tests/log_pipeline_run.sql",
-    // Re-pinned 2026-08-23 onto the clock_timestamp() fix, whose migration was
-    // applied via MCP the same evening with no committed file — so the live
-    // sweep went red and `migration-parity` had a gap for the same one change.
-    // The file this now names IS that missing git half.
+    // Re-pinned 2026-08-23 onto the clock_timestamp() fix (which IS duration_ms:
+    // now() there made the GREATEST-clamped duration a hard 0 for ten pipelines),
+    // then again 2026-08-28 onto the COALESCE removal. That earlier fix is carried
+    // forward verbatim inside the DDL this migration names.
     migration:
-      "supabase/migrations/20260823190648_audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp.sql",
+      "supabase/migrations/20260829040000_audit_20260828_log_pipeline_run_stops_fabricating_zero_counters.sql",
   },
   {
     // Added 2026-08-11. Batch writer into wallet_moments_cache (~2.2M rows).
@@ -305,7 +315,14 @@ const PINS = [
   {
     fn: "upsert_topshot_marketplace_fmv",
     test: "supabase/tests/upsert_topshot_marketplace_fmv.sql",
-    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+    // ⚠ RE-POINTED 2026-08-28 onto the prefilter migration, IN THE SAME SESSION as
+    // the change — and only because a full DB-invariant run surfaced it. The guard
+    // above is repo-vs-repo: it compares this test to the migration THIS LINE names,
+    // so leaving it on the 07-11 rename would have kept every check green while the
+    // test validated a body that no longer runs anywhere. That is this mechanism's
+    // documented blind spot, and it costs nothing to walk into.
+    migration:
+      "supabase/migrations/20260829020000_audit_20260828_topshot_fmv_populate_prefilters_before_the_sales_scan.sql",
   },
   // ── 2026-07-29: read/write RPC snapshot pins ────────────────────────────────
   // fmv_recalc_edition_page, get_edition_badges_unified, recalc_ultimate_fmv,
@@ -1098,7 +1115,10 @@ const PINS = [
     // CI has actually parsed green. Its header carries the (comment-STRIPPED) clause
     // counts for the restored body.
     migration:
-      "supabase/migrations/20260828053000_audit_20260828_rwfc_revert_freshness_guarded_fast_path.sql",
+      // ⚠ RE-POINTED AGAIN 2026-08-28 onto the two-caller advisory-lock fix. The
+      // note above says this MUST move in the same push as the migration; it did
+      // not, and a full DB-invariant run is what caught it.
+      "supabase/migrations/20260829030000_audit_20260828_rwfc_two_callers_collide_every_ten_minutes.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the

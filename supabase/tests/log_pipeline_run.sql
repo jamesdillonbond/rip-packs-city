@@ -5,11 +5,13 @@
 -- pipeline_runs_daily all read what it writes.
 --
 -- Pins:
---   • The three row counters COALESCE to 0. Callers routinely pass NULL for a
---     counter they don't track; if that reached the column, every downstream
---     SUM() over pipeline_runs would go NULL and a broken pipeline would read
---     as healthy-but-empty — a silent failure in the layer whose whole job is
---     to make failure loud.
+--   • ⚠ INVERTED 2026-08-28. The three row counters used to COALESCE to 0; they
+--     no longer do. An EXPLICIT NULL now survives as NULL ("I did not measure
+--     this") while an OMITTED counter is still 0 (the parameter DEFAULT). The old
+--     rationale — "a NULL would poison every downstream SUM" — is false: SUM()
+--     ignores NULLs, and heartbeat rows have written NULL counters into this same
+--     table for months without incident. See the block below and
+--     supabase/migrations/20260829040000_*.
 --   • finished_at is stamped by the FUNCTION, while started_at is the caller's
 --     value. That pairing is what makes duration measurable; if finished_at were
 --     also caller-supplied, an unset one would read as a zero-length run.
@@ -30,7 +32,7 @@
 --   • It RETURNS the new id (callers chain on it).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260823190648_audit_20260823_log_pipeline_run_finished_at_uses_clock_timestamp.sql),
+-- (supabase/migrations/20260829040000_audit_20260828_log_pipeline_run_stops_fabricating_zero_counters.sql),
 -- pulled from live prod via pg_get_functiondef on 2026-08-23 (md5
 -- 6dd327eea2dfb888e0340816dddc9fe8, verified against the DB's own md5 rather than
 -- by eye); __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
@@ -74,7 +76,11 @@ BEGIN
     -- the clock_timestamp() every caller passes as p_started_at, so duration_ms
     -- (GREATEST-clamped) was pinned at 0 for 10 pipelines.
     p_pipeline, p_collection_slug, p_started_at, clock_timestamp(),
-    COALESCE(p_rows_found,0), COALESCE(p_rows_written,0), COALESCE(p_rows_skipped,0),
+    -- NO COALESCE: the parameters already carry DEFAULT 0, which covers every
+    -- caller that OMITS a counter. An EXPLICIT NULL is a caller saying "I did not
+    -- measure this", and coalescing it to 0 published a number nobody read --
+    -- the fabricated-measurement shape this repo bans, in the fleet's own logger.
+    p_rows_found, p_rows_written, p_rows_skipped,
     p_cursor_before, p_cursor_after, p_ok, p_error, p_extra
   )
   RETURNING id INTO v_id;
@@ -128,26 +134,51 @@ SELECT _assert(
   'finished_at is WALL-CLOCK, not transaction start — this is the one word the whole metric rests on'
 );
 
--- THE COUNTER INVARIANT: explicit NULLs must land as 0, never NULL.
+-- 🚨 THE COUNTER INVARIANT, INVERTED 2026-08-28. It used to pin the opposite:
+-- "explicit NULLs must land as 0, never NULL", on the stated grounds that
+-- "a NULL would poison every downstream SUM". ⛔ THAT RATIONALE IS FALSE.
+-- `SUM()` IGNORES NULLs — it returns NULL only when EVERY row in the group is
+-- NULL — so a mixed group was never at risk, and the all-NULL case has been
+-- running harmlessly for months: every `*-heartbeat` pipeline already writes NULL
+-- counters through lib/pipeline/heartbeat.ts's direct insert, and
+-- rollup_pipeline_runs aggregates them without incident.
+--
+-- What the COALESCE actually did was publish a number nobody read. TWO callers
+-- passed NULL deliberately and had it overwritten:
+--   · supabase/functions/backfill-topshot-pack-supply/index.ts, whose comment
+--     reads "A failed targets read is a FAILURE, not an empty batch. rows_* stay
+--     NULL" — every such row in prod landed 0/0/0
+--   · app/api/wmc-fmv-populate/route.ts's `skipped_concurrent_refresh` row
+--
+-- ⭐ THE DISCRIMINATION IS THE PIN, and it needs BOTH halves: an explicit NULL
+-- means "not measured" and must survive; an OMITTED counter still means 0,
+-- because that is what the parameter DEFAULT says and ~129 call sites rely on it.
+-- A one-sided assertion here would pass under a body that made everything NULL.
 SELECT public.log_pipeline_run('nulls', now(), NULL, NULL, NULL);
-SELECT _assert_eq(
-  (SELECT rows_found::text FROM pipeline_runs WHERE pipeline='nulls'), '0',
-  'NULL rows_found COALESCEs to 0 (a NULL would poison every downstream SUM)'
+SELECT _assert(
+  (SELECT rows_found IS NULL FROM pipeline_runs WHERE pipeline='nulls'),
+  'an EXPLICIT NULL rows_found survives as NULL — "not measured" is not a measured zero'
 );
-SELECT _assert_eq(
-  (SELECT rows_written::text FROM pipeline_runs WHERE pipeline='nulls'), '0',
-  'NULL rows_written COALESCEs to 0'
+SELECT _assert(
+  (SELECT rows_written IS NULL FROM pipeline_runs WHERE pipeline='nulls'),
+  'an EXPLICIT NULL rows_written survives as NULL'
 );
-SELECT _assert_eq(
-  (SELECT rows_skipped::text FROM pipeline_runs WHERE pipeline='nulls'), '0',
-  'NULL rows_skipped COALESCEs to 0'
+SELECT _assert(
+  (SELECT rows_skipped IS NULL FROM pipeline_runs WHERE pipeline='nulls'),
+  'an EXPLICIT NULL rows_skipped survives as NULL'
 );
 
--- Omitted counters use the same 0 defaults (the common call shape).
+-- The other half, and it is not decoration: OMITTED counters must still be 0.
+-- This is the negative control for the three assertions above — without it,
+-- a body that wrote NULL unconditionally would pass them all.
 SELECT public.log_pipeline_run('defaults', now());
 SELECT _assert_eq(
   (SELECT (rows_found + rows_written + rows_skipped)::text FROM pipeline_runs WHERE pipeline='defaults'),
-  '0', 'omitted counters default to 0, not NULL'
+  '0', 'OMITTED counters still default to 0 — the parameter DEFAULT, not a COALESCE'
+);
+SELECT _assert(
+  (SELECT rows_written IS NOT NULL FROM pipeline_runs WHERE pipeline='defaults'),
+  'an omitted counter is a real 0, not NULL — this fails if the fix over-reaches'
 );
 
 -- Failure path: ok=false + error text survive, since that pair is what the

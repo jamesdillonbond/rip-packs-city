@@ -268,7 +268,11 @@ describe("wmc-fmv-populate — params + refresh degradation", () => {
   // These three tests pin the DISCRIMINATION, not the message: a skip and a
   // measured drain of zero must never collapse into the same row. That collapse is
   // one `Number(data ?? 0) || 0` away, which is what the code did before.
-  it("records a NULL return as a SKIP with rows_* NULL, never as a measured zero", async () => {
+  // ⚠ THIS ASSERTS THE CALL, NOT THE STORED ROW, and the distinction cost a real
+  // defect: until 2026-08-28 `log_pipeline_run` COALESCEd the NULLs back to 0, so
+  // this test passed while production stored 0/0/0. The stored half is pinned by
+  // supabase/tests/log_pipeline_run.sql. Neither test is sufficient alone.
+  it("passes rows_* as NULL on a skip, never a measured zero (the CALL contract)", async () => {
     const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: null } })
     await POST(req())
     await runDeferred()

@@ -79,11 +79,14 @@ CREATE TABLE public.rwfc_state (
 );
 
 -- >>> BEGIN verbatim refresh_wmc_fmv_changed (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(p_since_minutes integer DEFAULT 30, p_limit integer DEFAULT 50000)
- RETURNS integer
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
+CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(
+  p_since_minutes integer DEFAULT 30,
+  p_limit integer DEFAULT 50000
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $function$
 DECLARE
   v_total      integer := 0;
@@ -97,6 +100,19 @@ DECLARE
   -- Sized to fit the SMALLEST caller budget (service_role 30s), never scaled up.
   v_chunk      constant integer := 5;
 BEGIN
+  -- Two callers run this same non-reentrant drain: pg_cron jobid 303 (`7-57/10`, median 240 s)
+  -- and app/api/wmc-fmv-populate/route.ts (every 5 min, ~18 s budget). The route's tick one
+  -- minute after jobid 303 used to block on wmc row locks and die -- 83 of 84 lock timeouts in
+  -- 48 h landed on :08/:18/:28/:38/:48/:58. Skip instead of blocking; the other instance is
+  -- draining the same rwfc_state cursor, so nothing is lost.
+  -- ⚠ _xact_ is required: Supabase pools connections, so a leaked session-level advisory lock
+  -- would be inherited by an unrelated request and wedge this function permanently.
+  -- 🚨 NULL, not 0 -- `rows_written = 0` already means three different things here and a skip
+  -- must not become the fourth. The route reads NULL as `skipped_concurrent_refresh`.
+  IF NOT pg_try_advisory_xact_lock(hashtext('refresh_wmc_fmv_changed')::bigint) THEN
+    RETURN NULL;
+  END IF;
+
   SELECT setting::bigint INTO v_timeout_ms FROM pg_settings WHERE name = 'statement_timeout';
 
   IF v_timeout_ms IS NULL OR v_timeout_ms = 0 THEN

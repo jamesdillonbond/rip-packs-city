@@ -252,6 +252,13 @@ async function handle(req: NextRequest): Promise<Response> {
     // `rows_written = 0` on this pipeline already carries three incompatible
     // meanings, and adding a fourth is the defect class this repo counts. So a
     // skip is recorded with rows_* NULL and this note, never as a measured zero.
+    // ⚠ Passing NULL was NOT ENOUGH until 2026-08-28: `log_pipeline_run` carried
+    // `COALESCE(p_rows_*, 0)` and turned every explicit NULL back into a measured
+    // zero, so the first version of this row landed 0/0/0 with the note attached.
+    // Fixed in 20260829040000_audit_20260828_log_pipeline_run_stops_fabricating_
+    // zero_counters. If that COALESCE ever comes back, the assertions below still
+    // pass (they check the CALL) while the ROW silently reverts — the DB-invariant
+    // pin supabase/tests/log_pipeline_run.sql is what holds the other half.
     let note: string | null = null
     try {
       const { data, error } = await (supabaseAdmin as any).rpc(fn, args)

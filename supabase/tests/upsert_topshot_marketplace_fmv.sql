@@ -62,10 +62,10 @@ INSERT INTO public.sales (edition_id, collection_id, price_usd, sold_at) VALUES
 
 -- >>> BEGIN verbatim upsert_topshot_marketplace_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.upsert_topshot_marketplace_fmv(p_rows jsonb)
- RETURNS TABLE(upserted integer, skipped integer, no_edition integer)
- LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_temp'
- SET statement_timeout TO '60s'
+RETURNS TABLE(upserted integer, skipped integer, no_edition integer)
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+SET statement_timeout = '60s'
 AS $function$
 DECLARE
   v_collection_id  uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid;
@@ -119,7 +119,26 @@ BEGIN
   )
   SELECT v_no_edition + miss.miss_count INTO v_no_edition FROM miss;
 
-  -- Per-edition trailing 90d sales stats from our on-chain sales table.
+  -- PREFILTER, and it must come BEFORE the sales scan.
+  -- These are the two predicates `_eligible_rows` already applied. Applying them here means
+  -- `_sales_stats` and `_badge_ctx` -- read by nothing else -- are never computed for editions
+  -- that were going to be discarded. An edition already at HIGH/MEDIUM confidence is one with
+  -- plenty of recent sales, so this drops the EXPENSIVE half of the sales nested loop, not a
+  -- proportional share of it: measured 9,140 -> 1,449 buffers on 470 -> 215 editions.
+  DROP TABLE IF EXISTS _prefiltered;
+  CREATE TEMP TABLE _prefiltered ON COMMIT DROP AS
+  SELECT m.*
+  FROM _mapped_rows m
+  LEFT JOIN LATERAL (
+    SELECT fs.confidence::text AS conf
+    FROM fmv_snapshots fs
+    WHERE fs.edition_id = m.edition_id
+    ORDER BY fs.computed_at DESC
+    LIMIT 1
+  ) latest ON true
+  WHERE m.tier IS DISTINCT FROM 'ULTIMATE'
+    AND (latest.conf IS NULL OR latest.conf NOT IN ('HIGH','MEDIUM'));
+
   DROP TABLE IF EXISTS _sales_stats;
   CREATE TEMP TABLE _sales_stats ON COMMIT DROP AS
   SELECT s.edition_id,
@@ -129,14 +148,13 @@ BEGIN
   WHERE s.collection_id = v_collection_id
     AND s.sold_at >= NOW() - INTERVAL '90 days'
     AND s.price_usd > 0
-    AND s.edition_id IN (SELECT edition_id FROM _mapped_rows)
+    AND s.edition_id IN (SELECT edition_id FROM _prefiltered)
   GROUP BY s.edition_id;
 
-  -- badge_editions avg sale context for the zero-sale troll-ask gate.
   DROP TABLE IF EXISTS _badge_ctx;
   CREATE TEMP TABLE _badge_ctx ON COMMIT DROP AS
   SELECT DISTINCT ON (m.edition_id) m.edition_id, be.avg_sale_price
-  FROM _mapped_rows m
+  FROM _prefiltered m
   JOIN badge_editions be ON be.external_id = m.external_id
   WHERE be.avg_sale_price IS NOT NULL AND be.avg_sale_price > 0
   ORDER BY m.edition_id, be.avg_sale_price DESC;
@@ -147,20 +165,10 @@ BEGIN
          ss.sales_count_90d,
          ss.sales_median_90d,
          bc.avg_sale_price AS badge_avg
-  FROM _mapped_rows m
-  LEFT JOIN LATERAL (
-    SELECT fs.confidence::text AS conf
-    FROM fmv_snapshots fs
-    WHERE fs.edition_id = m.edition_id
-    ORDER BY fs.computed_at DESC
-    LIMIT 1
-  ) latest ON true
+  FROM _prefiltered m
   LEFT JOIN _sales_stats ss ON ss.edition_id = m.edition_id
   LEFT JOIN _badge_ctx bc ON bc.edition_id = m.edition_id
-  WHERE m.tier IS DISTINCT FROM 'ULTIMATE'
-    AND (latest.conf IS NULL OR latest.conf NOT IN ('HIGH','MEDIUM'))
-    -- sales-precedence: skip ask-derived writes for editions with real sales
-    AND NOT (
+  WHERE NOT (
       COALESCE(ss.sales_count_90d,0) >= 3
       AND NOT (m.avg_price IS NOT NULL AND m.avg_price > 0 AND m.total_sales > 0)
     );
