@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (prod DB) — `topshot-fmv-populate` had gone 17.7h without a success and the RPC was scanning the sales it had already decided to throw away
+
+**Found by following my OWN filing from 40 minutes earlier** (`detect_stalled_pipelines reported ALL CLEAR through a 7-hour outage`), which flagged this pipeline as *"the one to look at FIRST and it is NOT part of the outage"* and listed *why* it had not succeeded under **Not established**. This entry establishes it.
+
+⭐ **The two most recent ticks failed for TWO DIFFERENT REASONS, and only one of them is ours:**
+- `2026-08-28 19:38Z` — `http 503 … nginx` from the Top Shot GQL feed, 860 ms, 0 pages fetched. **That is the separate Top Shot outage. Not fixed here, not fixable here.**
+- `2026-08-28 13:38Z` — `canceling statement due to statement timeout` after **73,136 ms**, `pages_fetched: 3`, `nodes_fetched: 183`, `terminated_reason: feed_exhausted`. **The feed was fine; our own RPC ran out of budget.**
+
+⚠ **Reading the duration would have gotten this wrong.** 73,136 ms is neither the ~120 s Supabase gateway cap nor a 30 s role bound — it is the function's own `SET statement_timeout = '60s'` plus the sweep's HTTP work. The ERROR STRING is what separates them.
+
+**Cost, reproduced on the live instance rather than argued.** The route calls `upsert_topshot_marketplace_fmv` ONCE per sweep with the whole feed (183 nodes → ~470 mapped editions, comfortably under the caller's 500-row chunk, so chunking never engages). Rebuilt the function's own conditions with an **UNANALYZED** scratch table of 470 Top Shot editions — `reltuples = -1`, exactly like the `ON COMMIT DROP` temp table the function builds, so the planner is as blind as it is in production. The `_sales_stats` step **alone exceeded 60 s cold and could not be EXPLAIN ANALYZEd inside a 60 s budget.** Warm it is 647 ms. That is the whole variance: the same 183-node sweep is recorded at **5,845 ms and 73,136 ms**.
+
+⚠ **The buffers are SMALL and the query is still slow — this is random-read latency, not volume.** 50 editions → 1,092 buffers but 5,868 ms cold, i.e. ~6 ms per page: 470 nested-loop probes into `sales`, each pulling ~18 rows off distinct heap pages. **"Lower the limit" was never the lever here; cutting the number of probes was.**
+
+**FIX — `20260829020000_audit_20260828_topshot_fmv_populate_prefilters_before_the_sales_scan`.** `_sales_stats` and `_badge_ctx` were computed over ALL of `_mapped_rows`, but both are read by exactly one thing — `_eligible_rows` — which then discards every ULTIMATE and every edition whose latest `fmv_snapshots` row is already HIGH/MEDIUM. A new `_prefiltered` temp table applies those two predicates FIRST, so the function stops paying for sales medians it had already decided to drop.
+
+⭐ **The reduction is far larger than the row count predicts, and the mechanism is the point: an edition already priced HIGH/MEDIUM is one with plenty of recent sales.** The confidence filter removes precisely the SALES-HEAVY editions — the expensive half of the loop. 470 → 215 editions is −54% of rows but **−84% of buffers**.
+
+**MEASURED, ANALYZE + BUFFERS, warm-vs-warm on the live instance:**
+
+| leg | before | after |
+|---|---|---|
+| `_sales_stats` | 9,140 buffers (8,176 hit / **964 read**), 8,264 sales rows | 1,449 buffers (1,210 hit / **239 read**), 818 sales rows |
+| `_badge_ctx` | 1,268 buffers / 182 ms | scales with the same 470 → 215 cut |
+| `latest.conf` lateral | 2,841 buffers / 173 ms | unchanged — **moved, not added** |
+| whole function, warm | ~13,249 buffers | ~4,870 buffers (**−63%**) |
+
+⚠ **Single samples on a shared instance. The BUFFER counts are the durable comparison; the wall-clock ratio moves with load and must not be quoted as a guarantee.** ⚠ **And the 470/215 split is a HASH-SAMPLED 470 Top Shot editions, not the feed's own 470** — the feed was 503ing while this was measured. The mechanism generalises; the exact 84% will not.
+
+**EQUIVALENCE — proved read-only against both formulations in ONE query, not argued.** Built a 400-row synthetic input, computed `_eligible_rows` under the OLD shape (filter last) and the NEW shape (prefilter first) side by side, and `EXCEPT ALL`-diffed them **both directions**: `mapped 400 · prefiltered 182 · elig_old 161 · elig_new 161 · only_old 0 · only_new 0`. Since `v_skipped`'s terms are `count(_mapped_rows) − count(_eligible_rows)` and `count(_eligible_rows) − count(_writes)`, and neither count moves, **the numbers the pipeline reports are byte-identical.** The LATERAL is `LIMIT 1 … ON true`, so moving it earlier cannot change row multiplicity.
+
+⚠ **`SET statement_timeout='60s'` and `SET search_path` were re-declared VERBATIM** — `CREATE OR REPLACE FUNCTION` drops any `proconfig` not restated, and 60 s is deliberately ABOVE service_role's own 30 s, so silently losing it would have HALVED the budget while looking like a cleanup. Re-verified after apply: `proconfig` both entries present, `prosecdef=false`, return shape `TABLE(upserted, skipped, no_edition)` unchanged, ACL unchanged (`anon=false · authenticated=false · service_role=true`). Smoke: `select * from upsert_topshot_marketplace_fmv('[]'::jsonb)` → `0/0/0`, which executes every statement in the body.
+
+**REVERT: re-create the function with `_sales_stats` and `_badge_ctx` selecting `FROM _mapped_rows` again and the tier/confidence predicates back in `_eligible_rows`'s WHERE — i.e. drop the `_prefiltered` temp table.** Full prior body is in the migration header. **No data is written or destroyed by this change.**
+
+**EXIT CONDITION:** `topshot-fmv-populate` stops logging `canceling statement due to statement timeout`. Baseline from the 73h `pipeline_runs` retains: **2 of 12 runs (~17%)**, on 08-26 and 08-28; OK-run `duration_ms` ranged **5,845 – 60,222**. **FALSIFIER: if timeouts keep accruing at that rate, the cost is not `_sales_stats` but the DELETE+INSERT into `fmv_snapshots`, which this change does not touch.**
+
+⛔ **NOT ESTABLISHED, stated rather than dropped:**
+- **Whether the 503 will have cleared by the next tick (01:38Z).** Untouched and untouchable from here.
+- ⭐ **Why the marketplace feed exhausts after 183 nodes / 3 pages, every single run.** `sweep_complete: true` on every recorded tick, with `MAX_PAGES = 400` never approached. 183 live marketplace editions for all of NBA Top Shot is a number I do not believe, but the feed is 503ing so I could not probe it. **If that is a silently-truncating upstream page, this pipeline has been refreshing ~250 editions and calling it the whole marketplace.** Worth a probe once Top Shot is back.
+- **Whether `RPC_CHUNK = 500` is safe if a run ever DOES exceed it.** Two chunks would each run their own `DELETE … WHERE computed_at >= today`, so if two feed nodes ever map to the same edition across a chunk boundary, the second DELETE erases the first INSERT. Cannot happen at 183 nodes; **would become live the moment the previous bullet is fixed.**
+
 ### 2026-08-28 · ✅ SHIPPED (prod DB + code) — the six 420-min `wallet-backfill*` arms CANNOT be green, and the reason is a gate that returns before it writes anything
 
 **Inherited as "Trevor's open decision" from the 08-28 Cowork close. Re-derived rather than acted on, and the premise it rested on was half wrong.**
