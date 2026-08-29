@@ -81,11 +81,32 @@ function renderedSource(file: string): string {
   return stripComments(readFileSync(file, "utf8"))
 }
 
+/**
+ * ⚠ SEPARATOR NORMALISATION COMES FIRST, AND THE ORDER IS THE WHOLE BUG.
+ *
+ * `path.relative` returns the PLATFORM separator: on Windows this is
+ * `collection\route.tsx`. Stripping `/route.tsx` before converting backslashes
+ * therefore matched nothing, and the slug came out as `collection/route.tsx`
+ * while RECORDED holds `collection` — so on this box the guard could never
+ * pass, reporting all six recorded routes as unrecorded. Green on Linux CI,
+ * red on Windows, for a path-separator reason and not a code one.
+ *
+ * Measured 2026-08-29: `path.relative()` = "collection\\route.tsx";
+ * old order -> "collection/route.tsx" (no match), this order -> "collection".
+ *
+ * ⭐ Fixed with the idiom the rest of this suite already uses —
+ * `.split(path.sep).join("/")` — rather than a hand-rolled backslash replace.
+ * Six other guards normalise exactly that way (`after-route-heartbeat-ratchet`,
+ * `api-route-tsx-test-completeness`, `component-gate-include-completeness`,
+ * `helpers-client-directive`, …); this file was the only one hand-rolling it,
+ * and the hand-rolled version is what broke. Separator FIRST, strip SECOND.
+ */
 function slugOf(file: string): string {
   return path
     .relative(OG_DIR, file)
+    .split(path.sep)
+    .join("/")
     .replace(/\/route\.(tsx?|jsx?)$/, "")
-    .replace(/\\/g, "/")
 }
 
 describe("OG cards do not silently acquire a CDN dependency", () => {
