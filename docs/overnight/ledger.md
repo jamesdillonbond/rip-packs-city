@@ -65,6 +65,18 @@ from here; if it passes ~24h the atlas-proxy/#20 lens applies.
 
 **EXIT CONDITION:** `refresh_wmc_fmv_changed` skip rows and `topshot-pack-*-backfill` targets-failure rows land with `rows_*` NULL instead of 0. **FALSIFIER: if any arm, board or rollup starts reading NULL where it needs a number, this is wrong and the revert is one statement. The specific thing to watch is `pipeline_runs_daily.rows_written` for those two pipelines — it should stay a number, because both also write real counts on their success paths.**
 
+✅ **VERIFIED IN PRODUCTION, with a before/after visible in the same three rows.** The `skipped_concurrent_refresh` rows for `refresh_wmc_fmv_changed`:
+
+| started_at (Z) | rows_found | rows_written | rows_skipped |
+|---|---|---|---|
+| 03:38:19 | 0 | 0 | 0 | ← pre-migration |
+| 03:58:18 | 0 | 0 | 0 | ← pre-migration |
+| **04:18:21** | **NULL** | **NULL** | **NULL** | ← post-migration |
+
+Same caller, same code path, same note — only the RPC changed between them.
+
+✅ **And the two-caller fix now has a real record too: 19 post-fix runs, 0 lock timeouts, 0 failures, 3 skips** (at :18, :38, :58 — the predicted collision minutes), against a 48-hour pre-fix baseline of 17.0–17.9%. ⚠ **Still short of proof on the rate alone** — P(0 timeouts in 19 at 17%) ≈ 3%, and jobid 303 has been running short in this window — **but the three skips are direct observation of the guard firing, which the rate cannot give.**
+
 ⚠ **THIS ALSO CORRECTS A FALSE CLAIM IN MY OWN ENTRY ABOVE.** The two-caller entry says the skip is recorded with `rows_* NULL`. Until this migration it was **not** — the RPC overwrote it, and the route's comment and test title both promised a shape the database never stored. **A test whose title carries a promise its assertion does not keep is the vacuous-assertion shape this file names; mine asserted the CALL argument while the ROW landed 0.** Now both are true.
 
 ### 2026-08-28 · ✅ SHIPPED (prod DB + code) — `refresh_wmc_fmv_changed` has TWO callers running the same non-reentrant drain, and one of them holds `wallet_moments_cache` row locks for FOUR MINUTES
