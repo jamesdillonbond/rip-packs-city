@@ -305,8 +305,20 @@ describe("SerialPremiumsBoardClient — interaction + per-row branches", () => {
       fireEvent.click(getByText(/^(Copy link|Copied!)$/))
       expect(writeText).toHaveBeenCalled()
       expect(String(writeText.mock.calls.at(-1)![0])).toContain("ref=user-42")
+      // ⚠ ASSERTED INSIDE THIS BLOCK ON PURPOSE — moved here 2026-08-29.
+      // The component runs `setTimeout(() => setCopied(false), 1800)`, so
+      // "Copied!" is on screen for only 1800 ms of REAL time. Asserting it
+      // AFTER `waitFor` returns hands the label a 1.8 s window to revert
+      // between the two statements, and a loaded full-suite run is exactly
+      // where that window gets spent: this failed in the suite and passed 3/3
+      // in isolation ON THE SAME COMMIT ("Unable to find an element with the
+      // text: Copied!"). Checking it in the same tick as the click that sets
+      // it removes the window rather than widening it.
+      // ⛔ Do NOT "fix" a recurrence by raising the component's 1800 ms or by
+      // wrapping this in its own waitFor — the first changes product behaviour
+      // to suit a test, and the second re-opens the same race one layer up.
+      expect(getByText("Copied!")).toBeTruthy()
     })
-    expect(getByText("Copied!")).toBeTruthy()
   })
 
   it("falls the row image back to the thumbnail, then to the gradient, on error", async () => {
