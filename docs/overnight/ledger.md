@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⚠ CORRECTED — the 18-source fleet commit was REVERTED into docs/ staging the same hour: four guards demand per-function integration, and their demands are now the handoff
+
+\`2e4bbb88\` put 18 verbatim deployed sources into \`supabase/functions/\` and FOUR vitest guards
+red-lit main: the drift-checker's pinned 2026-08-07 fleet measurement (tree-derived, so 18 new dirs
+change its computed set) · \`edge-fn-no-hardcoded-gate-keys\` firing on two benign
+\`CHECKPOINT_KEY = "<pipeline name>"\` consts it cannot tell from credentials · the reachable-tests
+ratchet (BUDGET 10, found 28) · two missing inline-copy pins. **Each fix needs per-function judgment I
+could not validate locally (vitest cannot run in this sandbox) at ~10 min of CI per attempt on a shared
+main — the fix-boundary signal, so \`ba511f6c\` moved the sources to
+\`docs/audits/edge-fleet-staging-2026-08-28/\` instead**, with a README stating exactly what each guard
+demands. The R21 census, the 11-withheld-for-cause list, and the classify-acquisitions 410 retirement
+(v38, anon probe 401) all STAND — and the staging copy is the durable rollback artifact for that
+retirement. ⭐ Lesson: the guards' design assumption is that committed edge source arrives WITH its
+integration (pins, reachability, drift re-pin) — a bulk drop of even clean source is exactly what they
+exist to catch.
+
+**Revert:** \`git revert ba511f6c\` (restores the fleet placement and the four red guards with it).
+
 ### 2026-08-28 · ⏳ CANDY BOARDS, FIRST POST-FIX WINDOW — the mechanism is PROVEN, the production signal is consistent, and at n = 9 it still cannot beat chance
 
 **`refresh-insights-cache` runs every 5 minutes, so the exit condition had a real denominator within the
