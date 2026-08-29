@@ -170,6 +170,26 @@ Verified against the outcome table, not the self-report. Deployment `dpl_8pPUjix
 
 ---
 
+## 🚨 L. WALL-CLOCK-DEPENDENT TESTS — a class the suite cannot currently see, found TWICE today by two authors
+
+Two independent instances surfaced on 2026-08-29: `analytics-rpc-with-retry`'s budget-crumb block (another session), and the sentinel durability block **that I added during this audit** — which reddened CI 4197 at 19:05Z **on someone else's commit**. Same root: *a test that reads real time and asserts an exact outcome.*
+
+The sentinel case is the instructive one because of how it passed review:
+
+- The route notifies only when `hasCritical || hasWarn || (UTC hour % 6 === 0)`, so green-fixture notification assertions hold in **4 hours of 24**.
+- It was written and mutation-checked at **18:xx UTC** — one of those four. **All four mutation controls passed.**
+- ⭐ **A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES.** Proving a test reds when the code is broken says nothing about whether it is green for the *right reason*. When an assertion could depend on ambient state — clock, timezone, network, row counts, physical row order — the control has to vary **that**, not only the code under test. This is the ambient-state sibling of the rule this repo already records for a vacuous assertion, and it is the reusable part.
+
+**What exists now:** `d1a221a76` pins the clock for the notifying case; on top of it a `atUtcHour()` counterpart, an off-hour row test, and a **24-hour sweep** asserting the row is unconditional and notification is non-empty **iff** `hour % 6 === 0`. That is the per-test fix.
+
+⛔ **There is still no SUITE-LEVEL detector for the class, and a grep cannot be one.** `new Date()` / `Date.now()` appear in hundreds of legitimate fixtures here (freshness fixtures are built from real `now` on purpose), so a source scan over-reports the way `detect-jsx-space-drop.js` already does — and this file's own rule is to prefer a check that does not need a fragile matcher to be right.
+
+👉 **The sound version is to vary the ambient state, not to grep for it: a scheduled CI job that runs the unit suite with the runner's clock moved.** GHA ubuntu runners have passwordless sudo, so `sudo date -s` at a few UTC hours (say 01, 07, 13, 19 — one from each `% 6` residue class) turns "green for the right reason" into something measurable. ⚠ **Note TZ alone will NOT catch this instance:** the predicate is `getUTCHours()`, which `TZ` does not move — so a timezone matrix would have read clean through both of today's defects. ⛔ **Not shipped: `sudo date -s` on a GHA runner is unverified from this sandbox, and a clock-shifting job that fails for its own reasons is a new permanently-red instrument, which is the thing this audit is about.** Cost is one extra suite run per shifted hour (~7 min each).
+
+⚠ **And a caution about the fix I nearly shipped:** my first correction switched two tests to a CRITICAL fixture, which passes at every hour **by testing a different thing** — it drops coverage of the scheduled GREEN report, the one path where nobody is already looking at a page. `d1a221a76`'s comment says exactly that and it is right. *Passing at every hour is not the goal; asserting the same contract at every hour is.*
+
+---
+
 ---
 
 ## ⚠ I. Naming what CI structurally is here
