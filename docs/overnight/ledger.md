@@ -40,8 +40,31 @@ argument.
 28% improvement, looked like a success, and left a 5.3-second board 5.3 seconds slow.** A recipe that
 worked once is a hypothesis about the next case, not a result.
 
-⚠ **`candy_pack_market` is still UNMEASURED** — it references `candy_treasury_wallet` too, but nothing
-here says which shape it has. **Measure it before assuming either.**
+⭐ **ADDENDUM — `candy_pack_market` MEASURED TOO, and the three views together reveal a SHARED lever I
+did not see from any one of them.** Live: **592 ms · 16,946 buffers** — of which the `treas` InitPlan is
+**15,838 (93%)**. Everything else in that view is small.
+
+**So `candy_treasury_wallet` costs ~15,000 buffers EVERY time it is evaluated, and THREE views reference
+it** (`candy_scarcity_board` — now inlined —, `candy_special_serials_board`, `candy_pack_market`). It
+returns **one wallet address** and it aggregates all 25,375 Candy rows to do it.
+
+| view | wall clock | buffers | treasury share |
+|---|---:|---:|---:|
+| `candy_pack_market` | 592 ms | 16,946 | **15,838 (93%)** |
+| `candy_special_serials_board` | 5,355 ms | 54,524 | 15,517 (28%) |
+| `candy_scarcity_board` (fixed) | 114 ms | 23,550 | 3 |
+
+👉 **THE SHARED LEVER, which is NOT the recipe I already shipped: materialise `candy_treasury_wallet`.**
+The treasury wallet holds 2,129 of 25,375 Candy moments against a runner-up at 1,821 — it is a stable
+fact that changes rarely, and it is being recomputed from scratch on every board render. An MV refreshed
+on a cron would cut ~15k buffers from each of three renders. ⛔ **NOT shipped: that is a new object plus
+a refresh schedule (stagger discipline applies), and it deserves its own before/after rather than being
+bolted onto the end of a long session.**
+
+⚠ **Note the two views need DIFFERENT fixes and the ranking says so:** `candy_pack_market` is
+treasury-dominated (93%) and would be nearly solved by the MV alone; `candy_special_serials_board` is
+sales-lookup-dominated (67%) and would still be ~3.9 s after it. **Do not apply one fix to both and
+report a single number.**
 
 **Nothing shipped. No revert path.**
 
