@@ -10,6 +10,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED — `migration-parity` is RED on 11 files, and the QUEUED anon-TRUNCATE revoke is scoped too narrowly to close the hole
+
+Docs only; no code, no DB. Filing:
+`docs/overnight/inbox/2026-08-29T1800Z-migration-parity-is-red-on-11-and-the-queued-anon-truncate-revoke-closes-almost-nothing.md`.
+
+The sentinel reports `Detector Health (GitHub Actions): [NOT CONFIGURED]` and warns that
+*"a correct one can stay red indefinitely with nobody reading it."* **So I ran one rather
+than repeating the warning. It is red:** 11 migrations applied to production today between
+**05:08Z and 17:17Z** with no committed file. Not mine — every `main` commit in the last
+10 hours is from this session — so this is precisely the no-push scenario
+`check-migration-parity.mjs` was written for.
+
+⚠ **Compare on NAME, never on version.** Comparing on version first produced **24 false
+"missing" and 21 false "not applied"**, because `apply_migration` stamps its own version at
+apply time and it never equals the author's filename timestamp. The script's own header
+says so; I read it after making the mistake, not before.
+
+⭐ **Only three of the eleven change real state** — `GRANT MAINTAIN ON sales_2026 TO
+cron_heavy`, `ALTER TABLE sales_2026 SET (autovacuum_vacuum_scale_factor = 0.05)`, plus two
+`COMMENT ON`-only. **The other seven are metadata that append dated sections to object
+comments** — a deliberate comment-as-durable-store by a session that cannot push, so its
+findings are not at risk even though the repo cannot describe prod. ⚠ A naive whole-string
+regex flagged GRANT/ALTER on five of them; those verbs sit inside long prose headers.
+Line-level classification excluding `--` lines is what separates real DDL from prose.
+
+⛔ **Files NOT recovered, deliberately.** They ARE byte-exact recoverable — proved on
+`20260829050909` (863 chars, md5 `2d15969f…` round-tripped exactly; recipe in the filing) —
+but committing another live session's in-flight work under my own filename timestamps risks
+duplicate files when it lands its own. Recovery stays available and mechanical.
+
+🚨 **The half that needs Trevor.** `audit_20260829_anon_write_surface_arm_is_blind_to_truncate`
+(17:10Z) found the anon-write-surface arm cannot see TRUNCATE and **deliberately QUEUED
+rather than shipped** the fix — *"A 146-table REVOKE crosses a scope boundary the ledger
+records as a deliberate decision taken with Trevor's explicit 'Proceed'."* **That judgment
+is correct and is not overridden here.**
+
+⚠ **I nearly filed it as a broken security fix.** The line
+`REVOKE TRUNCATE ON ALL TABLES IN SCHEMA public FROM anon;` appears in that migration, and I
+measured 146 tables still truncatable after it — which reads exactly like a revoke that
+failed. It is **indented text inside the COMMENT the migration installs**: the queued
+statement, never executed. Reading the six lines around it before filing is the only reason
+this is an addition rather than a false alarm.
+
+⭐ **My independent count confirms their 146** — different session, different instrument
+(`has_table_privilege`, not acl text) — **and adds one they did not have:**
+
+| role | tables with TRUNCATE (of 379 in `public`) |
+|---|---|
+| `anon` | **146** |
+| `authenticated` | **152** |
+| `PUBLIC` | 0 |
+| both | **146** |
+
+**Every anon-truncatable table is also truncatable by `authenticated`**, so the queued
+anon-only revoke leaves all 152 reachable by any signed-in user — on a product where
+signing up makes you `authenticated`. That is CLAUDE.md's own recorded rule firing:
+*"Revoke `FROM PUBLIC, anon, authenticated` in ONE statement — either half alone leaves a
+grant."* 👉 The three-role form is what should go to Trevor.
+
+⚠ **And the queued note's exit condition needs the same widening** — *"the anon TRUNCATE
+count must read 0"* would verify **green while `authenticated` still held 152**. A guard
+that passes over an open hole is worse than none.
+
+⛔ **NOT established:** whether any of the 152 grants are load-bearing. The queued note
+argues the June carve-outs are anon INSERT paths that never truncate — sound for `anon`;
+**nobody has made that argument for `authenticated`**, and it is what the wider revoke
+needs before it ships.
+
 ### 2026-08-29 · ⛔ SECOND CORRECTION + ✅ SHIPPED (code) — my own `ok: true` table was wrong on 4 of 6 rows, and the obvious predicate was wrong on the route it did apply to
 
 **Revert:** `git revert <sha of the commit named below>` — one route + one rewritten test
