@@ -245,7 +245,62 @@ known jobid-288 rotation oscillation (they clear on its next sweep), and `unmapp
 is **draining** (317 → 310). ✅ Security clean, **0 invalid indexes database-wide, 0 leftover `tmp-*` cron
 jobs.**
 
-## 👉 Falsifier, cheap and dated
+## 🚨🚨 THIRD CORRECTION, 22:4xZ — THE OUTAGE HAS ENDED, AND MY "48.3 s ON AN IDLE INSTANCE" WAS WRONG
+
+**Two things, and the second is a mistake in my own method.**
+
+### 1. The 48.3 s was NOT an idle-instance cost — the same query now runs in 5.1 s
+
+Re-ran the **identical** statement (same 500 literal ids, same shape):
+
+| run | time | buffers |
+|---|---:|---|
+| ~20:50Z | **48,268 ms** | `hit=1147 read=9882` |
+| ~22:1xZ | **5,062 ms** | `hit=920 read=10126` |
+
+⭐⭐ **9.5× faster on essentially IDENTICAL work — the second run did MORE disk reads (10,126 vs 9,882).**
+**So it is not the buffer cache and not query structure: the variable is IO SERVICE TIME.** Same lesson
+this repo learned on the underpriced board earlier today — **load PRICES latency, it does not add it.**
+
+⛔ **And the error is mine: I wrote "48.3 SECONDS ON AN IDLE INSTANCE" without checking the instance at
+the moment of that measurement.** I had read `io_wait 0 / active 1 of 42` at **20:04Z** and then ran the
+`EXPLAIN` at **~20:50Z**, 45 minutes later, never re-reading. **A stale positive control is not a control.**
+The honest statement is: *the statement costs ~10k random reads, so it takes 5 s when IO is cheap and 48 s
+when it is not, and the 30 s ceiling sits between those.*
+
+### 2. Step 1b is PASSING again — the outage is over, and what is left is the documented state
+
+Vercel logs for the **22:28Z and 22:35Z** runs contain **no `Sales fetch error … range 0`** at all. They
+get through step 1b and proceed:
+
+```
+Wash-trade filter: removed suspicious clusters from 259 editions
+90d catch-up: seeded 724 zero-30d Top Shot / 287 All Day editions
+Processing 1511 distinct editions
+90d window extension: widened 1073 thin editions (11880 sales)
+thin-sales guard applied — thin=0 stale=59 …
+… Vercel Runtime Timeout Error: Task timed out after 300 seconds
+```
+
+⭐ **So the runs now die at the 300 s LAMBDA cap, not at the 30 s statement timeout — which is exactly the
+pre-existing, characterised `fmv-recalc` behaviour (*wasteful, NOT broken*, 64–73% wall-kills).** The
+step-1b total block ran roughly **17:56Z → ~21:28Z** and has cleared on its own as IO pressure eased.
+
+⚠ **The wedge is still rising (6.52 h) and that is NOT a contradiction:** a run killed at 300 s advances
+the cursor no more than a run that fails at step 1b. **The arm cannot distinguish them, and it should
+not — both mean the catalogue is not being repriced.**
+
+ⓘ Many *other* statements in those same runs still log `canceling statement due to statement timeout`
+(historical fallback, `edition_offers` ASK, All Day ASK, stale-freshness, the 90d extension). **Those
+branches are non-fatal and the run survives them** — but it is a fair signal of how much of this route is
+living on the edge of the 30 s ceiling.
+
+### What this changes about the recommendation
+
+⭐ **The covering index is still the right idea and is now BETTER motivated, not worse:** removing ~10k
+random reads removes this statement's exposure to IO pressure entirely, which is precisely what took the
+sweep down for 3.5 h. ⛔ **But it is NOT an emergency fix, the collision warning above still stands, and
+nobody should ship it tonight on my say-so.**
 
 **Re-read `fmv_sweep_wedge_hours` and `max(started_at) WHERE pipeline='fmv-recalc'` on the next
 monitor tick.**
