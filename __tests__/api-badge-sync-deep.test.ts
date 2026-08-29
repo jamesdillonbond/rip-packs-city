@@ -247,6 +247,63 @@ describe("badge-sync — tag sweep mode", () => {
     const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
     expect(row!.ok).toBe(true)
     expect(row!.rows_found).toBe(0)
+    // The other half of the distinction: empty WITHOUT fetch failures.
+    expect((row!.extra as Record<string, unknown>).sweep_failures).toBe(0)
+  })
+
+  // 🚨 THE ROW THE TAG LANE STARTED WRITING EARLIER THE SAME DAY IS WHAT EXPOSED
+  // THIS. Its first live row (2026-08-29T20:56:19Z) read ok:true, rows_found:0 and
+  // all five sweep_counts at zero — DURING a total public-api.nbatopshot.com
+  // outage. `sweep()` caught each GQL failure, logged it to console, and `break`ed,
+  // so a blind sweep and a genuinely empty one were the same empty array.
+  // CLAUDE.md's named shape: a paged read that `break`s on error returns a partial
+  // list no caller can distinguish from a complete one.
+  it("a sweep that fetched NOTHING because every upstream page errored is not an empty sweep", async () => {
+    for (const tag of [RY, TSD, ROTY, CHAMP, RM]) {
+      state.gqlPages[tag] = [{ __throw: "HTTP 530 error code: 1033" }]
+    }
+    const spy = install({})
+
+    const res = await POST(post())
+    const body = await res.json()
+
+    expect(
+      body.ok,
+      "a run that could not read a single page reported itself green",
+    ).toBe(false)
+
+    const runs = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as Record<string, unknown>[]
+    const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
+    expect(row!.ok).toBe(false)
+    // Assert the ABSENCE of the false claim, not merely the presence of a string:
+    // rows_found 0 must not be publishable as a clean result.
+    expect(row!.rows_found).toBe(0)
+    expect(String(row!.error), "the run recorded no reason for its own emptiness").toMatch(/blind/i)
+    expect(String(row!.error)).toMatch(/530/)
+    const extra = row!.extra as Record<string, unknown>
+    expect(extra.sweep_failures).toBe(5)
+    expect(String(extra.first_sweep_error)).toMatch(/530/)
+  })
+
+  it("CONTROL — one failed tag alongside a tag that DID collect stays green, with the failure recorded", async () => {
+    // Real progress was made; reddening here would punish a partial outage the
+    // run survived. The failure still has to be visible in `extra`.
+    state.gqlPages[RY] = [{ __throw: "HTTP 530 error code: 1033" }]
+    state.gqlPages[TSD] = [gqlPage([edition({ id: "e1", playTagIds: [TSD] })], null)]
+    const spy = install({})
+
+    const res = await POST(post())
+    const body = await res.json()
+    expect(body.ok, "a run that collected editions despite one bad tag must stay green").toBe(true)
+
+    const runs = (spy.writes.pipeline_runs ?? []).flatMap((w) => w.rows) as Record<string, unknown>[]
+    const row = runs.find((r) => r.pipeline === "topshot-badge-sync")
+    expect(row!.ok).toBe(true)
+    expect(row!.rows_found).toBe(1)
+    expect(row!.error).toBeNull()
+    const extra = row!.extra as Record<string, unknown>
+    expect(extra.sweep_failures, "the survived failure vanished from the record").toBe(1)
+    expect(String(extra.first_sweep_error)).toMatch(/Rookie Year/)
   })
 
   it("derives three-star rookie + rookie-mint scoring, and drops editions that cannot form an int-pair key", async () => {

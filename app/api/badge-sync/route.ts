@@ -417,10 +417,33 @@ async function fetchPage(
   }
 }
 
+/**
+ * Running tally of sweep-level FETCH failures for one run.
+ *
+ * 🚨 WHY THIS EXISTS (2026-08-29). `sweep()` catches a GQL failure, logs it to
+ * `console`, and `break`s — returning whatever it had collected. The caller then
+ * cannot tell "this tag genuinely has no editions" from "the fetch died on page 1",
+ * because both are an empty array. CLAUDE.md names this exact shape: *a PAGED read
+ * that `break`s on error returns a PARTIAL list no caller can distinguish from a
+ * complete one — the tell is the control-flow keyword. Throw, or carry
+ * `complete:false`.*
+ *
+ * ⭐ FOUND BY THE `pipeline_runs` ROW ADDED HOURS EARLIER IN THE SAME SESSION. Its
+ * first live row (20:56:19Z) read `ok: true`, `rows_found: 0` and every one of the
+ * five `sweep_counts` at zero — during a total `public-api.nbatopshot.com` outage.
+ * The telemetry was honest about what it could see; what it could see was already
+ * corrupted one layer down.
+ */
+interface SweepFailures {
+  count: number
+  first: string | null
+}
+
 async function sweep(
   label: string,
   playTagIDs: string[],
-  setPlayTagIDs: string[] = []
+  setPlayTagIDs: string[] = [],
+  failures?: SweepFailures
 ): Promise<RawEdition[]> {
   const collected: RawEdition[] = []
   const seen = new Set<string>()
@@ -438,10 +461,14 @@ async function sweep(
       if (!nextCursor || editions.length < PAGE_LIMIT || nextCursor === cursor) break
       cursor = nextCursor
     } catch (err) {
-      console.log(
-        `[badge-sync] ${label} page ${page + 1} fetch error:`,
-        err instanceof Error ? err.message : String(err)
-      )
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`[badge-sync] ${label} page ${page + 1} fetch error:`, msg)
+      // Carry the failure OUT. The `break` below still banks partial progress —
+      // that part was right — but the caller must know the list is incomplete.
+      if (failures) {
+        failures.count++
+        if (failures.first === null) failures.first = `${label}: ${msg}`.slice(0, 200)
+      }
       break
     }
     await sleep(PAGE_DELAY_MS)
@@ -658,15 +685,16 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now()
 
   // Play-level sweeps in parallel
+  const sweepFailures: SweepFailures = { count: 0, first: null }
   const [rookieYear, tsDebut, roty, champYear] = await Promise.all([
-    sweep("Rookie Year",       [BADGE.ROOKIE_YEAR]),
-    sweep("Top Shot Debut",    [BADGE.TOP_SHOT_DEBUT]),
-    sweep("ROTY",              [BADGE.ROOKIE_OF_THE_YEAR]),
-    sweep("Championship Year", [BADGE.CHAMPIONSHIP_YEAR]),
+    sweep("Rookie Year",       [BADGE.ROOKIE_YEAR], [], sweepFailures),
+    sweep("Top Shot Debut",    [BADGE.TOP_SHOT_DEBUT], [], sweepFailures),
+    sweep("ROTY",              [BADGE.ROOKIE_OF_THE_YEAR], [], sweepFailures),
+    sweep("Championship Year", [BADGE.CHAMPIONSHIP_YEAR], [], sweepFailures),
   ])
 
   // Rookie Mint is a setplay-level sweep — run last, merge-only
-  const rookieMint = await sweep("Rookie Mint", [], [BADGE.ROOKIE_MINT])
+  const rookieMint = await sweep("Rookie Mint", [], [BADGE.ROOKIE_MINT], sweepFailures)
 
   const sweepCounts: Record<string, number> = {
     "Rookie Year": rookieYear.length,
@@ -767,7 +795,15 @@ export async function POST(req: NextRequest) {
   // failed. The GHA caller only checks the HTTP status (never `body.ok`), so
   // nothing read it — but it is the value this route asserts about itself, and a
   // sweep that collected rows and wrote none is not a success.
-  const ok = upsertErrors === 0 && !(rows.length > 0 && upserted === 0)
+  // ⚠ THREE WAYS TO FAIL, AND THE THIRD IS THE ONE THE FIRST LIVE ROW EXPOSED.
+  // A sweep that FETCHED NOTHING because every upstream page errored is not an
+  // empty sweep — it is a blind one, and reporting it green is how a total outage
+  // reads as "no badged editions changed".
+  // ⚠ `rows.length === 0` is required: a run that collected editions despite one
+  // tag failing made real progress and stays green, with the failure recorded in
+  // `extra`. A genuinely empty sweep with NO fetch errors also stays green.
+  const blindSweep = sweepFailures.count > 0 && rows.length === 0
+  const ok = upsertErrors === 0 && !(rows.length > 0 && upserted === 0) && !blindSweep
 
   // ── Durable run record (2026-08-29) ──────────────────────────────────────
   // 🚨 THIS LANE WROTE NO `pipeline_runs` ROW AT ALL. Its CATALOG sibling
@@ -799,9 +835,18 @@ export async function POST(req: NextRequest) {
       rows_written: upserted,
       rows_skipped: skippedNoKey,
       ok,
-      error: upsertErrors > 0 ? `upsert_errors=${upsertErrors}` : null,
+      error:
+        upsertErrors > 0
+          ? `upsert_errors=${upsertErrors}`
+          : blindSweep
+            ? `sweeps blind: ${sweepFailures.count} tag sweep(s) failed to fetch and the run collected 0 editions; first: ${sweepFailures.first ?? "unknown"}`.slice(0, 500)
+            : null,
       extra: {
         upsert_errors: upsertErrors,
+        // Always emitted, including as 0 — an absent key cannot answer "was the
+        // sweep empty, or blind?", which is the whole reason it exists.
+        sweep_failures: sweepFailures.count,
+        first_sweep_error: sweepFailures.first,
         deleted_stale_rows: deletedStaleRows,
         sweep_counts: sweepCounts,
         duration_ms: durationMs,
