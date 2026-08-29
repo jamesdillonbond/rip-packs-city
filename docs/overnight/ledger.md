@@ -10,6 +10,68 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ TWO SUPABASE ADVISOR WARNINGS ARE UNFIXABLE AS ADVISED — proven by A/B with a control, and "fixing" them would break per-wallet durability
+
+**Ran `get_advisors(security)` — a source this project's notes do not routinely quote. 220 lints, and the
+shape matters more than the count.**
+
+| level | n | lint |
+|---|---:|---|
+| INFO | **211** | `rls_enabled_no_policy` |
+| WARN | 4 | `authenticated_security_definer_function_executable` |
+| WARN | 3 | `anon_security_definer_function_executable` |
+| WARN | **2** | `function_search_path_mutable` |
+
+⭐ **The 211 INFO are the SAFE state, not a backlog.** RLS enabled with zero policies is **deny-all** for
+anon/authenticated — fail-closed. A reader skimming "220 security lints" will mis-scale this badly; the
+actionable population is **9**, and most of those are already documented decisions.
+
+## 🚨 The two `function_search_path_mutable` WARNs CANNOT be remediated as the advisor prescribes
+
+Both are `public.reconcile_all_saved_wallet_stats` and `public.rpc_trust_health_precompute_refresh_p`.
+Live: **`prokind = 'p'` (PROCEDURE), `proconfig` NULL, `prosecdef` false, and both contain `COMMIT`.**
+
+**A PostgreSQL procedure carrying a `SET` clause cannot execute transaction control.** Measured here
+rather than asserted, with a positive control, because a claim like this is exactly the kind that gets
+repeated wrongly:
+
+| scratch probe | result |
+|---|---|
+| procedure **without** `SET`, body does `COMMIT` | ✅ `CALL` succeeds (**positive control**) |
+| procedure **with** `SET search_path`, identical body | ⛔ `ERROR: 2D000 invalid transaction termination` |
+
+⚠ **My FIRST version of this test was invalid and would have "confirmed" the same conclusion for the
+wrong reason.** I called the probe from inside a `DO` block — but a `DO` block is itself atomic, so a
+`COMMIT` inside it fails *regardless* of the SET clause. The discriminator only appears at top-level
+`CALL`, and without the no-SET control the failure proves nothing. Same trap CLAUDE.md records as *"a
+control must use the PRODUCTION CALLER"*.
+
+⛔ **So adding `SET search_path` to either procedure would convert a working job into one that throws
+`2D000` on its first `COMMIT`** — and for `reconcile_all_saved_wallet_stats` that COMMIT is the whole
+design: it is what banks partial progress per wallet when the soft deadline truncates the sweep. **A
+security "fix" here silently destroys the durability property the procedure exists for.**
+
+✅ **Residual risk is genuinely low and that is why this is a DO-NOT-FIX, not a deferral:** both are
+**SECURITY INVOKER**, so a mutable `search_path` executes with the caller's own privileges and cannot
+escalate. The production caller is pg_cron as `postgres`. **The advisor's rule is written for SECURITY
+DEFINER functions and does not transfer to an invoker-rights procedure.**
+
+👉 **If it is ever worth silencing: the only real remedy is to remove the transaction control** (batch the
+work and let the caller commit), which trades away partial-progress durability. **That is a design
+decision, not a lint fix.** Do not take it to satisfy an advisory.
+
+ⓘ **The other 7 WARNs, triaged not listed:** `serial_fmv_estimate` (×2 overloads, anon + authenticated) is
+the **documented must-stay-anon-executable** case CLAUDE.md already names (reached via the anon-readable
+`topshot_underpriced_serials_board`, and an invoker-mode view executes its callee AS THE CALLER);
+`get_my_fan_teams()` for `authenticated` is self-evidently intentional; `get_trophy_slab_data_by_username`
+is reached by the PUBLIC profile page. **None re-opened; none is new.**
+
+**Scratch DDL created and removed in the same session:** `zz_probe_setclause_commit` and
+`zz_probe_nosetclause_commit`, both dropped, **verified 0 remaining** by name-prefix count. No migration
+recorded (scratch probes, not schema).
+
+**Nothing shipped. No revert path — this entry is a DO-NOT-DO record.**
+
 ### 2026-08-28 · ⛔ RE-READ THE `compute_pack_ev_per_edition_weighted` BLOCKER AS CLAUDE.md INSTRUCTS — it is CONFIRMED REAL, and the tempting reading (mine) is wrong
 
 CLAUDE.md carries this as *"the ONE measured-but-unshipped DB fix left, blocked on a DECISION not a
