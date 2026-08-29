@@ -10,6 +10,71 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ✅ SHIPPED (DB) — four `candy_*` boards stop materialising 1.29M FMV snapshots to serve 125 editions. ⚠ AND MY OWN FALSIFIER PARTLY FIRED: they are now `wallet_moments_cache`-bound.
+
+**Found from `get_runtime_errors` — a source these notes rarely quote — where every Candy board is a
+distinct, live, user-facing error group.** 24 h to 2026-08-29T00:02Z, all
+`canceling statement due to statement timeout`: `candy_scarcity_board` **148**, `candy_parallel_premium`
+**137**, `candy_offer_spread_board` **136**, `candy_player_board` **134**, `candy_special_serials_board`
+102, `candy_pack_market` 85, `candy_deals_board` 41, `candy_secondary_board` 33.
+
+**Cause:** they `LEFT JOIN` the GLOBAL `fmv_current` — `SELECT DISTINCT ON (edition_id) … FROM
+fmv_snapshots` with no predicate. `DISTINCT ON` is an optimization fence, so the Candy filter cannot push
+in: the planner builds the whole snapshot history, then discards ~all of it against **125** editions.
+A purpose-built `candy_fmv_current` (same DISTINCT ON, predicate INSIDE) already existed and four other
+Candy views were already using it — this was half-finished work.
+
+🚨 **I NEARLY SHIPPED THE WRONG SCOPE. My first sweep used `pg_get_viewdef(...) ILIKE '%fmv_current%'`
+and reported EIGHT views to fix — but that substring also matches `candy_fmv_current`, so four
+ALREADY-CORRECT views were counted as broken.** Word-boundary matching (`\mfmv_current\M` vs
+`\mcandy_fmv_current\M`) gives the true split: **4 unscoped, 4 already scoped.** This file's own rule —
+*a substring test on a definition is not a state check* — met in the wild, again.
+
+✅ **EQUIVALENCE PROVED ATOMICALLY, which matters because three of four output fingerprints CHANGED.**
+Old-shape and new-shape joins compared in ONE query, simultaneously, so drift cannot confound it:
+**125 editions · 0 `fmv_usd` disagreements · 0 `confidence` disagreements** (FULL OUTER JOIN, so a
+one-sided row would count).
+⭐ **And there is a clean internal control for the fingerprint changes:** `candy_parallel_premium` — the
+only one of the four whose inputs are STATIC (editions + FMV alone) — came back **byte-identical**
+(`67656ba0…` both sides). The three that moved all have demonstrably live inputs: `wallet_moments_cache`
+(written every minute), `sales`, and `expiry > now()` in the offer board, which changes every second.
+⛔ **Do NOT read those three fingerprint changes as a behaviour change.**
+
+**Measured, `candy_scarcity_board`:**
+
+| | rows through the FMV leg | leg buffers |
+|---|---:|---:|
+| before (plan estimate) | **1,289,541** | not measured — deliberately |
+| after (ANALYZE) | **4,256** → 125 | **398** |
+
+⚠ **The "before" is an ESTIMATE and is quoted as row counts, not as a speedup factor.** Measuring it for
+real means running the 1.29M-row scan the migration exists to stop. The scoped path is an INDEX ONLY SCAN
+on `fmv_snapshots_2026_coll_ed_ct_fmv_conf_idx`, which already existed.
+
+🚨 **AND HERE IS THE HALF THAT IS NOT GOOD NEWS — THE FALSIFIER I WROTE INTO THE MIGRATION PARTLY FIRED.**
+Post-fix the board still executes in **8,424 ms** at **46,636 buffers**. The FMV leg is now 398 of those.
+**The cost is `wallet_moments_cache`, scanned TWICE over the same 25,375 Candy rows:** the `treas` CTE
+(23,082 buffers, 8,578 heap fetches) to find ONE treasury wallet, and the `h` group-by (23,079) — plus a
+25,375-row quicksort. ⛔ **So this is a large improvement that may NOT on its own stop the timeouts.**
+Do not close the error groups on this entry.
+
+👉 **NEXT LEVER, now precisely located and NOT taken here:** the same Candy WMC scan runs twice per board
+render, and `candy_treasury_wallet` is itself a GroupAggregate over all 25,375 rows to return a single
+wallet. Collapsing those two passes into one — or materialising the treasury wallet, which changes at
+most rarely — is the remaining ~98% of the query. **⛔ Not a bigger `statement_timeout`.**
+
+**Post-flight, read live rather than assumed:** all four views still carry `security_invoker=on`
+(`CREATE OR REPLACE VIEW` strips reloptions without the `WITH` clause — recorded four times in this
+file, so every statement carried it explicitly), bare `fmv_current` references now **0** on all four,
+scoped references **1** each, `anon` SELECT **false** on all four (unchanged), row counts identical
+(125 / 100 / 2 / 125).
+
+**Revert path:** re-run the four `CREATE OR REPLACE VIEW` statements with `candy_fmv_current` changed
+back to `fmv_current`, **keeping `WITH (security_invoker = on)` on each**. Record:
+`supabase/migrations/20260829003000_audit_20260828_candy_boards_join_the_scoped_fmv_view.sql`.
+**Exit condition:** the `[candy-mlb] candy_*_board … statement timeout` groups stop accruing new events.
+**Falsifier (already partly observed):** if they keep accruing, the residual is the WMC double-scan above.
+
 ### 2026-08-28 · MIGRATION PARITY FULLY CLOSED — the covering-index record + 5 recovered prod-applied migrations, and a lapsed `statement_timeout` reset caught
 
 - **Migration parity fully closed for 2026-08-28 + a lapsed timeout reset caught** (Cowork,
