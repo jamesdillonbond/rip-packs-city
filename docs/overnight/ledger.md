@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⛔ THE CANDY SINGLE-SCAN RECIPE DOES **NOT** TRANSFER to `candy_special_serials_board` — measured before extending it, and the dominant cost is somewhere else entirely
+
+**The previous entry ended by naming `candy_pack_market` and `candy_special_serials_board` as "the obvious
+next step … with a proven recipe". I measured one before applying it, and the recipe is the wrong tool.**
+
+`candy_special_serials_board` live: **5,355 ms · 54,524 buffers** (50,477 hit / 4,047 read).
+
+| leg | buffers | shape |
+|---|---:|---|
+| **per-serial last-sale lookup** | **36,433** | `Limit → Append` over **9 sales partitions**, **loops = 607** |
+| `candy_treasury_wallet` | 15,517 | **InitPlan — evaluated ONCE**, not per row |
+| FMV (already scoped) | 398 | fine |
+
+🚨 **The treasury scan here is a SINGLE InitPlan, not the double scan that made `candy_scarcity_board`
+slow.** `candy_scarcity_board` paid twice (23,082 + 23,079) because it referenced `candy_treasury_wallet`
+*and* aggregated the same rows separately. This view aggregates nothing from `wallet_moments_cache` at the
+edition level, so **the MATERIALIZED-CTE rewrite would save ~15,517 of 54,524 buffers (28%) and leave the
+real problem untouched.**
+
+⭐ **The real cost is a CORRELATED lookup: for each of 607 (edition, serial) rows it searches nine
+`sales_*` partitions for that serial's last sale.** The 2026 partition alone burns 24,599 + 2,250 buffers
+scanning `sales_2026_edition_id_sold_at_idx` and discarding **47 rows per loop** — the index gets it to
+the edition, then `serial_number` is a FILTER, not an index condition. **That is an index-shape problem
+(edition_id, serial_number), not a scan-count problem**, and it needs its own measurement and equivalence
+argument.
+
+⛔ **NOT SHIPPED, and the reason is the finding: applying the proven recipe here would have produced a
+28% improvement, looked like a success, and left a 5.3-second board 5.3 seconds slow.** A recipe that
+worked once is a hypothesis about the next case, not a result.
+
+⚠ **`candy_pack_market` is still UNMEASURED** — it references `candy_treasury_wallet` too, but nothing
+here says which shape it has. **Measure it before assuming either.**
+
+**Nothing shipped. No revert path.**
+
 ### 2026-08-28 · ✅ SHIPPED (DB) — `candy_scarcity_board` now scans `wallet_moments_cache` ONCE: **8,424 ms → 114 ms**. This is the falsifier from the previous entry, closed.
 
 **The entry above shipped the FMV scoping and predicted its own residual:** *"the boards are now
