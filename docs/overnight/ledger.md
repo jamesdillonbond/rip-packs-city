@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 🚨 R68 UPGRADED P3 → P2 — the run frequency of four production ingest endpoints is UNKNOWABLE, not merely low
+
+**Answering R68's own falsifier is what found this.** I had filed the row with the caveat *"if the sentinel's Success Coverage arm already covers all six endpoints, this adds a second red for one condition and should be left alone."* Checking it: **only 1 of the 6 is watchlisted** — and the query returned something I was not looking for.
+
+**Three independent layers of blindness, each survivable alone, jointly total:**
+
+1. `rpc-pipeline.yml` is **6 of 6 `continue-on-error`** with non-200 emitting only `::warning::` — 30 of 30 runs `success` **by construction**.
+2. ⚠ **Four of its six routes write NO run record of any kind** — no `log_pipeline_run`, no heartbeat, no `pipeline_runs` write: `fmv-backfill` (228 code lines), `backfill` (285), `cron/price-snapshots` (70), `backfill-player-names` (44). `ingest` logs only two SUB-steps and never its own outcome.
+3. R61 — the workflow receives ~3 of its 72 scheduled ticks a day.
+
+⭐ **Positive control in the same instrument, per the rule that a zero needs one:** `fmv-recalc` imports `writeInvocationHeartbeat`, logs under its own name, and shows **130 rows in 48 h**. The other five show **0**. The instrument works; the routes do not use it.
+
+🚨 **The precise consequence: the run frequency of those four endpoints is not merely low, it is UNKNOWABLE from any durable store.** "Did `/api/backfill` run today, and did it work?" has no answer anywhere.
+
+⛔ **Deliberately NOT shipped, and the reason is the documented fix boundary rather than fatigue: the four routes need PER-ROUTE judgment.** `backfill-player-names` is a thin proxy to a **deploy-only** edge function, so its row measures the proxy call and its `rows_*` must be **NULL** — it counts nothing itself; `cron/price-snapshots` calls one RPC and has a real payload to count; `fmv-backfill` and `backfill` are substantial and I have not read them. CLAUDE.md's *"a marker row's `rows_*` must be NULL, not 0"* decides each differently, and a `?? 0` there would publish a measured zero into the one table whose job is making failure legible — the exact defect this audit spent the day on. Four judgment calls on production ingest routes at the end of a long pass is how that gets committed.
+
+⚠ **Falsifier recorded on the row:** if one of the four turns out to be driven by cron-job.org as well, its frequency is not unknowable and only the outcome half of the finding stands.
+
+⚠ **Also corrects my own earlier filing, again:** `stale-fmv-monitor` and `data-integrity`'s warn-then-`exit 0` is DELIBERATE, because both call `sendOpsAlert` themselves. I filed them as defects and they are not.
+
+**Revert path:** `git revert` this commit — docs only, no code, no prod state.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the edition page and the deals board were contradicting each other across a hyperlink, and the fix needed NO payload change
 
 **The artifact.** The edition page's chip asserted a flat *"18% below FMV →"* while `/insights/deals`, one click away, marked that **identical row** `⚠ ask unconfirmed 31h`. One product disagreeing with itself across a link — the sharpest single symptom of the offers-sweep outage.
