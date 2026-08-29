@@ -10,6 +10,77 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · ⭐ The sales-leaderboard's 77% failure rate was a STALE VISIBILITY MAP, not the SQL — shipped, and production went 0/10 → 10/10
+
+The 23:00Z Cowork pass measured `/api/analytics/sales/leaderboard` at **20 of 26 requests failing
+in 24 h (10 of 10 in the last 6 h)** on `canceling statement due to statement timeout`, correctly
+**refuted** the attractive `prior_addrs`→`EXISTS` rewrite (worth ~2.5 s of 16.3 s), and handed over
+one decisive read: does the cost live in a missing index or in the `analytics_sales` view's
+derivation? **Neither.** Full write-up:
+[finding-2026-08-29-sales-leaderboard-timeout-was-a-stale-visibility-map.md](../finding-2026-08-29-sales-leaderboard-timeout-was-a-stale-visibility-map.md).
+
+The plan was already on the right covering index and named its own cause in one line:
+**`Heap Fetches: 66218`** on a Parallel Index Only Scan. An index-only scan touches the heap only
+for pages the visibility map does not mark all-visible.
+
+⭐ **The age-matched control is what made it legible** — same index, same query shape, and *more*
+rows in the cheap window, so nothing varies but age:
+
+| `sold_at` window | rows | buffers | heap fetches | elapsed |
+|---|---:|---:|---:|---:|
+| 60–90 d ago (stable) | 115,200 | **15,089** | **10,616** | **716 ms** |
+| last 30 d (hot) | 117,076 | **74,754** | **66,218** | 4,970–9,530 ms |
+
+⚠ **Two runs of the identical query read the identical 74.7k buffers and took 4,970 ms then
+9,530 ms** — contention, not cache residency (same control shape as known-issues #39). Buffers are
+the durable figure here; the timings are comparable only to each other.
+
+**After VACUUM**, production's own shape (through the view): **74,754 → 28,928 buffers, 66,218 → 0
+heap fetches, 2,466 ms.** And measured the way that counts — *calling the function as the function*
+— `analytics_sales_leaderboard('seller', l30, {topshot}, …)` went **16,300 ms → 2,303–2,961 ms**
+against a `pg_stat_statements` mean of 16,998 ms. The 10-request production sweep (5 collections ×
+2 roles, the exact `WhaleLeaderboard` fan-out) that was **0/10** re-fired **10/10 HTTP 200**. Ten
+probes, not one — the route was already succeeding 23% of the time, so a single probe proves
+nothing.
+
+**Shipped (DB state):**
+1. `VACUUM (DISABLE_PAGE_SKIPPING) public.sales_2026` — `relallvisible` 79.4% → **100%**.
+2. `VACUUM (ANALYZE) public.sales_2025` — separate real defect: this partition had **never** been
+   vacuumed or analyzed (`vacuum_count` 0) and its `n_live_tup` read **77** against 748,034 real
+   rows. Now 749,516 / 100% all-visible.
+3. `VACUUM (ANALYZE) public.pinnacle_sales` — the other leg of the `analytics_sales` UNION, 78.4%.
+4. pg_cron **`maint-vacuum-sales-hot-partition` (jobid 380)**, `20 10 * * *` (03:20 PT), nightly
+   `VACUUM (ANALYZE) public.sales_2026`. Migration `20260829002812`.
+
+**Revert:** `select cron.unschedule('maint-vacuum-sales-hot-partition');` — items 1–3 are
+maintenance ops with nothing to revert.
+
+⚠ **THE MECHANISM IS NOT ESTABLISHED AND ITEM 4 IS A HEDGE, NOT A PROVEN FIX.** "Autovacuum never
+fires here" is **refuted**: `sales_2026` already carries `autovacuum_vacuum_insert_threshold=2000` /
+`insert_scale_factor=0.01` (~3-day cadence) and had autovacuumed 11 times, last on 08-24 — it runs,
+and still left 66k heap fetches. A first plain `VACUUM` moved them only 66,218 → 54,923; a second
+~10 min later took them to 0, but that run differed in **two** variables at once (the
+`DISABLE_PAGE_SKIPPING` flag *and* the xmin horizon the 5–15 s `EXPLAIN` scans had been holding
+back), so the flag is not shown to be the lever. **Falsifier, 24–48 h:** re-run the l30
+`EXPLAIN (ANALYZE, BUFFERS)`; if `Heap Fetches` is back above ~10,000 with the nightly job running,
+a plain `VACUUM` is insufficient — escalate to `DISABLE_PAGE_SKIPPING`.
+
+⛔ **Not shipped, deliberately:** the collection-predicate push-down, worth a further
+28,928 → 13,835 buffers. `analytics_sales` maps long→short collection through a `CASE`, and
+`idx_sales_2026_pulse_window` leads on the **long** form — so `collection = ANY('{topshot}')`
+against the view is a Filter, never an Index Cond, and the leading column goes unconstrained.
+Real and semantics-preserving, but the vacuum alone already gives 2.3 s against a 30 s
+`service_role` timeout; filed rather than bundled into tonight's fix.
+
+⛔ **Materialising this leaderboard is moot** and should not be revived on these grounds — it was
+the live candidate and would have been a freshness/product decision plus a rollup table and refresh
+job, to solve a stale visibility map.
+
+⚠ **Worth a sweep, not assumed:** `sales_2026` carries ~20 indexes, many `INCLUDE`-covering
+(`idx_sales_2026_*_cover`, `idx_sales_2026_fmv_recalc_window`, …). A stale VM defeats index-only
+scans for all of them, so this route may not be the only surface that was paying it on an
+IO-bound instance.
+
 ### 2026-08-28 · 🚨 COMMITTING THE EDGE SOURCES EXPOSED TWO LIVE CURSOR-ADVANCE-ON-FAILURE DEFECTS — and `main` is still red on 3 of 6 guards, deliberately left for R21's author
 
 **R21 (`2e4bbb88c`) committed 18 deployed-only edge function sources. That reddened SIX assertions across
