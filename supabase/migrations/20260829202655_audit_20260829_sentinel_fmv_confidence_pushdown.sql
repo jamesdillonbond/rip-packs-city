@@ -5,6 +5,11 @@
 -- collection filter into the DISTINCT ON so rpc_ops_snapshot() stops timing out.
 -- Idempotent CREATE OR REPLACE; re-running against prod is a no-op.
 -- REVERT: CREATE OR REPLACE the prior SQL body reading FROM public.fmv_current.
+-- anon-exec: already-revoked — sentinel_fmv_confidence_rows has anon EXECUTE = FALSE
+-- and authenticated EXECUTE = FALSE, verified 2026-08-29 via has_function_privilege()
+-- rather than acl text. This is a SNAPSHOT migration: CREATE OR REPLACE FUNCTION does not
+-- reset a function ACL, so the existing revoke survives and adding a REVOKE here
+-- would be a production ACL change, not a no-op. Hence the marker, not a revoke.
 CREATE OR REPLACE FUNCTION public.sentinel_fmv_confidence_rows(p_collection_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(confidence text, count bigint)
  LANGUAGE plpgsql

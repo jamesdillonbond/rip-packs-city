@@ -3,6 +3,11 @@
 -- definition (table aliased fs, projected column conf). Idempotent; committing
 -- both files reproduces the final function and clears migration-parity for both
 -- recorded names. Re-running against prod is a no-op.
+-- anon-exec: already-revoked — sentinel_fmv_confidence_rows has anon EXECUTE = FALSE
+-- and authenticated EXECUTE = FALSE, verified 2026-08-29 via has_function_privilege()
+-- rather than acl text. This is a SNAPSHOT migration: CREATE OR REPLACE FUNCTION does not
+-- reset a function ACL, so the existing revoke survives and adding a REVOKE here
+-- would be a production ACL change, not a no-op. Hence the marker, not a revoke.
 CREATE OR REPLACE FUNCTION public.sentinel_fmv_confidence_rows(p_collection_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(confidence text, count bigint)
  LANGUAGE plpgsql
