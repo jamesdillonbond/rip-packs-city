@@ -8,6 +8,7 @@ import {
   classifyImportMapDrift,
   normaliseSource,
   runContentCensus,
+  driftExitCode,
 } from "@/scripts/check-edge-fn-drift.mjs"
 
 // Guards the edge-function drift detector — the only check in this repo that can
@@ -284,3 +285,38 @@ describe("edge-fn drift detector — tier 2 content census", () => {
   })
 })
 
+describe("edge-fn drift detector — the run's exit code", () => {
+  // Extracted from main() on 2026-08-29 because it DISAGREED with the report
+  // printed immediately above it. The report already refuses to publish an
+  // all-clear it did not earn ("no PROVEN drift — but the content census did not
+  // run, so this is NOT an all-clear"); the exit code returned 0 anyway, and CI
+  // reads the exit code, not the prose.
+
+  it("fails when the content census could not run, even with ZERO proven drift", () => {
+    // THE LATENT TRAP, and the reason this is worth a test rather than a comment.
+    // Today tier 1 proves 19 drifted so the run is red for another reason and the
+    // disagreement is invisible. Redeploy those 19 with their import maps and
+    // driftedCount goes to 0 while tier 2 has still failed on all 38 bodies since
+    // 2026-08-09 — the badge would go green and the natural reading is "fixed".
+    expect(driftExitCode({ driftedCount: 0, tier2Attempted: true, tier2Ran: false })).toBe(1)
+  })
+
+  it("still fails on proven drift while the census is dead — today's actual state", () => {
+    expect(driftExitCode({ driftedCount: 19, tier2Attempted: true, tier2Ran: false })).toBe(1)
+  })
+
+  it("passes ONLY when the census ran and found nothing", () => {
+    // The positive control. Without this, a body that returns 1 unconditionally
+    // would satisfy every other case in this block.
+    expect(driftExitCode({ driftedCount: 0, tier2Attempted: true, tier2Ran: true })).toBe(0)
+    expect(driftExitCode({ driftedCount: 1, tier2Attempted: true, tier2Ran: true })).toBe(1)
+  })
+
+  it("does not red on --tier1, where the census was never attempted", () => {
+    // A guard that fails on its own documented opt-out is a guard people delete.
+    // `tier2Ran` is false here for a categorically different reason: not asked,
+    // rather than asked and unable.
+    expect(driftExitCode({ driftedCount: 0, tier2Attempted: false, tier2Ran: false })).toBe(0)
+    expect(driftExitCode({ driftedCount: 2, tier2Attempted: false, tier2Ran: false })).toBe(1)
+  })
+})

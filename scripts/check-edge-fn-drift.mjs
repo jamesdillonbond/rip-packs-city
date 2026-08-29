@@ -146,6 +146,32 @@ function readRepoFunctions() {
  * `ran` is the POSITIVE CONTROL: false means no body was read, so nothing this
  * returns may be presented as a census.
  */
+/**
+ * The run's exit code, extracted so it can be pinned — it was inline and untested,
+ * and it disagreed with the report printed immediately above it.
+ *
+ * The bug it fixes is LATENT, not live: today tier 1 proves 19 drifted functions,
+ * so the run is red for that reason and the disagreement is invisible. The moment
+ * those 19 are redeployed with their import maps, `drifted.length` goes to 0 and
+ * this process exits 0 — while tier 2, the AUTHORITATIVE tier, has failed on all
+ * 38 bodies since 2026-08-09 (the Management API now serves an eszip bundle where
+ * this script's `api()` helper calls `r.json()`).
+ *
+ * The reporting already refuses to publish an all-clear it did not earn: it prints
+ * "no PROVEN drift — but the content census did not run, so this is NOT an
+ * all-clear." The exit code said 0 anyway, and CI reads the exit code, not the
+ * prose. Someone fixing the 19 would have watched the badge go green and
+ * reasonably concluded the fleet was clean.
+ *
+ * ⚠ `--tier1` is deliberately unaffected: when the census was never ATTEMPTED,
+ * its not having run is the stated mode, not a failure. A guard that reds on its
+ * own documented opt-out is a guard people delete.
+ */
+export function driftExitCode({ driftedCount, tier2Attempted, tier2Ran }) {
+  if (tier2Attempted && !tier2Ran) return 1
+  return driftedCount > 0 ? 1 : 0
+}
+
 export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5 }) {
   const contentDrift = []
   const bodyFailures = []
@@ -353,7 +379,11 @@ async function main() {
             "no PROVEN drift — but the content census did not run, so this is NOT an all-clear."
     )
   }
-  process.exitCode = drifted.length > 0 ? 1 : 0
+  process.exitCode = driftExitCode({
+    driftedCount: drifted.length,
+    tier2Attempted,
+    tier2Ran,
+  })
 }
 
 // Only run when invoked directly, so tests can import the pure core.
