@@ -10,6 +10,61 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-28 · 🚨 COMMITTING THE EDGE SOURCES EXPOSED TWO LIVE CURSOR-ADVANCE-ON-FAILURE DEFECTS — and `main` is still red on 3 of 6 guards, deliberately left for R21's author
+
+**R21 (`2e4bbb88c`) committed 18 deployed-only edge function sources. That reddened SIX assertions across
+FIVE guard files — and the reddening is the point: these functions were RUNNING IN PRODUCTION where no
+guard in this repo could see them.** Two resolved (`13214213f`), three left with analysis.
+
+## 🚨 The finding: two deployed indexers advance their cursor past a FAILED range
+
+`indexer-cursor-hold-on-partial-scan-guard` demands a by-hand check before a new walker joins its
+inventory — *"check by hand that a failed range cannot advance its cursor"*. **I did it. It FAILED for
+both.**
+
+- **`flowty-loan-indexer`** — the `flowty_loan_events` upsert error is logged and **swallowed**
+  (`else if (error) console.log("[idx] event insert err:", …)`), and the `rebuild_flowty_loans` RPC error
+  likewise. Then `cursor = chunkEnd + 1` runs **unconditionally**, and `scan_checkpoint` is upserted every
+  5 chunks. **A failed insert advances past those blocks permanently — the events are never re-scanned.**
+- **`scan-storefront-events`** — worse, because it *knows*: an empty/timed-out chunk is **counted**
+  (`if (blocks.length === 0 && …) timeouts++`) and then `currentStart = currentEnd + 1` advances anyway.
+  `scannedThrough` is written to `scan_checkpoint` **as if the range had been read.**
+
+⭐ **This is the 19-instance swallow class, in production, in code the repo could not see.** They are
+added to the guard's inventory with a comment stating plainly that **membership is an accounting of the
+set, NOT a clean bill of health** — otherwise a later reader takes the list as verification.
+
+⛔ **NOT fixed here: both are DEPLOYED.** The defect is live whatever the repo says, and correcting it
+needs an edge deploy (mandatory CLI flags + secrets — the `rpc-edge-fn-deploy` skill), not a test edit.
+**Do not "fix" this by editing the committed source and assuming production changed.**
+
+## ✅ Also resolved: a security guard's FALSE POSITIVE, verified rather than suppressed
+
+`edge-fn-no-hardcoded-gate-keys` flagged `CHECKPOINT_KEY` in both functions. **Read before suppressing:**
+each is the `key` COLUMN of a `scan_checkpoint` row (`.eq("key", CHECKPOINT_KEY)`,
+`upsert({ key: CHECKPOINT_KEY, block_height, … })`). They name a cursor row and authorize nothing — the
+detector matches the identifier NAME. Added to the guard's own `NON_CREDENTIAL_KEY_CONSTANTS` with that
+reason, which is the mechanism it provides. **R21's "credential-scanned twice, zero hits" was correct.**
+
+## ⛔ THREE STILL RED, AND I DID NOT TOUCH THEM ON PURPOSE
+
+| guard | state | why not me |
+|---|---|---|
+| `edge-functions-have-reachable-tests-ratchet` | BUDGET 10, found **28** | Its own message says *"Give the function reachable behaviour … rather than raising this."* |
+| `edge-inline-copy-drift-guard` | 2 unpinned verbatim copies (`toSerial`, `clampInt` in `allday-unmapped-resolver`) | Each pin needs a `<why a drift here bites>` reason I cannot supply for someone else's code |
+| `edge-fn-drift-checker` | expected 3, found **21** | It is a **PROOF** reproducing the 2026-08-07 fleet measurement; re-baselining changes what it proves |
+
+⭐ **The legitimate argument for re-baselining, stated so the author does not have to re-derive it:**
+these 18 functions were **already deployed and already carried whatever risk they carry**. The counts did
+not get worse — **they became MEASURABLE.** A ratchet whose population tripled because previously-invisible
+code entered the tree is measuring visibility, not regression. ⚠ **But that call belongs to whoever
+committed them and knows which are safe** — re-baselining another session's bulk commit, against guards
+that explicitly forbid the shortcut, is exactly the unilateral move this file keeps recording as a
+mistake.
+
+**Revert path:** `git revert 13214213f` restores the two guard files. It touches **no production state**;
+reverting only re-hides the defect above. **Nothing shipped to the DB or to any edge function.**
+
 ### 2026-08-28 · ⛔ THE CANDY SINGLE-SCAN RECIPE DOES **NOT** TRANSFER to `candy_special_serials_board` — measured before extending it, and the dominant cost is somewhere else entirely
 
 **The previous entry ended by naming `candy_pack_market` and `candy_special_serials_board` as "the obvious
