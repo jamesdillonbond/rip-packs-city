@@ -79,3 +79,26 @@ At ~1 s per chunk inside a 15 s budget that is **~14 iterations ≈ 350 editions
 - **Whether `refresh_wmc_fmv_drift_active` is worth fixing at all.** Its predicate (`>25%` deviation, allow-listed wallets) is a strict SUBSET of `refresh_wmc_fmv_changed`'s (`IS DISTINCT FROM`, all wallets), which writes ~622 rows/run against drift's ~1. **On paper drift is a prioritisation backstop for the 26 active wallets while `changed` works through its own backlog — but nobody has measured whether it ever updates a row `changed` would not have reached first.** ⚠ That question decides between "add an index" and "retire the job", and it is cheap to answer: instrument which rows drift updates that `changed` had not already converged. ⛔ **Do NOT retire it on `rows_written` — CLAUDE.md names that exact error.**
 - **Whether 136 holders/edition is representative.** One 25-edition sample from the head of the backlog.
 - **Whether the replacement index is actually chosen by the planner.** An index existing is not an index used — tonight's `rwfd` fix turned on precisely that distinction, where the right index already existed and was unreachable.
+
+---
+
+## ⛔ CORRECTION 2026-08-29 04:26Z — "it is going backwards" was measured over 47 minutes and does not hold. It is at STEADY STATE.
+
+Re-measured 2.6 hours after the build fix, by the same author.
+
+| | at 01:47Z (pre-fix) | 02:34Z | 04:26Z |
+|---|---|---|---|
+| `rwfd_state` lag | 858.7 min | 565.3 min | **258.2 min** |
+| backlog editions | 12,320 | 13,193 | **13,254** |
+
+⭐ **The two instruments disagree, and that is the whole lesson — not a contradiction.** The cutoff has advanced **ten hours of timeline** while the number of distinct editions ahead of it moved **+2.6%**. Both are true: the drain is chewing through the timeline at roughly the rate new snapshots arrive, so the lag falls toward an asymptote while the edition backlog sits flat.
+
+⛔ **Two readings in this filing were each selective and I am withdrawing both:**
+1. *"Then it stopped — 16 seconds of cutoff in the next 29 minutes"* — real, but a dense patch of the timeline, not a stall.
+2. *"backlog editions went 12,320 → 13,193. **It is going backwards**"* — that rise happened inside the first 47 minutes; over the following 112 minutes the backlog moved +61. **Neither window was long enough to support a trend claim, and I made one.**
+
+✅ **The build fix itself is now well supported: 31 post-fix runs, 0 failed**, against a 19.7% pre-fix rate — P(0 of 31 | 19.7%) ≈ **0.1%**.
+
+⭐ **The core finding is UNCHANGED and if anything sharper.** Those same 31 runs wrote **13 rows** in total. At ~15 s of loop budget each that is **roughly eight minutes of database time to update thirteen `wallet_moments_cache` rows**, and the per-chunk measurement (3,242 buffers returning zero rows, ~136 holders per edition, ~1.8M row reads per full pass to serve 26 wallets) is what explains it. **The candidate fix and the reasons for not shipping it stand exactly as written above.**
+
+⚠ **The durable instrument lesson: `rwfd_state` lag-in-minutes and backlog-in-editions answer different questions, and reading either alone gives a confident wrong trend.** Quote both, or quote neither.
