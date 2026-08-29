@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the collection page's Packs column drew the SAME em-dash for "you own none" and "we could not check", and a live 21-hour outage is exactly when the second one happens
+
+**Revert:** `git revert <sha of the commit named below>` — three files, no DB, no migration.
+
+⭐ **The honest signal was already on the wire; the CLIENT was the layer dropping it.**
+`/api/wallet-packs` degrades on purpose: when Top Shot GraphQL fails it returns a **200**
+carrying `{ walletAddress: null, totalSealedPacks: 0, packsByTitle: {}, error: "Sealed pack
+data is unavailable right now." }`, and its own comment says *"the caller reads packsByTitle
+and renders nothing"*. The caller did exactly that —
+`if (d && d.packsByTitle) setPacksByTitle(d.packsByTitle)` — and `{}` is **truthy**, so a
+failed read was stored as an answer, `getPackCount` returned `0`, and
+`CollectionMomentTable` drew the same `—` it draws for a wallet that genuinely holds no
+packs of that set.
+
+⚠ **This is the fifth-layer shape CLAUDE.md's four-row table does not cover** — not a null
+JSON body and not a non-OK status, but a **200 whose failure lives in a sibling key**.
+`fetchJson()`'s `ok` discriminator would not have caught it either; HTTP 200 *is* ok.
+
+**Why now:** `public-api.nbatopshot.com` has been returning Cloudflare **530 (code 1033)**
+and **503** since 2026-08-28 18:22Z — **~21 h at time of writing** — so this is the branch
+running in production right now, not a hypothetical.
+
+**Fix — three states where there were two.**
+- `CollectionTabClient.tsx`: new `packsFailed` state; the fetch now branches three ways
+  (`!d || d.error` → failed · `d.packsByTitle` → answer · neither → untouched), and the
+  `.catch` sets it too, since a network failure was the third silent path.
+- `getPackCount` returns `number | null` — **`null` = unknown, `0` = a measured zero.**
+- `CollectionMomentTable.tsx`: `null` renders `?` with a title that says it in words
+  (*"…this is not a count of zero"*), `0` keeps its `—`, a real count is unchanged.
+
+**Pinned, and the pin was mutation-tested.**
+`__tests__/component-CollectionMomentTable-packs-cell-has-three-states.test.tsx` asserts the
+**DISTINCTION, not the glyph** — no test mentions `?` or the copy — and locates the cell by
+its header's own column INDEX rather than an `nth-child` literal, so an added column cannot
+silently repoint it. ⚠ It also asserts the real count differs from **both**, or a component
+that drew one glyph for everything would satisfy it. **Mutation control: deleting the
+`count === null` branch fails it with `expected '—' not to be '—'`; restoring it passes.**
+
+⚠ **And the wire contract is now asserted POSITIVELY** in `api-wallet-packs.test.ts`
+(`typeof body.error === "string"`, non-empty, `packsByTitle` empty alongside it). The
+existing test only checked the message did not LEAK the upstream text; nothing said the key
+had to exist. It is now load-bearing for a different file, which is precisely the case
+CLAUDE.md flags — *a comment is only read by someone already in that file.*
+
+⛔ **What this does NOT claim.** The rest of the `topshotGraphql` blast radius was audited
+this pass and is **already honest**: nine user-facing routes call it, `topshotGraphql`
+THROWS on `!response.ok`, and `isUnresolvedIdentifierError` is `/could not resolve/i` — narrow
+enough that a 530 does **not** get classified as "we couldn't find that username" and falls
+through to `apiErrorResponse`. **The layer held under a real 21-hour outage.** This was the
+one gap. Nothing was changed in those routes.
+
+⭐ Discriminator worth keeping: during this outage the Top Shot pipelines split cleanly by
+BACKEND, not by name — the GraphQL-backed ones are at 100% failure (`offers-sweep`,
+`topshot-moments-hydrator`, `topshot-pack-pool-backfill`, `topshot-fmv-populate`,
+`topshot-badge-*`, `ingest-topshot-challenges`) while the **chain**-backed ones are healthy
+(`topshot-offers-indexer` 2.8% fail, `topshot-stub-resolver` 2.1%,
+`topshot-deal-floor-serials` 4.3%). "Top Shot is down" would have been the wrong summary.
+FMV is unaffected — it is computed from indexed `sales`, and Top Shot's newest
+`fmv_snapshots` row is **5.1 minutes old**.
+
 ### 2026-08-29 · ✅ VERIFIED at n ≫ 1 — three self-armed exit conditions answered, one of them a REFUSAL to credit a fix
 
 No code or DB shipped in this entry. Three claims from earlier today rested on n = 1 or on

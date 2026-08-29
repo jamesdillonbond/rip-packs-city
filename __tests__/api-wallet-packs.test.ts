@@ -96,5 +96,17 @@ describe("GET /api/wallet-packs", () => {
     expect(body.walletAddress).toBeNull()
     expect(body.totalSealedPacks).toBe(0)
     expect(body.error).not.toContain("rate limited")
+
+    // ⚠ THE `error` KEY IS A LOAD-BEARING CONTRACT, NOT DECORATION (2026-08-29).
+    // `totalSealedPacks: 0` and `packsByTitle: {}` on this path are byte-identical
+    // to a wallet that genuinely holds no packs, so `error` is the ONLY thing that
+    // tells them apart — and CollectionTabClient now discriminates on exactly it
+    // (`if (!d || d.error) setPacksFailed(true)`) to draw a distinguishable cell.
+    // Dropping the key here would silently restore the defect in a file nobody
+    // editing this route would think to open, so it is asserted POSITIVELY: a
+    // non-empty string, and the empty map alongside it.
+    expect(typeof body.error).toBe("string")
+    expect(body.error.length).toBeGreaterThan(0)
+    expect(body.packsByTitle).toEqual({})
   })
 })

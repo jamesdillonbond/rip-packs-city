@@ -98,6 +98,15 @@ function WalletMomentsBody() {
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
+  // ⚠ THE THIRD STATE FOR THE PACKS COLUMN (2026-08-29). `packsByTitle = {}` is
+  // produced by BOTH "this wallet holds no sealed packs" and "the sealed-pack
+  // read failed", and the column rendered an em-dash for both. /api/wallet-packs
+  // deliberately degrades to a 200 carrying `{ packsByTitle: {}, error }` when
+  // Top Shot GraphQL is down (its own comment says so) — so the honest signal
+  // was already on the wire and this client was the layer dropping it. Measured
+  // during the 2026-08-28/29 Top Shot outage: `public-api.nbatopshot.com`
+  // returned Cloudflare 530/503 for 21 h, which is exactly when that branch runs.
+  const [packsFailed, setPacksFailed] = useState(false)
   // Bumped once per runSearch; CollectionRecentSales owns the fetch + its own state.
   const [salesSearchNonce, setSalesSearchNonce] = useState(0)
   const [copied, setCopied] = useState(false);
@@ -740,12 +749,17 @@ function WalletMomentsBody() {
       // Fire-and-forget: load sealed pack titles for this wallet. (The response's
       // totalSealedPacks was previously stored in a `sealedPackCount` state that
       // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)
+      setPacksFailed(false)
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
-          if (d && d.packsByTitle) setPacksByTitle(d.packsByTitle)
+          // Three outcomes, three branches — not two. A non-OK response (d null)
+          // and a 200 carrying `error` are BOTH failures; only the third case is
+          // an answer, and only it may set the map.
+          if (!d || d.error) { setPacksFailed(true); return }
+          if (d.packsByTitle) setPacksByTitle(d.packsByTitle)
         })
-        .catch(function() {})
+        .catch(function() { setPacksFailed(true) })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -932,7 +946,10 @@ function WalletMomentsBody() {
   // We match by checking if a distribution title contains the set name
   const packLookup = useMemo(() => buildPackLookup(packsByTitle), [packsByTitle])
 
-  function getPackCount(setName: string): number {
+  // null = UNKNOWN (the read failed), 0 = a measured "no packs of this set".
+  // The table renders those differently; collapsing them here is the defect.
+  function getPackCount(setName: string): number | null {
+    if (packsFailed) return null
     return computePackCount(packLookup, setName)
   }
 

@@ -90,7 +90,10 @@ export default function CollectionMomentTable(props: {
   hasSearched: boolean
   loading: boolean
   showDebug: boolean
-  getPackCount: (setName: string) => number
+  // Returns null when the sealed-pack read FAILED, a number when it answered.
+  // ⚠ Not `number` with 0 for both — an em-dash for a failed read is a measured
+  // zero the reader cannot tell from the real one. See CollectionTabClient.
+  getPackCount: (setName: string) => number | null
   // Collection brand accent (collectionObj?.accent ?? var(--rpc-red)) — used by
   // the mobile thumbnail fallback + the primary-badge stat chip.
   accent: string
@@ -540,6 +543,16 @@ export default function CollectionMomentTable(props: {
                       <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const count = getPackCount(row.setName)
+                          if (count === null) {
+                            return (
+                              <span
+                                className="text-[color:var(--rpc-text-muted)]"
+                                title="Sealed pack data is unavailable right now — this is not a count of zero."
+                              >
+                                ?
+                              </span>
+                            )
+                          }
                           if (!count) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           return (
                             <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} className="hover:opacity-80" style={{ color: accent }}>
