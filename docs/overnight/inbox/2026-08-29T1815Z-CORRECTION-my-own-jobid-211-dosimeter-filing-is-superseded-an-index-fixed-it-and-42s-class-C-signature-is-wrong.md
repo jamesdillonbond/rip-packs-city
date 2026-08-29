@@ -70,6 +70,22 @@ writing (18:1xZ).** 18:35Z is the WORST slot in the whole history (16 of 39, 41.
 in ~2 s, all four slots are confirmed. If it fails at 600 s, the fix is partial and this filing is
 the thing to re-open**, because 18:35Z is the coldest-pool slot and therefore the real test.
 
+### ✅ FALSIFIER RESOLVED — 18:35Z SUCCEEDED, and HOW it succeeded is more informative than the pass
+
+**08-29 18:35Z: `succeeded`, 40 s.** All four slots on 08-29 now read **2 s · 2 s · 2 s · 40 s**,
+against a slot whose own history is **16 of 39 (41.0%)** with **every failure at exactly 600 s**.
+⭐ **The fix holds on the worst slot, on the worst IO day on record for that tick.**
+
+⭐⭐ **But 40 s is not 2 s, and that 20× spread inside a single day is the real finding.** 18:35Z ran
+inside the spell the monitor measured at `io_wait 40 / active 41 of 51`; the other three did not. So
+the job is **still IO-sensitive — it has simply stopped being BIMODAL.** Before the index a bad band
+meant a 600 s kill; now it means 40 s, comfortably inside the ceiling. 👉 **State the fix precisely:
+it did not make the query immune to contention, it made contention a COST rather than an OUTCOME.**
+⚠ **So 40 s is the number to watch, not 2 s** — this slot has roughly **15× headroom** left against
+its ceiling, not 300×.
+
+ⓘ This retires the last open question in this filing; nothing here is left pending.
+
 ## 4. ⭐⭐ THE TRANSFERABLE FINDING — #42's Class C signature is wrong, and jobid 211 was its exemplar
 
 known-issues **#42** classifies the fleet by `max(success duration) ÷ ceiling` and says of **Class C**:
