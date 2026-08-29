@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (prod DB, index REPLACE) — jobid 237's MV refresh goes 77,514 ms → 982 ms, and the cost objection that made it Trevor's call turned out to be already paid
+
+**Shipped on Trevor's explicit delegation (*"do what you think is best… keep going on anything still unresolved"*).** This is the fix predicted, then measured, earlier today: `rpc-refresh-pack-reality-dist` (pg_cron jobid 237) was Class C — 79 ok / 4 dead at the 602 s ceiling in 7 days, ~2,430 s/7d thrown away — because its MV's defining query heap-fetched `pull_value_usd` for every row in a 60-day window.
+
+**BUILT:** `idx_pack_rips_collection_time_pv` — `(collection_id, sealed_at DESC) INCLUDE (pull_value_usd)`, **174 MB**. **DROPPED:** the superseded `idx_pack_rips_collection_time` (144 MB). ⭐ **A REPLACE, not an ADD: identical leading columns, so every query the old index served is still served and the table's index COUNT stays at ten.** Net disk **+30 MB**.
+
+**✅ MEASURED, before and after, in comparable QUIET windows** (`io_wait 0 / active 1 of 42` before, `1 / 2 of 42` after — not a saturated-vs-quiet comparison, which would have flattered it):
+
+| | plan | buffers | disk reads | **time** |
+|---|---|---:|---:|---:|
+| before | `Index Scan` | 45,159 | 19,017 | **77,513.63 ms** |
+| after | **`Index Only Scan`** | 11,897 | **2,974** | **982.33 ms** |
+
+⭐⭐ **78.9× on wall clock, 6.4× on disk reads, and the plan flipped exactly as predicted.** ⚠ The AFTER ran against a **cold, just-built** index, which biases *against* the fix, and **9,909 `Heap Fetches` remain** (the visibility map is not perfectly clean, so a VACUUM would take it further — not done, not needed).
+
+⭐ **The prediction was hedged correctly and the hedge mattered:** the filing said *"seconds at most, not 77"* and explicitly warned **not** to quote *"77.5 s → 36 ms"*, because the 36 ms control merely COUNTS and never materialises the 88,553-row `numeric` CTE. **Actual: 982 ms — inside the hedge, and 27× off the number I refused to promise.**
+
+🚨 **WHY THIS WAS WORTH DOING RATHER THAN FILING: it is a USER-FACING board.** The MV backs the view `topshot_pack_reality_dist`, which grants **SELECT to `anon` AND `authenticated`** and is read by `/api/public/insights/pack-reality` and `/insights/pack-reality`. A refresh that cannot finish under load serves a stale public board, and it was already failing ~5% of runs on the wrong side of a 602 s ceiling — on an instance whose daytime capacity has been measurably eroding for six weeks (the jobid-211 series).
+
+⭐⭐ **AND THE COST OBJECTION THAT MADE THIS "TREVOR'S CALL" WAS ALREADY PAID — this is the part worth keeping.** The 08-28 migration correctly recorded that **`INCLUDE` and predicate columns BLOCK HOT UPDATES** and that `pull_value_usd` is exactly what the valuation backfill writes. **But HOT is ALL-OR-NOTHING, and `pack_rips` measures `hot_pct = 0.00%` — 119,046 updates, ZERO of them HOT** — because `idx_pack_rips_dist_agg` (shipped 08-28) already carries `pull_value_usd`. **So there was no HOT left to lose; the marginal cost is ONE extra index tuple per row update on a table taking ~119k updates in its tracked lifetime.** 👉 **Transferable: once a column is in ANY index, the HOT objection to adding it to a SECOND index is spent — check `n_tup_hot_upd` before repeating the objection, because it is a per-TABLE property, not a per-index one.**
+
+**HOW APPLIED.** `CREATE/DROP INDEX CONCURRENTLY` cannot run in a transaction block, so both went through the documented one-shot **single-statement pg_cron** recipe owned by `postgres` (`cron_heavy` is not a member of the table owner): jobid **381** `tmp-build-pack-rips-colltime-pv-idx` (**succeeded, 197 s**) and jobid **382** `tmp-drop-pack-rips-colltime-idx`. `ALTER ROLE postgres SET statement_timeout = '1800s'` for the window, **RESET afterwards**. ✅ **Both jobs unscheduled; `cron.job` back to its baseline; ZERO invalid `idx_pack_rips*` indexes.** Repo record: `supabase/migrations/20260829200500_idx_pack_rips_collection_time_pv_covering.sql`.
+
+⏱ **FALSIFIER, dated and cheap: jobid 237 runs `42 */2`. Its next ticks should complete in SECONDS, against a 303 s best-ever success. If any tick still burns 600 s, the base scan was not the binding cost and this entry is wrong** — the revert is the two `CONCURRENTLY` statements at the foot of the migration file, in that order.
+
+**Revert path:** `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_collection_time ON public.pack_rips (collection_id, sealed_at DESC);` then `DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_collection_time_pv;` — both via the same one-shot pg_cron recipe. ⛔ No schema change, no cron schedule change, no data mutation.
+
 ### 2026-08-29 · ✅ SHIPPED (code, 2 items) — a 100%-failing backfill that could not say WHY, and a sibling session's new test that reddens `main` for 5 hours in every 6
 
 **Revert:** `git revert <sha of the commit named below>` — two routes/libs + one new
