@@ -196,6 +196,12 @@ function tierColor(tier: string | null): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /**
+   * The SERVER's clock at render, used to age asks. Optional so existing callers
+   * and tests keep working; when omitted the markers simply appear on mount.
+   * ⚠ Passing it is what makes the staleness visible WITHOUT JavaScript.
+   */
+  initialNowMs?: number | null
   /** Non-null only when the server-side read FAILED (not when it was empty). */
   initialDegraded?: DegradedSummary | null
 }
@@ -203,6 +209,7 @@ type Props = {
 export default function DealsBoardClient({
   initialRows,
   initialFetchedAt,
+  initialNowMs = null,
   initialDegraded = null,
 }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
@@ -213,9 +220,12 @@ export default function DealsBoardClient({
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
   // Post-mount clock: null through SSR so ask-age output cannot differ between the
   // server render and hydration. See askVerifiedAgeHours.
-  const [nowMs, setNowMs] = useState<number | null>(null)
+  // Seeded from the SERVER's clock so the markers render in the raw HTML and the
+  // first client render produces byte-identical markup; refreshed on mount so a
+  // long-lived tab does not keep showing a 5-minute-old age.
+  const [nowMs, setNowMs] = useState<number | null>(initialNowMs ?? null)
   useEffect(() => {
-    setNowMs(Date.now()) // hydration-safe: set in an effect, so it is null at SSR and nothing server-renders
+    setNowMs(Date.now()) // hydration-safe: runs after hydration, so it cannot differ from the server render
   }, [])
 
   const [tier, setTier] = useState<TierFilter>("ALL")

@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the deals-board honesty now works WITHOUT JavaScript, found by verifying the live page instead of trusting the deploy
+
+**Revert:** `git revert <sha of the commit named below>` — the server page, the client
+component, one test file. No DB. Follow-on to the fix two entries above.
+
+⭐ **Found by actually fetching the deployed page.** The deploy was READY and the tests
+were green, so it would have been easy to call it done. Fetching the rendered HTML (via
+Vercel's own fetch — the agent proxy denies `www.rippackscity.com`) showed the fix was
+**half live**:
+
+| in the raw server HTML | |
+|---|---|
+| `Board rebuilt …` | ✅ present |
+| `⚠ ask unconfirmed 28h` | ⛔ **absent** |
+| `Asks refresh continuously` | 🚨 **still there, and still false** |
+
+**Because I had made the marker post-mount to satisfy the hydration guard**, the staleness
+appeared only after JavaScript ran. So a reader with JS disabled, **and every crawler**,
+still got the steady-state claim over day-old asks. The guard was right that a render-time
+`Date.now()` is React #418; my remedy was right about hydration and **wrong about the
+audience**.
+
+**Fixed by passing the SERVER's clock as a prop** (`initialNowMs={Date.now()}` from the
+server component). That is hydration-safe for a different and better reason — the value is
+**serialised into the payload**, so the server render and the first client render use the
+identical number, no clock is read during render, and the guard stays green — while putting
+the honesty into the raw HTML. A mount effect still refreshes it so a long-lived tab does
+not sit on a five-minute-old age. ⚠ `revalidate = 300` bounds the server value at 5 minutes
+stale; the markers are hour-granular, so that is immaterial.
+
+**Verified on the live deployment**, not inferred: SSR now carries
+`⚠ ask unconfirmed 28h`, `1 of 1 asks unconfirmed (oldest 28h)`, and **no**
+`Asks refresh continuously`.
+
+⚠ **THE TEST I WROTE FIRST WAS WRONG, AND ITS FAILURE IS THE USEFUL PART.** I asserted that
+the SSR string and the post-effect DOM produce the same age. It failed **28h vs 29h** — and
+that is **not** a hydration mismatch, it is the mount effect refreshing to the real clock
+exactly as designed. Hydration safety is a property of the FIRST client render, which uses
+the prop. Rewritten to pin the clock to the same instant so the effect is a no-op, leaving
+only the property that matters. **A test that compares SSR to a post-effect DOM is testing
+the wrong render**, and it would have failed forever for a correct component.
+
+⚠ Second harness trap in the same test: React separates adjacent text nodes with `<!-- -->`
+in SSR output, so `ask unconfirmed <!-- -->28h` does not match a naive regex. The separators
+are stripped before asserting — what matters is the text a reader sees.
+
+**Mutation control:** reverting the seed to `useState(null)` — i.e. back to post-mount only
+— fails the SSR test, which is precisely the half-live state the live fetch caught.
+Full suite **1,396 files / 15,346 tests green**.
+
+⛔ **Still not fixed, and unchanged by this:** the asks themselves. `offers-sweep` stays
+dead until `public-api.nbatopshot.com` returns or we migrate off it, and the marker clears
+itself when the feed recovers because it is derived, not stored.
+
 ### 2026-08-29 · 📥 LANDED ON ANOTHER SESSION'S BEHALF (repo record of a prod change that was already applied) — the `sentinel_fmv_confidence_rows` pushdown, plus TWO register rows deliberately left alone
 
 **Committed two migration files a Cowork NO-PUSH session applied to prod and staged on the mount for exactly this.** Their headers say so in as many words — *"Applied to prod via Supabase MCP apply_migration … Staged on the mount for Trevor/Claude Code to commit (normal apply-then-commit-later flow)"* — and ⭐ **the claim was VERIFIED, not trusted: both versions exist in `supabase_migrations.schema_migrations` with matching names, and their FILENAMES match their recorded versions exactly** (`20260829202655`, `20260829202944`) — unlike the hand-stamped class recorded earlier this week.

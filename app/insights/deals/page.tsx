@@ -37,6 +37,18 @@ export default async function DealsPage() {
     <DealsBoardClient
       initialRows={initialRows}
       initialFetchedAt={initialFetchedAt}
+      // ⚠ THE SERVER'S CLOCK, PASSED AS A PROP, AND BOTH HALVES ARE DELIBERATE.
+      // The ask-age markers need a "now"; reading it in the client during render is
+      // React #418 (the hydration guard catches it). Passing it as a prop is
+      // hydration-SAFE — the value is serialised into the payload, so the server
+      // render and the first client render use the identical number — and it also
+      // puts the honesty INTO THE RAW HTML, which a post-mount-only clock cannot:
+      // without this, a reader with JS disabled and every crawler still saw
+      // "Asks refresh continuously" while the asks were a day old.
+      // ⚠ `revalidate = 300` above means this is at most 5 minutes stale. The
+      // markers are hour-granular, so that is immaterial; the client refreshes it
+      // on mount anyway.
+      initialNowMs={Date.now()}
       initialDegraded={degradedFromSource(source, "Below FMV board")}
     />
   )
