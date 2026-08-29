@@ -63,6 +63,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 📦 **NOT APPLIED YET, and the reason is my own rule from a few hours earlier:** it is 13:33Z, inside the 12–13Z `wallet-backfill` wave (70 runs in the last five minutes) and the daytime IO band. `apply_migration`'s `PGRST002` burst lands inside those waves as `rows_lost` — measured last night at 511 rows from one migration nine seconds earlier. **The file is committed; the apply waits for 14:00Z+.**
 
+✅ **BOTH HALVES VERIFIED IN PRODUCTION WITHIN 13 MINUTES, and the promote one is as clean a demonstration as this table will ever produce:**
+
+| time | scope | duration | rows_found / written / skipped | note |
+|---|---|---:|---|---|
+| 13:56:08 | nfl_all_day | **126,447 ms** | 0 / 0 / 0 | — |
+| **13:56:27** | nfl_all_day | **1 ms** | **NULL / NULL / NULL** | **`skipped_concurrent_run`** |
+
+**Nineteen seconds after a 126-second AllDay drain started, a second AllDay call arrived, hit the advisory lock, and returned in ONE MILLISECOND.** Before today that was a second full 126-second duplicate scan. ⭐ **And its `rows_*` are NULL — which proves this morning's `log_pipeline_run` COALESCE removal working through a completely independent caller, hours after it shipped.**
+
+✅ **The indexer reorder verified too, first run after the deploy:** `allday-sales-indexer` at 13:56 recorded **1,789 ms against a true 1,700 ms — inflation 89 ms**, against a pre-fix average of **43,959 ms** (87.7% foreign). ⚠ n = 1, but the mechanism is deterministic — the log write now precedes the promote — so this is a confirmation that the reorder took effect, not an estimate of a rate.
+
 ⛔ **WHAT THIS DOES NOT FIX, and it is the bigger number:** AllDay carries **104,913 permanently unresolved rows**, and every run re-evaluates four resolution paths across them to promote **~1.5 sales an hour** — roughly **four hours of database time a day**, and `still_unresolved` moved **104,933 → 104,913 in thirteen hours**. ⚠ **`ok` is TRUE throughout**, because the honest-signal guard is `IF v_eligible > 0 AND v_promoted = 0 …`, which cannot fire when `eligible` is 0 or 1. **The advisory lock removes the duplicate quarter of that cost and nothing else.** The cadence question — whether `allday-sales-indexer`'s every-tick `finally` call is justified when pg_cron jobid 215 covers the same ground hourly — is a decision, and is filed rather than taken.
 
 ### 2026-08-28 · ✅ WATCH RESULTS — five run-4 exit conditions answered on real callers; one upstream outage found and correctly filed as ONE incident
