@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED + ✅ SHIPPED (code) — CI/testing audit: the gates are strong, the detectors are not firing
+
+**Filed:** `docs/overnight/inbox/2026-08-29T1741Z-ci-testing-audit-the-gates-are-strong-the-detectors-are-not-firing.md` (INDEX regenerated, 08-29 section 6 → 7).
+
+Full sweep of 20 workflows, 3 coverage gates, 1,392 vitest files, 181 SQL invariant files, 8 e2e specs. Four independent silent degradations on the POST-merge side:
+
+- 🚨 **GitHub is shedding ~92% of the scheduled ticks.** `pipeline-sentinel` (`34 * * * *`) ran 22/22/23 on 08-23/24/25 and **3 / 2 / 3** on 08-27/28/29; `ops-monitor` 48/day → **4 / 3 / 4**; `rpc-pipeline` 72/day → **2 / 3 / 3**. Corroborated from `pipeline_runs` (`stale-fmv-monitor` 8 rows/24 h vs 48). `state: active`, so not repo config; firing minutes are random. Ingest is NOT affected (cron-job.org + pg_cron are healthy) — **detection is.**
+- 🚨 **Three monitors cannot go red on what they monitor** — `rpc-pipeline` is 6/6 `continue-on-error`; `ops-monitor`'s `stale` and `issue_count > 0` both warn then `exit 0`.
+- 🚨 **`edge-fn-drift` red 21 of 22 runs since 08-09 is a TRUE positive (19 drifted) hiding a second failure** — tier 2 has never run (38/38 body reads fail on `ESZIP2.3`), and its pinned baseline of 31 reads 19, unreconciled.
+- 🚨 **No notification channel exists** — zero webhook/Slack/email steps in 20 workflows, which is null under the first finding.
+
+**Shipped (the one thing that was a defect rather than a decision):** `playwright.config.ts` had no `html` reporter and no `trace`, so `e2e-smoke.yml`'s `upload-artifact` logged `No files were found with the provided path: playwright-report/` on **every** failure of the repo's only client-side detector. Run 111 caught a real React #418 on `/insights/underpriced-serials` through two retries and retained zero diagnostics. Added the `html` reporter (`open: "never"`), `trace: "on-first-retry"`, and widened the upload to `test-results/` + `e2e-results.json`.
+
+**Revert path:** `git revert` the code commit (restores the two-reporter array and drops the trace); no DB half — this touched no prod state. The filing and INDEX entry revert with the docs commit.
+
 ### 2026-08-29 · 📦 FILED — `searchTopShotMarketplaceHistory` EXISTS, and a June decision deferred it on a premise that died yesterday
 
 Docs only; no code, no DB. Filing:
