@@ -8,22 +8,67 @@ on:
 jobs:
   sentinel:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Raised 5 -> 12 with the retry loop below. The route's own maxDuration is
+    # 180s, so three attempts plus backoff is up to ~10 minutes; at 5 the job
+    # would be KILLED mid-retry and red for the wrong reason, which is a false
+    # alarm on the one workflow that must stay trustworthy.
+    timeout-minutes: 12
     steps:
+      # ⚠ Until 2026-08-29 this step captured HTTP_CODE, echoed it, and NEVER
+      # TESTED IT. A 500, a 504, or a 401 from a rotated token all left STATUS as
+      # PARSE_ERROR, which is not "CRITICAL", so the step exited 0 — a sentinel
+      # that was completely down reported GREEN, and the badge is this alarm's
+      # only signal to anyone not reading Telegram. The route has 504'd under
+      # disk-IO saturation before (its own header records the 60 -> 180 s raise
+      # for exactly that), so this was not hypothetical.
+      #
+      # Three attempts before failing, matching ops-monitor's fmv-staleness step,
+      # so one transient blip under a saturation spell does not red the badge
+      # while a genuinely down sentinel still does.
+      #
+      # ⚠ Every assignment is `X=$(…) || X=""`. This is `bash -e`: a fallible
+      # command inside a bare assignment aborts the step where it stands, which
+      # would make the retry loop below DEAD CODE that still reads as coverage.
       - name: Run Pipeline Sentinel
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://www.rippackscity.com/api/sentinel \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json")
+          HTTP_CODE=""
+          BODY=""
+          STATUS=""
+          for attempt in 1 2 3; do
+            RESPONSE=$(curl -s --max-time 190 -w "\n%{http_code}" -X POST https://www.rippackscity.com/api/sentinel \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              -H "Content-Type: application/json") || RESPONSE=""
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1) || HTTP_CODE=""
+            BODY=$(echo "$RESPONSE" | head -n -1) || BODY=""
 
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response: $BODY"
+            echo "Attempt $attempt — HTTP Status: $HTTP_CODE"
+            echo "Response: $BODY"
 
-          STATUS=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
+            if [ "$HTTP_CODE" = "200" ]; then
+              STATUS=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','UNKNOWN'))" 2>/dev/null) || STATUS="PARSE_ERROR"
+              break
+            fi
+
+            echo "Non-200 (attempt $attempt) — retrying in 15s..."
+            sleep 15
+          done
+
           echo "Pipeline Status: $STATUS"
+
+          # A 200 whose body does not parse is NOT a pass. The sentinel's own
+          # header records a case where an HTML error page reached this parser;
+          # treating that as "not CRITICAL" is how an unreadable signal becomes a
+          # green badge.
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Pipeline Sentinel unreachable — last HTTP $HTTP_CODE after 3 attempts. The fleet alarm did not run."
+            exit 1
+          fi
+
+          if [ "$STATUS" = "PARSE_ERROR" ] || [ "$STATUS" = "UNKNOWN" ] || [ -z "$STATUS" ]; then
+            echo "::error::Pipeline Sentinel returned 200 with an unreadable status ($STATUS) — treat as a failed run, not a pass."
+            exit 1
+          fi
 
           if [ "$STATUS" = "CRITICAL" ]; then
             echo "::error::Pipeline Sentinel detected CRITICAL issues"

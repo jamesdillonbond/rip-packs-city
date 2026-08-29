@@ -62,11 +62,26 @@ The Supabase Management API returns the **eszip bundle**, not JSON, so the conte
 
 ---
 
-## 🚨 D. There is no notification channel. At all.
+## ⛔ D. CORRECTION (same session) — "there is no notification channel" was WRONG, and the way it was wrong is the reusable part
 
-Grepped all 20 workflows for `slack|webhook|notify|resend|discord|pagerduty|issue.*create`: **zero hits.** The entire alerting surface is (a) GitHub's default email to the actor on a failed scheduled run and (b) a red badge someone chooses to look at.
+**What I filed:** *"Grepped all 20 workflows for `slack|webhook|notify|resend|discord|pagerduty`: zero hits. There is no notification channel. At all."*
 
-**That channel is null under finding A** — a tick that never fires sends no email. So the two failures are multiplicative, not additive.
+**What is true:** there is a Telegram + Resend email alerting path, and it is live. `lib/ops-alert.ts` sends to both channels behind a 3-hour dedup (`ops_alert_should_send`), and `/api/sentinel` carries its own inline copies of both. Callers: `stale-fmv-monitor`, `data-integrity`, `smoke-test`, and the sentinel. **`alert_notifications_sent` holds 193 `high` and 20 `critical` rows, the most recent at 08-29 16:55Z** — an hour before I filed the claim.
+
+⭐ **The error is one this file already names: an exclusion justified by ANOTHER instrument is a claim about that instrument.** I scoped the grep to `.github/workflows/` because that is where CI alerting *would* live, and then reported the absence as a property of the system rather than of my search. The alerting lives one layer down, in the application, on purpose — and two of the routes say so in their headers.
+
+**What survives, and it is sharper than what I filed:**
+
+- ⚠ **The delivery OUTCOME was not durable anywhere.** The sentinel computes `telegram` / `telegram-FAILED` and `email` / `email-FAILED` — the silent-alert-failure guard working exactly as designed — and then puts it in the HTTP response body and a `console.log`. Nothing stored it. `alert_notifications_sent` records the **decision to send**, not the send: its columns are `alert_hash, sent_at, severity, pipeline_count, body_preview`, with no delivery field, and `sendOpsAlert` writes that row *before* both channels are attempted. So "did the alarm reach a human?" was unanswerable from any durable store. ✅ **FIXED this turn** — see the new finding J.
+- ⚠ **Finding A still bites the same way**, just via a different mechanism than I said: these alerts fire only when the route is INVOKED, and the sentinel is invoked by GHA alone. At 3 firings a day instead of 24, the fleet alarm's worst-case detection latency went from ~1 hour to ~8, with nothing anywhere turning red.
+
+## ⛔ B. PARTIAL CORRECTION — for two of the three, the badge was never meant to be the alarm
+
+`stale-fmv-monitor` and `data-integrity` both call `sendOpsAlert` themselves. The `::warning::`-then-`exit 0` shape is therefore **deliberate**, and `stale-fmv-monitor`'s header says so outright: *"Pass/fail for the GHA only depends on HTTP 200 + `status`."* The email is the alarm; the badge reports whether the check could run. That is a defensible split and I filed it as a defect.
+
+**What survives:** `rpc-pipeline.yml` is still 6/6 `continue-on-error` with no alerting of any kind behind it, so 30 of 30 runs are green by construction and nothing else is watching — that one stands as filed.
+
+🚨 **And the one place where the badge genuinely WAS the only alarm, it was broken.** `pipeline-sentinel.yml` captured `HTTP_CODE`, echoed it, and **never tested it**. The only failing branch was `STATUS = "CRITICAL"`, so a 500, a 504, or a 401 from a rotated token all left `STATUS` as `PARSE_ERROR` — not "CRITICAL" — and the step exited **0**. A sentinel that was completely down reported green. The route has 504'd under disk-IO saturation before (its own header records the 60 → 180 s `maxDuration` raise for exactly that), so this state was reachable, not hypothetical. ✅ **FIXED this turn.**
 
 ---
 
@@ -112,9 +127,30 @@ Coverage `include` globs, counted against the tree:
 - **`next build` never runs in CI.** Only `tsc --noEmit`. The BUILT BUNDLE is exercised for the first time on Vercel, after the push — and CLAUDE.md already records turbopack dropping a quasi from a `+`-joined template with every gate green.
 - **No `npm audit` gate.** `npm ci` reports **29 vulnerabilities (2 low, 15 moderate, 12 high)** on every CI run and nothing reads it.
 
-## ⚠ H. Two guards exist with no caller
+## ⛔ H. CORRECTION — the two "orphan" guards are deliberately unwired, and each says so in its own header
 
-`scripts/detect-duplicate-cron-pipelines.mjs` and `scripts/detect-jsx-space-drop.js` are referenced by no workflow, no npm script and no test. Written, never run.
+I reported `scripts/detect-duplicate-cron-pipelines.mjs` and `scripts/detect-jsx-space-drop.js` as "written, never run". Reading them first would have prevented that:
+
+- `detect-duplicate-cron-pipelines.mjs`: *"Diagnostic one-shot … Does NOT mutate anything. Output-only. Trevor reviews the markdown table and decides what to disable in cron-job.org."* It is a tool, not a gate, and correctly has no caller.
+- `detect-jsx-space-drop.js`: *"STATUS: USEFUL BUT NOT SOUND — it OVER-REPORTS. Do not treat its output as a defect list, and do not wire it into CI as a hard gate until the gap below is closed."* Spot-checking 5 of its 32 hits found 1 real and 4 false.
+
+**A recorded decision not to wire something is not an orphan.** This is the file's own rule about re-deriving a filed finding, and I broke it by grepping for callers instead of reading the two files.
+
+⭐ **What is worth keeping:** `detect-jsx-space-drop.js` targets a class CLAUDE.md says **nothing else here measures** — the build transform eating a space between JSX children, invisible to vitest because esbuild preserves what SWC drops. Six such defects shipped on public pages on 2026-07-27 with all 7,162 tests green. Its remaining gap is **diagnosed in its own header** (*"parse the emitted children sequence … rather than the flat set of string literals, and flag a text child only when its immediately-preceding sibling is an element call with no `\" \"` child between them"*) and nobody has taken it. That is a stated, bounded piece of work — not a wiring job — and it is the only route to a real gate on that class. ⛔ Not attempted here: it needs the reported-vs-real split re-measured against the live pages before anyone can tell whether the finished detector is sound.
+
+## ✅ J. The fleet sentinel had no durable run record — FIXED this turn
+
+`/api/sentinel` wrote **nothing** to `pipeline_runs`. Its status, its per-check verdicts and its alert-delivery outcomes existed only in the HTTP response body and a `console.log`. Its own sibling had the identical gap until deep-audit D7, whose fix comment states the rule:
+
+> *"A monitor whose own run history is invisible cannot be checked for having run, which is the one thing you need from a monitor."*
+
+The sentinel is the more important of the two and was missed. It now writes a `pipeline` = `sentinel` row carrying `status`, `checks_run`, the **breaching check NAMES** (a set, not a count — a count reads "no change" across a fix landing and a new arm firing the same day) and `notifications`, so a dead Telegram bot is now queryable rather than inferable.
+
+⭐ **This is also the cheapest partial answer to finding A:** the sentinel's true invocation cadence is now visible to any observer with one query, instead of only to whoever opens a GitHub Actions run that mostly does not exist. Independent corroboration that the row was needed: `stale-fmv-monitor`, which already had one, shows **11 rows in 48 h against 96 scheduled**.
+
+⛔ **Deliberately NOT paired with a `pipeline_cadence_watchlist` row.** The sentinel is the thing that reads that table, so an entry for itself is a guard that cannot fire exactly when it is needed — the tick that would notice the silence is the tick that did not happen.
+
+---
 
 ## ⚠ I. Naming what CI structurally is here
 

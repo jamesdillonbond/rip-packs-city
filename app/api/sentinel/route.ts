@@ -1478,6 +1478,67 @@ export async function POST(req: NextRequest) {
     report.notifications.push("github-actions-native");
   }
 
+  // ── Durable run record (2026-08-29) ───────────────────────────────────────
+  // Until today this route wrote NOTHING to pipeline_runs. Its status, its
+  // per-check results, and — the part that matters most — whether the Telegram
+  // and email alerts actually DELIVERED (`telegram-FAILED` / `email-FAILED`
+  // above) existed only in this response body and a console.log. So "did the
+  // fleet alarm run, and did anyone hear it?" was unanswerable from any durable
+  // store. That is this repo's worst alert sub-class applied to the DELIVERY
+  // rather than the condition: the output is silence, so the failure is
+  // unfalsifiable.
+  //
+  // The precedent is its own sibling, not an invention. `stale-fmv-monitor`
+  // carried the identical gap until deep-audit D7, and that fix states the rule
+  // in its own comment: "A monitor whose own run history is invisible cannot be
+  // checked for having run, which is the one thing you need from a monitor."
+  // This route is the more important of the two and was missed.
+  //
+  // ⚠ `ok` means THE SENTINEL RAN, not that the fleet is healthy — the same
+  // convention the sibling documents. Read `extra.status` for the verdict. A
+  // reader keying on `ok` here learns only that the check completed, which is
+  // why the breaching check NAMES are carried out rather than a count (a count
+  // reads "no change" across a fix landing and a new arm firing on the same day
+  // — diff the SET, not the number).
+  //
+  // ⛔ Deliberately NOT paired with a `pipeline_cadence_watchlist` row. This
+  // route is the thing that READS that table, so an entry for itself is a guard
+  // that cannot fire exactly when it is needed: the tick that would notice the
+  // silence is the tick that did not happen. The row's value is that any OTHER
+  // observer — the daytime monitor, the nightly pass, a human with one query —
+  // can now see this route's true invocation cadence, which GitHub's scheduler
+  // has been shedding (measured 2026-08-29: 3 firings on a day that asks for 24).
+  //
+  // rows_* are 0 rather than NULL on purpose: this route genuinely moves no
+  // rows, which is a MEASURED zero, not an unmeasured one. `log_pipeline_run`
+  // now preserves an explicit NULL, so the distinction is live and the choice
+  // has to be deliberate. Matches the sibling exactly.
+  try {
+    await supabase.rpc("log_pipeline_run", {
+      p_pipeline: "sentinel",
+      p_started_at: now.toISOString(),
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: true,
+      p_error: null,
+      p_collection_slug: null,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: {
+        status: overallStatus,
+        checks_run: checks.length,
+        critical: checks.filter((c) => c.status === "critical").map((c) => c.name),
+        warn: checks.filter((c) => c.status === "warn").map((c) => c.name),
+        notifications: report.notifications,
+        duration_ms: Date.now() - now.getTime(),
+      },
+    });
+  } catch (e) {
+    // Never let telemetry break the check it is measuring.
+    console.error("[sentinel] log_pipeline_run failed:", e);
+  }
+
   console.log(`SENTINEL ${overallStatus}`, JSON.stringify(report));
   return NextResponse.json(report);
 }

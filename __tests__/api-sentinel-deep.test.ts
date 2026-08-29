@@ -825,3 +825,110 @@ describe("POST /api/sentinel — full battery", () => {
     expect(report.status).toBe("ALL CLEAR")
   })
 })
+
+/**
+ * Until 2026-08-29 this route wrote NOTHING to pipeline_runs. Its status, its
+ * per-check verdicts and — the part that matters — whether the Telegram/email
+ * alert actually DELIVERED existed only in the HTTP response and a console.log.
+ * The GHA caller reads one field out of that body and discards the rest into a
+ * run log that is read only when someone opens the run, which (measured
+ * 2026-08-29) mostly does not exist because GitHub sheds most of this
+ * workflow's hourly ticks.
+ *
+ * So "did the fleet alarm run, and did anyone hear it?" was unanswerable from
+ * any durable store. Its own sibling `stale-fmv-monitor` carried the identical
+ * gap until deep-audit D7 and states the rule: "A monitor whose own run history
+ * is invisible cannot be checked for having run, which is the one thing you need
+ * from a monitor."
+ *
+ * ⚠ The write is deliberately inside a try/catch so telemetry can never break
+ * the check it measures — which means EVERY OTHER TEST IN THIS FILE PASSES
+ * WHETHER OR NOT IT HAPPENS. That is exactly why these assertions exist, and why
+ * they assert the row's CONTENT rather than merely that some rpc was called.
+ */
+describe("POST /api/sentinel — records its own run durably", () => {
+  it("writes a pipeline_runs row carrying the verdict and the alert-delivery outcome", async () => {
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await POST(post())
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged, "the sentinel must record its own run exactly once").toHaveLength(1)
+
+    const args = logged[0].args as Record<string, unknown>
+    expect(args.p_pipeline).toBe("sentinel")
+    expect(typeof args.p_started_at).toBe("string")
+
+    const extra = args.p_extra as Record<string, unknown>
+    // The verdict has to be readable WITHOUT reading `ok`, which means only that
+    // the check completed.
+    expect(extra.status).toBe("ALL CLEAR")
+    expect(extra.checks_run).toBeGreaterThan(0)
+    // Delivery outcome, not delivery intent. This is the field that makes a
+    // silently-dead alert channel falsifiable.
+    expect(extra.notifications).toContain("telegram")
+    expect(extra.notifications).toContain("email")
+  })
+
+  it("carries the BREACHING CHECK NAMES out, not just a count", async () => {
+    // A count reads "no change" across a fix landing and a new arm firing on the
+    // same day — diff the SET, not the number. This is what makes the row worth
+    // querying rather than merely worth storing.
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    const spy = install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+
+    // Positive control on the fixture itself: an empty `critical` array would
+    // otherwise satisfy the assertion below for entirely the wrong reason.
+    expect(report.status).toBe("CRITICAL")
+    const breaching = report.checks
+      .filter((c: Check) => c.status === "critical")
+      .map((c: Check) => c.name)
+    expect(breaching.length).toBeGreaterThan(0)
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<
+      string,
+      unknown
+    >
+    const extra = args.p_extra as Record<string, unknown>
+    expect(extra.status).toBe("CRITICAL")
+    // The stored set must be the reported set — not a truncation, not a count.
+    expect(extra.critical).toEqual(breaching)
+  })
+
+  it("a dead alert channel is recorded as FAILED in the durable row, not omitted", async () => {
+    // The silent-alert-failure class, made queryable. Before this row existed the
+    // only trace of a dead Telegram bot was a string in a response body nobody
+    // stored.
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, jsonRoute("api.telegram.org", { ok: false }, { status: 500 }), resendOk])
+
+    await POST(post())
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged).toHaveLength(1)
+    const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+    expect(extra.notifications).toContain("telegram-FAILED")
+    expect(extra.notifications).not.toContain("telegram")
+  })
+
+  it("records rows_* as a measured zero, never as an unmeasured NULL", async () => {
+    // log_pipeline_run now PRESERVES an explicit NULL (shipped 2026-08-29), so
+    // the distinction is live and the choice has to be deliberate: this route
+    // genuinely moves no rows, which is a measured zero. Passing NULL here would
+    // claim "not measured" and make the row unreadable to the rollups.
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await POST(post())
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<string, unknown>
+    expect(args.p_rows_found).toBe(0)
+    expect(args.p_rows_written).toBe(0)
+    expect(args.p_rows_skipped).toBe(0)
+  })
+})
