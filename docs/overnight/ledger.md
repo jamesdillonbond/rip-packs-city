@@ -10,6 +10,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED (not shipped) — `/insights/deals` stamps the MV's refresh time over Top Shot asks last verified **23 hours** ago, and the alert path has no freshness gate at all
+
+Docs only; no code, no DB. Filing:
+`docs/overnight/inbox/2026-08-29T1605Z-the-deals-board-stamps-mv-refresh-time-over-asks-verified-23-hours-ago.md`.
+
+This answers the open question in the 08-28T2320Z outage filing — *"whether any
+user-facing surface currently labels Top Shot marketplace data with its age."* **It does,
+and the label reads the wrong clock.**
+
+`offers-sweep` is the only writer of `edition_offers.updated_at`, which is a
+**verification** stamp. Normal cadence: **8 / 18 / 12 full wraps a day** (08-26/27/28) —
+every Top Shot edition re-verified about every **80 minutes**. Since 18:00Z on 08-28:
+**47 runs, 0 ok, 0 wraps, 0 pages, 0 rows written.** Now **139 of 12,539 Top Shot editions
+(1.1%)** are verified inside 12 h; median age **23.8 h ≈ 18× normal**. Meanwhile
+`cross-collection-deals-mv` is **47/47 ok**, refreshing every 30 min over those dead
+inputs — so the page renders `readMvAsOf("deals")` as **"Updated ~9 minutes ago"**, beside
+fixed copy reading **"Asks refresh continuously"**, while **9 of its 10 Top Shot rows are
+over 12 h unverified**.
+
+⭐ `lib/insights/mv-freshness.ts` was written to prevent exactly that sentence and stops
+one layer too high: it replaced *fetch time* with *MV refresh time*, which is still not
+*data time*. **A successful MV refresh over a dead feed looks BEST precisely when the data
+is worst** — a sharper version of the lie it fixed.
+
+🚨 **The trap, recorded because I fell into it first.** The MV UNIONs three branches into
+one `ask_updated_at` that **does not mean the same thing in all three**: Top Shot and
+Pinnacle are *last VERIFIED*; **All Day is `floor_ask_listed_at` — when the listing was
+CREATED.** My first reading called All Day the worse half (median 210 h, oldest 95.7 days)
+and that is **wrong** — those are long-standing listings, not unchecked ones. ⛔ **Nor is
+it fixable by choosing a better column: `allday_edition_floor_ask` has five columns and
+none is a verification stamp.** Any blended "asks checked N ago" stamp therefore publishes
+a NEW falsehood for a third of the board, which is why this is filed and not shipped.
+
+⭐ **The alert path was CHECKED rather than assumed, and there is no freshness gate in any
+of it** — 2 views, 3 functions, the payload type and the renderer all carry
+`ask_updated_at` and none reads it. That is the canon's worst sub-class by shape (an
+alert's output is silence, so a wrong one is unfalsifiable). ⚠ **Reach stated honestly:
+LATENT, not live — 2 active subscriptions and 0 `alert_deliveries` in 24 h.** The 9 rows
+in `alert_notifications_sent` are OPS pipeline alerts, a different table; reading them as
+user deliveries would have overstated this by 9.
+
+👉 The fix belongs in the shared `cross_collection_deals_board` so one gate serves board
+and alerts, and the precedent already exists — **only the Pinnacle branch carries
+`> now() - 3 days`.** ⚠ Size it first: that gate would drop **9 of the 10** Top Shot rows,
+turning a wrong board into a nearly-empty one that then needs `boardEmptyCopy`.
+
+⛔ **Do NOT close this when Top Shot recovers** — the missing gate and the wrong clock are
+pre-existing and survive the outage. ⛔ **And "Top Shot data is a day old" is FALSE**:
+sales and FMV are current (newest `fmv_snapshots` **5.1 minutes**), because pricing reads
+indexed on-chain `sales`, not GraphQL. **Asks and offers** are what is frozen.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the collection page's Packs column drew the SAME em-dash for "you own none" and "we could not check", and a live 21-hour outage is exactly when the second one happens
 
 **Revert:** `git revert <sha of the commit named below>` — three files, no DB, no migration.
