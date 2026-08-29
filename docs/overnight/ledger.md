@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED (no prod change) — `fmv-recalc` completed nothing for 90 minutes and `fmv_sweep_wedge_hours` is BREACHING, and it kept killing after the IO band cleared
+
+**Found by a closing health sweep, not by looking for it.** `fmv_sweep_wedge_hours` **4.30 h and rising against a breach at 3**; last terminal `fmv-recalc` row **18:48:06Z**; **8 heartbeats and ZERO terminal rows in 90 minutes**; 24 h totals **146 heartbeats / 59 terminal (59.6% killed) / 25,515 rows written**. Every heartbeat reads `{"phase":"started","offset":0}`.
+
+⛔ **Two over-readings refuted before they could be filed as findings. (1) It is NOT a kill-streak alarm** — this repo's own rule is *alert on `hours_since_last_completion`, NOT kill count/streak; a 38-kill streak on this pipeline was healthy* — and **8 kills at a documented 64–73% base rate is P ≈ 0.7⁸ ≈ 6%, unremarkable.** **(2) It is NOT "broken"** — the 2026-08-17 re-characterisation *wasteful, not broken* stands, 59.6% sits inside the documented band, and it still wrote 25,515 rows in 24 h.
+
+⭐ **The one thing that IS worth a row: the band cleared and it kept killing.** Today's daytime band peaked at `io_wait 40 / active 41 of 51` (18:06Z, ~4–5× the prior day) — but it was back to **`0 / 1 of 42` by 19:16Z** and `1 / 2 of 42` at 20:04Z, **with still zero terminal rows since 18:48Z.** 👉 **So band collateral does not cover the last ~70 minutes, and that is the only claim this filing makes.**
+
+⚠ **The two arms measure different things and must not be conflated:** `hours_since_last_completion` is **1.63 h** while the wedge is **4.30 h**, because the wedge counts time since the cursor last **ADVANCED**. **Runs completed between 16:10Z and 18:48Z without moving it** — the gap between the two numbers is itself the signal.
+
+⛔ **NOT established:** why it is killing now (the band is *insufficient*, not *excluded* — a spell leaves a cold pool behind it); whether the catalogue is actually going stale (**the `*_fmv_stale_hours` family structurally CANNOT see a sweep outage**, because cold-tail / thin-sales-guard / ask_only keep touching `computed_at` — so its green is evidence in neither direction); and whether 4.30 h is abnormal (**a real breach, but below the arm's own 6.00 h historical max**). ⚠ **n is one afternoon: a 90-minute gap on a job completing ~59×/24 h is ~4× its mean interval — that classifies, it does not rate.**
+
+👉 **Falsifier, cheap and dated: re-read the arm and `max(started_at) WHERE pipeline='fmv-recalc'` on the next monitor tick.** A terminal row and an advancing cursor ⇒ long tail of the 08-29 band, close it. Still nothing several hours into a quiet instance ⇒ **not the band**, and the `after()`-kill class becomes worth chasing — `npm run pipelines:kills` classifies it rather than re-deriving by hand. ⛔ **Do NOT raise `max_duration_s` in response:** on a job characterised as wasteful a longer budget buys a longer failure, and a function's declared timeout is inert on the pg_cron path anyway.
+
+**Revert path:** `git revert <this sha>` — filing only. ⛔ No schema, cron, index, migration or data change; nothing was touched on this pipeline.
+
 ### 2026-08-29 · ⛔ CORRECTION — the shedding is a CAP at ~5 runs/day, not a percentage, and my stated cause was wrong
 
 **The liveness detector I shipped an hour ago corrected its own filing on its first live run**, which is the best argument for it I could have made.
