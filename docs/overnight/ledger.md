@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⚠ I DUPLICATED AN EXISTING DETECTOR — the sentinel reached my "new" arm's predicate on 2026-08-17, and I did not find it first
+
+**Recording this against myself, because the failure mode is cheap to repeat and the record is the only thing that stops it.** `app/api/sentinel/route.ts` has carried **"Pipeline Success Coverage"** since **2026-08-17**, shipped off `apply-fmv-haircut` + `match-topshot-players` failing 3+ days unnoticed. It reached the **same predicate independently** — *"ZERO SUCCESSES **AND** ZERO ROWS WRITTEN"* — down to **the same negative control** (`reconcile-saved-wallet-stats`'s soft-deadline partial sweep) and the same reuse of `pipeline_alert_suppression`. Its header even states my headline finding: *"a cadence arm watches SILENCE, and a FAILING run still writes a `pipeline_runs` row."*
+
+⚠ **[[grep-the-memory-store-before-publishing-a-measurement]] is written for exactly this and I did not run it.** I grepped the DB for arms (`pg_proc`, `cron.job`, views) and the repo for `get_pipeline_alerts` callers — but **never for the IDEA**, only for the mechanism I had already decided to use. A caller-graph search cannot find a sibling detector living in a different layer.
+
+⭐ **They are NOT redundant, and I checked rather than assuming, in both directions:**
+
+| pipeline | sentinel (fixed 24–48 h, 6-hourly rollup) | this arm (per-pipeline budget, live rows) |
+|---|---|---|
+| `ingest` | **fires** | **fires** — genuinely duplicated |
+| `match-topshot-players` | silent (1 ok 30 h ago) | **fires** |
+| `wallet-username-resolver` | silent (6 ok yesterday) | **fires** (0 ok in its 450-min budget) |
+| `reconcile-saved-wallet-stats` | silent | silent — **both agree** |
+
+**The difference is the WINDOW.** The sentinel reads `pipeline_runs_daily` — deliberately, because `pipeline_runs` exceeds the **PostgREST 1000-row cap from OUTSIDE the DB** — so it lags up to 6 h (**measured 5 h stale**) and a pipeline that succeeded 30 h ago but has failed every run since reads **HEALTHY**. Mine runs **inside** the DB, so it has neither constraint and can use each pipeline's own `max_silent_minutes`. That is a real tightening, not a reimplementation — but I got there by accident, not by design.
+
+⚠ **A trap I nearly fell into while checking this:** the "All **2** watchlisted pipelines…" line I first reasoned from was **stdout from a TEST FIXTURE** in the CI log, not production. I was one step from concluding the sentinel arm was near-vacuous **on mocked data**. Re-derived against the live rollup instead.
+
+✅ **Shipped (migration 20260830171754, COMMENT-only):** the cross-reference now lives in the function's own comment — both arms named, the window difference explained, and the consequence recorded: **a pipeline both arms catch emits TWO alerts, and because they share `pipeline_alert_suppression`, one bounded suppression silences BOTH — usually what you want, but a wider action than it looks.**
+
+
 ### 2026-08-30 · 🔧 CI RED, MINE, FIXED — the anon-exec guard caught my alert-arm migration, and it was RIGHT
 
 `Unit tests (vitest)` failed on `0519697d` (1 of 15,597): `migration-new-function-states-its-anon-exec-decision` flagged `20260830165431 → public.get_pipeline_alerts`. **The guard was correct and the fix is NOT a revoke.**
