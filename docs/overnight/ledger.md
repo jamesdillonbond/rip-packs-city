@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — the `edge-fn-drift` report no longer tells you to cause an outage, and tier 2's failure is DIAGNOSED
+
+## 1. The dangerous advice line is fixed
+
+The nightly report ended with **"Redeploy each with deno.json in `files` AND import_map_path"** across all **19** proven-drifted functions — **two of which 403 every tick if deployed**. It now partitions:
+
+**19 drifted → 17 SAFE to redeploy · 2 ⛔ DO NOT REDEPLOY (`compute-golazos-pack-ev`, `ingest-pinnacle-mints`)**, with the reason inline: *their `*_GATE_KEY` secrets are UNSET, so deploying makes the gate fail CLOSED — the 2026-08-11 outage mechanism — and they are drifted **because** they were never redeployed, which is correct until an operator sets the secrets.*
+
+⚠ **The list is a DATED SAMPLE and a KNOWN MINIMUM, and the code says so:** it goes stale the moment a secret is set, and a newly de-hardcoded function would not be in it. **Absence from the list is never clearance to deploy.** ⭐ **Over-blocking is a real cost too** — it would strand a genuinely fixable function as permanent drift — so `compute-pinnacle-pack-ev` and `backfill-topshot-pack-supply` are **deliberately excluded**: both were deployed after the dual-accept cutoff (2026-08-15) and carry the `_OLD` fallback.
+
+**Tested as behaviour, not text** (`partitionByDeploySafety` + `GATE_KEY_DEPLOY_BLOCKED` exported). **Mutation-proved both ways: emptying the set fails 3 tests, blocking everything fails 3** — so neither under- nor over-blocking can pass. The guard pins the PARTITIONING and the two live-collision members, **never the set's size** — a guard that dies on a legitimate edit gets deleted. Full drift suite **293 → 25/25 on the touched file, no regression**.
+
+## 2. Why TIER 2 reads 0 of 38 — diagnosed, not fixed
+
+```
+body read failed — <fn>: Unexpected token 'E', "ESZIP2.3"... is not valid JSON
+```
+
+⭐ **Not a permissions problem and not a token problem** (the script already distinguishes a rejected token and would have said so). **`GET /v1/projects/{ref}/functions/{slug}/body` returns an ESZIP archive** — Deno's binary module-graph format — and the script calls `.json()` on it, so all 38 fail identically. Supabase docs confirm the eszip is the expected payload: unpacking it is what `supabase functions download` does.
+
+**So fixing tier 2 needs an eszip decoder or the Supabase CLI in the workflow — a real piece of work, and its value is deferred** because acting on drift is operator-gated anyway. **Not attempted here.** ⚠ Until it is, **19 stays a LOWER BOUND**, and the run exits 1 whether tier 2 ran or not, so a half-blind detector is invisible on the badge.
+
+⚠ **Diagnosed without reading a single body.** `get_edge_function` and the `/body` endpoint both return the deployed `index.ts`, which can carry a live gate literal — the leak vector that burned a real PAT on 08-16. The script's own failure MESSAGES (it keeps messages, never bodies) were enough.
+
+
 ### 2026-08-30 · 🚨 `edge-fn-drift` IS A TRUE RED (19 proven drifted) — **and following its own remediation line would take two working pipelines DOWN.** Diagnosed, nothing shipped.
 
 **The last of the three unwatched detectors. It is NOT a false red like `migration-parity` was — it is correctly reporting real drift, and it has been doing so unread since at least 08-27.**
