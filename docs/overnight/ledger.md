@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📋 WATCH ANSWERED — the wmc REINDEX campaign is logged as a total failure and actually freed 448 MB: a pg_cron job status is NOT its work's outcome
+
+**Closing another session's stated watch** (*"08:09/08:33/10:09/10:33Z reindex slots → jobids 397–400 `succeeded`; 10:49Z verify `ok=true`; zero `tmp-reindex-wmc-%` after"*). **By that condition it failed completely.** By outcome it did not.
+
+| job | slot | index | `cron.job_run_details` | actual result |
+|---|---|---|---|---|
+| 397 | 08:09Z | `idx_wmc_cohort_cover` | **failed** — 57014 at 600 s | ✅ **REINDEX COMPLETED** |
+| 398 | 08:33Z | `idx_wmc_coll_ek_serial_cover` | **failed** — 57014 at 604 s | ❌ genuinely not done |
+| 399 | 10:09Z | `idx_wmc_moment_collection_cover` | **no run row at all** | ❌ never fired |
+| 400 | 10:33Z | `wallet_moments_cache_wallet_collection_moment_key` | **no run row at all** | ❌ never fired |
+| 401 | 10:49Z | verify | succeeded | wrote `ok:false` |
+
+🚨 **JOBID 397 IS LOGGED `failed` AND ITS WORK COMMITTED.** `run_wmc_reindex_verify()` measured it independently, before and after:
+
+| index | 03:09Z baseline | 10:49Z after |
+|---|---|---|
+| `idx_wmc_cohort_cover` | **614.4 MB · 22.53 %** leaf density | **165.7 MB · 81.14 %** |
+| `idx_wmc_coll_ek_serial_cover` | 498.5 MB · 28.27 % | 498.5 · 28.37 % (unchanged) |
+| `idx_wmc_moment_collection_cover` | 314.3 MB · 41.55 % | 314.4 · 41.62 % (unchanged) |
+| `wallet_moments_cache_…_key` | 313.1 MB · 48.71 % | 313.1 · 48.94 % (unchanged) |
+
+**−448.7 MB (−73 %), leaf density 3.6× better, on a 512 MB `shared_buffers` instance.** ⭐ **The mechanism: `REINDEX INDEX CONCURRENTLY` cannot run inside a transaction block, so it commits on its own; the role's `statement_timeout` then killed the SESSION afterwards and pg_cron logged the run `failed`.** Reading the status alone, a reader would either re-run a 10-minute REINDEX that already succeeded on a saturated instance, or conclude the night's maintenance achieved nothing.
+
+⭐ **This is the repo's own favourite defect class in a new place** — a self-report that does not describe the work (`rows_written = 0`, `ok = false` overloading). Here the DB's own `cron.job_run_details.status` is the unreliable field, and the verify instrument someone built is what makes it falsifiable. **That instrument is why this is answerable at all** — without the 03:09Z baseline row there would be no way to tell a completed reindex from a failed one after the fact.
+
+✅ **No orphans, and not by luck:** `invalid_left` is `[]` in both verify rows, and jobids **402/403 at 09:12/09:14Z** logged `DROP INDEX` — another session cleaned up the `*_ccnew` left by 398 while I was elsewhere. `cron.job` now holds **zero** `tmp-reindex-wmc-%`.
+
+👉 **THE BINDING CONSTRAINT, measured:** `cron_heavy` carries `rolconfig = {statement_timeout=600s}`, and both failures died at exactly 600 s / 604 s. **The remaining three indexes total ~1,126 MB at 28–49 % density and cannot be rebuilt inside 600 s.** The surgical fix is a per-command `SET statement_timeout` as the first statement of the cron command (multi-statement cron commands demonstrably work — the verify job's second statement ran), **not** raising `cron_heavy`'s role default, which would relax every heavy job at once.
+
+⛔ **NOT re-booked here, deliberately.** This is another session's campaign, it has already cleaned up after itself, and re-scheduling REINDEX slots on a shared IO-bound instance is its call — not something to do from underneath it. Everything needed to re-book is above.
+
+⚠ **NOT claimed: that this helps `get_lock_check_batch`.** That function reads `idx_wmc_lock_wallet_coll` (67 MB), which was **not** one of the four and was not reindexed. The 448 MB is general buffer-pressure relief, not a targeted fix for the cold-read cost measured earlier tonight — do not read the two findings as one.
+
+
 ### 2026-08-30 · ⛔ REPAIRED, NOT FIXED — my own 03:57Z RLS migration was wiped by a re-CREATE ten hours later
 
 **`Smoke Tests` HARD FAIL on `f821a17fe`: `rls_off_base_table:audit_20260830_pgss_snap` — the same violation I closed this morning.**
