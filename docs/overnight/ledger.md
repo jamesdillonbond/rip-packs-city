@@ -10,6 +10,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830153424, APPLIED) — compute_pack_ev_from_pool walked every snapshot twice per priced call: 2.58 M buffers / 21.9 s → 11 k / 27 ms, identical output
+
+**Pass: desktop, 15:4xZ.** Third `fmv_current` instance today. 375 PostgREST calls at 3.3 s mean — a misleading mean: most are `/api/cron/compute-laliga-pack-ev` calls that return `pool_empty` at the first count (Golazos has **no** `pack_drop_pool` rows — 211 UFC / 1,985 TS / 3,125 AllDay dists, 0 Golazos — which is its own finding: that route loops over dists and prices nothing). A priced call on AllDay's largest pool (dist 6924, 792 editions): **2,578,477 hits + 29,993 reads, 21.9 s** — three `JOIN fmv_current` (coverage count, trimmed mean, raw mean), two of which run per call. Now three per-edition LATERALs with the same `fmv_usd IS NOT NULL` predicate: **11,309 hits, 27 ms**; the full jsonb (minus the trim counter) compared equal on the two largest AllDay pools before/after. Not pinned (2026-05-12 DDL); revert quoted in the migration. `sentinel_edition_coverage` (7.8 s mean lifetime) was also checked and left alone: its whole-table aggregate plans as a hash join over the edition index, 65 k hits / 1.2 s warm — the mean is load, not shape.
+
+**Exit (24 h):** `compute_pack_ev_from_pool` hits/call on priced calls in the low thousands. **Also filed:** `compute-laliga-pack-ev` prices nothing until Golazos gets pool rows — either seed the pool or stop the route's loop; product question.
+
 ### 2026-08-30 · ⛔ FALSIFIER RE-RUN — the Studio Top Shot index is still empty, all four ask sources are now measured, and a QUEUED item is struck as not viable
 
 **Went looking for the highest-value thing for users, not the next red badge.** The roadmap makes **accuracy the gate**; Top Shot sits at **7,114 / 19,742 = 36.0 % HIGH+MED with 1,606 STALE** and the nightly pass measured it *declining*, cause named: no ask feed ⇒ no LOW→MEDIUM promotions. **So "can we get Top Shot asks from somewhere else?" is the question that matters**, and the handoff queue still carried *"Top Shot legacy→Studio client migration — code+push"* as if it were viable.
