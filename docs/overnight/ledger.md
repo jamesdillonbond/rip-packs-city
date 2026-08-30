@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📋 MEASURED, NOTHING SHIPPED — `get_lock_check_batch` is IO-bound, not plan-bound: the #52 remedy makes NO difference, and the fix is already in flight by another session
+
+**Chased because it is a LIVE failure with a cause I had already ranked.** `get_pipeline_alerts()` shows `lock-check-batch` at **27/96 runs failed (28.1 %)**, every one `get_lock_check_batch: canceling statement due to statement timeout` — and my own #52 sweep had it at **24,767 ms mean** in the 71-min post-fix window (lifetime 48,979 ms over 842 calls, max clipped at the ~120 s ceiling).
+
+## What it actually costs (quiet-window, warm/cold split)
+
+| call | ms |
+|---|---:|
+| `nba_top_shot`, limit **1** | 726 |
+| `nba_top_shot`, limit **50** | 6,137 |
+| `disney_pinnacle`, limit **50** | 8,471 |
+| **`NULL` slug (all collections), limit 50** | **TIMED OUT** |
+| any of the above, **second call (warm)** | **~25** |
+
+⭐ **That last row is the finding.** Cost scales with `p_limit` (so it is not a fixed full scan — my first hypothesis, refuted), and **warm it is ~25 ms, 240× faster than the same call cold.** The production 25–50 s means are **cold reads under IO contention**, not bad plans.
+
+🚨 **The driver, sized:** 580 hot wallets (`seeded_wallets` 274 ∪ `saved_wallets` 104 ∪ `linked_accounts` 170), each getting a LATERAL probe fetching up to `p_limit` rows — up to **580 × 50 = 29,000 rows read to return 50**.
+
+## ⛔ THE OBVIOUS FIX WAS ALREADY TRIED AND REVERTED — I nearly repeated it
+
+I had the equivalence argument written (a row in the global oldest-50 is necessarily in its own wallet's oldest-50, so the per-wallet `LIMIT` cannot change the result — which is sound). **Grepping first found `20260827151742` and its 4-minutes-later revert `20260827152136`: that exact single-scan rewrite measured 127,534 buffers / 114,531 ms against the current form's 49,438 / 56,421.** It looked like a 213× win **inline with literals (232 buffers, 15.3 ms)** and was not, because *a parameterised SQL function does not plan like the same text with literals inline*. There is a guard that raises if it comes back. ⭐ *The memory rule "grep before publishing a measurement" earned its place again.*
+
+## ✅ The NEW idea, tested properly, and it does NOT work either
+
+That revert's own diagnosis — *"the planner has no constants to work with"* — is **exactly what tonight's #52 remedy fixes** (plpgsql + `SET plan_cache_mode = force_custom_plan`, which won big on `get_wallet_moments_with_fmv` and `get_wallet_total_fmv`). So it was worth one controlled test.
+
+Built a **scratch** copy (`execute_sql`, never a migration) **from `prosrc` rather than retyped**, with the occurrence count asserted before the one edit it needed. ⚠ **One real `LANGUAGE sql` → plpgsql difference surfaced:** SQL-language functions coerce output types implicitly, `RETURN QUERY` does not — `collections.slug` is `varchar(50)` against a declared `text`, so it needs an explicit `::text`. "Body-identical" is not quite free.
+
+- **Equivalence:** `EXCEPT` both directions on `('nba_top_shot', 50, 7)` → **0 and 0**.
+- **Warm A/B, alternated to control for cache order:** **OLD 26 / 26 ms · NEW 25 / 25 ms.**
+
+⛔ **No difference. `force_custom_plan` is not the lever here, and #52's remedy does not generalise to this function.** Scratch function dropped; `zz_scratch%` count back to 0.
+
+👉 **The right lever is already in flight and is not mine:** this function's cost is cold reads of `wallet_moments_cache`, and another session measured that table's indexes at **22.5–48.7 % leaf density (614 MB / 499 MB / 314 MB) on a 512 MB `shared_buffers` instance** and booked `REINDEX INDEX CONCURRENTLY` at **08:09 / 08:33 / 10:09 / 10:33Z with a verify at 10:49Z**. **Denser indexes are exactly what a cold-read-bound function needs. Re-measure `get_lock_check_batch` after 10:49Z before doing anything else to it.** ⚠ I deliberately did NOT add an index of my own — a competing build on the same table while those slots are booked is the collision this repo keeps warning about.
+
+⚠ **A verification note worth keeping.** The 08-27 revert recorded a "whitespace-collapsed md5" (`30d615…`) as its proof-of-restore. **None of three plausible normalisations reproduce it**, so as a later session I could not verify the function by that digest. Its **structural** assertions all did reproduce exactly — 2 `CROSS JOIN LATERAL`, 4 `LIMIT p_limit` sites, per-wallet leg present, single-scan leg absent, `ROW_NUMBER() OVER` and `forced_priority` intact — which is how I confirmed production is untouched. ⭐ **A digest recorded without the exact expression that produced it is not verifiable later; a structural assertion is.**
+
+**Nothing shipped. Production `get_lock_check_batch` is byte-unchanged** (only a separate `zz_scratch_` function was created and dropped).
+
+
 ### 2026-08-29 · ✅ SHIPPED (DB) — the live `weekly-db-maintenance` breach is a STALE NOTE plus the fleet's #1 cron failure mode, and the tempting mechanism is refuted
 
 **Started from a real alert:** `detect_stalled_pipelines()` reports `weekly-db-maintenance` silent **2,614 min** against a 1,800 min arm. Two findings, neither of which is "the purge is broken".
