@@ -28,6 +28,21 @@ type BestOfferResult = {
   bestOffer: number | null
   bestOfferSource: "Top Shot Edition" | "Top Shot Serial" | "Flowty Serial" | "Dapper Offer" | null
   bestOfferType: "edition" | "serial" | null
+  /**
+   * Hours since the winning bid was last CONFIRMED, or `null` when this leg cannot
+   * answer that. Added 2026-08-29.
+   *
+   * ⚠ TWO OF THE FOUR LEGS ARE STRUCTURALLY UNDATABLE, and they must render UNMARKED
+   * rather than be forced into a number:
+   *   - `get_serial_offers` returns `(external_id, serial_number, offer_amount_usd)` —
+   *     no timestamp at all.
+   *   - `marketplace_offers.created_at` is when the OFFER WAS MADE, not when we last
+   *     checked it. Labelling that "unconfirmed 90d" would be a NEW false claim about
+   *     a long-standing bid — the same trap the deals board hit with All Day's
+   *     `floor_ask_listed_at`, where a listed-at was nearly relabelled a verified-at.
+   * So `null` here means UNKNOWN, and unknown must never render as fresh either.
+   */
+  bestOfferAgeHours: number | null
 }
 
 const CHUNK = 500 // PostgREST URL cap on .in() lists
@@ -57,6 +72,7 @@ export async function POST(req: NextRequest) {
       editionKey: editionKeys[index] ?? null,
       bestOffer: null,
       bestOfferSource: null,
+      bestOfferAgeHours: null,
       bestOfferType: null,
     }))
 
@@ -88,14 +104,47 @@ export async function POST(req: NextRequest) {
     // the same string the collection grid stores as editionKey. Read the broad
     // edition_offers cache first; fall back to badge_editions for any key the
     // offers-sweep hasn't populated yet.
-    const offerByKey = new Map<string, number>()
+    // 🚨 THE PREFERENCE ORDER WAS WRONG FOR ALL DAY, AND IT IS A MEASUREMENT.
+    // This used to read `edition_offers` first and consult `badge_editions` only for
+    // keys the sweep had MISSED — on the premise, written into the comment above, that
+    // the sweep is the fresher source. True for Top Shot (33.0 h median vs 111.7 h);
+    // FALSE for All Day, which has a dedicated `allday-badge-low-ask-refresh` running
+    // green every hour while `offers-sweep` barely reaches it: **edition_offers 168.5 h
+    // median vs badge_editions 1.0 h**. Of 2,052 All Day keys present in BOTH, **1,925
+    // (94%) had a badge row at least a day fresher**, and **137 of those disagreed on
+    // the value** — so the grid showed a week-old bid while an hour-old one said
+    // something else.
+    // ⚠ THE FIX IS A RULE, NOT A PER-COLLECTION SWITCH: prefer the row we CONFIRMED
+    // most recently. That adapts on its own if either feed's health flips again, which
+    // a hardcoded "All Day prefers badges" would not.
+    // ⚠ AND IT IS NOT "TAKE THE HIGHER BID" ANY MORE, across tables. Within one table
+    // the max still wins (two rows for one key are both current). Across tables the
+    // fresher wins even when it is LOWER — a bid that was withdrawn is not beaten by a
+    // stale memory of it.
+    type OfferHit = { offer: number; at: number | null }
+    const offerByKey = new Map<string, OfferHit>()
+
+    /** Prefer the fresher row; fall back to the higher bid when neither is datable. */
+    function considerOffer(key: string, hit: OfferHit) {
+      const prev = offerByKey.get(key)
+      if (prev == null) { offerByKey.set(key, hit); return }
+      if (hit.at != null && prev.at != null) {
+        if (hit.at > prev.at) offerByKey.set(key, hit)
+        else if (hit.at === prev.at && hit.offer > prev.offer) offerByKey.set(key, hit)
+        return
+      }
+      // One side undatable: a KNOWN confirmation time beats an unknown one.
+      if (hit.at != null && prev.at == null) { offerByKey.set(key, hit); return }
+      if (hit.at == null && prev.at != null) return
+      if (hit.offer > prev.offer) offerByKey.set(key, hit)
+    }
 
     async function harvest(table: "edition_offers" | "badge_editions", keys: string[]) {
       for (let i = 0; i < keys.length; i += CHUNK) {
         const slice = keys.slice(i, i + CHUNK)
         const { data, error } = await supabase
           .from(table)
-          .select("external_id, highest_offer")
+          .select("external_id, highest_offer, updated_at")
           .eq("collection_id", collectionId)
           .in("external_id", slice)
           .gt("highest_offer", 0)
@@ -104,8 +153,10 @@ export async function POST(req: NextRequest) {
           const key = String(row.external_id)
           const offer = Number(row.highest_offer)
           if (!Number.isFinite(offer) || offer <= 0) continue
-          const prev = offerByKey.get(key)
-          if (prev == null || offer > prev) offerByKey.set(key, offer)
+          // `null` when the timestamp is missing or unparseable — passed through, never
+          // coalesced to now(), which would publish an unknown age as a fresh one.
+          const t = row.updated_at ? Date.parse(String(row.updated_at)) : NaN
+          considerOffer(key, { offer, at: Number.isNaN(t) ? null : t })
         }
       }
     }
@@ -118,9 +169,13 @@ export async function POST(req: NextRequest) {
     // the edition-grain answer.
     const serialOfferByKey = new Map<string, number>()
     try {
+      // ⚠ BOTH TABLES OVER ALL KEYS NOW — `badge_editions` is no longer a gap-filler.
+      // It cannot be: the freshness comparison above only means something if both rows
+      // are actually read. This is one extra chunked read per request over the keys
+      // already batched at CHUNK apiece; the previous shape queried the same rows for
+      // every key the sweep had missed anyway.
       await harvest("edition_offers", distinctKeys)
-      const missing = distinctKeys.filter((k) => !offerByKey.has(k))
-      if (missing.length) await harvest("badge_editions", missing)
+      await harvest("badge_editions", distinctKeys)
     } catch (e) {
       return NextResponse.json(
         // Shape-preserving: the caller reads `results`, so only the message is
@@ -193,7 +248,8 @@ export async function POST(req: NextRequest) {
     const results: BestOfferResult[] = momentIds.map((momentId: string, index: number) => {
       const editionKey = editionKeys[index] ?? null
       const key = typeof editionKey === "string" ? editionKey.trim() : ""
-      const editionOffer = key ? offerByKey.get(key) : undefined
+      const editionHit = key ? offerByKey.get(key) : undefined
+      const editionOffer = editionHit?.offer
       const serial = serials[index] ?? null
       const serialOffer = key && serial != null ? serialOfferByKey.get(`${key}|${serial}`) : undefined
       const momentOffer = momentOfferById.get(momentId)
@@ -202,21 +258,31 @@ export async function POST(req: NextRequest) {
       let bestOffer: number | null = null
       let bestOfferSource: BestOfferResult["bestOfferSource"] = null
       let bestOfferType: BestOfferResult["bestOfferType"] = null
+      // ⚠ The age travels WITH the winning leg, and is reset to null whenever a leg
+      // that cannot be dated takes over. A stale-looking age left behind by a losing
+      // leg would date the wrong number.
+      let bestOfferAt: number | null = null
       if (editionOffer != null && editionOffer > 0) {
         bestOffer = editionOffer
         bestOfferSource = "Top Shot Edition"
         bestOfferType = "edition"
+        bestOfferAt = editionHit?.at ?? null
       }
       if (serialOffer != null && serialOffer > 0 && (bestOffer == null || serialOffer > bestOffer)) {
         bestOffer = serialOffer
         bestOfferSource = "Top Shot Serial"
         bestOfferType = "serial"
+        // `get_serial_offers` returns no timestamp — UNKNOWN, not fresh.
+        bestOfferAt = null
       }
       // Non-Top-Shot DapperOffersV2 bid — a per-moment (serial-grain) offer.
       if (momentOffer != null && momentOffer > 0 && (bestOffer == null || momentOffer > bestOffer)) {
         bestOffer = momentOffer
         bestOfferSource = "Dapper Offer"
         bestOfferType = "serial"
+        // `marketplace_offers.created_at` is when the OFFER WAS MADE, not when we last
+        // confirmed it. Reporting it as an age would assert something we never checked.
+        bestOfferAt = null
       }
 
       return {
@@ -225,6 +291,10 @@ export async function POST(req: NextRequest) {
         bestOffer,
         bestOfferSource,
         bestOfferType,
+        bestOfferAgeHours:
+          bestOffer != null && bestOfferAt != null
+            ? (Date.now() - bestOfferAt) / 3_600_000
+            : null,
       }
     })
 

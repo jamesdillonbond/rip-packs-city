@@ -42,6 +42,7 @@ import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-mo
 import { computeCollectionTotals } from "@/lib/collection/totals"
 import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import { resolveSeriesParam } from "@/lib/collection/series-param"
+import { ASK_STALE_HOURS, fmtAskAge } from "@/lib/market/ask-freshness"
 import {
   buildPlayerOptions,
   buildSetOptions,
@@ -470,7 +471,7 @@ function WalletMomentsBody() {
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
           if (!d || !Array.isArray(d.results)) return
-          const offerMap = new Map<string, { bestOffer: number; bestOfferType: "edition" | "serial" | null; editionOffer: number | null }>()
+          const offerMap = new Map<string, { bestOffer: number; bestOfferType: "edition" | "serial" | null; editionOffer: number | null; bestOfferAgeHours: number | null }>()
           for (const result of d.results) {
             if (typeof result.bestOffer === "number" && result.bestOffer > 0) {
               // Determine edition-level offer from bestOfferType
@@ -479,6 +480,10 @@ function WalletMomentsBody() {
                 bestOffer: result.bestOffer,
                 bestOfferType: result.bestOfferType ?? null,
                 editionOffer,
+                // The API dates the WINNING leg only, and sends null for the two legs
+                // that carry no confirmation time. Passed straight through.
+                bestOfferAgeHours:
+                  typeof result.bestOfferAgeHours === "number" ? result.bestOfferAgeHours : null,
               })
             }
           }
@@ -493,6 +498,7 @@ function WalletMomentsBody() {
                 bestOffer: fresh.bestOffer,
                 bestOfferType: fresh.bestOfferType,
                 editionOffer: fresh.editionOffer,
+                bestOfferAgeHours: fresh.bestOfferAgeHours,
               }
             })
           })
@@ -1180,7 +1186,30 @@ function WalletMomentsBody() {
                       <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
                       <td className="p-2">{row.bestMarket ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.rowLowAsk ?? getBestAsk(row))}</td>
-                      <td className="p-2">{formatCurrency(row.rowBestOffer ?? row.bestOffer)}</td>
+                      <td className="p-2">
+                        {formatCurrency(row.rowBestOffer ?? row.bestOffer)}
+                        {/* ⚠ The bid side has the SAME single writer as the ask —
+                            `offers-sweep` — and on 2026-08-29 it had not confirmed one
+                            in 33 h (7,372 Top Shot editions). The age is computed by
+                            the API, so no clock is read during render and this cannot
+                            hydrate differently; it is absent until the post-mount fetch
+                            resolves, which is the honest state before we know.
+                            ⚠ `row.rowBestOffer` is a different, per-row value the age
+                            does not describe — mark only when the API's own answer is
+                            what is on screen. */}
+                        {row.rowBestOffer == null &&
+                          row.bestOffer != null &&
+                          row.bestOfferAgeHours != null &&
+                          row.bestOfferAgeHours >= ASK_STALE_HOURS && (
+                            <span
+                              className="rpc-mono"
+                              style={{ display: "block", fontSize: 10, color: "var(--rpc-warning)", fontWeight: 600 }}
+                              title={`We last confirmed this bid ${fmtAskAge(row.bestOfferAgeHours)} ago. It may already be withdrawn or beaten — open the marketplace before acting.`}
+                            >
+                              ⚠ bid unconfirmed {fmtAskAge(row.bestOfferAgeHours)}
+                            </span>
+                          )}
+                      </td>
                       <td className="p-2">{formatCurrency(row.editionLowAsk)}</td>
                       <td className="p-2">{formatCurrency(row.editionBestOffer)}</td>
                       <td className="p-2">{formatCurrency(row.editionLastSale)}</td>

@@ -78,6 +78,13 @@ export type MomentRow = {
   badgeInfo?: BadgeInfo | null
   editionOffer?: number | null
   bestOfferType?: "edition" | "serial" | null
+  /**
+   * Hours since the winning bid was last CONFIRMED, computed server-side by
+   * /api/best-offers so no client clock is read during render. `null`/absent means
+   * UNKNOWN — two of the four offer legs carry no confirmation timestamp at all — and
+   * unknown must render as NO marker, never as fresh.
+   */
+  bestOfferAgeHours?: number | null
   acquisitionMethod?: string | null
   acquisitionSource?: string | null
   acquisitionConfidence?: string | null
