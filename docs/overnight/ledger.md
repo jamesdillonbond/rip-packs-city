@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830170715 APPLIED + a workflow gate) — the dead `ingest` costs 0.2%, the TS volume drop is REAL, and a 12/12-red workflow is now an honest backstop
+
+**Follow-on from the alert-arm entry below. Three things measured, two shipped, and one correction to my own numbers from an hour ago.**
+
+## 1. The dead `ingest` pipeline is NOT a data emergency — measured, with a control
+
+The new arm surfaced `ingest` (TS sales, GQL) with **no success in 7 days**, every row `Top Shot GraphQL failed with 530` — a direct casualty of the Atlas move. Impact, measured rather than assumed:
+
+- `topshot_gql` was contributing **~1,300–1,550 sales/day (~30–35% of TS volume)** and decayed to zero as the host died: 1,321 → 557 → 100 → 50 → **0**.
+- ⭐ **But on 2026-08-24 (both sources healthy), 1,280 of 1,283 `topshot_gql` sales — 99.8% — already had a non-GQL counterpart** for the same `nft_id` within ±10 min. **Only 3 were unique to GQL.**
+- ⚠ **Negative control, because a positive result needs one:** re-running with a deliberately corrupted join key (`nft_id || '9'`) returned **0** matches, so the 99.8% is not an artefact of a too-loose match.
+
+✅ **Losing `topshot_gql` costs ~3 sales/day (~0.2%).** The on-chain indexer already covered it. **No user-facing accuracy emergency; do not treat `ingest` as urgent.**
+
+## 2. The Top Shot volume decline is REAL MARKET, not a broken instrument
+
+On-chain sales by `sold_at` fell to **1,280 (08-28)** and **938 (08-29)** — below the entire 3-week range (prior min 1,857). That is a separate decline the dead host does not explain, so I checked our side rather than assuming.
+
+`topshot-sales-indexer` is **healthy and GAP-FREE**: every recent run `ok=true`, and **each `cursor_before` equals the previous `cursor_after`** (…162935290 → 162936687), ~1,380 blocks per 20-min tick. It is scanning every block and simply **finding few sales** (3–40 per tick).
+
+⭐ **Contiguous cursor + ok + low `rows_found` = the market, not the pipeline.** Consistent with Dapper's own marketplace being degraded (the concurrent session watched **40 of 47** of nbatopshot.com's own RSC requests return 503). ⭐ Worth stating plainly: during this outage RPC is running on **on-chain truth while Dapper's own surfaces are down**.
+
+## 3. ✅ SHIPPED — a 12/12-red workflow becomes an honest, self-resuming backstop
+
+`.github/workflows/topshot-active-listings-ingest.yml` had failed **12/12 scheduled runs**: Atlas WAF-blocks the GitHub-runner IP, so every tick burned ~90 s, wrote an `egress_blocked` row, and left a **permanently-red badge — which by our own rule is indistinguishable from a broken instrument**, so a NEW failure here could not have been seen.
+
+New `atlas-reachable` probe job gates the sweep. ⚠ **The polarity is the OPPOSITE of badge-sync.yml's probe**: there the HOST was down and a runner-IP 403 had to count as *alive*; here the host is fine and the **RUNNER** is blocked, so a 403 means "this runner cannot do the job" and must skip. ⚠ **THREE probes, not one** — Atlas's challenge is **probabilistic** (measured: 10% overall, 23% worst batch, scattered not tail-clustered), so a single probe would misclassify a working runner ~1 tick in 10; requiring ≥1 usable 200 of 3 keeps a fully-blocked IP at 0 while making a false skip ~1 in 1000. The step **echoes the count it inspected**, so a loop that ran zero times cannot read as a clean skip. **Self-resuming: if GitHub's egress is ever unblocked the backstop returns with nobody having to remember it.** YAML parse-checked; `workflow-curl-assignments-are-guarded` still green (the `|| STATUS="000"` is load-bearing under `bash -e`).
+
+## 4. ✅ SHIPPED — the watchlist note, and the threshold that rested on the failing arm
+
+The note credited this pipeline to "(GitHub Actions)" — the arm that does **nothing**. Corrected, and with it something I nearly missed: **the 900-minute threshold's justification is now VOID.** It was max-governed off **POOLED** gaps (median 180.0 / p95 399.8 / max 758.2) that the failing GHA arm's 3-hourly rows helped keep short. **Residential-only gaps are median 180.0 / p95 540.2 / MAX 1260.0 — i.e. ABOVE 900.**
+
+⭐ **900 is KEPT deliberately, not by inertia.** A >900 min gap now means the desktop that is the board's ONLY feeder has been dark — exactly the detection the failing arm was masking — so it is **expected to fire sometimes**. ⚠ **If it proves noisy the fix is the box's availability or a second datacenter-independent feeder, NOT a bigger number: raising it would re-hide what it now sees.** Migration asserts md5+length pre-state and `ROW_COUNT = 1`; verified threshold/severity/is_active unchanged and 113 watchlist rows intact.
+
+## 5. ⛔ Correcting my own numbers from the entry below
+
+I labelled the two-arm split "**7 d**". **`pipeline_runs` retains 76.4 h** (oldest row 2026-08-27 05:41 PT) — [[pipeline-runs-pruned-faster-than-detection]], which I had already written down. **The RATES stand (residential 18/18 = 100%, GHA 0/9 = 0%); the WINDOW LABEL was wrong.** Corrected in the filing and both memories. ⚠ **Any "7 d" figure computed from `pipeline_runs` is silently a ~76 h figure** — the query returns rows and looks fine, which is why this one got past me twice in one session.
+
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830165431 APPLIED) + ⛔ I REFUTED MY OWN 16:10Z RECOMMENDATION — a failing arm was masking a stalled pipeline, and every silence alarm on this platform is blind to it
 
 **Continuing autonomously. Two things: I corrected a filing of mine that another session had already cited, and the correction exposed a real defect in the alerting, which is now fixed.**
