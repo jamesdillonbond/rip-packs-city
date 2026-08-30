@@ -68,3 +68,13 @@ Chosen over step 2 (a manual pause at cron-job.org) for the reason the filing it
 - **`topshot-moments-hydrator` is a Cloudflare Worker** (`workers/topshot-moments-hydrator/`). Pushing `workers/**` to `main` deploys **nothing** — CF Workers need a `wrangler deploy`, which this session cannot do. It is also the higher-volume offender (12 runs / 12 failures in 2 h). **Owed: port the same breaker to the worker and `wrangler deploy` it.** Its cron is declared in no file in this repo (known-issues #21), so the pause lever is external either way.
 - **`topshot-fmv-populate`** (1 failure / 2 h) was left alone — too low-volume to be worth a gate, and it is a different route family.
 - **The 530 outage itself is untouched.** This reduces the cost of waiting it out; it does not fix Top Shot.
+
+### ✅ VERIFIED IN PRODUCTION 03:42:13Z — and ⛔ a CORRECTION to my own cost claim above
+
+Deploy READY 03:34:10Z with production aliases, so the 03:42Z tick was the first that could exercise the gate. **It declined, and every pinned property held live:** `extra.skipped = upstream_outage` · `window_minutes = 30` · `last_error` = the 530 · `rows_found/written/skipped` all **NULL** · **`cursor_after` preserved** · heartbeat present at 03:42:09Z.
+
+⛔ **The cost claim was wrong and it was mine.** I wrote that a failing tick paid *"a full 40-page walk"*. **No failing tick completes a walk** — it dies on the first GQL call, and the cost is retry-grinding. Caught because the three newest failures read `duration_ms` **3.7–4.5 s**.
+
+⚠ **The fast reading was not the answer either — three runs is not a distribution.** Across 88 failed runs in 29.7 h: **p10 3.8 s · median 32.3 s · p90 107.7 s · max 208.3 s**, **32 of 88 under 6 s**, total ~57 min of lambda.
+
+**Honest benefit:** a skip costs a measured **3.8 s** of fixed route overhead against a **39.2 s** mean failing tick ⇒ **~35 s saved per skipped tick in expectation, ≈0 on the ~36% already failing fast**. The breaker's own read is **23 buffers / 0.33 ms**. Real, and smaller than I first said.

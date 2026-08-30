@@ -10,7 +10,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
-### 2026-08-29 · ✅ SHIPPED — an upstream circuit breaker for `offers-sweep`, so a dead Top Shot host stops costing a full 40-page walk every 20 minutes
+### 2026-08-29 · ✅ SHIPPED + VERIFIED IN PRODUCTION — an upstream circuit breaker for `offers-sweep` (⚠ and a CORRECTION to this entry's own cost claim, at the bottom)
 
 **The finding (daytime monitor, 0311Z filing): the 530 mitigation was applied ASYMMETRICALLY.** The night pass paused pg_cron jobid 16 `rpc-backfill-pack-pool`, but `offers-sweep` (6 runs / 6 failures in 2 h; 93 of 141 over two days) and `topshot-moments-hydrator` (12/12 in 2 h) kept firing full ticks into the same dead `public-api.nbatopshot.com`. Outage confirmed still live at 03:12Z while working.
 
@@ -42,7 +42,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⭐ **FOLLOW-UP the same night — the module now takes its client as a REQUIRED parameter and imports `@/lib/supabase` nowhere.** The second caller this is wanted for is `workers/topshot-moments-hydrator`, a Cloudflare Worker with its own build that **cannot resolve the `@/` alias**. An eager import would have made the module unimportable there, leaving only one option: COPY it — **which is exactly how this repo got 37 divergent copies of `stripComments`, two of them measurably blind.** Removing the coupling now costs one argument at the call site and removes the duplication pressure before it is felt. ⚠ Behaviour is unchanged; the deployed `c8ac905b9` used the default client and the follow-up passes the same one explicitly. ⚠ **The client type is deliberately SHALLOW (`{ from: (t: string) => unknown }`, cast internally):** spelling the builder chain out structurally made `tsc` report *"Type instantiation is excessively deep and possibly infinite"* at the call site, because supabase-js's own generics are recursive and a hand-written mirror re-triggers it. Re-verified after the refactor: 30/30 tests, **all 5 mutations still red**, eslint ratchet unmoved (9/9), `tsc` clean.
 
-✅ **VERIFIED IN PRODUCTION BY ITS OWN TELEMETRY, not by a deploy scan.** Deploy `dpl_9dicqHsd9zWRH78ZH3ARS6kPAk9L` READY 03:34:10Z with the production aliases attached — i.e. live *before* the 03:42Z tick, which is the first tick that could exercise the gate. Result recorded below this entry's own verification line rather than assumed.
+✅ **VERIFIED IN PRODUCTION BY ITS OWN TELEMETRY, not by a deploy scan.** Deploy `dpl_9dicqHsd9zWRH78ZH3ARS6kPAk9L` READY 03:34:10Z with production aliases attached — live *before* the 03:42Z tick, the first one that could exercise the gate. **That tick declined, and every property the tests pin held in production:**
+
+| field | 03:42:13Z row | why it matters |
+|---|---|---|
+| `extra.skipped` | `upstream_outage` | the decline is VISIBLE — not a gate returning before any write |
+| `extra.window_minutes` | `30` | the window is recorded, so a reader need not read the code |
+| `extra.last_error` | `Top Shot GraphQL failed with 530…` | says WHAT it declined on |
+| `rows_found/written/skipped` | **NULL, NULL, NULL** | a declined tick measured nothing — not a fabricated 0 |
+| `cursor_after` | **preserved** | the ~80 min cycle was NOT reset to head |
+| heartbeat | present, 03:42:09Z | route reached; the pair is intact |
+
+⛔ **CORRECTION TO THIS ENTRY'S OWN COST CLAIM, and it was mine.** The heading and the code comment said a failing tick paid *"a full 40-page walk"*. **That is wrong — no failing tick completes a walk**; it dies on the first GQL call and the real cost is retry-grinding against a dead host. I caught it because the three newest failures read `duration_ms` **3.7–4.5 s**, which is nothing like a walk.
+
+⚠ **And the fast reading was ALSO not the answer — a snapshot of three is not a distribution.** Over the 88 failed runs in 29.7 h the shape is **BIMODAL**: **p10 3.8 s · median 32.3 s · p90 107.7 s · max 208.3 s**, with **32 of 88 dying inside 6 s** and the rest grinding. Total **3,446 s (~57 min)** of lambda across the window.
+
+**So the honest benefit:** a skipped tick costs a measured **3.8 s** (fixed route overhead — heartbeat, cursor read, log — which a real tick pays too), against a mean failing tick of **39.2 s** ⇒ **~35 s saved per skipped tick in expectation, and ≈ZERO on the ~36% that were already failing fast.** At ~1.5 skips/h that is roughly **half of ~1.9 min of lambda per hour**. Real, and materially smaller than the heading claimed. ✅ **The breaker is not itself a cost:** its read is **23 buffers / 0.33 ms**, an Index Scan on `pipeline_runs_pipeline_finished_idx`.
+
+⭐ **The lesson is the one this repo keeps paying for: I wrote a mechanism ("a 40-page walk") into a commit message and a code comment without measuring it, and it read as fact because it was specific.** `duration_ms` was one column away the whole time.
 
 
 ### 2026-08-29 · ✅ SHIPPED (code) — the sentinel detected CRITICAL and could not tell anyone, and `telegram-FAILED` did not say why

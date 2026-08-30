@@ -252,9 +252,22 @@ export async function POST(req: NextRequest) {
 
   // ── Upstream circuit breaker ────────────────────────────────────────────────
   // The Top Shot GraphQL host returns Cloudflare 530 / "error code: 1033" when
-  // its origin is down. On 2026-08-30 that had been true for 2 days and this
-  // pipeline was still paying a full 40-page walk per tick to rediscover it:
-  // 6 runs / 6 failures in two hours, 93 of 141 over two days.
+  // its origin is down. On 2026-08-30 that had been true for 2 days: 93 of 141
+  // runs failed, 6 of 6 in the two hours before this shipped.
+  //
+  // ⚠ WHAT A FAILING TICK ACTUALLY COSTS, measured rather than assumed — an
+  // earlier version of this comment said "a full 40-page walk per tick", and
+  // that was WRONG. No failing tick completes a walk; it dies on the first GQL
+  // call and the cost is retry-grinding against a dead host. Over 88 failed
+  // runs in 29.7 h the distribution is BIMODAL: p10 3.8 s, median 32.3 s,
+  // p90 107.7 s, max 208.3 s — 32 of 88 die inside 6 s, the rest grind.
+  // Total 3,446 s (~57 min) of lambda over that window.
+  //
+  // So the saving is ~35 s per skipped tick IN EXPECTATION (mean failing tick
+  // 39.2 s minus a measured 3.8 s skip), and on the ~36% of ticks that were
+  // already failing fast it is close to ZERO. Worth having, and smaller than
+  // "skip the walk" implies. The breaker's own read is 23 buffers / 0.33 ms on
+  // pipeline_runs_pipeline_finished_idx, so it is not itself a cost.
   //
   // ⚠ Placed AFTER the cursor read ON PURPOSE. The declined tick still writes a
   // pipeline_runs row (a gate that returns before any write is the fourth cause
