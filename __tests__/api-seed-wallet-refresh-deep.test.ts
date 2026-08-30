@@ -64,6 +64,7 @@ function seeded(over: Partial<Record<string, unknown>> = {}) {
     tags: null,
     priority: 1,
     last_refreshed_at: null,
+    last_refreshed_per_collection: null,
     cached_moment_count: 500,
     ...over,
   }
@@ -159,6 +160,81 @@ describe("seed-wallet-refresh — dispatch policy", () => {
 
     expect(dispatchBodies(fetchMock!)).toHaveLength(0)
     expect(spy.writes.seeded_wallets ?? []).toHaveLength(0)
+  })
+})
+
+describe("seed-wallet-refresh — backstop freshness gate (?force=1)", () => {
+  // The GHA backstop fires ?force=1 and, because GitHub does not honour its
+  // schedule, can land right after a primary wave (2026-08-30: 08:38Z slot ran
+  // at 13:58Z, re-dispatching 120 wallets the 12/13Z wave had just walked). A
+  // forced wave must skip wallets walked within SEED_REFRESH_BACKSTOP_FRESH_HOURS,
+  // judged by the per-collection stamp (written on EVERY child run), while an
+  // unforced primary wave ignores the gate entirely.
+  const oneHourAgo = () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
+  const fiveHoursAgo = () => new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+
+  it("forced wave skips wallets walked within the fresh window, whatever their priority", async () => {
+    install({
+      seeded_wallets: {
+        data: [
+          // High priority, per-collection stamp 1h old -> skipped on a forced wave.
+          seeded({ id: 1, username: "highpri-fresh", wallet_address: "0x1111111111111111", priority: 1, last_refreshed_at: fiveHoursAgo(), last_refreshed_per_collection: { nfl_all_day: oneHourAgo() } }),
+          // Stale everywhere -> still refreshed (this is what a backstop is for).
+          seeded({ id: 2, username: "highpri-stale", wallet_address: "0x2222222222222222", priority: 1, last_refreshed_at: fiveHoursAgo(), last_refreshed_per_collection: { nfl_all_day: fiveHoursAgo() } }),
+          // Never walked -> refreshed.
+          seeded({ id: 3, username: "never", wallet_address: "0x3333333333333333", priority: 1, last_refreshed_at: null, last_refreshed_per_collection: null }),
+          // Fresh but truncation-signature count -> repair bypasses the gate.
+          seeded({ id: 4, username: "fresh-truncated", wallet_address: "0x4444444444444444", priority: 1, last_refreshed_at: oneHourAgo(), cached_moment_count: 24 }),
+        ],
+        error: null,
+      },
+    })
+
+    await GET(req("?force=1"))
+    await runDeferred()
+
+    const wallets = dispatchBodies(fetchMock!).map((b) => b.wallet).sort()
+    expect(wallets).toEqual(["0x2222222222222222", "0x3333333333333333", "0x4444444444444444"])
+  })
+
+  it("an unforced primary wave does not apply the backstop gate", async () => {
+    install({
+      seeded_wallets: {
+        data: [
+          seeded({ id: 1, username: "highpri-fresh", wallet_address: "0x1111111111111111", priority: 1, last_refreshed_at: oneHourAgo(), last_refreshed_per_collection: { nfl_all_day: oneHourAgo() } }),
+        ],
+        error: null,
+      },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    expect(dispatchBodies(fetchMock!).map((b) => b.wallet)).toEqual(["0x1111111111111111"])
+  })
+
+  it("SEED_REFRESH_BACKSTOP_FRESH_HOURS=0 disables the gate", async () => {
+    // The constant is read at module load, so this pins the env contract via a
+    // fresh import rather than the shared module instance.
+    vi.resetModules()
+    process.env.SEED_REFRESH_BACKSTOP_FRESH_HOURS = "0"
+    try {
+      const { GET: GET0 } = await import("@/app/api/seed-wallet-refresh/route")
+      install({
+        seeded_wallets: {
+          data: [
+            seeded({ id: 1, username: "highpri-fresh", wallet_address: "0x1111111111111111", priority: 1, last_refreshed_at: oneHourAgo(), last_refreshed_per_collection: { nfl_all_day: oneHourAgo() } }),
+          ],
+          error: null,
+        },
+      })
+      await GET0(req("?force=1"))
+      await runDeferred()
+      expect(dispatchBodies(fetchMock!).map((b) => b.wallet)).toEqual(["0x1111111111111111"])
+    } finally {
+      delete process.env.SEED_REFRESH_BACKSTOP_FRESH_HOURS
+      vi.resetModules()
+    }
   })
 })
 

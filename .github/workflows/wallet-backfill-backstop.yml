@@ -51,6 +51,19 @@ name: Wallet Backfill Backstop
 # disabled for a single clean trigger; until then dual-trigger is intentional
 # and harmless thanks to the guard.
 #
+# ⭐ 2026-08-30 — THE FORCED WAVE IS NOW A REAL BACKSTOP, NOT A SECOND WAVE.
+# Measured: the 08:38Z slot ran at 13:58Z, straight after the 12/13Z primary
+# wave had completed all four cohorts with errors=0, and re-dispatched 120
+# wallets (~600 collection walks) while the DB sat at 33/36 backends in
+# DataFileRead. The "guard makes a redundant fire a no-op" claim at the top of
+# this file is only true for the on-chain walk — every child still paid the
+# full wallet_moments_cache read + backfill_wmc_metadata_from_editions. So
+# /api/seed-wallet-refresh now skips, ON FORCED WAVES ONLY, any wallet whose
+# last per-collection walk is younger than SEED_REFRESH_BACKSTOP_FRESH_HOURS
+# (default 3): if the primaries ran, this workflow dispatches ~nothing; if a
+# cohort died, its wallets are stale and are refreshed. The `complete` row
+# carries `backstop_fresh_skipped` so the no-op is visible.
+#
 # &force=1 IS LOAD-BEARING (2026-07-18) — do not drop it. /api/seed-wallet-refresh
 # carries a 12h cadence gate (cost lever) that skips any wave where
 # utcHour%12>=2. This workflow's hours are 2,8,14,20 — ALL of which the gate

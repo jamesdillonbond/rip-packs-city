@@ -86,6 +86,8 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Weekly Digest | /api/send-digest | weekly Mon 16:00 UTC |
 | RPC Weekly Support Report | /api/support-report?days=7&format=html | weekly Mon 14:00 UTC |
 
+> **⚠ 2026-08-30: forced (backstop, `?force=1`) waves now skip any wallet walked within `SEED_REFRESH_BACKSTOP_FRESH_HOURS` (default 3 h) by its per-collection stamp.** The GHA backstop drifts hours late and landed at 13:58Z on top of the finished 12/13Z primary wave, re-dispatching 120 wallets; with the gate it dispatches only what a dead cohort left stale. `complete` rows carry `backstop_fresh_skipped`.
+
 > **⚠ Seed-wallet-refresh EFFECTIVE cadence is 12h, not 6h (2026-07-18 Phase 2 cost lever).** The 4 cohort entries above still FIRE 4×/day, but `/api/seed-wallet-refresh` carries a gate that executes only the `hour % 12 < 2` waves (hours 0/1 and 12/13) and no-ops the 6/7 and 18/19 waves in <1s. Rationale: the wallet-backfill fan-out was both the #1 Vercel Fluid driver and the #1 DB-IOPS driver; halving it at ~2× wallet staleness. It lives in code (not the console) so it is revertible with `git revert`. **To make it permanent and remove the drift:** set the entries to `45 */12`, `59 */12`, `13 1,13`, `27 1,13` and delete the gate from the route. **To disable the gate without a deploy:** set `SEED_WALLET_REFRESH_EVERY_WAVE=1` in Vercel.
 
 ## Active cron-job.org — Supabase edge functions  ·  12 active

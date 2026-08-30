@@ -81,6 +81,7 @@ type SeededRow = {
   tags: string[] | null
   priority: number | null
   last_refreshed_at: string | null
+  last_refreshed_per_collection: Record<string, string> | null
   cached_moment_count: number | null
 }
 
@@ -210,6 +211,44 @@ const LOW_PRIORITY_INTERVAL_HOURS = Number(
 )
 const LOW_PRIORITY_INTERVAL_MS =
   Math.max(0, LOW_PRIORITY_INTERVAL_HOURS) * 60 * 60 * 1000
+
+// ── Backstop freshness gate (2026-08-30) ─────────────────────────────────
+// A FORCED wave is the GHA backstop (wallet-backfill-backstop.yml, ?force=1),
+// whose one job is to refresh wallets a primary cohort MISSED. It used to
+// re-dispatch every high-priority wallet regardless — and because GitHub does
+// not honour the `38 2,8,14,20` schedule (median +45 min, p90 +205 min), the
+// 08:38Z run landed at 13:58Z on 2026-08-30, right after the 12/13Z primary
+// wave had finished all four cohorts with errors=0: 120 wallets re-dispatched,
+// ~600 collection walks, every one a no-op that still paid the full
+// wallet_moments_cache read + backfill_wmc_metadata_from_editions against a
+// disk already at 33/36 backends in DataFileRead. So on a forced wave, skip
+// any wallet whose last walk is younger than BACKSTOP_FRESH_HOURS — using the
+// per-collection stamp (written unconditionally on every child run) rather
+// than last_refreshed_at (stamped only when rows changed or stats aged past
+// 6h). Never-seeded / truncation-signature wallets still bypass. Primaries
+// (unforced waves) are untouched. 0 disables.
+//   SEED_REFRESH_BACKSTOP_FRESH_HOURS (default 3)
+const BACKSTOP_FRESH_HOURS = Number(process.env.SEED_REFRESH_BACKSTOP_FRESH_HOURS ?? 3)
+const BACKSTOP_FRESH_MS =
+  (Number.isFinite(BACKSTOP_FRESH_HOURS) ? Math.max(0, BACKSTOP_FRESH_HOURS) : 3) * 60 * 60 * 1000
+
+// Most recent walk of any collection for this wallet, as epoch ms; NaN when
+// the wallet has never been walked (or the stamps are unparseable).
+function lastWalkMs(row: {
+  last_refreshed_at: string | null
+  last_refreshed_per_collection: Record<string, string> | null
+}): number {
+  let best = NaN
+  const consider = (raw: unknown) => {
+    if (typeof raw !== "string") return
+    const t = Date.parse(raw)
+    if (Number.isFinite(t) && (!Number.isFinite(best) || t > best)) best = t
+  }
+  consider(row.last_refreshed_at)
+  const per = row.last_refreshed_per_collection
+  if (per && typeof per === "object") for (const v of Object.values(per)) consider(v)
+  return best
+}
 
 function isLowPriority(priority: number | null): boolean {
   return priority != null && priority >= LOW_PRIORITY_MIN
@@ -415,7 +454,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("seeded_wallets")
-      .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at, cached_moment_count")
+      .select("id, username, wallet_address, display_name, tags, priority, last_refreshed_at, last_refreshed_per_collection, cached_moment_count")
       .eq("is_active", true)
 
     if (error) {
@@ -433,11 +472,19 @@ export async function GET(req: NextRequest) {
     // truncation-signature) and high-priority wallets are never gated.
     const nowMs = Date.now()
     let lowPrioritySkipped = 0
+    let backstopFreshSkipped = 0
     const addressRows = cohortRows
       .filter((r) => r.wallet_address != null)
       .filter((row) => {
         const cached = row.cached_moment_count ?? 0
         const forceFull = cached === 0 || SUSPICIOUS_COUNTS.has(cached)
+        if (forceWave && !forceFull && BACKSTOP_FRESH_MS > 0) {
+          const ageMs = nowMs - lastWalkMs(row)
+          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < BACKSTOP_FRESH_MS) {
+            backstopFreshSkipped++
+            return false
+          }
+        }
         if (
           !forceFull &&
           LOW_PRIORITY_INTERVAL_MS > 0 &&
@@ -541,7 +588,7 @@ export async function GET(req: NextRequest) {
     console.log(
       `[seed-wallet-refresh] done — cohort=${cohortK}/${cohortN} processed=${
         walletsWithAddress.length + walletsWithoutAddress.length
-      } low_priority_skipped=${lowPrioritySkipped} lowpri_interval_h=${LOW_PRIORITY_INTERVAL_HOURS} backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
+      } low_priority_skipped=${lowPrioritySkipped} lowpri_interval_h=${LOW_PRIORITY_INTERVAL_HOURS} backstop_fresh_skipped=${backstopFreshSkipped} backstop_fresh_h=${BACKSTOP_FRESH_HOURS} backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
     )
 
     // Terminal row, keyed to the INVOCATION start so it pairs with the
@@ -553,6 +600,7 @@ export async function GET(req: NextRequest) {
       processed: walletsWithAddress.length + walletsWithoutAddress.length,
       backfill_fired: backfillFired,
       low_priority_skipped: lowPrioritySkipped,
+      backstop_fresh_skipped: backstopFreshSkipped,
       errors: errors.length,
     }, new Date().toISOString())
   })
