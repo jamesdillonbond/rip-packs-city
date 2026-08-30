@@ -28,6 +28,8 @@
 --   SELECT fc.edition_id, fc.fmv_usd FROM fmv_current fc
 --   WHERE fc.collection_id = p_collection_id AND fc.edition_id = ANY(p_edition_ids) AND fc.fmv_usd IS NOT NULL;
 
+-- anon-exec: intentional — same signature, ACLs unchanged by CREATE OR REPLACE; pack pages and the anon pack-EV readers call it (get_fmv_for_editions)
+-- (marker added to the committed file after apply — comment only; parity is by name.)
 CREATE OR REPLACE FUNCTION public.get_fmv_for_editions(p_collection_id uuid, p_edition_ids uuid[])
  RETURNS TABLE(edition_id uuid, fmv_usd numeric)
  LANGUAGE sql

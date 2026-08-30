@@ -55,6 +55,9 @@
 --   supabase/migrations/20260810040000_audit_20260810_fix_get_wallet_total_fmv_collection_scope.sql
 -- and re-point the PINS entry + verbatim copy back.
 
+-- anon-exec: intentional — same signature, ACLs unchanged by CREATE OR REPLACE; the un-gated collection tab and /share/[wallet] read it anon (get_wallet_total_fmv).
+-- (this marker line was added to the committed file after apply; it is a comment only, so the
+-- file is no longer byte-identical to prod's recorded statements — parity is by name.)
 CREATE OR REPLACE FUNCTION public.get_wallet_total_fmv(p_wallet text, p_collection_id uuid DEFAULT NULL::uuid)
  RETURNS numeric
  LANGUAGE plpgsql

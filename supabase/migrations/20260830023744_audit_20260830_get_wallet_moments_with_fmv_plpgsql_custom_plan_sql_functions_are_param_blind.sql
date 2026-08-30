@@ -40,6 +40,9 @@
 --   supabase/migrations/20260806033000_audit_20260806_get_wallet_moments_series_topshot_convention.sql
 -- (LANGUAGE sql, no plan_cache_mode) and re-point the PINS entry + verbatim copy back.
 
+-- anon-exec: intentional — same signature, ACLs unchanged by CREATE OR REPLACE; the un-gated collection tab and /share/[wallet] read it anon (get_wallet_moments_with_fmv).
+-- (this marker line was added to the committed file after apply; it is a comment only, so the
+-- file is no longer byte-identical to prod's recorded statements — parity is by name.)
 CREATE OR REPLACE FUNCTION public.get_wallet_moments_with_fmv(p_wallet text, p_sort_by text DEFAULT 'fmv_desc'::text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0, p_player text DEFAULT NULL::text, p_series integer DEFAULT NULL::integer, p_tier text DEFAULT NULL::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
  RETURNS json
  LANGUAGE plpgsql

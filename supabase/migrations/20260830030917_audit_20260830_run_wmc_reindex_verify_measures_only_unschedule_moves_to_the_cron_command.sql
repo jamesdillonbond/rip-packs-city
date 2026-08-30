@@ -8,6 +8,8 @@
 --   SELECT cron.unschedule(jobname) FROM cron.job WHERE jobname LIKE 'tmp-reindex-wmc-%' AND username = current_user;
 -- (scheduled by the next migration). Same measurement body as before.
 
+-- anon-exec: revoked in 20260830030753 (REVOKE ... FROM PUBLIC, anon, authenticated); CREATE OR REPLACE keeps that ACL (run_wmc_reindex_verify)
+-- (marker added to the committed file after apply — comment only; parity is by name.)
 CREATE OR REPLACE FUNCTION public.run_wmc_reindex_verify()
  RETURNS jsonb
  LANGUAGE plpgsql
