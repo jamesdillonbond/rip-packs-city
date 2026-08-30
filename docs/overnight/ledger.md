@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (guard + 4 data fixes) — the canonical open list was the one coordination file nobody guarded, and it had been rendering four rows into the wrong columns
+
+**What shipped.** `scripts/check-register-integrity.mjs` + `__tests__/register-integrity-guard.test.ts` (18 tests) + a `register-guard` CI job + `npm run register:check`, and the four register rows the guard's first full run found broken.
+
+**Why it existed to be found.** Of the three files sessions coordinate through, the ledger has the no-clobber and future-date arms and `docs/overnight/inbox/INDEX.md` has four CI assertions. `docs/audits/deep-audit-register.md` — the list a session reads to decide *what to work on* — had **nothing**: measured 2026-08-29, no test and no script referenced it. A lost register row is worse than a lost ledger entry: it does not merely drop a record, it **un-files a finding**.
+
+**The four defects, all one shape.** GFM splits a table row on `|` **before** it parses inline code, so a raw pipe inside backticks opens a column — `/(ts\|tsx)$/` in R26, two brand-title strings in R31, `(TierBreakdownCard\|PortfolioSparkline)` in D30 — and cells past the header's width are **discarded by the renderer**. R46 carried a genuine 7th cell, so its `owner` column had simply vanished from the rendered table while the ⛔ DECIDED text sat in its place. ⚠ **Every character is still in the file, so a grep finds all of it** — which is exactly why this survived four audit runs.
+
+**Two corrections to the guard itself, both found by running it against the real file rather than a fixture.** (1) The first draft hardcoded `{OPEN: 6, RESOLVED: 5}` and flagged all 48 resolved rows; the width is now read from **each section's own header row**, which cannot drift from the file it checks. (2) It matched `^| R\d+ |`, which silently skipped `D12b`, `D30`, `D2b`, `E5` — widening it to every id-keyed row took the population **67 → 111 and immediately found D30**, invisible to the narrow version.
+
+**Non-vacuity at two granularities**, per the standing rule that a guard which inspects nothing looks like one that found nothing: it reports the row count and exits **2** on zero, *and* exits 2 unless **at least two sections contribute rows** — a parser that stopped matching `RESOLVED` would otherwise report a healthy-looking count from `OPEN` alone. The two prose sections are excluded **by the property** (their header's first column is `area` / `item`, not `id`), not by name, so a new id-keyed section is picked up with no edit; the test asserts that.
+
+**Proven, not assumed.** Positive control: run against `HEAD`'s register it exits 1 and names exactly R26, R31, D30, R46; green after the fix. **Six mutations, and two SURVIVED the first pass** — dropping the two-section floor from `ok` (the exit code still caught it: two agreeing signals, one silently wrong) and restricting the parent set to `OPEN` (deleting **resolved** history was invisible — and RESOLVED is where the revert paths live). Both gaps closed with direct assertions; all six red now.
+
+**Verified:** full suite 1405 files / 15443 tests green · `tsc --noEmit` clean (the `checkRegister` JSDoc is load-bearing — without it TS infers `before` as `null` from its default and every string call site fails) · eslint ratchet 717/717, no rise · the CI job's exact bash simulated locally against `HEAD~1`.
+
+**Revert path:** `git revert` the two commits below (guard + data). Removing `scripts/check-register-integrity.mjs`, `__tests__/register-integrity-guard.test.ts`, the `register-guard` job in `.github/workflows/ci.yml` and the `register:check` script restores the prior state; the four register rows are plain markdown and revert with them.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the methodology page passed a PAGE CACHE off as a DATA cadence, and my first guard for it fired on an accurate sentence
 
 **The last item of the ask-staleness sweep, and the whole filing is now drained.** The public Listings methodology paired *"Live Top Shot ask data comes from `edition_offers`"* with `refresh: "Every 5 minutes (page revalidate)"`. Both statements were individually true; read together they said **the asks are five minutes old**. ⭐ Stating only the flattering of two different measurements is the same shape as the boards' retired *"Refreshes continuously"* — and `edition_offers` had sat unrefreshed for **over 30 hours** while this page implied minutes. The FMV entry had the sibling: *"the FMV is derived from the lowest **live** ask"*, unbounded.
