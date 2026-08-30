@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (test) — `main` was red for ~1 h on a clock-dependent JSON-LD assertion, and the fix is to compare a DATE as a date
+
+**Found by CI babysitting on my own docs commits** (`d262e8b`, `2307184`): `Unit tests (vitest)` red, 1 of 15,416 — `seo-jsonld-ask-age.test.ts › a FRESH ask gets a priceValidUntil in the FUTURE`, `expected 1788048000000 to be greater than 1788048977148`. The test landed in `323ee41` (the concurrent session's InStock fix) ~2 h earlier and was green then.
+
+⭐ **Mechanism: `priceValidUntil` is a schema.org DATE (`.slice(0, 10)`), and the test parsed it with `Date.parse`, which reads `"2026-08-30"` as 00:00Z — the START of the day the price is still vouched for.** A fresh ask confirmed at T gets the date of T+12 h; whenever that date is *today* (every CI run between 00:00Z and ~13:00Z) the parse lands in the past. The 31 h "already elapsed" case has the mirror ambiguity: date-granular, it is unambiguous only beyond ~36 h — exactly the caveat the shipping commit message recorded, and then did not encode.
+
+✅ **Test-only fix:** the fresh case asserts `priceValidUntil >= todayUtc()` as a `YYYY-MM-DD` string compare; the elapsed fixture moves 31 h → **48 h** (past the fog) and asserts `< todayUtc()`. The reasoning is in a comment at the top of the file so the next reader does not "simplify" it back. **Control varied the CLOCK, not just the code** (per the 08-29 mutation-control rule): with `vi.setSystemTime` the OLD test fails at 00:16Z (reproduces CI) and the NEW one passes at 00:16Z, 12:59Z and 19:30Z.
+
+ⓘ Same family as the sentinel clock flake the concurrent session swept at `438bca1` two hours earlier — the second time-of-day-dependent assertion on `main` in one evening. Worth a guard: any test that calls `Date.now()` against a date-granular field.
+
+**Revert path:** `git revert` the test commit; the revert restores a test that reds for ~13 h of every UTC day.
+
 ### 2026-08-29 · ✅ SHIPPED (DB ×5 + cron-job.org) — the sentinel's four WARN arms each got their mechanism fixed, not their threshold
 
 All five migrations are committed with this entry (byte-exact via `scripts/recover-fileless-migrations.mjs`, 5/5 md5-verified). Same Cowork desktop-VM session as the leaderboard entry above; every reschedule was chosen from a live 7-day `cron.job_run_details` startup-timeout histogram (zero-storm hours: 08, 10, 11, 20, 23Z; worst: 13Z 226, 09Z 191) and a free-minute query, never from a handoff.
