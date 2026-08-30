@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⛔ REPAIRED, NOT FIXED — my own 03:57Z RLS migration was wiped by a re-CREATE ten hours later
+
+**`Smoke Tests` HARD FAIL on `f821a17fe`: `rls_off_base_table:audit_20260830_pgss_snap` — the same violation I closed this morning.**
+
+**It came back because the table is DROPped and re-CREATEd, not altered.** Proven rather than assumed: it holds exactly **one** snapshot (`distinct at = 1`, newest **13:57:06Z**, 4,798 rows) and the `COMMENT ON TABLE` I added at 03:57Z is **gone**. A `CREATE TABLE AS` resets both RLS and the comment.
+
+⭐ **THE LESSON, and it has a documented sibling one line away in CLAUDE.md.** That file already records *"`CREATE OR REPLACE VIEW` with no `WITH` clause RESETS reloptions and silently strips `security_invoker=on` (four occurrences)"*. **This is the TABLE analogue — `DROP`/`CREATE` resets RLS — and it means an `ALTER` is a ONE-SHOT REPAIR on an object another session recreates.** Migration `20260830035732` was correct and is now inert; the file stays committed and its effect does not.
+
+⚠ **So today's repair was done as `execute_sql` scratch DDL, NOT a second migration** — and that is a deliberate distinction, not laziness. **A committed migration whose effect the next recreate wipes reads as protection that is not there**, which is worse than no file. Filing the ALTER once per recreate would accumulate exactly that.
+
+**Exposure while RLS is off:** `anon` and `authenticated` retain SELECT — the GRANT survives the recreate, so RLS is the only thing between anon and the data — over a `pg_stat_statements` snapshot: internal query TEXT, call counts and IO for ~4,800 statements. No user PII; it publishes the shape of the query surface.
+
+⚠ **It will recur.** `cron.job` scanned for both `pgss_snap` and `pg_stat_statements`: **zero rows**. Nothing schedules it — it is session-driven, and the new "every 2h" autonomous task makes a ~2-hourly cadence likely.
+
+👉 **Two durable fixes, NEITHER taken unilaterally.** (1) The owning session enables RLS at creation — one line, removes the cause, but needs code this session does not own. (2) A `ddl_command_end` **event trigger** enabling RLS on any new `public` base table, which would make an **already-enforced** invariant self-enforcing (the smoke arm already treats any exception as a HARD FAIL, so it invents no policy). ⛔ **Not installed:** a database-wide DDL trigger changes every future migration in every session, and a table needing anon read before its policy lands would break. Trevor's call.
+
+⛔ **Two things the next session must NOT do**, both recorded in the filing: allowlisting the table in the smoke guard (the guard is right — it is genuinely exposed), and filing another migration for the ALTER.
+
+**Verified:** `relrowsecurity` true again · `check_public_security_invariants()` back to `[]` · inbox filing indexed (counts 326→327, 08-30 section 5→6), guard green.
+
+Filing: [inbox 2026-08-30T1410Z](inbox/2026-08-30T1410Z-a-one-time-rls-alter-does-not-hold-on-a-table-another-session-recreates.md).
+
+
 ### 2026-08-30 · 📦 PATCH SET (cloud pass, cannot push) — the wallet-backfill lock fails OPEN on the one error class where open is the worst answer: 656 saturated-database claim errors in 24 h, every one proceeding, 226 overlapping same-wallet walks
 
 **Pass: cloud, 12:59–13:4xZ (05:59–06:4x PT), origin/main `73220044c` read at 12:59Z. Not shipped from here — the cloud git proxy denies push for this repo and that cannot be self-granted. ⚠ That blocker is specific to this cloud session; Trevor's machine and Claude Code push normally. The patch set is in the Project (`claude/patch-2026-08-30-wallet-backfill-lock-fail-closed-on-saturation.patch` + `APPLY.md`); apply with `git am --3way`.**
