@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — the wallet-backfill cache read paged with LIMIT/OFFSET, so loading a whale's cached ids was O(n²): keyset paging on the unique key makes every page an O(page) index-only scan
+
+**Pass: desktop, 14:2x–14:3xZ.** Follows the backstop entry above; same 13:57→14:13Z pgss diff. The `wallet_moments_cache … WHERE wallet_address=$1 AND collection_id=$2 ORDER BY moment_id LIMIT $3 OFFSET $4` shape was **520 calls / 2,498 s / 2.7 M buffer hits in 16 min** (its `moment_id, edition_key` twin another 131 / 834 s). Three readers page that way: `loadCachedMomentIds` and `loadCachedMomentIdsAndKeys` in `lib/chains/flow/wallet-backfill-helpers.ts` (every non-Top-Shot child) and `loadCachedMomentIds` in `app/api/wallet-backfill/route.ts` (Top Shot). Page k re-walks the first k·1000 index entries, so a 154,237-row whale (`0x0d744d23165bfb6c`) costs ~12 M index-entry visits per load, once per child, ~5 children per dispatch.
+
+**Measured** (EXPLAIN ANALYZE, BUFFERS on the whale, Top Shot): the keyset page `… AND moment_id > $cursor ORDER BY moment_id LIMIT 1000` is an **Index Only Scan on `wallet_moments_cache_wallet_collection_moment_key`, 1,122 buffers, 481 heap fetches** (the stale-VM class from 08-29), 9.1 s wall under the storm — all IO wait. The OFFSET-100000 page would not finish inside the 60 s MCP cap at all.
+
+**Change:** all three readers now page on `.gt("moment_id", last)` + `.order("moment_id")` + `.limit(1000)`; `moment_id` is text and the cursor compares in the column's own collation, so the ORDER BY that 2026-08-16 added for determinism is now also what makes the cursor exact. No DB change. Test: the helpers mock now emulates `gt`/`limit`, and a new case pins two pages over 1,500 cached ids — exactly one `.gt("moment_id", <1000th id>)`, no `.range`, and the resulting Set complete (1,500 skipped, zero upserts). 91/91 helpers, 132/132 across the four wallet-backfill suites.
+
+**Exit (next pgss diff ≥ 30 min after deploy, joined on the full key):** that statement shape drops from ~5 k buffer hits per call toward ~1.1 k per 1,000 rows, and its share of the storm falls accordingly; `pipeline_runs` wallet-backfill `duration_ms` on whales falls. **Falsifier:** per-call hits unchanged → PostgREST is not passing the cursor (check the request's `moment_id=gt.` filter in the Vercel logs). **Revert:** `git revert`; the three functions are self-contained.
+
 ### 2026-08-30 · 📋 NO CHANGE — three RED smoke badges on my own commits in 11 minutes were ONE saturation spell, not three defects
 
 **Recorded because a future reader will see red badges against these commits and should not re-diagnose them.** `Smoke Tests` flapped 14:09–14:22Z: `709a9e31` fail · `bf11c1ce` **pass** · `ba4e33cb` **pass** · `421001da` fail · `274b8f98` fail — and the three failures name **three DIFFERENT hard arms**:
