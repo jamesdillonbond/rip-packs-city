@@ -60,7 +60,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Refresh Conflated Editions | /api/cron/refresh-conflated-editions | daily 15:17 UTC ⟨exec-derived⟩ — NEW |
 | RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | ~~hourly :23~~ **INACTIVE 2026-08-29** — refresh moved to pg_cron jobid 384 `rpc-refresh-pack-grail-metrics-mv` (`cron_heavy`, `23 * * * *`, migration 20260829235752): the 60 s lambda killed 13 of 24 ticks while the DB refresh committed. Route stays deployed as the revert (re-enable entry 7619844). |
 | RPC Resolve Topshot Stubs | /api/cron/resolve-topshot-stubs | 9,39 |
-| RPC Resolve Wallet Usernames | /api/cron/resolve-wallet-usernames | 8,38 ⟨exec-derived⟩ — NEW |
+| RPC Resolve Wallet Usernames | /api/cron/resolve-wallet-usernames | ~~every 3 h :08~~ **INACTIVE 2026-08-30 18:2xZ** — its username source is the dead public-api.nbatopshot.com (18:08Z tick: all 300 lookups http 530 after the 20260830155848 candidate fix held). Console entry 7776245, one click to re-enable; suppression row added (20260830181738). |
 | RPC Run Insider Detectors | /api/cron/run-insider-detectors | hourly :26 |
 | RPC Snapshot Institutional Wallets | /api/cron/snapshot-institutional-wallets | daily 10:07 UTC ⟨exec-derived⟩ — moved from 06:37 |
 | RPC Pack Sniper Ask Snapshot | /api/cron/snapshot-pack-asks | 3,8,13,…,58 (every 5m) ⟨exec-derived⟩ — NEW |

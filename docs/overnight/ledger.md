@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830181738 + console + one VACUUM FULL) — the username resolver is the ninth dead-host name, badge_editions gave back half its heap, and jobid 408's first scheduled tick verified
+
+**Pass: desktop, 18:0x–18:3xZ.**
+
+- **`wallet-username-resolver` joins the dead-host class.** The 18:08Z tick proved the 20260830155848 fix (candidates in 5 s, no more 60 s timeout) and then failed on the next hop: `all 300 username lookups failed; first: http 530` — the lookup source is `public-api.nbatopshot.com` GraphQL. cron-job.org "RPC Resolve Wallet Usernames" (7776245) **disabled** (list shows Inactive); bounded suppression row added (20260830181738, expires 2026-09-13, same exit as the class: host non-5xx twice → re-enable + delete the row). The DB-side fix stays valuable — it is what will make the first tick after re-enable actually resolve.
+- **`badge_editions` VACUUM (FULL, ANALYZE) run live at 18:1xZ** on the idle instance (postgres, sub-second lock): heap **14 MB → 6,976 kB**, total 9.8 MB. The 08-30 morning bloat reading is cleared; sniper-deals' badge reads now touch half the pages.
+- **jobid 408 first scheduled tick, 18:09Z: ok=true `catalog_unchanged` 254 ms** — the Pinnacle sync's pg_cron move is verified by its real caller, not just the smoke run.
+- **`topshot-onchain-art-backfill` left alone, named:** 18 runs/48 h, 8 rows written, `resolver_misses: 80` per run, ~9 s each — media resolution starves on the same dead host but the cost is small and a trickle still lands; re-check when the Atlas port ships.
+- ⓘ 18:2xZ live read: ~20 active backends (a normal daytime wave — PostgREST RPC cold reads + the 18:19Z `backfill_pinnacle_mint_acquisitions` tick), not the fixed pathology; `allday_pack_sales_cursor.done` still false, projected ~19–19:30Z.
+
 ### 2026-08-30 · ✅ SHIPPED (four renames) + 📋 MEASURED — the version-stamp mismatches split cleanly: four files are header+exact-applied-SQL (renamed to their DB stamps), four differ in BODY too (left, named)
 
 **Pass: desktop, 18:1xZ.** Open-thread item 6, worked with a content check first instead of renaming blind.
