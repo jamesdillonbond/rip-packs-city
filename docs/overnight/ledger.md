@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED — an upstream circuit breaker for `offers-sweep`, so a dead Top Shot host stops costing a full 40-page walk every 20 minutes
+
+**The finding (daytime monitor, 0311Z filing): the 530 mitigation was applied ASYMMETRICALLY.** The night pass paused pg_cron jobid 16 `rpc-backfill-pack-pool`, but `offers-sweep` (6 runs / 6 failures in 2 h; 93 of 141 over two days) and `topshot-moments-hydrator` (12/12 in 2 h) kept firing full ticks into the same dead `public-api.nbatopshot.com`. Outage confirmed still live at 03:12Z while working.
+
+✅ **Step 1 of the filing verified rather than assumed:** `offers-sweep` is Top-Shot-only — one hardcoded `COLLECTION_ID`, one `topshotGraphql` call — so backing it off cannot strand another collection. **That check was the filing's own precondition and it was the right one:** the existing saturation throttle counts OTHER pipelines' failures, which is exactly how a Top Shot outage throttled four unrelated collections on 08-29. **A per-collection outage must never be able to pause another collection**, so this breaker keys ONLY on the calling pipeline's own most recent run.
+
+**Chose step 3 (durable) over step 2 (a manual cron-job.org pause) for the reason the filing itself gives — a manual pause has to be remembered and reversed.** `lib/pipeline/upstream-breaker.ts` has **no stored state to forget**: the window runs from the last failing run, so once it elapses the next tick makes a REAL attempt. Still down → another window. Recovered → it never trips again. **Half-open by construction.**
+
+⭐ **The safety property is STRUCTURAL, not a promise:** it can only trip when the pipeline's most recent *real* run FAILED with an upstream signature, so there is no state in which it pauses working work. Asserted directly, with a negative control (a breaker that always trips reds it).
+
+⚠ **It fails OPEN on every unreadable state, which is the OPPOSITE of the saturation throttle — and the inversion is deliberate.** That throttle's fail-open `count ?? 0` was a real bug because "open" meant hammering an already-saturated database. Here "open" is one ordinary tick and "closed" is a silently paused pipeline, so the cheaper mistake flips. **Do not "harden" this without redoing that cost argument.**
+
+**Three traps handled explicitly, each of which this repo has been bitten by:**
+- **The declined tick still writes a `pipeline_runs` row** — a gate that returns before any write is the 4th cause of `cron_silent`, invisible to every query. `rows_*` are **NULL, not 0**: a declined tick measured nothing, and a 0 is the fabricated-measurement shape.
+- **The gate sits AFTER the cursor read and carries `startCursor` forward.** The sweep resumes from the newest row's `cursor_after`, so a marker with a null cursor would have silently reset an ~80 min cycle to head on every skipped tick.
+- **Skip markers are excluded when finding "the last real run"**, or the breaker disarms itself after exactly one skip.
+- **The signature is not a bare `/530/`** — it matches the four spellings actually present in `pipeline_runs` and is pinned against prose like `"wrote 530 rows"`, so a bug in OUR code cannot trip the breaker and then hide behind it.
+
+⭐ **A real bug in the breaker was caught by the EXISTING route test, not by the ones I wrote for it.** `rows.find()` sat outside the try, so a non-array payload threw *past* the module into the calling route's fatal handler — logging a fatal run and resetting the cursor. **A breaker whose failure mode is "abort the pipeline it protects" is worse than no breaker.** Fixed, and pinned as a regression with the three payload shapes.
+
+**Verified:** live check (newest real run failed 03:02Z matching the signature → next tick declines, the one after attempts) · 10/10 offers-sweep route tests · 20/20 breaker tests · **5 mutations all red** (never trips · always trips · marker with null cursor · `rows_*` as 0 · gate does not return) · `tsc --noEmit` clean · full suite green apart from one PRE-EXISTING failure that is not mine (see below).
+
+⛔ **`topshot-moments-hydrator` NOT shipped, and the reason is ACCESS, not judgement** — it is a Cloudflare Worker, and pushing `workers/**` to main deploys **nothing**. It is the higher-volume offender. **Owed: port the same breaker and `wrangler deploy`.** `topshot-fmv-populate` (1 failure / 2 h) deliberately left alone as too low-volume to justify a gate.
+
+⚠ **NOT CLAIMED: that this fixes anything user-facing.** It reduces the cost of waiting out the outage. Top Shot is still down, and `edition_offers` still goes stale meanwhile.
+
+🚨 **UNRELATED PRE-EXISTING RED ON MAIN, flagged not fixed:** `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` fails on the two `run_wmc_reindex_verify` migrations from `275a79bef` (another session's in-flight work, `20260830030829` + `20260830030917`). Attributed by `git log` on the named files, not assumed. Left to that session rather than edited underneath it.
+
+**Revert path:** `git revert` the commit below — removes `lib/pipeline/upstream-breaker.ts`, its test, and the gate in `app/api/cron/offers-sweep/route.ts`. The route returns to walking every tick. No DB half; the breaker creates no objects and the marker rows are ordinary `pipeline_runs` rows.
+
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the sentinel detected CRITICAL and could not tell anyone, and `telegram-FAILED` did not say why
 
 **What shipped.** `lib/redact-secrets.ts` (new) + a discriminated `Delivery` result in `app/api/sentinel/route.ts` and `lib/ops-alert.ts` + 13 tests. Plus the two fixes my own instruments caught on me, below.
