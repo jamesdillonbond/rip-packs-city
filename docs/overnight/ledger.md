@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ VERIFIED IN PRODUCTION + SHIPPED — R68's instrumentation caught a real failed ingest on its FIRST tick, the five endpoints are now watchlisted, and R67 has a detector
+
+**R68 verified, not assumed.** Dispatched `rpc-pipeline.yml` against the deployed fix (`9fbb91637`, Vercel `dpl_CyoJHwq…` READY with aliases attached) and re-ran the exact query that had returned one row. Before: `fmv-recalc` 130 rows / 48 h, the other five **zero**. After one tick, 02:20–02:21Z, all seven names present:
+
+| pipeline | ok | counters | extra |
+|---|---|---|---|
+| `ingest` | **false** | NULL | `stage: fatal` — **"Top Shot GraphQL failed with 530"** |
+| `ingest-heartbeat` | true | NULL | `phase: started` |
+| `fmv-backfill` | true | found 0 / written 0 | `caught_up` (a MEASURED zero) |
+| `backfill` | true | NULL | `already_complete` |
+| `backfill-player-names` | true | NULL | `edge_fn status 200` |
+| `price-snapshots` | true | written **71** | `bucket 2026-08-30T01:00Z` |
+
+🚨 **The very first tick recorded a real production failure that the old setup could not have shown.** `/api/ingest` returns 202 from `after()`, so the workflow saw a 200; there was no row; the failure existed only in a Vercel log nobody reads. ⚠ **Do NOT over-read the 530** — one sample, and `sales` is still flowing (558 rows in 6 h, newest ingested 02:23Z), so a transient upstream blip is at least as likely as an outage. What is established is the INSTRUMENT, not the diagnosis. The counter contract also held in production: NULL where nothing was measured, a real 0 where it was, 71 where it was counted.
+
+**Then the arming step, because durable rows are DATA, not detection.** Migration `20260830022811` watchlists the five (`ingest` medium, `price-snapshots` medium, the three backfills info). ⚠ **The threshold is from a measured distribution, not the nominal schedule**: over the 30 scheduled runs GitHub still lists (08-26→08-30) the inter-run gap is **median 1.81 h · p90 9.92 h · max 11.35 h**, and runs per UTC day were **18, 2, 3, 6, 1**. 1800 m = 30 h is **2.6× the observed max**. ⚠ 1800 is also a CEILING: the sentinel's Success Coverage arm reads a 24–48 h window and its comment states the invariant that the window must stay wider than the slowest watchlisted cadence — 1800 is the longest on the active list, so these sit at the bound rather than breaking it. Severity is deliberately below `high` (high pages). ✅ **Armed against the trap this table's own 08-02 migration records** — `detect_stalled_pipelines()` fires on `last_run IS NULL`, so a row armed before its instrumentation exists manufactures a false stall; armed only after confirming rows, and re-checked immediately after: it returns **two** stalls, both pre-existing (`weekly-db-maintenance` 2434 m, `pinnacle-resolve-buyers` 1504 m) and **none of mine**.
+
+⚠ **A CORRECTION TO MY OWN 08-29 FINDING.** I recorded a GHA "≈ min(expected, 5) per day cap". **08-26 had 18 scheduled runs**, so there is no flat cap — the shedding is erratic, not clamped. R61's substance (the workflow gets a small fraction of its 72 ticks) stands; the mechanism I attached to it does not.
+
+**R67 — the wall-clock detector, shipped.** `scripts/clock-sweep.mjs` + an opt-in `RPC_CLOCK_OFFSET_MS` shim in `vitest.setup.ts` + a daily `clock-sweep.yml`. It runs the suite once per sampled UTC hour and **diffs the failing SETS**: a test failing at some offsets and passing at others is the finding.
+
+⚠ **This is deliberately NOT the version R67 filed.** That one was `sudo date -s` on the runner, and R67 declined to ship it with the falsifier *"if it reds for runner reasons rather than test reasons, revert"*. Shifting the clock **inside the vitest process** removes that failure mode by construction: it needs no privileges, and a failure caused by the runner or by genuinely broken code fails at **every** offset, so it is classified ALWAYS-FAILING and does not trip the sweep. **The instrument cannot cry wolf about its own environment.** The shim moves only the ZERO-ARGUMENT `Date` — every explicit instant is left alone, or the sweep would report the whole suite.
+
+⚠ **The sampled hours are chosen against the known residue classes, not spread evenly** — an even spread is exactly what a `% 6` predicate survives. `0, 5, 13, 20`: no two agree under mod 6, 3 or 2, and hour 0 is load-bearing twice (the `% 6 === 0` notify branch AND the early-UTC window where a date parsed as a datetime reads as already elapsed). Asserted, not just chosen.
+
+✅ **Positive control run end to end before trusting it**: a temporary test file carrying all four classes — the `% 6` shape, the date-as-datetime shape, a genuine pass, and a genuine always-failure. The sweep flagged **both** clock-dependent shapes with the exact hours, classified the genuine failure as NOT clock-dependent, and ignored the pass. 18 unit tests, **7 mutations all red** (always-failing reported as a finding · vacuity ignoring a zero-test run · vacuity ignoring a single run · an offset allowed to go backward · unqualified test ids · evenly-spread hours · the shim moving explicit dates).
+
+⚠ **A measurement DISCARDED rather than reported.** The first full-suite sweep showed 1 failing test at hour 0 — but I created a migration file mid-run, and four tests walk `supabase/migrations`, so the tree changed under the instrument. **A measurement taken while its subject changed is not a measurement**; that run was killed and is being redone on a frozen tree. Recorded so nobody inherits the "1 failing at hour 0" number.
+
+**Verified:** 1408 files / 15484 tests green on the rebased tree · `tsc --noEmit` clean · `detect_stalled_pipelines()` unchanged by the arming.
+
+**Revert path:** `git revert` the commit below (removes `scripts/clock-sweep.mjs`, `__tests__/clock-sweep.test.ts`, `.github/workflows/clock-sweep.yml`, the `vitest.setup.ts` shim — which is inert when `RPC_CLOCK_OFFSET_MS` is unset — and the migration file). DB half: `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline IN ('ingest','fmv-backfill','backfill','backfill-player-names','price-snapshots');`
+
 ### 2026-08-29 · 📦 FILED (no prod change) — the counterparty backfill crossed the mainnet19 spork, and the access node answers **200 with nothing**
 
 **The signal.** `sales-counterparty-backfill` reports `ok: true` on 562 of 571 runs in 48 h. Bucketed 6-hourly the applied count is a **step change, not a decay**: 4,619 → 4,616 → **0**, then **311 more runs at zero** — ~383 runs, ~36,600 rows found, **33 hours, nothing applied** — while `rows_found` never dips and the cursor keeps advancing.

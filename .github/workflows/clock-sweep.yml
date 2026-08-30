@@ -1,0 +1,54 @@
+name: Clock sweep (wall-clock-dependent tests)
+
+# Register R67. Three wall-clock-dependent tests landed in ONE day, by three
+# authors, with at least TWO distinct mechanisms — a `getUTCHours() % 6`
+# predicate that held in 4 hours of 24, a block reading real elapsed time, and a
+# DATE compared as a DATETIME that failed 00:00Z→~13:00Z every day. One of them
+# reddened CI on ANOTHER SESSION'S COMMIT, which is the cost: the author who
+# pays is not the author who wrote it.
+#
+# ⛔ A SOURCE SCAN CANNOT BE THE DETECTOR. `new Date()` appears in hundreds of
+# legitimate fixtures, and a pattern aimed at one sub-shape misses the other two.
+# This runs the suite once per sampled UTC hour and compares the FAILING SETS: a
+# test that fails at some offsets and passes at others is the finding.
+#
+# ⚠ WHY THIS IS SAFE TO SCHEDULE, WHERE THE FILED VERSION WAS NOT. R67 proposed
+# `sudo date -s` on the runner and deliberately did not ship it — "a
+# clock-shifting job that fails for its own reasons is a new permanently-red
+# instrument", with the falsifier "if it reds for runner reasons rather than test
+# reasons, revert". The clock is shifted INSIDE the vitest process instead
+# (RPC_CLOCK_OFFSET_MS, see vitest.setup.ts), so it needs no privileges and
+# touches nothing outside the test run — and, decisively, a failure caused by the
+# runner or by genuinely broken code fails at EVERY offset and is classified as
+# ALWAYS-FAILING rather than reported. The instrument cannot cry wolf about its
+# own environment.
+#
+# ⚠ DAILY, NOT PER-PUSH. It is four full suites (~30 min). Per-push would be a
+# tax on every commit for a class that appears a few times a year; daily catches
+# it within a day of landing, which is what "it reddened someone else's commit"
+# actually costs.
+#
+# ⚠ It is a REAL job, not informational: the whole point of R67 is that this
+# class currently surfaces as a red build on an innocent commit. Better here.
+
+on:
+  schedule:
+    # 08:20 UTC — off the top of the hour and clear of the other scheduled jobs.
+    - cron: "20 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  clock-sweep:
+    name: Run the suite at four UTC hours and diff the failures
+    runs-on: ubuntu-latest
+    # Four full suites at ~8 min each in CI, plus install.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Sweep
+        run: node scripts/clock-sweep.mjs
