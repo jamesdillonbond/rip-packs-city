@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ VERIFIED (nothing new shipped) — the 16:0xZ watches on the day's levers all held: 0 active backends, Pinnacle sync 295 ms, username resolver 60 s → 0.1 s
+
+**Pass close, 16:05Z (09:05 PT), origin/main `215fe8bdf`.** Read from the DB, not from the transcript:
+
+- **Saturation:** `pg_stat_activity` **0 active client backends, 0 `DataFileRead`** at 16:05Z (36 / 33 at 14:16Z when the pass started). Top disk reader since the 15:04Z pgss snapshot is once again the **unfiltered `allday_pack_sales_history` `LIMIT/OFFSET` + `count=exact` read** (20 calls / 334k reads in the hour; 64.5M lifetime) — the deploy-only `backfill-allday-pack-sales` edge function with a hardcoded gate literal, blocked behind R21 (see inbox 2026-08-29T1359Z). Not touchable from a session.
+- **Item: Pinnacle sync watermark (20260830153801/154447):** the 16:03:18Z `/api/…/populate-pinnacle` tick logged **ok=true, 295 ms** (previous ticks 125,260 ms `upstream request timeout`). pg_cron jobid 406: 15:44Z `permission denied` (pre-grant), 15:48Z 35 s (the catch-up drain), 15:52Z **0 s** (`catalog_unchanged`). ✅
+- **Item: username resolver (20260830155848):** direct call `wallet_usernames_unresolved(300)` returns **300 addresses in 5.2 s cold / 0.12 s warm** (the last three scheduled ticks at 09:08 / 12:08 / 15:08Z all died at the 60 s statement timeout with 0 resolved). Next scheduled tick **18:08Z** — expect `resolved > 0` for the first time today. Falsifier: 18:08Z row still `ok=false`.
+- **Item: jobid 303 (rwfc):** ticks since 14:57Z: 260 / 1 / 160 / 1 / 157 / 0 / 19 s — every one under its 360 s ceiling; the alternating shape is the cursor-diff DELETE doing its job (odd ticks find nothing changed). **jobid 71:** 15:13Z 190 s `succeeded`. **jobid 215** (new `37 3,7,11,15,19,23` schedule): 15:37Z 195 s `succeeded`.
+- **No new migrations, no code.** Parity ✓, pins 189/189 unchanged.
+
 ### 2026-08-30 · ✅ SHIPPED (migrations 20260830155543 + 20260830155848, APPLIED) — sentinel sweep: two more dead-host names suppressed, and the username resolver stops scanning 21 days of sales every 30 minutes
 
 **Pass: desktop, 15:5x–16:0xZ.** `get_pipeline_alerts()` read at 15:55Z (after the day's saturation work): 9 entries. Actioned:
