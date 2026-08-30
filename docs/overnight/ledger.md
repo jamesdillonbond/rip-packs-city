@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 🧹 SESSION CLOSE — register updated (#53, #54), CLAUDE.md sharpened by DISPLACEMENT, and **MEMORY.md was over its limit so part of it was not loading**
+
+## The one that was silently broken: MEMORY.md
+
+⚠ **It was 28,566 bytes against a ~24.4 KB limit, which means the tail of the index WAS NOT BEING LOADED at session start — some memories were invisible, and nothing said so** (the warning is a single line in a system reminder, easy to scroll past). Trimmed the index entries to **24,519 bytes**; every memory is discoverable again.
+
+⭐ **Trimming mechanically was not enough, and this is the reusable part.** Cutting at 175 chars produced clean-looking entries that had lost their POINT — `a-parameterised-function…` read *"232 buffers inline with literals."*, dropping the **127,534 called as the FUNCTION** contrast that IS the finding — and two entries were cut **mid-word** (*"spreads i."*, *"reproduced b."*). **A truncated index entry still looks like a sentence, so the damage is invisible.** All four were repaired by hand and the budget was re-paid by trimming elsewhere. **If you ever trim that file, re-read every line you touched.**
+
+## CLAUDE.md — displaced, not spent
+
+Headroom was **37 chars**. The sharpening worth making is the one this session got wrong: a no-change control is only a control **if the fix cannot move it**. Added `**the fix cannot move**` (+23) and paid for it by dropping a redundant word from the same bullet (−8) ⇒ **39,979 / 40,000, headroom 21**, guard green. **Everything else from today went to `docs/reference/*.md` and memory instead, which is where it belongs.**
+
+## Register: two new OPEN items, both needing someone else's decision
+
+- **#53** — `edge-fn-drift` **tier 2 has read 0 of 38 bodies since ≥08-27**, so "19 drifted" is a lower bound. Cause is the **eszip response format**, not permissions. The dangerous half (the "Redeploy each" line that named two functions which 403 on deploy) **is already fixed**.
+- **#54** — `match-topshot-players` is a **daily no-op**: 20 of 30 runs succeed writing **zero** rows, because `nba_players` holds **174 rows and no Ja Morant**. **User-facing impact zero** (Fast Break has never been used), cost is 51–126 s/day on a saturated instance. **Retire or repopulate is a product call.**
+
+## What is left, and who owns it
+
+**Operator/Trevor only:** rotate the leaked pg_cron gate key · `GITHUB_ACTIONS_READ_TOKEN` (today **two of three** daily detectors were red and nothing said so) · Sentry dark since 08-18 · the six gate-key secrets · #54's Fast Break call · whether to fund an Atlas catalogue sweep.
+
+**Owed measurements, stated so they are not mistaken for done:** the `wallet-username-resolver` fix's HONEST exit (`rows_found > 0` + no statement timeout — true at **n=1**, next confirmations ~14:08/17:08 PT; ⚠ **do NOT read "leaves `get_pipeline_alerts()`" as its exit — it now fails on the dead host, and suppressing it would FABRICATE a pass**) · the unused-index A/B on `idx_allday_pack_sales_hist_pack`, split on the change point · a same-hour (~06:30Z) re-read of FMV HIGH+MED before anyone calls the recovery real.
+
+**State at close:** tree clean, 0/0 with origin, CI green on every completed run, all migrations have repo files, `npm test` green apart from one `CollectionTabClient` assertion that passes **96/96 in isolation** (a parallel-load flake in a file another session is actively de-flaking, and one no change of mine can reach).
+
+
 ### 2026-08-30 · ✅ POST-SHIP VERIFICATION (not mine — the 15:49Z `pack_rips` index): **the MECHANISM is confirmed, but the error-rate drop that looks like proof is NOT, and crediting it would be a false attribution**
 
 **Swept Vercel runtime errors — a surface nobody had checked this session, and the only server-side one that matters while Sentry has been dark since 08-18. The loudest user-facing route is `/[collection]/pack/dist/[distId]`, every panel timing out at 5,000 ms since 08-23 (110 unique users in 24 h). That is the page migration `20260830154907` was shipped for at 15:49Z.**
