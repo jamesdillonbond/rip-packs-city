@@ -92,7 +92,14 @@ describe("sendOpsAlert per-channel delivery reporting", () => {
     // return honestly (suppressed:false, both false), not crash the monitor.
     stubFetch(() => ({ ok: false }))
     const r = await sendOpsAlert(base)
-    expect(r).toEqual({ suppressed: false, telegram: false, email: false })
+    expect(r.suppressed).toBe(false)
+    expect(r.telegram).toBe(false)
+    expect(r.email).toBe(false)
+    // ⚠ The reason distinguishes THIS case (the channels answered and refused)
+    // from the unconfigured one (they were never called). Both used to render as
+    // a bare `false`, which is why a dead token and a missing token looked alike.
+    expect(r.telegramReason).toContain("http_")
+    expect(r.emailReason).toContain("http_")
   })
 
   it("forwards an html body to the email channel when supplied", async () => {

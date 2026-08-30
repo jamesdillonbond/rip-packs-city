@@ -36,7 +36,17 @@ describe("sendOpsAlert with no channels configured", () => {
 
     // Not within cooldown (the RPC allows it), but both channels are unconfigured,
     // so the result is a real, honest "delivered nothing" — not suppressed.
-    expect(r).toEqual({ suppressed: false, telegram: false, email: false })
+    // ⚠ Pinned as PROPERTIES, not as object equality (2026-08-30). The result
+    // gained `telegramReason`/`emailReason`, which is additive — the booleans
+    // keep their exact meaning — and a `toEqual` on the whole object is a
+    // spelling pin that reds on any honest addition.
+    expect(r.suppressed).toBe(false)
+    expect(r.telegram).toBe(false)
+    expect(r.email).toBe(false)
+    // And the new part, which is the point: an unconfigured channel now SAYS SO
+    // rather than being an unexplained false.
+    expect(r.telegramReason).toBe("not_configured")
+    expect(r.emailReason).toBe("not_configured")
     // The guards short-circuit BEFORE any network call.
     expect(fetchSpy).not.toHaveBeenCalled()
   })

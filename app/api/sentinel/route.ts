@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { redactSecrets } from "@/lib/redact-secrets";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -71,8 +72,27 @@ const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
 // report's `notifications` list reflects real delivery — a dead token or a
 // non-2xx must NOT show up as "telegram"/"email" notified (silent-alert-failure
 // guard).
-async function sendTelegram(text: string): Promise<boolean> {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
+// ── WHY A REASON AND NOT A BOOLEAN (2026-08-30) ───────────────────────────
+// Observed live: run 33283636751 reported `"notifications":["telegram-FAILED"]`
+// on a CRITICAL sweep — the sentinel correctly detected three dead Top Shot
+// GraphQL pipelines and could not tell anyone, and WHY went to console.error
+// only. From outside, a revoked token, a non-2xx and a thrown fetch were
+// indistinguishable. That is CLAUDE.md's alert sub-class exactly: an alert's
+// output is silence, so its error is unfalsifiable.
+//
+// ⚠ The `not_configured` case is now REPORTED rather than skipped. It used to
+// sit behind an `if (TOKEN && CHAT_ID)` guard at the call site, so an
+// unconfigured channel produced NO entry at all — absence, which reads
+// identically to "no notification was needed".
+//
+// 🚨 Every reason goes through `redactSecrets`, and that is load-bearing rather
+// than decorative: the Telegram bot token is IN THE URL PATH, so a thrown fetch
+// quoting the URL would write a live credential into `pipeline_runs.extra` and
+// into this route's JSON response.
+type Delivery = { ok: true } | { ok: false; reason: string };
+
+async function sendTelegram(text: string): Promise<Delivery> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -87,22 +107,20 @@ async function sendTelegram(text: string): Promise<boolean> {
       },
     );
     if (!res.ok) {
-      console.error(
-        "Telegram send non-OK:",
-        res.status,
-        (await res.text().catch(() => "")).slice(0, 200),
-      );
-      return false;
+      const body = redactSecrets((await res.text().catch(() => "")).slice(0, 200));
+      console.error("Telegram send non-OK:", res.status, body);
+      return { ok: false, reason: `http_${res.status}: ${body}` };
     }
-    return true;
+    return { ok: true };
   } catch (e: any) {
-    console.error("Telegram send failed:", e.message);
-    return false;
+    const msg = redactSecrets(e?.message ?? e);
+    console.error("Telegram send failed:", msg);
+    return { ok: false, reason: `threw: ${msg}` };
   }
 }
 
-async function sendEmail(subject: string, html: string): Promise<boolean> {
-  if (!RESEND_API_KEY || !ALERT_EMAIL) return false;
+async function sendEmail(subject: string, html: string): Promise<Delivery> {
+  if (!RESEND_API_KEY || !ALERT_EMAIL) return { ok: false, reason: "not_configured" };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -123,12 +141,13 @@ async function sendEmail(subject: string, html: string): Promise<boolean> {
         res.status,
         (await res.text().catch(() => "")).slice(0, 200),
       );
-      return false;
+      return { ok: false, reason: `http_${res.status}` };
     }
-    return true;
+    return { ok: true };
   } catch (e: any) {
-    console.error("Email send failed:", e.message);
-    return false;
+    const msg = redactSecrets(e?.message ?? e);
+    console.error("Email send failed:", msg);
+    return { ok: false, reason: `threw: ${msg}` };
   }
 }
 
@@ -1453,16 +1472,18 @@ export async function POST(req: NextRequest) {
         ? "\u26A0\uFE0F"
         : "\u2705";
 
-    if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+    {
       const tgLines = checks.map(
         (c) => `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
       );
       const tgMsg = `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}\n\n${tgLines.join("\n")}`;
-      const tgOk = await sendTelegram(tgMsg);
-      report.notifications.push(tgOk ? "telegram" : "telegram-FAILED");
+      const tg = await sendTelegram(tgMsg);
+      // ⚠ The reason is appended to the SAME `telegram-FAILED` prefix any
+      // existing reader matches on, so nothing that greps for it breaks.
+      report.notifications.push(tg.ok ? "telegram" : `telegram-FAILED:${tg.reason}`);
     }
 
-    if (RESEND_API_KEY && ALERT_EMAIL) {
+    {
       const emailSubject = `${statusEmoji} RPC Sentinel: ${overallStatus}`;
       const rows = checks
         .map(
@@ -1471,8 +1492,8 @@ export async function POST(req: NextRequest) {
         )
         .join("");
       const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:${hasCritical ? "#E03A2F" : hasWarn ? "#F59E0B" : "#22C55E"}">${statusEmoji} Pipeline Sentinel - ${overallStatus}</h2><p style="color:#64748B">${now.toUTCString()}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><thead><tr style="background:#1E293B;color:white"><th style="padding:8px 12px;text-align:left"></th><th style="padding:8px 12px;text-align:left">Check</th><th style="padding:8px 12px;text-align:left">Detail</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#94A3B8;font-size:12px;margin-top:24px">Rip Packs City - Pipeline Sentinel - Automated Report</p></div>`;
-      const emailOk = await sendEmail(emailSubject, emailHtml);
-      report.notifications.push(emailOk ? "email" : "email-FAILED");
+      const em = await sendEmail(emailSubject, emailHtml);
+      report.notifications.push(em.ok ? "email" : `email-FAILED:${em.reason}`);
     }
 
     report.notifications.push("github-actions-native");

@@ -566,7 +566,12 @@ describe("sentinel — sniper-feed arms + notification failure", () => {
     const r = await run({}, [boom, telegramOk, jsonRoute("api.resend.com", { error: "bad" }, { status: 500, ok: false })])
     expect(chk(r, "Sniper Feed").status).toBe("critical")
     expect(r.status).toBe("CRITICAL")
-    expect(r.notifications).toContain("email-FAILED")
+    // ⚠ Prefix, not equality (2026-08-30): the entry now carries the REASON, and
+    // the reason is the improvement — `email-FAILED` alone said an alert was lost
+    // and nothing about why. The prefix pins the property any reader matches on.
+    const em = (r.notifications as string[]).find((n: string) => n.startsWith("email-FAILED"))
+    expect(em).toBeDefined()
+    expect(em).toContain("http_500")
     expect(r.notifications).toContain("telegram")
   })
 })

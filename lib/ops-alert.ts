@@ -17,6 +17,7 @@
 // this into a "use client" component (it uses the service-role client).
 
 import { supabaseAdmin } from "@/lib/supabase";
+import { redactSecrets } from "@/lib/redact-secrets";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
@@ -30,10 +31,18 @@ export interface OpsAlertResult {
   suppressed: boolean; // true ⇒ within cooldown, nothing sent
   telegram: boolean;
   email: boolean;
+  // ⚠ ADDITIVE (2026-08-30). The booleans keep their exact meaning, so every
+  // existing caller is unaffected; these carry WHY a false is false.
+  // `undefined` on success. See lib/redact-secrets.ts for why the reason is
+  // scrubbed before it is allowed anywhere durable.
+  telegramReason?: string;
+  emailReason?: string;
 }
 
-async function sendTelegram(text: string): Promise<boolean> {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
+type Delivery = { ok: true } | { ok: false; reason: string };
+
+async function sendTelegram(text: string): Promise<Delivery> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
   try {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -41,18 +50,20 @@ async function sendTelegram(text: string): Promise<boolean> {
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
     });
     if (!res.ok) {
-      console.error("[ops-alert] telegram non-OK", res.status, (await res.text().catch(() => "")).slice(0, 200));
-      return false;
+      const body = redactSecrets((await res.text().catch(() => "")).slice(0, 200));
+      console.error("[ops-alert] telegram non-OK", res.status, body);
+      return { ok: false, reason: `http_${res.status}: ${body}` };
     }
-    return true;
+    return { ok: true };
   } catch (e) {
-    console.error("[ops-alert] telegram failed", e instanceof Error ? e.message : String(e));
-    return false;
+    const msg = redactSecrets(e instanceof Error ? e.message : String(e));
+    console.error("[ops-alert] telegram failed", msg);
+    return { ok: false, reason: `threw: ${msg}` };
   }
 }
 
-async function sendEmail(subject: string, text: string, html?: string): Promise<boolean> {
-  if (!RESEND_API_KEY || !ALERT_EMAIL) return false;
+async function sendEmail(subject: string, text: string, html?: string): Promise<Delivery> {
+  if (!RESEND_API_KEY || !ALERT_EMAIL) return { ok: false, reason: "not_configured" };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -60,13 +71,15 @@ async function sendEmail(subject: string, text: string, html?: string): Promise<
       body: JSON.stringify({ from: OPS_FROM, to: [ALERT_EMAIL], subject, text, ...(html ? { html } : {}) }),
     });
     if (!res.ok) {
-      console.error("[ops-alert] email non-OK", res.status, (await res.text().catch(() => "")).slice(0, 200));
-      return false;
+      const body = redactSecrets((await res.text().catch(() => "")).slice(0, 200));
+      console.error("[ops-alert] email non-OK", res.status, body);
+      return { ok: false, reason: `http_${res.status}: ${body}` };
     }
-    return true;
+    return { ok: true };
   } catch (e) {
-    console.error("[ops-alert] email failed", e instanceof Error ? e.message : String(e));
-    return false;
+    const msg = redactSecrets(e instanceof Error ? e.message : String(e));
+    console.error("[ops-alert] email failed", msg);
+    return { ok: false, reason: `threw: ${msg}` };
   }
 }
 
@@ -98,9 +111,20 @@ export async function sendOpsAlert(opts: {
   }
   if (!allowed) return { suppressed: true, telegram: false, email: false };
 
-  const [telegram, email] = await Promise.all([sendTelegram(text), sendEmail(subject, text, html)]);
-  if (!telegram && !email) {
-    console.error(`[ops-alert] BOTH channels failed for key=${key} — alert not delivered: ${subject}`);
+  const [tg, em] = await Promise.all([sendTelegram(text), sendEmail(subject, text, html)]);
+  if (!tg.ok && !em.ok) {
+    // ⚠ The reasons are IN the line now. "BOTH channels failed" on its own is
+    // the unfalsifiable shape: it says an alert was lost and nothing about why.
+    console.error(
+      `[ops-alert] BOTH channels failed for key=${key} — alert not delivered: ${subject} ` +
+        `(telegram: ${tg.ok ? "ok" : tg.reason}; email: ${em.ok ? "ok" : em.reason})`,
+    );
   }
-  return { suppressed: false, telegram, email };
+  return {
+    suppressed: false,
+    telegram: tg.ok,
+    email: em.ok,
+    ...(tg.ok ? {} : { telegramReason: tg.reason }),
+    ...(em.ok ? {} : { emailReason: em.reason }),
+  };
 }

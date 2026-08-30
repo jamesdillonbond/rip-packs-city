@@ -544,7 +544,14 @@ describe("POST /api/sentinel — full battery", () => {
     expect(report.status).toBe("CRITICAL")
     expect(check(report, "Sales Ingest (2h)").detail).toContain("ZERO sales")
     // Silent-alert-failure guard: the dead channel must not claim delivery.
-    expect(report.notifications).toContain("telegram-FAILED")
+    // ⚠ STRENGTHENED, not relaxed, when the reason was added (2026-08-30): the
+    // entry keeps the `telegram-FAILED` PREFIX any existing reader matches on,
+    // and must now also say WHY. `telegram-FAILED` alone was the unfalsifiable
+    // shape this whole change removes — matching the prefix pins the property,
+    // matching the reason pins the improvement.
+    const tg = (report.notifications as string[]).find((n) => n.startsWith("telegram-FAILED"))
+    expect(tg).toBeDefined()
+    expect(tg).toContain("http_500")
     expect(report.notifications).toContain("email")
   })
 
@@ -942,7 +949,12 @@ describe("POST /api/sentinel — records its own run durably", () => {
     const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
     expect(logged).toHaveLength(1)
     const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
-    expect(extra.notifications).toContain("telegram-FAILED")
+    const tg = (extra.notifications as string[]).find((n) => n.startsWith("telegram-FAILED"))
+    expect(tg).toBeDefined()
+    // The reason is in the DURABLE row, which is the point: before this the only
+    // trace of WHY was a console.error nobody stores.
+    expect(tg).toContain("http_500")
+    // ...and it must still not claim delivery.
     expect(extra.notifications).not.toContain("telegram")
   })
 
