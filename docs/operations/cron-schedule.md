@@ -153,6 +153,8 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 
 ## Known issues / watch-list (2026-07-21)
 
+- **2026-08-30 — pg_cron jobid 16 `rpc-backfill-pack-pool` is PAUSED** (`cron.alter_job(16, active => false)`, migration `20260830021817`): its target `public-api.nbatopshot.com` has been 530/1033 since 08-28 ~17Z; 277 runs/day were paying a 9.6 s / 1,565-disk-read `get_topshot_pool_backfill_targets()` each before failing. No watchlist row covers it, so the pause is silent by construction. **Re-enable** (`cron.alter_job(16, active => true)`) when the host answers non-5xx on two consecutive probes or the function is ported to Studio.
+
 - ✅ **Analytics Smoke** / **Lock Check Batch** — both previously ⚠ (>30s); now clean. Resolved.
 - ✅ **Weekly DB maintenance** — was NOT dark (see the inactive-table note); the broken `Pipeline Runs Cleanup` external entry is deleted, and `weekly-db-maintenance` is now watchlisted. Closes the 🔴 item carried since the 2026-07-11 audit.
 - ♻️ **Double-fires (OPEN — needs intended-primary decision):** `pinnacle-sync` (cron-job.org 10:07 UTC + vercel.json 06:00) and `compute-laliga-pack-ev` (cron-job.org 05:00 + vercel.json 05:30). `pinnacle-sync`'s dual schedule is a deliberate dropout backstop — likely keep both. `compute-laliga` — decide primary; if de-duping, keep the Vercel-native leg (cron-job.org is the dropout-prone side) and remove the cron-job.org entry.
