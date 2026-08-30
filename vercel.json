@@ -15,11 +15,11 @@
     },
     {
       "path": "/api/cron/refresh-insights-cache",
-      "schedule": "*/5 * * * *"
+      "schedule": "7,22,37,52 * * * *"
     },
     {
       "path": "/api/cron/warm",
-      "schedule": "*/10 13-23,0-5 * * *"
+      "schedule": "13,43 13-23,0-5 * * *"
     },
     {
       "path": "/api/admin/recover-v1-budget-exhausted",
