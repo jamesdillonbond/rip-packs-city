@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (route change) — the Flow spork floor MOVED on ~08-28: mainnet17–23 are decommissioned, and the TS historical buyer backfill has been walking 100 % 404s below the new floor for two days
+
+**Pass: desktop, 17:5x–18:1xZ.** Chased because the trigger prompt's saturation item lists `/api/admin/backfill-topshot-buyers` at 61,649 reads per candidate page every 30 min.
+
+## The mechanism, probed to the node
+
+- `topshot-buyer-backfill-historical` wrote **1,650 buyers on 08-27 and 3,915 on 08-28, then 0 on 08-29 and 0 on 08-30** — every run since is `found 120 / decode_404 120 / spork_floor true`, with the cursor stalled oscillating at **2023-11-05 → 11-08**.
+- Probed every public historical access node (`access-001.mainnetNN.nodes.onflow.org:8070`, 17:xxZ): **mainnet17–23 have NO DNS at all; mainnet24–27 answer HTTP 200.** The June floor (mainnet17, 2022-04-06) is gone — decommissioned in the same ~08-28 window as the `public-api.nbatopshot.com` shutdown and the Atlas move.
+- Read the **mainnet24 root block from the live node: height 65,264,619 @ 2023-11-08T16:07:03Z** — exactly where the cursor stalled. The deployed pack-opens pipelines already carry `floor: 65264619` in their run rows (their side adapted); the buyers route's `HIST_WINDOW_START` was still the 2022-04-06 constant, so it kept paying **48 runs/day × (a ~60k-block candidate scan + 120 spork lookups) for zero recoverable buyers, forever**.
+
+## The change (one constant + the header rewritten to the new measurement)
+
+- `HIST_WINDOW_START` `2022-04-06T18:20:00Z` → **`2023-11-08T16:07:03Z`** (mainnet24 root). The stalled cursor is below the new floor, so the next tick after deploy reads an empty page, wraps, and the lane converges to its real residue: **45 null-buyer rows remain in [new floor, 2025-01-01)** — one cheap retry page per wrap. The 2022-04→2023-11 band (~630k null-buyer rows, most tx-hash-less anyway) is **permanently unrecoverable via public sporks** and stays null, as the pre-2022-04 band always was. If Flow restores older sporks, lower the constant back — the rows are all still there.
+- tsc error count unchanged at the env baseline (12 × missing `@onflow/fcl` types, none in this file); the route's 10 test files / 60 tests pass, including `backfill-topshot-buyers-spork-floor-vs-fault`.
+- **Exit (post-deploy):** `topshot-buyer-backfill-historical` runs show `rows_found ≤ 45`, near-zero duration, and the `sales … buyer_address IS NULL … ORDER BY sold_at DESC` statement's reads/call collapse in `pg_stat_statements`. **Falsifier:** reads/call unchanged → the 61k-read page was the FORWARD lane's (2025+ pruned) and needs its own look. **Revert:** restore the constant.
+- ⚠ NOT touched: `workers/spork-proxy/index.ts` still lists mainnet17–23 (guarded by two test pins; the DEPLOYED worker evidently differs — `worker-deploy-drift` class). Harmless now (the route never asks below the floor); reconcile repo↔deployed when the worker next ships via wrangler (operator).
+- ⚠ Same-class check, negative: `allday-pack-opens-backfill` (routed spork, floor 65264619) wrote 14,885 rows in 24 h — healthy; `topshot-pack-opens-history-backfill` reports `done:true`. The morning's `suppress-pinnacle-trades-backfill-cursor-stalled-spork-floor` suppression is this same event seen from another pipeline.
+
 ### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — `match-topshot-players` is a DAILY NO-OP by construction: its reference table has 174 rows and no Ja Morant. **Needs a Trevor decision, not a fix.**
 
 **Found by following my own new alert arm's most frequent flag (8 of 25 days) instead of just suppressing it.** The obvious read was "it times out at the ~120 s gateway, so move it to `cron_heavy` pg_cron like the Pinnacle sync was this morning." ⛔ **That fix would have been worthless, and measuring first is the only reason I know.**

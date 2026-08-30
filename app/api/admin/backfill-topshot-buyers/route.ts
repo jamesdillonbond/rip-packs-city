@@ -57,17 +57,23 @@ const MAX_RUN_MS = 600_000
 //   3. Set SPORK_PROXY_URL + SPORK_PROXY_SECRET in Vercel env.
 //   4. Set TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 and wire a low-cadence cron to
 //      POST ?mode=historical (its own pipeline_runs row: topshot-buyer-backfill-historical).
-// NOTE: recoverable floor measured 2026-06-25. The spork-proxy worker was extended
-// to mainnet17 (root 27,341,470 = 2022-04-06) + mainnet18 — both public nodes still
-// serve blocks + events (HTTP 200). mainnet16 and older return 503 (decommissioned),
-// so anything before ~2022-04-06 (mainnet1–16, the 2020 → 2022-Q1 bulk) is permanently
-// unrecoverable via public sporks and stays null. The window below starts at the
-// mainnet17 floor so the lane doesn't burn a full not-found walk per pre-2022-04 row.
+// NOTE: recoverable floor RE-MEASURED 2026-08-30 — IT MOVED. The 2026-06-25 floor was
+// mainnet17 (2022-04-06), but on ~2026-08-28/29 the public historical access nodes for
+// mainnet17–23 were decommissioned outright (access-001.mainnetNN.nodes.onflow.org: no
+// DNS at all; probed per-spork 2026-08-30 17:xxZ — 17–23 dead, 24–27 answer HTTP 200).
+// The effect in production: from 08-29 the lane's cursor stalled at exactly
+// 2023-11-08 (the mainnet24 root: height 65,264,619 @ 2023-11-08T16:07:03Z, read from
+// the live node) and every run was 120/120 decode_404 with spork_floor=true — 48
+// runs/day of pure 404 walking plus a ~60k-block candidate scan each, for zero buyers.
+// So the recoverable floor is now the mainnet24 root: sold_at before 2023-11-08T16:07:03Z
+// (including the whole 2022-04→2023-11 band the June floor could still reach) is
+// permanently unrecoverable via public sporks and stays null. If Flow ever restores
+// older sporks, lower this constant again — the null rows are all still there.
 // (Requires the extended spork-proxy to be deployed + SPORK_PROXY_URL/SECRET set in
 // Vercel; until then this lane is inert behind TS_HISTORICAL_BUYER_BACKFILL_ENABLED.)
 const HIST_PIPELINE_NAME = "topshot-buyer-backfill-historical"
 const HIST_BATCH = 120 // recent-spork rows decode fast; the MAX_RUN_MS guard + cursor advance bound the run regardless
-const HIST_WINDOW_START = "2022-04-06T18:20:00Z" // ≥ this: reachable via the wired sporks (mainnet17 root floor)
+const HIST_WINDOW_START = "2023-11-08T16:07:03Z" // ≥ this: reachable via the surviving sporks (mainnet24 root floor; was 2022-04-06 / mainnet17 until 2026-08-28)
 const HIST_WINDOW_END = "2025-01-01T00:00:00Z"   // < this: pre current-spork (forward lane owns 2025+)
 
 export const dynamic = "force-dynamic"
