@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830165128 APPLIED) — the last live `fmv_current` consumer with a caller: `get_market_summary()` 9.5 s / 6.48 M buffers → 2.5 s / 51 k
+
+**Pass: desktop, 16:5xZ.** Closing the "remaining `fmv_current` consumers" item from the 16:05Z handoff by measuring each through the function on the now-idle instance:
+
+- **`refresh_series_detail_rollup`** (jobid 357 hourly :59; 180 calls / 2,322 s lifetime) reads `edition_fmv_current` (the table), not the view — its cost was the saturation, not its shape: **15:59Z tick 711 ms** (14:59Z 4,729 ms, 13:xxZ 13 s mean). Nothing to change.
+- **`health_check()`** — no live caller (`/api/ready`, `/api/health`, `data-integrity`, `stale-fmv-monitor` all moved off it, per their own headers). Left as is.
+- **`sentinel_fmv_confidence_canonical_ts()`** — no caller; the sentinel calls `_split`, which already uses the per-edition LATERAL. 1.7 s if anyone calls it. Left as is.
+- **`get_market_summary()`** (`/api/market/summary`, cookie-gated): **9,485 ms, 6,476,931 shared hits** — `COUNT(*) FROM fmv_current WHERE collection_id = c.id` five times, each a full 1.31 M-row DISTINCT ON pass. `edition_fmv_current` holds the identical set (per-collection counts equal for all five collections, 27,150 rows, verified 16:5xZ; ≤ 1 h lag by watermark). Re-pointed: **2,529 ms, 47 k hits + 4.5 k reads** — the remainder is the six 7-day `sales` sub-selects per collection, which are real work. ACL unchanged (postgres + service_role), re-asserted. Not pinned; `check-db-pin-staleness` 189/189; the anon-exec and view-invoker guards pass locally.
+- **Exit:** `/api/market/summary` p95 under 3 s from the runtime logs when anyone uses it. **Revert:** migration header.
+
 ### 2026-08-30 · ✅ SCHEDULED (migration 20260830164048 APPLIED) + 📋 STAGED — the wmc reindex second wave runs tonight 02:03–03:53Z inside a 1800 s cron_heavy window, and the platform's largest cold-read consumer turns out to be a cosmetic `count(*)` that finishes on its own in ~2 h
 
 **Pass: desktop, 16:4x–16:5xZ.** Continuation of the needs-Trevor list.
