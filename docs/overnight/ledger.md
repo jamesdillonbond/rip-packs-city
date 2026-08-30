@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830161744 APPLIED, cron-job.org ×2 disabled, badge-sync.yml gated) — the Pinnacle sync owns a 600 s budget on pg_cron, and the dead Top Shot host stops being paid for by three schedulers
+
+**Pass: desktop, 16:1x–16:5xZ (09:1x–09:5x PT).** Trevor: "Take care of these and do all you can yourself" — the needs-Trevor list from the 16:05Z close-out, worked in order.
+
+## 1. `populate-pinnacle-wmc-fmv` → cron_heavy pg_cron **jobid 408** (`9 * * * *`)
+
+- **Why now, not "accept catch-up":** with the watermark (20260830153801) the no-work ticks are < 1 s, so the ONLY ticks that still need a real budget are the ~4 after a catalog recompute — exactly the ones PostgREST's ~120 s gateway kills (every tick 11:03–15:03Z died at 125,260 ms). The same drain as cron_heavy took 35 s.
+- **Shape:** wrapper `run_populate_pinnacle_wmc_fmv_job()` (SECDEF, EXECUTE revoked from PUBLIC/anon/authenticated, granted to cron_heavy/postgres/service_role) calls `populate_pinnacle_wmc_fmv(10000)` and writes the route's exact terminal row (`populate-pinnacle-wmc-fmv`, rows_found = examined, rows_written = updated, `disney_pinnacle`, `extra.via = pg_cron`, `extra.reason`) and CATCHES the cancel — a timed-out drain logs ok=false, never silence. Smoke: 16:17:52Z ok=true 219 ms `catalog_unchanged`.
+- **cron-job.org "RPC Populate Pinnacle WMC FMV" (id 7584781) DISABLED at 16:4xZ** (Common tab → Enable job off → Save; list shows Inactive). Route stays deployed = manual/revert path.
+- **Exit:** the tick after tomorrow's 09:37Z catalog backfill / 10:07Z sync logs `examined > 0, ok=true` from `via = pg_cron` in < 600 s. **Falsifier:** an ok=false row with `57014` → the drain needs chunking, not a bigger budget. **Revert:** migration header (unschedule as cron_heavy, drop the wrapper, re-enable the console entry).
+
+## 2. The dead-host class: PORT is not available today, so RETIRE the schedulers that still pay for it
+
+- **Port attempt (facts, 16:2x–16:4xZ):** `public-api.nbatopshot.com/graphql` → Cloudflare **530 / error 1033** (Argo tunnel down) from the VM; `api.nbatopshot.com` same; `nbatopshot.com/marketplace/graphql` → 403 bot challenge; `v2.nbatopshot.com/graphql` → 302. developers.nbatopshot.com still documents only the dead URL; status.nbatopshot.com shows no incident. Loading `nbatopshot.com/search` in Chrome and reading its network: the marketplace is **server-rendered** (RSC `/edition/<id>?_rsc=…` — 40 of 47 of those returned **503** from Dapper's own site while I watched) and the only client API is `api.production.atlas.dapperlabs.com/public/atlas.v1.DrawService/GetDraws` (Connect-RPC, draws only). **There is no public GraphQL to port to; scraping Dapper's RSC payloads behind hCaptcha is not a pipeline.** Re-probe weekly; the `upstream-probe` below is the sensor. ⭐ **Landed while this was being written (`35a661b`, 16:07 PT): the concurrent session confirmed Top Shot has moved to ATLAS and `pg_net` reaches it — see the entry below this one. So the port EXISTS and is that session's track (first step: the board ingest); this pass only retires the legacy-host schedulers, all of which self-resume or re-enable in one click, and none of which should be re-pointed at Atlas before the empty-200 throttle rule is settled.**
+- **cron-job.org "RPC TopShot Deal Floor Serials" (id 7850139) DISABLED at 16:4xZ** — every tick "resolved 0 of 10 deal editions; 10 fetch errors". The 20260830155543 suppression row can be dropped when it is re-enabled.
+- **`.github/workflows/badge-sync.yml`:** new `upstream-probe` job; `badge-sync` and `badge-catalog-sweep` both `needs` it and run only when `alive == 'true'`. Dead = 000/52x/530 only — a 200, 4xx, or bot-challenge 403 still runs the jobs, so a runner-IP block can never mask a live host. Self-resumes; nothing to remember. (`topshot-badge-sync` 0/5 sweeps and `topshot-badge-catalog` 5/5 failed every tick since 08-28.)
+- **Left alone, deliberately:** `offers-sweep` (cron-job.org :02/:22/:42) stays behind the upstream circuit breaker (c8ac905) — 9/18 runs failed in 6 h but each failure is one 530 round-trip; `drain-topshot-misattribution?rekey=1` (vercel.json, 1/6 h) same. `backfill-badges-from-sets` is admin-manual.
+
+## 3. Also
+- `docs/operations/cron-schedule.md`: jobid 408 row; Deal Floor Serials + Populate Pinnacle rows → INACTIVE with the console path; badge-sync.yml row.
+
 ### 2026-08-30 · 🚨 MEASURED — Trevor's hypothesis is right: Top Shot has moved to ATLAS, and `pg_net` reaches Atlas with NO operator action
 
 **Trevor: *"it feels like Top Shot is shifting away from their own and moving the endpoint to Atlas."* It is correct — and testing it broke open the thing that was blocked.**

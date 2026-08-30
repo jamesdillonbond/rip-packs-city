@@ -20,9 +20,33 @@ on:
         type: boolean
         default: false
 jobs:
+  # 2026-08-30: public-api.nbatopshot.com has answered Cloudflare 530/1033 (origin tunnel down) since
+  # 2026-08-28 ~17Z; every tick of both jobs below spent its full run on 530s and logged a failed
+  # pipeline_runs row (topshot-badge-sync 0/5 sweeps, topshot-badge-catalog 5/5 failed). This probe
+  # gates them on the upstream being reachable, so the workflow self-resumes the tick after the host
+  # returns and nobody has to remember to re-enable it. Only a Cloudflare 52x/530 or a connection
+  # failure counts as dead -- any other status (200, 4xx, even a bot-challenge 403) lets the jobs run,
+  # so a runner-IP block can never mask a live host.
+  upstream-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      alive: ${{ steps.probe.outputs.alive }}
+    steps:
+      - id: probe
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 -X POST \
+            -H "content-type: application/json" --data "{\"query\":\"{__typename}\"}" \
+            https://public-api.nbatopshot.com/graphql) || STATUS="000"
+          echo "public-api.nbatopshot.com/graphql -> $STATUS"
+          case "$STATUS" in
+            000|52[0-9]|530) echo "alive=false" >> "$GITHUB_OUTPUT"; echo "::warning::Top Shot public API is down ($STATUS) -- skipping this tick" ;;
+            *) echo "alive=true" >> "$GITHUB_OUTPUT" ;;
+          esac
   badge-sync:
     # Tag sweep: the :15 schedule, or manual dispatch without the catalog flag.
-    if: github.event.schedule == '15 */6 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog != true)
+    needs: upstream-probe
+    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '15 */6 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog != true))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -38,7 +62,8 @@ jobs:
             echo "::warning::Badge sync returned $STATUS"
           fi
   badge-catalog-sweep:
-    if: github.event.schedule == '45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true)
+    needs: upstream-probe
+    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
