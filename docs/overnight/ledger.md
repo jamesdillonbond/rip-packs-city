@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (DB) — the live `weekly-db-maintenance` breach is a STALE NOTE plus the fleet's #1 cron failure mode, and the tempting mechanism is refuted
+
+**Started from a real alert:** `detect_stalled_pipelines()` reports `weekly-db-maintenance` silent **2,614 min** against a 1,800 min arm. Two findings, neither of which is "the purge is broken".
+
+## 1. The slot moved and the note did not
+
+The live cadence note says *"Runs on pg_cron jobid 198 (rpc-weekly-log-purges) DAILY **09:40 UTC**"*. `cron.job.schedule` is now `46 11 * * *` — moved off the 09Z storm band by migration `20260830000048` earlier tonight. **A reader triaging this breach goes to 09:40, finds nothing, and concludes the scheduler died.** Same drift the register already records correcting for `candy-editions-ingest`, arriving again within days. Corrected in place, with a `_backup` table for revert.
+
+## 2. `job startup timeout` is the fleet's #1 cron failure mode, and it presents as SILENCE
+
+Measured over `cron.job_run_details` — **51 days, 188,316 runs, 4,338 failures**:
+
+| failure | events | jobs | share of failures |
+|---|---:|---:|---:|
+| **`job startup timeout`** | **3,034** | **84** | **~70 %** |
+| `canceling statement due to statement timeout` | 1,247 | ~86 | ~29 % |
+| everything else | ~57 | — | ~1 % |
+
+🚨 **A startup timeout means the job never RAN**, so it writes no `pipeline_runs` row and shows up as silence rather than failure — feeding the `cron_silent` class directly. jobid 198 hit it on 08-29 09:54, 08-25 09:40 and 08-24 09:40.
+
+⭐ **THE ASYMMETRY IS THE WHOLE EXPLANATION, and it is why this arm breaches while nothing is wrong.** The per-tick rate is a fairly uniform **3–4 % on high-frequency jobs** (`rpc-pinnacle-mints-backfill` 381/10,042 = 3.8 %; `rpc-allday-pack-sales-backfill` 237/6,565 = 3.6 %; worst observed 5.8 %). **A `*/2` job absorbs a lost tick invisibly; a DAILY job cannot** — one lost tick is a 48 h gap against a 30 h arm. The same background loss rate is noise on one and a page on the other. ⚠ So the raw 3,034 reads alarming and is mostly volume: no job is catastrophically affected.
+
+⛔ **A TEMPTING MECHANISM, MEASURED AND REFUTED — recorded so nobody re-derives it.** `cron.max_running_jobs` is **32** while `max_worker_processes` is **6**, which looks exactly like pg_cron promising slots the server cannot supply. **Observed concurrency reaches 11**, so worker-process exhaustion at 6 is NOT the mechanism. ⭐ *I had the write-up half-drafted before running the concurrency query.* The cause stays unestablished — a capacity symptom on an IO-bound Small instance — and the note says so rather than guessing.
+
+**Shipped:** the note now names the **11:46 UTC** slot and carries the startup-timeout triage step, the fleet numbers, the asymmetry, and the refuted mechanism. ⛔ **Severity (info), `max_silent_minutes` (1800) and `is_active` are UNCHANGED** — the arm is right; a daily job silent 30 h *is* worth a look. Only the note was wrong. ✅ Backup table created **with RLS enabled**, matching the convention this session enforced on `audit_20260830_pgss_snap` a few hours earlier; `check_public_security_invariants()` returns zero rows (clean).
+
+**Verified:** `note_says_1146` true · old-slot text gone · `names_startup_timeout` true · backup 1 row, `relrowsecurity` true · severity/arm/active unchanged · 3 migration guards green (18 tests).
+
+⚠ **NOT claimed:** that the breach is fully explained by the note. The 08-29 tick genuinely failed to start, and the schedule move means the next real run is 2026-08-30 11:46Z, so **this arm will stay breached until then and should not be re-diagnosed** — the same "expect a long false-looking breach" note #47 carries for its own schedule move.
+
+**Revert path:** `git revert` the commit below for the file. DB half is in the migration header: restore `notes` from `public.audit_20260830_weekly_maint_note_backup`, then drop it. ⚠ Named explicitly — never wildcard-drop the `audit_20260830_` prefix, other sessions share it.
+
+
 ### 2026-08-29 · ⛔ MEASURED — GitHub Actions does not honour our schedules: 14.9% of runs start on time, the DAILY guards run up to 12 HOURS late, and #48's remaining lever does not exist
 
 **Reached by trying to answer a falsifier nobody had read.** #48 specified an experiment (`sleep 60 → 300` + `timeout-minutes 10 → 25`, same commit) — **which had already shipped in `1de79b1a8` on 2026-08-27 23:09 PT and sat unevaluated for two days.** ⭐ *A queued experiment that ships and is never read is a decision nobody made.*
