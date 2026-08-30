@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration `20260830222057`, applied + committed) — the pack-ev MV refresh loses its two hidden costs: a never-vacuumed history table and 24 no-op refreshes a day
+
+**Pass: cloud, 22:1x–22:3xZ.** The pack-ev class's largest consumer, found while measuring known-issues #52's remaining half: `refresh_mv_pack_ev_latest()` (pg_cron jobid 73, `3,33 * * * *`, cron_heavy) at **810 calls / 70.0 s mean / 68.6 GB shared reads** since the 08-12 stats reset — to maintain a **768 kB, 1,855-row** materialized view.
+
+**Two independent causes, both measured before touching anything:**
+1. `pack_ev_history` (176 MB, append-only: `n_tup_upd`=0, `n_tup_del`=0) had **never been vacuumed** — the covering-index scan did **94,595 heap fetches** because no visibility-map bit was set. `VACUUM (ANALYZE)` dropped the probe from **2,517 ms / 101k buffers → 146 ms / 8.6k buffers** (17×). Same disease as the collection-moments finding two nights ago: heap fetches, not query shape. Root cause of the rot: the default autovacuum insert threshold (1000 + 0.2 × 300k ≈ 61k rows) fires every ~19 days at the measured ~3.2k inserts/day.
+2. Snapshots land **hourly** (23 distinct hours in the last 24 h) while the refresh runs **every 30 minutes** — half the refreshes recompute an identical view, and CONCURRENTLY pays the full query + diff each time.
+
+**What shipped (`20260830222057_audit_20260830_mv_pack_ev_latest_refresh_watermark_gate`):**
+- Single-row `mv_pack_ev_latest_refresh_state` + a watermark gate: skip the REFRESH when `max(snapshotted_at)` (an ~1 ms index probe) has not advanced since the last refresh. Watermark lives OUTSIDE the MV so filtered-out rows ('Holding %') still advance it; fail-open on missing state/NULL max. Counters (`refreshed_count`/`skipped_count`) make the lever measurable.
+- `ALTER TABLE pack_ev_history SET (autovacuum_vacuum_insert_threshold = 5000, autovacuum_vacuum_insert_scale_factor = 0.0)` — VM stays fresh every ~1.5 days instead of ~19.
+
+**Verified live, both branches, one double-call:** first call REFRESHED (watermark → the 22:13Z snapshot), immediate second call SKIPPED — state row reads `refreshed_count=1, skipped_count=1`.
+
+ⓘ **Stored-text amendment, disclosed:** the migration as first applied lacked the `-- anon-exec:` decision marker the post-08-17 guard requires of any file creating a public function. The function's ACL was already hardened (anon=false, authenticated=false, cron_heavy=true — measured) and `CREATE OR REPLACE` preserves it, so the truthful decision statement is the marker, and adding a REVOKE to the stored text would have recorded DDL that never ran. The stored `schema_migrations.statements` was amended with the comment line only (executed DDL byte-identical), and the committed file matches the amended stamp: md5 `3c2cd5abf51a356a76fcbc41b657cd07` both sides.
+
+⚠ **Soundness boundary + falsifier:** the gate assumes `pack_ev_history` stays append-only. `n_tup_upd`/`n_tup_del` > 0 breaks the assumption → revert the gate (path in the migration header), do not widen it. **Exit:** jobid 73's next few days show `skipped_count` ≈ `refreshed_count` and `pg_stat_statements` mean for `refresh_mv_pack_ev_latest` well under 70 s. **Target metric:** ~28 min/day of cron_heavy runtime and ~1.7 GB/day of shared reads returned, plus faster real refreshes from the fresh visibility map.
+
 ### 2026-08-30 · ✅ SHIPPED (3 commits + 3 dispatched runs) — TIER 2 RUNS: the eszip parse-mode census read all 38 bundles and the fleet's real drift number is 25, not tier 1's 19
 
 **Pass: cloud, 21:3x–22:2xZ.** Closes register **R63** and known-issues **#53**; ends the census blackout that began 2026-08-09 and that Detector Health surfaced as the edge-fn-drift 12× streak the moment it was armed.
