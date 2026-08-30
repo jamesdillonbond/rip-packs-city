@@ -9,6 +9,8 @@ import {
   normaliseSource,
   runContentCensus,
   driftExitCode,
+  partitionByDeploySafety,
+  GATE_KEY_DEPLOY_BLOCKED,
 } from "@/scripts/check-edge-fn-drift.mjs"
 
 // Guards the edge-function drift detector — the only check in this repo that can
@@ -318,5 +320,64 @@ describe("edge-fn drift detector — the run's exit code", () => {
     // rather than asked and unable.
     expect(driftExitCode({ driftedCount: 0, tier2Attempted: false, tier2Ran: false })).toBe(0)
     expect(driftExitCode({ driftedCount: 2, tier2Attempted: false, tier2Ran: false })).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The report must not tell you to cause an outage.
+//
+// 🚨 WHY. Tier 1 flags 19 functions as PROVEN drifted, and the report used to end
+// with "Redeploy each ...". But six functions read Deno.env.get("<NAME>_GATE_KEY")
+// while the secret is UNSET: deploying one makes its gate fail CLOSED and 403 on
+// every tick — the mechanism of the 24h 2026-08-11 AllDay/Pinnacle outage.
+//
+// ⭐ And they are drifted BECAUSE they were never redeployed, which is the correct
+// state: their signature (deployed import_map:false vs a bare-specifier repo
+// source) is exactly what tier 1 keys on. So they appear in this report every
+// night, forever, and the advice line pointed straight at them.
+//
+// ⚠ The list is a DATED SAMPLE and a KNOWN MINIMUM, so these tests pin the
+// PARTITIONING BEHAVIOUR (and that the two known-drifted blocked ones are in it),
+// never the exact size of the set — a guard that dies on a legitimate edit is a
+// guard that gets deleted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked functions", () => {
+  it("separates the blocked ones from the safe ones", () => {
+    const { safe, mustNotDeploy } = partitionByDeploySafety([
+      "compute-topshot-pack-ev",
+      "ingest-pinnacle-mints",
+      "sales-serial-backfill",
+      "compute-golazos-pack-ev",
+    ])
+    expect(mustNotDeploy).toEqual(["ingest-pinnacle-mints", "compute-golazos-pack-ev"])
+    expect(safe).toEqual(["compute-topshot-pack-ev", "sales-serial-backfill"])
+  })
+
+  it("contains the two blocked functions that are ACTUALLY in the live drift list", () => {
+    // Measured 2026-08-30: both appear among tier 1's 19 proven-drifted, so this
+    // is not a hypothetical overlap — it is the live collision.
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("ingest-pinnacle-mints")).toBe(true)
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("compute-golazos-pack-ev")).toBe(true)
+  })
+
+  it("does NOT block the two functions deployed after the dual-accept cutoff", () => {
+    // Over-blocking is a real cost too: it would leave a genuinely fixable
+    // function stuck as permanent drift. Both were deployed 2026-08-15, so they
+    // carry the _OLD fallback and are safe.
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("compute-pinnacle-pack-ev")).toBe(false)
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("backfill-topshot-pack-supply")).toBe(false)
+  })
+
+  it("treats an unknown slug as safe, so the list can never silently gate new work", () => {
+    const { safe, mustNotDeploy } = partitionByDeploySafety(["some-brand-new-fn"])
+    expect(safe).toEqual(["some-brand-new-fn"])
+    expect(mustNotDeploy).toEqual([])
+  })
+
+  it("is order-preserving and total — every input lands in exactly one bucket", () => {
+    const input = ["a", "ingest-pinnacle-mints", "b", "backfill-pack-opens-api", "c"]
+    const { safe, mustNotDeploy } = partitionByDeploySafety(input)
+    expect([...safe, ...mustNotDeploy].sort()).toEqual([...input].sort())
+    expect(safe).toEqual(["a", "b", "c"])
   })
 })

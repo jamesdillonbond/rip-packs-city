@@ -172,6 +172,46 @@ export function driftExitCode({ driftedCount, tier2Attempted, tier2Ran }) {
   return driftedCount > 0 ? 1 : 0
 }
 
+/**
+ * DO-NOT-REDEPLOY LIST — functions that are drifted and MUST STAY THAT WAY.
+ *
+ * These read Deno.env.get("<NAME>_GATE_KEY") in the repo while the secret is
+ * UNSET, so deploying makes the gate read "" and fail CLOSED: 403 on every tick.
+ * That is the mechanism of the 24h 2026-08-11 AllDay/Pinnacle outage and of the
+ * backfill-topshot-pack-supply break, and it is strictly worse than the drift it
+ * would "fix".
+ *
+ * THEY ARE DRIFTED *BECAUSE* THEY WERE NEVER REDEPLOYED, WHICH IS CORRECT.
+ * Their drift signature is their documented one: deployed import_map:false while
+ * the repo source imports by bare specifier -- exactly what tier 1 keys on. So
+ * this report lists them every night, and its old "Redeploy each" line was an
+ * instruction to cause an outage.
+ *
+ * DATED SAMPLE (2026-08-18 deploy-time measurement), not a constant. It goes
+ * stale the moment an operator sets one of the secrets, and it is a KNOWN
+ * MINIMUM, not exhaustive -- a newly de-hardcoded function would not be here.
+ * Re-derive before acting; absence from this list is NEVER clearance to deploy.
+ *
+ * Excluded deliberately: compute-pinnacle-pack-ev and backfill-topshot-pack-supply
+ * WERE deployed after the dual-accept cutoff, so they are safe.
+ */
+export const GATE_KEY_DEPLOY_BLOCKED = new Set([
+  'ingest-allday-pack-opens',
+  'ingest-topshot-pack-opens-history',
+  'ingest-pinnacle-mints',
+  'compute-golazos-pack-ev',
+  'backfill-pack-opens-api',
+  'backfill-allday-pack-supply',
+])
+
+/** Split drifted slugs into those safe to redeploy and those that would 403. */
+export function partitionByDeploySafety(slugs, blocked = GATE_KEY_DEPLOY_BLOCKED) {
+  const safe = []
+  const mustNotDeploy = []
+  for (const s of slugs) (blocked.has(s) ? mustNotDeploy : safe).push(s)
+  return { safe, mustNotDeploy }
+}
+
 export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5 }) {
   const contentDrift = []
   const bodyFailures = []
@@ -370,7 +410,20 @@ async function main() {
     if (t1.notDeployed.length) console.log(`in repo, NOT deployed: ${t1.notDeployed.join(", ")}\n`)
     console.log(
       drifted.length
-        ? `DRIFT: ${drifted.length} function(s). Redeploy each with deno.json in \`files\` AND import_map_path — omitting the map turns a stale function into a hard-down one.`
+        ? (() => {
+            const { safe, mustNotDeploy } = partitionByDeploySafety(drifted)
+            const head = `DRIFT: ${drifted.length} function(s).`
+            const safeLine = safe.length
+              ? ` ${safe.length} SAFE to redeploy — deploy each with deno.json in the files list AND import_map_path; omitting the map turns a stale function into a hard-down one.`
+              : ` 0 of them are safe to redeploy.`
+            // Never let this read as blanket clearance. Naming the blocked ones
+            // inline IS the fix: the list is what stops someone working the
+            // report top-to-bottom straight into an outage.
+            const blockedLine = mustNotDeploy.length
+              ? ` ⛔ DO NOT REDEPLOY ${mustNotDeploy.length}: ${mustNotDeploy.join(', ')} — their *_GATE_KEY secrets are UNSET, so deploying makes the gate fail CLOSED and 403 every tick (the 2026-08-11 outage mechanism). They are drifted BECAUSE they were never redeployed, which is correct until an operator sets the secrets.`
+              : ``
+            return head + safeLine + blockedLine
+          })()
         : tier2Ran
           ? "clean: every deployed function matches repo source."
           : // Never publish an all-clear the run did not earn. With no content
