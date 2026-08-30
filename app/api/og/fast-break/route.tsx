@@ -11,6 +11,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
   let runName = "FAST BREAK"
   try {
     const origin = new URL(req.url).origin
-    const r = await fetch(
+    const r = await ogFetch(
       `${origin}/api/nba/fast-break/optimize?game_date=${encodeURIComponent(date)}`,
       { cache: "no-store" }
     )

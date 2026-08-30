@@ -6,6 +6,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
   let fetched = false
   try {
     const origin = new URL(req.url).origin
-    const r = await fetch(`${origin}/api/public/insights/first-mint?limit=3`, { cache: "no-store" })
+    const r = await ogFetch(`${origin}/api/public/insights/first-mint?limit=3`, { cache: "no-store" })
     if (r.ok) {
       fetched = true
       const j = await r.json()

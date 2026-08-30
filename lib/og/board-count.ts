@@ -32,6 +32,7 @@
 // established. Grep the route's `Math.min(...)` rather than guessing.
 
 import { boardCountFloor } from "@/lib/insights/board-meta"
+import { ogFetch } from "./og-fetch"
 
 export type BoardCount = {
   /** Rows the count request actually returned. A FLOOR when `truncated`. */
@@ -67,7 +68,7 @@ export async function fetchBoardCount(
 ): Promise<BoardCount | null> {
   try {
     const sep = pathAndQuery.includes("?") ? "&" : "?"
-    const r = await fetch(`${origin}${pathAndQuery}${sep}limit=${maxLimit}`, { cache: "no-store" })
+    const r = await ogFetch(`${origin}${pathAndQuery}${sep}limit=${maxLimit}`, { cache: "no-store" })
     if (!r.ok) return null
     const j = await r.json()
     const meta = j?.meta

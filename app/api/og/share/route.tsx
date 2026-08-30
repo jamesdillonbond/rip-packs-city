@@ -15,6 +15,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "edge"
 
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
   let topPlayers: string[] = []
 
   try {
-    const res = await fetch(`${BASE_URL}/api/collection-snapshot?wallet=${encodeURIComponent(wallet)}`, {
+    const res = await ogFetch(`${BASE_URL}/api/collection-snapshot?wallet=${encodeURIComponent(wallet)}`, {
       next: { revalidate: 300 },
     })
     if (res.ok) {

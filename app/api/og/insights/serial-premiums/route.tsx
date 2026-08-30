@@ -14,6 +14,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { OgMark } from "@/lib/og/marks"
+import { ogFetch } from "@/lib/og/og-fetch"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
   try {
     const origin = new URL(req.url).origin
     count = await fetchBoardCount(origin, "/api/public/insights/serial-premiums?window=90d&sort=premium", 100)
-    const r = await fetch(
+    const r = await ogFetch(
       `${origin}/api/public/insights/serial-premiums?window=90d&sort=premium&limit=3`,
       { cache: "no-store" }
     )

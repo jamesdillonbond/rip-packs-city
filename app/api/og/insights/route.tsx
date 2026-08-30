@@ -8,6 +8,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,9 +34,9 @@ export async function GET(req: NextRequest) {
     // Three parallel fetches against the live JSON routes — keeps the card
     // honest with whatever the surfaces are actually showing today.
     const [packR, ccR, fmR] = await Promise.all([
-      fetch(`${origin}/api/public/insights/pack-reality?limit=1`, { cache: "no-store" }).catch(() => null),
-      fetch(`${origin}/api/public/insights/cross-collection?sort=moments&limit=1`, { cache: "no-store" }).catch(() => null),
-      fetch(`${origin}/api/public/insights/first-mint?limit=1`, { cache: "no-store" }).catch(() => null),
+      ogFetch(`${origin}/api/public/insights/pack-reality?limit=1`, { cache: "no-store" }).catch(() => null),
+      ogFetch(`${origin}/api/public/insights/cross-collection?sort=moments&limit=1`, { cache: "no-store" }).catch(() => null),
+      ogFetch(`${origin}/api/public/insights/first-mint?limit=1`, { cache: "no-store" }).catch(() => null),
     ])
     if (packR?.ok) {
       const j = await packR.json()

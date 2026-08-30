@@ -11,6 +11,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   let qualifying: number | null = null
   try {
     const origin = new URL(req.url).origin
-    const r = await fetch(`${origin}/api/public/insights/allday-pack-market`, { cache: "no-store" })
+    const r = await ogFetch(`${origin}/api/public/insights/allday-pack-market`, { cache: "no-store" })
     if (r.ok) {
       const j = await r.json()
       qualifying = j?.market?.qualifying_dists ?? null

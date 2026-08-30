@@ -10,6 +10,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { ogFetch } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     const origin = new URL(req.url).origin
     // Honest deals only (lottery packs hidden), matching the board's default
     // crawlable view. Pull a small page for the headline rows.
-    const r = await fetch(
+    const r = await ogFetch(
       `${origin}/api/public/insights/pack-sniper?collection=nba-top-shot&include_high_variance=false&limit=3`,
       { cache: "no-store" },
     )

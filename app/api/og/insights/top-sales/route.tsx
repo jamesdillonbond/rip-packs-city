@@ -11,6 +11,7 @@ import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
+import { ogFetch } from "@/lib/og/og-fetch"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
   try {
     const origin = new URL(req.url).origin
     count = await fetchBoardCount(origin, "/api/public/insights/top-sales?window=7d&sort=price", 200)
-    const r = await fetch(`${origin}/api/public/insights/top-sales?window=7d&sort=price&limit=3`, {
+    const r = await ogFetch(`${origin}/api/public/insights/top-sales?window=7d&sort=price&limit=3`, {
       cache: "no-store",
     })
     if (r.ok) {

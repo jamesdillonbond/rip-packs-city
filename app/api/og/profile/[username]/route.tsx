@@ -62,6 +62,7 @@ import {
   type OgFont,
 } from "@/lib/og/brand-fonts";
 import { OgMark, type MarkName } from "@/lib/og/marks";
+import { ogFetch } from "@/lib/og/og-fetch";
 
 export const runtime = "edge";
 
@@ -152,7 +153,7 @@ function fmtDollars(n: number): string {
  */
 async function fetchJson<T>(url: string): Promise<{ rows: T[]; ok: boolean }> {
   try {
-    const r = await fetch(url, {
+    const r = await ogFetch(url, {
       headers: {
         apikey: SERVICE_KEY,
         Authorization: "Bearer " + SERVICE_KEY,
@@ -176,7 +177,7 @@ async function fetchJson<T>(url: string): Promise<{ rows: T[]; ok: boolean }> {
  */
 async function fetchRpc<T>(fn: string, body: unknown): Promise<{ rows: T[]; ok: boolean }> {
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    const r = await ogFetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
       method: "POST",
       headers: {
         apikey: SERVICE_KEY,

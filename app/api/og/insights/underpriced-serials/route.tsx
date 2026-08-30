@@ -14,6 +14,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { boardMaxAgeHours, boardLivenessLabel } from "@/lib/og/board-freshness"
+import { ogFetch } from "@/lib/og/og-fetch"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -83,7 +84,7 @@ export async function GET(req: NextRequest) {
     const origin = new URL(req.url).origin
     count = await fetchBoardCount(origin, "/api/public/insights/underpriced-serials?sort=discount", 100)
     // Lead the card with the most trustworthy deals.
-    const r = await fetch(
+    const r = await ogFetch(
       `${origin}/api/public/insights/underpriced-serials?quality=tight&sort=discount&limit=3`,
       { cache: "no-store" }
     )
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
     }
     // If no tight deals right now, fall back to all rows so the card isn't empty.
     if (rows.length === 0) {
-      const r2 = await fetch(
+      const r2 = await ogFetch(
         `${origin}/api/public/insights/underpriced-serials?sort=discount&limit=3`,
         { cache: "no-store" }
       )
