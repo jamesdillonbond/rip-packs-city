@@ -49,7 +49,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Daily Portfolio Snapshot | /api/cron/daily-portfolio-snapshot | daily 07:05 UTC |
 | RPC EVM Transfers Ingest | /api/cron/evm-transfers-ingest | hourly :19 |
 | RPC Lock Check Batch | /api/cron/lock-check-batch | 8,38 — ✅ FIXED (was brushing 30s cap) |
-| RPC Offers Sweep | /api/cron/offers-sweep | 2,22,42 |
+| RPC Offers Sweep | /api/cron/offers-sweep | 2,22,42 | ⚠ dead host (public-api.nbatopshot.com 530 since 08-28); kept ACTIVE behind the upstream circuit breaker (c8ac905). |
 | RPC Ownership On-chain Walk | /api/cron/ownership-onchain-walk | daily 13:30 UTC ⟨exec-derived⟩ — NEW |
 | RPC Pinnacle Events Ingest | /api/cron/pinnacle-events-ingest | 4,19,34,49 |
 | RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
@@ -79,7 +79,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Seed Wallet Refresh cohort 1/4 | /api/seed-wallet-refresh?cohort=1&of=4 | 59 0,6,12,18 UTC |
 | RPC Seed Wallet Refresh cohort 2/4 | /api/seed-wallet-refresh?cohort=2&of=4 | 13 1,7,13,19 UTC |
 | RPC Seed Wallet Refresh cohort 3/4 | /api/seed-wallet-refresh?cohort=3&of=4 | 27 1,7,13,19 UTC |
-| RPC TopShot FMV Populate | /api/topshot-fmv-populate | 50 0,6,12,18 UTC |
+| RPC TopShot FMV Populate | /api/topshot-fmv-populate | 50 0,6,12,18 UTC | **INACTIVE 2026-08-30** — dead host public-api.nbatopshot.com (530/1033 since 08-28), 0 rows in 24 h; paused by Trevor's ask, not retired. Re-enable when the host answers non-5xx twice (migration 20260830034312 header).
 | RPC Top Shot Offers Indexer | /api/topshot-offers-indexer | 12,32,52 |
 | RPC wmc-fmv-populate | /api/wmc-fmv-populate?limit=5000 | 3,8,13,…,58 (every 5m) |
 | RPC Smoke Concierge Daily | /api/smoke-test?concierge=1 | daily 09:08 UTC ⟨exec-derived⟩ — NEW (~17s runtime; concierge API cost) |
@@ -95,7 +95,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC AllDay Listing Serial Backfill | backfill-allday-listing-serials | 34 */3 ⟨exec-derived⟩ — NEW |
 | RPC Compute Achievements | compute-achievements | weekly Mon 15:00 UTC |
 | RPC Compute AllDay Pack EV | compute-allday-pack-ev | 7,37 |
-| RPC Compute Topshot Pack EV | compute-topshot-pack-ev | 1,7,13,…,55 (10/hr × batch 4 — the throughput design; do NOT change batch) |
+| RPC Compute Topshot Pack EV | compute-topshot-pack-ev | 1,7,13,…,55 (10/hr × batch 4 — the throughput design; do NOT change batch) | **INACTIVE 2026-08-30** — dead host public-api.nbatopshot.com (530/1033 since 08-28), 0 rows in 24 h; paused by Trevor's ask, not retired. Re-enable when the host answers non-5xx twice (migration 20260830034312 header).
 | RPC Hybrid Custody Events | hybrid-custody-events | 13,33,53 |
 | RPC NBA Player Name Matcher | match-topshot-players | daily 08:00 UTC |
 | RPC NBA Projections Sync | sync-nba-projections | 07 every 3h |
@@ -111,7 +111,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 |---|---|---|
 | RPC Pack Events Ingest TopShot | pack-events-ingest.tdillonbond.workers.dev/ | 9,24,39,54 |
 | RPC Pack Events Ingest Backfill TopShot | pack-events-ingest.tdillonbond.workers.dev/backfill | 1,16,31,46 |
-| RPC Topshot Moments Hydrator | topshot-moments-hydrator.tdillonbond.workers.dev/ | 2,12,22,32,42,52 |
+| RPC Topshot Moments Hydrator | topshot-moments-hydrator.tdillonbond.workers.dev/ | 2,12,22,32,42,52 | **INACTIVE 2026-08-30** — dead host public-api.nbatopshot.com (530/1033 since 08-28), 0 rows in 24 h; paused by Trevor's ask, not retired. Re-enable when the host answers non-5xx twice (migration 20260830034312 header).
 
 ## Inactive cron-job.org entries  ·  7 (intentionally off)
 
