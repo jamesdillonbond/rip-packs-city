@@ -58,7 +58,15 @@ export async function GET(req: NextRequest) {
   const collection = getCollection(id);
 
   const label = collection?.label ?? "Rip Packs City";
-  const icon = collection?.icon ?? "🎴"; // 🎴
+  // ⚠ `collection.icon` USED TO BE THE HERO OF THIS CARD, AT 140px, AND IT WAS
+  // THE ONE CDN DEPENDENCY NO SOURCE SCAN COULD EVER HAVE FOUND. Every icon in
+  // the registry is an emoji (🏀 🏈 ✨ ⚽ 🥊 🃏 ⚾ 🏅), so next/og fetched an SVG
+  // from cdn.jsdelivr.net at RENDER time — through DATA, not through a literal
+  // in this file. A guard that greps OG routes for emoji sees the "🎴" fallback
+  // and nothing else; the actual dependency arrived from lib/collections.ts.
+  // The registry field is untouched (the mobile collections sheet still renders
+  // it in a browser, where an emoji costs nothing) — this CARD no longer asks
+  // for a glyph it cannot draw. See lib/og/marks.tsx for the measurement.
   const accent = collection?.accent ?? "#E03A2F";
   const sport = collection?.sport ?? "Multi-Sport";
   const partner = collection?.partner ?? "RPC";
@@ -167,20 +175,26 @@ export async function GET(req: NextRequest) {
             flex: 1,
           }}
         >
+          {/* The accent rule replaces the 140px emoji as the hero's anchor.
+              It is the collection's own colour, it needs no font and no
+              network, and it hands the vertical space the cartoon was using
+              back to the thing a 1200x630 card is actually read for in a
+              timeline: the NAME. 76px -> 96px is the visible half of this
+              change; the invisible half is that the card no longer waits on
+              somebody else's CDN before a crawler can see it. */}
           <div
             style={{
-              fontSize: "140px",
-              lineHeight: 1,
-              marginBottom: "16px",
+              width: "160px",
+              height: "10px",
+              background: accent,
+              marginBottom: "34px",
               display: "flex",
             }}
-          >
-            {icon}
-          </div>
+          />
           <div
             style={{
               color: "#FFFFFF",
-              fontSize: "76px",
+              fontSize: "96px",
               fontWeight: 800,
               lineHeight: 1,
               display: "flex",

@@ -21,6 +21,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { OgMark } from "@/lib/og/marks"
 
 export const runtime = "edge"
 
@@ -178,7 +179,7 @@ export async function GET(req: NextRequest) {
         {/* Header row */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 26, lineHeight: 1, display: "flex" }}>{isRipped ? "🎉" : "📦"}</div>
+            <OgMark name={isRipped ? "burst" : "pack"} size={26} color="#FF6B35" weight={2} />
             <div style={{ color: "#FF6B35", fontSize: 22, fontWeight: 800, letterSpacing: "2px", display: "flex" }}>
               {eyebrow}
             </div>

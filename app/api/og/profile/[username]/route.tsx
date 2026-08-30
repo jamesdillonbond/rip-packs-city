@@ -61,6 +61,7 @@ import {
   OG_CACHE_HEADERS,
   type OgFont,
 } from "@/lib/og/brand-fonts";
+import { OgMark, type MarkName } from "@/lib/og/marks";
 
 export const runtime = "edge";
 
@@ -99,14 +100,21 @@ interface AchievementRow {
   tier: string;
 }
 
-const ACH_EMOJI: Record<string, string> = {
-  pack_hunter: "🎒",
-  diamond_hands: "💎",
-  serial_sniper: "🎯",
-  trophy_curator: "🏆",
-  challenge_accepted: "⚡",
-  series_collector: "📚",
-  big_spender: "💰",
+// ⚠ THESE WERE EMOJI, AND AN EMOJI HERE WAS A THIRD-PARTY NETWORK CALL ON THE
+// PATH X's CRAWLER WAITS ON. next/og resolves 🎒💎🎯🏆⚡📚💰 by fetching an SVG
+// from cdn.jsdelivr.net at RENDER time, and the "★" that stood in for an
+// unrecognised key was worse still — it is not an emoji, so it fell through to
+// next/og's OTHER remote fallback, a Google Fonts stylesheet for Noto Sans
+// Symbols. Two third-party dependencies in one seven-entry map, neither
+// declared, neither bounded. See lib/og/marks.tsx for the measurement.
+const ACH_MARK: Record<string, MarkName> = {
+  pack_hunter: "bag",
+  diamond_hands: "diamond",
+  serial_sniper: "target",
+  trophy_curator: "trophy",
+  challenge_accepted: "bolt",
+  series_collector: "stack",
+  big_spender: "coin",
 };
 
 function achTierColor(tier: string): string {
@@ -599,13 +607,19 @@ export async function GET(
                   }}
                 >
                   {achievements.slice(0, 6).map((a, i) => {
-                    const emoji = ACH_EMOJI[a.achievement_key] ?? "★";
-                    const dot = achTierColor(a.tier);
+                    const mark = ACH_MARK[a.achievement_key] ?? "star";
+                    // The mark now CARRIES the tier instead of standing next to
+                    // it. The 6px dot in the corner encoded exactly one variable
+                    // — tier — while the emoji beside it encoded none of it, and
+                    // at the 28px this badge actually occupies a 6px dot is the
+                    // least legible thing on the card. A 20px mark in the tier
+                    // colour says the same thing at three times the size, and
+                    // one encoding of one variable is not clutter.
+                    const tint = achTierColor(a.tier);
                     return (
                       <div
                         key={i}
                         style={{
-                          position: "relative",
                           display: "flex",
                           width: 28,
                           height: 28,
@@ -613,22 +627,7 @@ export async function GET(
                           justifyContent: "center",
                         }}
                       >
-                        <span style={{ fontSize: 20, lineHeight: 1, display: "flex" }}>
-                          {emoji}
-                        </span>
-                        <div
-                          style={{
-                            position: "absolute",
-                            right: -2,
-                            bottom: -2,
-                            width: 6,
-                            height: 6,
-                            borderRadius: 999,
-                            background: dot,
-                            border: "1px solid #0a0a0d",
-                            display: "flex",
-                          }}
-                        />
+                        <OgMark name={mark} size={20} color={tint} weight={2} />
                       </div>
                     );
                   })}

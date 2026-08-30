@@ -13,6 +13,7 @@ import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
+import { OgMark } from "@/lib/og/marks"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -160,8 +161,19 @@ export async function GET(req: NextRequest) {
                       {(r.tier ?? "").replace(/^MOMENT_TIER_/, "") || "—"}
                     </span>
                     <span>·</span>
-                    <span>
-                      {fmtMoney(r.edition_median_usd)} → {fmtMoney(r.headline_last_sale_usd)}
+                    {/* The "→" here was a THIRD-PARTY FONT FETCH, not a
+                        character. next/og falls back to a Google Fonts
+                        stylesheet for any glyph the supplied fonts miss, and
+                        Barlow Condensed / Share Tech Mono miss U+2192 — so this
+                        row put fonts.googleapis.com on the path a crawler waits
+                        on, once per uncached render. It is drawn now. The arrow
+                        is the RELATION between the two numbers, so unlike the
+                        emoji this module also replaced, it could not simply be
+                        dropped. See lib/og/marks.tsx. */}
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {fmtMoney(r.edition_median_usd)}
+                      <OgMark name="arrow" size={13} color="rgba(255,255,255,0.55)" weight={2.4} />
+                      {fmtMoney(r.headline_last_sale_usd)}
                     </span>
                   </div>
                 </div>

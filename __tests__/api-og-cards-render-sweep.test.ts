@@ -363,23 +363,29 @@ function isAppApiRequest(input: RequestInfo | URL): boolean {
   // recorded: `next/og` fetches emoji SVGs from
   // https://cdn.jsdelivr.net/gh/twitter/twemoji/... at RENDER time, so four
   // cards (collection, deal, pack, pack/lifecycle) reached a third-party CDN on
-  // every run of this suite — and, more importantly, do so IN PRODUCTION on
-  // every uncached card render. Filed separately; stubbed here so the suite is
-  // hermetic and cannot hang on someone else's CDN.
-  return (
-    url.includes("/api/") ||
-    url.includes("/rest/v1/") ||
-    url.includes("/fonts/") ||
-    url.includes("twemoji")
-  )
-}
-
-/** A minimal valid SVG, so an emoji renders as a shape rather than failing. */
-function twemojiStubResponse(): Response {
-  return new Response(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16"/></svg>',
-    { status: 200, headers: { "content-type": "image/svg+xml" } },
-  )
+  // every run of this suite — and, more importantly, did so IN PRODUCTION on
+  // every uncached card render.
+  //
+  // 🚨 THAT STUB IS GONE ON PURPOSE (2026-08-29), AND ITS REMOVAL IS THIS FILE'S
+  // STRONGEST ASSERTION. Stubbing `twemoji` made the suite hermetic and made the
+  // defect INVISIBLE here: the cards kept reaching the CDN in production while
+  // this sweep stayed green. Now a remote-glyph fetch falls through to the throw
+  // below, so the sweep FAILS on it — and it is the only instrument that can,
+  // because it sees glyphs that arrive through DATA. `og/collection` rendered
+  // `collection.icon` at 140px, and every icon in the registry is an emoji; no
+  // scan of this repo's source could ever have found that.
+  //
+  // ⚠ The throw is a real failure, not a degraded render: verified 2026-08-29 by
+  // rendering "deal 🎯 card" against a rejecting fetch — `ImageResponse` rejects
+  // with the escape message rather than dropping the glyph and carrying on (the
+  // control, "deal card", renders 3,364 bytes clean). Satori does not swallow it,
+  // so this guard cannot pass while the dependency exists.
+  //
+  // Both of next/og's remote fallbacks land here. jsdelivr for emoji; Google
+  // Fonts (`fonts.googleapis.com/css2?family=Noto+Sans+Symbols…`) for any glyph
+  // the supplied brand fonts miss — → ↑ ↓ ← ▲ ▼ ✓ ✕ № ‾ among them, measured.
+  // Neither is in the predicate, so neither can be silently absorbed again.
+  return url.includes("/api/") || url.includes("/rest/v1/") || url.includes("/fonts/")
 }
 
 /**
@@ -434,7 +440,6 @@ beforeEach(() => {
   // prod being up, and on a slow/500 upstream it would assert the WRONG card.
   stubFetch(async (url) => {
     if (url.includes("/fonts/")) return localFontResponse(url)
-    if (url.includes("twemoji")) return twemojiStubResponse()
     const body = url.includes("/rest/v1/") ? restRowsFor(url) : UNIVERSAL_JSON
     return new Response(JSON.stringify(body), {
       status: 200,

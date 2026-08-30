@@ -15,6 +15,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { OgMark } from "@/lib/og/marks"
 
 export const runtime = "edge"
 
@@ -233,7 +234,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 26, lineHeight: 1, display: "flex" }}>📦</div>
+            <OgMark name="pack" size={26} color="#FF6B35" weight={2} />
             <div
               style={{
                 color: "#FF6B35",
