@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — both Supabase advisors triaged (571 findings): **security is genuinely CLEAN, and 2 of its 7 warnings would BREAK production if "fixed"**
+
+**A class nobody had swept this session. Read in full, aggregated rather than skimmed: 226 security + 345 performance.**
+
+## 1. Security — 226 findings, ZERO action, and two traps
+
+| level · rule | n | verdict |
+|---|---:|---|
+| INFO `rls_enabled_no_policy` | **217** | ✅ the SECURE default — RLS on with no policy DENIES everyone but service_role |
+| WARN `authenticated_security_definer_function_executable` | 4 | ✅ all allowlisted, with reasons |
+| WARN `anon_security_definer_function_executable` | 3 | ✅ all allowlisted, with reasons |
+| WARN `function_search_path_mutable` | 2 | ⛔ **"fixing" these BREAKS production** |
+
+⭐ **Our own `check_secdef_anon_exec_drift()` reads 0 while Supabase reports 7 — and our guard is RIGHT.** It defers to `public.secdef_anon_exec_allowlist`, and every entry carries a specific, checkable justification naming the caller: `serial_fmv_estimate` ×2 (*"reached via the SECURITY INVOKER fn `get_wallet_moments_with_fmv` and the anon-SELECTable invoker view `topshot_underpriced_serials_board`; an invoker caller executes the callee AS THE CALLER, so revoking breaks the wallet-moments read and the public board"*), `get_trophy_slab_data_by_username` (*public profile data, no PII beyond the username the caller supplied*), `get_my_fan_teams` (*scoped by `auth.uid()`*). **That is what a suppression list is supposed to look like.**
+
+🚨 **The two `function_search_path_mutable` warnings are the dangerous ones, and the danger is the FIX, not the finding.** Both are `prosecdef = false`, `prokind = 'p'` **PROCEDURES**, executable by **neither anon nor authenticated** — so there is no escalation path and the warning is inapplicable. ⛔ **And adding the recommended `SET search_path` would silently stop them COMMITTING — [[set-clause-on-a-committing-procedure-breaks-it]], already shipped twice on this platform.** `reconcile_all_saved_wallet_stats` is the documented bounded procedure. **Do not "clean these up".**
+
+⚠ **CONTROL for the 217, because "all clear" needs one:** the dangerous shape is not *RLS-on-no-policy*, it is **a table anon can SELECT with RLS OFF** — which the INFO list would never surface. Measured across all **380** public tables: **anon-readable with RLS off = 0.** (51 carry a vestigial anon grant that RLS denies anyway.) **The posture is sound.**
+
+## 2. Performance — 345 findings, and the headline number is wrong in a useful direction
+
+**284 `unused_index`.** ⭐ **Trustworthy, because the counter is alive and the stats were never reset:** `pg_stat_database.stats_reset` is **NULL**, and the positive control — the busiest index, `pack_ask_state_pkey` — reads **325,188,613 scans**. So `idx_scan = 0` really means never used.
+
+⚠ **But the advisor's list is NOT a drop list, and two corrections shrink it:**
+- **109 of the 329 non-unique/non-PK unused indexes BACK A FOREIGN KEY.** Those are load-bearing at `idx_scan = 0` — Postgres uses them for FK checks, and dropping one can make parent-table DELETEs catastrophically slow. **The advisor does not account for this.**
+- **0 read replicas / 0 replication slots**, so there is no hidden usage elsewhere — the measurement is valid for this instance. (Had there been one, every "unused" verdict would have been unsafe.)
+
+**⇒ 220 genuinely safe candidates, 185 MB, on tables carrying 25.4 M cumulative writes.** Top by write volume: `allday_pack_sales_history.idx_allday_pack_sales_hist_pack` (**12.5 M writes**, 31 MB, plain btree, not expression/partial), `badge_editions.{player_id,season}` (2.34 M each), `pack_listings_cache`, `panini_card_serials` ×2.
+
+## ⛔ Why I did NOT drop any of them, and this is a judgement not timidity
+
+**The size win is trivial — 185 MB of 8,098 MB (2.3%). The real argument is WRITE AMPLIFICATION on an IO-bound instance, and I have not measured it.** I have shown these indexes are never read and sit on hot tables; I have **not** shown what dropping them saves. **A schema change on production justified by a plausible mechanism rather than a number is exactly what this repo forbids** — and `CREATE INDEX CONCURRENTLY` is reachable here only through a one-statement pg_cron job, so the undo is awkward enough to deserve a reason.
+
+👉 **The honest next step is an A/B, not a sweep:** drop the single biggest (`idx_allday_pack_sales_hist_pack`) in a low-traffic window and compare write IO / `n_tup_upd` cost across the change point — **split on the change point, never pooled**. If the delta is unmeasurable, the remaining 219 are not worth the risk either, and that is a useful answer.
+
+
 ### 2026-08-30 · ✅ SHIPPED — the `edge-fn-drift` report no longer tells you to cause an outage, and tier 2's failure is DIAGNOSED
 
 ## 1. The dangerous advice line is fixed
