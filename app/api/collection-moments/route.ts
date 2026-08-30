@@ -221,6 +221,29 @@ export async function GET(req: NextRequest) {
       })
       .catch(function () { return 0 })
 
+    // ⚠ STARTED HERE, NOT AT ITS USE SITE, and that is the whole point. The
+    // comment at the use site said "Fire get_acquisition_stats in parallel
+    // (non-blocking)" while the code `await`ed it AFTER `await totalFmvPromise`
+    // — fully sequential. `get_acquisition_stats` measured **6,593 ms mean over
+    // 15 calls** in the 71 min to 2026-08-30 05:00Z (pg_stat_statements diffed
+    // against the 03:50Z snapshot, so post- not pre-fix), which was being added
+    // to a route the same night's work had just brought to ~2 s.
+    //
+    // Kicking it off alongside the total-FMV read makes the comment true: the
+    // two RPCs and the row-shaping now overlap instead of queueing. Errors are
+    // still swallowed to null — this panel is decoration, and `acquisitionStats`
+    // is rendered only when it is non-null with `total_count > 0`, so a failure
+    // hides the panel rather than publishing a zeroed one.
+    const acqParams: Record<string, any> = { p_wallet: wallet }
+    if (collectionId) acqParams.p_collection_id = collectionId
+    const acquisitionStatsPromise = (supabaseAdmin as any)
+      .rpc("get_acquisition_stats", acqParams)
+      .then(function (res: any) { return res.error ? null : res.data })
+      .catch(function (err: unknown) {
+        console.log("[collection-moments] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
+        return null
+      })
+
     // Add thumbnail URLs: prefer RPC thumbnail_url, fall back to edition_key construction, then moment media URL
     const moments = rawMoments.map(function (row: any) {
       let thumbnailUrl: string | null = row.thumbnail_url ?? null
@@ -335,7 +358,8 @@ export async function GET(req: NextRequest) {
 
     const totalFmv = await totalFmvPromise
 
-    // Fire get_acquisition_stats in parallel (non-blocking — fail silently if missing)
+    // Awaited here; the RPC was DISPATCHED far above, alongside the total-FMV
+    // read, so by this point it has been running for the whole row-shaping pass.
     let acquisitionStats: {
       pack_pull_count: number
       marketplace_count: number
@@ -347,10 +371,8 @@ export async function GET(req: NextRequest) {
       total_spent: number
     } | null = null
     try {
-      const acqParams: Record<string, any> = { p_wallet: wallet }
-      if (collectionId) acqParams.p_collection_id = collectionId
-      const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
-      if (!acqErr && acqRaw) {
+      const acqRaw = await acquisitionStatsPromise
+      if (acqRaw) {
         const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }
         const counts = bucketAcquisitionCounts(result?.breakdown)
         acquisitionStats = {

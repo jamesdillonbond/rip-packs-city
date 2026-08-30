@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED + 📋 THE #52 SWEEP — `get_acquisition_stats` was blocking a route whose own comment said it did not, and the LANGUAGE-sql ranking is now measured POST-fix instead of pooled
+
+**Two things, and the second is the one to keep.**
+
+## 1. SHIPPED — `/api/collection-moments` dispatches `get_acquisition_stats` early
+
+🚨 **The comment and the code disagreed, and the comment was the wrong one.** It read *"Fire get_acquisition_stats in parallel (non-blocking — fail silently if missing)"* — while the code `await`ed the RPC **after** `await totalFmvPromise`, fully sequential. Measured **6,593 ms mean over 15 calls** in the 71 min to 05:00Z, added to a route the same night's work had just brought from 40–60 s to ~2 s. The sibling `get_wallet_total_fmv` on the line above was already done correctly, which is exactly why the wrong one read as fine.
+
+**Fixed** by dispatching it where `totalFmvPromise` is dispatched and awaiting it where it is used, so it overlaps the row-shaping and the GQL fallback instead of queueing behind them.
+
+✅ **Pinned on ORDER, not presence** — *"the rpc was called"* passes in both the fixed and the broken arrangement, so the test records a single interleaved log of RPC dispatches **and** the GQL fetch, and asserts the dispatch precedes the fetch (the fallback runs during row-shaping, i.e. between dispatch and await). **Mutation red**, and deliberately a hard one: deferring the dispatch by a single `Promise.resolve().then()` — still "early" in the source — reds it.
+
+## 2. THE #52 SWEEP, and its headline number is a TRAP I nearly published
+
+#52 asks for the sweep of `LANGUAGE sql` public RPCs planned param-blind. There are **~230**; a blanket conversion is exactly what that item warns against, so it has to be ranked by cost. Ranked over `pg_stat_statements` **lifetime**, the answer is dominated by `get_fmv_for_editions` at **154,266 s** — ⛔ **which is meaningless, because it was FIXED tonight and those stats span the fix.** That is the pooled-across-a-change trap CLAUDE.md names, arriving in the one place it is easiest to miss: the biggest number on the board.
+
+✅ **Split it instead, using the OTHER session's instrument.** `audit_20260830_pgss_snap` holds a 03:50Z snapshot; diffing live `pg_stat_statements` against it on **(userid, dbid, toplevel, queryid)** (a queryid-only join fans out) gives a clean **71-minute, post-fix window**. Current ranking, `LANGUAGE sql` with parameters:
+
+| function | calls/71m | total s | mean ms |
+|---|---:|---:|---:|
+| `get_topshot_sniper_deals` | 60 | 245 | 4,082 |
+| `get_pack_lifecycle_row` | 22 | 148 | 6,723 |
+| `get_acquisition_stats` | 15 | 99 | **6,593** ← fixed above (dispatch, not body) |
+| `get_pack_realized_ev_row` | 23 | 74 | 3,233 |
+| `get_lock_check_batch` | 3 | 74 | 24,767 |
+| `get_edition_market_bundle` | 95 | 65 | 684 |
+| `get_edition_special_serials` | 192 | 46 | 238 |
+
+⚠ **`get_fmv_for_editions` does not appear at all in the post-fix window** — the strongest confirmation that the 154,266 s was a corpse. ⚠ **And these totals are modest in absolute terms** (245 s over 71 min ≈ 5.7 % of one core), so this is a *user-latency* list, not a saturation list; do not quote it as the instance's cost driver.
+
+👉 **The next body change by this ranking is `get_topshot_sniper_deals` (user-facing, 4 s mean) — NOT touched here**, because a param-blind conversion must be measured **by calling the FUNCTION, not inline text**, and the DB is running another session's one-off `REINDEX CONCURRENTLY` slots at 08:09/08:33/10:09/10:33Z. Measuring a plan against a concurrently-reindexing table would produce a number nobody could trust. Queued, with the instrument named.
+
+## ⛔ A honesty finding I formed, chased, and REFUTED — recorded so nobody re-derives it
+
+`totalFmvPromise` does `if (res.error) return 0` and `.catch(() => 0)`, and the handoff records this shape rendering **$0 for a real collector**. That looks exactly like the fabricated-zero class. **It is defended downstream and I did not change it:** `lib/portfolio-summary-compute.ts` treats `walletTotalFmv > 0` as the only publishable case and otherwise falls to page totals and then to `null`, and `PortfolioSummary` documents the rule — *"emit null (not 0) when the data hasn't arrived yet so WalletStatRow renders em-dash."* **A zero never reaches a user as a total.** ⭐ The trigger was fixed at the DB level tonight; the shape was already safe. Left alone rather than "hardened" into a change with no user-visible effect.
+
+**Verified:** 16/16 route tests · full suite **1416 files / 15568 tests** green · `tsc` clean · 1 mutation red on the ordering pin.
+
+**Revert path:** `git revert` the commit below — returns the RPC to a sequential await at its use site and drops the ordering test. No DB half.
+
+
 ### 2026-08-29 · ✅ SHIPPED — `/api/collection-moments` stops waiting on the dead Top Shot host, and MUTATION TESTING KILLED TWO OF MY OWN CLAIMS ON THE WAY
 
 **Taken from the 02:20–03:20Z desktop-VM handoff, which named it as needing push access this session had and that one did not:** *"still has a per-page GQL fallback to the dead `public-api.nbatopshot.com` for moments missing `player_name` (6 s × N/10, sequential) — route code, patch-set only from a cloud pass."*

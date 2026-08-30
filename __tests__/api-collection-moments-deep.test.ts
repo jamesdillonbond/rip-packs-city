@@ -267,6 +267,61 @@ describe("GET /api/collection-moments — GQL player-name backfill", () => {
   })
 })
 
+describe("GET /api/collection-moments — get_acquisition_stats is DISPATCHED early, not awaited late", () => {
+  // The use-site comment said "Fire get_acquisition_stats in parallel
+  // (non-blocking)" while the code awaited it AFTER `await totalFmvPromise` —
+  // fully sequential. Measured 6,593 ms mean over 15 calls in the 71 min to
+  // 2026-08-30 05:00Z, on a route just brought to ~2 s.
+  //
+  // ⚠ The property is ORDER, not presence, so asserting "the rpc was called"
+  // would pass in both the fixed and the broken arrangement. This records a
+  // single interleaved log of rpc dispatches AND the GQL fetch: the fallback
+  // runs during row-shaping, i.e. between dispatch and await, so if the RPC were
+  // still sequential it would appear AFTER the fetch.
+  it("dispatches the RPC before the row-shaping GQL fallback runs", async () => {
+    const order: string[] = []
+    install({
+      "rpc:get_wallet_moments_with_fmv": {
+        data: {
+          moments: [{ moment_id: "801", edition_key: "z:9", player_name: null, thumbnail_url: "http://x" }],
+          total_count: 1,
+        },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const base = state.sb as { rpc: (n: string, a?: unknown) => Promise<unknown> }
+    const baseRpc = base.rpc.bind(base)
+    base.rpc = (name: string, args?: unknown) => {
+      order.push("rpc:" + name)
+      return baseRpc(name, args)
+    }
+
+    const h = installFetchMock([
+      {
+        match: (url: string) => url.includes("nbatopshot.com"),
+        respond: () => {
+          order.push("gql-fetch")
+          return { json: { data: { getMintedMoment: { data: null } } } }
+        },
+      },
+    ])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+    } finally {
+      h.restore()
+    }
+
+    const acq = order.indexOf("rpc:get_acquisition_stats")
+    const fetchAt = order.indexOf("gql-fetch")
+    expect(acq).toBeGreaterThanOrEqual(0)
+    expect(fetchAt).toBeGreaterThanOrEqual(0)
+    // THE ASSERTION: dispatched before the work it is supposed to overlap with.
+    expect(acq).toBeLessThan(fetchAt)
+  })
+})
+
 describe("GET /api/collection-moments — the dead-host circuit", () => {
   // `public-api.nbatopshot.com` has been Cloudflare 530/1033 since 2026-08-28,
   // and 6.90% of the 1,904,686 Top Shot rows in wallet_moments_cache have a null
