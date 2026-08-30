@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ POST-SHIP VERIFICATION (not mine — the 15:49Z `pack_rips` index): **the MECHANISM is confirmed, but the error-rate drop that looks like proof is NOT, and crediting it would be a false attribution**
+
+**Swept Vercel runtime errors — a surface nobody had checked this session, and the only server-side one that matters while Sentry has been dark since 08-18. The loudest user-facing route is `/[collection]/pack/dist/[distId]`, every panel timing out at 5,000 ms since 08-23 (110 unique users in 24 h). That is the page migration `20260830154907` was shipped for at 15:49Z.**
+
+## The tempting evidence, split on the change point (never pooled)
+
+| panel | 24 h | last 3 h (all post-fix) | pre-fix /h | post-fix /h |
+|---|---:|---:|---:|---:|
+| `pack_lifecycle` | 160 | 7 | 7.29 | 2.33 |
+| **`pack_realized_ev`** | 137 | 7 | **6.19** | **2.33** |
+| `pack_sales_history` | 62 | 5 | 2.71 | 1.67 |
+| `pack_market` | 56 | 3 | 2.52 | 1.00 |
+
+⛔ **This does NOT verify the fix, and the reason is in the table.** The index targeted `get_pack_lifecycle_row` **only** — yet `pack_realized_ev`, which it never touches, fell by the *same* proportion. **`pack_realized_ev` is the no-change control, and it moved.** When every panel improves together, the common cause is general load easing, not the targeted index. ⚠ **And an error COUNT is not an error RATE:** I have no traffic denominator, so even the 68 % could be a traffic artifact — the 3 h window is midday PT and the 24 h window includes the quiet overnight hours.
+
+## What DOES verify it — a mechanism check, immune to both confounds
+
+`idx_pack_rips_dist_agg_v2` — `(collection_id, dist_id) INCLUDE (pull_value_usd, moments_pulled) WHERE dist_id IS NOT NULL` — has **116 scans / 2,965,044 tuples read** in the ~4 h since it was built. ⭐ **The planner is choosing it.** That is a direct observation of the mechanism, needs no denominator, and cannot be smeared by another panel's behaviour. ✅ **The fix works; the error-rate drop is simply not the evidence for it.**
+
+⚠ **The page is improved, not fixed:** still 7 `pack_lifecycle` timeouts across 6 users in the last 3 h. The residue looks like the saturation class, not this query.
+
+## ⭐ An incidental number that reframes today's unused-index finding
+
+**`idx_pack_rips_dist_agg_v2` is 185 MB — exactly equal to ALL 220 safe "unused index" drop candidates combined** (the entry below this one). **So the index-cleanup opportunity I measured is worth the same disk as one index the team correctly added this afternoon.** That is a strong argument that sweeping unused indexes is **not** where the leverage is here, and it further justifies not having dropped them: the payoff would have to come from write amplification alone, which remains unmeasured.
+
+## Also seen, and NOT new work — the honest-error pattern is holding
+
+`/[collection]/edition/[slug]` (`market_bundle` timeout, 89 users), `/[collection]/player/[slug]`, `/[collection]/team/[slug]` and `/profile/[username]` all log **"failed after retries … — degrading to empty"** and **"bound … read exceeded"**. ⭐ **That is the four-layer honesty canon working as designed** — they are bounding the read and degrading rather than publishing a failed read as a fact. Loud, attributable, and correct. **The underlying slowness is the saturation class (#46/R46), not a new defect.**
+
+
 ### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — both Supabase advisors triaged (571 findings): **security is genuinely CLEAN, and 2 of its 7 warnings would BREAK production if "fixed"**
 
 **A class nobody had swept this session. Read in full, aggregated rather than skimmed: 226 security + 345 performance.**
