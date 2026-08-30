@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the methodology page passed a PAGE CACHE off as a DATA cadence, and my first guard for it fired on an accurate sentence
+
+**The last item of the ask-staleness sweep, and the whole filing is now drained.** The public Listings methodology paired *"Live Top Shot ask data comes from `edition_offers`"* with `refresh: "Every 5 minutes (page revalidate)"`. Both statements were individually true; read together they said **the asks are five minutes old**. ⭐ Stating only the flattering of two different measurements is the same shape as the boards' retired *"Refreshes continuously"* — and `edition_offers` had sat unrefreshed for **over 30 hours** while this page implied minutes. The FMV entry had the sibling: *"the FMV is derived from the lowest **live** ask"*, unbounded.
+
+**Shipped.** The refresh line now names both numbers (*"Page revalidates every 5 minutes; the underlying ask feed re-checks each edition roughly hourly when healthy"*), the ask sentence states the cadence, the outage and what the surfaces now do instead, and the FMV entry says *"the lowest ask we have confirmed recently"* with the 7-day corroboration bound. Its sources list also now names `edition_offers` at all — it previously credited `ts_listings`, which is **RETIRED** and named as retired two entries away.
+
+⭐⭐ **MY FIRST GUARD WAS TOO BLUNT AND CAUGHT A TRUE STATEMENT.** It banned any *"live ask"* anywhere in the methodology and immediately fired on the **Packs** entry: *"a 20-minute cron … stamps each row with the live ask price."* That claim is bounded **in the same breath**, and the pack-ask feed was measurably healthy (`snapshot-pack-asks` 282/282 ok) that day. **A guard that reds on an accurate, qualified statement teaches people to delete the qualifier** — the precise inverse of what it is for. Narrowed to the real property: any paragraph naming **`edition_offers`** (the feed that actually broke) must also state how current it is. ⚠ Its not-vacuous arm asserts at least one paragraph names the feed, so a rename cannot leave the ban reading nothing.
+
+**Verification.** 3 new arms. Mutation-checked twice: restore the bare page-revalidate refresh → the cadence test reds; strip the cadence clause from the ask sentence → the bounded test reds. Full suite **1404 files / 15425 tests green**, `tsc` 0.
+
+ⓘ **Not a code change but worth the line:** this closes all five surfaces from the 2230Z filing plus its two follow-ons. The remaining ask-staleness work is not code — it is the upstream itself, still `530 / error code: 1033`.
+
+**Revert path:** `git revert <sha of "fix(methodology): a page cache is not a data cadence">`. Copy + guard only, no runtime behaviour, no DB half.
+
 ### 2026-08-29 · ✅ SHIPPED (code) — the collection grid preferred a week-old bid over an hour-old one, and the premise for that was written into the route's own comment
 
 **The last open item from the 2230Z filing, and the measurement moved it UP the list.** `/api/best-offers` read `edition_offers` first and consulted `badge_editions` only for keys the sweep had MISSED — on the premise, stated in the route header, that the sweep is the fresher source. ⚠ **True for Top Shot (33.0 h median vs 111.7 h). FALSE for All Day**, which has a dedicated hourly `allday-badge-low-ask-refresh` running green while `offers-sweep` barely reaches it: **`edition_offers` 168.5 h median vs `badge_editions` 1.0 h.**
