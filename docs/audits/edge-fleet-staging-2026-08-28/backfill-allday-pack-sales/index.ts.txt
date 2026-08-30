@@ -1,13 +1,17 @@
-// REDACTED COPY of the DEPLOYED source (backfill-allday-pack-sales, fetched 2026-08-30 16:5xZ via get_edge_function by a redacted-report subagent).
-// The gate literal is replaced by <REDACTED_GATE_KEY>; nothing else changed. Stored as .txt so tsc and the .ts-walking guards skip it.
-// STAGED FIX (not deployed): the LAST line's count:"exact" is a full count(*) over the whole history table on EVERY run and feeds only
-// the informational rows_in_table field -> change to count:"estimated" (or drop the read) when this function is next deployed.
-// De-literalise at the same time: const GATE = Deno.env.get("PACK_SALES_GATE_KEY") ?? ""; if (!GATE) fail closed; accept _OLD during cutover (R21 procedure).
+// VERBATIM copy of the DEPLOYED source (backfill-allday-pack-sales v21, deployed 2026-08-30 ~13:36 PT).
+// ezbr_sha256 80a3f0a71319bd9fbd36a7c94097f002ba387a4f0f3f9e5ed4e8ca43691dd3ef
+// ⭐ NO LONGER REDACTED, and no longer redactable: the gate literal is GONE. This build reads
+// PACK_SALES_GATE_KEY (+ _OLD for the rotation) from Deno.env, so this file carries no credential
+// and is a byte-faithful rollback artifact. Still .txt so tsc and the .ts-walking guards skip it;
+// landing it in supabase/functions/ still needs the four guard fixes in README.md (register R21).
+// Both staged fixes from the 08-30 addendum are APPLIED here: count:"exact" -> count:"estimated"
+// on the last line (the informational rows_in_table read), and the gate de-literalisation.
 // backfill-allday-pack-sales v2 — complete AllDay pack SALES history from Dapper searchPackMarketplaceHistory
 // (filter base_filter.nft_type=AllDay PackNFT). v2 also captures nft{dist_id,status} per sale so sales
 // are per-dist aggregatable. Cursored; durable allday_pack_sales_history. Gated ?key=. ?reset=1 restarts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-const GATE="<REDACTED_GATE_KEY>"
+const GATE = Deno.env.get("PACK_SALES_GATE_KEY") ?? ""
+const GATE_OLD = Deno.env.get("PACK_SALES_GATE_KEY_OLD") ?? ""
 const EP="https://api.production.studio-platform.dapperlabs.com/graphql"
 const ALLDAY_PACK="A.e4cf4bdc1751c65d.PackNFT.NFT"
 const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
@@ -28,7 +32,10 @@ async function gql(after:string|null){
 }
 Deno.serve(async(req)=>{
   const url=new URL(req.url)
-  if(url.searchParams.get("key")!==GATE) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  // Fail CLOSED: an unset secret must never mean "accept anything".
+  if(!GATE) return new Response("gate not configured",{status:500})
+  const k=url.searchParams.get("key")
+  if(k!==GATE && !(GATE_OLD && k===GATE_OLD)) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
   const reset=url.searchParams.get("reset")==="1"
   const budget=Math.min(60,Math.max(1,Number(url.searchParams.get("pages")||"30")))
   if(reset){ await sb.from("allday_pack_sales_cursor").upsert({id:1,after_cursor:null,done:false,updated_at:new Date().toISOString()}) }
@@ -50,6 +57,6 @@ Deno.serve(async(req)=>{
     hasNext=r.data?.pageInfo?.hasNextPage===true; lastCursor=r.data?.pageInfo?.endCursor??lastCursor; await sleep(120)
   }
   await sb.from("allday_pack_sales_cursor").upsert({id:1,after_cursor:lastCursor,done:!hasNext&&!err,total_seen:total,updated_at:new Date().toISOString()})
-  const {count}=await sb.from("allday_pack_sales_history").select("*",{count:"exact",head:true})
+  const {count}=await sb.from("allday_pack_sales_history").select("*",{count:"estimated",head:true})
   return new Response(JSON.stringify({pages,written,total_api:total,rows_in_table:count,hasNext,oldest_block_time_this_run:oldest,err}),{headers:{"content-type":"application/json"}})
 })
