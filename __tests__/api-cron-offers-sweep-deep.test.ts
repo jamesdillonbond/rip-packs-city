@@ -252,6 +252,75 @@ describe("offers-sweep — cursoring + failure honesty", () => {
     expect((log?.p_extra as Record<string, unknown>).wrapped).toBe(true)
   })
 
+  it("UPSTREAM BREAKER — declines the tick, writes a marker, and CARRIES THE CURSOR FORWARD", async () => {
+    // The Top Shot GraphQL host 530s when its origin is down. A declined tick
+    // must still leave a pipeline_runs row (a gate returning before any write is
+    // the 4th cause of cron_silent), and it must NOT reset the sweep to head:
+    // the cursor is read from the newest row, so a marker with a null cursor
+    // would throw away the whole cycle's progress.
+    state.gqlPages = [gqlPage([rawEdition({ id: "should-never-be-fetched", lowAsk: 5 })], null)]
+    const spy = install({
+      // ⚠ THREE entries, and the first one is not a read. `writeInvocationHeartbeat`
+      // INSERTs into pipeline_runs, and an awaited insert consumes a sequence slot
+      // just like a select does. Omitting it silently shifts every later payload
+      // by one, which presents as "the cursor vanished".
+      pipeline_runs: [
+        { data: null, error: null }, // 1: the heartbeat insert
+        { data: { cursor_after: "cursor-A" }, error: null }, // 2: the cursor read
+        {
+          data: [
+            {
+              ok: false,
+              error: "Top Shot GraphQL failed with 530. Response body: <head>",
+              finished_at: new Date(Date.now() - 60_000).toISOString(),
+              extra: null,
+            },
+          ],
+          error: null,
+        }, // 3: the breaker read
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.skipped).toBe("upstream_outage")
+    // The cursor survives the decline — this is the assertion that would have
+    // caught a marker written with a null cursor.
+    expect(log).toMatchObject({ p_cursor_before: "cursor-A", p_cursor_after: "cursor-A" })
+    // NULL, not 0: a declined tick measured nothing.
+    expect(log?.p_rows_found).toBeNull()
+    expect(log?.p_rows_written).toBeNull()
+    // And it really did skip the work, rather than doing it and logging a skip.
+    expect(spy.writes.edition_offers ?? []).toHaveLength(0)
+    expect(state.gqlCursor).toBe(0)
+  })
+
+  it("UPSTREAM BREAKER — does NOT decline when the last run succeeded", async () => {
+    // Negative control. Without it the test above passes on a breaker that
+    // short-circuits unconditionally, which would silently stop the pipeline.
+    state.gqlPages = [gqlPage([rawEdition({ id: "e1", lowAsk: 5 })], null)]
+    const spy = install({
+      pipeline_runs: [
+        { data: null, error: null }, // the heartbeat insert
+        { data: { cursor_after: "cursor-A" }, error: null }, // the cursor read
+        {
+          data: [{ ok: true, error: null, finished_at: new Date().toISOString(), extra: null }],
+          error: null,
+        }, // the breaker read
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const extra = terminalLog(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.skipped).toBeUndefined()
+    expect(state.gqlCursor).toBeGreaterThan(0)
+  })
+
   it("a mid-sweep GQL failure still upserts what was collected and logs ok=false with the error", async () => {
     state.gqlPages = [
       gqlPage(Array.from({ length: 100 }, (_, i) => rawEdition({ id: `e${i}`, lowAsk: 5 })), "cursor-B"),

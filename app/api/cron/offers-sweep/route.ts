@@ -3,6 +3,7 @@ import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
+import { checkUpstreamBreaker, UPSTREAM_OUTAGE_SKIP } from "@/lib/pipeline/upstream-breaker"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top
 // standing offer + lowest ask into edition_offers, keyed on the canonical
@@ -32,6 +33,13 @@ const PAGE_LIMIT = 100
 const MAX_PAGES_PER_TICK = 40
 const PAGE_DELAY_MS = 200
 const UPSERT_BATCH = 500
+
+// One upstream failure buys this much quiet. Against the ~20 min cron cadence
+// that is roughly one real attempt per 40 min instead of three per hour, and it
+// is HALF-OPEN by construction: the window is measured from the last failing
+// run, so once it elapses the next tick makes a genuine attempt and the breaker
+// disarms itself the moment Top Shot recovers. Nothing to remember to undo.
+const OUTAGE_BREAKER_WINDOW_MS = 30 * 60 * 1000
 
 const QUERY = `
   query OffersSweep($searchInput: BaseSearchInput!) {
@@ -240,6 +248,51 @@ export async function POST(req: NextRequest) {
     if (typeof prev === "string" && prev.length > 0) startCursor = prev
   } catch (err) {
     console.warn("[offers-sweep] cursor read failed, starting at head:", err)
+  }
+
+  // ── Upstream circuit breaker ────────────────────────────────────────────────
+  // The Top Shot GraphQL host returns Cloudflare 530 / "error code: 1033" when
+  // its origin is down. On 2026-08-30 that had been true for 2 days and this
+  // pipeline was still paying a full 40-page walk per tick to rediscover it:
+  // 6 runs / 6 failures in two hours, 93 of 141 over two days.
+  //
+  // ⚠ Placed AFTER the cursor read ON PURPOSE. The declined tick still writes a
+  // pipeline_runs row (a gate that returns before any write is the fourth cause
+  // of `cron_silent` — invoked, deliberately declined, and invisible to every
+  // query), and the cursor is read from the NEWEST row. A marker carrying a null
+  // cursor would therefore restart the sweep at the head and throw away the
+  // cycle's progress, so it carries `startCursor` forward unchanged.
+  const breaker = await checkUpstreamBreaker({
+    pipeline: "offers-sweep",
+    windowMs: OUTAGE_BREAKER_WINDOW_MS,
+  })
+  if (breaker.skip) {
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "offers-sweep",
+        p_started_at: new Date(startTime).toISOString(),
+        // NULL, not 0. A declined tick MEASURED NOTHING, and a 0 here is a
+        // number nobody read — the fabricated-measurement shape this repo bans.
+        p_rows_found: null,
+        p_rows_written: null,
+        p_rows_skipped: null,
+        p_ok: true,
+        p_error: null,
+        p_collection_slug: "nba_top_shot",
+        p_cursor_before: startCursor || null,
+        p_cursor_after: startCursor || null,
+        p_extra: {
+          skipped: UPSTREAM_OUTAGE_SKIP,
+          last_error: breaker.lastError,
+          last_failed_at: breaker.lastFailedAt,
+          window_minutes: OUTAGE_BREAKER_WINDOW_MS / 60000,
+          duration_ms: Date.now() - startTime,
+        },
+      })
+    } catch (err) {
+      console.warn("[offers-sweep] breaker log_pipeline_run failed (non-fatal):", err)
+    }
+    return
   }
 
   const setMap = await fetchSetOnchainMap()
