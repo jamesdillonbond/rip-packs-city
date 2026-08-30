@@ -28,6 +28,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **A one-line trap worth the entry:** `spy.mockRestore()` **clears `mock.calls`**, so asserting after the `finally` reads an empty array and the case fails on a correct helper — which is exactly how it failed on its first run. Read the calls before restoring.
 
+⚠ **CORRECTING MY OWN HEADLINE IN THE SAME BREATH: "every OG card read is bounded" is NOT literally true.** `og/share` is the only one on Next's data cache (`next: { revalidate: 300 }`); the other 29 are `no-store`. Two things had to hold for it and both do — read out of `next/dist/server/lib/patch-fetch.js`, not assumed. (1) **A `signal` does NOT opt a request out of the data cache** — Next destructures it out of `init` and re-attaches it; the opt-outs are `no-cache`/`no-store` and segment config. So this change did not silently turn a cached read into an uncached one, which is the regression it could most easily have caused. (2) **On a BACKGROUND REVALIDATION Next deliberately drops the signal** (`signal: isStale ? undefined : signal`, *"don't pass through signal when revalidating"*) — that revalidation is Next's own work, off the request a crawler waits on, so it is outside what this bound is for. Recorded in `lib/og/og-fetch.ts` so it is not rediscovered as a surprise.
+
 **Verified:** full suite **1,415 files / 15,559 tests** green · `tsc` 0 · primary coverage gate green (92.23 → **92.24** stmts) · eslint ratchet exactly at baseline **717**.
 
 **Revert path:** `git revert` this code commit. `lib/og/og-fetch.ts` and `__tests__/og-fetches-are-bounded.test.ts` are new files. No DB, no env, no schedule.
