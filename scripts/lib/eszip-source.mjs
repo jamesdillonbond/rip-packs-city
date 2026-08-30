@@ -87,30 +87,40 @@ export function bareSpecifiers(src) {
  * treats that as a failed read, never as "clean".
  */
 export function pickEntrypoint(specifiers, entrypointPath = null) {
-  const files = specifiers.filter((s) => s.startsWith("file://") && !/\.jsonc?$/.test(s))
+  // A production bundle references the function's OWN modules by RELATIVE
+  // specifier ("source/index.ts", "source/_shared/util.ts") and every vendored
+  // dependency by absolute URL — measured 2026-08-30 on all 38 live bundles
+  // (0 file:// among 545+ specifiers each; the first picker looked only for
+  // file:// and identified nothing). So "local" means NOT a remote scheme,
+  // with file:// normalised away for bundles (and fixtures) that use it.
+  const remote = /^(https?:|jsr:|npm:|node:|data:)/
+  const norm = (s) => s.replace(/^file:\/\//, "")
+  const locals = specifiers.filter((s) => !remote.test(s) && !/\.jsonc?$/.test(s) && !s.endsWith(".d.ts"))
   if (entrypointPath) {
-    const hit = files.find((s) => s === `file://${entrypointPath}` || s.endsWith(entrypointPath))
+    // The metadata path ("/tmp/user_fn_<ref>_<id>_<n>/source/index.ts") and the
+    // bundle's own specifier ("source/index.ts") share only a tail — compare in
+    // both directions.
+    const hit = locals.find((s) => {
+      const p = norm(s)
+      return p === entrypointPath || entrypointPath.endsWith(`/${p}`) || p.endsWith(entrypointPath)
+    })
     if (hit) return hit
-    // The metadata path's numeric deploy suffix (…user_fn_<ref>_<id>_<n>/) can
-    // differ from the one stamped into the bundle at build time — match on the
-    // path's tail below the suffixed directory instead.
-    const tail = entrypointPath.replace(/^.*user_fn_[^/]*\//, "/")
-    if (tail !== entrypointPath) {
-      const tailHit = files.find((s) => s.endsWith(tail))
-      if (tailHit) return tailHit
-    }
   }
-  const sourceIdx = files.filter((s) => s.endsWith("/source/index.ts"))
-  if (sourceIdx.length === 1) return sourceIdx[0]
-  const idx = files.filter((s) => s.endsWith("/index.ts") && !s.includes("/_shared/"))
+  const exact = locals.filter((s) => {
+    const p = norm(s)
+    return p === "source/index.ts" || p.endsWith("/source/index.ts")
+  })
+  if (exact.length === 1) return exact[0]
+  const idx = locals.filter((s) => {
+    const p = norm(s)
+    return p.endsWith("index.ts") && !p.includes("_shared")
+  })
   if (idx.length === 1) return idx[0]
-  // A production bundle inlines its whole graph, so "exactly one candidate"
-  // can fail on shapes we have not seen. Prefer the SHORTEST index.ts under a
-  // user_fn_ root — the entrypoint sits at the top of the function directory,
-  // while vendored modules nest deeper.
+  // Several candidates under user_fn_ roots: the entrypoint sits at the top of
+  // the function directory, vendored modules nest deeper — take the shortest.
   const userFnIdx = idx.filter((s) => s.includes("user_fn_"))
   if (userFnIdx.length > 1) return userFnIdx.sort((a, b) => a.length - b.length)[0]
-  if (files.length === 1) return files[0]
+  if (locals.length === 1) return locals[0]
   return null
 }
 

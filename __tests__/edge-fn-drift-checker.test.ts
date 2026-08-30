@@ -494,6 +494,23 @@ describe("edge-fn drift detector — eszip entrypoint identification", () => {
       pickEntrypoint(["file:///a/source/index.ts", "file:///b/source/index.ts"])
     ).toBe(null)
   })
+
+  // The LIVE bundle shape, measured 2026-08-30 on all 38 production bundles:
+  // the function's own modules are RELATIVE specifiers, every dependency is an
+  // absolute URL, and file:// never appears. The first picker looked only for
+  // file:// and identified 0 of 38 entrypoints.
+  it("identifies the relative-specifier entrypoint of a real production bundle", () => {
+    const production = [
+      "source/index.ts",
+      "source/_shared/institutional-snapshot.ts",
+      "https://jsr.io/@supabase/supabase-js/2.112.2/src/index.ts",
+      "https://jsr.io/@supabase/functions-js/2.110.0/src/edge-runtime.d.ts",
+      "https://esm.sh/some-dep@1.0.0",
+    ]
+    expect(pickEntrypoint(production, "/tmp/user_fn_ref_abc_6/source/index.ts")).toBe("source/index.ts")
+    // and without the metadata hint, the source/index.ts shape still wins
+    expect(pickEntrypoint(production)).toBe("source/index.ts")
+  })
 })
 
 // The real thing, wasm and all: a production-shaped bundle built with the same
