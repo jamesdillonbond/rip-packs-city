@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — "FMV HIGH+MED is declining, tracks the Top Shot outage" is a SNAPSHOT, not a trend, and the series does not support it
+
+**`docs/overnight/metrics-latest.json` (overnight pass, 06:34Z) records `nba_top_shot: 6983` with the note *"HIGH+MED declining, tracks the ~38h Top Shot legacy-endpoint outage aging editions into STALE. Root cause upstream; not fixable in DB."* That framing matters — it attributes a decline to an outage and closes the question — so it is worth checking rather than inheriting.**
+
+⚠ **First, the comparison I nearly made was invalid.** `sentinel_fmv_confidence_canonical_ts_split()` reads **base 6,394** HIGH+MED right now, which looks like a further fall from 6,983 — but that is a **different population** from the `fmv_by_collection` key the note came from ([[cross-instrument-sampling-fallacy]]). Read through the **same instrument** (`rpc_ops_snapshot() -> fmv_by_collection`), Top Shot is **HIGH 2,199 + MEDIUM 5,345 = 7,544**.
+
+⭐ **`metrics-latest.json` is version-controlled, so the series is reconstructable — and it is oscillation, not decline:**
+
+| reading (UTC) | nba_top_shot HIGH+MED |
+|---|---:|
+| 08-26 03:06 | 7,631 |
+| 08-27 06:50 | 7,502 |
+| 08-28 06:45 | **7,781** (band high) |
+| 08-30 06:34 | **6,983** (band low — the reading the note is attached to) |
+| **08-30 17:25 (now)** | **7,544** |
+
+**Range 6,983–7,781 = 798 ≈ 11%. The 6,983 the note fired on is the LOW of that band, and the metric has since recovered to 7,544 — inside it.** A single low reading inside normal oscillation is not a trend, and "declining" is not supported by the series I can reconstruct. ⚠ **This is [[neighbourhood-baseline-is-not-a-distribution]] and CLAUDE.md's "a directional claim needs a DISTRIBUTION, not a snapshot" — and note a delta between two STOCKS is neither a rate nor a sign.**
+
+⚠ **Stated against my own result, because it is a real confound:** every historical reading is **03:00–07:00 UTC** and mine is **17:25 UTC**. If HIGH+MED has any diurnal shape, my confirming point is not same-hour with the others. **The band itself (four morning readings spanning 798) stands regardless** — that is what refutes "declining" — but the recovery to 7,544 deserves a same-hour re-read at ~06:30Z before anyone calls it a recovery. ⚠ I could not test the stated MECHANISM (editions aging into STALE): the historical metrics files carry no STALE breakdown, so there is no series for it.
+
+**Why it matters, and it is not pedantry:** "root cause upstream; not fixable in DB" is a **decision not to act**, and per CLAUDE.md that is the class nobody re-checks because declining to act reads as conservative. Current TS spread for the record: HIGH 2,199 · MEDIUM 5,345 · LOW 5,102 · STALE 1,607 · ASK_ONLY 2,059 · NO_DATA 3,401 · SALES_ONLY 29. **Nothing shipped; this is a correction to a filed interpretation, not to any data.**
+
+
 ### 2026-08-30 · ⚠ I DUPLICATED AN EXISTING DETECTOR — the sentinel reached my "new" arm's predicate on 2026-08-17, and I did not find it first
 
 **Recording this against myself, because the failure mode is cheap to repeat and the record is the only thing that stops it.** `app/api/sentinel/route.ts` has carried **"Pipeline Success Coverage"** since **2026-08-17**, shipped off `apply-fmv-haircut` + `match-topshot-players` failing 3+ days unnoticed. It reached the **same predicate independently** — *"ZERO SUCCESSES **AND** ZERO ROWS WRITTEN"* — down to **the same negative control** (`reconcile-saved-wallet-stats`'s soft-deadline partial sweep) and the same reuse of `pipeline_alert_suppression`. Its header even states my headline finding: *"a cadence arm watches SILENCE, and a FAILING run still writes a `pipeline_runs` row."*
