@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
+import { isTransientQueryError } from "../scripts/check-migration-parity.mjs"
 
 // ── Guard for the guard: scripts/check-migration-parity.mjs ─────────────────
 //
@@ -144,5 +145,56 @@ describe("check-migration-parity: the fileless allowlist stays honest", () => {
       const line = block.split("\n").find((l) => l.includes(`'${e}'`)) ?? ""
       expect(line, `KNOWN_FILELESS entry ${e} needs an inline reason comment`).toMatch(/\/\//)
     }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The transient-retry decision, tested as BEHAVIOUR rather than as source text.
+//
+// ⚠ WHY THIS EXISTS. `apply_migration` triggers a ~10-20s PostgREST schema-cache
+// re-introspection burst (PGRST002). This check runs on a schedule, so collisions
+// are routine: measured 2026-08-30, 3 of the last 4 SCHEDULED runs died on
+// "Could not query the database for the schema cache. Retrying." and exited 2 —
+// every one a FALSE RED. And the sentinel reports this detector as NOT CONFIGURED
+// (no GITHUB_ACTIONS_READ_TOKEN), so nobody was reading it: a detector red most
+// days is indistinguishable from a broken one, and a REAL parity violation would
+// have looked identical.
+//
+// ⚠ The predicate must be right in BOTH directions, which is why this is not a
+// one-sided test: retrying a genuine config error burns ~50s pretending it might
+// recover, and failing to retry the schema-cache class is the false-red bug.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("check-migration-parity: which query errors are worth retrying", () => {
+  it("treats the PostgREST schema-cache class as TRANSIENT", () => {
+    // The exact string production emitted on 2026-08-30.
+    expect(isTransientQueryError("Could not query the database for the schema cache. Retrying.")).toBe(true)
+    expect(isTransientQueryError("PGRST002: schema cache load failed")).toBe(true)
+    expect(isTransientQueryError("Schema Cache reload in progress")).toBe(true)
+  })
+
+  it("does NOT retry a genuine config or permission error", () => {
+    // These must fail fast. If this ever flips to true, the check will spend ~50s
+    // retrying something that cannot recover, and the failure will read as flake.
+    expect(isTransientQueryError("permission denied for function query_sql")).toBe(false)
+    expect(isTransientQueryError("Invalid API key")).toBe(false)
+    expect(isTransientQueryError("relation supabase_migrations.schema_migrations does not exist")).toBe(false)
+    expect(isTransientQueryError("canceling statement due to statement timeout")).toBe(false)
+  })
+
+  it("is safe on a missing or empty message rather than throwing", () => {
+    // supabase-js can hand back an error whose `message` is undefined; a throw
+    // here would abort the run and read as a parity failure.
+    expect(isTransientQueryError(undefined)).toBe(false)
+    expect(isTransientQueryError(null)).toBe(false)
+    expect(isTransientQueryError("")).toBe(false)
+  })
+
+  it("still exits 2 when the retries are exhausted — a check that cannot RUN is never a pass", () => {
+    const code = stripComments(src)
+    // The retry must not swallow the failure into a green exit.
+    expect(code).toMatch(/process\.exitCode\s*=\s*2/)
+    // And it must report how many attempts it actually made, so a loop that ran
+    // zero times cannot read as one that tried.
+    expect(code).toMatch(/attempts/)
   })
 })

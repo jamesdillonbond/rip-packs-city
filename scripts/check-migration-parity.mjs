@@ -75,6 +75,19 @@ import { readdirSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 
+/**
+ * Is this query error the TRANSIENT PostgREST schema-cache class (PGRST002)?
+ *
+ * Exported so the guard can test the real decision rather than grep this file's
+ * text. ⚠ The distinction is load-bearing in BOTH directions: retrying a genuine
+ * config/permission error burns ~50s pretending it might recover, and NOT
+ * retrying the schema-cache burst is what made this detector red on 3 of its
+ * last 4 scheduled runs — every one a false red.
+ */
+export function isTransientQueryError(message) {
+  return /schema cache|PGRST002|Could not query the database/i.test(message ?? '')
+}
+
 const MIGRATIONS_DIR = 'supabase/migrations'
 
 const WINDOW_DAYS = Number(process.env.MIGRATION_PARITY_WINDOW_DAYS || 14)
@@ -155,16 +168,52 @@ async function main() {
   // query_sql() is the service_role-only reader (execute_sql returns void).
   // schema_migrations lives in the supabase_migrations schema, which PostgREST
   // does not expose, so it must be reached through query_sql.
-  const { data, error } = await supabase.rpc('query_sql', {
-    query: `SELECT version, name
+  const PARITY_QUERY = `SELECT version, name
               FROM supabase_migrations.schema_migrations
              WHERE version >= to_char(now() - interval '${WINDOW_DAYS} days', 'YYYYMMDD') || '000000'
-             ORDER BY version`,
-  })
+             ORDER BY version`
+
+  // ⚠ PGRST002 IS THE EXPECTED CASE HERE, NOT AN EXCEPTIONAL ONE, AND IT WAS
+  // MAKING THIS DETECTOR LIE. Every `apply_migration` triggers a ~10-20s
+  // PostgREST schema-cache re-introspection burst; this check runs on a
+  // schedule, so collisions are routine rather than rare. Measured 2026-08-30:
+  // 3 of the last 4 SCHEDULED runs died on
+  //   "Could not query the database for the schema cache. Retrying."
+  // and exited 2 — every one a FALSE RED, on a detector the sentinel reports as
+  // NOT CONFIGURED (no GITHUB_ACTIONS_READ_TOKEN), i.e. nobody was reading it.
+  // A detector that is red most days cannot be distinguished from a broken one
+  // at a glance, so a REAL parity violation would have looked identical.
+  //
+  // ⚠ The word "Retrying." in that log line belongs to POSTGREST'S OWN ERROR
+  // MESSAGE — this script had no retry at all. It reads as though it did, which
+  // is exactly why nobody added one.
+  //
+  // Retry ONLY the transient class: a genuine config/permission error must
+  // still fail fast rather than burn 50s pretending it might recover. And a
+  // check that CANNOT RUN must never read as a pass — exitCode stays 2.
+  const BACKOFF_MS = [5000, 15000, 30000] // ~50s total, comfortably past the burst
+
+  let data, error
+  let attempts = 0
+  for (let i = 0; ; i++) {
+    attempts++
+    ;({ data, error } = await supabase.rpc('query_sql', { query: PARITY_QUERY }))
+    if (!error) break
+    if (!isTransientQueryError(error.message) || i >= BACKOFF_MS.length) break
+    console.error(
+      `query_sql transient error (attempt ${attempts}/${BACKOFF_MS.length + 1}): ` +
+        `${error.message} — retrying in ${BACKOFF_MS[i]}ms`,
+    )
+    await new Promise((r) => setTimeout(r, BACKOFF_MS[i]))
+  }
   if (error) {
-    console.error('query_sql failed:', error.message)
+    // State the count inspected, so a loop that ran zero times cannot read as one that tried.
+    console.error(`query_sql failed after ${attempts} attempt(s):`, error.message)
     process.exitCode = 2
     return
+  }
+  if (attempts > 1) {
+    console.log(`query_sql recovered on attempt ${attempts} of ${BACKOFF_MS.length + 1}`)
   }
 
   const applied = data ?? []
