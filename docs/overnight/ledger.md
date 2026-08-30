@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED (no prod change) — the counterparty backfill crossed the mainnet19 spork, and the access node answers **200 with nothing**
+
+**The signal.** `sales-counterparty-backfill` reports `ok: true` on 562 of 571 runs in 48 h. Bucketed 6-hourly the applied count is a **step change, not a decay**: 4,619 → 4,616 → **0**, then **311 more runs at zero** — ~383 runs, ~36,600 rows found, **33 hours, nothing applied** — while `rows_found` never dips and the cursor keeps advancing.
+
+⛔ **THE OBVIOUS ATTRIBUTION IS WRONG, AND IT IS THE ONE I NEARLY FILED.** `public-api.nbatopshot.com` went 530 at 08-28 **~17Z**, one hour before the step change, on the evening I had spent tracing that outage. **This worker never touches Top Shot** — it decodes from `rest-mainnet.onflow.org`. A coincidence close enough to be convincing.
+
+✅ **The real cause, bracketed to 22 MINUTES by the pipeline's own cursor:** last productive `2023-11-08T14:39Z`, first dead bucket ends `T14:17Z`. That is the **mainnet19 spork boundary — which CLAUDE.md records only as "~2023-11-08".** Confirmed by a controlled probe pair against the live node: a tx at 13:59 (pre) and one at 2023-11-09 00:02 (post, control).
+
+🚨🚨 **AND THE MECHANISM IS WORSE THAN A 404 — it is this platform's own defect class arriving from OUTSIDE.** A pre-spork transaction returns **`200 OK` with `"execution": "Pending"`, `block_id: ""` and `events: []`**. Success, with nothing in it. So the decoder records a miss that is indistinguishable from a genuinely undecodable row, **no error is ever raised**, the hardcoded `ok: true` never flips — and `rows_written` is *honestly* 0, which makes every fleet instrument read **idle** rather than **blind**. ⭐ *We keep fixing `?? 0` and 200-on-error in our own code; this is the same shape served TO us, and it defeated a worker careful enough to comment on the adjacent hazard.*
+
+⚠ **Two overclaims removed before filing, both mine.** (1) NOT permanent loss — the cursor advances past misses but the rows stay NULL for a later pass. (2) NOT "14 h of DB time per 48 h": the 846 minutes is the **worker's wall time**, dominated by Flow REST round-trips at CONCURRENCY 3 with pauses and a retry pass. **The DB share is unmeasured.** Do not quote it as a database cost.
+
+⭐ **The repo already owns the fix and this worker does not use it.** `backfill-topshot-buyers` decodes through `SPORK_PROXY_URL` (`workers/spork-proxy`), reaching the mainnet17 root floor `2022-04-06T18:20Z`, and already classifies exactly this condition as **`spork_floor`** rather than a fault (hardened earlier the same day). This worker's `wrangler.toml` states the opposite premise as settled: *"Flow's public REST endpoint is reachable directly from Cloudflare Workers (verified)"* — true for post-spork rows, and the walk has left that range.
+
+👉 **NOTHING SHIPPED, and the reason is access, not judgement: it self-schedules on Cloudflare Cron Triggers** (`crons = ["*/5 * * * *"]` — **no pg_cron job, no GHA workflow, no cron-job.org entry; all three checked**), so this session can neither stop it nor deploy it. Owed: classify the 100%-miss case; then bound the queue at the reachable floor or route decodes through `spork-proxy`; a cursor reset is worth doing only once the decode path can serve that corridor. Until then it walks from 2023-10-30 back to 2020 applying zero, every five minutes.
+
+**Revert path:** docs only — `git revert <sha of "docs(inbox): the counterparty backfill crossed the mainnet19 spork">`. No code, no DB.
+
 ### 2026-08-29 · ✅ SHIPPED (DB) — jobid 16 `rpc-backfill-pack-pool` is PAUSED while its host is dead: 277 runs/day, 0 rows, ~44 DB-minutes and ~430k disk reads a day for nothing
 
 `public-api.nbatopshot.com` has answered **530/1033 from every egress path** (Supabase, Vercel-via-proxy, and the cloud container at 02:3xZ tonight) since 08-28 ~17Z. jobid 16 dispatched `backfill-topshot-pack-supply?mode=pool` every 5 min regardless: **277 runs / 0 ok / 0 rows in 24 h**, and each run first pays `get_topshot_pool_backfill_targets()` on the DB — `pg_stat_statements`: **3,559 calls, mean 9,570 ms, 1,565 disk reads per call** — before dying upstream. That is the instance's binding constraint spent on a walk that cannot succeed, plus a permanent 477/703 HIGH on `get_pipeline_alerts()`.
