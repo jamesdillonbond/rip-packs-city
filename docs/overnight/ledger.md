@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ FIXED (2 commits) — the census and watermark work each tripped one guard on landing, and both guards were right
+
+**Pass: cloud, 22:4x–23:2xZ.** Correction entry: three pushes tonight (`d52cda7`, `c0f27da`, `1b13355`) ran CI red, and `efdf60e` ran Smoke red — caught in-pass by reading the runs, fixed within the hour, tree green again at `54fa768` (CI ✅ + Smoke ✅).
+
+- **CI / TypeScript + unit tests (`efdf60e`):** `npx tsc --noEmit` inferred the census's new `= null` injectable defaults (`parseEszip`, `canonicalise`, `entrypointPath`) as type `null`, rejecting every test call site — fixed with JSDoc `@param` signatures on the five functions (verified against the repo compiler options: tsc clean, 43/43). And the #53 status flip required `gen-known-issues-index.mjs` — the generated ITEM-INDEX block is pinned byte-identical by test, exactly so a status edit cannot skip it. It caught mine.
+- **Smoke / RLS invariant (`54fa768`, migration `20260830223446`):** `mv_pack_ev_latest_refresh_state` shipped with anon REVOKED but RLS off, and "public base tables: RLS on + no anon write" went hard-red on the next run. RLS now on with zero policies (owner-run SECDEF refresher and service_role unaffected); the refresher verified working after the change — including a LIVE skip on the 23:03Z cron tick (counters `refreshed=2, skipped=2`).
+
+⭐ Both failures are the guard system doing its job on same-day work, and both fixes landed before any human saw the red. The lesson already in the register stands: grants and RLS are independent layers — revoking anon is not an RLS decision, and a new state table needs both.
+
 ### 2026-08-30 · ✅ SHIPPED (migration `20260830222057`, applied + committed) — the pack-ev MV refresh loses its two hidden costs: a never-vacuumed history table and 24 no-op refreshes a day
 
 **Pass: cloud, 22:1x–22:3xZ.** The pack-ev class's largest consumer, found while measuring known-issues #52's remaining half: `refresh_mv_pack_ev_latest()` (pg_cron jobid 73, `3,33 * * * *`, cron_heavy) at **810 calls / 70.0 s mean / 68.6 GB shared reads** since the 08-12 stats reset — to maintain a **768 kB, 1,855-row** materialized view.
