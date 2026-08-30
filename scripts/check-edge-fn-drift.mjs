@@ -218,6 +218,8 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
   const eszipMisses = []
   let bodiesRead = 0
   let bodiesFailed = 0
+  let eszipContained = 0
+  let eszipAttempted = false
 
   if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: false }
 
@@ -241,10 +243,13 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
       // needle's neighbourhood (false miss is safe, but keep it rare).
       if (body && typeof body === "object" && typeof body.eszip === "string") {
         bodiesRead++
+        eszipAttempted = true
         const hay = body.eszip.replace(/\s+/g, " ")
         const needle = src.replace(/\s+/g, " ").trim()
         if (needle && !hay.includes(needle)) {
           eszipMisses.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
+        } else {
+          eszipContained++
         }
         continue
       }
@@ -269,6 +274,26 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
     }
   }
 
+  // ── POSITIVE CONTROL for containment mode (2026-08-30, first live run) ────
+  // The dispatched 20:02Z run answered the calibration question: ALL 38 eszip
+  // reads missed, while a locally BUILT eszip does contain its source — because
+  // Supabase's hosted bundler TRANSPILES (TS -> JS, reformat, specifier
+  // rewrites) before bundling, so repo TS can never be byte-contained in a
+  // production bundle. A census in which containment matched NOTHING has
+  // measured nothing: report tier-2-did-not-run rather than 38 unprovable
+  // "misses" that would read as near-findings. If even ONE function is
+  // contained, the mode has a positive control and misses become meaningful.
+  const eszipAttempts = eszipContained + eszipMisses.length
+  if (eszipAttempts > 0 && eszipContained === 0) {
+    bodiesFailed += eszipMisses.length
+    bodiesRead -= eszipMisses.length
+    if (bodyFailures.length < maxFailuresKept) {
+      bodyFailures.push(
+        `eszip containment matched 0 of ${eszipAttempts} bundles — the bundler transpiles sources, so containment cannot census this fleet (parse the eszip instead: @deno/eszip Parser.parseBytes + ts transpile of the repo side)`
+      )
+    }
+    eszipMisses.length = 0
+  }
   return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: bodiesRead > 0 }
 }
 

@@ -197,6 +197,22 @@ describe("edge-fn drift detector — tier 2 content census", () => {
     expect(r.ran).toBe(true)
   })
 
+  // Positive control (first live run, 2026-08-30 20:02Z): Supabase's bundler
+  // transpiles sources, so on the real fleet containment matched 0 of 38 — a
+  // census that matched NOTHING has measured nothing and must say so.
+  it("eszip: when containment matches ZERO bundles, tier 2 reports did-not-run instead of 38 misses", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async () => ({ eszip: "ESZIP2.3 transpiled-beyond-recognition " }),
+    })
+    expect(r.ran).toBe(false)
+    expect(r.bodiesRead).toBe(0)
+    expect(r.bodiesFailed).toBe(2)
+    expect(r.eszipMisses).toEqual([])
+    expect(r.bodyFailures.some((f: string) => f.includes("matched 0 of 2"))).toBe(true)
+  })
+
   it("eszip: a bundle NOT containing the repo source lands in eszipMisses, not contentDrift", async () => {
     const r = await runContentCensus({
       repo,

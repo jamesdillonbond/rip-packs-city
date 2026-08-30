@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ CALIBRATED (follow-up to the eszip fix, its own falsifier met) — containment matched 0 of 38 on the live fleet: Supabase's bundler TRANSPILES, so tier 2 now says "did not run" instead of 38 unprovable misses
+
+**Pass: desktop, 20:0x–20:1xZ.** The dispatched 20:02Z edge-fn-drift run answered the calibration question the previous entry posed, in the falsifier direction.
+
+- **Live run:** `content census: 38 bodies read, 0 failed` but **all 38 containment MISSES**. Control built locally with `@deno/eszip`: a from-source eszip DOES contain its source (whitespace-collapsed) — and the Parser round-trip shows `build()` already reformats (`const  x =\n1` → `const x = 1;`), so **Supabase's hosted bundler transpiles TS → JS before bundling; repo TS can never be byte-contained in a production bundle.** Containment mode has no positive control on this fleet.
+- **Shipped:** the rule the previous entry committed to — if eszip containment matches **zero** bundles, the census reports **tier-2-did-not-run** (bodies counted as failed, one failure line naming the cause and the real fix), and `eszipMisses` is emptied rather than shipped as 38 near-findings. One contained function is the positive control that re-arms miss reporting. 28/28 tests (new zero-match case).
+- **The real tier-2 fix, scoped for a follow-up with a dependency change (R63 stays open on this half):** parse the bundle with `@deno/eszip` (`Parser.parseBytes` → `load` → `getModuleSource(entrypoint)`, verified working in Node tonight; note plain `parse()` crashes in Node — use `parseBytes`), transpile the repo side (`typescript.transpileModule`, already a devDependency), normalise both, compare. Needs `@deno/eszip` added to devDependencies + lockfile — better done where `npm ci` runs natively.
+- **Exit:** tomorrow's 12:10Z run prints `TIER 2 DID NOT RUN … matched 0 of 38 … parse the eszip instead` — honest, loud, and pointing at the fix — while the run stays red on tier 1's 19. **Revert:** `git revert`.
+
 ### 2026-08-30 · ✅ SHIPPED (script + tests) — Detector Health went live and immediately earned its keep: edge-fn-drift has been red 12 nights UNREAD, and its tier-2 census has been dead since 08-09 (the API now serves eszip)
 
 **Pass: desktop, 19:5x–20:0xZ.** Trevor set `GITHUB_ACTIONS_READ_TOKEN` in Vercel; the 19:54Z sentinel (dispatched to verify) flipped Detector Health from `[NOT CONFIGURED]` straight to 🚨 `edge-fn-drift 12x consecutive failures (crit at 7)` — the exact "correct and unread" case the arm was built for.
