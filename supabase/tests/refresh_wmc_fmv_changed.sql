@@ -151,6 +151,37 @@ BEGIN
   CREATE INDEX ON _rwfc_recent (computed_at);
   ANALYZE _rwfc_recent;
 
+  -- 2026-08-30: drop editions whose newest price is the price they already had.
+  -- Measured over a 2 h window: 2,295 of 3,108 new snapshots (74 %) carried an
+  -- fmv_usd IDENTICAL to the edition's previous snapshot — fmv-recalc writes a
+  -- row per recalculated edition whether or not the number moved. Every one of
+  -- those editions was still popped below, and the UPDATE's IS DISTINCT FROM
+  -- guard, which correctly writes nothing, still READS every holder row to find
+  -- that out: on a 2.5M-row table behind a bloated (collection_id, edition_key)
+  -- index that is the drain's IO, and this job (303, `7-57/10`) ran to its 360 s
+  -- deadline on every tick, ~60 % of wall-clock, ~50 min behind. Two index
+  -- probes per queued edition replace a holder scan for three editions in four.
+  -- Sound because wmc already holds the <= v_cutoff value: the cursor only
+  -- advances past an edition once its UPDATE committed (a timeout rolls both
+  -- back together). An edition with no priced snapshot on or before the cutoff
+  -- has nothing to compare against and stays queued.
+  DELETE FROM _rwfc_recent
+   WHERE edition_id IN (
+     SELECT r.edition_id
+       FROM _rwfc_recent r
+       JOIN LATERAL (
+         SELECT f.fmv_usd FROM public.fmv_snapshots f
+          WHERE f.edition_id = r.edition_id AND f.computed_at > v_cutoff AND f.fmv_usd IS NOT NULL
+          ORDER BY f.computed_at DESC LIMIT 1
+       ) cur ON true
+       JOIN LATERAL (
+         SELECT f.fmv_usd FROM public.fmv_snapshots f
+          WHERE f.edition_id = r.edition_id AND f.computed_at <= v_cutoff AND f.fmv_usd IS NOT NULL
+          ORDER BY f.computed_at DESC LIMIT 1
+       ) prev ON true
+      WHERE cur.fmv_usd = prev.fmv_usd
+   );
+
   LOOP
     WITH popped AS (
       DELETE FROM _rwfc_recent
@@ -265,6 +296,25 @@ SELECT _assert(
 DELETE FROM public.rwfc_state;
 SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
   're-running with no new snapshots updates nothing');
+
+-- ── 2026-08-30: an edition whose price did not move is not re-swept ───────
+-- Edition 2's newest snapshot after the cursor (42.00) equals its newest at or
+-- before the cursor (42.00), so the drain drops it before the loop instead of
+-- reading every holder row to discover IS DISTINCT FROM has nothing to write.
+-- Pinned through a deliberately stale holder row: because the edition is
+-- skipped, the row is NOT repaired here (that is the NULL-fill route's job and
+-- would otherwise cost a holder scan for three editions in four).
+INSERT INTO public.rwfc_state (id, last_cutoff) VALUES (1, now() - interval '90 seconds')
+ON CONFLICT (id) DO UPDATE SET last_cutoff = EXCLUDED.last_cutoff;
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at)
+VALUES ('22222222-2222-2222-2222-222222222222', 42.00, now() - interval '30 seconds');
+UPDATE public.wallet_moments_cache SET fmv_usd = 5.00 WHERE wallet_address = '0xC';
+SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
+  'an edition whose newest price equals its pre-cursor price is dropped from the queue');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xC'), '5.00',
+  'so its holder rows are not even read (the stale row proves the skip happened)');
+UPDATE public.wallet_moments_cache SET fmv_usd = 42.00 WHERE wallet_address = '0xC';
 
 -- ── A NULL-priced snapshot never blanks an existing wmc price ─────────────
 -- `fmv_usd IS NOT NULL` appears THREE times: building _rwfc_recent, selecting

@@ -1143,8 +1143,10 @@ const PINS = [
     // in that gap drops this pin from the LIVE drift check silently. Two pins were
     // invisible for exactly that reason until 2026-08-08, and
     // __tests__/db-pin-staleness-parser-coverage.test.ts caught this one at 188/189.
+    // ⚠ RE-POINTED 2026-08-30: editions whose newest price equals their pre-cursor
+    // price are dropped from the queue before the loop (74 % of snapshots).
     migration:
-      "supabase/migrations/20260829030000_audit_20260828_rwfc_two_callers_collide_every_ten_minutes.sql",
+      "supabase/migrations/20260830144724_audit_20260830_rwfc_skips_editions_whose_price_did_not_move.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
