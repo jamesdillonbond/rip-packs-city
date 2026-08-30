@@ -47,3 +47,52 @@ for (const secret of [
   // exported should not cost another afternoon to trace.
   delete process.env[secret]
 }
+
+// ── OPT-IN CLOCK OFFSET, for the wall-clock-dependence sweep ────────────────
+//
+// Register R67: three wall-clock-dependent tests landed in ONE day, by three
+// authors, with at least TWO distinct mechanisms — a `getUTCHours() % 6`
+// predicate that held in 4 hours of 24, a block reading real time, and a DATE
+// compared as a DATETIME that failed 00:00Z→~13:00Z every day. One of them
+// reddened CI on ANOTHER SESSION'S COMMIT.
+//
+// ⛔ A SOURCE SCAN CANNOT FIND THE CLASS. `new Date()` appears in hundreds of
+// legitimate fixtures, and a detector aimed at one sub-shape misses the other
+// two. The sound version VARIES THE AMBIENT STATE and compares outcomes, which
+// is what `scripts/clock-sweep.mjs` does with this hook.
+//
+// ⚠ WHY IN-PROCESS RATHER THAN `sudo date -s` ON THE RUNNER. R67 filed the
+// runner-clock version and deliberately did not ship it, on the grounds that a
+// clock-shifting job which fails for its OWN reasons is a new permanently-red
+// instrument. Shifting inside the test process removes that failure mode
+// entirely: it needs no privileges, touches nothing outside vitest, and — the
+// part that matters — a failure caused by the RUNNER fails at EVERY offset, so
+// the sweep classifies it as "not clock-dependent" instead of reporting it.
+// Only a test whose result CHANGES with the clock is a finding.
+//
+// ⚠ A test that pins its own clock (`vi.useFakeTimers` / `vi.setSystemTime`)
+// overrides this and is immune. That is correct, and it is the fix this sweep
+// exists to prescribe.
+//
+// Unset or 0 -> completely inert. The production suite is unaffected.
+const RPC_CLOCK_OFFSET_MS = Number(process.env.RPC_CLOCK_OFFSET_MS ?? "0")
+if (Number.isFinite(RPC_CLOCK_OFFSET_MS) && RPC_CLOCK_OFFSET_MS !== 0) {
+  const RealDate = Date
+  const realNow = RealDate.now.bind(RealDate)
+  class ShiftedDate extends RealDate {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    constructor(...args: any[]) {
+      // ⚠ Only the ZERO-ARGUMENT form means "now". Every other form is an
+      // explicit instant and must be left alone, or every fixture date in the
+      // suite would silently move and the sweep would report the whole suite.
+      if (args.length === 0) super(realNow() + RPC_CLOCK_OFFSET_MS)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      else super(...(args as [any]))
+    }
+    static now() {
+      return realNow() + RPC_CLOCK_OFFSET_MS
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(globalThis as any).Date = ShiftedDate
+}
