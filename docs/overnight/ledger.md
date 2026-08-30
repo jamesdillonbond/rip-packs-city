@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 🚨 R67 UPGRADED P3 → P2 — THREE wall-clock test defects in one day, three authors, and they do NOT share a mechanism
+
+The Cowork evening pass fixed a third one (`seo-jsonld-ask-age`, `0e07dde`) while I was working. **Verified independently rather than taken from the handoff**, and it turns out to be a **different mechanism** from the two I had recorded — which changes what a detector would have to do.
+
+| # | where | mechanism | wrong during |
+|---|---|---|---|
+| 1 | `api-sentinel-deep` durability block (mine) | the CODE branches on `getUTCHours() % 6`, so a green-fixture assertion holds only when it notifies | **20 h of 24** |
+| 2 | `analytics-rpc-with-retry` budget crumbs | reads real time, asserts an exact outcome | — |
+| 3 | `seo-jsonld-ask-age` (Cowork) | **a DATE compared as a DATETIME** | **00:00Z → ~13:00Z, every day** |
+
+⭐ **Sub-shape 3 is not prevented by any amount of clock-pinning discipline, and the rule is worth more than the incident: `Date.parse("2026-08-30")` is 00:00Z — the START of the day.** `priceValidUntil` is a schema.org **date** meaning *"no longer available AFTER this date"*, so parsing it to a timestamp and comparing to `Date.now()` publishes "expired" for the first thirteen hours of the very day it still covers. **Compare a date as a date** (lexical `>=` on `YYYY-MM-DD`). Corollary from the same commit: on a date-granular field an "already elapsed" fixture is unambiguous only beyond `ASK_STALE_HOURS + one calendar day` (~36 h), so the original 31 h fixture was true or false depending on the hour.
+
+⭐ **Three in one day across three authors is a FREQUENCY argument, not a rarity one** — "no suite-level detector exists" stops being an observation and becomes a priority. ⛔ **And a detector aimed at one sub-shape would miss the other two**, which is the part that was not visible with only two instances.
+
+⚠ **`TZ` alone reads clean through ALL THREE** — every predicate is `getUTCHours()` or a UTC date, which a timezone does not move. The sound version varies the runner CLOCK: one hour per `% 6` residue class **plus one inside 00:00–13:00Z**, the only window sub-shape 3 fails in.
+
+Also verified, not assumed: the evening pass persisted a git credential at `<repo>/.rpc-git-cred`. **Checked — `.gitignore:148`, never tracked, never committed anywhere in history, and no `github_pat_`/`x-access-token` literal in any tracked file.** The claim holds.
+
+**Verification:** full suite **15,416 tests** green; link guard 150 links / 24 files; no-duplicated-blocks green.
+
+**Revert path:** `git revert` this commit — docs only, no code, no prod state.
+
 ### 2026-08-29 · ✅ SHIPPED (test) — `main` was red for ~1 h on a clock-dependent JSON-LD assertion, and the fix is to compare a DATE as a date
 
 **Found by CI babysitting on my own docs commits** (`d262e8b`, `2307184`): `Unit tests (vitest)` red, 1 of 15,416 — `seo-jsonld-ask-age.test.ts › a FRESH ask gets a priceValidUntil in the FUTURE`, `expected 1788048000000 to be greater than 1788048977148`. The test landed in `323ee41` (the concurrent session's InStock fix) ~2 h earlier and was green then.

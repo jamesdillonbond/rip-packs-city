@@ -1360,7 +1360,17 @@ New tests asserted `extra.notifications` contains `telegram` on a GREEN fixture.
 
 ⛔ **And the fix NOT to make:** switching the affected tests to a fixture that notifies unconditionally (a CRITICAL one) passes at every hour **by testing a different thing** — it drops coverage of the scheduled GREEN report, the one path where nobody is already looking at a page. Pin the clock instead (`vi.useFakeTimers({ toFake: ["Date"] })` — `Date` only, or faking `setTimeout` hangs awaited fetch mocks), and add a sweep over all 24 hours asserting the contract holds at each.
 
-⚠ **Second instance the same day, different author and subsystem** (`analytics-rpc-with-retry`'s budget-crumb block). One root: *a test that reads real time and asserts an exact outcome.* **There is still no suite-level detector, and a grep cannot be one** — `new Date()` appears in hundreds of legitimate fixtures. The sound version varies the ambient state: a scheduled job running the suite with the runner clock moved to one hour from each `% 6` residue class. ⚠ **`TZ` alone would have read clean through BOTH defects**, because the predicate is `getUTCHours()`, which a timezone does not move.
+⚠ **THREE instances on 2026-08-29, by THREE independent authors, in three subsystems** — and they do **not** share one mechanism, which is why a detector aimed at one shape would miss the others:
+
+| # | where | mechanism | window it was wrong in |
+|---|---|---|---|
+| 1 | `api-sentinel-deep` durability block | the CODE branches on the hour (`getUTCHours() % 6 === 0`), so a green-fixture assertion only holds when it notifies | 20 h of 24 |
+| 2 | `analytics-rpc-with-retry` budget crumbs | reads real time and asserts an exact outcome | — |
+| 3 | `seo-jsonld-ask-age` | **a DATE compared as a DATETIME** | 00:00Z → ~13:00Z daily |
+
+⭐ **Sub-shape 3 is the one no amount of clock-pinning discipline would have prevented, and it generalises: `Date.parse("2026-08-30")` is 00:00Z — the START of the day.** `priceValidUntil` is a schema.org **date** meaning *"no longer available AFTER this date"*, so parsing it to a timestamp and comparing against `Date.now()` says "expired" for the first thirteen hours of the very day it still covers. **Compare a date as a date** — a lexical `>=` on `YYYY-MM-DD` — never via `Date.parse`. The same commit records the corollary for fixtures: with a date-granular field, an "already elapsed" claim is only unambiguous beyond **`ASK_STALE_HOURS` + one calendar day** (~36 h), so a 31 h fixture is true or false depending on the hour CI runs.
+
+⭐ **Three in one day across three authors is not a rarity argument — it is a frequency argument.** "No suite-level detector exists" stops being an observation and becomes a priority. **There is still no such detector, and a grep cannot be one** — `new Date()` appears in hundreds of legitimate fixtures. The sound version varies the ambient state: a scheduled job running the suite with the runner clock moved to one hour from each `% 6` residue class. ⚠ **`TZ` alone would have read clean through BOTH defects**, because the predicate is `getUTCHours()`, which a timezone does not move.
 
 ### 🚨 "Flaky" is not a diagnosis — the 720×-vs-15% discriminator
 
