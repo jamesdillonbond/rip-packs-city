@@ -123,6 +123,15 @@ Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check
 
 Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `allday/topshot-pack-sales-backfill` (3m), `allday-dist-opened-backfill` (4m), `backfill-pack-pool` (5m), `refresh-mv-pack-ev-latest` (10m). Weekly FMV compute cluster (7 jobs) Sun 11:00–12:00 UTC. Full functional grouping in `claude/scheduler-map-2026-07-20.md`.
 
+**`cron_heavy` maintenance jobs (2026-08-29/30).** `cron_heavy` carries `statement_timeout=600s` and MAINTAIN on `sales_2026`, `fmv_snapshots_2026`, `wallet_moments_cache`; `postgres` inherits the cluster 120 s and never finished a VACUUM (jobid 380, 0 completions). Jobs are keyed on (jobname, username): unschedule with `SET ROLE cron_heavy` first.
+
+| Job | jobid | Schedule | Command | Notes |
+|---|---|---|---|---|
+| maint-vacuum-sales-hot-partition | 383 | `53 10,20 * * *` | `VACUUM (ANALYZE) public.sales_2026` | Re-own of 380 (20260829235254). |
+| tmp-reindex-wmc-1 … -4 | 397–400 | `9 8`, `33 8`, `9 10`, `33 10` | `REINDEX INDEX CONCURRENTLY` idx_wmc_cohort_cover / idx_wmc_coll_ek_serial_cover / idx_wmc_moment_collection_cover / wallet_moments_cache_wallet_collection_moment_key | ONE-OFF (20260830030951): leaf density 22.5/28.3/41.6/48.7 % → ~1.1 GB reclaim expected. A slot over 600 s leaves `<index>_ccnew` INVALID — drop it with `DROP INDEX CONCURRENTLY`. |
+| tmp-reindex-wmc-verify | 401 | `49 10 * * *` | `run_wmc_reindex_verify()` + self-unschedule of all `tmp-reindex-wmc-%` | Logs `pipeline_runs` `wmc-reindex-verify` (baseline row 03:4xZ ok=false). If this slot fails, 397–401 **recur daily** — unschedule by hand. |
+| (done) tmp-vacuum-fmv-snapshots-2026 | 396 | one-off 02:29Z | `VACUUM (ANALYZE) public.fmv_snapshots_2026` | 9 s, succeeded, unscheduled. Falsified the heap-fetch hypothesis (ledger 08-29 late). |
+
 **Notable finite pack-opens backfills** (migrated off cron-job.org onto pg_cron 2026-07-11 — retire the pg_cron job + set the `pipeline_cadence_watchlist` row `is_active=false` once the pipeline logs `done:true`; confirm both still exist in `cron.job` before relying on them):
 
 | Job | jobid | Schedule | Target | Notes |
