@@ -103,6 +103,22 @@ BEGIN
 END
 $guard$;
 
+-- ── anon-exec decision (added 2026-08-29 by a sibling Claude Code session) ───
+-- This migration was already applied when the marker was added; the marker is a
+-- COMMENT and changes nothing in the database. It landed here because
+-- `migration-new-function-states-its-anon-exec-decision` was red on main for
+-- every commit pushed after this file, and that guard is keyed per FUNCTION NAME.
+--
+-- ⚠ MEASURED, NOT ASSUMED, before choosing between a revoke and a marker —
+-- `has_function_privilege` on the live DB: anon=false, authenticated=false,
+-- service_role=true. There is NO exposure to close here.
+--
+-- ⛔ A REVOKE WOULD HAVE BEEN THE WRONG FIX, and the guard's own header says so:
+-- this is a CREATE OR REPLACE, which does NOT reset a function's ACL, so the
+-- pre-existing revoke survives it. Adding a REVOKE would imply this migration
+-- hardened something when the hardening already existed elsewhere.
+--
+-- anon-exec: unchanged — claim_pinnacle_resolver_batch is service_role-only already (anon=false, authenticated=false, measured live 2026-08-30); a SECDEF claim-batch helper called by the resolver worker, never from a browser.
 CREATE OR REPLACE FUNCTION public.claim_pinnacle_resolver_batch(p_limit integer DEFAULT 50)
 RETURNS TABLE(id text, tx_hash text, sold_at timestamptz, attempts integer)
 LANGUAGE plpgsql
