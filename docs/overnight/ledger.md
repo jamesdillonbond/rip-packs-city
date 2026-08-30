@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⛔ FALSIFIER RE-RUN — the Studio Top Shot index is still empty, all four ask sources are now measured, and a QUEUED item is struck as not viable
+
+**Went looking for the highest-value thing for users, not the next red badge.** The roadmap makes **accuracy the gate**; Top Shot sits at **7,114 / 19,742 = 36.0 % HIGH+MED with 1,606 STALE** and the nightly pass measured it *declining*, cause named: no ask feed ⇒ no LOW→MEDIUM promotions. **So "can we get Top Shot asks from somewhere else?" is the question that matters**, and the handoff queue still carried *"Top Shot legacy→Studio client migration — code+push"* as if it were viable.
+
+**The 2026-08-29T2200Z filing left an explicit, cheap falsifier and nobody had run it for ~17 h:** *"a single re-probe of `searchTopShotNft` with no filters settles it — if it ever returns non-zero, this filing's conclusion is void and the migration is back on."*
+
+**It does not fire.** Probed via `pg_net` (the sandbox has no egress to that host), both HTTP 200 in one batch:
+
+| probe | totalCount |
+|---|---:|
+| `searchTopShotNft(searchInput:{first:1,filters:[]})` | **0** |
+| `searchAllDayNft` — same shape, same minute, POSITIVE CONTROL | **10,670,740** |
+
+⭐ **The control earned its place twice.** My first pair **422'd — and the AllDay control 422'd IDENTICALLY**, which is exactly what a control is for: it said the fault was MY query, not the data. The argument is `searchInput` (not `input`) and `filters` is an ARRAY — re-taken from the repo's own proven client (`lib/chains/flow/allday-studio-holdings.ts`) rather than guessed a second time. Without the control I would have read a 422 as "the field is gone".
+
+**All four candidate sources, measured today:**
+
+| source | result | verdict |
+|---|---|---|
+| `public-api.nbatopshot.com` (legacy) | 530 / `error code: 1033`, ~40 h | ⛔ dead |
+| Studio `searchTopShotNft` | **0** | ⛔ empty |
+| Studio `searchTopShotMarketplaceHistory` | **34**, unchanged in 17 h | ⛔ negligible |
+| Atlas per-serial (`topshot_active_listings`) | fresh (2.0 h), **237 / 19,913 editions = 1.2 %** | ⚠ alive, far too narrow |
+| Flowty `flowty_open_listings` | `principal_amount / interest_rate / repayment_usd / borrower_addr` | ⛔ **a LOAN book, not a sale-ask feed** |
+
+⚠ **The Atlas number is the one that could mislead**: it is our freshest Top Shot ask source and it is **not** a replacement — the workflow header states it is a **$100-floor sweep, ~1,080 targets**, i.e. a board feed, not a catalogue pricer. Widening it is ~18× the calls on a path that **403s Node/undici** and must run curl on a GHA runner already failing 6 of 16 with `egress_blocked` (#20, operator-gated).
+
+🚨 **STRUCK: the queued "Top Shot legacy→Studio client migration" is NOT VIABLE for the ask path** and should leave the queue rather than be carried. ⭐ *A queued item that cannot work costs more than an empty queue — someone will eventually spend a day on it.* The 08-30T1510Z daytime-monitor filing, written this morning, still lists it as "queued for operator"; that is the drift this entry stops.
+
+👉 **The honest strategic picture, and two of the three levers are already pulled.** (1) Wait for the endpoint — outside our control. (2) Widen Atlas to catalogue scale — the only technical path, a real spend, **Trevor's call**. (3) Keep the surfaces honest meanwhile — ✅ **already done**, the 2230Z filing's four all shipped. ⭐ **So the product is currently doing the right thing: it is not lying about staleness and it cannot make the numbers fresher. The gate metric will keep drifting until (1) or (2) — that is a SUPPLY problem, not a bug, and it must not be re-diagnosed as one.**
+
+**Also shipped in this commit — the THIRD instance of a secret-leak shape, into `tooling-gotchas.md`.** The 2200Z filing recorded that reading `net.http_request_queue.url` to check QUEUE DEPTH printed a live pg_cron gate key into a transcript. That is the same shape as the cron-job.org Advanced tab and `get_edge_function`: **the secret rides in a payload you did not ask for.** Recorded with the mask (`split_part(url,'?',1)`, or `id`/`count(*)`) and the generalisation — **a read is scoped by what it RETURNS, not by why you ran it.** ⚠ **CLAUDE.md was NOT edited: it measures 39,963 of 40,000 characters — 37 to spare** — so the instance went to the detail file it already links to, which is what that budget is for. ⚠ **The leaked key still needs rotating (operator); its value is not repeated anywhere in this repo.** ✅ Practised immediately: every queue check in this session selected `id`/`count(*)` only.
+
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830153041, APPLIED) — backfill_pack_rip_metadata priced ≤ 500 rips' pulls through the fmv_current view: 1.31 M buffers per hourly call → 31 k
 
 **Pass: desktop, 15:3xZ.** The `fmv_current` consumer sweep the previous entry asked for: 13 functions reference the view; the hot ones by `pg_stat_statements` are `backfill_pack_rip_metadata` (231 calls, **22.5 s mean**; `/api/cron/backfill-pack-rip-metadata` hourly :53), `sentinel_edition_coverage` (234 calls, 7.8 s), `compute_pack_ev_from_pool` (375 calls, 3.3 s). Same one-line cause as `compute_pack_ev_per_edition_weighted`: `LEFT JOIN public.fmv_current fc ON fc.edition_id = m.edition_id AND fc.collection_id = m.collection_id` in the `pull_values` CTE — a Merge Append over every snapshot to price 500 rips' moments. **Measured** (EXPLAIN ANALYZE of the real call, p_limit 500, warm): before **1,313,808 hits + 5,123 reads, 4.5 s**; after **31,643 hits + 4,912 reads, 3.1 s** — the remaining time is the UPDATE of 500 `pack_rips` rows (2,388 dirtied) and the acquisitions/moments joins, i.e. the work. Same two-step semantics (newest snapshot for the edition, then the collection must match). Not pinned (pre-migration DDL); the old join is quoted in the migration's REVERT note. File md5 = prod statements md5.
