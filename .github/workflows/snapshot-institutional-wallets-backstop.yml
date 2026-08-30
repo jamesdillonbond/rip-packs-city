@@ -46,7 +46,7 @@ jobs:
         run: |
           STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/snap.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/cron/snapshot-institutional-wallets)
+            https://www.rippackscity.com/api/cron/snapshot-institutional-wallets) || STATUS=""
           echo "snapshot-institutional-wallets status: $STATUS"
           cat /tmp/snap.json || true
           echo ""

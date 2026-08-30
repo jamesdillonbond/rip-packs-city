@@ -70,7 +70,7 @@ jobs:
         run: |
           STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/ts-sales.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/sales-indexer)
+            https://www.rippackscity.com/api/sales-indexer) || STATUS=""
           echo "TopShot sales-indexer status: $STATUS"
           cat /tmp/ts-sales.json
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
@@ -81,7 +81,7 @@ jobs:
         run: |
           STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/allday-sales.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/allday-sales-indexer)
+            https://www.rippackscity.com/api/allday-sales-indexer) || STATUS=""
           echo "AllDay sales-indexer status: $STATUS"
           cat /tmp/allday-sales.json
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
@@ -92,7 +92,7 @@ jobs:
         run: |
           STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/golazos-sales.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/golazos-sales-indexer)
+            https://www.rippackscity.com/api/golazos-sales-indexer) || STATUS=""
           echo "Golazos sales-indexer status: $STATUS"
           cat /tmp/golazos-sales.json
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then

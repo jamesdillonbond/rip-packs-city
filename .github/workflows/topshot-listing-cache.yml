@@ -48,7 +48,7 @@ jobs:
         run: |
           STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/ts-cache.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/topshot-listing-cache)
+            https://www.rippackscity.com/api/topshot-listing-cache) || STATUS=""
           echo "TopShot listing cache status: $STATUS"
           cat /tmp/ts-cache.json
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then

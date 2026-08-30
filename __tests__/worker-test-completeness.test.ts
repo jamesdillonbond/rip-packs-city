@@ -48,13 +48,28 @@ function workerEntry(dir: string): string | null {
 }
 
 /** All test files' concatenated text (cheap: read once). */
-function allTestText(): string {
-  const parts: string[] = []
+/**
+ * Every test file's text, read ONCE and reused.
+ *
+ * ⚠ An ARRAY, never a concatenation, and that distinction is load-bearing:
+ * `entryIsDriven` requires the import AND a handler call **in the same file**.
+ * Joining the corpus first would let an import in file A pair with a `.fetch(`
+ * in file B and silently weaken the guard into a much easier check.
+ */
+let _testFilesCache: string[] | null = null
+function testFileTexts(): string[] {
+  if (_testFilesCache) return _testFilesCache
+  const texts: string[] = []
   for (const entry of readdirSync(TESTS_DIR)) {
     if (!entry.endsWith(".test.ts") && !entry.endsWith(".test.tsx")) continue
-    parts.push(readFileSync(path.join(TESTS_DIR, entry), "utf8"))
+    texts.push(readFileSync(path.join(TESTS_DIR, entry), "utf8"))
   }
-  return parts.join("\n")
+  _testFilesCache = texts
+  return texts
+}
+
+function allTestText(): string {
+  return testFileTexts().join("\n")
 }
 
 /**
@@ -63,11 +78,14 @@ function allTestText(): string {
  * is the behavioural-drive signal: a token dir reference or a pure-submodule
  * import (cdc/currency/decode/parse) does not count. Robust to name hyphens.
  */
-function entryIsDriven(workerName: string): boolean {
+export function entryIsDriven(workerName: string, texts: string[] = testFileTexts()): boolean {
   const importRe = new RegExp(`workers/${workerName}/(src/)?index`)
-  for (const entry of readdirSync(TESTS_DIR)) {
-    if (!entry.endsWith(".test.ts") && !entry.endsWith(".test.tsx")) continue
-    const txt = readFileSync(path.join(TESTS_DIR, entry), "utf8")
+  // ⚡ Reads the corpus ONCE (cached) instead of re-reading every test file for
+  // every worker. This was O(workers × testFiles) — ~17 × ~1,400 ≈ 24,000 reads —
+  // which is why the arm grew from a measured 3.3 s (2026-08-24) to 21 s standalone
+  // and began crossing even its raised 60 s timeout under full-suite load. The
+  // per-file conjunction below is unchanged, so the assertion is identical.
+  for (const txt of texts) {
     if (importRe.test(txt) && /\.(fetch|scheduled)\(/.test(txt)) return true
   }
   return false
@@ -81,6 +99,33 @@ describe("worker test-completeness rot-guard", () => {
 
   it("finds worker directories (sanity)", () => {
     expect(workerDirs.length).toBeGreaterThan(10)
+  })
+
+  // ⚠ THE PER-FILE CONJUNCTION IS PINNED HERE, ON SYNTHETIC TEXT, and it has to
+  // be: every worker is currently driven, so at a population of ZERO a loosening
+  // of `entryIsDriven` is INVISIBLE to the tree-walking arm below. Mutation-tested
+  // 2026-08-30 — dropping the `.fetch(`/`.scheduled(` half left that arm green.
+  // The property is what matters, not today's offender count.
+  describe("entryIsDriven requires the import AND a handler call IN THE SAME FILE", () => {
+    it("accepts one file carrying both", () => {
+      expect(entryIsDriven("demo", ['import w from "../workers/demo/index"\nawait w.fetch(req)'])).toBe(true)
+      expect(entryIsDriven("demo", ['import w from "../workers/demo/src/index"\nawait w.scheduled(ev)'])).toBe(true)
+    })
+
+    it("REJECTS the halves split across two files", () => {
+      // The exact weakening a concatenated corpus would introduce.
+      expect(
+        entryIsDriven("demo", ['import w from "../workers/demo/index"', "await other.fetch(req)"]),
+      ).toBe(false)
+    })
+
+    it("REJECTS a bare reference with no handler drive", () => {
+      expect(entryIsDriven("demo", ['import w from "../workers/demo/index"\nexpect(w).toBeTruthy()'])).toBe(false)
+    })
+
+    it("does not match a DIFFERENT worker's entry", () => {
+      expect(entryIsDriven("demo", ['import w from "../workers/other/index"\nawait w.fetch(req)'])).toBe(false)
+    })
   })
 
   it("every worker with an entry file is referenced by a test (or explicitly allowlisted)", () => {

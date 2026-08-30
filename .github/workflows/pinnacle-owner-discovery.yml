@@ -41,7 +41,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/owner-discovery.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-owner-discovery?blocks=${BLOCKS}" \
-            --max-time 300)
+            --max-time 300) || STATUS=""
           echo "Owner discovery status: $STATUS"
           cat /tmp/owner-discovery.json
           if [ "$STATUS" != "200" ]; then
@@ -54,7 +54,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/nft-resolver.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-nft-resolver?batch=${BATCH}" \
-            --max-time 300)
+            --max-time 300) || STATUS=""
           echo "NFT resolver status: $STATUS"
           cat /tmp/nft-resolver.json
           if [ "$STATUS" != "200" ]; then

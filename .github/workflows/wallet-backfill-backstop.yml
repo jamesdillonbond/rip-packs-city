@@ -81,7 +81,7 @@ jobs:
           for K in 0 1 2 3; do
             STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 30 -o "/tmp/seed-$K.json" -w "%{http_code}" \
               -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-              "https://www.rippackscity.com/api/seed-wallet-refresh?cohort=$K&of=4&force=1")
+              "https://www.rippackscity.com/api/seed-wallet-refresh?cohort=$K&of=4&force=1") || STATUS=""
             echo "seed-wallet-refresh cohort=$K/4 status: $STATUS"
             cat "/tmp/seed-$K.json" || true
             echo ""

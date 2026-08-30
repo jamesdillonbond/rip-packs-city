@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — 15 CI steps could abort before their own error handling ran, and the guard that found it also fixed a 13.6× slow test
+
+**Found by chasing a red badge to its exit code.** `Offer-Fill Sales Backfill` (run 33313722968) failed with **exit 28** — a curl TIMEOUT, not an HTTP status. Its entire step output was:
+
+    ── call 1/15  url=…?sync=1
+    ##[error]Process completed with exit code 28
+
+**No `HTTP $STATUS` line, no `::warning::`, no annotation naming the endpoint.** Every `run:` block is `bash -e`, so `STATUS=$(curl …)` **aborts the step at the assignment** — and the `if [ "$STATUS" != "200" ]` check, its warning, its `OVERALL=1` and its `break` are **dead code on exactly the failures they were written for.**
+
+🚨 **THE PART WORTH KEEPING: this repo had ALREADY LEARNED THIS TRAP AND FIXED THE WRONG HALF.** `offer-fill-backfill.yml` and `allow-list-reconcile.yml` each carry a careful comment explaining `bash -e` + assignment — attached to the **`jq`** call, while the **`curl`** assignment three lines above it stayed unguarded. ⭐ *The lesson was applied at the SITE where it was observed rather than to the CLASS.* Same shape as "grep for the EXPRESSION, not the file", arriving in CI YAML.
+
+**Swept: 24 sites across 14 workflows. 9 were already guarded** (`rpc-pipeline` ×6, `ops-monitor` ×2, `pipeline-sentinel`) — so the fix existed and had not been generalised. **15 were not, and all 15 are fixed** by appending `|| VAR=""` to the line closing the substitution. ⚠ **Deliberately minimal, because the downstream branch already handles it**: an empty string is not `200`, so the existing non-200 path reports it — the failure becomes a named warning instead of an opaque `28`. Verified per shape: the `STATUS=` family hits `[ "$STATUS" != "200" ]`; the two `RESPONSE=` sites derive `HTTP_CODE` via `tail -1`, which yields `""` and takes the same branch.
+
+✅ **BAN AT ZERO, not a ratchet** — `__tests__/workflow-curl-assignments-are-guarded.test.ts`, achievable because the population was cleared in the same commit. Keyed on the SHAPE (any `VAR=$(curl`), not on `jq`, so it cannot repeat the site-vs-class mistake. **3 mutations red:** un-guarding the workflow that provably broke · the detector calling everything guarded · the detector finding nothing.
+
+## And the sweep surfaced a second, unrelated defect
+
+Two consecutive full `npm test` runs went red on `worker-test-completeness` — **"Test timed out in 60000ms"**, passing in **21.5 s** alone. ⚠ **Not mine** (11 YAML lines and a 428 ms test cannot slow a worker-import guard), and the ledger already records this exact file by name as a parallel-load flake. But the number had moved: its own comment measures it at **3.3 s on 2026-08-24**, and it is now **21 s — 6× slower**, which is why even its raised 60 s timeout stopped being enough.
+
+🚨 **The cause is O(workers × testFiles):** `entryIsDriven()` re-read **every test file for every worker** — ~17 × ~1,400 ≈ **24,000 reads**. Now reads the corpus **once**, cached. **21.51 s → 1.58 s (13.6×)**, assertion unchanged — and the full suite came down from 290 s to **199 s**.
+
+⚠ **An ARRAY, never a concatenation, and that is load-bearing:** the guard requires the import AND a handler call **in the same file**; joining the corpus first would let an import in file A pair with a `.fetch(` in file B and silently weaken it.
+
+⭐ **Mutation testing then found something I would otherwise have shipped blind: at a population of ZERO the per-file conjunction was UNPINNED.** Dropping the `.fetch(`/`.scheduled(` half left the tree-walking arm **green**, because every worker is currently driven — a loosening is invisible when there are no offenders. Fixed by making `entryIsDriven` take its texts as a parameter and pinning the property on **synthetic** input (same-file accepted · halves split across two files rejected · bare reference rejected · a different worker's entry rejected). **Both mutations now red** — dropping the handler half, and concatenating the corpus. **The property is pinned at any population, not just today's.**
+
+**Verified:** full suite **1417 files / 15,576 tests** green · `tsc --noEmit` clean · 5 mutations red across the two guards · migration parity clean.
+
+**Revert path:** `git revert` the commit below — restores the 15 unguarded assignments (re-opening the abort-before-handling behaviour), removes the new workflow guard, and returns `worker-test-completeness` to its O(W×F) form. No DB half; no deploy (`.github/` and `__tests__/` only).
+
+
 ### 2026-08-30 · ✅ SHIPPED (DB) — the Candy boards spent 85 % of their buffers re-discovering one wallet address on every read: `candy_treasury_wallet` is now a precomputed row
 
 `candy_pack_market` (a one-row summary) under the 13:5xZ contention: **11.9 s, 15,677 hit + 3,187 read buffers, 85 % of it the `candy_treasury_wallet` CTE** — an Index Only Scan over 25,375 `idx_wmc_candy_holder_cover` entries with **Heap Fetches 4,734** (the wmc visibility map is churned by every FMV refresh), GROUPed and sorted to find the ONE wallet that holds the most Candy moments, embedded in `candy_pack_market` and `candy_special_serials_board`, both rebuilt by `refresh-insights-cache` on every tick. ✅ `20260830135550`: `candy_treasury_wallet_cache` (1 row, RLS, service_role SELECT) + `refresh_candy_treasury_wallet()` (SECDEF, seeded at apply — cache = live = `BhA2Bfd8…APe2`) + pg_cron **jobid 404 `rpc-refresh-candy-treasury-wallet`** hourly at :39; the view now reads the cache (same column, `security_invoker=on` re-set — CREATE OR REPLACE VIEW resets reloptions — grants preserved, dependents bind by OID). **`candy_pack_market` 18,864 buffers / 11.9 s → 1,117 buffers / 91 ms.** Revert in the migration header.

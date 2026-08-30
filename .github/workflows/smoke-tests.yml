@@ -43,7 +43,7 @@ jobs:
 
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json") || RESPONSE=""
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)

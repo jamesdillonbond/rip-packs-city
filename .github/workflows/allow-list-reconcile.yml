@@ -18,7 +18,7 @@ jobs:
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://www.rippackscity.com/api/cron/allow-list-reconcile")
+            "https://www.rippackscity.com/api/cron/allow-list-reconcile") || RESPONSE=""
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)

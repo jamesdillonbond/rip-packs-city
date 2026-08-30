@@ -31,7 +31,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/badge-sync.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             --max-time 600 \
-            https://www.rippackscity.com/api/badge-sync)
+            https://www.rippackscity.com/api/badge-sync) || STATUS=""
           echo "Badge sync status: $STATUS"
           cat /tmp/badge-sync.json
           if [ "$STATUS" != "200" ]; then
@@ -47,7 +47,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/badge-catalog.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             --max-time 600 \
-            "https://www.rippackscity.com/api/badge-sync?mode=catalog")
+            "https://www.rippackscity.com/api/badge-sync?mode=catalog") || STATUS=""
           echo "Badge catalog sweep status: $STATUS"
           cat /tmp/badge-catalog.json
           if [ "$STATUS" != "200" ]; then

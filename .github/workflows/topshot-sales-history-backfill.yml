@@ -40,7 +40,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/ts-sales-backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             --max-time 600 \
-            "$URL")
+            "$URL") || STATUS=""
           echo "HTTP $STATUS"
           cat /tmp/ts-sales-backfill.json
           echo ""
