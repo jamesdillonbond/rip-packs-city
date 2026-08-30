@@ -561,6 +561,56 @@ jobs:
           fi
           echo "OK — no entries lost."
 
+  # Register integrity guard — ADDED 2026-08-29. docs/audits/deep-audit-register.md
+  # is the canonical open list, and it was the only one of the three coordination
+  # files with no guard: the ledger has the no-clobber + future-date arms above,
+  # docs/overnight/inbox/INDEX.md has four CI assertions, and the register had
+  # NOTHING. A row deleted by a bad splice un-files a finding — worse than losing
+  # a history entry, because the next pass never looks again.
+  #
+  # ⚠ It found four real defects on its first full run (R26, R31, D30, R46), all
+  # of the same shape: a row that renders in the WRONG columns. GFM splits a table
+  # row on `|` BEFORE it parses inline code, so a raw pipe inside backticks —
+  # `/(ts|tsx)/`, `(TierBreakdownCard|PortfolioSparkline)` — opens a column, and
+  # cells past the header's width are DISCARDED by the renderer. R46's `owner`
+  # column had simply vanished from the rendered table. A grep still finds every
+  # character of it, which is why nobody had noticed.
+  #
+  # ⚠ The no-clobber arm needs the parent revision, so this job carries
+  # fetch-depth: 2 and runs on push only, exactly like ledger-guard. The shape
+  # arm is absolute and is covered on every event by
+  # __tests__/register-integrity-guard.test.ts in the main suite — so a PR is not
+  # unguarded, it is only un-compared.
+  register-guard:
+    name: Register integrity guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Fail if a register row was dropped or malformed
+        run: |
+          REGISTER=docs/audits/deep-audit-register.md
+          if [ ! -f "$REGISTER" ]; then
+            echo "::error::$REGISTER is missing. The canonical open list cannot be checked."
+            exit 1
+          fi
+          # ⚠ Every `run:` block is `bash -e`, so a fallible command in an
+          # ASSIGNMENT aborts the step there. Written `X=$(…) || X=""` so the
+          # explicit test below is what decides, not the assignment's exit status.
+          BEFORE=/tmp/register_before.md
+          git show HEAD~1:"$REGISTER" > "$BEFORE" 2>/dev/null || : > "$BEFORE"
+          if [ -s "$BEFORE" ]; then
+            node scripts/check-register-integrity.mjs --before "$BEFORE"
+          else
+            # No parent revision (first commit, shallow history): the shape arm
+            # still runs. It is NOT skipped — a guard that no-ops on a missing
+            # parent is indistinguishable from a passing one.
+            echo "no parent revision for $REGISTER — running the shape arm only"
+            node scripts/check-register-integrity.mjs
+          fi
+
   # Deno type-check + lint for the Supabase edge functions (supabase/functions/**).
   # Those run on Deno and are excluded from the vitest/tsc coverage measure (no
   # Deno toolchain elsewhere in CI), so the edge SOURCE was previously

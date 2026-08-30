@@ -19,6 +19,7 @@
     "test:cadence": "node scripts/extract-cadence.mjs && flow cadence lint -f tests/cadence/flow.test.json tests/cadence/fixtures/purchase-moment.cdc",
     "test:cadence:escrow": "bash scripts/fetch-cadence-escrow-test-deps.sh && flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc",
     "db:pins:check": "node scripts/check-db-pin-staleness.mjs",
+    "register:check": "node scripts/check-register-integrity.mjs",
     "pipelines:kills": "node scripts/analysis/killed-after-routes.mjs",
     "edge:drift:check": "node scripts/check-edge-fn-drift.mjs",
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",
