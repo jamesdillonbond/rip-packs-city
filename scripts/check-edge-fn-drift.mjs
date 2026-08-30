@@ -35,10 +35,17 @@
 //   proof is actually a proof. Drift in a _shared importer is caught by tier 2.
 //
 // TIER 2 — CONTENT CENSUS (authoritative, needs the deployed body)
-//   Fetch each deployed entrypoint, normalise (strip comments + collapse
-//   whitespace), diff against the repo file. This is the only census: tier 1 is
-//   a LOWER BOUND and is blind to a function whose import STYLE happens to match
-//   (e.g. sync-nba-games, which is url-only in both places).
+//   Fetch each deployed bundle — /body serves a Deno eszip since ~2026-08-09 —
+//   PARSE it (@deno/eszip: Parser.parseBytes → load → getModuleSource) and
+//   compare the entrypoint's stored source against the repo file: directly,
+//   then through the canonicalising build→parse roundtrip in
+//   scripts/lib/eszip-source.mjs, because the hosted bundler TRANSPILES before
+//   storing (types stripped, swc-reprinted) so repo TS and stored source are
+//   two dialects of the same module. A CALIBRATION rule guards the dialect
+//   bridge: mismatches are findings only once at least one function matches,
+//   otherwise the run reports that the census did not run. This is the only
+//   census: tier 1 is a LOWER BOUND and is blind to a function whose import
+//   STYLE happens to match (e.g. sync-nba-games, url-only in both places).
 //
 // ⚠ TIMESTAMPS CANNOT ANSWER THIS. Comparing deployed `updated_at` to the last
 // commit touching a directory is unsound here for three independent reasons, all
@@ -52,12 +59,16 @@
 //   node scripts/check-edge-fn-drift.mjs --json    # machine-readable
 //   node scripts/check-edge-fn-drift.mjs --tier1   # metadata only, skip body fetches
 //
-// Needs SUPABASE_ACCESS_TOKEN (a `sbp_…` Management API PAT) + SUPABASE_PROJECT_ID.
+// Needs SUPABASE_ACCESS_TOKEN (a `sbp_…` Management API PAT) + SUPABASE_PROJECT_ID,
+// and the @deno/eszip devDependency for tier 2's parse mode.
 // Exit 0 clean · 1 drift found · 2 config/transport error.
 
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { stripComments } from "./lib/strip-comments.mjs"
+// Static import is safe for the pure-core consumers: eszip-source lazy-loads
+// the wasm only when extraction/canonicalisation is actually called.
+import { extractEntrypointSource, canonicaliseSource, tightNormalise } from "./lib/eszip-source.mjs"
 
 const FUNCTIONS_DIR = "supabase/functions"
 const API = "https://api.supabase.com/v1"
@@ -212,35 +223,82 @@ export function partitionByDeploySafety(slugs, blocked = GATE_KEY_DEPLOY_BLOCKED
   return { safe, mustNotDeploy }
 }
 
-export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5 }) {
+/**
+ * Which dialect bridge two sources of ONE module meet at, or null for none.
+ * Ordered strongest-claim-first; the mode is reported so a calibration shift
+ * (e.g. the hosted bundler changing swc versions and "canonical" decaying to
+ * "canonical_tight") is visible in the series, not silent.
+ */
+export async function matchDialects(repoSrc, depSrc, canonicalise = null) {
+  if (repoSrc === depSrc) return "verbatim"
+  if (normaliseSource(repoSrc) === normaliseSource(depSrc)) return "normalised"
+  if (canonicalise) {
+    let canon = null
+    try {
+      canon = await canonicalise(repoSrc)
+    } catch {
+      // A repo file the canonicaliser cannot process compares on the plain
+      // modes above only; returning null here reads as a mismatch, which the
+      // calibration rule keeps honest.
+      return null
+    }
+    if (normaliseSource(canon) === normaliseSource(depSrc)) return "canonical"
+    if (tightNormalise(canon) === tightNormalise(depSrc)) return "canonical_tight"
+  }
+  return null
+}
+
+export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5, parseEszip = null, canonicalise = null }) {
   const contentDrift = []
   const bodyFailures = []
   const eszipMisses = []
+  const parseMismatches = []
+  const parseMatchModes = { verbatim: 0, normalised: 0, canonical: 0, canonical_tight: 0 }
   let bodiesRead = 0
   let bodiesFailed = 0
   let eszipContained = 0
+  let eszipParsed = 0
   let eszipAttempted = false
 
-  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: false }
+  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: false }
 
   const bySlug = new Map(deployed.map((d) => [d.slug, d]))
   for (const { slug, src } of repo) {
     if (!bySlug.has(slug)) continue
     try {
       const body = await fetchBody(slug)
-      // ── ESZIP CONTAINMENT MODE (2026-08-30) ────────────────────────────────
-      // Since ~2026-08-09 the Management API serves /functions/{slug}/body as a
-      // Deno eszip bundle, not JSON — which is why this census read 0 bodies for
-      // 12 straight nightly runs (Detector Health caught the streak the moment it
-      // was configured, 2026-08-30). eszip embeds each module's source bytes, so
-      // the sound dependency-free check is CONTAINMENT: if the repo source is
-      // (whitespace-normalised) byte-contained in the bundle, the deploy includes
-      // it verbatim -> NOT drifted. A MISS is AMBIGUOUS — real drift and a
-      // bundler transformation look identical — so misses are reported loudly as
-      // eszipMisses, never counted into the PROVEN drift set. Whitespace-collapse
-      // only (no comment strip): a from-repo deploy is byte-identical, and
-      // running the comment-stripper over megabytes of binary risks blanking the
-      // needle's neighbourhood (false miss is safe, but keep it rare).
+      // ── ESZIP PARSE MODE (2026-08-30, the real tier 2) ─────────────────────
+      // Parse the bundle, extract the entrypoint's stored module source, and
+      // compare across dialects (see matchDialects). The containment scan
+      // below survives only as the fallback for a runtime where the wasm
+      // parser is unavailable or a bundle it cannot parse.
+      if (body && typeof body === "object" && typeof body.eszip === "string" && parseEszip && body.bytes) {
+        const dep = bySlug.get(slug)
+        let depSrc = null
+        try {
+          ;({ source: depSrc } = await parseEszip(body.bytes, { entrypointPath: dep.entrypoint_path ?? null }))
+        } catch (e) {
+          // A bundle the parser rejects is a FAILED read — never "clean".
+          bodiesFailed++
+          if (bodyFailures.length < maxFailuresKept) bodyFailures.push(`${slug}: eszip parse failed — ${e.message}`)
+          continue
+        }
+        bodiesRead++
+        eszipParsed++
+        const mode = await matchDialects(src, depSrc, canonicalise)
+        if (mode) parseMatchModes[mode]++
+        else parseMismatches.push({ slug, version: dep.version, updated_at: dep.updated_at })
+        continue
+      }
+      // ── ESZIP CONTAINMENT MODE (2026-08-30; FALLBACK ONLY since parse mode) ─
+      // Reached only when the wasm parser is unavailable (parseEszip null, or a
+      // caller that supplied no bytes). Kept because it needs nothing beyond
+      // string ops, and its positive control below already knows its limit: the
+      // hosted bundler transpiles, so containment matches nothing on a real
+      // fleet and the control converts the run to tier-2-did-not-run rather
+      // than 38 unprovable "misses". A MISS here is AMBIGUOUS — real drift and
+      // a bundler transformation look identical — so misses go to eszipMisses,
+      // never the PROVEN drift set.
       if (body && typeof body === "object" && typeof body.eszip === "string") {
         bodiesRead++
         eszipAttempted = true
@@ -294,7 +352,31 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
     }
     eszipMisses.length = 0
   }
-  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: bodiesRead > 0 }
+
+  // ── PARSE-MODE CALIBRATION (the same philosophy, one level up) ────────────
+  // A mismatch between the parsed deployed source and the canonicalised repo
+  // source is a REAL finding only if the dialect bridge is proven to work —
+  // i.e. at least one function in the fleet matched. With zero matches the
+  // likelier story is a comparison defect (the hosted bundler's swc printing
+  // differently than @deno/eszip's), and publishing 38 "drifted" would be this
+  // detector's containment mistake again, one abstraction higher. So: no
+  // calibration -> the parse attempts were failed reads and the run says the
+  // census did not run; calibrated -> mismatches are content drift.
+  const parseMatched = Object.values(parseMatchModes).reduce((a, b) => a + b, 0)
+  if (eszipParsed > 0 && parseMatched === 0) {
+    bodiesFailed += parseMismatches.length
+    bodiesRead -= parseMismatches.length
+    if (bodyFailures.length < maxFailuresKept) {
+      bodyFailures.push(
+        `eszip parse mode matched 0 of ${eszipParsed} parsed bundles under every dialect bridge — uncalibrated, so these mismatches prove nothing; fix the comparison (dialect gap between the hosted bundler and @deno/eszip) before believing any of it`
+      )
+    }
+    parseMismatches.length = 0
+  } else {
+    for (const m of parseMismatches) contentDrift.push(m)
+  }
+
+  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: bodiesRead > 0 }
 }
 
 class AuthError extends Error {}
@@ -330,7 +412,9 @@ async function apiBody(path, token) {
     throw new Error(`GET ${path} -> HTTP ${r.status}: ${body}`)
   }
   const buf = Buffer.from(await r.arrayBuffer())
-  if (buf.subarray(0, 5).toString("utf8") === "ESZIP") return { eszip: buf.toString("latin1") }
+  // `bytes` feeds the parser; `eszip` (latin1 text view) feeds the containment
+  // fallback and keeps the pre-parse-mode result shape stable for callers.
+  if (buf.subarray(0, 5).toString("utf8") === "ESZIP") return { eszip: buf.toString("latin1"), bytes: new Uint8Array(buf) }
   const text = buf.toString("utf8")
   try { return JSON.parse(text) } catch { return text }
 }
@@ -374,8 +458,11 @@ async function main() {
     deployed,
     attempted: tier2Attempted,
     fetchBody: (slug) => apiBody(`/projects/${project}/functions/${slug}/body`, token),
+    parseEszip: extractEntrypointSource,
+    canonicalise: canonicaliseSource,
   })
-  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: tier2Ran } = census
+  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMatchModes, eszipParsed, ran: tier2Ran } = census
+  const parseMatched = Object.values(parseMatchModes ?? {}).reduce((a, b) => a + b, 0)
 
   if (tier2Attempted && !tier2Ran) {
     console.error(
@@ -429,6 +516,13 @@ async function main() {
     content_drifted: contentDrift.length,
     content_drifted_slugs: contentDrift.map((c) => c.slug).sort(),
     eszip_misses: eszipMisses.map((m) => m.slug).sort(),
+    // Parse-mode calibration series: how many bundles the parser read, and at
+    // which dialect bridge each match landed. A drift here (canonical decaying
+    // to canonical_tight, or matched dropping toward 0) is the early warning
+    // that the hosted bundler changed dialects under the census.
+    eszip_parsed: eszipParsed ?? 0,
+    eszip_parse_matched: parseMatched,
+    eszip_parse_match_modes: parseMatchModes ?? {},
     population: deployed
       .map((d) => ({
         slug: d.slug,
@@ -470,6 +564,13 @@ async function main() {
     console.log(
       tier2Attempted
         ? `content census: ${bodiesRead} body/bodies read, ${bodiesFailed} failed` +
+            (eszipParsed > 0
+              ? ` (eszip-parsed ${eszipParsed}, matched ${parseMatched}` +
+                (parseMatched > 0
+                  ? `: ` + Object.entries(parseMatchModes).filter(([, n]) => n > 0).map(([k, n]) => `${k}=${n}`).join(" ")
+                  : ``) +
+                `)`
+              : "") +
             (tier2Ran ? "" : "  ← CENSUS DID NOT RUN; the count below is a LOWER BOUND")
         : `content census: SKIPPED (--tier1); the count below is a LOWER BOUND`
     )

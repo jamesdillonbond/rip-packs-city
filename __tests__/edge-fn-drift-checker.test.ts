@@ -8,10 +8,18 @@ import {
   classifyImportMapDrift,
   normaliseSource,
   runContentCensus,
+  matchDialects,
   driftExitCode,
   partitionByDeploySafety,
   GATE_KEY_DEPLOY_BLOCKED,
 } from "@/scripts/check-edge-fn-drift.mjs"
+import {
+  pickEntrypoint,
+  tightNormalise,
+  bareSpecifiers,
+  extractEntrypointSource,
+  canonicaliseSource,
+} from "@/scripts/lib/eszip-source.mjs"
 
 // Guards the edge-function drift detector — the only check in this repo that can
 // see a function which was fixed, reviewed, tested, merged, and never deployed.
@@ -182,6 +190,9 @@ describe("edge-fn drift detector — tier 2 content census", () => {
   // The Management API serves /body as an eszip bundle since ~08-09; the census
   // read 0 bodies for 12 nightly runs. Containment: repo source found in the
   // bundle = clean; missing = eszipMisses (loud, but never counted as PROVEN).
+  // Since parse mode landed (same day), containment is the FALLBACK — these
+  // tests exercise it by not injecting `parseEszip`, which is exactly the
+  // runtime condition that selects it.
   it("eszip: a bundle containing the repo source (any whitespace) reads clean", async () => {
     const r = await runContentCensus({
       repo,
@@ -334,6 +345,208 @@ describe("edge-fn drift detector — tier 2 content census", () => {
     })
     expect(r.bodiesFailed).toBe(9)
     expect(r.bodyFailures.length).toBe(5)
+  })
+})
+
+// ── TIER 2 PARSE MODE — the real census over eszip bundles ───────────────────
+//
+// Containment's own positive control proved it can never census this fleet
+// (matched 0 of 38 live: the hosted bundler transpiles before storing). Parse
+// mode reads the bundle with @deno/eszip and compares module SOURCE across
+// dialects; its calibration rule is the same philosophy one level up — a
+// mismatch is only a finding once at least one function matched, because a
+// comparison that matches NOTHING has more likely broken itself than found 38
+// simultaneous drifts.
+describe("edge-fn drift detector — tier 2 eszip parse mode", () => {
+  const repo = [
+    { slug: "a", src: "const x: number = 1\nconsole.log(x)\n" },
+    { slug: "b", src: "const y = 2\nconsole.log(y)\n" },
+  ]
+  const deployed = [
+    { slug: "a", version: 3, updated_at: "2026-08-01", entrypoint_path: "/tmp/f_a/source/index.ts" },
+    { slug: "b", version: 4, updated_at: "2026-08-02", entrypoint_path: "/tmp/f_b/source/index.ts" },
+  ]
+  const eszipBody = async () => ({ eszip: "ESZIP2.3 ...bundle...", bytes: new Uint8Array([1, 2, 3]) })
+  // The hosted bundler's dialect: types stripped, semicolons added — what a
+  // real production bundle stores for these sources.
+  const transpiled: Record<string, string> = {
+    "/tmp/f_a/source/index.ts": "const x = 1;\nconsole.log(x);\n",
+    "/tmp/f_b/source/index.ts": "const y = 2;\nconsole.log(y);\n",
+  }
+  const fakeParse = async (_bytes: Uint8Array, { entrypointPath }: any) => ({ source: transpiled[entrypointPath] })
+  const fakeCanonicalise = async (src: string) => src.replace(": number", "")
+
+  it("calibrated fleet: matches are clean, a real mismatch IS content drift", async () => {
+    const parse = async (_b: Uint8Array, { entrypointPath }: any) =>
+      entrypointPath.includes("f_a")
+        ? { source: transpiled["/tmp/f_a/source/index.ts"] }
+        : { source: "const y = 999;\nconsole.log(y);\n" } // deployed b differs for real
+    const r = await runContentCensus({
+      repo, deployed, fetchBody: eszipBody, parseEszip: parse, canonicalise: fakeCanonicalise,
+    })
+    expect(r.bodiesRead).toBe(2)
+    expect(r.eszipParsed).toBe(2)
+    expect(r.contentDrift.map((c: any) => c.slug)).toEqual(["b"])
+    expect(r.ran).toBe(true)
+    // and the match landed on a named dialect bridge, so the series can see it
+    const matched = Object.values(r.parseMatchModes as Record<string, number>).reduce((s, n) => s + n, 0)
+    expect(matched).toBe(1)
+  })
+
+  it("both matching across the dialect gap: clean census, no drift, modes counted", async () => {
+    const r = await runContentCensus({
+      repo, deployed, fetchBody: eszipBody, parseEszip: fakeParse, canonicalise: fakeCanonicalise,
+    })
+    expect(r.contentDrift).toEqual([])
+    expect(r.bodiesRead).toBe(2)
+    expect(r.ran).toBe(true)
+  })
+
+  // The calibration rule — parse mode's own version of containment's positive
+  // control. Zero matches across the whole fleet means the DIALECT BRIDGE is
+  // broken, not that everything drifted at once.
+  it("UNCALIBRATED (zero matches anywhere): reports did-not-run, never 2 findings", async () => {
+    const parse = async () => ({ source: "something the comparison cannot bridge at all" })
+    const r = await runContentCensus({
+      repo, deployed, fetchBody: eszipBody, parseEszip: parse, canonicalise: fakeCanonicalise,
+    })
+    expect(r.ran).toBe(false)
+    expect(r.bodiesRead).toBe(0)
+    expect(r.bodiesFailed).toBe(2)
+    expect(r.contentDrift).toEqual([])
+    expect(r.bodyFailures.some((f: string) => f.includes("matched 0 of 2"))).toBe(true)
+  })
+
+  it("a bundle the parser rejects is a FAILED read, not a clean one", async () => {
+    const parse = async (_b: Uint8Array, { entrypointPath }: any) => {
+      if (entrypointPath.includes("f_a")) throw new Error("wasm panic: not implemented")
+      return { source: transpiled["/tmp/f_b/source/index.ts"] }
+    }
+    const r = await runContentCensus({
+      repo, deployed, fetchBody: eszipBody, parseEszip: parse, canonicalise: fakeCanonicalise,
+    })
+    expect(r.bodiesFailed).toBe(1)
+    expect(r.bodiesRead).toBe(1)
+    expect(r.bodyFailures.join(" ")).toContain("eszip parse failed")
+    expect(r.ran).toBe(true)
+  })
+
+  it("falls back to containment when the body carries no bytes, even with a parser present", async () => {
+    // Same runtime condition as an old-shape cached body: {eszip} text only.
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) =>
+        slug === "a"
+          ? { eszip: "ESZIP2.3 const x: number = 1 console.log(x) " }
+          : { eszip: "ESZIP2.3 const y = 2 console.log(y) " },
+      parseEszip: fakeParse,
+      canonicalise: fakeCanonicalise,
+    })
+    expect(r.eszipParsed).toBe(0)
+    expect(r.bodiesRead).toBe(2)
+    expect(r.contentDrift).toEqual([])
+  })
+})
+
+describe("edge-fn drift detector — dialect bridges (matchDialects / tightNormalise)", () => {
+  it("orders the ladder: verbatim, then comment/whitespace, then canonical", async () => {
+    expect(await matchDialects("const a = 1", "const a = 1")).toBe("verbatim")
+    expect(await matchDialects("const a = 1 // x", "/* y */ const  a = 1")).toBe("normalised")
+    expect(await matchDialects("const a: number = 1", "const a = 1", async (s: string) => s.replace(": number", ""))).toBe("canonical")
+    expect(await matchDialects("const a = 1", "const a = 2")).toBe(null)
+  })
+
+  it("canonical_tight bridges swc reprint artifacts: added semicolons, retabbed objects", async () => {
+    const repoSide = 'fetch(url, { method: "POST", headers: h })\n'
+    const deployedSide = 'fetch(url, {\n  method: "POST",\n  headers: h\n});\n'
+    expect(await matchDialects(repoSide, deployedSide, async (s: string) => s)).toBe("canonical_tight")
+  })
+
+  it("a canonicalise failure degrades to the plain modes instead of throwing", async () => {
+    const boom = async () => { throw new Error("swc choked") }
+    expect(await matchDialects("const a = 1", "const  a = 1", boom)).toBe("normalised")
+    expect(await matchDialects("const a: number = 1", "const a = 1;", boom)).toBe(null)
+  })
+
+  it("tightNormalise converts semicolons to SPACES before tightening — deletion would glue `1;console` ≠ `1 console`", () => {
+    expect(tightNormalise("const x = 1;\nconsole.log(x);")).toBe(tightNormalise("const x = 1\nconsole.log(x)"))
+    // and it must never bridge an actual code change
+    expect(tightNormalise("const x = 1")).not.toBe(tightNormalise("const x = 2"))
+  })
+})
+
+describe("edge-fn drift detector — eszip entrypoint identification", () => {
+  const specs = [
+    "file:///tmp/user_fn_p_abc_1/source/import_map.json",
+    "file:///tmp/user_fn_p_abc_1/source/index.ts",
+    "file:///tmp/user_fn_p_abc_1/source/_shared/util.ts",
+    "https://esm.sh/@supabase/supabase-js@2",
+  ]
+  it("prefers the metadata entrypoint_path when it resolves", () => {
+    expect(pickEntrypoint(specs, "/tmp/user_fn_p_abc_1/source/index.ts")).toBe("file:///tmp/user_fn_p_abc_1/source/index.ts")
+  })
+  it("falls back to the /source/index.ts shape, excluding _shared and remote modules", () => {
+    expect(pickEntrypoint(specs)).toBe("file:///tmp/user_fn_p_abc_1/source/index.ts")
+  })
+  it("returns null when genuinely ambiguous — a failed read, never a guess", () => {
+    expect(
+      pickEntrypoint(["file:///a/source/index.ts", "file:///b/source/index.ts"])
+    ).toBe(null)
+  })
+})
+
+// The real thing, wasm and all: a production-shaped bundle built with the same
+// library the census parses with. Proves the full extract → canonicalise →
+// compare pipeline bridges the transpile gap on identical sources and still
+// sees a one-token content change. (~100ms; if @deno/eszip ever breaks under
+// Node this is the test that says so before a nightly run does.)
+describe("edge-fn drift detector — eszip wasm integration", () => {
+  const SRC = [
+    'import { createClient } from "@supabase/supabase-js"',
+    "// hourly sweep",
+    "interface Row { id: number }",
+    'const c = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("KEY")!)',
+    "Deno.serve(async () => {",
+    "  const r: Row = { id: 1 }",
+    '  return new Response(JSON.stringify({ r, c: !!c }), { headers: { "Content-Type": "application/json" } })',
+    "})",
+    "",
+  ].join("\n")
+
+  async function buildProductionLikeBundle(src: string) {
+    const { build } = await import("@deno/eszip")
+    const spec = "file:///tmp/user_fn_proj_abc_1/source/index.ts"
+    const mapUrl = "file:///tmp/user_fn_proj_abc_1/source/deno.json"
+    return build(
+      [spec],
+      async (s: string) => {
+        if (s === spec) return { kind: "module", specifier: s, content: src }
+        if (s === mapUrl)
+          return {
+            kind: "module",
+            specifier: s,
+            content: JSON.stringify({ imports: { "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2" } }),
+          }
+        return { kind: "external", specifier: s }
+      },
+      mapUrl
+    )
+  }
+
+  it("identical source bridges the transpile gap; a changed token does not", async () => {
+    const bytes = await buildProductionLikeBundle(SRC)
+    const ext = await extractEntrypointSource(bytes, { entrypointPath: "/tmp/user_fn_proj_abc_1/source/index.ts" })
+    expect(ext.specifier).toBe("file:///tmp/user_fn_proj_abc_1/source/index.ts")
+    // the stored source is TRANSPILED — this is the fact containment died on
+    expect(ext.source).not.toContain("interface Row")
+    expect(await matchDialects(SRC, ext.source, canonicaliseSource)).not.toBe(null)
+    expect(await matchDialects(SRC.replace("id: 1", "id: 2"), ext.source, canonicaliseSource)).toBe(null)
+  })
+
+  it("bareSpecifiers finds from-imports and side-effect imports, skipping url/relative", () => {
+    const src = 'import "polyfill-lib"\nimport { a } from "@x/y"\nimport b from "./local.ts"\nimport c from "https://esm.sh/z"'
+    expect(bareSpecifiers(src).sort()).toEqual(["@x/y", "polyfill-lib"])
   })
 })
 
