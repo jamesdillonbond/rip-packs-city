@@ -39,7 +39,58 @@ on:
         default: false
 
 jobs:
+  # 2026-08-30. This workflow had failed 12/12 scheduled runs: Dapper Atlas WAF-blocks
+  # the GitHub-runner IP, so every tick burned ~90s, wrote an `egress_blocked`
+  # pipeline_runs row, and left a permanently-red badge -- which by our own rule is
+  # indistinguishable from a broken instrument at a glance, so a NEW failure here
+  # could not have been seen.
+  #
+  # The board is NOT starved: it is fed by the residential Windows Task Scheduler arm
+  # on Trevor's box (18/18 = 100% over 7d, 26,584 Atlas calls). This GHA arm has
+  # contributed 0 rows and 0 Atlas calls in that window, so gating it removes no
+  # redundancy -- it was never redundant.
+  #
+  # NOTE the polarity is the OPPOSITE of badge-sync.yml's probe. There the HOST was
+  # down and a runner-IP 403 had to count as alive. Here the host is fine and the
+  # RUNNER is blocked, so a 403 challenge means "this runner cannot do the job" and
+  # must skip. Self-resuming either way: if GitHub's egress is ever unblocked, the
+  # probe passes and the backstop silently comes back with no one to remember it.
+  #
+  # THREE probes, not one: Atlas's challenge is PROBABILISTIC (measured 2026-08-30
+  # from a working egress: 10% overall, 23% in the worst batch, scattered rather than
+  # tail-clustered). A single probe would misclassify a working runner ~1 tick in 10.
+  # Requiring >=1 usable 200 of 3 keeps a fully-blocked IP at 0 while making a false
+  # skip on a working IP ~1 in 1000.
+  atlas-reachable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      reachable: ${{ steps.probe.outputs.reachable }}
+    steps:
+      - id: probe
+        run: |
+          OK=0
+          for i in 1 2 3; do
+            # bash -e: a fallible command in an ASSIGNMENT aborts the step, so the
+            # `|| STATUS=` fallback is load-bearing, not decorative.
+            STATUS=$(curl -s -o /tmp/atlas-probe.json -w "%{http_code}" --max-time 20 -X POST               -H "connect-protocol-version: 1"               -H "content-type: application/json"               -H "Origin: https://dapper.market"               -H "Referer: https://dapper.market/"               -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"               --data '{"product":"nba","completed":false,"editionId":"2402","sortByOption":"SERIAL_NUMBER","sortByDirection":"ASC","limit":"1","offset":"0","offers":false}'               https://api.production.atlas.dapperlabs.com/public/atlas.v1.MarketplaceService/SearchMarketplaceTransactions) || STATUS="000"
+            echo "atlas probe $i/3 -> $STATUS"
+            if [ "$STATUS" = "200" ]; then OK=$((OK+1)); fi
+            sleep 3
+          done
+          # Assert the count the guard actually inspected, so a probe loop that
+          # silently ran zero times cannot read as a clean skip.
+          echo "usable 200s: $OK of 3 probes"
+          if [ "$OK" -ge 1 ]; then
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Atlas is unreachable from this runner (0 of 3 probes returned 200) -- skipping. The residential Task Scheduler arm feeds the board; this job is only a backstop."
+          fi
+
   ingest:
+    needs: atlas-reachable
+    if: needs.atlas-reachable.outputs.reachable == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

@@ -8,7 +8,7 @@
 
 ⚠ **The error is the two-caller-arm trap, committed in full.** `topshot-active-listings-ingest` has TWO callers and I measured the pooled rate, which is neither arm's rate:
 
-| arm | runs (7 d) | ok | **% ok** | egress_blocked | Atlas calls | rows written |
+| arm | runs (**76 h retained window**) | ok | **% ok** | egress_blocked | Atlas calls | rows written |
 |---|---:|---:|---:|---:|---:|---:|
 | **residential — Windows Task Scheduler on Trevor's box, `29 */3`→:13** | **18** | **18** | **100 %** | 0 | 26,584 | 4,719 |
 | GitHub Actions (`.github/workflows/topshot-active-listings-ingest.yml`, `29 */3`) | 9 | **0** | **0 %** | 9 | 0 | 0 |
