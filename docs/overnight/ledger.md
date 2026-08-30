@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830171144 APPLIED) — `ingest` joins the dead-host suppression class, with its impact measured BEFORE it was silenced
+
+**Cleaning up the signal I created an hour ago.** The new arm surfaced `ingest` (TS sales GQL) as stalled; leaving it would page forever on a host that is not coming back, so it now joins the existing **"dead host 2026-08-30"** class at the **same expiry (2026-09-13 00:00Z)**, so the whole class lapses and is re-checked together.
+
+⭐ **Why it was missed in the 15:55Z sweep that suppressed the other eight, which is the interesting part: NOTHING WAS ALERTING ON IT.** Both silence arms read `max(started_at)` with no `ok` filter, so `ingest`'s own failure rows held them green. It was invisible until the new arm existed — the defect and the missing pipeline were the same bug.
+
+⚠ **Impact measured BEFORE suppressing — suppressing an unmeasured signal is how a real outage gets filed as noise.** `topshot_gql` supplied ~1,300–1,550 sales/day (~30–35% of TS volume) before the host died, which *sounds* severe; but on 2026-08-24 with both sources healthy, **1,280 of 1,283 (99.8%) already had a non-GQL counterpart** for the same `nft_id` within ±10 min — **only 3 unique**, so the true loss is **~3 sales/day (~0.2%)**. ⚠ **Negative control:** the same query with a corrupted join key (`nft_id || '9'`) returned **0**, so the 99.8% is not a too-loose match.
+
+**Exit condition, stated so it cannot quietly renew:** the arm re-fires the moment this lapses on 2026-09-13. **If the host is still dead then, RETIRE the `ingest` step in `rpc-pipeline.yml` rather than suppress a third time — a twice-renewed suppression is a decision nobody is making.** Migration asserts no pre-existing row and `ROW_COUNT = 1`. **Revert: `DELETE FROM public.pipeline_alert_suppression WHERE pipeline = 'ingest';`**
+
+✅ **Verified, and it doubles as proof the new arm honours suppressions:** the arm went **3 → 2** on insert (`match-topshot-players`, `wallet-username-resolver` remain; `ingest` gone). ⭐ Both survivors are left deliberately — `match-topshot-players` failed once after two clean days and should self-heal, and `wallet-username-resolver` is corroborated by `failure_rate` and already being worked (20260830155848).
+
+⭐ **The whole path is confirmed live, not assumed:** at 09:55 PT `check-alerts` logged `alerts_active` **7 → 11** (matching the wrapper exactly), `debounced: false`, **1 email + 1 Telegram sent**. The new arm reached Trevor on its first tick.
+
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830170715 APPLIED + a workflow gate) — the dead `ingest` costs 0.2%, the TS volume drop is REAL, and a 12/12-red workflow is now an honest backstop
 
 **Follow-on from the alert-arm entry below. Three things measured, two shipped, and one correction to my own numbers from an hour ago.**
