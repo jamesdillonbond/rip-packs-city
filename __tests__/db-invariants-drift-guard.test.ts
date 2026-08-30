@@ -136,7 +136,9 @@ const PINS = [
   {
     fn: "backfill_wmc_metadata_from_editions",
     test: "supabase/tests/backfill_wmc_metadata_from_editions.sql",
-    migration: "supabase/migrations/20260713050000_audit_20260713_wmc_team_name_denorm.sql",
+    // Re-pointed 2026-08-30: rows whose NULLs the edition cannot fill are no
+    // longer rewritten (and no longer counted) on every child run.
+    migration: "supabase/migrations/20260830143540_audit_20260830_wmc_metadata_post_pass_rewrites_rows_it_cannot_fill.sql",
   },
   {
     fn: "update_badge_low_ask_from_cached_listings",

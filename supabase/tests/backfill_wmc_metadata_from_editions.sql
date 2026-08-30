@@ -8,9 +8,11 @@
 -- its team as the display name rather than blank. Returns the count updated.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260713050000_audit_20260713_wmc_team_name_denorm.sql),
+-- (supabase/migrations/20260830143540_audit_20260830_wmc_metadata_post_pass_rewrites_rows_it_cannot_fill.sql),
 -- with its body verified byte-identical to live prod via pg_get_functiondef on
--- 2026-07-31. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- 2026-08-30. Since 2026-08-30 a row is touched only when at least one of its
+-- NULLs can actually be filled — a row whose edition is NULL in the same column
+-- is neither rewritten nor counted (it used to be, on every child run). __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -61,12 +63,15 @@ BEGIN
      WHERE e.collection_id = wmc.collection_id
        AND e.external_id   = wmc.edition_key
        AND wmc.edition_key IS NOT NULL
+       -- Only rows where at least one NULL can actually be filled. Without the
+       -- right-hand IS NOT NULL checks a row whose edition is also NULL in that
+       -- column was rewritten with identical values on every run (2026-08-30).
        AND (
-         wmc.tier IS NULL OR
-         wmc.player_name IS NULL OR
-         wmc.set_name IS NULL OR
-         wmc.mint_count IS NULL OR
-         wmc.team_name IS NULL
+         (wmc.tier        IS NULL AND e.tier IS NOT NULL) OR
+         (wmc.player_name IS NULL AND COALESCE(e.player_name, e.team_name) IS NOT NULL) OR
+         (wmc.set_name    IS NULL AND e.set_name IS NOT NULL) OR
+         (wmc.mint_count  IS NULL AND e.circulation_count IS NOT NULL) OR
+         (wmc.team_name   IS NULL AND e.team_name IS NOT NULL)
        )
        AND (p_wallet_address IS NULL OR wmc.wallet_address = p_wallet_address)
        AND (p_collection_id  IS NULL OR wmc.collection_id  = p_collection_id)
@@ -84,18 +89,29 @@ $function$;
 
 INSERT INTO public.editions (collection_id, external_id, tier, player_name, set_name, circulation_count, team_name) VALUES
   (:ts::uuid, 'E1', 'LEGENDARY', 'Player One', 'Set A', 100, 'Team X'),
-  (:ts::uuid, 'E2', 'RARE',      NULL,         'Set B',  50, 'Team Y');  -- no player → team fallback
+  (:ts::uuid, 'E2', 'RARE',      NULL,         'Set B',  50, 'Team Y'),  -- no player → team fallback
+  (:ts::uuid, 'E3', 'RARE',      'Someone',    'Set C',  20, NULL);      -- no team → cannot fill a NULL team_name
 
 INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name) VALUES
   ('0xW1', :ts::uuid, 'E1', NULL,      NULL,      NULL,   NULL, NULL),      -- all filled
   ('0xW1', :ts::uuid, 'E1', 'EXISTING','Keep Me', NULL,   NULL, NULL),      -- keeps tier+player, fills rest
   ('0xW1', :ts::uuid, 'E2', NULL,      NULL,      NULL,   NULL, NULL),      -- player falls back to team
   ('0xW1', :ts::uuid, 'E1', 'X',       'Y',       'Z',    9,    'T'),       -- fully populated → skipped
-  ('0xW1', :ts::uuid, 'NOMATCH', NULL, NULL,      NULL,   NULL, NULL);      -- no edition → skipped
+  ('0xW1', :ts::uuid, 'NOMATCH', NULL, NULL,      NULL,   NULL, NULL),      -- no edition → skipped
+  ('0xW2', :ts::uuid, 'E3', 'RARE',    'Someone', 'Set C', 20,   NULL);      -- only team_name NULL, edition has none → NOT rewritten (2026-08-30)
 
 -- ── Count: three rows have a fillable NULL and a matching edition ────────────
 SELECT _assert_eq(public.backfill_wmc_metadata_from_editions()::text, '3',
-  'updates the 3 rows missing a field with a matching edition; the full row + no-match row are skipped');
+  'updates the 3 rows missing a field with a matching edition; the full row, the no-match row AND the unfillable-NULL row are skipped');
+
+-- ── 2026-08-30: a NULL the edition cannot fill is not a reason to rewrite ────
+-- 0xW2/E3 has only team_name NULL and its edition has no team_name either. The
+-- old predicate rewrote it with identical values every run and counted it —
+-- the phantom count is what kept refresh_seeded_wallet_stats firing.
+SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW2')::text, '0',
+  'a row whose only NULLs cannot be filled by its edition is not rewritten and not counted');
+SELECT _assert_eq((SELECT xmax::text FROM public.wallet_moments_cache WHERE wallet_address='0xW2'), '0',
+  'the unfillable row was never touched (xmax = 0: no UPDATE ever locked or rewrote it)');
 
 -- ── Row 1: every NULL filled from the edition ───────────────────────────────
 SELECT _assert_eq((SELECT tier||'|'||player_name||'|'||set_name||'|'||mint_count::text||'|'||team_name
