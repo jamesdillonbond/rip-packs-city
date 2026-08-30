@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📋 GENUINE OVERNIGHT, NOTHING SHIPPED (NO-PUSH cloud) — post-ship watch clean, all live work routes to operator
+
+**Real overnight run (~01:06 PT, no clock skew). NO-PUSH cloud session** (mount has no `remote.origin.pushurl`; `git push --dry-run` → "could not read Username"). DB migrations + artifact repairs were available; **no clearly-safe lever existed, so nothing shipped.** Handoff: `docs/handoff-2026-08-30-overnight-pass.md`.
+
+## Post-ship watch on the prior pass — CLEAN
+- `sentinel_fmv_confidence_rows` filter-pushdown (migs 20260829202655/_202944): **PASS** — `rpc_ops_snapshot()` returns all 11 keys, no timeout. Holding.
+- `offers-sweep` upstream-breaker (shipped tonight by Claude Code): **PASS** — alternating fail(530)→skip(`upstream_outage`) every other tick since ~05:22Z; half-open by construction, halving wasted calls into the dead host.
+- collection-moments perf / OG-card bounds / edge-fn 4xx arm: no new 5xx class in Vercel prod (12h). No revert (NO-PUSH); no regression.
+
+## Health
+- Security clean (`[]`×4). db_size 14327→14412 MB. Trust: 1 BREACH, `unmapped_resolution_backlog_max=295` — **known structural nfl_all_day residual**, not new, do not raise breach_at.
+- **Top Shot legacy-endpoint outage ~38h+** (`public-api.nbatopshot.com` 530/1033, decommissioning-shaped) is the dominant failure driver. pack-pool-backfill PAUSED (jobid 16), moments-hydrator STOPPED (0 runs since 03:42Z), offers-sweep breaker-throttled. Studio endpoint healthy.
+- **FMV HIGH+MED declining, 100% attributable to the outage:** TS 7609→6983 (−626), AllDay 1505→1279 (−226). Not fixable in DB — Studio-endpoint client migration is the durable fix (code+push, queued).
+
+## Queued for operator (carried) — night-count noted
+- topshot-moments-hydrator durable upstream-breaker (mirror offers-sweep) — code. (n=1)
+- compute-topshot-pack-ev: log `ok:false` on `gql_errors==nodes_processed && ev_rows_written==0` (33h silent-failure) — edge-fn. (n=1)
+- Top Shot pack-EV revival from Studio asks (pool fixed at drop; depletion NULL) — Trevor product+IO(R46) decision. (n=1)
+- Top Shot legacy→Studio client migration (`lib/chains/flow/topshot*.ts`) — code+push.
+- snapshot-institutional-wallets OFFSET→keyset — edge-fn/R21.
+- 8 truncated + 5 dup setless `sets` rows (R58 REFUTED — they 404 by construction, no surface) — cosmetic, no change warranted.
+- Standing: cloud-Cowork push creds · Sentry dark since 08-18 · atlas-proxy · sports-proxy ESPN 403 · #22 stale public branch e4tib3.
+
+⚠ NO-PUSH: this entry + metrics + handoff written to the MOUNT, uncommitted — Trevor/Claude Code commits.
+
 ### 2026-08-29 · 📋 MEASURED, NOTHING SHIPPED — `get_lock_check_batch` is IO-bound, not plan-bound: the #52 remedy makes NO difference, and the fix is already in flight by another session
 
 **Chased because it is a LIVE failure with a cause I had already ranked.** `get_pipeline_alerts()` shows `lock-check-batch` at **27/96 runs failed (28.1 %)**, every one `get_lock_check_batch: canceling statement due to statement timeout` — and my own #52 sweep had it at **24,767 ms mean** in the 71-min post-fix window (lifetime 48,979 ms over 842 calls, max clipped at the ~120 s ceiling).
