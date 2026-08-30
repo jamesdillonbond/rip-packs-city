@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (four renames) — the "BODY-DIFF" verdicts were my own classifier's artifact: all eight stamp-mismatched files are comment-only deltas, and item 6 closes completely
+
+**Pass: desktop, 21:0x–21:2xZ.** Correction to the 18:1xZ entry, held to the higher bar a correction demands.
+
+- **The earlier method was wrong for four files:** it stripped each file's LEADING comment header before comparing against the register — but the register text for these migrations INCLUDES the header (the desktop workflow applied the full file text, then appended more narrative to the file afterward). Header-stripping one side manufactured the "REAL SQL DELTA" verdicts.
+- **The correct comparison** (full text both sides, comments stripped, whitespace collapsed): all four match their register rows. `20260830051052` also proven by direct diff of the recovered prod text: the entire delta is **three comment lines** ("Verified by a rolled-back positive control…") added to the file post-apply.
+- **Renamed to the DB stamps:** `20260829023000→20260829015314` rwfd_temp_build, `20260829030000→20260829024938` rwfc_two_callers, `20260829134500→20260829134428` promote_unmapped_sales_does_not_overlap, `20260830051026→20260830051052` edge_fn_http_arm. Zero code/test references to the old stamps (grepped). Every applied migration in the window now sits at its recorded version with SQL-identical content; the files' extra post-apply comments are a feature, not drift.
+- ⓘ Also: 20:28Z board sweep `succeeded` 17 s, 45/45 boards ok — open-thread item 4's last slot closes. jobid 408 ticking hourly (19:09, 20:09 `succeeded`); jobid 303 ticks 1–34 s; alerts 7; instance idle.
+
 ### 2026-08-30 · ✅ SHIPPED (prod edge functions + docs) — R21: both pack-sales backfills de-literalised onto `PACK_SALES_GATE_KEY`, with `_OLD` dual-accept and the `count:"exact"` cold-read fix
 
 **Prod state: two edge-function deploys. No migration, no schema change, no cron change.**
