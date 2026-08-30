@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (prod edge functions + docs) — R21: both pack-sales backfills de-literalised onto `PACK_SALES_GATE_KEY`, with `_OLD` dual-accept and the `count:"exact"` cold-read fix
+
+**Prod state: two edge-function deploys. No migration, no schema change, no cron change.**
+`backfill-allday-pack-sales` v19 → **v21** · `backfill-topshot-pack-sales` v18 → **v20**.
+Both `verify_jwt:false`, `import_map:false` (they import supabase-js by full esm.sh URL — no bare
+specifiers, so no import map is needed; they are NOT in the edge-fn-drift tier-1 class).
+
+**Three changes per function, and nothing else** (built by an assert-counted script, diffed against
+the staged originals):
+1. `const GATE="<literal>"` → `Deno.env.get("PACK_SALES_GATE_KEY") ?? ""`
+2. `GATE_OLD` dual-accept + **fail-closed** `if(!GATE) return 500 "gate not configured"` before the
+   key check. ⭐ **Deliberately added beyond the handoff spec:** the 08-18 correction is that `_OLD`
+   exists only in *deployed* builds — six functions are stuck precisely because it was added in repo
+   and never deployed. This was the one deploy where including it cost nothing, and the later
+   rotation now has a zero-downtime path.
+3. `count:"exact"` → `count:"estimated"` on the final `rows_in_table` read — the informational
+   full `count(*)` over a 281/305 MB table that was the instance's largest single cold-read consumer
+   (≈6.8% of all cold reads).
+
+**Ordering was the whole risk and it was respected.** Trevor set `PACK_SALES_GATE_KEY` (to the value
+cron already sends) BEFORE the deploy. Deploying first would have made the gate `""` → 403 on every
+tick for jobs 25/29 — the 08-11 mechanism, and unrevertible here because the staged rollback copy
+was redacted. ⚠ The agent could NOT have done the secret: the `sbp_` PAT still 401s (re-probed
+08-30), the CLI is not installed, and the Supabase MCP exposes no secrets management.
+
+**Verified three ways, in increasing strength:**
+- Unauthenticated boot probe on both → **403 with the function's OWN JSON body**, not 500. That
+  proves the module booted, imports resolved, AND `GATE` is non-empty — an unset secret would have
+  returned the 500 branch *before* the key check.
+- Real caller, Top Shot: jobid 29 dispatched 20:37:00Z (after its 20:36:49Z deploy) → **200
+  `{"done":true}`**.
+- Zero 403s and zero 500s across all post-deploy responses.
+
+⚠ **Both walks are COMPLETE** (AllDay finished 19:18:00Z today; Top Shot earlier), so both jobs
+early-return `{"done":true}` *before* reaching the count line. **The IO saving is therefore latent,
+not immediate** — it lands on the next `?reset=1` full re-walk. Do not expect a `pg_stat_statements`
+drop today; there is nothing left to drop until a re-walk.
+
+ⓘ Two side-findings worth not re-deriving: the live schedules are `*/3` / `1-58/3` because the
+08-25 cadence cut was **reverted 08-26** when its own falsifier tripped — that is current and
+correct, do not re-cut. And `max(content)` on a response-body column is **lexicographic**, which
+handed me a stale body and briefly made a finished walk look active.
+
+**Revert path:** redeploy the previous body from
+`docs/audits/edge-fleet-staging-2026-08-28/backfill-{allday,topshot}-pack-sales/index.ts.txt` —
+⚠ but note those staged copies are now the NEW (v21/v20) source. To roll back to the literal-gate
+build you would need the pre-08-30 copy from git history (`git log -p` that path) **and** the gate
+literal, which is not in the repo by design. In practice the forward fix is to correct the secret,
+not to roll back: a 403 means the secret ≠ the cron key and nothing else changed.
+
+**Still open (unchanged):** landing these in `supabase/functions/` still needs the four guard fixes
+in the staging README (register R21). The rotation itself is NOT done — `_OLD` is now deployed, so
+it can proceed one function at a time whenever Trevor wants.
+
 ### 2026-08-30 · ✅ CALIBRATED (follow-up to the eszip fix, its own falsifier met) — containment matched 0 of 38 on the live fleet: Supabase's bundler TRANSPILES, so tier 2 now says "did not run" instead of 38 unprovable misses
 
 **Pass: desktop, 20:0x–20:1xZ.** The dispatched 20:02Z edge-fn-drift run answered the calibration question the previous entry posed, in the falsifier direction.
