@@ -35,19 +35,23 @@
 -- every weighted aggregate -- and D9 below pins exactly that. See
 -- supabase/migrations/20260802210000_audit_20260802_pack_ev_coverage_denominator_pullable_only.sql.
 --
--- DDL below is a VERBATIM copy of that snapshot migration;
+-- REPINNED 2026-08-30: the pool's FMV lookup is a per-edition LATERAL on
+-- fmv_snapshots instead of a join to the fmv_current view (1.26M buffers per
+-- call -> 530). See supabase/migrations/20260830152806_audit_20260830_pack_ev_pool_reads_latest_snapshot_per_edition_not_the_fmv_current_view.sql.
+--
+-- DDL below is a VERBATIM copy of that migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
 
--- fmv_current is a view in prod (latest FMV per edition); the function only LEFT
--- JOINs it on (edition_id, collection_id, fmv_usd), so a plain table stands in.
+-- Since 2026-08-30 the function reads fmv_snapshots directly (newest row per
+-- pool edition, then the collection must match); a plain table stands in.
 CREATE TABLE pack_drop_pool (
   collection_id uuid, dist_id text, edition_id uuid,
   drop_weight numeric, orig_drop_weight numeric);
-CREATE TABLE fmv_current (edition_id uuid, collection_id uuid, fmv_usd numeric);
+CREATE TABLE fmv_snapshots (edition_id uuid, collection_id uuid, fmv_usd numeric, computed_at timestamptz);
 
 -- >>> BEGIN verbatim compute_pack_ev_per_edition_weighted (byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.compute_pack_ev_per_edition_weighted(p_collection_id uuid, p_dist_id text, p_pack_price numeric, p_slots integer DEFAULT 1)
@@ -132,9 +136,21 @@ BEGIN
       CASE WHEN v_use_original THEN COALESCE(pdp.orig_drop_weight, 0) ELSE pdp.drop_weight END AS w,
       fc.fmv_usd
     FROM pack_drop_pool pdp
-    LEFT JOIN fmv_current fc
-      ON fc.edition_id = pdp.edition_id
-      AND fc.collection_id = pdp.collection_id
+    -- 2026-08-30: the latest snapshot per pool edition, looked up per row.
+    -- This was `LEFT JOIN fmv_current` -- the DISTINCT ON view -- and the
+    -- planner cannot push a join key into DISTINCT ON, so every call walked
+    -- all 1.31M fmv_snapshots rows to price a 40-80 row pool: 1,259,494
+    -- buffers / 17.2 s vs 530 buffers / 6 ms for the identical rows (dist
+    -- 1246). Same semantics as the view: newest snapshot for the edition
+    -- regardless of collection, then the collection must match or the row
+    -- is unpriced.
+    LEFT JOIN LATERAL (
+      SELECT s.fmv_usd, s.collection_id
+      FROM fmv_snapshots s
+      WHERE s.edition_id = pdp.edition_id
+      ORDER BY s.computed_at DESC
+      LIMIT 1
+    ) fc ON fc.collection_id = pdp.collection_id
     WHERE pdp.collection_id = p_collection_id
       AND pdp.dist_id = p_dist_id
   ),
@@ -209,10 +225,20 @@ DECLARE
   eA uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   eB uuid := 'aaaaaaaa-0000-0000-0000-000000000002';
   eC uuid := 'aaaaaaaa-0000-0000-0000-000000000003';
+  eD uuid := 'aaaaaaaa-0000-0000-0000-000000000004';
+  eE uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+  eF uuid := 'aaaaaaaa-0000-0000-0000-000000000006';
 BEGIN
-  -- fmv_current is a CURRENT view: exactly one row per (edition, collection).
-  -- eA=$10, eB=$100 on TS; eA=$10, eB=$20 on OTHER; eC has no FMV anywhere.
-  INSERT INTO fmv_current VALUES (eA,ts,10),(eB,ts,100),(eA,other,10),(eB,other,20);
+  -- Snapshots: the function takes each edition's NEWEST row, then requires
+  -- its collection to match the pool's. eA=$10 and eB=$100 on TS (eA also has
+  -- an OLDER $999 row that must never win); eD=$10, eE=$20 on OTHER; eC has no
+  -- snapshot anywhere; eF's newest snapshot belongs to OTHER, so it is
+  -- unpriced in a TS pool.
+  INSERT INTO fmv_snapshots VALUES
+    (eA,ts,999,now()-interval '2 days'),(eA,ts,10,now()-interval '1 hour'),
+    (eB,ts,100,now()-interval '1 hour'),
+    (eD,other,10,now()-interval '1 hour'),(eE,other,20,now()-interval '1 hour'),
+    (eF,ts,500,now()-interval '2 days'),(eF,other,7,now()-interval '1 hour');
 
   -- D1 (TS): varied weights 0.9/0.1/0.5; A+B priced, C unpriced.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
@@ -224,7 +250,7 @@ BEGIN
 
   -- D3 (OTHER): uniform weight → guard does NOT apply, so it still prices.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
-    (other,'D3',eA,0.5),(other,'D3',eB,0.5);
+    (other,'D3',eD,0.5),(other,'D3',eE,0.5);
 
   -- D4 (TS): varied weights but NO FMV coverage (eC only, which has no FMV row).
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
@@ -238,7 +264,12 @@ BEGIN
 
   -- D6 (OTHER): same shape as D5 on a non-TS collection → original basis DOES apply.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
-    (other,'D6',eA,0.2,0.8),(other,'D6',eB,0.8,0.2);
+    (other,'D6',eD,0.2,0.8),(other,'D6',eE,0.8,0.2);
+
+  -- D10 (TS): eA priced $10 (its $999 row is older) and eF, whose NEWEST
+  -- snapshot is OTHER's, so eF is unpriced here. Pins the two lookup steps.
+  INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
+    (ts,'D10',eA,0.7),(ts,'D10',eF,0.3);
 
   -- D7 (TS): weights vary, but the remaining pool has drained to 0.4 of a slot.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
@@ -357,6 +388,14 @@ SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad
   'original', 'D6 non-TS pool with orig weights uses the original pool');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','D6',10,1)->>'gross_ev'),
   '12.00', 'D6 original-weighted mean = (0.8*10 + 0.2*20)/1.0 = 12');
+
+-- ── 2026-08-30: newest snapshot wins, and only if its collection matches ──
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D10',10,1)->>'gross_ev'),
+  '10.00', 'D10 prices eA at its NEWEST snapshot ($10), never the older $999 row');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D10',10,1)->>'editions_with_fmv'),
+  '1', 'D10: eF is unpriced because its newest snapshot belongs to another collection (its stale TS row does not count)');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D10',10,1)->>'weighted_fmv_coverage_pct'),
+  '70', 'D10 weighted coverage = 0.7 of 1.0');
 
 SELECT '✓ compute_pack_ev_per_edition_weighted invariants pass' AS result;
 ROLLBACK;

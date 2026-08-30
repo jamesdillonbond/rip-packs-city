@@ -198,7 +198,8 @@ const PINS = [
     // pulled. Now counted over weight > 0 under the basis in use; EV-neutral.
     fn: "compute_pack_ev_per_edition_weighted",
     test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
-    migration: "supabase/migrations/20260802210000_audit_20260802_pack_ev_coverage_denominator_pullable_only.sql",
+    // Re-pointed 2026-08-30: pool FMV via per-edition LATERAL, not the fmv_current view.
+    migration: "supabase/migrations/20260830152806_audit_20260830_pack_ev_pool_reads_latest_snapshot_per_edition_not_the_fmv_current_view.sql",
   },
   {
     fn: "fmv_from_cached_listings",
