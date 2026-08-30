@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — the GHA wallet-backfill backstop was a second full wave, not a backstop: it landed 5 h late on top of the finished primary wave and re-dispatched 120 fresh wallets into a disk already at 33/36 backends in DataFileRead
+
+**Pass: desktop (device-bound, can push), 14:00–14:3xZ (07:00–07:3x PT).** Also applied and pushed the cloud pass's two-patch wallet-backfill fail-closed set (`7c2e430` + `bf11c1c`, `git am --3way` on the fresh clone, 132/132, ledger re-spliced) — `skipped_db_saturated` rows started appearing within the hour (23 in the first 30 min). And `ba4e33c` records the wmc reindex outcome and jobid 404 in cron-schedule.md; the recover script found no fileless migrations.
+
+## What the 13:57→14:13Z pgss diff said
+
+16 min, joined on the full (userid, dbid, toplevel, queryid) key: `backfill_wmc_metadata_from_editions` **123 calls / 2,695 s (22 s mean)**, the `wallet_moments_cache … ORDER BY moment_id LIMIT/OFFSET` id page **520 calls / 2,498 s (4.8 s mean, 2.7 M buffer hits)**, `upsert_wmc_batch` **258 / 2,488 s**, the `moment_id, edition_key` page 131 / 834 s. That is ~8 statements' worth of wall-clock from the wallet-backfill family alone, and `pg_stat_activity` at 14:16Z showed 36 active client backends, **33 in DataFileRead**, 7 of them wmc statements. `pipeline_runs` for the same 30 min: **119 multicollection dispatches → 342 collection walks** (allday 86 @ 136 s, ufc 79 @ 87 s, pinnacle 75 @ 115 s, top-shot 53 @ 141 s, golazos 49 @ 41 s) — i.e. ~20 walks in flight at every instant.
+
+## Why: two waves, back to back
+
+`seed-wallet-refresh` `complete` rows: the primary 12/13Z wave ran cohorts 0–3 at 12:45 / 12:59 / 13:13 / 13:27Z, **errors=0**, 26+33+40+41 backfills fired. Then `forced: true` rows at **13:58 / 14:03 / 14:08 / 14:14Z** — the GHA backstop (`wallet-backfill-backstop.yml`, `38 2,8,14,20`, `?force=1`), whose 08:38Z slot GitHub ran **5 h 20 min late**, fired 23+31+33+… more. The backstop's own header already documents that GHA does not honour the schedule (median +45 min, p90 +205 min) and claims a redundant fire is "a no-op thanks to the concurrency guard" — which is true only of the on-chain Cadence walk. The guard is per (collection, wallet) and the primaries had *finished*, so nothing was in progress; every one of those ~600 children ran the full cache read and metadata pass for wallets walked minutes earlier.
+
+## The fix (`app/api/seed-wallet-refresh/route.ts`, +3 tests)
+
+On a **forced** wave only, skip any wallet whose most recent walk — `max(last_refreshed_at, values(last_refreshed_per_collection))`, the per-collection stamp being written unconditionally by every child — is younger than `SEED_REFRESH_BACKSTOP_FRESH_HOURS` (default **3**; `0` disables; env-tunable, no deploy). Never-seeded and truncation-signature wallets still bypass (repair first). Unforced primary waves are byte-identical to before. The `complete` row and the done-log carry `backstop_fresh_skipped`. Cost when the primaries ran: the backstop dispatches ~nothing. Cost when a cohort died: its wallets are >3 h stale and refresh exactly as before.
+
+**Exit (next two backstop firings, whenever GitHub runs them):** `seed-wallet-refresh` `complete` rows with `forced=true` show `backfill_fired` near 0 and `backstop_fresh_skipped` ≈ the cohort size, **and** the 30-min multicollection dispatch count after a forced wave stays at the primary-only baseline. **Falsifier:** a forced wave still fires dozens of backfills with `backstop_fresh_skipped` ≈ 0 → the per-collection stamps are not being written (look at `stampLastRefreshed`), not the gate. **Revert:** `SEED_REFRESH_BACKSTOP_FRESH_HOURS=0` in Vercel env (instant), or `git revert`.
+
+## Still open in the same family (not shipped — each needs its own measurement)
+
+- The wmc id read pages by **`LIMIT/OFFSET` on `ORDER BY moment_id`** (`loadCachedMomentIds` / `loadCachedMomentIdsAndKeys` in `wallet-backfill-helpers.ts`, and `app/api/wallet-backfill/route.ts:146`). On a 154 k-row whale that is 155 pages each re-walking the prefix — O(n²) — which is where the 2.7 M buffer hits come from. Keyset paging (`.gt("moment_id", last)`) over the existing unique `(wallet_address, collection_id, moment_id)` index makes every page O(page). Straightforward, but it touches three read paths with pinned tests; do it with a whale-wallet timing before/after, not blind.
+- `backfill_wmc_metadata_from_editions` at 22 s mean on ~2 k buffers is IO wait, not work; it runs once per child. Worth asking whether a child that wrote 0 rows needs to call it at all (the same argument the `stampLastRefreshed` gate already made for `refresh_seeded_wallet_stats`).
+- `refresh_wmc_fmv_changed(30, 200000)` as cron_heavy: 2 calls / 727 s in the window. Cadence vs. cost not yet examined.
+
 ### 2026-08-30 · 📋 WATCH ANSWERED — the wmc REINDEX campaign is logged as a total failure and actually freed 448 MB: a pg_cron job status is NOT its work's outcome
 
 **Closing another session's stated watch** (*"08:09/08:33/10:09/10:33Z reindex slots → jobids 397–400 `succeeded`; 10:49Z verify `ok=true`; zero `tmp-reindex-wmc-%` after"*). **By that condition it failed completely.** By outcome it did not.
