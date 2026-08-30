@@ -132,7 +132,7 @@ export function fileOfId(id) {
  * @param {{hour: number, failing: string[], total: number}[]} runs
  * @param {(file: string) => boolean} [spawnsChild]
  */
-export function classify(runs, spawnsChild = (_file) => false) {
+export function classify(runs, spawnsChild = () => false) {
   const everyRunFails = (id) => runs.every((r) => r.failing.includes(id))
   const anyRunFails = new Set(runs.flatMap((r) => r.failing))
 
