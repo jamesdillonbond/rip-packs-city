@@ -10,6 +10,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration 20260830165431 APPLIED) + ⛔ I REFUTED MY OWN 16:10Z RECOMMENDATION — a failing arm was masking a stalled pipeline, and every silence alarm on this platform is blind to it
+
+**Continuing autonomously. Two things: I corrected a filing of mine that another session had already cited, and the correction exposed a real defect in the alerting, which is now fixed.**
+
+## 1. ⛔ The correction — the board ingest is NOT starved, and my 16:10Z §5 rested on a false premise
+
+I recommended moving the Underpriced-#1s board ingest to the new pg_net→Atlas egress because it "fails ~83% on the blocked GHA IP" and would "un-starve three live surfaces". **Both claims are wrong.** ⚠ **I pooled a TWO-CALLER pipeline and quoted a number that is neither arm's rate** — [[measuring-one-arm-of-a-two-caller-pipeline]] fired exactly as written and I walked into it anyway, because the pooled figure was plausible and flattered a build I already wanted to do.
+
+| arm | runs (7d) | ok | **% ok** | egress_blocked | Atlas calls | rows |
+|---|---:|---:|---:|---:|---:|---:|
+| **residential — Task Scheduler on Trevor's box** | **18** | **18** | **100%** | 0 | 26,584 | 4,719 |
+| GitHub Actions (runner IP WAF-blocked) | 9 | **0** | **0%** | 9 | 0 | 0 |
+| *pooled (what I quoted)* | 27 | 18 | *66.7%* | 9 | — | — |
+
+**Attribution confirmed, not inferred:** `gh run list` shows **12/12 scheduled GHA runs `failure`**, start times matching the `egress_blocked` rows to the minute. ⚠ **Attributing by schedule MINUTE was itself wrong** — the task is registered `-StartWhenAvailable`, so a sleeping box fires it late at an off-anchor minute; the two successful "off-arm" runs are residential catch-ups. **Attribute by MECHANISM (`atlas_calls > 0`), never by clock.** Latest sweep 09:13 PT: ok, 674 targets, 1,348 Atlas calls, 233 listings.
+
+✅ **What survives:** the board's only working feeder is **a scheduled task on a personal desktop that "runs only while the user is logged on."** pg_net→Atlas is worth having as a **datacenter-independent, always-on second feeder — resilience, not rescue.** Less urgent, more durable. **Not a priority-1 build; nothing is starved.**
+
+## 2. ✅ SHIPPED — the defect the correction exposed: **every silence alarm here can be held green by a failing arm**
+
+Chasing "would anything notice if that desktop went dark?" found the real bug. **BOTH silence detectors** — the cadence arm in `get_pipeline_alerts_core()` and the standalone `detect_stalled_pipelines()` — compute silence as `max(started_at)` over **ALL** rows, **with no `ok` filter**:
+
+```sql
+SELECT MAX(started_at) FROM pipeline_runs WHERE pr.pipeline = wl.pipeline AND started_at > NOW() - INTERVAL '24 hours'
+```
+
+🚨 **So a second, permanently-failing caller writes a row every tick and keeps the clock fresh over a genuinely dead pipeline.** For `topshot-active-listings-ingest` the blocked GHA arm's `egress_blocked` row every ~3h means the 900-minute alarm **could never fire** even if the residential box died for days. **The alarm designed to catch silence is defeated by noise.**
+
+**Measured blast radius — watchlisted pipelines with rows inside their own window but ZERO ok runs:**
+
+| pipeline | budget | runs | ok | rows written | verdict |
+|---|---:|---:|---:|---:|---|
+| `ingest` (TS sales) | 1800m | 2 | **0** | 0 | **STALLED** — `Top Shot GraphQL failed with 530`, the dead legacy host |
+| `match-topshot-players` | 1800m | 1 | **0** | 0 | **STALLED** |
+| `wallet-username-resolver` | 450m | 2 | **0** | 0 | **STALLED** — also on `failure_rate` ⇒ **positive control** |
+| `reconcile-saved-wallet-stats` | 150m | 3 | **0** | **19** | ✅ **productive — must NOT fire** ⇒ **negative control** |
+
+⭐ **`ingest` had not succeeded in SEVEN DAYS and nothing was alerting on it.** It is another casualty of the Top Shot host move confirmed this morning.
+
+⚠ **The negative control is why this arm is not just `ok_runs = 0`.** `reconcile-saved-wallet-stats` logs `ok=false` **hourly** (`soft_deadline_reached_partial_sweep_committed`) while writing **2–8 rows every run**. It is WORKING — `ok=false` is overloaded, exactly as the standing rule says. **An arm keyed only on `ok` would page on a healthy pipeline every hour and be muted inside a week.** The predicate is therefore **no ok run AND no work done**, which separates FAILING-AND-IDLE from FAILING-BUT-PRODUCTIVE.
+
+**Shape:** new arm `check_pipelines_running_but_not_succeeding()` (SECDEF, `search_path=public`, EXECUTE revoked FROM PUBLIC/anon/authenticated in one statement, granted service_role+postgres), appended in the `get_pipeline_alerts()` wrapper **exactly as `check_edge_fn_http_failures()` already is** — additive, no existing arm changed, no watchlist row touched, no data written.
+
+**Verified:** arm fires on exactly the 3 stalled · **negative control absent** · wrapper still `array`, 8 → 11 · `check_cursor_stall_threshold_drift()` **0** (the guard that one-hops from this wrapper still passes) · `check_secdef_anon_exec_drift()` **0** · anon/authenticated cannot execute. **Revert: in the migration header** (restore the two-term wrapper, drop the arm).
+
+## 3. The sustained-rate measurement the 16:10Z filing said was owed
+
+120 calls, ~20 min, paced ~20/min: **108 ok (90%), 12 × HTTP 403, 2 empty-200, 0 timeouts.** ⭐ **The failure mode is a LOUD Cloudflare 403 challenge, NOT the feared silent empty-200** — trivially distinguishable from "no listing", so it cannot cause the ask-wipe. ⭐ **403s SCATTERED, not tail-clustered ⇒ probabilistic, not rate-triggered: pacing does not help, retry does.** ⭐ **Rate IMPROVED 23%→17%→0%→0% ⇒ no progressive IP burn.** ⚠ Empties were **anti-correlated** with load (all 12 challenges in the batches with ZERO empties) — evidence against the throttle reading at n=2, **not proof**, so **an empty Atlas response stays UNKNOWN, never "no listing."**
+
+⚠ **Self-inflicted alerts, so nobody chases them:** this raised `pg_net_http_403` (**critical**, 12) and `pg_net_http_422` (2) — both mine (Atlas probes / the earlier Studio schema probe). They age out of the 2h window.
+
+⚠ **Two migrations applied by the concurrent session had no repo file when I checked** (`20260830165128`, `20260830164048`) — theirs to commit; noting it so a `migration-parity` red is not misattributed.
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830165128 APPLIED) — the last live `fmv_current` consumer with a caller: `get_market_summary()` 9.5 s / 6.48 M buffers → 2.5 s / 51 k
 
 **Pass: desktop, 16:5xZ.** Closing the "remaining `fmv_current` consumers" item from the 16:05Z handoff by measuring each through the function on the now-idle instance:
