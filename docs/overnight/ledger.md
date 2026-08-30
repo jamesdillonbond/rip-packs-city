@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📦 FILED (no prod change) — R58's premise is REFUTED: the 13 "empty set pages" do not exist, and the real finding is 8 corrupt NAMES
+
+**R58 was assigned to me and said "sample the 13 before treating as defect." The sample overturned the row**, which is the outcome that rule exists to produce.
+
+⛔ **There are no empty set pages.** `get_set_detail` resolves a slug against `sets_summary` — a materialized view built **entirely from `editions_unified`, which never reads `sets`** — so a row with zero editions yields no summary row, the RPC returns NULL, and the segment layout `notFound()`s before the first flush. **Verified by the real caller, controls both directions: `/nba-top-shot/set/archive-set-1986-` → 404 + `robots: noindex`; `/nba-top-shot/set/wnba-skyline` → 200.**
+
+✅ **Unreachable three further ways, each measured:** the sitemap's `/set/` list is built from `slugifyName(editions.set_name)`, so a setless row cannot produce a URL; `rpc_search_catalog` filters `n > 0` over `set_id OR set_name` and all 13 score zero on both legs; and the only FK to `public.sets` in the entire schema is `editions.set_id`.
+
+🚨 **What the row missed: the names are CORRUPT.** 8 of 13 are truncation artifacts with the season range cut mid-string — `Archive Set 1986-`, `Run It Back 2005-`, `Run It Back: Legacies 2014-` — matching **zero** rows in `editions.set_name`. The other 5 duplicate canonical sets holding 9–1,218 editions; `Rookie Revelation`'s external_id is literally `185` and a canonical row has `set_id_onchain = 185`, so it is a pre-canonical stub keyed by the on-chain id as a string.
+
+⚠ **A hypothesis of mine was refuted by its own control.** I expected the trailing-space `The Champion's Path ` twin to inflate the page's merge count; it reads **1**, because D20 matches `set_name_variants`, which derive from `editions.set_name` and carry no trailing space. The one genuinely inflated case is `wnba-skyline` (2 where 1 has editions) — and ⛔ **whether that renders a visible banner is NOT established**; a keyword scan of the live 200 found no "merged"/"underlying" text. **Do not quote it as a visible defect.**
+
+⛔ **NO CODE SHIPPED, and the reason is the trade, not the difficulty.** The fix is one predicate in `get_set_detail` — a **pinned, registered** function, so pin + migration + guard row — and every `apply_migration` costs a ~10–20 s window of user-facing `PGRST002` 500s. **Paying that for one cosmetic banner on a 9-edition page, during a shared-CI window with a concurrent session shipping, is a bad trade on its own.** Batch it into the next migration that has to happen anyway.
+
+🚨 **Two NEW items found in passing, neither of them R58, both filed rather than folded in:** (a) the set page's JSON-LD omits its block on a FAILED editions read — the comment says exactly why — but a **successful EMPTY** read still publishes `numberOfItems: 0`; the third state again, latent on any set that legitimately empties. (b) **`sets_summary` has no `CREATE MATERIALIZED VIEW` anywhere in `supabase/migrations/`**, only `refresh_sets_summary()` — a load-bearing object behind every set page exists only in the live database.
+
+👉 **Trevor's call is the 13 rows** (destructive SQL, so not shipped autonomously). ⭐ **Cleanup would be durable, and that is measured rather than hoped: no `auto_*` set row has been created in 60 days** (newest `auto_*` 2026-06-08) **while ordinary set creation continues to 2026-08-28** — the artifact-producing path is dormant, not merely quiet. Exact DELETE is in the filing. ⚠ Also: 3 TS `sets` rows have `name <> btrim(name)`; the ingest does not trim, which is what created the duplicate in the first place.
+
+**Revert path:** docs only — `git revert <sha of "docs(register): R58's premise is refuted -- the setless sets 404, they do not render empty">`. No code, no DB.
+
 ### 2026-08-29 · ✅ SHIPPED (code + CI) — R68 closed: four production ingest endpoints whose run frequency was UNKNOWABLE, and a workflow that could not fail
 
 **What shipped.** `lib/pipeline/terminal-run.ts` (new helper) + terminal `pipeline_runs` rows on every exit path of `fmv-backfill`, `backfill`, `cron/price-snapshots` and `backfill-player-names` + the heartbeat/terminal pair on `ingest` + a non-tolerant gate step in `.github/workflows/rpc-pipeline.yml` + 23 tests across two new files.
