@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (DB) — the grail-MV cadence arm stops false-breaching by construction; a THIRD fileless migration recovered; ⛔ and a CORRECTION to my own "byte-exact" claim
+
+## 1. `refresh-pack-grail-metrics-mv` — `max_silent_minutes` 90 → 130
+
+**Raised by the 08-30T1510Z daytime monitor, and it independently reached the same rate this session measured hours earlier.** The refresh moved to pg_cron jobid 384 (`23 * * * *`, hourly) on 08-29. **A 90-minute arm on an hourly job tolerates ZERO lost ticks**, and the fleet loses **~3–4 % of ticks** to `job startup timeout` — so one lost tick is a ~120 min gap **while the matview is perfectly fresh**, and the arm false-breaches roughly daily.
+
+⭐ **Why this is worth doing at `info` severity: alert fatigue is how a whole instrument set dies.** An arm that cries wolf by construction trains people to skim past every breach, which is this repo's own *"a permanently-red instrument is indistinguishable from a broken one at a glance"* in slow motion. The cost of the fix is that a genuine STOP is caught ~40 min later, on a ranking-UI matview.
+
+⚠ **Framed as a DESIGN CHOICE, not a curve fit** — 130 = 60 cadence + 60 one lost tick + 10 margin, so two lost ticks (~180 min) still breach. ⚠ **The supporting sample is thin and dirty and is NOT the basis:** 16 terminal rows over 15.4 h (median 60, p90 62, **max 117**) on a day carrying two saturation bands. **The monitor asked for a clean 72 h window first and that window is not satisfiable until ~09-01** — the job is 15 h old in this form. ⭐ *The dirty sample argues FOR the change: a bad day is exactly when an arm must not cry wolf, and 117 min is a LOWER bound on what a bad day produces.* 👉 **The 72 h re-measure is still owed and can only TIGHTEN this back.**
+
+⛔ **Not a fix for the tick loss itself** — that is a capacity symptom whose mechanism stays **unestablished** (the obvious `cron.max_running_jobs=32` vs `max_worker_processes=6` reading was measured and **refuted**: observed concurrency reaches 11). Severity and `is_active` untouched; backup table created **with RLS on**; `check_public_security_invariants()` returns 0.
+
+## 2. A THIRD fileless production migration, recovered
+
+`20260830153424_audit_20260830_compute_pack_ev_from_pool_reads_latest_snapshot_per_edition_not_the_fmv_current_view` — applied 15:34Z by a concurrent session with **no committed file**, i.e. no committed revert path. That is the **third today** (after the two recovered this morning). Recovered the same way: read `array_to_string(statements, E'\n')` through `query_sql` and written directly, so the SQL never passes through a transcript. **File md5 `0df7b14d…` equals prod exactly, 5,663 chars = prod's 5,663.**
+
+## 3. ⛔ CORRECTION TO MY OWN EARLIER ENTRY, and it is the error I wrote a memory about this morning
+
+The 14:0xZ entry said the first two recovered migrations were **"RECOVERED BYTE-EXACTLY"** with **"md5 … both MATCH prod"**. ⚠ **That is true of the SQL BODY and NOT of the FILES.** Re-checked: the files are **7,408 and 5,097 bytes against prod's 7,407 and 5,096** — my recovery script appends a trailing newline when the stored statement lacks one, so `md5(exact file) ≠ prod` while `md5(file minus one trailing newline) == prod`.
+
+**Nothing is wrong with the files** — a trailing newline is the correct convention for a text file in git, the SQL is semantically identical, and parity matches on NAME. **What was wrong was my claim**, which asserted a digest match without saying WHAT was hashed.
+
+⭐⭐ **This is precisely the rule I recorded this morning in `a-digest-without-its-expression-is-not-verifiable-later` — "record the exact expression that produced the digest, not a prose description" — and I broke it hours later in a ledger entry.** ⚠ It also explains a confusing `MISMATCH` line in this run's output: the script's post-write check normalises by stripping one newline, which is right when the source lacked one and **wrong when it already had one**, so it reported a false mismatch on a byte-perfect file. **It failed SAFE (flagged a good file rather than passing a bad one), which is the correct direction for a verifier.**
+
+👉 **The honest statement, for all three:** *the SQL body is byte-identical to prod (md5 of `array_to_string(statements, E'\n')` matches); each file additionally ends with a newline.*
+
+**Verified:** arm reads 130 with severity `info` and `is_active` unchanged · backup 1 row, value 90, RLS on · 3 migration guards green (18 tests) · parity now reports both new files `[UNTRACKED]` (present, awaiting this commit) rather than `[MISSING]`.
+
+**Revert paths:** the arm — restore `max_silent_minutes` from `public.audit_20260830_grail_arm_backup`, then drop it (named explicitly; never wildcard the `audit_20260830_` prefix). The recovered file — `git revert` removes the FILE only; the migration is already applied and carries its own revert in its header.
+
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830153424, APPLIED) — compute_pack_ev_from_pool walked every snapshot twice per priced call: 2.58 M buffers / 21.9 s → 11 k / 27 ms, identical output
 
 **Pass: desktop, 15:4xZ.** Third `fmv_current` instance today. 375 PostgREST calls at 3.3 s mean — a misleading mean: most are `/api/cron/compute-laliga-pack-ev` calls that return `pool_empty` at the first count (Golazos has **no** `pack_drop_pool` rows — 211 UFC / 1,985 TS / 3,125 AllDay dists, 0 Golazos — which is its own finding: that route loops over dists and prices nothing). A priced call on AllDay's largest pool (dist 6924, 792 editions): **2,578,477 hits + 29,993 reads, 21.9 s** — three `JOIN fmv_current` (coverage count, trimmed mean, raw mean), two of which run per call. Now three per-edition LATERALs with the same `fmv_usd IS NOT NULL` predicate: **11,309 hits, 27 ms**; the full jsonb (minus the trim counter) compared equal on the two largest AllDay pools before/after. Not pinned (2026-05-12 DDL); revert quoted in the migration. `sentinel_edition_coverage` (7.8 s mean lifetime) was also checked and left alone: its whole-table aggregate plans as a hash join over the edition index, 65 k hits / 1.2 s warm — the mean is load, not shape.
