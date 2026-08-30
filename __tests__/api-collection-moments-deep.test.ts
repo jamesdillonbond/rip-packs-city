@@ -23,6 +23,7 @@ vi.mock("@/lib/chains/flow/topshot", () => ({
 }))
 
 import { GET } from "@/app/api/collection-moments/route"
+import { __resetUpstreamCircuits } from "@/lib/upstream/host-circuit"
 
 const req = (u: string) => ({ nextUrl: new URL(u) }) as never
 const WALLET = "0xbd94cade097e50ac" // 0x + 16 hex = 18 chars → resolves locally
@@ -32,6 +33,14 @@ function install(fixtures: Record<string, unknown>) {
 }
 
 beforeEach(() => {
+  // ⛔ LOAD-BEARING, and it was added because its absence made three tests below
+  // VACUOUS the moment the host circuit shipped. The circuit lives in module
+  // scope, so a test that returns HTTP 500 from the GQL host trips it for every
+  // LATER test in this file — those tests would then SKIP the fallback entirely
+  // while still passing, because "skipped" and "failed" both leave player_name
+  // null. They went on asserting an outcome they were no longer producing.
+  // The paired defence is the `h.calls` assertion each of them now carries.
+  __resetUpstreamCircuits()
   state.sb = null
   state.gqlResolve = null
 })
@@ -192,6 +201,10 @@ describe("GET /api/collection-moments — GQL player-name backfill", () => {
     try {
       const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
       expect(body.moments[0].player_name).toBeNull()
+      // ⚠ NOT redundant with the null above: a SKIPPED fallback also leaves it
+      // null, so without this the test cannot tell "called and failed" from
+      // "never called" — the exact vacuity the host circuit can introduce.
+      expect(h.calls.filter((c) => c.url.includes("nbatopshot.com"))).toHaveLength(1)
     } finally {
       h.restore()
     }
@@ -218,6 +231,7 @@ describe("GET /api/collection-moments — GQL player-name backfill", () => {
     try {
       const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
       expect(body.moments[0].player_name).toBeNull()
+      expect(h.calls.filter((c) => c.url.includes("nbatopshot.com"))).toHaveLength(1)
     } finally {
       h.restore()
     }
@@ -246,8 +260,132 @@ describe("GET /api/collection-moments — GQL player-name backfill", () => {
     try {
       const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
       expect(body.moments[0].player_name).toBeNull()
+      expect(h.calls.filter((c) => c.url.includes("nbatopshot.com"))).toHaveLength(1)
     } finally {
       h.restore()
+    }
+  })
+})
+
+describe("GET /api/collection-moments — the dead-host circuit", () => {
+  // `public-api.nbatopshot.com` has been Cloudflare 530/1033 since 2026-08-28,
+  // and 6.90% of the 1,904,686 Top Shot rows in wallet_moments_cache have a null
+  // player_name — so this fallback fires on nearly every page and cannot
+  // succeed. Each call carries a 6 s AbortSignal timeout.
+  const twoMissing = {
+    "rpc:get_wallet_moments_with_fmv": {
+      data: {
+        moments: [
+          { moment_id: "701", edition_key: "a:1", player_name: null, thumbnail_url: "http://x" },
+          { moment_id: "702", edition_key: "b:2", player_name: null, thumbnail_url: "http://x" },
+        ],
+        total_count: 2,
+      },
+      error: null,
+    },
+    "rpc:get_wallet_total_fmv": { data: 0, error: null },
+    "rpc:get_acquisition_stats": { data: null, error: null },
+  }
+
+  it("a 5xx trips the circuit, so a LATER request skips the host entirely", async () => {
+    install(twoMissing)
+    const first = installFetchMock([jsonRoute("nbatopshot.com", { data: {} }, { status: 530 })])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+      // Both keys were attempted in one parallel batch before the circuit was known.
+      expect(first.calls.filter((c) => c.url.includes("nbatopshot.com")).length).toBeGreaterThan(0)
+    } finally {
+      first.restore()
+    }
+
+    install(twoMissing)
+    const second = installFetchMock([jsonRoute("nbatopshot.com", { data: {} }, { status: 530 })])
+    try {
+      const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
+      // THE POINT: zero calls, so zero 6 s waits on a user-facing request.
+      expect(second.calls.filter((c) => c.url.includes("nbatopshot.com"))).toHaveLength(0)
+      // And the rendered value is unchanged — skipped and failed both leave null.
+      expect(body.moments[0].player_name).toBeNull()
+      expect(body.moments[1].player_name).toBeNull()
+    } finally {
+      second.restore()
+    }
+  })
+
+  it("a THROWN fetch (the 6 s timeout shape) trips the circuit too", async () => {
+    // ⚠ This case was missing and mutation testing caught it: removing
+    // noteUpstreamFailure from the catch block left every other test green.
+    // It is the most important path — a dead host's 6 s AbortSignal timeout is
+    // the expensive shape, far worse than a fast 530 — so it needs its own
+    // multi-request assertion rather than riding on the 5xx one.
+    install(twoMissing)
+    const first = installFetchMock([
+      { match: (url: string) => url.includes("nbatopshot.com"), respond: () => { throw new Error("The operation was aborted due to timeout") } },
+    ])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+      expect(first.calls.filter((c) => c.url.includes("nbatopshot.com")).length).toBeGreaterThan(0)
+    } finally {
+      first.restore()
+    }
+
+    install(twoMissing)
+    const second = installFetchMock([
+      { match: (url: string) => url.includes("nbatopshot.com"), respond: () => { throw new Error("The operation was aborted due to timeout") } },
+    ])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+      expect(second.calls.filter((c) => c.url.includes("nbatopshot.com"))).toHaveLength(0)
+    } finally {
+      second.restore()
+    }
+  })
+
+  it("NEGATIVE CONTROL — a 4xx is about one moment id and must NOT trip the circuit", async () => {
+    // Otherwise a single bad id disables enrichment for every later request.
+    install(twoMissing)
+    const first = installFetchMock([jsonRoute("nbatopshot.com", { data: {} }, { status: 404 })])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+    } finally {
+      first.restore()
+    }
+
+    install(twoMissing)
+    const second = installFetchMock([jsonRoute("nbatopshot.com", { data: {} }, { status: 404 })])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+      expect(second.calls.filter((c) => c.url.includes("nbatopshot.com")).length).toBeGreaterThan(0)
+    } finally {
+      second.restore()
+    }
+  })
+
+  it("a SUCCESS keeps the circuit closed, so enrichment is never self-disabling", async () => {
+    install(twoMissing)
+    const h = installFetchMock([
+      jsonRoute("nbatopshot.com", {
+        data: { getMintedMoment: { data: { play: { stats: { playerName: "Live Name" } }, set: { flowName: "S" }, tier: "RARE" } } },
+      }),
+    ])
+    try {
+      const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
+      expect(body.moments[0].player_name).toBe("Live Name")
+    } finally {
+      h.restore()
+    }
+
+    install(twoMissing)
+    const again = installFetchMock([
+      jsonRoute("nbatopshot.com", {
+        data: { getMintedMoment: { data: { play: { stats: { playerName: "Live Name" } }, set: { flowName: "S" }, tier: "RARE" } } },
+      }),
+    ])
+    try {
+      await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+      expect(again.calls.filter((c) => c.url.includes("nbatopshot.com")).length).toBeGreaterThan(0)
+    } finally {
+      again.restore()
     }
   })
 })

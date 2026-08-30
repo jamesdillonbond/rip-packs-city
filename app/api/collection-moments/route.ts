@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
+import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/upstream/host-circuit"
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 
@@ -31,6 +32,15 @@ const VALID_SORTS = new Set([
 ])
 
 const TOPSHOT_GQL_URL = "https://public-api.nbatopshot.com/graphql"
+const TOPSHOT_GQL_HOST = "public-api.nbatopshot.com"
+
+// How long one observed host failure suppresses the fallback ON THIS INSTANCE.
+// Sized against the failure it exists for: this host has been 530/1033 for
+// ~36 h, so anything in minutes is equivalent for the outage case, and the
+// number that matters is the recovery lag — a fix is picked up within one
+// cooldown. 5 min keeps that lag small while removing essentially all of the
+// waste, and it needs no deploy to un-stick.
+const GQL_CIRCUIT_COOLDOWN_MS = 5 * 60 * 1000
 
 const GQL_GET_MOMENT = `
   query GetMomentMeta($id: ID!) {
@@ -72,9 +82,15 @@ async function fetchMomentMetaFromGql(momentId: string): Promise<{
       signal: AbortSignal.timeout(6000),
     })
     if (!res.ok) {
+      // A 5xx/429 is the HOST being unavailable; trip the circuit so the rest of
+      // this page (and the next few minutes of requests on this instance) skip
+      // the wait. A 4xx is about THIS id, not the host, so it must not trip it —
+      // otherwise one bad moment id disables enrichment for everyone.
+      if (res.status >= 500 || res.status === 429) noteUpstreamFailure(TOPSHOT_GQL_HOST)
       console.log("[collection-moments] GQL fetch failed for moment " + momentId + ": HTTP " + res.status)
       return null
     }
+    noteUpstreamSuccess(TOPSHOT_GQL_HOST)
     const json = await res.json()
     if (json?.errors) {
       console.log("[collection-moments] GQL errors for moment " + momentId + ": " + JSON.stringify(json.errors).slice(0, 200))
@@ -90,6 +106,9 @@ async function fetchMomentMetaFromGql(momentId: string): Promise<{
       tier: data.tier ?? null,
     }
   } catch (err) {
+    // Includes the 6 s AbortSignal timeout — the single most expensive shape on
+    // this path, and the one a dead host produces.
+    noteUpstreamFailure(TOPSHOT_GQL_HOST)
     console.log("[collection-moments] GQL exception for moment " + momentId + ": " + (err instanceof Error ? err.message : String(err)))
     return null
   }
@@ -269,6 +288,22 @@ export async function GET(req: NextRequest) {
       const entries = [...missingByEditionKey.entries()]
       const BATCH = 10
       for (let i = 0; i < entries.length; i += BATCH) {
+        // ⚠ ONE guard, checked at the TOP OF EVERY BATCH — including the first,
+        // which is why there is no separate pre-loop check. An earlier version
+        // had both; mutation testing killed the pre-loop one (removing it changed
+        // nothing, because this check already fires at i === 0), and a branch no
+        // test can kill is a branch that will rot. The per-batch position is the
+        // load-bearing part: a 200-row page needs several batches, and without
+        // re-checking, a request that learns on batch 1 that the host is dead
+        // still pays the full 6 s wall for every remaining batch.
+        if (isUpstreamDown(TOPSHOT_GQL_HOST, GQL_CIRCUIT_COOLDOWN_MS)) {
+          console.log(
+            "[collection-moments] GQL fallback " + (i === 0 ? "SKIPPED" : "ABANDONED after " + i) +
+            "/" + entries.length + " edition keys — " + TOPSHOT_GQL_HOST +
+            " failed within the last " + GQL_CIRCUIT_COOLDOWN_MS / 1000 + "s on this instance",
+          )
+          break
+        }
         const batch = entries.slice(i, i + BATCH)
         const promises = batch.map(function ([editionKey, indices]) {
           const momentId = moments[indices[0]].moment_id

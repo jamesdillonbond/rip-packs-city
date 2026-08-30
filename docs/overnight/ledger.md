@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED — `/api/collection-moments` stops waiting on the dead Top Shot host, and MUTATION TESTING KILLED TWO OF MY OWN CLAIMS ON THE WAY
+
+**Taken from the 02:20–03:20Z desktop-VM handoff, which named it as needing push access this session had and that one did not:** *"still has a per-page GQL fallback to the dead `public-api.nbatopshot.com` for moments missing `player_name` (6 s × N/10, sequential) — route code, patch-set only from a cloud pass."*
+
+**Sized from the DATABASE rather than from logs** (a `get_runtime_logs` sweep timed out; the table answers it better anyway): **6.90 % of the 1,904,686 Top Shot rows in `wallet_moments_cache` — 131,420 — have a NULL `player_name`**, so the fallback fires on nearly every page. Page size is 50 default / 200 max, batches of 10 in parallel and batches sequential, each call on a 6 s `AbortSignal`. Against a host that has been Cloudflare 530/1033 since 08-28 ~17Z that is **~6 s on a default page and up to ~12 s on a 200-row page, added to a route the same night's work had just brought from 40–60 s to ~2 s** — a 4–7× latency regression, on a user-facing read, buying nothing.
+
+**Shipped:** `lib/upstream/host-circuit.ts` — an **in-process** per-host circuit, checked at the top of **every batch**. ⚠ **Deliberately NOT `lib/pipeline/upstream-breaker.ts`** (tonight's cron breaker): that one reads `pipeline_runs`, which is right for a cron tick and wrong here — a page render must not pay a DB round-trip to learn a third party is down, and a user request has no `pipeline_runs` row. Same idea, different cost budget.
+
+⚠ **THIS CHANGES NO RENDERED VALUE.** A skipped fallback and a failed one both leave `player_name` null. It removes the WAIT, not a result — asserted in the test, not just claimed.
+
+⛔ **A 4xx must NOT trip it** — that is about one moment id, not the host; only 5xx/429 and thrown/timed-out fetches do. Otherwise one bad id disables enrichment for everyone.
+
+🚨 **MUTATION TESTING KILLED TWO CLAIMS I HAD ALREADY WRITTEN DOWN, and both corrections are the point of this entry.**
+1. **A redundant guard.** I had a pre-loop check AND a per-batch check. Removing the pre-loop one changed **nothing** — the per-batch check already fires at `i === 0`. **A branch no test can kill is a branch that will rot**, so it is gone; there is now ONE guard, and a mutation moving it out of the loop reds, which is what pins the per-batch position as the load-bearing part.
+2. **The most expensive path was untested.** Deleting `noteUpstreamFailure` from the **catch** block — the 6 s timeout shape, far worse than a fast 530 — left every test green, because the existing throwing-fetch test has a single edition key so tripping is unobservable within one request. It now has its own two-request assertion.
+
+🚨 **AND IT NEARLY MADE THREE EXISTING TESTS VACUOUS — the failure mode this repo names most often.** The circuit lives in module scope, so the existing *"GQL fallback returns an HTTP error"* test (status **500**) tripped it for every LATER test in the file. Those tests would have **skipped the fallback they are named for and still passed**, because *skipped* and *failed* both leave `player_name` null. They asserted an outcome they were no longer producing. Fixed in both directions: `__resetUpstreamCircuits()` in `beforeEach` (a mutation removing it now reds), and each of the three now asserts `h.calls` — **that the host was actually called** — which is the assertion whose absence made the vacuity possible. ⭐ *An outcome assertion that both the working and the broken path satisfy is not a test.*
+
+**Verified:** **8 mutations, all red** (guard never suppresses · guard hoisted out of the loop · 4xx trips · catch stops tripping · beforeEach reset removed · module: success stops clearing · module: unknown host reports down · module: cooldown off-by-one) · 15/15 route tests · 9/9 circuit tests · full suite **1415 files / 15558 tests** green · `tsc` clean.
+
+⚠ **Per-process state is a trade, not an oversight.** A warm Fluid instance learns once and then skips; a COLD one pays one probe. That is the correct price for needing no shared store and never being wrong for long. **Half-open by construction** — the cooldown runs from the last failure, so a Top Shot recovery is picked up within 5 minutes with no deploy and nothing to switch back on.
+
+⚠ **NOT claimed:** that this fixes the missing names. 131,420 rows still have no `player_name` and the only writer for them is the dead host; this makes the page fast while it is dead, and it is **not** a substitute for the pack-reality/Studio source decision that is Trevor's.
+
+**Revert path:** `git revert` the commit below — removes `lib/upstream/host-circuit.ts`, its test, the route wiring and the three `h.calls` assertions. The route returns to waiting on every page. No DB half.
+
+
 ### 2026-08-29 · ✅ SHIPPED — every OG card read is now bounded; 30 bare `fetch()` calls across 28 files had no timeout at all
 
 **Found by finishing R66 rather than by looking for it.** Having removed the two THIRD-PARTY fetches from the card render path, I checked what was left on it: **30 bare `fetch()` calls across 28 files under `app/api/og/**` and `lib/og/**`, and ZERO carrying an `AbortSignal`** — against CLAUDE.md's standing *"Bound every `fetch` — no default timeout"*. This was the largest single violation of that rule in the repo, on the one path where waiting is indistinguishable from failing: a crawler that is still waiting has already shown the reader a bare URL.
