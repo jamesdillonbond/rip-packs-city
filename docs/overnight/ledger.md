@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ VALIDATED (no change shipped) — the new arm's expected ALERT RATE, which I should have measured before it started paging
+
+**I shipped an arm that emails and Telegrams Trevor without first measuring how often it fires. Correcting that now rather than discovering it from his inbox.** `pipeline_runs` retains only ~76 h, but `pipeline_runs_daily` is indefinite, so the arm's predicate can be replayed over 25 days of history.
+
+**Watchlisted pipeline-days with `runs > 0` AND zero ok AND zero rows written — 2026-08-06 → 08-30:** fires on **19 of ~25 days**, **1–3 pipelines per day** (median 1, max 3).
+
+⭐ **Every pipeline it names is a REAL outage — there is not one false positive in the window:**
+
+| pipeline | days | what it was |
+|---|---:|---|
+| `apply-fmv-haircut` | 7 | one of the two documented 2026-08-16 cases that motivated the sentinel arm |
+| `match-topshot-players` | 8 | the other one — `upstream request timeout` (gateway, not a Postgres kill) |
+| `compute-pinnacle-pack-ev` | 3 | the known `ON CONFLICT … cannot affect row a second time` bug |
+| `topshot-active-listings-ingest` | 3 | the WAF-blocked GHA arm, now gated off |
+| `offers-sweep`, `allday-pack-opens-backfill`, `ingest`, `wallet-username-resolver` | 1 each | dead host / today's findings |
+
+⭐ **So the "AND zero rows written" half is doing its job**: the pipelines that log `ok=false` constantly *while working* (`reconcile-saved-wallet-stats`, `candy-offers-indexer`, `refresh_wmc_fmv_changed` at a 32.6% failure rate and 409,110 rows) appear **nowhere** in 25 days. An arm keyed on `ok` alone would have fired on them daily and been muted within a week.
+
+⚠ **This UNDER-counts, so treat it as a floor, not the rate.** The replay uses the rollup's coarse 1-day grain; the live arm judges each pipeline over its own `max_silent_minutes`, which is stricter — exactly why it currently fires on `match-topshot-players` and `wallet-username-resolver` while the sentinel's fixed 24–48 h window does not.
+
+**Verdict: ~1–3 true alerts/day is honest signal, not noise — but it is a standing volume, and `pipeline_alert_suppression` (bounded, with a stated exit) is the pressure valve, not a bigger threshold.** ⚠ **If this ever gets muted rather than acted on, the failure will be that the underlying pipelines were never fixed — not that the arm was wrong.**
+
+
 ### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — "FMV HIGH+MED is declining, tracks the Top Shot outage" is a SNAPSHOT, not a trend, and the series does not support it
 
 **`docs/overnight/metrics-latest.json` (overnight pass, 06:34Z) records `nba_top_shot: 6983` with the note *"HIGH+MED declining, tracks the ~38h Top Shot legacy-endpoint outage aging editions into STALE. Root cause upstream; not fixable in DB."* That framing matters — it attributes a decline to an outage and closes the question — so it is worth checking rather than inheriting.**
