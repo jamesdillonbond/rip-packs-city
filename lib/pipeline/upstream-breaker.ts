@@ -44,7 +44,32 @@
 // that, the marker this breaker writes becomes the newest row, the next tick
 // sees a non-failure, and the breaker disarms itself after exactly one skip.
 
-import { supabaseAdmin } from "@/lib/supabase"
+// ⚠ NO `@/lib/supabase` IMPORT, AND THAT IS DELIBERATE. The second caller this
+// is wanted for is `workers/topshot-moments-hydrator`, a Cloudflare Worker with
+// its own build that cannot resolve the `@/` alias. An eager import here would
+// make the module unimportable there, and the only remaining option would be to
+// COPY it — which is precisely how this repo ended up with 37 divergent copies
+// of `stripComments`, two of them measurably blind. The client is therefore
+// passed in, which also keeps the module free of module-level side effects and
+// trivially testable. Callers hold their own client already.
+
+/**
+ * The narrow slice of a supabase-js client this module uses.
+ *
+ * ⚠ Deliberately shallow (`unknown`, cast internally) rather than a fully typed
+ * builder chain. Spelling the chain out structurally made `tsc` report
+ * "Type instantiation is excessively deep and possibly infinite" at the call
+ * site — supabase-js's own generics are recursive, and a hand-written mirror of
+ * them re-triggers that. Shallow here, checked at the one place it is used.
+ */
+export type BreakerClient = { from: (table: string) => unknown }
+
+type QueryChain = {
+  select: (cols: string) => QueryChain
+  eq: (col: string, val: string) => QueryChain
+  order: (col: string, opts: { ascending: boolean }) => QueryChain
+  limit: (n: number) => PromiseLike<{ data: unknown; error: unknown }>
+}
 
 /** `extra.skipped` value written by a declined tick. Also the marker this module ignores when reading back. */
 export const UPSTREAM_OUTAGE_SKIP = "upstream_outage"
@@ -86,8 +111,8 @@ export type UpstreamBreakerOptions = {
   /** How long one failure buys. The next tick after this elapses makes a real attempt. */
   windowMs: number
   signature?: RegExp
-  /** Injectable for tests. Defaults to the shared admin client. */
-  client?: typeof supabaseAdmin
+  /** REQUIRED — see the note at the top of this file on why there is no default. */
+  client: BreakerClient
   now?: () => number
 }
 
@@ -102,8 +127,7 @@ export type UpstreamBreakerOptions = {
 export async function checkUpstreamBreaker(
   opts: UpstreamBreakerOptions,
 ): Promise<UpstreamBreakerVerdict> {
-  const { pipeline, windowMs, signature = CLOUDFLARE_ORIGIN_DOWN } = opts
-  const db = opts.client ?? supabaseAdmin
+  const { pipeline, windowMs, signature = CLOUDFLARE_ORIGIN_DOWN, client: db } = opts
   const now = opts.now ? opts.now() : Date.now()
 
   let rows: { ok: boolean | null; error: string | null; finished_at: string | null; extra: unknown }[]
@@ -111,8 +135,7 @@ export async function checkUpstreamBreaker(
     // A small window of recent rows, newest first, so skip markers can be
     // stepped over. `id` is the tiebreak: `finished_at` is not unique, and an
     // unordered read of "the latest row" is physical order, not the latest row.
-    const { data, error } = await db
-      .from("pipeline_runs")
+    const { data, error } = await (db.from("pipeline_runs") as QueryChain)
       .select("ok, error, finished_at, extra")
       .eq("pipeline", pipeline)
       .order("finished_at", { ascending: false })

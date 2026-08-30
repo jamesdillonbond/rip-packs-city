@@ -265,6 +265,7 @@ export async function POST(req: NextRequest) {
   const breaker = await checkUpstreamBreaker({
     pipeline: "offers-sweep",
     windowMs: OUTAGE_BREAKER_WINDOW_MS,
+    client: supabaseAdmin,
   })
   if (breaker.skip) {
     try {

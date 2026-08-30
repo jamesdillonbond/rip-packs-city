@@ -40,6 +40,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert path:** `git revert` the commit below — removes `lib/pipeline/upstream-breaker.ts`, its test, and the gate in `app/api/cron/offers-sweep/route.ts`. The route returns to walking every tick. No DB half; the breaker creates no objects and the marker rows are ordinary `pipeline_runs` rows.
 
+⭐ **FOLLOW-UP the same night — the module now takes its client as a REQUIRED parameter and imports `@/lib/supabase` nowhere.** The second caller this is wanted for is `workers/topshot-moments-hydrator`, a Cloudflare Worker with its own build that **cannot resolve the `@/` alias**. An eager import would have made the module unimportable there, leaving only one option: COPY it — **which is exactly how this repo got 37 divergent copies of `stripComments`, two of them measurably blind.** Removing the coupling now costs one argument at the call site and removes the duplication pressure before it is felt. ⚠ Behaviour is unchanged; the deployed `c8ac905b9` used the default client and the follow-up passes the same one explicitly. ⚠ **The client type is deliberately SHALLOW (`{ from: (t: string) => unknown }`, cast internally):** spelling the builder chain out structurally made `tsc` report *"Type instantiation is excessively deep and possibly infinite"* at the call site, because supabase-js's own generics are recursive and a hand-written mirror re-triggers it. Re-verified after the refactor: 30/30 tests, **all 5 mutations still red**, eslint ratchet unmoved (9/9), `tsc` clean.
+
+✅ **VERIFIED IN PRODUCTION BY ITS OWN TELEMETRY, not by a deploy scan.** Deploy `dpl_9dicqHsd9zWRH78ZH3ARS6kPAk9L` READY 03:34:10Z with the production aliases attached — i.e. live *before* the 03:42Z tick, which is the first tick that could exercise the gate. Result recorded below this entry's own verification line rather than assumed.
+
 
 ### 2026-08-29 · ✅ SHIPPED (code) — the sentinel detected CRITICAL and could not tell anyone, and `telegram-FAILED` did not say why
 
