@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (DB) — a pg_stat_statements snapshot was ANON-READABLE through PostgREST, and it was hard-failing the smoke suite on every commit
+
+**Found by chasing a red badge to the LOG rather than reading the badge.** `Smoke Tests` had gone red on three consecutive commits (`f1b63136`, `54f4fdd4`, `546d33e7`) — none of them mine. The suite reported **54/55 · hard 42/43** with exactly one violation:
+
+    HARD FAIL: public base tables: RLS on + no anon write
+      -> rls_off_base_table:audit_20260830_pgss_snap
+
+🚨 **The exposure is real and was measured, not inferred from the table's name.** `has_table_privilege('anon', 'public.audit_20260830_pgss_snap', 'SELECT')` returned **true**, as did `authenticated` — so a **pg_stat_statements snapshot** (internal query TEXT, call counts and IO figures for **4,759** statements) was readable through PostgREST **by anyone**. No user PII, and `anon` INSERT was already false, but it publishes the shape of the entire query surface, which is what someone reads *before* probing.
+
+**It is also the only one.** Across all ~100 `audit_*` tables in `public`, this is the **single** base table with `relrowsecurity = false`; every sibling already follows the convention, and several state it in their own `COMMENT`: *"RLS on, no policies: service_role only."*
+
+⚠ **ENABLE RLS, deliberately NOT DROP — and the distinction matters because the table is not mine.** It is another session's in-flight measurement (created ~03:2xZ, 4,759 rows, **no cron writer** — checked `cron.job` for the name, so it is a one-off snapshot, not a live sampler). Dropping it destroys a baseline somebody is mid-way through using. Enabling RLS is non-destructive, **cannot break the owning session** (`service_role` and `postgres` BYPASS RLS; only anon/authenticated lose the read), and matches the convention already in force on its ~100 siblings. ⛔ **Named explicitly, never a prefix wildcard** — other sessions write into the same `audit_20260830_` date prefix and a prefix-drop would take their work with it. The new `COMMENT` tells the owner to drop it when finished and repeats that warning.
+
+**Verified:** `relrowsecurity` now **true**, **0 policies** (so non-bypass roles read zero rows). The empirical confirmation is the next `Smoke Tests` run on the commit below — that suite is the instrument that found it, so it is the one that should clear it.
+
+🚨 **A SECOND, UNRELATED RED ON MAIN, FLAGGED NOT FIXED — it is another session's and it is NOT the one I just fixed.** `migration-new-function-states-its-anon-exec-decision` fails on `20260830030857_audit_20260830_pinnacle_resolver_claims_null_buyers_not_only_the_trade_contract.sql` → `public.claim_pinnacle_resolver_batch`, which creates a function without stating its anon-EXECUTE decision. Attributed by running the guard and reading the file it names, not assumed. Left to that session, the same way the earlier `run_wmc_reindex_verify` instance was left and then fixed by its author within the hour.
+
+⭐ **Transferable: a red badge on somebody else's commit is still worth opening.** Three commits carried this and none of their authors triggered it — the table was created by a fourth session and the failure attached itself to whoever pushed next. **Read the LOG, not the badge, and attribute from the log's own words.**
+
+**Revert path:** `git revert` the commit below removes the migration FILE only. DB half: `ALTER TABLE public.audit_20260830_pgss_snap DISABLE ROW LEVEL SECURITY;` — which **re-opens the anon read**, so prefer dropping the table once its owner is done.
+
+
 ### 2026-08-29 · 🚨 FIXED — the census guard I shipped four hours earlier was ITSELF structurally blind, and it hid the repo's third-largest source file
 
 **Found by using the guard's own lesson on a different item, which is the only reason it surfaced.** Known-issues #14 ends with *"derive this population from the tree by size, not from a list — that is why the largest instance went unnamed."* Doing exactly that, the file #14 names as the biggest (`app/(collections)/[collection]/pack/dist/[distId]/page.tsx`, **2,384 lines**) **did not appear in my tree walk at all.**
