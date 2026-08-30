@@ -87,17 +87,38 @@ export function bareSpecifiers(src) {
  * treats that as a failed read, never as "clean".
  */
 export function pickEntrypoint(specifiers, entrypointPath = null) {
-  const files = specifiers.filter((s) => s.startsWith("file://") && !s.endsWith("import_map.json"))
+  const files = specifiers.filter((s) => s.startsWith("file://") && !/\.jsonc?$/.test(s))
   if (entrypointPath) {
     const hit = files.find((s) => s === `file://${entrypointPath}` || s.endsWith(entrypointPath))
     if (hit) return hit
+    // The metadata path's numeric deploy suffix (…user_fn_<ref>_<id>_<n>/) can
+    // differ from the one stamped into the bundle at build time — match on the
+    // path's tail below the suffixed directory instead.
+    const tail = entrypointPath.replace(/^.*user_fn_[^/]*\//, "/")
+    if (tail !== entrypointPath) {
+      const tailHit = files.find((s) => s.endsWith(tail))
+      if (tailHit) return tailHit
+    }
   }
   const sourceIdx = files.filter((s) => s.endsWith("/source/index.ts"))
   if (sourceIdx.length === 1) return sourceIdx[0]
   const idx = files.filter((s) => s.endsWith("/index.ts") && !s.includes("/_shared/"))
   if (idx.length === 1) return idx[0]
+  // A production bundle inlines its whole graph, so "exactly one candidate"
+  // can fail on shapes we have not seen. Prefer the SHORTEST index.ts under a
+  // user_fn_ root — the entrypoint sits at the top of the function directory,
+  // while vendored modules nest deeper.
+  const userFnIdx = idx.filter((s) => s.includes("user_fn_"))
+  if (userFnIdx.length > 1) return userFnIdx.sort((a, b) => a.length - b.length)[0]
   if (files.length === 1) return files[0]
   return null
+}
+
+/** Log-safe sample of a bundle's module paths for a failed-pick diagnostic. */
+function specifierSample(specifiers, max = 6) {
+  const files = specifiers.filter((s) => s.startsWith("file://"))
+  const sample = (files.length ? files : specifiers).slice(0, max)
+  return `${files.length} file:// of ${specifiers.length} total; e.g. ${sample.join(" , ")}`
 }
 
 /**
@@ -111,7 +132,9 @@ export async function extractEntrypointSource(bytes, { entrypointPath = null } =
   const specifiers = await parser.parseBytes(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes))
   await parser.load()
   const entry = pickEntrypoint(specifiers, entrypointPath)
-  if (!entry) throw new Error(`cannot identify entrypoint among ${specifiers.length} specifier(s)`)
+  // The diagnostic names module PATHS only (never content) — safe for a CI log,
+  // and the only way to learn a bundle shape the picker has not met.
+  if (!entry) throw new Error(`cannot identify entrypoint (${specifierSample(specifiers)})`)
   const source = await parser.getModuleSource(entry)
   if (typeof source !== "string" || source.length === 0) {
     throw new Error(`entrypoint ${entry} has empty module source`)
