@@ -1803,34 +1803,36 @@ export async function POST(req: NextRequest) {
     // of drifting back to floor between recalcs. Scope to the collection set
     // we actually saw sales for; if the batch was empty (early-return path
     // wouldn't reach here), fall back to NULL = all collections.
+    // 2026-08-30: SCOPED TO THE EDITIONS THIS RUN WROTE. The per-collection call
+    // did a DISTINCT ON over EVERY snapshot of the collection (twice) to touch the
+    // ~130 rows just written — 38 s / 2.6M buffers per collection, every ~10 min,
+    // the #1 DB consumer in a quiet-hour window (ledger 2026-08-29, saturation).
+    // fmv_apply_thin_sale_haircut_for_editions applies the identical rules to an
+    // explicit id list (a few k buffers). The daily full-scope job
+    // (/api/admin/apply-fmv-haircut, 15:35 PT) keeps the catch-all semantics, so
+    // an empty page now does nothing here instead of a NULL = all-collections pass.
     let haircutRowsTotal = 0
     let haircutCollectionsRun = 0
     try {
-      const collectionIds = new Set<string>()
-      for (const { collectionId } of editionSalesMap.values()) {
-        if (collectionId) collectionIds.add(collectionId)
-      }
-      const targets: (string | null)[] =
-        collectionIds.size > 0 ? [...collectionIds] : [null]
-
-      for (const cid of targets) {
+      const haircutEditionIds = [...editionSalesMap.keys()]
+      if (haircutEditionIds.length > 0) {
         const { data: hc, error: hcErr } = await supabaseAdmin.rpc(
-          "fmv_apply_thin_sale_haircut",
-          { p_collection_id: cid, p_dry_run: false }
+          "fmv_apply_thin_sale_haircut_for_editions",
+          { p_edition_ids: haircutEditionIds, p_dry_run: false }
         )
         if (hcErr) {
           console.warn(
-            `[FMV-RECALC] Haircut RPC error (cid=${cid ?? "all"}): ${hcErr.message}`
+            `[FMV-RECALC] Haircut RPC error (editions=${haircutEditionIds.length}): ${hcErr.message}`
           )
-          continue
+        } else {
+          const row = Array.isArray(hc) && hc.length > 0 ? hc[0] : null
+          const haircut = Number(row?.rows_haircut ?? 0)
+          haircutRowsTotal += haircut
+          haircutCollectionsRun += 1
+          console.log(
+            `[FMV-RECALC] Haircut applied editions=${haircutEditionIds.length} examined=${row?.rows_examined ?? 0} haircut=${haircut} dollars_removed=${row?.dollars_removed ?? 0}`
+          )
         }
-        const row = Array.isArray(hc) && hc.length > 0 ? hc[0] : null
-        const haircut = Number(row?.rows_haircut ?? 0)
-        haircutRowsTotal += haircut
-        haircutCollectionsRun += 1
-        console.log(
-          `[FMV-RECALC] Haircut applied cid=${cid ?? "all"} examined=${row?.rows_examined ?? 0} haircut=${haircut} dollars_removed=${row?.total_dollars_removed ?? 0}`
-        )
       }
     } catch (err) {
       console.warn(
@@ -1920,32 +1922,40 @@ export async function POST(req: NextRequest) {
     // freshly-written row to be born clamped, so a full-scope scan would be pure
     // cost. Pinnacle short-circuits to zero inside the function (its FMV is
     // render-keyed in pinnacle_fmv_history, not fmv_snapshots).
+    //
+    // 2026-08-30: SCOPED TO THE EDITIONS THIS RUN WROTE (same reason as Step 8).
+    // The per-collection call ran a 90-day sales aggregate over every edition of
+    // the collection plus a DISTINCT ON over all its snapshots — 56 s / 1.3M
+    // buffers per collection every ~10 min, and it timed out outright on All Day
+    // under load. fmv_clamp_disconnected_ask_for_editions applies the identical
+    // rules to the explicit id list and skips Pinnacle editions inside; the daily
+    // pg_cron backstop (jobid 69) still runs the full scope.
     let clampRows = 0
     try {
-      const clampTargets = new Set<string>()
-      for (const { collectionId } of editionSalesMap.values()) {
+      const clampEditionIds: string[] = []
+      for (const [editionId, { collectionId }] of editionSalesMap.entries()) {
         if (collectionId && collectionId !== PINNACLE_COLLECTION_ID) {
-          clampTargets.add(collectionId)
+          clampEditionIds.push(editionId)
         }
       }
-      for (const cid of clampTargets) {
+      if (clampEditionIds.length > 0) {
         const { data: clampRes, error: clampErr } = await supabaseAdmin.rpc(
-          "fmv_clamp_disconnected_ask",
-          { p_collection_id: cid, p_dry_run: false },
+          "fmv_clamp_disconnected_ask_for_editions",
+          { p_edition_ids: clampEditionIds, p_dry_run: false },
         )
         if (clampErr) {
           console.warn(
-            `[FMV-RECALC] disconnected-ask clamp error (cid=${cid}, non-fatal): ${clampErr.message}`,
+            `[FMV-RECALC] disconnected-ask clamp error (editions=${clampEditionIds.length}, non-fatal): ${clampErr.message}`,
           )
-          continue
-        }
-        const row = Array.isArray(clampRes) && clampRes.length > 0 ? clampRes[0] : null
-        const clamped = Number(row?.rows_clamped ?? 0)
-        clampRows += clamped
-        if (clamped > 0) {
-          console.log(
-            `[FMV-RECALC] disconnected-ask clamp: cid=${cid} rows_clamped=${clamped} dollars_removed=${row?.dollars_removed ?? 0}`,
-          )
+        } else {
+          const row = Array.isArray(clampRes) && clampRes.length > 0 ? clampRes[0] : null
+          const clamped = Number(row?.rows_clamped ?? 0)
+          clampRows += clamped
+          if (clamped > 0) {
+            console.log(
+              `[FMV-RECALC] disconnected-ask clamp: editions=${clampEditionIds.length} rows_clamped=${clamped} dollars_removed=${row?.dollars_removed ?? 0}`,
+            )
+          }
         }
       }
     } catch (err) {

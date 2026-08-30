@@ -101,8 +101,10 @@ const EDITION_META = {
 const QUIET_TAIL = {
   "rpc:query_sql": { data: [], error: null },
   "rpc:fmv_apply_thin_sale_haircut": { data: [{ rows_examined: 0, rows_haircut: 0, total_dollars_removed: 0 }], error: null },
+  "rpc:fmv_apply_thin_sale_haircut_for_editions": { data: [{ rows_examined: 0, rows_haircut: 0, dollars_removed: 0 }], error: null },
   "rpc:apply_fmv_thin_sales_guard": { data: [{ thin_sales_count: 0, stale_count: 0, common_outlier_count: 0, total_caps_applied: 0 }], error: null },
   "rpc:fmv_clamp_disconnected_ask": { data: [{ rows_clamped: 0, dollars_removed: 0 }], error: null },
+  "rpc:fmv_clamp_disconnected_ask_for_editions": { data: [{ rows_clamped: 0, dollars_removed: 0 }], error: null },
   "rpc:purge_fmv_snapshots_today": { data: null, error: null },
   "rpc:log_pipeline_run": { data: null, error: null },
 }
