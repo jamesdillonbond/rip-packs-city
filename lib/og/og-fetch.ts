@@ -54,6 +54,27 @@
 export const OG_FETCH_TIMEOUT_MS = 10_000
 
 /**
+ * ⚠ ONE PLACE THIS BOUND DOES NOT REACH, CHECKED IN NEXT'S SOURCE RATHER THAN
+ * ASSUMED. `app/api/og/share/route.tsx` is the only OG read that uses Next's
+ * data cache (`next: { revalidate: 300 }`); the other 29 are `cache: "no-store"`
+ * and are unaffected by any of this.
+ *
+ * Two things had to be true for that route and both are:
+ *   1. A `signal` does NOT opt the request out of the data cache. Next
+ *      destructures it out of `init` and re-attaches it
+ *      (`next/dist/server/lib/patch-fetch.js`, ~line 623) — the cache opt-outs
+ *      are `no-cache`/`no-store` and segment config, not the presence of a
+ *      signal. So this bound did not silently turn a cached read into an
+ *      uncached one.
+ *   2. On a BACKGROUND REVALIDATION Next deliberately drops it
+ *      (`signal: isStale ? undefined : signal`, "don't pass through signal when
+ *      revalidating"). That revalidation is Next's own work, off the request a
+ *      crawler is waiting on, so it is outside what this bound is for — but
+ *      "every OG read is bounded" is therefore not literally true, and the
+ *      exception belongs here rather than being rediscovered as a surprise.
+ */
+
+/**
  * `fetch` with a deadline. Drop-in: same arguments, same return.
  *
  * A caller that supplies its own `signal` keeps it — the helper adds a bound
