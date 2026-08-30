@@ -55,7 +55,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
 | RPC Pinnacle Sync | /api/cron/pinnacle-sync | daily 10:07 UTC — ⚠ **double-fire** w/ vercel.json (0 6 = 06:00); backstop kept deliberately (dropout history) |
 | RPC wmc Render-id Remap | /api/cron/pinnacle-wmc-render-id | hourly :37 |
-| RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03 |
+| RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03  ⚠ 2026-08-30: the RPC returns early (`catalog_unchanged`) unless `pinnacle_catalog.fmv_computed_at` moved past its watermark (migration 20260830153801); the ~4 working ticks after a catalog recompute need > the route's 125 s under daytime IO — `cron_heavy` now has EXECUTE (20260830154447) so the call can move to pg_cron; Trevor's call. |
 | RPC Prune Log Tables | /api/cron/prune-logs | daily 04:23 UTC |
 | RPC Refresh Conflated Editions | /api/cron/refresh-conflated-editions | daily 15:17 UTC ⟨exec-derived⟩ — NEW |
 | RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | ~~hourly :23~~ **INACTIVE 2026-08-29** — refresh moved to pg_cron jobid 384 `rpc-refresh-pack-grail-metrics-mv` (`cron_heavy`, `23 * * * *`, migration 20260829235752): the 60 s lambda killed 13 of 24 ticks while the DB refresh committed. Route stays deployed as the revert (re-enable entry 7619844). |
