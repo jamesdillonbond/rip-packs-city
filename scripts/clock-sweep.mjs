@@ -91,17 +91,55 @@ export function totalTests(report) {
 }
 
 /**
+ * ⚠ THE ONE THING THE IN-PROCESS SHIM CANNOT REACH, found by the sweep's first
+ * real run rather than reasoned about in advance.
+ *
+ * `__tests__/find-future-dated-ledger-headings.test.ts` computes "today in
+ * Pacific" in the VITEST process and then runs the detector in a CHILD process
+ * via `execFileSync`. A child is a fresh Node with the REAL clock, so under a
+ * shifted parent the two disagree and the test fails — at three of four offsets.
+ *
+ * That difference is an ARTIFACT OF THIS INSTRUMENT, not evidence about the
+ * test: in real CI parent and child share one clock and it is not
+ * hour-dependent. Reporting it would make the sweep permanently red, which is
+ * the exact outcome R67 declined the runner-clock version to avoid.
+ *
+ * ⛔ It is NOT silently dropped either — a child-process test COULD be genuinely
+ * clock-dependent and this cannot tell. It goes in its own bucket, is printed
+ * on every run, and says plainly that it is unmeasured rather than clean.
+ *
+ * The predicate is a PROPERTY of the file, not a name list, so a new test that
+ * shells out is covered with no edit here.
+ */
+export function fileSpawnsChildProcess(src) {
+  return /\bnode:child_process\b|\bchild_process\b|\bexecFileSync\b|\bexecSync\b|\bspawnSync\b|\bexecFile\b|\bspawn\b/.test(
+    String(src),
+  )
+}
+
+/** The file part of a `<file> > <test name>` id. */
+export function fileOfId(id) {
+  const i = String(id).indexOf(" > ")
+  return i === -1 ? String(id) : String(id).slice(0, i)
+}
+
+/**
  * The decision, pure so it can be pinned without running a suite.
  * `runs` is `[{ hour, failing: string[], total: number }]`.
+ * `spawnsChild(file) -> boolean` decides which differences this instrument
+ * cannot speak to; the default says "none", so the pure core stays testable.
+ *
+ * @param {{hour: number, failing: string[], total: number}[]} runs
+ * @param {(file: string) => boolean} [spawnsChild]
  */
-export function classify(runs) {
+export function classify(runs, spawnsChild = (_file) => false) {
   const everyRunFails = (id) => runs.every((r) => r.failing.includes(id))
   const anyRunFails = new Set(runs.flatMap((r) => r.failing))
 
   const alwaysFailing = [...anyRunFails].filter(everyRunFails).sort()
   // The finding: a test whose result DEPENDS on the clock. Failing at some
   // offsets and not others is the only thing that can mean.
-  const clockDependent = [...anyRunFails]
+  const differing = [...anyRunFails]
     .filter((id) => !everyRunFails(id))
     .map((id) => ({
       id,
@@ -110,8 +148,11 @@ export function classify(runs) {
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 
+  const outOfReach = differing.filter((f) => spawnsChild(fileOfId(f.id)))
+  const clockDependent = differing.filter((f) => !spawnsChild(fileOfId(f.id)))
+
   const vacuous = runs.length < 2 || runs.some((r) => r.total === 0)
-  return { runs: runs.length, alwaysFailing, clockDependent, vacuous }
+  return { runs: runs.length, alwaysFailing, clockDependent, outOfReach, vacuous }
 }
 
 export function sweepExitCode(result) {
@@ -131,6 +172,15 @@ export function renderReport(result) {
         `so this sweep is not the instrument for them:`,
     )
     for (const id of result.alwaysFailing.slice(0, 10)) lines.push(`    · ${id}`)
+  }
+  for (const f of result.outOfReach ?? []) {
+    lines.push(
+      `  UNMEASURED (not a finding, and not a clean bill either) — ${f.id}\n` +
+        `    Its file spawns a CHILD PROCESS, which starts with the real clock and does not ` +
+        `inherit RPC_CLOCK_OFFSET_MS, so parent and child disagree under this instrument in a way ` +
+        `they never do in CI. The difference at hour(s) ${f.failedAt.join(", ")} is an artifact of ` +
+        `the sweep. This test's clock-dependence is UNKNOWN, not cleared.`,
+    )
   }
   for (const f of result.clockDependent) {
     lines.push(
@@ -200,7 +250,15 @@ function main() {
       runs.push(run)
     }
 
-    const result = classify(runs)
+    const result = classify(runs, (file) => {
+      try {
+        return fileSpawnsChildProcess(readFileSync(file, "utf8"))
+      } catch {
+        // ⚠ Unreadable means UNKNOWN, and unknown must not become an exemption:
+        // fall back to treating it as in-reach so the finding is still reported.
+        return false
+      }
+    })
     console.log(renderReport(result))
     if (result.vacuous) {
       console.error(

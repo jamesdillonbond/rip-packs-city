@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
 import {
   DEFAULT_HOURS,
   offsetForUtcHour,
@@ -7,6 +8,8 @@ import {
   classify,
   sweepExitCode,
   renderReport,
+  fileSpawnsChildProcess,
+  fileOfId,
 } from "../scripts/clock-sweep.mjs"
 
 // Register R67: three wall-clock-dependent tests in ONE day, by three authors,
@@ -154,11 +157,84 @@ describe("renderReport", () => {
   })
 })
 
+describe("differences this instrument cannot speak to", () => {
+  const spawns = (file: string) => file.endsWith("child.test.ts")
+
+  it("does NOT report a differing test whose file spawns a child process", () => {
+    // ⛔ Reporting it would make the sweep permanently red on a test that is
+    // fine in CI — R67's own reason for declining the runner-clock version.
+    const r = classify(
+      [{ hour: 0, failing: ["/x/child.test.ts > t"], total: 10 }, { hour: 5, failing: [], total: 10 }],
+      spawns,
+    )
+    expect(r.clockDependent).toEqual([])
+    expect(r.outOfReach.map((f) => f.id)).toEqual(["/x/child.test.ts > t"])
+    expect(sweepExitCode(r)).toBe(0)
+  })
+
+  it("STILL reports it, as unmeasured rather than clean, in the rendered output", () => {
+    // The exclusion must not be silent: a child-process test COULD be genuinely
+    // clock-dependent and this cannot tell.
+    const out = renderReport(
+      classify(
+        [{ hour: 0, failing: ["/x/child.test.ts > t"], total: 10 }, { hour: 5, failing: [], total: 10 }],
+        spawns,
+      ),
+    )
+    expect(out).toContain("UNMEASURED")
+    expect(out).toContain("not a clean bill either")
+  })
+
+  it("still reports a differing test whose file does NOT spawn a child", () => {
+    // The control in the other direction: the exemption must be narrow.
+    const r = classify(
+      [{ hour: 0, failing: ["/x/plain.test.ts > t"], total: 10 }, { hour: 5, failing: [], total: 10 }],
+      spawns,
+    )
+    expect(r.clockDependent.map((f) => f.id)).toEqual(["/x/plain.test.ts > t"])
+    expect(sweepExitCode(r)).toBe(1)
+  })
+
+  it("puts every differing test in EXACTLY ONE bucket — the two must not overlap", () => {
+    // ⚠ Added after a mutation survived: widening `outOfReach` to everything left
+    // `clockDependent` untouched, so a finding could appear in both buckets and
+    // be reported as a finding AND as unmeasured at once. The buckets are a
+    // partition; assert that, not just each side.
+    const runs = [
+      { hour: 0, failing: ["/x/child.test.ts > a", "/x/plain.test.ts > b"], total: 10 },
+      { hour: 5, failing: [], total: 10 },
+    ]
+    const r = classify(runs, spawns)
+    const ids = [...r.clockDependent.map((f) => f.id), ...r.outOfReach.map((f) => f.id)].sort()
+    expect(ids).toEqual(["/x/child.test.ts > a", "/x/plain.test.ts > b"])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it("detects the spawn by PROPERTY, so a new shelling-out test needs no edit", () => {
+    expect(fileSpawnsChildProcess('import { execFileSync } from "node:child_process"')).toBe(true)
+    expect(fileSpawnsChildProcess('const { spawnSync } = require("child_process")')).toBe(true)
+    expect(fileSpawnsChildProcess('import { describe } from "vitest"')).toBe(false)
+  })
+
+  it("takes the file from the id, so a test name containing ' > ' does not confuse it", () => {
+    expect(fileOfId("/a/b.test.ts > suite > case")).toBe("/a/b.test.ts")
+  })
+})
+
 describe("the RPC_CLOCK_OFFSET_MS shim in vitest.setup.ts", () => {
-  it("is inert in this process — the production suite must be unaffected", () => {
-    // If the shim were active by default it would move every fixture written
-    // against "now", and the suite would be measuring a lie.
-    expect(process.env.RPC_CLOCK_OFFSET_MS ?? "0").toBe("0")
+  it("agrees with the offset the environment declares, whatever that is", () => {
+    // ⚠ THIS ASSERTION WAS WRONG ON ITS FIRST REAL USE and the sweep caught it.
+    // It asserted `RPC_CLOCK_OFFSET_MS === "0"`, which is false BY CONSTRUCTION
+    // while the sweep is running — so the detector reported one always-failing
+    // test on every sweep. A permanently-noisy instrument is the exact outcome
+    // R67 declined the runner-clock version to avoid, and I shipped it in the
+    // replacement. The honest property holds under BOTH conditions: the process
+    // clock must differ from the real clock by exactly the declared offset.
+    const declared = Number(process.env.RPC_CLOCK_OFFSET_MS ?? "0")
+    const drift = Date.now() - (globalThis.performance.timeOrigin + globalThis.performance.now())
+    // Generous bound: this compares two clocks read microseconds apart, and
+    // timeOrigin is itself sampled from the real clock at process start.
+    expect(Math.abs(drift - declared)).toBeLessThan(5000)
   })
 
   it("shifts only the ZERO-ARGUMENT Date, leaving explicit instants alone", () => {
@@ -187,9 +263,20 @@ describe("the RPC_CLOCK_OFFSET_MS shim in vitest.setup.ts", () => {
     expect(new Shifted(0).toISOString()).toBe("1970-01-01T00:00:00.000Z")
   })
 
+  it("cannot reach a CHILD process, which is why the sweep has a third bucket", () => {
+    // A child is a fresh Node with the real clock. `find-future-dated-ledger-headings`
+    // computes "today in Pacific" in the parent and runs the detector in a child,
+    // so under a shifted parent the two disagree — at three of four offsets.
+    // In CI they share one clock and it is not hour-dependent, so that difference
+    // is an artifact of the instrument. Asserted here so the limitation is pinned
+    // rather than remembered.
+    const src = readFileSync("__tests__/find-future-dated-ledger-headings.test.ts", "utf8")
+    expect(fileSpawnsChildProcess(src)).toBe(true)
+  })
+
   it("is what vitest.setup.ts actually installs", () => {
     // The reconstruction above is only evidence if it matches the shipped code.
-    const src = require("node:fs").readFileSync("vitest.setup.ts", "utf8")
+    const src = readFileSync("vitest.setup.ts", "utf8")
     expect(src).toContain("RPC_CLOCK_OFFSET_MS")
     expect(src).toMatch(/if \(args\.length === 0\)/)
     expect(src).toMatch(/static now\(\)/)
