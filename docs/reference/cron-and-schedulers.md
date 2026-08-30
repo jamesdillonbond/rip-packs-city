@@ -42,6 +42,29 @@ whether they asked for 24 or 96. `offer-fill-backfill` asks for **96 ticks and g
 the next reader will trust. Either move the schedule to cron-job.org — which is not subject to this and
 already drives the production pipelines reliably — or rewrite the cron to state what it actually gets.
 
+⚠⚠ **CORRECTION 2026-08-29 — `min(expected, 5)` IS THE WRONG SHAPE, and the sentence above is a MODEL
+fitted to one 24 h window (n = 17, one sample).** Re-derived from the 30 scheduled `rpc-pipeline` runs
+GitHub still lists, 2026-08-26 → 08-30:
+
+| UTC day | scheduled runs |
+|---|---|
+| 08-26 | **18** |
+| 08-27 | 2 |
+| 08-28 | 3 |
+| 08-29 | 6 |
+
+**Eighteen runs in a day refutes a cap of five outright.** Inter-run gap over that span: **median 1.81 h ·
+p90 9.92 h · max 11.35 h**. So the shedding is **erratic, not clamped** — the practical advice above
+(don't state a cadence you don't get; prefer cron-job.org for anything load-bearing) is UNCHANGED and
+still correct, but ⛔ **do not quote `min(expected, 5)` as a mechanism, and do not derive a threshold
+from it.** A watchlist `max_silent_minutes` must come from the observed MAX GAP, not from a runs/day
+model: `audit_20260830_watchlist_rpc_pipeline_endpoints` uses **1800 m = 2.6× the 11.35 h max**.
+
+⚠ **The general lesson is the one worth keeping: a rate model fitted to ONE window is a hypothesis about
+the window.** The original reading is not "wrong" about what it saw — eight workflows really did get 4–6
+that day — it is wrong about what that implies. **A directional claim needs a DISTRIBUTION** (CLAUDE.md),
+and this is the same rule applied to a scheduler instead of a database.
+
 ⛔ **"~92% shed" is the wrong summary statistic**: it is 95% for a 96/day cron and **0% for a daily one**,
 and the three 1/day workflows measured got 1 of 1. Daily schedules survive; that is why
 `scheduler-liveness.yml` runs daily rather than hourly — an hourly liveness check would be shed by the
@@ -745,3 +768,62 @@ adjacent data, which is off-limits for autonomous shipping):
 ⚠ **Until that lands, the honest reading of a green-looking tick is in the row itself:** `ok=false`
 with `"0/N dists converted; N returned no editions"` is the *correct* report of a wedged queue, not a
 transient upstream failure.
+
+---
+
+## `rpc-pipeline.yml` and the four endpoints nobody could see (register R68, 2026-08-29/30)
+
+**The finding was TRIPLE blindness, not one green badge.** The workflow calls six production
+endpoints ~3×/day and: (1) it was **six of six `continue-on-error`** with non-200 emitting only
+`::warning::`, so 30 of 30 recent runs read `success` **by construction** — two steps did not even
+test the status they captured, and one captured none; (2) **four of the six routes wrote no
+`pipeline_runs` row of any kind**, with `fmv-recalc` as the positive control **in the same
+instrument** (130 rows / 48 h against their **0**); (3) GHA log retention is finite.
+**Jointly: the run frequency of four production endpoints was unknowable from any durable store.**
+
+### `lib/pipeline/terminal-run.ts` — the sibling of `lib/pipeline/heartbeat.ts`
+
+The heartbeat covers `after()` routes; this covers the other shape, a route that does its work inline
+and returns, so its outcome is knowable when it responds. Written as a helper for the reason the
+heartbeat's own header records: five routes once hand-rolled that contract and **no two agreed**.
+
+⚠ **Its counters default to `null`, NEVER `0`.** A route that counted nothing must publish *not
+measured*. This is only safe because `log_pipeline_run` stopped COALESCEing an explicit NULL to 0
+(migration `20260829040000`).
+⚠ **It cannot record a `maxDuration` kill** — the platform takes the terminal row with it, and
+`try/catch`/`finally` do not save you. A route that can be wall-killed AND whose invocation frequency
+must be knowable needs a heartbeat as well; the kill is then read by CORRELATION.
+⚠ **A request rejected at AUTH writes nothing, deliberately.** The absence then means "never invoked",
+covering both a schedule that did not fire and a token that drifted — they need the same
+investigation, so collapsing them loses nothing.
+
+### The gate, and why the threshold is "every endpoint failed"
+
+Per-step tolerance is **kept** (one bad endpoint must not starve the rest — the 2026-06-25
+restructure); a new non-tolerant step fails the job only when **all six** failed. Partial failure is
+normal here and self-heals next tick; total failure is an outage (expired token, DNS, a bad deploy)
+and had no signal at all. ⚠ **A missing status file counts as a FAILURE, not an unknown** — a step
+killed by its own `timeout-minutes` writes nothing, which is precisely the case that must not read as
+healthy. The gate also asserts it inspected `EXPECTED_STEPS` endpoints, so a shrunken list fails
+rather than reporting a healthy count off a partial population.
+
+✅ **THE TWO LAYERS WERE OBSERVED DISAGREEING, WHICH IS THE DESIGN WORKING.** On the 02:20Z
+verification run the gate printed **`6 of 6 endpoints returned 200`** while `pipeline_runs` recorded
+`ingest` **`ok:false`** on the same tick (Top Shot GraphQL 530). ⚠ **The job's green is honest about
+what it measures — HTTP reachability — and is NOT evidence the pipeline worked:** `/api/ingest`
+returns 202 from `after()`, so the 200 comes back before the work is attempted. **Read
+`pipeline_runs` for health, never this workflow's badge.**
+
+### Arming the watchlist rows — the trap this table's own history records
+
+`detect_stalled_pipelines()` fires when `last_run IS NULL`, so **a row armed before its
+instrumentation exists manufactures a false stall** (recorded in
+`audit_20260802_arm_staged_watchlist_rows`). The five new rows were armed only after confirming rows
+existed, and `detect_stalled_pipelines()` was re-read immediately after: same two pre-existing stalls,
+none of the new ones.
+
+⚠ **The threshold came from a measured distribution, not the nominal schedule** — see the GHA
+correction above: **1800 m = 2.6× the measured 11.35 h max inter-run gap**. ⚠ **1800 is also a
+CEILING, not just a choice**: the sentinel's `Pipeline Success Coverage` arm reads a 24–48 h window
+and its own comment states the invariant that the window must stay wider than the slowest watchlisted
+cadence. Anything longer makes that arm flap.

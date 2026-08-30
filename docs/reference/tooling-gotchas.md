@@ -695,3 +695,59 @@ Kept verbatim, because the numbers are what make the rule stick:
 > **KEEPING IT UNDER: the limit is on CHARACTERS; `wc -c` counts BYTES and this file lives inside that gap** (it once read 40,086 on a true 39,610). **Count with `node -e`, not `wc` — and not Python `len()`, which counts CODE POINTS and under-reports by one per astral emoji (4 × 🚨 here, so it reads 39,974 as 39,970)** — `.length` is what the harness and CI's guard both measure.
 
 Three instruments, three different answers on the same file. `.length` is the only one that matches what the harness and `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts` measure.
+
+---
+
+## Two git traps that bit again on 2026-08-29/30
+
+### 🚨 `git push … | tail -2` REPORTS `tail`'s EXIT CODE, so a failed push reads as success
+
+CLAUDE.md already carries *"a pipe reports the LAST command's exit code"* for `tsc`. It applies to
+`git push` too, and I wrote a retry loop that did exactly the wrong thing:
+
+```bash
+# WRONG — prints the hint lines AND reports success
+for i in 1 2 3; do
+  if git push -u origin main 2>&1 | tail -2; then echo "PUSH_OK"; break; fi
+done
+```
+
+The push failed **non-fast-forward**, the hint text printed, `tail` exited 0, and the loop announced
+`PUSH_OK` and stopped. Capture first, then test:
+
+```bash
+out=$(git push origin main 2>&1); rc=$?
+echo "$out" | tail -2
+echo "PUSH_RC=$rc"
+```
+
+⚠ **And diagnose from the ERROR STRING** — `hint: 'git pull' before pushing again` /
+`(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
+
+### The ledger rebase-conflict recipe, as a script rather than a memory
+
+Against a concurrent session pushing every few minutes, the ledger conflicts on nearly every rebase.
+The recipe in CLAUDE.md works but is easy to fumble under pressure, so it is worth driving from a
+script that enforces its three traps at once — **splice into upstream's copy (`git show :2:…`) at the
+first `^### `, never hand-edit the markers; gate `git add` on the RESOLVER's exit code, not the
+rebase's; measure a baseline BEFORE splicing:**
+
+```bash
+git show :2:docs/overnight/ledger.md > /tmp/up.md
+BEFORE=$(grep -c '^### ' /tmp/up.md)
+SW_BEFORE=$(awk -f scripts/find-swallowed-ledger-headings.awk /tmp/up.md)
+if python3 splice.py; then                       # ← gate on THIS, not on git
+  AFTER=$(grep -c '^### ' docs/overnight/ledger.md)
+  SW_AFTER=$(awk -f scripts/find-swallowed-ledger-headings.awk docs/overnight/ledger.md)
+  FUT=$(node scripts/find-future-dated-ledger-headings.mjs docs/overnight/ledger.md)
+  [ "$AFTER" -eq "$((BEFORE+1))" ] && [ "$SW_AFTER" = "$SW_BEFORE" ] && [ "$FUT" = 0 ] \
+    && git add docs/overnight/ledger.md
+fi
+```
+
+⚠ **The baseline must come from `:2:`, not from the working tree** — mid-conflict the working tree
+contains conflict markers, so `grep -c '^### '` over it counts both sides.
+
+⚠ **The future-date arm earned its keep again on 2026-08-29**: I stamped `### 2026-08-30` from a
+`date -u` reading while PT was still 08-29, and the guard caught it before the commit. The web sandbox
+is **PDT**, so `date -u` is genuinely tomorrow after 17:00 PT — read `TZ=America/Los_Angeles date`.

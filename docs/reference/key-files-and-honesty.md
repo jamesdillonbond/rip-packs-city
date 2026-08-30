@@ -631,3 +631,45 @@ whose shape is present but unrendered. **Follow the value to the pixel.**
 
 ⓘ Both surviving candidates were also the two `is_active=false` pre-launch collections (Candy MLB, Panini) —
 worth establishing *before* spending a fix, since even a real defect there reaches almost nobody.
+
+---
+
+## The ALERT sub-class, made falsifiable (2026-08-29/30)
+
+The canon above names the alert as one of the worst sub-classes — *its output is silence, so the error
+is unfalsifiable*. Two live instances, both fixed, and the fix is the same idea in both: **an error
+that is not published is not an error anyone can act on.**
+
+**Observed:** `pipeline-sentinel` run 33283636751 reported `"notifications":["telegram-FAILED"]` on a
+CRITICAL sweep — it had correctly found three dead Top Shot GraphQL pipelines and could not tell
+anyone. The reason went to `console.error` only, so a revoked token, a non-2xx and a thrown fetch were
+indistinguishable from outside.
+
+⚠ **The second half is the one that generalises: an unconfigured channel produced NO ENTRY AT ALL.**
+Both push sites sat inside `if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID)`, so a channel that could not
+deliver was silent, and **absence reads identically to "no notification was needed"**. Whenever a
+capability is gated on config, ask what the ABSENCE renders as. It now says
+`telegram-FAILED:not_configured`.
+
+**The helpers:**
+
+| what | where |
+|---|---|
+| scrub a secret out of anything about to be published | `lib/redact-secrets.ts` → `redactSecrets()` |
+| a synchronous cron route's terminal `pipeline_runs` row | `lib/pipeline/terminal-run.ts` → `logTerminalRun()` |
+| an `after()` route's pre-work marker | `lib/pipeline/heartbeat.ts` → `writeInvocationHeartbeat()` |
+
+🚨 **`redactSecrets` is not decorative — the Telegram bot token is IN THE URL PATH**
+(`/bot<TOKEN>/sendMessage`), so publishing a thrown fetch's message writes a live credential into
+`pipeline_runs.extra` and the route's JSON response. It scrubs **by value AND by shape**, because the
+value arm cannot cover a rotated token and the shape arm cannot cover a value outside those shapes.
+
+⚠ **Fixed in BOTH copies.** `lib/ops-alert.ts` is the copy-paste sibling (it backs
+`stale-fmv-monitor` and `data-integrity`); its `OpsAlertResult` gained `telegramReason`/`emailReason`
+**additively**, so the booleans keep their exact meaning and no caller breaks. This is the standing
+rule in action: **when you find one, grep for the EXPRESSION, not the file.**
+
+⚠ **Four existing tests were UPDATED, NOT DELETED, and three were STRENGTHENED.** They pinned
+spellings — `toContain("telegram-FAILED")`, `toEqual` on the whole result object — which red on an
+honest addition. They now match the `…-FAILED` **prefix** (the property any reader keys on) *and*
+assert the reason is present, which is the improvement.

@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📝 DOCS — the session's durable lessons promoted out of the ledger, and one CLAUDE.md claim REFUTED
+
+**Why this entry exists at all:** CLAUDE.md's own rule is that *a fact left only in a session log stops being read*. This turn moves the CI/testing audit's lessons into the files that get read before a session knows its topic, and **corrects a stated measurement that was wrong**.
+
+⚠⚠ **THE CORRECTION IS THE MOST IMPORTANT PART. `observed ≈ min(expected, 5)` FOR GHA SHEDDING IS REFUTED.** That figure was a MODEL fitted to a single 24 h window (n = 17). Re-derived from the 30 scheduled `rpc-pipeline` runs GitHub still lists, 2026-08-26 → 08-30: **18, 2, 3, 6 runs per UTC day**. **Eighteen in a day refutes a cap of five outright.** Gap distribution: **median 1.81 h · p90 9.92 h · max 11.35 h**. ✅ The practical advice is UNCHANGED and still right — don't state a cadence you don't get; put anything load-bearing on cron-job.org. ⛔ **But do not quote `min(expected, 5)` as a mechanism, and never derive a threshold from it** — a watchlist bound must come from the observed MAX GAP. Recorded with the general form: **a rate model fitted to ONE window is a hypothesis about the window**, which is CLAUDE.md's *"a directional claim needs a DISTRIBUTION"* applied to a scheduler instead of a database.
+
+**CLAUDE.md** — one rule added, at its size equilibrium, so it **displaced** rather than spent room (39,998 of 40,000 by `.length`; the guard is green, and it caught me at 40,004 first, which is the astral-emoji gap the header warns about). *"Three ways a measurement lies about a change"* is now **four**: ⚠ **a reading taken while its SUBJECT CHANGED is not a reading** — 3 of 4 clock-sweep runs measured the instrument, not the suite. Freeze the tree, then measure. The displaced text was a redundant duplicate pointer on the comment-stripper bullet.
+
+**`testing-and-ci.md`** — the three new instruments, and for each **what it cannot see**: the register guard (and the two corrections to the guard itself, both found by running it against the real file rather than a fixture); the clock sweep (why in-process beats `sudo date -s`; why the sampled hours are chosen against the residue classes rather than spread evenly, since an even spread is exactly what a `% 6` predicate survives; and its two standing blind spots — child processes, and anything needing a span longer than 24 h); the redactor. Plus **four mutation lessons**, of which the sharpest is: ⚠ **deleting an IMPORT is not a mutation of the behaviour** — the helper name is still in the source, the guard still matches, and the build breaks for an unrelated reason. Mutate the CALLS.
+
+**`cron-and-schedulers.md`** — the GHA correction above; `lib/pipeline/terminal-run.ts` and why the counters default to `null`; the gate's "every endpoint failed" threshold and why a MISSING status file counts as a failure rather than an unknown; and the arming trap (`detect_stalled_pipelines()` fires on `last_run IS NULL`, so a row armed before its instrumentation exists manufactures a false stall).
+
+**`key-files-and-honesty.md`** — the ALERT sub-class made falsifiable, with the generalisable half stated as a question to ask elsewhere: ⚠ **when a capability is gated on config, ask what its ABSENCE renders as.** A channel that could not deliver was silent, and silence read identically to "no notification was needed".
+
+**`tooling-gotchas.md`** — 🚨 **`git push … | tail -2` reports `tail`'s exit code**, so a non-fast-forward push printed its hint lines and my retry loop announced `PUSH_OK` and stopped. Capture, then test. Plus the ledger rebase-conflict recipe as a script that enforces its three traps at once, with the one I nearly got wrong: **the baseline must come from `:2:`, not the working tree, which mid-conflict contains both sides' headings.**
+
+**`docs/sessions/2026-08.md`** — session entry, including the six self-corrections to my own audit findings and the two times I reddened `main`.
+
+**Verified:** 1416 files / 15573 tests green · `tsc --noEmit` clean · memory-doc link guard 151 links across 24 files all resolve · CLAUDE.md size guard green · register guard green · ledger 1319 headings, swallowed 3, future 0.
+
+**Revert path:** docs only — `git revert` the commit below. No code, no DB, no prod state.
+
 ### 2026-08-29 · 📝 MEMORY — the session's two general lessons promoted, and CLAUDE.md paid for one by DISPLACING another
 
 **Session close for the R66 + R72 pass.** Everything shipped is already recorded above; this entry is only about where the durable lessons now live, because a fact left in a session log stops being read.

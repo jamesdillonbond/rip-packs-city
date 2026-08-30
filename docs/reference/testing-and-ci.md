@@ -1442,3 +1442,117 @@ expect(spy).toHaveBeenCalledWith(OG_FETCH_TIMEOUT_MS)   // reads [] — fails on
 ```
 
 `mockRestore()` resets the mock's state as well as unpatching it, so the assertion reads an empty call list and the case fails against code that is doing exactly the right thing. Capture what you need inside the `try` (`const args = spy.mock.calls.map(c => [...c])`) and assert on that. The tell is a mutation suite where the **baseline** is red and every mutation is red too — a test that can never pass is not a strict test, it is a broken one.
+
+---
+
+## The 2026-08-29/30 detection pass — three new instruments, and what each cannot see
+
+Sibling to the "six lessons" section above; that one was about the audit, this one is about the
+guards it produced. **Every one of them was wrong on its first run**, and the corrections are the
+part worth reading.
+
+### 1. `scripts/check-register-integrity.mjs` + the `register-guard` CI job
+
+`docs/audits/deep-audit-register.md` is what CLAUDE.md calls the canonical open list, and it was the
+only one of the three coordination files with **no guard at all** — the ledger has the no-clobber +
+future-date arms, `docs/overnight/inbox/INDEX.md` has four CI assertions, the register had nothing.
+A lost register row does not merely drop a record: **it un-files a finding**, and the next pass
+re-derives it or never looks again.
+
+Three arms: no id vanishes between `HEAD~1` and `HEAD` (ids tracked as a **SET**, so an
+OPEN→RESOLVED move is the lifecycle and not a loss); every row matches the width **its own section
+header declares**; ids are unique.
+
+⚠ **It found four real defects on its first full run** — R26, R31, D30, R46 — all one shape.
+**GFM splits a table row on `|` BEFORE it parses inline code**, so a raw pipe inside backticks
+(`` `/(ts|tsx)$/` ``, `` `(TierBreakdownCard|PortfolioSparkline)` ``) opens a column, and cells past
+the header's width are **discarded by the renderer**. R46's `owner` column had vanished from the
+rendered table entirely. 🚨 **Every character is still in the file, so a grep finds all of it** —
+which is what makes this the worst shape of loss and why four audit runs missed it.
+
+⚠ **TWO CORRECTIONS TO THE GUARD ITSELF, both from running it against the real file rather than a
+fixture.** (1) It hardcoded `{OPEN: 6, RESOLVED: 5}` and flagged all 48 resolved rows — the width is
+now read from **each section's own header row**, which cannot drift from the file it checks.
+(2) It matched `^\| R\d+ \|`, silently skipping `D12b`, `D30`, `D2b`, `E5`; widening to every
+id-keyed row took the population **67 → 111 and found D30 on the spot**.
+
+⚠ Non-vacuity at **two** granularities: it fails on zero rows, *and* fails unless **at least two
+sections contribute** — a parser that stopped matching `RESOLVED` would otherwise report a
+healthy-looking count from `OPEN` alone. The prose sections are excluded **by the property** (their
+header's first column is `area` / `item`, not `id`), which is asserted, so a new id-keyed section is
+picked up with no edit.
+
+### 2. `scripts/clock-sweep.mjs` + `clock-sweep.yml` — the wall-clock detector (register R67)
+
+Runs the suite once per sampled UTC hour and **diffs the failing SETS**. A test failing at some
+offsets and passing at others is the finding. The clock is shifted by an opt-in
+`RPC_CLOCK_OFFSET_MS` shim in `vitest.setup.ts` that moves **only the zero-argument `Date`** — every
+explicit instant is left alone, or the sweep would report the whole suite.
+
+⛔ **A source scan cannot be the detector.** `new Date()` appears in hundreds of legitimate fixtures,
+and R67's three instances had at least two distinct mechanisms, one of which (a DATE compared as a
+DATETIME) clock-pinning discipline does not prevent at all. **The sound version varies the ambient
+state and compares outcomes.**
+
+⭐ **Why in-process rather than `sudo date -s` on the runner, which is what R67 filed and declined:**
+its falsifier was *"if it reds for runner reasons rather than test reasons, revert"*. Shifting inside
+the vitest process removes that failure mode **by construction** — a failure caused by the runner, a
+bad dependency, or genuinely broken code fails at **every** offset and is classified ALWAYS-FAILING
+rather than reported. **The instrument cannot cry wolf about its own environment.**
+
+⚠ **The sampled hours are chosen against the residue classes, not spread evenly** — an even spread is
+exactly what a `% 6` predicate survives. `0, 5, 13, 20`: no two agree under mod 6, 3 or 2, and hour 0
+is load-bearing twice (the `% 6 === 0` notify branch AND the early-UTC window where a date parsed as
+a datetime reads as already elapsed). Asserted, not merely chosen.
+
+🚨 **THE FIRST REAL RUN CAUGHT ME TWICE.**
+1. My own `expect(process.env.RPC_CLOCK_OFFSET_MS ?? "0").toBe("0")` is false **by construction**
+   while the sweep runs, so the detector reported an always-failing test on every sweep. **I shipped a
+   permanently-noisy instrument into the replacement for one declined for being permanently noisy.**
+   The honest assertion holds under both conditions: the process clock differs from the real clock by
+   exactly the declared offset.
+2. ⭐ **The shim cannot reach a CHILD PROCESS.** `find-future-dated-ledger-headings.test.ts` computes
+   "today in Pacific" in the vitest process and runs the detector via `execFileSync`; a child starts
+   with the real clock. Parent and child disagree under the sweep in a way they never do in CI. That
+   gets a **third bucket — UNMEASURED**: printed every run, explicitly *not* a clean bill, and not a
+   failure. The predicate is a **property of the file** (does it spawn a child), not a name list.
+
+⛔ **Standing limits, stated rather than glossed:** anything a child process decides, and any
+clock-dependence needing a span longer than 24 h (a month- or year-boundary shape). Neither is covered.
+
+⚠ **Three readings were DISCARDED rather than reported**, and this is the durable rule: one was taken
+while a migration file was created mid-run (four tests walk `supabase/migrations`, so the tree moved
+under the instrument); one was my own bad assertion; one was the child-process artifact. **Only the
+fourth run was a measurement.** A detector's first output is a hypothesis about the detector.
+
+### 3. `lib/redact-secrets.ts` — publishing an alert's failure reason without publishing the token
+
+`pipeline-sentinel` run 33283636751 reported `"notifications":["telegram-FAILED"]` on a **CRITICAL**
+sweep. It had correctly found three dead pipelines and **could not tell anyone**, and the reason went
+to `console.error` only — so a revoked token, a non-2xx and a thrown fetch were indistinguishable.
+CLAUDE.md's alert sub-class exactly: *an alert's output is silence, so its error is unfalsifiable.*
+
+⚠ **The second half was worse:** both push sites sat inside `if (TOKEN && CHAT_ID)`, so an
+**unconfigured** channel produced **no entry at all** — absence, indistinguishable from "no
+notification was needed". Now `…-FAILED:not_configured`.
+
+🚨 **Publishing the reason is only safe because of the redactor: the Telegram bot token is IN THE URL
+PATH** (`/bot<TOKEN>/sendMessage`), so a thrown fetch quoting the URL would write a live credential
+into `pipeline_runs.extra` and the route's JSON response. **Two independent arms, and the second is
+not redundant:** (1) replace each secret VALUE the process holds — cannot cover a rotated token;
+(2) rewrite the token-bearing SHAPES regardless — cannot cover a value outside those shapes.
+⚠ `length >= 8` stops a short env value turning the redactor into a mangler that destroys the very
+diagnosis it exists to give.
+
+### Mutation lessons from this pass
+
+- ⚠ **Two agreeing signals, one silently wrong.** A mutation that dropped the two-section floor from
+  `ok` survived, because the exit code enforced it separately. **Assert both when a decision is
+  computed in two places**, or one can rot unnoticed.
+- ⚠ **A parent-only comparison hides half the loss.** Restricting the register's "before" set to
+  `OPEN` survived every test: deleting **RESOLVED** rows — where the revert paths live — was
+  invisible. Test the direction you did not think of.
+- ⚠ **An exemption widened to everything can leave the other bucket untouched**, so a finding appears
+  in both. When a classifier partitions, **assert the partition**, not each side.
+- ⚠ **Deleting an IMPORT is not a mutation of the behaviour** — the helper name is still in the source
+  and the guard still matches, while the build breaks for an unrelated reason. Mutate the **calls**.
