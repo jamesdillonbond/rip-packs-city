@@ -10,6 +10,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ RECOVERED — a FOURTH fileless migration, and the recovery verifier is fixed rather than worked around
+
+`20260830153801_audit_20260830_populate_pinnacle_wmc_fmv_returns_early_when_the_catalog_has_not_moved` — applied 15:38Z by a concurrent session with **no committed file**. Recovered from prod: **6,832 chars, body md5 matches, trailing newline already present** (so nothing was added and the file is byte-exact).
+
+⭐ **FOUR in one day** (`…050435`, `…110335`, `…153424`, `…153801`), none of them mine. **The guard is working exactly as designed** — `Migration parity` names each one and its error text carries the recovery recipe — so this is not a defect in the system, it is the system catching a habit: **a session that applies via `apply_migration` and does not commit the file leaves production with no committed revert path until someone else notices.** ⚠ No code change is warranted for this; the fix belongs to the applying sessions. Recorded so the count is visible rather than four separate one-offs.
+
+✅ **The verifier is FIXED, not worked around.** The previous version normalised by stripping one trailing newline before comparing, which is right when the stored statement lacked one (we appended it) and **wrong when it already had one** — that is what produced the false `MISMATCH` on a byte-perfect file earlier this hour. It now tracks whether the newline was **added** and compares exactly what was written, and it proves fetch integrity **before** writing by re-hashing the fetched body against prod's own `md5(array_to_string(statements, E'\n'))`. This run's line reads *"trailing newline already present — body md5 MATCHES prod ✓"*, which is a claim that now says what was hashed.
+
+⚠ **Checked for the collision this creates and there is none:** if the applying session later commits its own copy under a different version stamp, the repo would carry two files for one migration. `ls | sed 's/^version_//' | uniq -d` over all **772** migration files returns **zero duplicate names**.
+
+**Revert path:** `git revert` removes the FILE only — the migration is already applied and carries its own revert in its header.
+
+
 ### 2026-08-30 · ✅ SHIPPED (DB) — the grail-MV cadence arm stops false-breaching by construction; a THIRD fileless migration recovered; ⛔ and a CORRECTION to my own "byte-exact" claim
 
 ## 1. `refresh-pack-grail-metrics-mv` — `max_silent_minutes` 90 → 130
