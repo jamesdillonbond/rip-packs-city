@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📋 NO CHANGE — three RED smoke badges on my own commits in 11 minutes were ONE saturation spell, not three defects
+
+**Recorded because a future reader will see red badges against these commits and should not re-diagnose them.** `Smoke Tests` flapped 14:09–14:22Z: `709a9e31` fail · `bf11c1ce` **pass** · `ba4e33cb` **pass** · `421001da` fail · `274b8f98` fail — and the three failures name **three DIFFERENT hard arms**:
+
+- `concierge answers rather than degrading — Timed out acquiring connection from connection pool`
+- `edition page has Activity section — HTTP 200, Activity=false`
+- (and the earlier `rls_off_base_table`, which is a **separate, real** defect fixed in its own entry above)
+
+⭐ **Three different arms failing in eleven minutes, each alongside ~11 SOFT failures, is the signature of a spell rather than a defect** — a code fault reds the same arm every time.
+
+**Measured while it was happening**, which is the only reason it is attributable: **36 connections ACTIVE of 46 (max_connections 90 — so NOT connection exhaustion), and EVERY active query waiting on `IO`**. Longest 482 s. Two `cron_heavy` jobs were running concurrently — `backfill_topshot_historical_pack_ev(15)` at 482 s on `DataFileRead` and `refresh_wmc_fmv_changed(30, 200000)` at 242 s on `DataFileWrite` — while ~10 PostgREST queries queued at 24–90 s. By 14:2xZ it had eased to 13 active / longest 145 s.
+
+⛔ **THE TEMPTING FIX IS WRONG, and the arithmetic says so.** jobid 71 fires at `:13` and jobid 303 at `7-57/10`, so 303 lands inside 71's window every hour — a textbook slot collision. **But moving a slot cannot help:** over 3 days, **jobid 303 alone occupies 37.6 % of wall-clock time** (97,492 s of 259,200), jobid 71 4.8 %, and **all pg_cron jobs together = 104.6 %**. ⭐ **Scheduled work already exceeds the clock, so something is essentially always running — you cannot schedule around a job that occupies more than a third of it.** That is the mechanism behind #42's own thesis (*"if waste is a property of the CONTENTION rather than of any one job, removing the biggest job redistributes it instead of reducing it"*), now with a duty-cycle number under it.
+
+⛔ **NO NEW REGISTER ITEM, deliberately.** #36 already owns `refresh_wmc_fmv_changed` (40.2 % of blocks dirtied, 11 h/day) and #42 already owns cron contention at length — including its own conclusion that **the remaining action is on the INSTRUMENT (split the triage on the change point), not on any job.** Adding a third item would split ownership of one problem across three places. ⚠ The 104.6 % figure is recorded here rather than appended to #42, which is already very long; quote it from this entry.
+
+✅ **Confirmed NOT a regression from this session's work:** the failing arms are concierge/edition-page/pool, none touched by tonight's changes; two commits inside the same window passed; and `rls_off_base_table` does **not** appear in the two most recent failures, so the RLS repair held.
+
+**Nothing shipped for this entry.**
+
+
 ### 2026-08-30 · ✅ SHIPPED — the GHA wallet-backfill backstop was a second full wave, not a backstop: it landed 5 h late on top of the finished primary wave and re-dispatched 120 fresh wallets into a disk already at 33/36 backends in DataFileRead
 
 **Pass: desktop (device-bound, can push), 14:00–14:3xZ (07:00–07:3x PT).** Also applied and pushed the cloud pass's two-patch wallet-backfill fail-closed set (`7c2e430` + `bf11c1c`, `git am --3way` on the fresh clone, 132/132, ledger re-spliced) — `skipped_db_saturated` rows started appearing within the hour (23 in the first 30 min). And `ba4e33c` records the wmc reindex outcome and jobid 404 in cron-schedule.md; the recover script found no fileless migrations.
