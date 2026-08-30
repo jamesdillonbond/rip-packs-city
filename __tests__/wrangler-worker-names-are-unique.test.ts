@@ -24,8 +24,12 @@ import path from "node:path"
 // The 75-line copy is a 2026-04-27 fossil that knows only mainnet24–27 and is
 // referenced by nothing but its own README. **A `wrangler deploy` run from that
 // directory would have silently replaced the live worker with it** — removing
-// mainnet17–23 and the tx lookup, and breaking the pack-opens backfills without
-// changing one line of application code. Nothing in CI or the repo would have
+// the tx lookup and the reachability-floor guard, and breaking the pack-opens
+// backfills without changing one line of application code.
+// ⓘ 2026-08-30: the original wording said "removing mainnet17–23". Those nodes
+// have since been decommissioned upstream (DNS ENOTFOUND), so that half of the
+// consequence is now moot — but the ban still stands on the other half, and the
+// live worker gained a floor guard the fossil does not have. Nothing in CI or the repo would have
 // said so; the pipelines would simply have started failing to find history.
 //
 // Renamed rather than deleted (reversible, non-destructive); this ban keeps the

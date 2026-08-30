@@ -73,34 +73,35 @@ describe("spork-proxy — events range validation + spork selection", () => {
   })
 
   it("400s when the range crosses a spork boundary", async () => {
-    // start in mainnet17 (<=31,735,954), end in mainnet18 (<=35,858,810)
-    const res = await worker.fetch(ev("start_height=31000000&end_height=32000000&event_type=A.x"), env)
+    // start in mainnet24 (<=85,981,134), end in mainnet25 (<=88,226,266) — both
+    // above REACHABLE_FLOOR_HEIGHT, so the boundary check is what answers, not the floor.
+    const res = await worker.fetch(ev("start_height=85000000&end_height=86000000&event_type=A.x"), env)
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("range_crosses_spork_boundary")
   })
 
   it("routes a single-spork range to the matching access node with the X-Spork-Node header", async () => {
     fetchMock.mockResolvedValueOnce(new Response('{"events":[]}', { status: 200 }))
-    // both within mainnet19 (<=40,171,633)
-    const res = await worker.fetch(ev("start_height=36000000&end_height=37000000&event_type=A.TopShot.Deposit"), env)
+    // both within mainnet24 (<=85,981,134), the lowest REACHABLE spork
+    const res = await worker.fetch(ev("start_height=70000000&end_height=71000000&event_type=A.TopShot.Deposit"), env)
     expect(res.status).toBe(200)
-    expect(res.headers.get("X-Spork-Node")).toBe("mainnet19")
+    expect(res.headers.get("X-Spork-Node")).toBe("mainnet24")
     const url = upstreamUrl()
-    expect(url).toContain("access-001.mainnet19.nodes.onflow.org")
+    expect(url).toContain("access-001.mainnet24.nodes.onflow.org")
     expect(url).toContain("/v1/events")
-    expect(url).toContain("start_height=36000000")
+    expect(url).toContain("start_height=70000000")
   })
 
   it("502s when the upstream events fetch fails", async () => {
     fetchMock.mockRejectedValueOnce(Object.assign(new Error("boom"), { name: "TypeError" }))
-    const res = await worker.fetch(ev("start_height=36000000&end_height=37000000&event_type=A.x"), env)
+    const res = await worker.fetch(ev("start_height=70000000&end_height=71000000&event_type=A.x"), env)
     expect(res.status).toBe(502)
     expect((await res.json()).error).toBe("upstream_fetch_failed")
   })
 
   it("504s when the upstream events fetch aborts (timeout)", async () => {
     fetchMock.mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }))
-    const res = await worker.fetch(ev("start_height=36000000&end_height=37000000&event_type=A.x"), env)
+    const res = await worker.fetch(ev("start_height=70000000&end_height=71000000&event_type=A.x"), env)
     expect(res.status).toBe(504)
     expect((await res.json()).error).toBe("upstream_timeout")
   })
@@ -132,8 +133,51 @@ describe("spork-proxy — tx-result walk", () => {
 
   it("404s when no listed spork holds the tx (all 404)", async () => {
     fetchMock.mockResolvedValue(new Response("nope", { status: 404 }))
-    const res = await worker.fetch(ev(`tx=${TX}&spork=mainnet20`), env)
+    const res = await worker.fetch(ev(`tx=${TX}&spork=mainnet25`), env)
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("tx_not_found_in_listed_sporks")
+  })
+})
+
+describe("spork-proxy — the reachability floor (mainnet17–23 decommissioned ~2026-08-28)", () => {
+  const TX = "a".repeat(64)
+
+  it("400s an events range below the mainnet24 floor instead of mis-routing it to the lowest surviving node", async () => {
+    // 36,000,000 used to route to mainnet19. That node no longer resolves, and
+    // without the floor guard SPORKS.find() would hand the range to mainnet24,
+    // which does not hold those blocks -- an empty 200 that reads as "no events".
+    const res = await worker.fetch(ev("start_height=36000000&end_height=37000000&event_type=A.x"), env)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("below_spork_floor")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("distinguishes a decommissioned spork from an unknown one", async () => {
+    const dead = await worker.fetch(ev(`tx=${TX}&spork=mainnet20`), env)
+    expect(dead.status).toBe(400)
+    expect((await dead.json()).error).toBe("spork_below_floor")
+
+    const unknown = await worker.fetch(ev(`tx=${TX}&spork=mainnet99`), env)
+    expect(unknown.status).toBe(400)
+    expect((await unknown.json()).error).toBe("unknown_spork")
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("never dials a decommissioned node during an unqualified tx walk", async () => {
+    fetchMock.mockResolvedValue(new Response("nope", { status: 404 }))
+    const res = await worker.fetch(ev(`tx=${TX}`), env)
+    expect(res.status).toBe(404)
+
+    const dialed = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(dialed.length).toBeGreaterThan(0)
+    for (const name of ["mainnet17", "mainnet18", "mainnet19", "mainnet20", "mainnet21", "mainnet22", "mainnet23"]) {
+      expect(dialed.some((u) => u.includes(name)), `walk dialed decommissioned ${name}`).toBe(false)
+    }
+    // and it DID cover every reachable one -- an all-miss walk that dialed
+    // nothing would satisfy the assertion above vacuously.
+    for (const name of ["mainnet24", "mainnet25", "mainnet26", "mainnet27"]) {
+      expect(dialed.some((u) => u.includes(name)), `walk skipped reachable ${name}`).toBe(true)
+    }
   })
 })

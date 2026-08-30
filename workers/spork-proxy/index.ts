@@ -9,10 +9,9 @@
 //     historical transaction. Most callers don't know which spork a tx belongs
 //     to (we don't store block_height for pre-2026 sales), so when `spork` is
 //     omitted the worker WALKS the spork nodes newest→oldest and returns the
-//     first that has the tx. A tx not found in ANY listed spork (mainnet17→27)
-//     is pre-mainnet17 (before 2022-04-06) and is reported tx_not_found_in_listed_sporks
-//     — the older nodes (mainnet1–16) are decommissioned (503/no-DNS), so that
-//     history is unrecoverable via public sporks (see the FLOOR note on SPORKS).
+//     first that has the tx. The walk covers only the REACHABLE sporks
+//     (mainnet24→27 as of 2026-08-30 — see REACHABLE_FLOOR_HEIGHT); a tx not found
+//     in those is reported tx_not_found_in_listed_sporks.
 //
 // Auth: Authorization: Bearer <SPORK_PROXY_SECRET>
 // Response: upstream JSON body + X-Spork-Node header naming the spork used.
@@ -32,12 +31,18 @@ interface Spork {
 // spork's ROOT (not its end), so events queries near a spork's upper range were
 // mis-routed to the next node; corrected 2026-06-25.
 //
-// FLOOR (measured 2026-06-25): the public historical access nodes are only alive
-// down to mainnet17 (root 27,341,470 = 2022-04-06). mainnet17 + mainnet18 serve
-// blocks AND events (HTTP 200); mainnet16 and older return 503 "upstream connect
-// error" (decommissioned) and mainnet1 has no DNS. So ~2022-04-06 is the earliest
-// recoverable on-chain history via public sporks — pre-2022-04 (mainnet1–16,
-// 2020-10 → 2022-02) is permanently unrecoverable this way.
+// ⚠ THE LIST IS HISTORY, NOT REACHABILITY. Every entry is still needed for range
+// math (maxHeight boundaries), but only the sporks at or above
+// REACHABLE_FLOOR_HEIGHT still answer. Do not delete entries to express deadness —
+// raise the floor instead, so restoring a node is a one-constant change.
+//
+// FLOOR (measured 2026-06-25, RE-MEASURED 2026-08-30): the floor MOVED. On
+// 2026-06-25 the nodes were alive down to mainnet17 (root 27,341,470 = 2022-04-06).
+// As of ~2026-08-28 mainnet17–23 no longer resolve at all (DNS ENOTFOUND on
+// access-001.<name>.nodes.onflow.org, all 7 verified 2026-08-30); mainnet24–27
+// still resolve. So the earliest recoverable on-chain history via public sporks is
+// now the mainnet24 root, 65,264,619 @ 2023-11-08T16:07:03Z. The 2022-04 → 2023-11
+// band became unrecoverable this way, exactly as mainnet1–16 did before it.
 const SPORKS: Spork[] = [
   { name: "mainnet17", maxHeight: 31_735_954 },
   { name: "mainnet18", maxHeight: 35_858_810 },
@@ -53,6 +58,12 @@ const SPORKS: Spork[] = [
 ];
 
 const CURRENT_SPORK_MIN_HEIGHT = 137_390_146; // mainnet28 root
+
+// Lowest height still served by a resolvable node: the mainnet24 root.
+// ⭐ If Flow restores older sporks, LOWER this one constant — the SPORKS entries
+// above are untouched and the capability comes straight back.
+const REACHABLE_FLOOR_HEIGHT = 65_264_619; // mainnet24 root @ 2023-11-08T16:07:03Z
+const REACHABLE_SPORKS: Spork[] = SPORKS.filter((s) => s.maxHeight >= REACHABLE_FLOOR_HEIGHT);
 const NODE_URL = (name: string) =>
   `http://access-001.${name}.nodes.onflow.org:8070`;
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -110,12 +121,21 @@ async function handleTxResult(txParam: string, sporkParam: string | null): Promi
   }
 
   // Explicit spork: single lookup. Otherwise walk newest→oldest within budget.
-  const candidates = sporkParam
-    ? SPORKS.filter((s) => s.name === sporkParam).map((s) => s.name)
-    : [...SPORKS].reverse().map((s) => s.name);
-  if (candidates.length === 0) {
+  if (sporkParam && !SPORKS.some((s) => s.name === sporkParam)) {
     return jsonError(400, "unknown_spork", { sporks: SPORKS.map((s) => s.name) });
   }
+  // A known-but-decommissioned spork is NOT an unknown one: say so, rather than
+  // walking a node whose DNS no longer resolves and reporting "not found".
+  if (sporkParam && !REACHABLE_SPORKS.some((s) => s.name === sporkParam)) {
+    return jsonError(400, "spork_below_floor", {
+      hint: "that spork's access node is decommissioned (no DNS); its history is unrecoverable via public sporks",
+      reachable_sporks: REACHABLE_SPORKS.map((s) => s.name),
+      reachable_floor_height: REACHABLE_FLOOR_HEIGHT,
+    });
+  }
+  const candidates = sporkParam
+    ? [sporkParam]
+    : [...REACHABLE_SPORKS].reverse().map((s) => s.name);
 
   const walkStart = Date.now();
   const tried: string[] = [];
@@ -133,7 +153,7 @@ async function handleTxResult(txParam: string, sporkParam: string | null): Promi
     }
   }
   return jsonError(404, "tx_not_found_in_listed_sporks", {
-    hint: "tx is likely pre-mainnet19 (2020–21) — not served by the wired sporks",
+    hint: "tx is likely below the mainnet24 floor (before 2023-11-08) — not served by any reachable spork",
     tried,
   });
 }
@@ -196,6 +216,13 @@ export default {
         return jsonError(400, "current_spork_not_supported", {
           hint: "For blocks >= 137390146, use https://rest-mainnet.onflow.org directly",
           current_spork_min_height: CURRENT_SPORK_MIN_HEIGHT,
+        });
+      }
+
+      if (startHeight < REACHABLE_FLOOR_HEIGHT) {
+        return jsonError(400, "below_spork_floor", {
+          hint: "blocks below the mainnet24 root (2023-11-08) are no longer served by any public spork node",
+          reachable_floor_height: REACHABLE_FLOOR_HEIGHT,
         });
       }
 
