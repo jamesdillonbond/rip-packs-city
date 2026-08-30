@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (DB) — the edge-fn 4xx alert stops asserting a cause it cannot observe (known-issues #51, partial)
+
+**The arm's `detail` said, as fact:** *"A 4xx here is a MISCONFIGURATION (stale ?key= gate, rotated secret, bad route), not an upstream blip."* ⛔ **It cannot know that.** `net._http_response` has **no url column** — the URL lives in `net.http_request_queue`, which pg_net DRAINS on completion — so the function sees a status code and a body and nothing else. It had already asserted "edge-function call … MISCONFIGURATION" over three `GRAPHQL_VALIDATION_FAILED` replies from the Dapper Studio endpoint **dispatched by the database itself**.
+
+⭐ **This is the platform's own top defect class pointed at an ALERT** — publishing a conclusion the read cannot support. The fix is to say what is known and name the ambiguity, not to guess better. The detail now states that the endpoint is unknown and gives both readings — (a) a real edge-function misconfiguration, (b) self-inflicted, a strict upstream rejecting one of our own probes — with the GraphQL-shaped body named as the discriminator.
+
+⭐ **The 80-char body sample was load-bearing IN THE WRONG DIRECTION, and that is the concrete repair.** It truncated before a GraphQL envelope was recognisable, so a reader could not settle the question from the alert itself and the false attribution stuck. Widened to **200**.
+
+✅ **Verified by a ROLLED-BACK POSITIVE CONTROL, not by the clean return.** The function currently returns `[]` — correct, and worthless as evidence, since `[]` is also what a broken arm returns. So a synthetic 422 carrying a `GRAPHQL_VALIDATION_FAILED` body was INSERTed inside a `DO` block, the function called, and `RAISE` used to surface the rendered text and abort the transaction. The alert came back at `severity: high`, `pipeline: pg_net_http_422`, with `GRAPHQL_VALIDATION_FAILED` **inline in the body sample** — the thing 80 chars had been cutting off. Re-checked after: synthetic row count **0**, real 4xx count **0**.
+
+⛔ **SEVERITY DELIBERATELY UNCHANGED, including 401/403 → critical.** Downgrading a "GraphQL-shaped body" on a heuristic would eventually silence a REAL gate-key outage that happened to return JSON — and **an alert's output is silence, so that failure is the least falsifiable one there is.** It keeps failing loud; only the false CLAIM was fixed. Byte-identical severity mapping.
+
+👉 **STILL OWED and deliberately not attempted: persist the dispatch URL** (a wrapper recording `request_id → url`, joined back on `net._http_response.id`). ⚠ **The reason is measured, not asserted:** it needs **15** call sites changed — 14 pg_cron commands plus `resolve_topshot_username_live`, enumerated from `pg_proc` and `cron.job` — and `net._http_response` holds **683 rows over a ~6 h retention window with ZERO 4xx in it**, so the arm is quiet and the wrapper is not justified by present incidence. ⚠ **That ~6 h retention is itself a design input nobody had written down**: a dispatch-log table needs matching pruning or it becomes the larger object.
+
+**Verified:** live `prosrc` carries the new text, no longer carries the old false claim, and the sample width is 200 · `anon_exec` still **false** (`CREATE OR REPLACE` does not reset an ACL, so the migration carries the `anon-exec:` marker rather than a needless REVOKE) · 4 migration guards green (215 tests).
+
+**Revert path:** `git revert` the commit below and re-apply the prior body from its git history — the only differences are the `detail` string and the `left(...)` width. Nothing else in the DB changed.
+
+
 ### 2026-08-29 · ✅ SHIPPED + 📋 THE #52 SWEEP — `get_acquisition_stats` was blocking a route whose own comment said it did not, and the LANGUAGE-sql ranking is now measured POST-fix instead of pooled
 
 **Two things, and the second is the one to keep.**
