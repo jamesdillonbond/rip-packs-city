@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — `migration-parity` was RED on 3 of its last 4 scheduled runs and **none of them was a parity violation**
+
+**Found by doing the read the sentinel says nobody can do.** Its `Detector Health (GitHub Actions)` check reports **`[NOT CONFIGURED]`** — no `GITHUB_ACTIONS_READ_TOKEN` — and warns in its own words that the three daily detectors are unwatched, so *"a correct one can stay red indefinitely with nobody reading it."* I read them with `gh` instead:
+
+| detector | last 4 scheduled runs |
+|---|---|
+| `edge-fn-drift` | **failure ×4** (08-27 → 08-30) — **still open, see below** |
+| `migration-parity` | failure · success · failure · failure |
+| `db-pin-staleness` | ✅ success ×4 |
+
+## The parity reds were FALSE, and the cause is our own migrations
+
+Not drift — the runs died on `query_sql failed: Could not query the database for the schema cache. Retrying.` and exited **2** (*"could not RUN"*, which the workflow correctly distinguishes from a violation). That is **PGRST002**: CLAUDE.md already records that **every `apply_migration` causes a ~10–20 s schema-cache re-introspection burst**. The check runs on a schedule and we applied **seven migrations today alone**, so the collision is routine, not rare.
+
+🚨 **A detector red most days cannot be told from a broken one at a glance — so a REAL parity violation would have looked identical, on the one instrument whose whole job is catching prod/repo drift.**
+
+⭐ **And the reason nobody had fixed it is the best detail: the word "Retrying." in that log belongs to POSTGREST'S OWN ERROR MESSAGE. The script had no retry at all** — a single `supabase.rpc` that set `exitCode = 2` on any error. It *reads* as though it already retried, so there was nothing to notice.
+
+## Fix
+
+Bounded retry — `5s / 15s / 30s` (~50 s, comfortably past the burst) — **only for the transient class**. ⚠ **The predicate has to be right in BOTH directions:** retrying a genuine config/permission error burns 50 s pretending it might recover, and not retrying the schema-cache class is the false-red bug. **A check that cannot RUN still exits 2 — never a pass** — and it now prints the attempt count, so a loop that ran zero times cannot read as one that tried.
+
+⭐ **Testable, not text-matched:** the predicate is hoisted and **exported** as `isTransientQueryError()`, so the guard tests the real decision instead of grepping the file. **Mutation-proved in both directions:** forcing it `true` fails **2** tests, forcing it `false` (the original bug) fails **1**, restored **15/15**.
+
+## ⚠ Still open, and NOT fixed here
+
+**`edge-fn-drift` has failed 4/4 scheduled runs since 08-27.** Memory says it *"soft-skips without secrets"*, so a hard failure is not the no-secrets path and may be reporting **real** drift ([[edge-fn-repo-vs-deployed-drift]] measured 26/37 edge functions running older code than `main`). **Not diagnosed — it needs its own look, and it is the last of the three still unread.**
+
+👉 **The operator item stands and is now quantified:** setting `GITHUB_ACTIONS_READ_TOKEN` in Vercel is what makes these three visible without someone remembering to run `gh`. **Today two of the three were red and nothing said so.**
+
+
 ### 2026-08-30 · ✅ POST-SHIP VERIFICATION (not mine — the 15:58Z `wallet-username-resolver` fix): **IT WORKED. Its stated EXIT CONDITION will still fail, for an unrelated reason — do not read that as the fix failing.**
 
 **Verified the first run to land after that pass (11:08 PT), which happened after its author had finished. The failure MODE changed, which is the whole signal:**
