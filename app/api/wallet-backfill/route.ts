@@ -17,7 +17,7 @@ import {
   chunkFailureExtra,
   upsertWmcChunkWithRetry,
 } from "@/lib/chains/flow/wmc-chunk-upsert"
-import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
+import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -245,10 +245,12 @@ async function runBackfill(
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // a concurrent invocation for the same wallet (cron-job.org wave overlapping
   // the GHA backstop, or an onboarding prewarm racing a cron wave) no-ops
-  // instead of paying a 2nd full on-chain Cadence walk. Fail-open.
+  // instead of paying a 2nd full on-chain Cadence walk. Fail-open, except that
+  // a claim refused by a SATURATED database skips this tick (see the helper).
   const lockKey = walletBackfillLockKey(COLLECTION_SLUG, wallet)
-  const claimed = await claimPipelineLock(lockKey)
-  if (!claimed) {
+  const lockClaim = await claimPipelineLockDetailed(lockKey)
+  if (!lockClaim.claimed) {
+    const terminatedReason = skippedReasonFor(lockClaim)
     await logRun({
       startedAt: startedAtIso,
       wallet,
@@ -257,12 +259,16 @@ async function runBackfill(
       rowsSkipped: 0,
       ok: true,
       extra: {
-        terminated_reason: "skipped_in_progress",
+        terminated_reason: terminatedReason,
         skip_cached: skipCached,
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    console.log(`[wallet-backfill] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    console.log(
+      lockClaim.reason === "db_saturated"
+        ? `[wallet-backfill] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
+        : `[wallet-backfill] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
+    )
     return { rowsFound: 0 }
   }
 

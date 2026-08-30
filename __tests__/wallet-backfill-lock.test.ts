@@ -37,7 +37,10 @@ vi.mock("@/lib/supabase", () => {
 import {
   walletBackfillLockKey,
   claimPipelineLock,
+  claimPipelineLockDetailed,
+  isDbSaturationError,
   releasePipelineLock,
+  skippedReasonFor,
 } from "@/lib/wallet-backfill-lock"
 
 let warnSpy: any
@@ -113,6 +116,61 @@ describe("claimPipelineLock", () => {
     state.claimThrow = "raw"
     expect(await claimPipelineLock("k1")).toBe(true)
     expect(warnSpy).toHaveBeenCalled()
+  })
+})
+
+// 2026-08-30 carve-out: a claim that fails because the DATABASE HAS NO
+// CAPACITY fails CLOSED. Measured over 24 h: 656 claim errors of exactly these
+// shapes, all proceeding, and 226 overlapping same-wallet walks on the table the
+// pool was saturated writing to. Everything else keeps the original fail-open.
+describe("claimPipelineLock — saturated-database carve-out", () => {
+  const SATURATION_MESSAGES = [
+    "Timed out acquiring connection from connection pool.",
+    "Could not query the database for the schema cache. Retrying.",
+    "canceling statement due to lock timeout",
+    "canceling statement due to statement timeout",
+  ]
+
+  it.each(SATURATION_MESSAGES)("fails CLOSED on an RPC error object saying %s", async (message) => {
+    state.claim = { data: null, error: { message } }
+    expect(await claimPipelineLock("k1")).toBe(false)
+    expect(await claimPipelineLockDetailed("k1")).toEqual({ claimed: false, reason: "db_saturated" })
+    expect(warnSpy).toHaveBeenCalled()
+    expect(String(warnSpy.mock.calls.at(-1)?.[0])).toContain("fail-closed")
+  })
+
+  it("fails CLOSED when the RPC THROWS a saturation-class error", async () => {
+    state.claimThrow = true
+    rpcMock.mockImplementationOnce(async () => {
+      throw new Error("Timed out acquiring connection from connection pool.")
+    })
+    expect(await claimPipelineLockDetailed("k1")).toEqual({ claimed: false, reason: "db_saturated" })
+  })
+
+  it("still fails OPEN on an error that means the lock table itself is broken", async () => {
+    state.claim = { data: null, error: { message: "function claim_pipeline_lock(p_key => text) does not exist" } }
+    expect(await claimPipelineLockDetailed("k1")).toEqual({ claimed: true, reason: "fail_open" })
+    state.claim = { data: null, error: { message: "permission denied for table pipeline_run_locks" } }
+    expect(await claimPipelineLock("k1")).toBe(true)
+  })
+
+  it("reports the plain outcomes with their own reasons", async () => {
+    state.claim = { data: true, error: null }
+    expect(await claimPipelineLockDetailed("k1")).toEqual({ claimed: true, reason: "claimed" })
+    state.claim = { data: false, error: null }
+    expect(await claimPipelineLockDetailed("k1")).toEqual({ claimed: false, reason: "in_progress" })
+  })
+
+  it("maps a refused claim to the terminated_reason the runners record", () => {
+    expect(skippedReasonFor({ claimed: false, reason: "in_progress" })).toBe("skipped_in_progress")
+    expect(skippedReasonFor({ claimed: false, reason: "db_saturated" })).toBe("skipped_db_saturated")
+  })
+
+  it("isDbSaturationError is a narrow allow-list, not a catch-all", () => {
+    for (const m of SATURATION_MESSAGES) expect(isDbSaturationError(m)).toBe(true)
+    expect(isDbSaturationError("lock table missing")).toBe(false)
+    expect(isDbSaturationError("")).toBe(false)
+    expect(isDbSaturationError("relation pipeline_run_locks does not exist")).toBe(false)
   })
 })
 

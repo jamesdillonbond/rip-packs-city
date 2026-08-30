@@ -25,7 +25,7 @@ const state = vi.hoisted(() => ({
   metadataById: {} as Record<string, Record<string, string>>,
   metadataCalls: [] as string[],
   ownedCalls: 0,
-  lockClaimed: true,
+  lockClaimed: true as boolean | "db_saturated",
   lockClaims: [] as string[],
   lockReleases: [] as string[],
   resolveOutcome: { found: false } as { found: boolean; walletAddress?: string; reason?: string },
@@ -80,8 +80,15 @@ vi.mock("@/lib/wallet-backfill-lock", () => ({
   walletBackfillLockKey: (slug: string, wallet: string) => `${slug}:${wallet}`,
   claimPipelineLock: async (key: string) => {
     state.lockClaims.push(key)
-    return state.lockClaimed
+    return state.lockClaimed === true
   },
+  claimPipelineLockDetailed: async (key: string) => {
+    state.lockClaims.push(key)
+    if (state.lockClaimed === "db_saturated") return { claimed: false, reason: "db_saturated" }
+    return state.lockClaimed ? { claimed: true, reason: "claimed" } : { claimed: false, reason: "in_progress" }
+  },
+  skippedReasonFor: (claim: { reason: string }) =>
+    claim.reason === "db_saturated" ? "skipped_db_saturated" : "skipped_in_progress",
   releasePipelineLock: async (key: string) => {
     state.lockReleases.push(key)
   },
@@ -346,6 +353,21 @@ describe("wallet-backfill — lock + error reclassification", () => {
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 0 })
     expect(log?.p_extra).toMatchObject({ terminated_reason: "skipped_in_progress" })
     expect(scanCall(spy.rpcCalls)).toMatchObject({ p_found_count: 0 })
+  })
+
+  it("a claim refused by a saturated database no-ops with skipped_db_saturated (no walk, no release) — 2026-08-30", async () => {
+    state.lockClaimed = "db_saturated"
+    state.ownedIds = [1]
+    const spy = install({})
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    expect(state.ownedCalls).toBe(0)
+    expect(state.lockReleases).toHaveLength(0)
+    const log = walkLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 0 })
+    expect(log?.p_extra).toMatchObject({ terminated_reason: "skipped_db_saturated" })
   })
 
   it("Cadence 1106 storage-limit reclassifies as ok:true + sharded-scan flag (mega-wallet, not a failure)", async () => {

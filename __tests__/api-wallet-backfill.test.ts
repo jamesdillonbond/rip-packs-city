@@ -25,6 +25,8 @@ vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
 }))
 vi.mock("@/lib/wallet-backfill-lock", () => ({
   claimPipelineLock: async () => true,
+  claimPipelineLockDetailed: async () => ({ claimed: true, reason: "claimed" }),
+  skippedReasonFor: () => "skipped_in_progress",
   releasePipelineLock: async () => {},
   walletBackfillLockKey: () => "k",
 }))

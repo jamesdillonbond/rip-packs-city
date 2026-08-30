@@ -26,7 +26,7 @@ const H = vi.hoisted(() => {
     // which is the pre-2026-07-26 behaviour every other test assumes.
     seededWalletRows: [] as Array<{ last_refreshed_at: string | null }>,
     // lock + fcl + username-resolve
-    lockClaim: true,
+    lockClaim: true as boolean | "db_saturated",
     fclQuery: (async () => []) as (arg?: any) => Promise<any>,
     usernameOutcome: { found: false, reason: "not_found" } as any,
     // captured
@@ -91,7 +91,17 @@ vi.mock("@/lib/supabase", () => ({ supabase: H.client, supabaseAdmin: H.client }
 vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: (arg?: any) => H.state.fclQuery(arg) } }))
 vi.mock("@/lib/wallet-backfill-lock", () => ({
   walletBackfillLockKey: (slug: string, wallet: string) => `${slug}:${wallet}`,
-  claimPipelineLock: async () => H.state.lockClaim,
+  claimPipelineLock: async () => H.state.lockClaim === true,
+  // Mirrors the real helper: boolean true/false = claimed / held by a sibling;
+  // the literal "db_saturated" = the claim was refused by a saturated database.
+  claimPipelineLockDetailed: async () =>
+    H.state.lockClaim === "db_saturated"
+      ? { claimed: false, reason: "db_saturated" }
+      : H.state.lockClaim
+        ? { claimed: true, reason: "claimed" }
+        : { claimed: false, reason: "in_progress" },
+  skippedReasonFor: (claim: { reason: string }) =>
+    claim.reason === "db_saturated" ? "skipped_db_saturated" : "skipped_in_progress",
   releasePipelineLock: async () => {},
 }))
 vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
@@ -477,6 +487,17 @@ describe("runIdOnlyBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_in_progress")
   })
 
+  it("no-ops with skipped_db_saturated when the claim was refused by a saturated database (2026-08-30)", async () => {
+    H.state.lockClaim = "db_saturated"
+    const out = await runIdOnlyBackfill(baseArgs())
+    expect(out).toEqual({ rowsFound: 0 })
+    expect(lastLog().p_ok).toBe(true)
+    expect(lastLog().p_extra.terminated_reason).toBe("skipped_db_saturated")
+    // No chain walk and no write: the whole point is adding zero load.
+    expect(fetch).not.toHaveBeenCalled()
+    expect(H.state.rpcCalls.some((c: any) => c.name === "upsert_wmc_batch")).toBe(false)
+  })
+
   it("logs no_more_moments for an empty wallet and stamps refresh", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
     const out = await runIdOnlyBackfill(baseArgs())
@@ -578,6 +599,13 @@ describe("runAllDayDetailsBackfill", () => {
     const out = await runAllDayDetailsBackfill(baseArgs())
     expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_in_progress")
+  })
+
+  it("no-ops (complete) with skipped_db_saturated when the claim was refused by a saturated database", async () => {
+    H.state.lockClaim = "db_saturated"
+    const out = await runAllDayDetailsBackfill(baseArgs())
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(lastLog().p_extra.terminated_reason).toBe("skipped_db_saturated")
   })
 
   it("logs no_more_moments (complete) for a wallet with no triples", async () => {

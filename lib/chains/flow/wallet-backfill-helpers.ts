@@ -35,7 +35,7 @@ import {
   unionHoldingTriples,
   type StudioHoldingsResult,
 } from "@/lib/chains/flow/allday-studio-holdings"
-import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
+import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import {
   UPSERT_CHUNK,
   newChunkTally,
@@ -575,9 +575,12 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
 
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // a concurrent invocation for the same (collection, wallet) no-ops instead
-  // of paying a 2nd on-chain Cadence walk. Fail-open.
+  // of paying a 2nd on-chain Cadence walk. Fail-open, except that a claim
+  // refused by a SATURATED database skips this tick (see the lock helper).
   const lockKey = walletBackfillLockKey(config.slug, wallet)
-  if (!(await claimPipelineLock(lockKey))) {
+  const lockClaim = await claimPipelineLockDetailed(lockKey)
+  if (!lockClaim.claimed) {
+    const terminatedReason = skippedReasonFor(lockClaim)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -585,12 +588,16 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: true,
       extra: {
-        terminated_reason: "skipped_in_progress",
+        terminated_reason: terminatedReason,
         skip_cached: skipCached, force: !!force,
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    console.log(
+      lockClaim.reason === "db_saturated"
+        ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
+        : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
+    )
     return { rowsFound: 0 }
   }
 
@@ -802,9 +809,12 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // claimed per sync round-trip / fire-and-forget call. A concurrent
   // invocation no-ops (returns complete=true so the orchestrator stops
-  // polling this collection for this wallet). Fail-open.
+  // polling this collection for this wallet). Fail-open, except that a claim
+  // refused by a SATURATED database skips this tick (see the lock helper).
   const lockKey = walletBackfillLockKey(config.slug, wallet)
-  if (!(await claimPipelineLock(lockKey))) {
+  const lockClaim = await claimPipelineLockDetailed(lockKey)
+  if (!lockClaim.claimed) {
+    const terminatedReason = skippedReasonFor(lockClaim)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -812,12 +822,16 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: true,
       extra: {
-        terminated_reason: "skipped_in_progress",
+        terminated_reason: terminatedReason,
         skip_cached: skipCached, force: !!force,
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    console.log(
+      lockClaim.reason === "db_saturated"
+        ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
+        : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
+    )
     return { rowsFound: 0, complete: true, nextStartIndex: null }
   }
 
@@ -1213,9 +1227,12 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // claimed per sync round-trip / fire-and-forget call. A concurrent
   // invocation no-ops (returns complete=true so the orchestrator stops
-  // polling this collection for this wallet). Fail-open.
+  // polling this collection for this wallet). Fail-open, except that a claim
+  // refused by a SATURATED database skips this tick (see the lock helper).
   const lockKey = walletBackfillLockKey(config.slug, wallet)
-  if (!(await claimPipelineLock(lockKey))) {
+  const lockClaim = await claimPipelineLockDetailed(lockKey)
+  if (!lockClaim.claimed) {
+    const terminatedReason = skippedReasonFor(lockClaim)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1223,12 +1240,16 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: true,
       extra: {
-        terminated_reason: "skipped_in_progress",
+        terminated_reason: terminatedReason,
         skip_cached: skipCached, force: !!force,
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    console.log(
+      lockClaim.reason === "db_saturated"
+        ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
+        : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
+    )
     return { rowsFound: 0, complete: true, nextStartIndex: null }
   }
 
