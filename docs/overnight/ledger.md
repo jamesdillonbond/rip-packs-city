@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ SHIPPED (code) — the collection grid preferred a week-old bid over an hour-old one, and the premise for that was written into the route's own comment
+
+**The last open item from the 2230Z filing, and the measurement moved it UP the list.** `/api/best-offers` read `edition_offers` first and consulted `badge_editions` only for keys the sweep had MISSED — on the premise, stated in the route header, that the sweep is the fresher source. ⚠ **True for Top Shot (33.0 h median vs 111.7 h). FALSE for All Day**, which has a dedicated hourly `allday-badge-low-ask-refresh` running green while `offers-sweep` barely reaches it: **`edition_offers` 168.5 h median vs `badge_editions` 1.0 h.**
+
+**The blast radius, measured rather than asserted:** of **2,052** All Day keys present in BOTH tables, **1,925 (94%) had a badge row at least a day fresher** — but only **137 (6.7%) disagreed on the VALUE.** ⭐ Both halves matter. The 94% is why the ordering is wrong in principle; the 137 is the number of editions actually showing a wrong bid, and quoting only the first would have overstated this by 15×.
+
+⭐ **The fix is a RULE, not a per-collection switch:** prefer the row we CONFIRMED most recently. It adapts on its own if either feed's health flips again, which a hardcoded "All Day prefers badges" would not. ⚠ **And it is no longer "take the higher bid" ACROSS tables** — within one table the max still wins, but across them the fresher wins **even when lower**: a bid that was withdrawn must not be beaten by a stale memory of it.
+
+⚠ **TWO OF THE FOUR LEGS ARE STRUCTURALLY UNDATABLE and must stay UNMARKED**, which is why `bestOfferAgeHours` is a nullable field rather than a number: `get_serial_offers` returns `(external_id, serial_number, offer_amount_usd)` with **no timestamp at all**, and `marketplace_offers.created_at` is **when the offer was MADE, not when we last checked it**. 🚨 Labelling that second one "unconfirmed 90d" would be a NEW false claim about a long-standing bid — **the same trap the deals board hit with All Day's `floor_ask_listed_at`**, where a listed-at was nearly relabelled a verified-at. The age also **travels with the winning leg and is reset by it**, so a losing leg's timestamp can never date the wrong number.
+
+**Also shipped:** the grid cell marks `⚠ bid unconfirmed {age}` past 12 h. ⚠ **No clock is read during render** — the API computes the age — so this cannot hydrate differently, and it is simply absent until the post-mount fetch resolves, which is the honest state before we know. ⚠ It marks only when the API's own answer is on screen; `row.rowBestOffer` is a different per-row value the age does not describe.
+
+**Verification.** 6 new tests, incl. three controls (the Top Shot direction still wins; neither-datable falls back to the higher bid; an edition winner DOES carry its age — without which the null assertions would pass on a route that dates nothing). Mutation-checked three ways: restore the old preference → the fresher test reds; leave the losing leg's age attached → the serial test reds; coalesce an unknown timestamp to `now()` → two red. Full suite **1404 files / 15422 tests green**, `tsc` 0.
+
+ⓘ **Noticed and NOT changed, deliberately:** `CollectionTabClient` has its own `if (row.bestOffer >= fresh.bestOffer) return row` — a second "higher wins" that can keep a stale server-seeded value over the fresher API answer. Same defect class, but the seed's provenance is not established and changing it blind is how a correct surface becomes wrong. **Stated, not silently fixed.**
+
+**Revert path:** `git revert <sha of "fix(best-offers): prefer the bid we confirmed most recently, not the table we happened to read first">`. Code only, no DB half.
+
 ### 2026-08-29 · 🚨 R67 UPGRADED P3 → P2 — THREE wall-clock test defects in one day, three authors, and they do NOT share a mechanism
 
 The Cowork evening pass fixed a third one (`seo-jsonld-ask-age`, `0e07dde`) while I was working. **Verified independently rather than taken from the handoff**, and it turns out to be a **different mechanism** from the two I had recorded — which changes what a detector would have to do.
