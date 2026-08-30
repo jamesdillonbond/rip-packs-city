@@ -14,7 +14,9 @@
 -- to the unscoped join would price the c1 moment against the c2 edition too.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260810040000_audit_20260810_fix_get_wallet_total_fmv_collection_scope.sql);
+-- (supabase/migrations/20260830025740_audit_20260830_get_wallet_total_fmv_scopes_latest_fmv_to_the_wallet_and_plans_with_its_params.sql
+-- — 2026-08-30: LATERAL latest-per-edition instead of a whole-table DISTINCT ON, plpgsql +
+-- force_custom_plan; the 3-tier semantics below are unchanged);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -43,36 +45,46 @@ CREATE TABLE wallet_moments_cache (
 -- >>> BEGIN verbatim get_wallet_total_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_total_fmv(p_wallet text, p_collection_id uuid DEFAULT NULL::uuid)
  RETURNS numeric
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE
  SET statement_timeout TO '30s'
  SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
-  WITH latest_fmv AS (
-    SELECT DISTINCT ON (edition_id)
-      edition_id, fmv_usd
-    FROM fmv_snapshots
-    ORDER BY edition_id, computed_at DESC
-  ),
-  sibling_fmv AS (
-    SELECT DISTINCT ON (int_ed.id)
-      int_ed.id AS int_edition_id,
-      lf.fmv_usd
-    FROM editions int_ed
-    JOIN editions uuid_ed ON uuid_ed.name = int_ed.name
-      AND uuid_ed.series = int_ed.series
-      AND uuid_ed.id != int_ed.id
-    JOIN latest_fmv lf ON lf.edition_id = uuid_ed.id
-    WHERE int_ed.external_id ~ '^\d+:\d+$'
-    ORDER BY int_ed.id, lf.fmv_usd DESC NULLS LAST
-  )
+BEGIN
+  RETURN (
   SELECT COALESCE(SUM(COALESCE(lf.fmv_usd, sf.fmv_usd, wmc.fmv_usd)), 0)
   FROM wallet_moments_cache wmc
   LEFT JOIN editions e ON e.external_id = wmc.edition_key AND e.collection_id = wmc.collection_id
-  LEFT JOIN latest_fmv lf ON lf.edition_id = e.id
-  LEFT JOIN sibling_fmv sf ON sf.int_edition_id = e.id AND lf.edition_id IS NULL
+  LEFT JOIN LATERAL (
+    SELECT fs.edition_id, fs.fmv_usd
+    FROM fmv_snapshots fs
+    WHERE fs.edition_id = e.id
+    ORDER BY fs.computed_at DESC
+    LIMIT 1
+  ) lf ON true
+  LEFT JOIN LATERAL (
+    SELECT lf2.fmv_usd
+    FROM editions uuid_ed
+    JOIN LATERAL (
+      SELECT fs.fmv_usd
+      FROM fmv_snapshots fs
+      WHERE fs.edition_id = uuid_ed.id
+      ORDER BY fs.computed_at DESC
+      LIMIT 1
+    ) lf2 ON true
+    WHERE lf.edition_id IS NULL
+      AND e.external_id ~ '^\d+:\d+$'
+      AND uuid_ed.name = e.name
+      AND uuid_ed.series = e.series
+      AND uuid_ed.id != e.id
+    ORDER BY lf2.fmv_usd DESC NULLS LAST
+    LIMIT 1
+  ) sf ON true
   WHERE wmc.wallet_address = p_wallet
-    AND (p_collection_id IS NULL OR wmc.collection_id = p_collection_id);
+    AND (p_collection_id IS NULL OR wmc.collection_id = p_collection_id)
+  );
+END;
 $function$;
 -- <<< END verbatim get_wallet_total_fmv <<<
 

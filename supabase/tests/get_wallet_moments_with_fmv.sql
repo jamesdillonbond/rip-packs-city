@@ -23,7 +23,9 @@
 --
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20260806033000_audit_20260806_get_wallet_moments_series_topshot_convention.sql);
+-- (supabase/migrations/20260830023744_audit_20260830_get_wallet_moments_with_fmv_plpgsql_custom_plan_sql_functions_are_param_blind.sql
+-- — LANGUAGE plpgsql + plan_cache_mode=force_custom_plan since 2026-08-30; the SQL body is
+-- byte-identical to the 20260806033000 version, wrapped in RETURN ( ... ));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -109,11 +111,14 @@ INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_i
 -- >>> BEGIN verbatim get_wallet_moments_with_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_moments_with_fmv(p_wallet text, p_sort_by text DEFAULT 'fmv_desc'::text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0, p_player text DEFAULT NULL::text, p_series integer DEFAULT NULL::integer, p_tier text DEFAULT NULL::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
  RETURNS json
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE
  SET statement_timeout TO '30s'
  SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
+BEGIN
+  RETURN (
   WITH
   pin_uuid AS (SELECT '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid AS u),
   base_other AS (
@@ -301,7 +306,9 @@ AS $function$
   SELECT json_build_object(
     'moments', COALESCE((SELECT json_agg(row_to_json(enriched)) FROM enriched), '[]'::json),
     'total_count', (SELECT cnt FROM total)
+  )
   );
+END;
 $function$;
 -- <<< END verbatim get_wallet_moments_with_fmv <<<
 

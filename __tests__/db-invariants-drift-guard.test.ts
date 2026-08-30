@@ -319,7 +319,12 @@ const PINS = [
     // Re-pointed 2026-08-05: the series 0-vs-1 convention fix (Top-Shot-scoped
     // normalisation of the editions.series fallback arm) supersedes the
     // 20260726 pooled-edition_id snapshot as the newest defining migration.
-    migration: "supabase/migrations/20260806033000_audit_20260806_get_wallet_moments_series_topshot_convention.sql",
+    // Re-pointed 2026-08-30 IN THE SAME SESSION as the change: LANGUAGE sql ->
+    // plpgsql + plan_cache_mode=force_custom_plan (a SQL-language function is planned
+    // param-blind on PG 17, so a 15k-moment wallet got the generic nested-loop plan:
+    // 139,922 buffers -> 80,986). The SELECT body is byte-identical, wrapped in
+    // RETURN ( ... ).
+    migration: "supabase/migrations/20260830023744_audit_20260830_get_wallet_moments_with_fmv_plpgsql_custom_plan_sql_functions_are_param_blind.sql",
   },
   {
     fn: "upsert_topshot_marketplace_fmv",
@@ -682,7 +687,12 @@ const PINS = [
     test: "supabase/tests/get_wallet_total_fmv.sql",
     // re-pointed 2026-08-10: collection-scoped the editions join (fixes the
     // cross-collection FMV inflation); the fix migration supersedes the snapshot.
-    migration: "supabase/migrations/20260810040000_audit_20260810_fix_get_wallet_total_fmv_collection_scope.sql",
+    // Re-pointed 2026-08-30 IN THE SAME SESSION as the change: the whole-table
+    // DISTINCT ON latest_fmv (1.37M buffers per call) became a per-edition LATERAL and
+    // the function went LANGUAGE plpgsql + force_custom_plan (the generic plan filtered
+    // a 155k-row wallet instead of using the (wallet, collection) index: 30 s timeout).
+    // Same 3-tier COALESCE, same fixtures, all three assertions unchanged.
+    migration: "supabase/migrations/20260830025740_audit_20260830_get_wallet_total_fmv_scopes_latest_fmv_to_the_wallet_and_plans_with_its_params.sql",
   },
   {
     fn: "resolve_wallet_challenge_match",
