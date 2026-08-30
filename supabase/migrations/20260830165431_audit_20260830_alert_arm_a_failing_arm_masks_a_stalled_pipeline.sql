@@ -35,6 +35,15 @@
 -- wrapper exactly the way check_edge_fn_http_failures() already is. No existing
 -- arm changes behaviour, no watchlist row changes, no data is touched.
 --
+-- anon-exec: unchanged -- get_pipeline_alerts is PRE-EXISTING and this migration replaces
+-- only its BODY, adding a third arm. Its ACL was re-verified against the live database
+-- before this line was written: anon=false, authenticated=false, service_role=true,
+-- postgres=true. CREATE OR REPLACE FUNCTION does NOT reset a function's ACL, so adding a
+-- REVOKE here would not be the no-op it looks like -- it would be an unreviewed production
+-- ACL change dressed as boilerplate, which is exactly what the guard's header warns about.
+-- The NEW function created here, check_pipelines_running_but_not_succeeding, carries a real
+-- three-role REVOKE below (PUBLIC, anon, authenticated), verified anon/authenticated false.
+--
 -- REVERT (restores the two-term wrapper and drops the arm):
 --   CREATE OR REPLACE FUNCTION public.get_pipeline_alerts()
 --    RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
