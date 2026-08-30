@@ -3,6 +3,15 @@ import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+
+// The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
+// which can be renamed without anyone noticing the telemetry key moved. ⚠ It is
+// deliberately distinct from the two SUB-STEP names this route also writes
+// (`editions-hydrate-at-insert`, `ingest-canonical-guard`); those measure parts,
+// this one measures the run.
+const PIPELINE = "ingest"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -612,6 +621,26 @@ export async function POST(req: NextRequest) {
   // cron-job.org's 30s timeout even when processing takes longer.
   after(async () => {
     const startTime = Date.now()
+
+    // ⚠ THIS ROUTE LOGGED TWO SUB-STEPS AND NEVER ITS OWN OUTCOME (register R68).
+    // `editions-hydrate-at-insert` and `ingest-canonical-guard` both wrote rows,
+    // so the pipeline LOOKED instrumented while `pipeline='ingest'` returned zero
+    // rows over 48 h — the highest-volume endpoint in the fleet, and nobody could
+    // say whether it had run.
+    //
+    // The pair is the standard one, and both halves are load-bearing:
+    //   heartbeat + terminal row -> ran to completion
+    //   heartbeat only           -> after() dropped or killed at the wall
+    //   neither                  -> route never reached (cron / auth)
+    // `try/catch` CANNOT catch a maxDuration kill, so the marker must be written
+    // BEFORE the work — that ordering is the whole point.
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE,
+      startedAtMs: startTime,
+      cursor,
+      extra: { batch_size: batchSize, chain },
+    })
+
     try {
 
     console.log(`[INGEST] Starting — batchSize=${batchSize} cursor=${cursor ?? "start"}`)
@@ -937,12 +966,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: true,
+      rowsFound: salesIngested + duplicates,
+      rowsWritten: salesIngested,
+      rowsSkipped: duplicates,
+      collectionSlug: "nba_top_shot",
+      cursorBefore: cursor,
+      cursorAfter: nextCursor,
+      extra: {
+        moments_written: momentsWritten,
+        editions_updated: editionsUpdated,
+        per_tx_errors: errors,
+        uuid_resolved_onchain: uuidResolvedOnchain,
+        uuid_skipped: uuidSkipped,
+      },
+    })
+
     await fireNextPipelineStep("/api/sales-indexer", chain)
     console.log(
       `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} uuid_resolved_onchain=${uuidResolvedOnchain} uuid_skipped=${uuidSkipped} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
     )
     } catch (e) {
-      console.error("[INGEST] Fatal error:", e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error("[INGEST] Fatal error:", msg)
+      // ⚠ The counters are OMITTED here rather than zeroed: the run aborted at an
+      // unknown point, so any number would be one nobody took. The heartbeat
+      // above already records that the invocation started.
+      await logTerminalRun({
+        pipeline: PIPELINE,
+        startedAt: startTime,
+        ok: false,
+        error: msg,
+        collectionSlug: "nba_top_shot",
+        cursorBefore: cursor,
+        extra: { stage: "fatal" },
+      })
     }
   })
 

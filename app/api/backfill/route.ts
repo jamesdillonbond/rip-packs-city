@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js";
+import { logTerminalRun } from "@/lib/pipeline/terminal-run";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
+
+// The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
+// which can be renamed without anyone noticing the telemetry key moved.
+//
+// ⚠ This route can be wall-killed at the 300 s cap, and a terminal row cannot
+// survive that. The absence of a row therefore still has two readings here
+// (never invoked / killed mid-walk); a heartbeat would separate them. Recorded
+// rather than glossed: the outcome half is fixed, the kill half is not.
+const PIPELINE = "backfill";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -219,10 +229,30 @@ export async function POST(req: NextRequest) {
   if (stateErr) {
     // Doing nothing is always safe here: the walk is resumable by design, so a
     // skipped tick costs one cron interval and a wrong one costs the cursor.
+    // ⚠ EVERY exit path past auth logs. Doing nothing is safe for the WALK, but
+    // doing it silently is not: an absent row and a failed run are not the same
+    // fact, and this route wrote neither for months.
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: false,
+      error: `backfill_state read: ${stateErr.message}`,
+      extra: { stage: "read_state" },
+    });
     return apiErrorResponse(stateErr, "api/backfill", "Could not read backfill state.");
   }
 
   if (state?.status === "complete") {
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: true,
+      // ⚠ The counters are OMITTED, not zeroed: this tick counted nothing, and a
+      // `0` here would read as "walked and found none" in every rollup.
+      cursorBefore: state?.cursor ?? null,
+      cursorAfter: state?.cursor ?? null,
+      extra: { stage: "already_complete", total_ingested: state.total_ingested },
+    });
     return NextResponse.json({
       ok: true,
       message: "Backfill already complete",
@@ -252,6 +282,17 @@ export async function POST(req: NextRequest) {
           })
           .eq("id", "topshot_sales");
 
+        await logTerminalRun({
+          pipeline: PIPELINE,
+          startedAt: startTime,
+          ok: true,
+          rowsFound: 0,
+          rowsWritten: totalThisRun,
+          rowsSkipped: duplicates,
+          cursorBefore: state?.cursor ?? null,
+          cursorAfter: cursor,
+          extra: { stage: "completed", pages },
+        });
         return NextResponse.json({
           ok: true,
           message: "Backfill complete - no more transactions",
@@ -320,6 +361,20 @@ export async function POST(req: NextRequest) {
       })
       .eq("id", "topshot_sales");
 
+    // ⚠ This path returns HTTP **200** with `ok:false`, so the calling workflow's
+    // status check cannot see it. Until this row existed, a failing walk was
+    // indistinguishable from a healthy one at every layer.
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: false,
+      error: String(e?.message ?? e),
+      rowsWritten: totalThisRun,
+      rowsSkipped: duplicates,
+      cursorBefore: state?.cursor ?? null,
+      cursorAfter: cursor,
+      extra: { stage: "walk_failed", pages },
+    });
     return NextResponse.json({
       ok: false,
       error: e.message,
@@ -329,6 +384,17 @@ export async function POST(req: NextRequest) {
       elapsed: Date.now() - startTime,
     });
   }
+
+  await logTerminalRun({
+    pipeline: PIPELINE,
+    startedAt: startTime,
+    ok: true,
+    rowsWritten: totalThisRun,
+    rowsSkipped: duplicates,
+    cursorBefore: state?.cursor ?? null,
+    cursorAfter: cursor,
+    extra: { stage: "done", pages },
+  });
 
   return NextResponse.json({
     ok: true,

@@ -2029,9 +2029,17 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.rpc("log_pipeline_run", {
           p_pipeline: "fmv-recalc",
           p_started_at: new Date(startTime).toISOString(),
-          p_rows_found: 0,
-          p_rows_written: 0,
-          p_rows_skipped: 0,
+          // ⚠ NULL, not 0 (corrected 2026-08-29). This path is a THROW at an
+          // unknown point in the run, so the counters are not zero — they are
+          // UNKNOWN, and work may already have been written before it. A hard 0
+          // here is the `?? 0` fabrication in telemetry: a number nobody took,
+          // reading as a measured zero. Every other 0 in this file is on a path
+          // that genuinely counted none, which is why only this one moved.
+          // `log_pipeline_run` stopped COALESCEing an explicit NULL to 0 in
+          // migration 20260829040000, so the NULL now survives the round trip.
+          p_rows_found: null,
+          p_rows_written: null,
+          p_rows_skipped: null,
           p_ok: false,
           p_error: errMsg.slice(0, 500),
           p_collection_slug: null,

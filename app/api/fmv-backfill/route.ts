@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
+import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 
 // ── FMV Backfill Route ───────────────────────────────────────────────────────
 //
@@ -18,6 +19,10 @@ import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 export const maxDuration = 120
 
 const ALGO_VERSION = "1.5.0"
+
+// The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
+// which can be renamed without anyone noticing the telemetry key moved.
+const PIPELINE = "fmv-backfill"
 const WINDOW_DAYS = 30
 
 function trimmedMedian(prices: number[]): number {
@@ -100,6 +105,16 @@ export async function POST(req: NextRequest) {
 
     if (candErr) {
       console.error("[FMV-BACKFILL] candidate RPC error:", candErr.message, candErr)
+      // ⚠ EVERY exit path past auth logs. An early return that skips the log is
+      // what made saturation-era fmv-recalc timeouts read as a cron that never
+      // fired — an absent row and a failed run are not the same fact.
+      await logTerminalRun({
+        pipeline: PIPELINE,
+        startedAt: startTime,
+        ok: false,
+        error: `fmv_backfill_candidates: ${candErr.message}`,
+        extra: { algo_version: ALGO_VERSION, stage: "candidates", batch_size: batchSize },
+      })
       return NextResponse.json(
         { ok: false, error: "Failed to fetch backfill candidates: " + candErr.message },
         { status: 500 }
@@ -112,6 +127,17 @@ export async function POST(req: NextRequest) {
 
     if (!editionIds.length) {
       console.log("[FMV-BACKFILL] No uncovered editions found — all caught up")
+      // A genuine zero, and it is recorded as one: rows_found 0 here is MEASURED
+      // (the candidate RPC returned an empty set), unlike the omitted counters
+      // on the failure paths above and below.
+      await logTerminalRun({
+        pipeline: PIPELINE,
+        startedAt: startTime,
+        ok: true,
+        rowsFound: 0,
+        rowsWritten: 0,
+        extra: { algo_version: ALGO_VERSION, stage: "caught_up", batch_size: batchSize },
+      })
       return NextResponse.json({
         ok: true,
         editionsFound: 0,
@@ -275,6 +301,15 @@ export async function POST(req: NextRequest) {
       `[FMV-BACKFILL] Done — found=${editionIds.length} inserted=${snapshotsInserted} hasMore=${hasMore} duration=${duration}ms`
     )
 
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: true,
+      rowsFound: editionIds.length,
+      rowsWritten: snapshotsInserted,
+      extra: { algo_version: ALGO_VERSION, stage: "done", has_more: hasMore, batch_size: batchSize },
+    })
+
     return NextResponse.json({
       ok: true,
       editionsFound: editionIds.length,
@@ -288,6 +323,13 @@ export async function POST(req: NextRequest) {
     const errStack = e instanceof Error ? e.stack : undefined
     console.error("[FMV-BACKFILL] Fatal error:", errMsg)
     if (errStack) console.error("[FMV-BACKFILL] Stack:", errStack)
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: false,
+      error: errMsg,
+      extra: { algo_version: ALGO_VERSION, stage: "fatal" },
+    })
     return NextResponse.json(
       { ok: false, error: errMsg },
       { status: 500 }

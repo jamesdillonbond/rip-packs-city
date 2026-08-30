@@ -6,39 +6,73 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    # 2026-06-25: each step now carries its own timeout-minutes + continue-on-error
-    # so a single hung endpoint (FMV Backfill was hanging ~18m under DB load and
+    # 2026-06-25: each step carries its own timeout-minutes + continue-on-error so
+    # a single hung endpoint (FMV Backfill was hanging ~18m under DB load and
     # starving every later step) can no longer consume the whole job. The job
-    # timeout is just a backstop. Health is tracked via pipeline_runs / the
-    # sentinel + detect_stalled_pipelines(), not GHA red/green — steps emit
-    # ::warning:: on non-200 rather than failing the job. The Top Shot Listing
-    # Cache step was moved to its own workflow (topshot-listing-cache.yml).
+    # timeout is just a backstop. The Top Shot Listing Cache step was moved to its
+    # own workflow (topshot-listing-cache.yml).
+    #
+    # ⚠ 2026-08-29 (register R68) — THIS WORKFLOW COULD NOT FAIL, AND THAT WAS NOT
+    # THE ONLY LAYER. Six of six steps were `continue-on-error` with non-200
+    # emitting only `::warning::`, so 30 of 30 recent runs read `success` BY
+    # CONSTRUCTION. Two of the six did not even test the status they captured.
+    # Underneath that, four of the six routes wrote no `pipeline_runs` row of any
+    # kind, so the claim "health is tracked via pipeline_runs, not GHA red/green"
+    # — which this comment used to make — was true of one route and false of four.
+    #
+    # Both halves are now fixed, and they are fixed in the right order: the ROUTES
+    # write terminal rows (that is the durable record), and this workflow keeps
+    # per-step tolerance so one bad endpoint still cannot starve the rest — but a
+    # run in which EVERY endpoint failed now fails the job. That threshold is
+    # deliberate: partial failure is normal here and self-heals on the next tick;
+    # total failure is an outage (expired token, DNS, a bad deploy) and had no
+    # signal at all.
     timeout-minutes: 20
+    env:
+      # Every step writes its HTTP status here. The gate reads the directory
+      # rather than step outputs, so a step killed by its own timeout-minutes
+      # simply leaves no file — which the gate counts as a failure, not as a
+      # missing measurement it can ignore.
+      STATUS_DIR: /tmp/rpc-pipeline-status
+      # ⚠ Asserted against the real step count by
+      # __tests__/rpc-pipeline-workflow-can-fail.test.ts, so this cannot drift
+      # when a step is added or removed.
+      EXPECTED_STEPS: "6"
     steps:
+      - name: Prepare status directory
+        run: mkdir -p "$STATUS_DIR"
+
       - name: Ingest — Fetch latest Top Shot sales
         timeout-minutes: 4
         continue-on-error: true
         run: |
+          # ⚠ `bash -e`: a fallible command in an ASSIGNMENT aborts the step there,
+          # so every capture is written `X=$(…) || X=""` and the explicit test
+          # below is what decides. curl exits non-zero on a connection failure.
           STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/ingest.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/ingest)
-          echo "Ingest status: $STATUS"
-          cat /tmp/ingest.json
+            https://www.rippackscity.com/api/ingest) || STATUS=""
+          echo "Ingest status: ${STATUS:-<no response>}"
+          cat /tmp/ingest.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/ingest"
           if [ "$STATUS" != "200" ]; then
-            echo "::warning::Ingest returned $STATUS"
+            echo "::warning::Ingest returned ${STATUS:-<no response>}"
           fi
+
       - name: FMV Recalc — Recompute fair market values
         timeout-minutes: 4
         continue-on-error: true
         run: |
           STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/recalc.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/fmv-recalc)
-          echo "FMV recalc status: $STATUS"
-          cat /tmp/recalc.json
+            https://www.rippackscity.com/api/fmv-recalc) || STATUS=""
+          echo "FMV recalc status: ${STATUS:-<no response>}"
+          cat /tmp/recalc.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/fmv-recalc"
           if [ "$STATUS" != "200" ]; then
-            echo "::warning::FMV recalc returned $STATUS"
+            echo "::warning::FMV recalc returned ${STATUS:-<no response>}"
           fi
+
       - name: FMV Backfill — Cover editions with sales but no FMV snapshot
         timeout-minutes: 5
         continue-on-error: true
@@ -47,40 +81,95 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"batchSize":100}' \
-            https://www.rippackscity.com/api/fmv-backfill)
-          echo "FMV backfill status: $STATUS"
-          cat /tmp/fmv-backfill.json
+            https://www.rippackscity.com/api/fmv-backfill) || STATUS=""
+          echo "FMV backfill status: ${STATUS:-<no response>}"
+          cat /tmp/fmv-backfill.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/fmv-backfill"
           if [ "$STATUS" != "200" ]; then
-            echo "::warning::FMV backfill returned $STATUS"
+            echo "::warning::FMV backfill returned ${STATUS:-<no response>}"
           fi
+
       - name: Backfill Player Names — Fill missing player names via Supabase Edge Function
         timeout-minutes: 4
         continue-on-error: true
         run: |
+          # ⚠ This step captured STATUS and NEVER TESTED IT until 2026-08-29 — a
+          # latent-green shape: the variable read like a check to anyone skimming.
           STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/player-names.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/backfill-player-names)
-          echo "Player names backfill status: $STATUS"
-          cat /tmp/player-names.json
+            https://www.rippackscity.com/api/backfill-player-names) || STATUS=""
+          echo "Player names backfill status: ${STATUS:-<no response>}"
+          cat /tmp/player-names.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/backfill-player-names"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Player names backfill returned ${STATUS:-<no response>}"
+          fi
+
       # Top Shot Listing Cache moved to its own workflow (topshot-listing-cache.yml)
       # on 2026-06-25 — it was being starved here when this job hit its timeout.
       - name: Backfill — Ingest historical sales
         timeout-minutes: 5
         continue-on-error: true
         run: |
+          # ⚠ This endpoint returns HTTP 200 with `{"ok":false}` on a failed walk,
+          # so a 200 here is NOT proof it worked. That half is only visible in
+          # `pipeline_runs` (pipeline='backfill', ok=false), which is why the route
+          # was given a terminal row in the same change.
           STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/backfill)
-          echo "Backfill status: $STATUS"
-          cat /tmp/backfill.json
+            https://www.rippackscity.com/api/backfill) || STATUS=""
+          echo "Backfill status: ${STATUS:-<no response>}"
+          cat /tmp/backfill.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/backfill"
           if [ "$STATUS" != "200" ]; then
-            echo "::warning::Backfill returned $STATUS"
+            echo "::warning::Backfill returned ${STATUS:-<no response>}"
           fi
+
       - name: Price snapshots
         timeout-minutes: 4
         continue-on-error: true
         run: |
-          RESPONSE=$(curl -s --retry 2 --retry-all-errors --max-time 180 -X POST https://www.rippackscity.com/api/cron/price-snapshots \
+          # ⚠ This step did not capture a status code AT ALL until 2026-08-29 — it
+          # printed the body and moved on, so a 504 under pooler saturation (the
+          # documented failure for this endpoint) was indistinguishable from a
+          # healthy hour.
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/price-snapshots.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json")
-          echo "Price snapshots: $RESPONSE"
+            -H "Content-Type: application/json" \
+            https://www.rippackscity.com/api/cron/price-snapshots) || STATUS=""
+          echo "Price snapshots status: ${STATUS:-<no response>}"
+          cat /tmp/price-snapshots.json 2>/dev/null || true
+          echo "${STATUS:-000}" > "$STATUS_DIR/price-snapshots"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Price snapshots returned ${STATUS:-<no response>}"
+          fi
+
+      # ⚠ NOT continue-on-error. This is the only step in the job that can fail it.
+      - name: Gate — fail when EVERY endpoint failed
+        run: |
+          OK=0
+          TOTAL=0
+          for name in ingest fmv-recalc fmv-backfill backfill-player-names backfill price-snapshots; do
+            TOTAL=$((TOTAL + 1))
+            CODE=$(cat "$STATUS_DIR/$name" 2>/dev/null) || CODE=""
+            # ⚠ A MISSING file counts as a failure, not as an absent measurement.
+            # A step killed by its own timeout-minutes writes nothing, and that is
+            # precisely the outcome this gate must not treat as unknown.
+            printf '%-24s %s\n' "$name" "${CODE:-<step wrote nothing>}"
+            if [ "$CODE" = "200" ]; then OK=$((OK + 1)); fi
+          done
+          echo "---"
+          echo "$OK of $TOTAL endpoints returned 200."
+          # ⚠ NON-VACUITY: assert the gate inspected the number of endpoints the
+          # job actually has. A loop that silently walked fewer names would report
+          # a healthy-looking count from a partial population — the failure mode
+          # this whole change exists to remove.
+          if [ "$TOTAL" != "$EXPECTED_STEPS" ]; then
+            echo "::error::The gate inspected $TOTAL endpoint(s) but EXPECTED_STEPS is $EXPECTED_STEPS. Its list has drifted from the job's steps; fix the list rather than the number."
+            exit 1
+          fi
+          if [ "$OK" -eq 0 ]; then
+            echo "::error::EVERY endpoint failed. This is an outage (expired INGEST_SECRET_TOKEN, DNS, or a bad deploy), not the ordinary partial failure this job tolerates. Per-run detail is in pipeline_runs; check the newest rows for ingest / fmv-recalc / fmv-backfill / backfill / backfill-player-names / price-snapshots."
+            exit 1
+          fi
+          echo "At least one endpoint succeeded — partial failure is tolerated here and self-heals on the next tick."

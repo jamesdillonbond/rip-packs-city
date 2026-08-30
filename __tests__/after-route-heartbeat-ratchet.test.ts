@@ -220,7 +220,11 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //       prescribes is "add a marker", so the next session working the list would
 //       have bolted a SECOND marker onto the fleet's highest-volume pipeline.
 //   ⚠ Read off the failing no-slack assertion (42), not by subtracting five.
-const BUDGET = 41
+// 2026-08-29: 41 -> 40. `app/api/ingest/route.ts` converted (register R68). It had
+// logged two SUB-steps and never its own outcome, so `pipeline='ingest'` returned
+// zero rows over 48 h on the fleet's highest-volume endpoint; it now writes both
+// the heartbeat and a terminal row under its own name.
+const BUDGET = 40
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

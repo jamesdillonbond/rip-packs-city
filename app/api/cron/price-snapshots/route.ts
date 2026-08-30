@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { apiErrorResponse } from "@/lib/api-error";
+import { logTerminalRun } from "@/lib/pipeline/terminal-run";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +21,12 @@ export const dynamic = "force-dynamic";
 // idx_sales_2026_fmv_recalc_window partial index (also drops junk from OHLC).
 export const maxDuration = 60;
 
+// The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
+// which can be renamed without anyone noticing the telemetry key moved.
+const PIPELINE = "price-snapshots";
+
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
   const auth = request.headers.get("authorization");
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -33,6 +39,17 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("[price-snapshots] RPC failed:", error.message);
+      // ⚠ EVERY exit path past auth logs. Until this row existed there was no
+      // durable record that this endpoint had run AT ALL, so a 504 under pooler
+      // saturation — the documented failure above — left the missing OHLC bucket
+      // as the only evidence, and only if someone happened to look at a chart.
+      await logTerminalRun({
+        pipeline: PIPELINE,
+        startedAt: startTime,
+        ok: false,
+        error: `populate_price_snapshots_hourly: ${error.message}`,
+        extra: { stage: "rpc" },
+      });
       return NextResponse.json(
         { status: "error", error: error.message },
         { status: 500 }
@@ -43,9 +60,28 @@ export async function POST(request: NextRequest) {
       `[price-snapshots] ${data.editions_snapshotted} editions snapshotted for bucket ${data.bucket}`
     );
 
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: true,
+      // A MEASURED count, read from the RPC's own return — not a `?? 0` guard.
+      // If the RPC ever stops returning it the field goes NULL, which reads as
+      // "not measured" rather than as a snapshot-less hour.
+      rowsWritten:
+        typeof data?.editions_snapshotted === "number" ? data.editions_snapshotted : null,
+      extra: { stage: "done", bucket: data?.bucket ?? null },
+    });
+
     return NextResponse.json({ status: "ok", ...data });
   } catch (err: any) {
     console.error("[price-snapshots] Unexpected error:", err.message);
+    await logTerminalRun({
+      pipeline: PIPELINE,
+      startedAt: startTime,
+      ok: false,
+      error: String(err?.message ?? err),
+      extra: { stage: "fatal" },
+    });
     return NextResponse.json(
       { status: "error", error: err.message },
       { status: 500 }
