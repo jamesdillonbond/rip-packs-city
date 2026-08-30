@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ✅ R67's EXIT CONDITION MET — the clock sweep is quiet on a clean tree, and the one thing it cannot see says so
+
+**The measurement, on a frozen tree at `a9bff1170`.** Four full suites, 15,522 tests each, at 00:30 / 05:30 / 13:30 / 20:30 UTC:
+
+```
+clock sweep — 4 run(s) at different UTC hours
+  UNMEASURED (not a finding, and not a clean bill either) — find-future-dated-ledger-headings.test.ts
+    Its file spawns a CHILD PROCESS … the difference at hour(s) 0, 13, 20 is an artifact
+    of the sweep. This test's clock-dependence is UNKNOWN, not cleared.
+  no test changed outcome with the clock.
+SWEEP_EXIT=0
+```
+
+**Three things this establishes, and one it deliberately does not.** The suite has **no test whose outcome depends on the wall clock** that this instrument can see. The **always-failing bucket is empty**, which is the check that my own bad assertion is gone. And the sweep **exits 0**, i.e. it is quiet enough to schedule daily — the property R67 declined the runner-clock version for lacking. ⛔ What it does NOT establish: anything a child process decides. That one test's clock-dependence remains **unknown, not cleared**, and the output says so on every run rather than leaving a reader to infer a clean bill.
+
+⚠ **Three earlier readings of this same instrument were discarded rather than reported**, and the reasons are the useful part: one was taken while I created a migration file mid-run (four tests walk `supabase/migrations`, so the tree moved under the measurement); one reported an always-failing test that was **my own assertion being false by construction under the sweep**; one reported a wall-clock finding that was the child-process artifact. **Only the fourth run was a measurement.** A detector's first output is a hypothesis about the detector.
+
+R67 moved to RESOLVED in the register with the residue stated (child processes; anything needing a span longer than 24 h).
+
+**Revert path:** unchanged from the 2026-08-29 clock-sweep entry — `git revert` that commit removes the script, its tests, the workflow and the (inert-when-unset) `vitest.setup.ts` shim. This entry ships no code.
+
 ### 2026-08-29 · ✅ SHIPPED (ops + DB) — the five dead-host Pipeline Alerts are cleared by PAUSING the class, not by hiding it: three cron-job.org entries Inactive, six bounded suppressions, three arms off
 
 Trevor (late 08-29 PT): "address these from sentinel" — the 5-active Pipeline Alert (offers-sweep 93/141, topshot-badge-set-backfill 5/8, topshot-fmv-populate 6/8, topshot-moments-hydrator 172/276, topshot-pack-pool-backfill 460/561), every last error `public-api.nbatopshot.com` 530/1033. Last 24 h all eight dead-host pipelines wrote **zero rows**: compute-topshot-pack-ev 416 runs × 15 s, pack-pool-backfill 262 × 62 s (paused 02:18Z), moments-hydrator 137 × 3 s, offers-sweep 70 × 44 s — roughly two hours of compute a day and the `get_topshot_pool_backfill_targets` disk reads, spent on a host that answers with a Cloudflare error page.
