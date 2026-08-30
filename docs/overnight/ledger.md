@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 🚨 MEASURED — Trevor's hypothesis is right: Top Shot has moved to ATLAS, and `pg_net` reaches Atlas with NO operator action
+
+**Trevor: *"it feels like Top Shot is shifting away from their own and moving the endpoint to Atlas."* It is correct — and testing it broke open the thing that was blocked.**
+
+## The hypothesis, confirmed three ways
+
+| endpoint | Top Shot | sibling | reading |
+|---|---|---|---|
+| `public-api.nbatopshot.com` | **530 / 1033, ~41 h** | — | decommissioning-shaped |
+| Studio `searchTopShotNft` | **0** | `searchAllDayNft` **10,670,740** | Top Shot is not on Studio |
+| **Atlas `MarketplaceService`** | **LIVE, full listing rows** | — | **this is where it lives now** |
+
+⭐ **The Studio zero stops being a mystery under this reading.** Studio carries `searchAllDayEditions`, `searchGolazosEditions`, `searchPinnacleEditions` and **no Top Shot editions field at all** — previously logged as an odd gap, and exactly the shape you would expect if Top Shot were being served by Atlas (`dapper.market`) instead. An Atlas row carries everything the dead `searchMarketplaceEditions` did: `priceCents`, `nftId`, `editionId`, `serialNumber`, `listedAt`, `edition.{seriesId,setId,editionTemplateId,tier}`.
+
+## 🚨 The finding that changes what is blocked
+
+The record says Atlas is unreachable for us: its WAF **403s Node/undici** from Vercel, the **GHA runner IP is `egress_blocked`**, and `atlas-proxy` is **INERT pending an operator `wrangler deploy`**. That is the whole of #20.
+
+**`pg_net` is libcurl, and Atlas allows curl.** Using the byte-identical request shape the production runner uses:
+
+| batch | n | HTTP 200 | non-empty transactions | timeouts / 4xx |
+|---|---:|---:|---:|---:|
+| A (spread) | 8 | 8 | **8** | 0 / 0 |
+| B (**40 dispatched, all answered in 7 s**) | 40 | 40 | **39** | 0 / 0 |
+
+**48/48 HTTP 200, 47 non-empty. A third egress works today and needs nobody's approval.**
+
+⚠ **A CONTROL FIRED FIRST AND WOULD HAVE INVERTED THIS ENTRY.** The opening probe **timed out at 25 s** — DNS 45 ms, then nothing — which is precisely the documented WAF-hang signature, and I was one write-up away from filing "pg_net is blocked too". The discriminator was a second probe carrying a real `editionId`: **200 with data, same conditions, same minute.** **The timeout was my QUERY — Atlas will not serve an unfiltered sweep — not the egress.**
+
+## ⛔ The hazard that must be settled BEFORE any implementation
+
+`scripts/backfill-atlas-edition-map.mjs` records in its own header that Atlas **"soft-throttles under rapid calls (HTTP 200 with empty results)"**. 🚨 **That is this platform's top defect class arriving from outside, aimed at the ask column: a sweep that reads `{"transactions":[]}` as *"no listing"* will REWRITE LIVE ASKS TO NULL under throttle** — the identical shape the 2026-08-29T2200Z filing caught before it shipped against Studio. **An empty Atlas response is UNKNOWN, never "no listing".** ⚠ **My burst does not clear this:** 39/40 non-empty at ~5.7 req/s shows no material throttling and the single empty is indistinguishable from a genuinely unlisted edition, but the warning is about **sustained** rate, which is **untested**.
+
+## Sizing, and the decision
+
+`topshot_atlas_edition_map` holds **9,080 of 19,913** editions (**45.6 %**, extendable via Atlas `EditionService/SearchEditions` over the same egress). At the observed rate: catalogue sweep **≈27 min** (**≈53** with the ASC+DESC boundary protocol); the existing board sweep **≈6 min**.
+
+⛔ **DECISION: do NOT build the catalogue sweep as the first move, and this is a judgement not a deferral.** It is a new **asynchronous** pipeline — pg_net dispatches and you collect later, so it needs request→edition correlation, partial-completion handling and the throttle rule above — landing on a database already at **104.6 % pg_cron duty cycle** and IO-bound. Improvising that at the end of a long session is how the wipe happens, and the roadmap's "no infra spend pre-revenue" makes a standing load increase Trevor's call, not mine.
+
+✅ **The net-positive first step is moving the EXISTING board ingest to this egress.** It fires 8×/day and currently fails **~83 %** on the blocked GHA IP, so the move **adds no load — it replaces a broken path with a working one** — takes ~6 min a sweep, un-starves three live surfaces (Underpriced #1s board, the concierge's `search_serial_deals`, the alert dispatcher's serial pass), **and yields the sustained-rate measurement the catalogue sweep needs before it can be sized honestly.**
+
+👉 **#20 updated: still wanted, no longer a hard blocker on an absent operator.** Keeping fetch off an IO-bound DB is still the tidier architecture and #30's DB-timeout half is untouched either way. ⭐ It also **raises the prior that the worker route works** — Atlas evidently does not blanket-block datacentre IPs, since Supabase's is fine. **Not proof**; different provider, different WAF verdict.
+
+**Nothing shipped to production.** Filing: [inbox 2026-08-30T1610Z](inbox/2026-08-30T1610Z-topshot-has-moved-to-atlas-and-atlas-is-reachable-from-the-database.md).
+
+
 ### 2026-08-30 · ✅ VERIFIED (nothing new shipped) — the 16:0xZ watches on the day's levers all held: 0 active backends, Pinnacle sync 295 ms, username resolver 60 s → 0.1 s
 
 **Pass close, 16:05Z (09:05 PT), origin/main `215fe8bdf`.** Read from the DB, not from the transcript:
