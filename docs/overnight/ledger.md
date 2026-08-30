@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ⚠ MEASURED, NOTHING SHIPPED — `match-topshot-players` is a DAILY NO-OP by construction: its reference table has 174 rows and no Ja Morant. **Needs a Trevor decision, not a fix.**
+
+**Found by following my own new alert arm's most frequent flag (8 of 25 days) instead of just suppressing it.** The obvious read was "it times out at the ~120 s gateway, so move it to `cron_heavy` pg_cron like the Pinnacle sync was this morning." ⛔ **That fix would have been worthless, and measuring first is the only reason I know.**
+
+## The timeout is not the problem
+
+30 days of `pipeline_runs_daily`: **20 of 30 runs SUCCEEDED** — and **`rows_written = 0` on every single day, successes included**, while `rows_found` creeps 1,413 → 1,432. **Making it faster would buy 10 more days of writing zero.**
+
+## Why it writes zero
+
+`match_topshot_players_run()` fuzzy-matches unresolved `wallet_moments_cache` player names against `nba_players` and auto-aliases only where **exactly one** candidate scores `similarity >= 0.85`. Its own `needs_manual_review` payload — already computed and sitting in `pipeline_runs.extra`, so this cost **no query** — says why nothing matches:
+
+| name | owners | best_sim | candidates |
+|---|---:|---:|---:|
+| Ja Morant | 331 | **0.15** | **0** |
+| Bam Adebayo | 318 | 0.22 | 0 |
+| LaMelo Ball | 315 | 0.13 | 0 |
+| Zion Williamson | 299 | 0.36 | 0 |
+| Anthony Davis | 295 | 0.36 | 0 |
+| Russell Westbrook | 291 | 0.14 | 0 |
+
+⭐ **Superstars with ~300 owners each scoring 0.15 against the whole table is not "no unique match" — it is the reference table not containing them.** Confirmed directly: **`nba_players` holds 174 rows**, `full_name ilike '%Morant%'` → **0**, `'%Davis%'` → **0**, and the sample is recent rookies/fringe (Adem Bona, Thomas Sorber, Dalton Knecht, Jaylon Tyson, Ariel Hukporti). **Newest row created 2026-05-07 — 3.5 months stale.** It is a partial load, not an NBA roster, and Top Shot spans 2019→now.
+
+## Blast radius — measured before calling it a defect, and it is why this is NOT urgent
+
+`nba_players` is read by `get_fb_eligible_players` / `optimize_fast_break_lineup` (the **Fast Break lineup optimizer**) and FK'd by `nba_player_projections`, `fast_break_lineups`, `fast_break_player_uses`. **A user-facing feature — so it looked like a live accuracy defect.** It is not:
+
+- `fast_break_lineups` = **0 rows**, `fast_break_player_uses` = **0 rows** — **the feature has never been used.**
+- `nba_player_projections` is fed by `sync-nba-projections`, **measured dead** (#8: ESPN 403s residentially too, `all_upstreams_failed`, 0 ok/16 in 48 h) and it is the NBA offseason.
+
+✅ **So current user-facing impact is ZERO** — and the honest cost is the other direction: **51–126 s of daily work on a 104.6 %-duty-cycle, IO-bound instance, timing out a third of the time, to produce nothing.**
+
+## 👉 The decision, which is Trevor's and not mine
+
+**Retire/slow it, or repopulate `nba_players`** — and that turns entirely on whether **Fast Break is coming back**. [[retire-a-pipeline-by-measured-yield-not-by-name]] says retire on measured yield, and the measured yield is **0 rows in 30 days**; but the same memory's other half is that a pipeline is not dead because its collection looks quiet. **I did not retire it unilaterally: this is a product-direction call, and repopulating the roster would make it valuable overnight.** ⚠ **Until then my new arm will keep flagging it ~8 days in 25 — that flagging is CORRECT (it truly does no work) and should be resolved by the decision, not by a suppression that hides a standing waste.**
+
+
 ### 2026-08-30 · ✅ VALIDATED (no change shipped) — the new arm's expected ALERT RATE, which I should have measured before it started paging
 
 **I shipped an arm that emails and Telegrams Trevor without first measuring how often it fires. Correcting that now rather than discovering it from his inbox.** `pipeline_runs` retains only ~76 h, but `pipeline_runs_daily` is indefinite, so the arm's predicate can be replayed over 25 days of history.
