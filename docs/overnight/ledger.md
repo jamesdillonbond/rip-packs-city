@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (3 commits + 3 dispatched runs) — TIER 2 RUNS: the eszip parse-mode census read all 38 bundles and the fleet's real drift number is 25, not tier 1's 19
+
+**Pass: cloud, 21:3x–22:2xZ.** Closes register **R63** and known-issues **#53**; ends the census blackout that began 2026-08-09 and that Detector Health surfaced as the edge-fn-drift 12× streak the moment it was armed.
+
+**What shipped (`7743d01` → `d52cda7` → `c0f27da`):**
+- `scripts/lib/eszip-source.mjs` — extract the entrypoint's stored module source from a production bundle (`@deno/eszip`: `Parser.parseBytes` → `load` → `getModuleSource`; fresh Parser per bundle, a wasm panic poisons the instance), and `canonicaliseSource()`: push REPO source through the same build→parse roundtrip (synthetic import map so bare specifiers resolve to external stubs) so both sides are printed by the same swc.
+- `matchDialects()` ladder in the checker — verbatim → normalised → canonical → canonical_tight — with the mode counted into the report series so a hosted-bundler dialect change is visible, plus a CALIBRATION rule: parse-mode mismatches are findings only once ≥ 1 function matches; zero matches fleet-wide reads as a broken comparison and reports tier-2-did-not-run. Containment survives only as the no-wasm fallback.
+- `@deno/eszip@0.106.0` devDependency (lockfile delta additive only). Tests 28 → **43/43**, including a real-wasm integration roundtrip and a unit test pinning the live bundle shape.
+
+⭐ **The learning loop was the run itself, twice.** Dispatch 1 (33337577456): all 38 parsed but 0 entrypoints identified — production bundles inline the whole graph (545+ specifiers). The fix added a log-safe failed-pick diagnostic (module PATHS only, never content). Dispatch 2 (33337860780): the diagnostic answered — bundles name the function's own modules by RELATIVE specifier (`source/index.ts`; **0 `file://` anywhere**, refuting the picker's founding assumption). Dispatch 3 (33338453882): `content census: 38 body/bodies read, 0 failed (eszip-parsed 38, matched 13: canonical=13)`.
+
+**The census's first findings in 21 days:**
+- 13 functions match repo source across the transpile gap — every match on the `canonical` bridge (full calibration; the hosted bundler and `@deno/eszip` print the same dialect today).
+- **25 content-drifted** — tier 1's 19 ALL corroborated (zero tier-1 false positives), plus **6 drifts tier 1 was structurally blind to**: `backfill-allday-pack-supply`, `backfill-pack-opens-api`, `ingest-allday-pack-opens`, `ingest-topshot-pack-opens-history` (all four gate-key-blocked, so the DO-NOT-REDEPLOY line correctly grew 2 → 6), `snapshot-institutional-wallets`, `sync-nba-projections`.
+- The run is red and SHOULD be: 19 safe redeploys + 6 gate-key-blocked are operator work (R64/R21). Red now means drift, not blindness.
+
+ⓘ `typescript.transpileModule` (the planned repo-side bridge) was never needed — canonicalising through the same wasm replaces a second engine, which also avoids the cross-engine-transform trap this repo just paid for on the migration-stamp verdicts.
+
+**Exit (met, verbatim):** a run reporting `content census: N read, 0 failed` — this one reads `38 read, 0 failed`. **Falsifier for the mode:** if a future run reports `matched 0` across the fleet, believe the calibration rule (census-did-not-run), not the 38 "drifts"; if `canonical` decays to `canonical_tight`, the hosted bundler changed swc — recalibrate before trusting mismatches. **Revert path:** `git revert c0f27da d52cda7 7743d01` (containment fallback + its control resume exactly as before).
+
 ### 2026-08-30 · ✅ SHIPPED (Cloudflare worker + tests) — spork-proxy gained a REACHABILITY FLOOR; and the premise it was queued under ("repo↔deployed SPORKS drift") is REFUTED — there was none
 
 **Prod state: `wrangler deploy` of `workers/spork-proxy`, version `f43af71e-f519-4237-b5ce-ca87517c5ed0`.**
