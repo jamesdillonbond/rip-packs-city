@@ -264,6 +264,12 @@ describe("stripComments — the boundary that REPLACED the verbatim-interpolatio
   })
 })
 
+// ⚠ SCOPE. The block below pins the SHAPE of DEFECT 4 with a synthetic fixture.
+// It does NOT walk the tree and does NOT name the affected files — the stripper's
+// header claimed it did both until 2026-08-29, which is how the real population
+// drifted (8 → 7) unobserved. The COUNT lives in
+// `__tests__/strip-comments-defect-4-population.test.ts`. Keep them separate:
+// this file is the contract, that one is the census.
 describe("stripComments — DEFECT 4: JSX text is not JS (known, unfixed, pinned)", () => {
   // An apostrophe in JSX prose is not a string delimiter, but this is a JS
   // parser. `<p>Couldn't load</p>` opens an `sq` state that runs to the next

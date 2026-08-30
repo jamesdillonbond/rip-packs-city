@@ -73,9 +73,20 @@
 // ⚠ This is a JS/TS parser, and it is also run over `.tsx`. In JSX *text* an
 // apostrophe is prose, not a string delimiter — so `<p>Couldn't load</p>` opens
 // an `sq` state that runs to the next apostrophe, possibly hundreds of lines on.
-// **8 files in this repo end in a non-`code` state for this reason** (7 `sq`,
-// 1 `dq`); `__tests__/strip-comments-shared-helper.test.ts` pins the population
-// so it is visible rather than silent, and names them.
+// **7 files in this repo end in a non-`code` state for this reason** (6 `sq`,
+// 1 `dq`) — measured 2026-08-29 by `__tests__/strip-comments-defect-4-population.test.ts`,
+// which walks the tree, ratchets the count and prints the names on failure.
+//
+// ⛔ **CORRECTION, and it is the reason that test exists.** This header used to
+// read "8 files … 7 `sq`, 1 `dq`; `strip-comments-shared-helper.test.ts` pins
+// the population so it is visible rather than silent, and names them." **Both
+// claims were false.** That contract test pins the DEFECT 4 *shape* with a
+// four-line synthetic fixture; it never walked the tree and never named a file.
+// So the population was free to grow unobserved, and the sentence asserting it
+// was pinned is exactly what would have stopped anyone checking. The live count
+// was also 7, not 8 — one file had left the population and nothing noticed.
+// ⭐ **A boundary nobody can COUNT is not a visible boundary, however carefully
+// it is described.** Prefer a number a test re-derives over a number in prose.
 //
 // ✅ Unlike DEFECT 3, this one fails in the SAFE direction: inside `sq`/`dq`
 // everything is copied verbatim, so the machine KEEPS too much (comments survive)
@@ -92,11 +103,25 @@ const KEYWORDS_BEFORE_REGEX = new Set([
 ])
 
 /**
- * Replace comments with spaces, preserving length and line numbers.
+ * Replace comments with spaces, preserving length and line numbers, AND report
+ * the state machine's terminal state.
+ *
+ * ⚠ Why the state is exported at all. DEFECT 4 below is a KNOWN, UNFIXED
+ * boundary, and its header used to claim the contract test "pins the population
+ * so it is visible rather than silent, and names them". It did not — the test
+ * never walked the tree and never named a file, so the population could have
+ * grown from 8 to 80 with every guard still green. A boundary nobody can COUNT
+ * is not a visible boundary. `endState`/`tplDepth` are what make it countable;
+ * `__tests__/strip-comments-defect-4-population.test.ts` ratchets on them.
+ *
+ * A healthy file ends `code` with `tplDepth === 0`. Anything else means the
+ * machine desynced somewhere and the rest of that file was read in the wrong
+ * state.
+ *
  * @param {string} src
- * @returns {string}
+ * @returns {{ code: string, endState: string, tplDepth: number }}
  */
-export function stripComments(src) {
+export function stripCommentsWithState(src) {
   let out = ""
   let i = 0
   /** @type {"code"|"line"|"block"|"sq"|"dq"|"tpl"|"regex"|"class"} */
@@ -191,7 +216,17 @@ export function stripComments(src) {
     out += c; i++
   }
 
-  return out
+  return { code: out, endState: state, tplDepth: tplStack.length }
+}
+
+/**
+ * Replace comments with spaces, preserving length and line numbers.
+ * The ONE entry point every guard should call.
+ * @param {string} src
+ * @returns {string}
+ */
+export function stripComments(src) {
+  return stripCommentsWithState(src).code
 }
 
 export default stripComments
