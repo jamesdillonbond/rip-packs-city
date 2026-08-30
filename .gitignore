@@ -143,3 +143,6 @@ supabase/functions/deno.lock
 # is pure redundancy — but until someone deletes it, a `git add -A` would commit the
 # patch files themselves. Ignore it rather than rely on everyone using explicit paths.
 Rip Packs City/
+
+# Cowork desktop-VM push credential (2026-08-29): never commit, never print
+.rpc-git-cred

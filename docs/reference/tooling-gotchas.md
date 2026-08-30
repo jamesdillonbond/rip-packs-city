@@ -83,6 +83,23 @@ Rotation surfaces and which worker carries which secret: see the three-rotation-
 
 ## Pushing from a sandbox — the full case history (moved verbatim from CLAUDE.md 2026-08-17)
 
+### ✅ Cowork DESKTOP-VM sessions CAN push — durable recipe (Trevor approved 2026-08-29)
+
+A Cowork session linked to Trevor's laptop runs `device_bash` in a Linux VM with open egress to github.com and the repo mounted at `$HOME/mnt/rip-packs-city`. The Windows-side credential lives in Git Credential Manager, invisible to the VM — so on 2026-08-29 a GitHub device-flow token (gh's public client id, scope `repo workflow`, no expiry unless revoked at github.com/settings/applications) was persisted, with Trevor's explicit approval, to **`<repo>/.rpc-git-cred`** (gitignored + `.git/info/exclude`; same exposure class as `.env.local`). ⛔ **Never `cat`, `echo` or `git remote -v` it** — a printed credential is a burned one (08-16).
+
+```bash
+# 1. fresh clone in the VM's own $HOME — NEVER commit into the live mount (Claude Code moves its HEAD mid-session)
+cd $HOME && git clone -q --depth 50 --branch main https://github.com/jamesdillonbond/rip-packs-city.git rpcwork
+cd rpcwork && test -z "$(git status --porcelain)" || echo 'DIRTY FRESH CLONE — stop'
+# 2. edit, commit (ledger BEFORE code), then:
+git -c credential.helper= -c credential.helper="store --file=$HOME/mnt/rip-packs-city/.rpc-git-cred" push origin HEAD:refs/heads/main
+# 3. success test is ls-remote, never the push output
+test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+```
+
+`npm ci` in that clone stalls for 30+ min on this VM (Node 22 vs the repo's `24.x` engine, native bindings); `npm i --no-save --ignore-scripts` finishes in ~2 min and is enough for vitest + `scripts/recover-fileless-migrations.mjs` (source `.env.local` from the mount with `set -a; . …; set +a` — never print it). The **cloud** Cowork session is still repo-set 403; this recipe is desktop-only.
+
+
 ### Pushing from a sandbox — BOTH sandbox paths are dead, for DIFFERENT reasons
 
 - **CLOUD: there is no credential fix, and looking for one is wasted time.** Since 2026-08-11 the git proxy refuses at the **repository-authorization layer, before any credential is evaluated** — `access denied by the git proxy: … is not in this session's authorized repository set, so the proxy will not inject a credential for it`. Probed directly: an embedded `x-access-token:<PAT>@github.com` returns the **identical 403**. Upstream `anthropics/claude-code#76248`, open.
