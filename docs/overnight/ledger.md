@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SCHEDULED (migration 20260830164048 APPLIED) + 📋 STAGED — the wmc reindex second wave runs tonight 02:03–03:53Z inside a 1800 s cron_heavy window, and the platform's largest cold-read consumer turns out to be a cosmetic `count(*)` that finishes on its own in ~2 h
+
+**Pass: desktop, 16:4x–16:5xZ.** Continuation of the needs-Trevor list.
+
+## 1. wmc reindex — jobids 409–414
+
+- **Slot chosen from the record, not by feel:** `cron.job_run_details` over the last 3 days, cron-seconds per hour-of-day: **02Z 519, 03Z 596** (quietest two), 01Z 1,078, 04Z 1,119; the 08Z hour the first wave used is > 3×. Zero failures/day in both.
+- **Budget:** cron_heavy's 600 s is what killed 398 (a REINDEX CONCURRENTLY spends most of its time in wait phases on the wmc upsert stream, not scanning). A one-off command cannot raise its own timeout (SET + REINDEX = implicit transaction block = CONCURRENTLY refused), so **postgres-owned jobid 409 raises `cron_heavy.statement_timeout` to 1800 s at 02:00Z and jobid 410 restores it to `600s` at 04:03Z** (SET back, never RESET — RESET drops cron_heavy to the cluster 120 s) and unschedules both. Both are scheduled in the same migration as the builds, so the window closes even if nothing else runs.
+- **Builds (cron_heavy, MAINTAIN on wmc):** 411 `idx_wmc_coll_ek_serial_cover` 02:03Z (499 MB, 28 %), 412 `idx_wmc_moment_collection_cover` 02:43Z (314 MB), 413 `wallet_moments_cache_wallet_collection_moment_key` 03:23Z (313 MB); 40-min stagger. **414 verify 04:06Z** = `run_wmc_reindex_verify()` (writes `pipeline_runs` `wmc-reindex-verify`) + self-unschedule of the cron_heavy tmp jobs.
+- **Collateral, accepted and named:** every cron_heavy job starting 02:00–04:03Z carries the 1800 s budget (303 every 10 min, 71 :13, 356 :41, 215 03:37, 331 03:55). All finished under 260 s today; none has a runaway history.
+- **Exit:** 04:06Z verify row ok=true, four targets ≥ 60 %, zero `indisvalid=false`, `pg_roles.rolconfig` for cron_heavy back to exactly `statement_timeout=600s`, zero `tmp-reindex-wmc-%` rows. **Falsifier:** a `*_ccnew` INVALID leftover = a build that needed more than 1800 s → `DROP INDEX CONCURRENTLY` it via a one-off cron_heavy job and file the duration; do not re-raise the budget. **Revert/hand-unschedule:** in the migration header.
+
+## 2. The `*_pack_sales_history` full-table read — measured to the line, not fixed from here
+
+- A redacted-report subagent fetched the two deploy-only functions (`backfill-allday-pack-sales` v19, `backfill-topshot-pack-sales` v18; same gate literal in both, compared in code, no env var). **The entire full-table read is the LAST line: `select("*",{count:"exact",head:true})` on the history table, feeding only the informational `rows_in_table` field of the response.** Not a cursor, not a dedup — the cursor is Dapper's `endCursor` in `<x>_pack_sales_cursor`, dedup is `onConflict:"tx_hash,pack_nft_id"`. One-line fix: `count:"estimated"`.
+- **It is self-limiting:** the walk runs newest→oldest until `hasNextPage=false`, then sets `done:true` and every later tick early-returns before the count. Top Shot is already `done` (02:19Z). **AllDay was at 2023-07-21 with `total_api` 134,981 remaining at 16:45Z, consuming ~3,000/run every 3 min → done in ~2 h (~19Z).** Until then: 480 runs/day × a full `count(*)` on 281 MB (16.6 k cold reads each) + 3,000-row re-upserts of 2023 rows per run, for **2 new rows in the last 24 h** (AllDay is SUNSET).
+- **Not deployed from here, on purpose:** the deployed bundle carries the literal; deploying a patched copy means the key passes through a transcript (the R21 leak vector), and deploying the redacted copy 403s every tick. **Staged instead:** `docs/audits/edge-fleet-staging-2026-08-28/backfill-{allday,topshot}-pack-sales/index.ts.txt` (redacted, key-shape-grepped zero) with the fix and the de-literalisation (`Deno.env.get("PACK_SALES_GATE_KEY")`, fail closed if empty, `_OLD` dual-accept) in the header — so the R21 operator deploy ships the IO fix in the same motion.
+- **Watch next pass:** `allday_pack_sales_cursor.done = true` by ~19:30Z and the `allday_pack_sales_history` LIMIT/OFFSET+count statement's `calls` in `pg_stat_statements` flat afterwards. If `done` is still false tomorrow, something re-`?reset=1`s it — find that caller before anything else.
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830161744 APPLIED, cron-job.org ×2 disabled, badge-sync.yml gated) — the Pinnacle sync owns a 600 s budget on pg_cron, and the dead Top Shot host stops being paid for by three schedulers
 
 **Pass: desktop, 16:1x–16:5xZ (09:1x–09:5x PT).** Trevor: "Take care of these and do all you can yourself" — the needs-Trevor list from the 16:05Z close-out, worked in order.
