@@ -121,7 +121,7 @@ Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check
 
 (`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily **11:46 UTC** (moved off 09:54Z on 2026-08-30 — that hour carried 191 startup timeouts in 7 days; migration 20260830000048). A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
 
-## pg_cron  ·  64 active (authoritative: `cron.job`; health: `check_pgcron_recent_failures()`)
+## pg_cron  ·  108 active / 1 inactive at 2026-08-30 21:2xZ — includes the 6 one-off `tmp-reindex-wmc-*` slots that self-unschedule 08-31 ~04:06Z (authoritative: `cron.job`; health: `check_pgcron_recent_failures()`)
 
 Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `allday/topshot-pack-sales-backfill` (3m), `allday-dist-opened-backfill` (4m), `backfill-pack-pool` (5m), `refresh-mv-pack-ev-latest` (10m). Weekly FMV compute cluster (7 jobs) Sun 11:00–12:00 UTC. Full functional grouping in `claude/scheduler-map-2026-07-20.md`.
 
@@ -178,7 +178,7 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 
 ## Changes since the 2026-06-07 regen
 
-Count 69 → 86 (79 active, 7 inactive). NEW (~13): alerts-dispatch, alerts-send (alert pipeline split), ownership-onchain-walk, refresh-conflated-editions, resolve-wallet-usernames, snapshot-pack-asks, topshot-deal-floor-serials, sync-topshot-ownership-dune, smoke-concierge-daily, backfill-topshot-buyers (TEMP ×2), backfill-topshot-onchain-art, backfill-allday-listing-serials. Fixed: Analytics Smoke, Lock Check. Deleted: Pipeline Runs Cleanup. → inactive: Pinnacle Listings Reconcile. Moved: Snapshot Institutional Wallets (06:37→10:07 UTC), V1-Dapper Recovery (daily→3h). pg_cron 34 → 64.
+Count at 2026-08-30 18:2xZ (console read): **69 active, 16 inactive, 85 rows** — the 08-30 dead-host pauses moved Populate Pinnacle WMC FMV, TopShot Deal Floor Serials and Resolve Wallet Usernames to Inactive; Populate Pinnacle now runs on pg_cron jobid 408.
 
 ## Pending additions
 
