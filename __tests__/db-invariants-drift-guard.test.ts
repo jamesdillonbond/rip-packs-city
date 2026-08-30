@@ -59,7 +59,7 @@ const PINS = [
     // then again 2026-08-28 onto the COALESCE removal. That earlier fix is carried
     // forward verbatim inside the DDL this migration names.
     migration:
-      "supabase/migrations/20260829040000_audit_20260828_log_pipeline_run_stops_fabricating_zero_counters.sql",
+      "supabase/migrations/20260829041215_audit_20260828_log_pipeline_run_stops_fabricating_zero_counters.sql",
   },
   {
     // Added 2026-08-11. Batch writer into wallet_moments_cache (~2.2M rows).
@@ -340,7 +340,7 @@ const PINS = [
     // test validated a body that no longer runs anywhere. That is this mechanism's
     // documented blind spot, and it costs nothing to walk into.
     migration:
-      "supabase/migrations/20260829020000_audit_20260828_topshot_fmv_populate_prefilters_before_the_sales_scan.sql",
+      "supabase/migrations/20260829013927_audit_20260828_topshot_fmv_populate_prefilters_before_the_sales_scan.sql",
   },
   // ── 2026-07-29: read/write RPC snapshot pins ────────────────────────────────
   // fmv_recalc_edition_page, get_edition_badges_unified, recalc_ultimate_fmv,

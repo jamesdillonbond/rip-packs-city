@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (four renames) + 📋 MEASURED — the version-stamp mismatches split cleanly: four files are header+exact-applied-SQL (renamed to their DB stamps), four differ in BODY too (left, named)
+
+**Pass: desktop, 18:1xZ.** Open-thread item 6, worked with a content check first instead of renaming blind.
+
+- **Method:** for each of the 8 register-vs-file stamp mismatches, md5 the file with its leading `--` narrative header stripped against `md5(array_to_string(statements, E'\n'))` from the register. The desktop workflow that produced these applied the SQL first and wrote the file (with an added narrative header) after — so a header-stripped BODY match proves the file's SQL is byte-identical to what prod ran.
+- **Renamed to the recorded versions (BODY-MATCH):** `20260829020000→20260829013927` topshot_fmv_populate_prefilters, `20260829040000→20260829041215` log_pipeline_run_stops_fabricating_zero_counters, `20260829003000→20260829001636` candy_boards_join_the_scoped_fmv_view, `20260829004500→20260829002200` candy_scarcity_board_scans_wmc_once. The two `migration:` registration rows in `db-invariants-drift-guard.test.ts` that cited the old paths are re-pointed (197/197 pass). Prose citations of "20260829040000" in route/lib comments and the log_pipeline_run pin HEADER are left as-is — the pin's verbatim body must not be touched, and the prose is historical.
+- **NOT renamed (BODY-DIFF — the file's SQL differs from the recorded statements, not just the stamp):** `20260829023000` (register 20260829015314, rwfd_temp_build_materialized_cte), `20260829030000` (20260829024938, rwfc_two_callers_collide), `20260829134500` (20260829134428, promote_unmapped_sales_does_not_overlap_itself), `20260830051026` (20260830051052, edge_fn_http_arm). ⚠ Renaming these would assert a byte parity that does not exist. Each needs a per-file diff against the recovered prod text to classify the delta (comment-only vs SQL) — note the first three functions were all superseded by later applied migrations (20260830144724 rwfc, 20260830150207 promote), so the live objects are NOT in drift; only the historical file record is imprecise. Queued, not urgent.
+- `check-migration-parity` (by name) still ✓ — this pass changes stamps, not names.
+
 ### 2026-08-30 · ✅ SHIPPED (route change) — the Flow spork floor MOVED on ~08-28: mainnet17–23 are decommissioned, and the TS historical buyer backfill has been walking 100 % 404s below the new floor for two days
 
 **Pass: desktop, 17:5x–18:1xZ.** Chased because the trigger prompt's saturation item lists `/api/admin/backfill-topshot-buyers` at 61,649 reads per candidate page every 30 min.
