@@ -1,5 +1,52 @@
 # 🚨 Top Shot has moved to ATLAS — and Atlas is reachable from the DATABASE, with no operator action
 
+---
+
+## ⛔ CORRECTION 2026-08-30 ~09:5x PT (16:5xZ), BY THE SESSION THAT FILED THIS — §5's RECOMMENDATION RESTED ON A FALSE PREMISE
+
+**What §5 says: the board ingest "currently fails ~83% on the blocked GHA IP" and moving it "immediately un-starves three live surfaces". That is WRONG. The board is NOT starved. It is fully fed, right now, and has been all week.**
+
+⚠ **The error is the two-caller-arm trap, committed in full.** `topshot-active-listings-ingest` has TWO callers and I measured the pooled rate, which is neither arm's rate:
+
+| arm | runs (7 d) | ok | **% ok** | egress_blocked | Atlas calls | rows written |
+|---|---:|---:|---:|---:|---:|---:|
+| **residential — Windows Task Scheduler on Trevor's box, `29 */3`→:13** | **18** | **18** | **100 %** | 0 | 26,584 | 4,719 |
+| GitHub Actions (`.github/workflows/topshot-active-listings-ingest.yml`, `29 */3`) | 9 | **0** | **0 %** | 9 | 0 | 0 |
+| *pooled (what I quoted)* | 27 | 18 | *66.7 %* | 9 | — | — |
+
+**Attribution is confirmed, not inferred:** `gh run list` shows **12/12 scheduled GHA runs `failure`**, and their start times match the `egress_blocked` rows to the minute. The two *successful* off-anchor runs are NOT GHA — they are residential catch-ups, because the task is registered `-StartWhenAvailable`, so a sleeping box fires it late at a non-:13 minute. Attributing by MINUTE was itself wrong; attribute by MECHANISM (`atlas_calls > 0`).
+
+Latest residential sweep: **2026-08-30 09:13 PT, ok=true, 674 targets, 1,348 Atlas calls, 233 listings, 36 deactivated.**
+
+### What survives, and what does not
+
+- ❌ **DEAD: "moving the board ingest un-starves three live surfaces."** Nothing is starved. There is no user-visible outage to fix, and this is no longer a priority-1 build.
+- ✅ **ALIVE, and now the real reason:** the board's ONLY working feeder is **a scheduled task on Trevor's personal desktop that "runs only while the user is logged on."** That is a single point of failure on a machine that is not a server. `pg_net` reaching Atlas is valuable because it is a **datacenter-independent, always-on** second feeder — resilience, not rescue. That reframing is *less* urgent and *more* durable.
+- ✅ **The pg_net→Atlas finding itself stands**, and is now measured harder — see the sustained-rate block below.
+
+### Sustained rate — the measurement §3 said was missing (120 calls, ~20 min, paced ~20/min)
+
+| batch | ok | **403 Cloudflare challenge** | empty-200 |
+|---|---:|---:|---:|
+| 1 | 23 | **7 (23.3 %)** | 0 |
+| 2 | 25 | **5 (16.7 %)** | 0 |
+| 3 | 30 | 0 | 1 |
+| 4 | 30 | 0 | 1 |
+| **total** | **108 (90 %)** | **12 (10 %)** | **2** |
+
+- ⭐ **The failure mode is NOT the feared silent empty-200 — it is a LOUD `403` Cloudflare "Just a moment…" interstitial.** Loud is good: it is trivially distinguishable from "no listing", so it cannot cause the ask-wipe §3 warns about.
+- ⭐ **The 403s are SCATTERED, not clustered at the tail** (seq 2,4,5,12,16,21,23) ⇒ probabilistic challenge, **not** rate-triggered exhaustion. Pacing does not help; **retry does**.
+- ⭐ **The rate IMPROVED across the run (23 % → 17 % → 0 % → 0 %) ⇒ no progressive IP burn.** The earlier 48/48 was a favourable window, not a different regime.
+- ⚠ **Evidence AGAINST the empty-200-as-throttle reading, at this pacing:** the empties are **anti-correlated** with load — batches 1–2 carried all 12 challenges and **zero** empties; the clean batches 3–4 produced both empties. At n=2 that is evidence, **not proof**, so the conservative rule STANDS: **an empty Atlas response is UNKNOWN, never "no listing."**
+
+### ⚠ Self-inflicted alerts, so nobody chases them
+
+This measurement raised `pg_net_http_403` (**critical**, 12 calls) and `pg_net_http_422` (high, 2 calls) in `get_pipeline_alerts()`. **Both are mine** — the 403s are these Atlas probes, the 422s the earlier Studio schema probe. The arm's own text anticipates this ("SELF-INFLICTED — a strict upstream rejecting one of our schema probes"). They age out of the 2 h window on their own.
+
+**Durable lesson: [[measuring-one-arm-of-a-two-caller-pipeline]] fired exactly as written, and I still walked into it — because the pooled number was plausible and flattered a build I already wanted to do. A rate quoted for a two-caller pipeline is meaningless until the arms are split, and the split must be by MECHANISM, not by schedule minute.**
+
+---
+
 **Filed 2026-08-30 ~09:10 PT (16:10Z) by the Claude Code interactive session. MEASURED, DECISION-GRADE, NOTHING SHIPPED.**
 
 **Origin: Trevor's hypothesis** — *"it feels like Top Shot is shifting away from their own and moving the endpoint to Atlas."* It is correct, and testing it produced a second finding that changes what is blocked.
@@ -50,6 +97,8 @@ The record says Atlas is hard to reach: its WAF **403s Node/undici** (verified f
 ## 5. Recommendation — and the reasoning, not just the verdict
 
 ⛔ **Do NOT build the full catalogue sweep as the first move.** It is a new **asynchronous** pipeline (pg_net dispatches and you collect later, so it needs request→edition correlation, partial-completion handling, and the throttle rule above) on a saturated instance, touching a user-facing accuracy path. Improvising that at the end of a long session is how the wipe happens.
+
+⛔ **THE BULLET BELOW IS REFUTED — see the CORRECTION at the top of this file. The board is NOT starved: the residential arm is 18/18 (100%) and the ~83% figure is the OTHER arm. Kept verbatim so the error stays legible.**
 
 ✅ **The clearly net-positive first step is to move the EXISTING board ingest to this egress.** It runs 8×/day and currently fails ~83 % on the blocked GHA IP. Moving it **adds no load — it replaces a broken path with a working one**, it is ~6 min per sweep, and it immediately un-starves three live surfaces: the Underpriced #1s board, the concierge's `search_serial_deals`, and the serial pass of the alert dispatcher. It also yields a real sustained-rate measurement as a by-product, which is exactly what the full sweep needs before it can be sized.
 
