@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ RECOVERED — two production migrations had NO committed file, and the CI job that should have caught it could not run
+
+**`Migration parity` was RED on `73220044c` — but not for the reason the badge implies.** The job exited **RC=2, "could not RUN (config or query error)"**, on `query_sql failed: Could not query the database for the schema cache`. ⭐ *That workflow's own design is what made this legible: it treats "the check could not answer" as a distinct, LOUD outcome rather than a pass — and its header says so.* A check that cannot answer is not a pass.
+
+**So I answered it locally instead of assuming the transient was the whole story — and there was a REAL gap underneath.** Two migrations were applied to production with **no committed file, i.e. no committed revert path**:
+
+| version | name | applied |
+|---|---|---|
+| `20260830050435` | `audit_20260830_clamp_for_editions_s90_reads_only_the_low_ask_only_editions` | 05:04Z |
+| `20260830110335` | `audit_20260830_suppress_pinnacle_trades_backfill_cursor_stalled_at_spork_floor` | 11:03Z |
+
+⚠ **Neither is mine** (both my migrations of the night, `20260830051052` and `20260830053055`, were already committed) — they are the desktop-VM and 2-hourly sessions', landing either side of the no-push window.
+
+✅ **RECOVERED BYTE-EXACTLY FROM PROD, NOT RETYPED**, which is what the parity script's own error text instructs: *"Recover the SQL from PROD — do NOT retype it from a ledger entry."* A short script read `array_to_string(statements, E'\n')` through `query_sql` and wrote the files directly, so the SQL never passed through a transcript. **The md5 was checked BEFORE the write** (refuse-and-skip on mismatch) and again after: `849e98c6…` and `483c4948…`, **both MATCH prod**. 7,407 and 5,096 chars.
+
+⚠ **Parity now reports them `[UNTRACKED]` rather than `[MISSING]`** — a distinct annotation that workflow deliberately emits, because "the file exists but was never `git add`ed" is the cheaper of the two failures and the state a push outage leaves behind. This commit closes it.
+
+**Also landed in the commit before this one:** the 2026-08-30 nightly pass's own artifacts (ledger entry, `metrics-latest.json`, session note, handoff). That pass ran **NO-PUSH** — its mount has no authenticated `remote.origin.pushurl` — shipped nothing, and explicitly asked for its docs to be committed. Its `.lock` reads **RELEASED 08:11:36Z**, so this was not a concurrent write. ⭐ **Its post-ship watch independently confirms two of tonight's ships:** the `offers-sweep` breaker *"PASS — alternating fail(530) → skip(`upstream_outage`) every other tick since ~05:22Z"*, and the fresh-999 board arms *"self-cleared, confirmed designed behaviour"*.
+
+**Verified:** parity re-run locally, both rows moved MISSING → UNTRACKED → (after this commit) clean · ledger invariants on the pass's own edit re-checked before committing it (swallowed **3**, future-dated **0**) · inbox index guard green.
+
+**Revert path:** `git revert` the commit below removes only the two recovered FILES. ⛔ It does **not** unwind either migration — both are already applied to production, and each carries its own revert instructions in its header. Removing the files would simply re-open the gap this closes.
+
+
 ### 2026-08-30 · 📋 GENUINE OVERNIGHT, NOTHING SHIPPED (NO-PUSH cloud) — post-ship watch clean, all live work routes to operator
 
 **Real overnight run (~01:06 PT, no clock skew). NO-PUSH cloud session** (mount has no `remote.origin.pushurl`; `git push --dry-run` → "could not read Username"). DB migrations + artifact repairs were available; **no clearly-safe lever existed, so nothing shipped.** Handoff: `docs/handoff-2026-08-30-overnight-pass.md`.
