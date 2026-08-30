@@ -42,7 +42,34 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-28 16:20 PT (23:20Z) (supersedes the 08-27 20:45 PT block below)
+## ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-29 17:25 PT (2026-08-30 00:25Z) (supersedes the 08-28 16:20 PT block below)
+
+**All-rows basis (Trevor's 08-28 decision). Fresh `fmv_current` read; numerators and denominators recorded, per the 08-28 rule.**
+
+| collection | priced | HIGH/MEDIUM | share | vs 08-28 |
+|---|---:|---:|---:|---:|
+| nba_top_shot | 19,742 | **7,868** | **39.9%** | +278 rows, +1.5 pts on an UNCHANGED denominator |
+| nfl_all_day | 6,190 | 1,521 | 24.6% | flat |
+| laliga_golazos | 575 | 2 | 0.3% | flat |
+| ufc_strike | 518 | 0 | 0.0% | flat |
+| candy_mlb | 125 | 76 | 60.8% | −3 rows |
+| **estate-wide** | **27,150** | **9,467** | **34.9%** | **+275 rows, +1.0 pt** |
+
+⭐ **The Top Shot move is attributable this time, because the denominator did not move:** +278 HIGH/MEDIUM rows on the same 19,742 is the day's ask-corroboration work (the 7-day ask age gate `c537b390d`, the 30 h ask-staleness markers) re-grading rows, not new pricing. It is the first same-denominator delta this file has recorded. ⚠ Still n = 2 same-basis points; not yet a trend. Pinnacle remains in neither total.
+
+**DEMAND — 23 accounts · newest 2026-08-25 · WAU 2 · 104 saved wallets.** Fourth consecutive confirmation of the 08-26 reading. The 50+ WAU gate has not moved. Same single-instrument caution as every prior block.
+
+**OPS, same pass (desktop-VM Cowork session WITH git — the first Cowork pass that could both apply and commit):**
+- 🚨→✅ **`/api/analytics/sales/leaderboard`**, the one user-facing route failing on the day, is fixed at the mechanism (collection push-down, `20260829234203`): ufc 41,361 → 2,194 buffers, topshot 162,717 → 27,642. Known-issues **#49** carries the residual (the all-collections leg) and the watch.
+- ✅ **Sentinel**: all four WARN arms addressed at the mechanism, not the threshold — grail-MV refresh moved to pg_cron (jobid 384) so lambda kills stop reading as silence; board-liveness sweeps moved off the 12Z/18Z truncation hours (jobid 288 → `28 0,6,11,20`, probe window 600); log purges off the 09Z storm band (jobid 198 → 11:46Z); fmv-recalc un-wedged on its own. `unmapped_resolution_backlog_max` stays red **on purpose** (D37 is a real backlog).
+- ✅ **jobid 380 → 383**: the never-completed sales_2026 vacuum is re-owned to cron_heavy at `53 10,20`.
+- ✅ **Migration parity**: 13 drifted Cowork migrations + 6 new committed byte-exact (`scripts/recover-fileless-migrations.mjs`, 19/19 md5-verified). Drift is ZERO at `2307184`.
+- ✅ **Git push from Cowork is durable** (Trevor-approved): `<repo>/.rpc-git-cred`, recipe in `docs/reference/tooling-gotchas.md`. Cloud passes still cannot push.
+- 🟡 **Open, user-visible next:** **#50** `/insights/pack-reality` top-EV ranker drains to zero rows within ~20 h (dead pack-ask source — Trevor's source decision) · **#51** the pg_net 4xx detector cannot attribute its own probes · `topshot-active-listings-ingest` GHA is 12/12 red (WAF block via Atlas, #20, operator) · Sentry still dark (#34, operator).
+
+---
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-28 16:20 PT (23:20Z) (supersedes the 08-27 20:45 PT block below)
 
 **On Trevor's 08-28 ALL-ROWS decision, which is the gate basis. Every figure below is a fresh
 `fmv_current` read, not a re-quote.**
