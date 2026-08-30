@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (script + tests) — Detector Health went live and immediately earned its keep: edge-fn-drift has been red 12 nights UNREAD, and its tier-2 census has been dead since 08-09 (the API now serves eszip)
+
+**Pass: desktop, 19:5x–20:0xZ.** Trevor set `GITHUB_ACTIONS_READ_TOKEN` in Vercel; the 19:54Z sentinel (dispatched to verify) flipped Detector Health from `[NOT CONFIGURED]` straight to 🚨 `edge-fn-drift 12x consecutive failures (crit at 7)` — the exact "correct and unread" case the arm was built for.
+
+## What the 12 red runs actually say (job log, run 33310770399)
+
+1. **Tier 1 (metadata): 19 functions PROVEN drifted** — repo source needs an import map, deployed build has none. Known class; fixing = redeploying each with `deno.json` + `import_map_path` (overlaps the R21 operator work; several carry gate literals). Not addressed here.
+2. **Tier 2 (content census): 0 of 38 bodies read, 12 nights running** — every read fails `Unexpected token 'E', "ESZIP2.3"…`: the Management API's `/functions/{slug}/body` now serves the deployed **eszip bundle**, not JSON. The script's own header had already diagnosed this (dated ~08-09) and hardened the exit code so tier-2-dead cannot read as green; nobody had read the log until the arm surfaced the streak.
+
+## The fix (dependency-free, honest about ambiguity)
+
+- `apiBody()` reads bytes: `ESZIP` magic → `{eszip}` (latin1), else JSON, else raw text (old shapes keep working; tests cover both).
+- `runContentCensus` gains **containment mode**: whitespace-normalised repo source found inside the bundle → clean (a from-repo deploy embeds the source verbatim); **a MISS is AMBIGUOUS** — drift and bundler transformation look identical — so misses land in a new `eszipMisses` list, printed as `::warning::` and persisted in the report (`eszip_misses`, population verdict `eszip_uncontained`), **never counted into the PROVEN set and never the exit code**. No comment-strip over megabytes of binary (false-miss risk only, kept rare).
+- 22/22 in `edge-fn-drift-checker.test.ts` incl. two new eszip cases.
+- **Exit (first dispatched run + tomorrow's 12Z):** `bodies_read = 38`, tier 2 `ran=true`; the run stays red on tier 1's 19 — correctly. **Calibration read:** if known-clean functions show ~0 misses, a follow-up may promote misses to red; if EVERY function misses, the bundler transforms sources and containment mode must say tier-2-did-not-run instead (falsifier). **Revert:** `git revert`.
+- ⚠ The 12-night streak itself is the second lesson: the detector was RIGHT the whole time. The arm now watching it is the fix for the class, not just this instance.
+
 ### 2026-08-30 · 🧹 SESSION CLOSE — register updated (#53, #54), CLAUDE.md sharpened by DISPLACEMENT, and **MEMORY.md was over its limit so part of it was not loading**
 
 ## The one that was silently broken: MEMORY.md

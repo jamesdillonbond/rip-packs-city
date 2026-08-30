@@ -215,16 +215,39 @@ export function partitionByDeploySafety(slugs, blocked = GATE_KEY_DEPLOY_BLOCKED
 export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5 }) {
   const contentDrift = []
   const bodyFailures = []
+  const eszipMisses = []
   let bodiesRead = 0
   let bodiesFailed = 0
 
-  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: false }
+  if (!attempted) return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: false }
 
   const bySlug = new Map(deployed.map((d) => [d.slug, d]))
   for (const { slug, src } of repo) {
     if (!bySlug.has(slug)) continue
     try {
       const body = await fetchBody(slug)
+      // ── ESZIP CONTAINMENT MODE (2026-08-30) ────────────────────────────────
+      // Since ~2026-08-09 the Management API serves /functions/{slug}/body as a
+      // Deno eszip bundle, not JSON — which is why this census read 0 bodies for
+      // 12 straight nightly runs (Detector Health caught the streak the moment it
+      // was configured, 2026-08-30). eszip embeds each module's source bytes, so
+      // the sound dependency-free check is CONTAINMENT: if the repo source is
+      // (whitespace-normalised) byte-contained in the bundle, the deploy includes
+      // it verbatim -> NOT drifted. A MISS is AMBIGUOUS — real drift and a
+      // bundler transformation look identical — so misses are reported loudly as
+      // eszipMisses, never counted into the PROVEN drift set. Whitespace-collapse
+      // only (no comment strip): a from-repo deploy is byte-identical, and
+      // running the comment-stripper over megabytes of binary risks blanking the
+      // needle's neighbourhood (false miss is safe, but keep it rare).
+      if (body && typeof body === "object" && typeof body.eszip === "string") {
+        bodiesRead++
+        const hay = body.eszip.replace(/\s+/g, " ")
+        const needle = src.replace(/\s+/g, " ").trim()
+        if (needle && !hay.includes(needle)) {
+          eszipMisses.push({ slug, version: bySlug.get(slug).version, updated_at: bySlug.get(slug).updated_at })
+        }
+        continue
+      }
       const depSrc = typeof body === "string" ? body : (body?.files?.find((f) => /index\.ts$/.test(f.name))?.content ?? "")
       if (!depSrc) {
         // A 200 with no readable entrypoint is a FAILED READ, not a clean one.
@@ -246,7 +269,7 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
     }
   }
 
-  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: bodiesRead > 0 }
+  return { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: bodiesRead > 0 }
 }
 
 class AuthError extends Error {}
@@ -267,6 +290,24 @@ async function api(path, token) {
     throw new Error(`GET ${path} -> HTTP ${r.status}: ${body}`)
   }
   return r.json()
+}
+
+// The /body endpoint's answer changed shape (~2026-08-09): it now serves the
+// deployed eszip bundle as bytes. Read bytes; hand back {eszip} for bundles,
+// parsed JSON for the old shape, raw text otherwise. Errors mirror api().
+async function apiBody(path, token) {
+  const r = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 200)
+    if (r.status === 401 || r.status === 403) {
+      throw new AuthError(`Management API REJECTED the token (HTTP ${r.status}) on ${path}: ${body}`)
+    }
+    throw new Error(`GET ${path} -> HTTP ${r.status}: ${body}`)
+  }
+  const buf = Buffer.from(await r.arrayBuffer())
+  if (buf.subarray(0, 5).toString("utf8") === "ESZIP") return { eszip: buf.toString("latin1") }
+  const text = buf.toString("utf8")
+  try { return JSON.parse(text) } catch { return text }
 }
 
 async function main() {
@@ -307,9 +348,9 @@ async function main() {
     repo,
     deployed,
     attempted: tier2Attempted,
-    fetchBody: (slug) => api(`/projects/${project}/functions/${slug}/body`, token),
+    fetchBody: (slug) => apiBody(`/projects/${project}/functions/${slug}/body`, token),
   })
-  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, ran: tier2Ran } = census
+  const { contentDrift, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, ran: tier2Ran } = census
 
   if (tier2Attempted && !tier2Ran) {
     console.error(
@@ -324,6 +365,14 @@ async function main() {
         `Those ${bodiesFailed} are covered only by tier 1's proof, so content drift in them is unmeasured.`
     )
     for (const f of bodyFailures) console.error(`  body read failed — ${f}`)
+  }
+
+  if (eszipMisses.length > 0) {
+    console.error(
+      `::warning::eszip containment: ${eszipMisses.length} function(s) whose repo source is NOT contained in the deployed bundle — ` +
+        `probable content drift, UNPROVEN (containment cannot distinguish drift from a bundler transformation): ` +
+        eszipMisses.map((m) => m.slug).join(", ")
+    )
   }
 
   const drifted = [...new Set([...t1.proven, ...contentDrift.map((c) => c.slug)])].sort()
@@ -354,6 +403,7 @@ async function main() {
     bodies_failed: bodiesFailed,
     content_drifted: contentDrift.length,
     content_drifted_slugs: contentDrift.map((c) => c.slug).sort(),
+    eszip_misses: eszipMisses.map((m) => m.slug).sort(),
     population: deployed
       .map((d) => ({
         slug: d.slug,
@@ -365,7 +415,9 @@ async function main() {
           ? "proven_drifted"
           : contentDrift.some((c) => c.slug === d.slug)
             ? "content_drifted"
-            : t1.clean.includes(d.slug)
+            : eszipMisses.some((m) => m.slug === d.slug)
+              ? "eszip_uncontained"
+              : t1.clean.includes(d.slug)
               ? // Only claim "clean" if the census actually looked at this one.
                 tier2Ran
                 ? "clean"

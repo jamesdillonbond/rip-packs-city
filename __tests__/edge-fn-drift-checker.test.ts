@@ -178,6 +178,40 @@ describe("edge-fn drift detector — tier 2 content census", () => {
     expect(r.ran).toBe(true)
   })
 
+  // ── ESZIP containment mode (2026-08-30) ──────────────────────────────────
+  // The Management API serves /body as an eszip bundle since ~08-09; the census
+  // read 0 bodies for 12 nightly runs. Containment: repo source found in the
+  // bundle = clean; missing = eszipMisses (loud, but never counted as PROVEN).
+  it("eszip: a bundle containing the repo source (any whitespace) reads clean", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) =>
+        slug === "a"
+          ? { eszip: "ESZIP2.3\x00\x01module: const  x =\n1 \x02tail" }
+          : { eszip: "ESZIP2.3 const y = 2 " },
+    })
+    expect(r.bodiesRead).toBe(2)
+    expect(r.contentDrift).toEqual([])
+    expect(r.eszipMisses).toEqual([])
+    expect(r.ran).toBe(true)
+  })
+
+  it("eszip: a bundle NOT containing the repo source lands in eszipMisses, not contentDrift", async () => {
+    const r = await runContentCensus({
+      repo,
+      deployed,
+      fetchBody: async (slug: string) =>
+        slug === "a" ? { eszip: "ESZIP2.3 const x = 999 " } : { eszip: "ESZIP2.3 const y = 2 " },
+    })
+    expect(r.bodiesRead).toBe(2)
+    expect(r.contentDrift).toEqual([])
+    expect(r.eszipMisses.map((m: any) => m.slug)).toEqual(["a"])
+    // Misses are UNPROVEN: the run still counts as having run, and the drift
+    // exit code does not include them.
+    expect(r.ran).toBe(true)
+  })
+
   it("ignores comment and whitespace differences, so a reformat is not drift", async () => {
     const r = await runContentCensus({
       repo,
