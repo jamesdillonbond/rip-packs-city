@@ -58,7 +58,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03 |
 | RPC Prune Log Tables | /api/cron/prune-logs | daily 04:23 UTC |
 | RPC Refresh Conflated Editions | /api/cron/refresh-conflated-editions | daily 15:17 UTC ⟨exec-derived⟩ — NEW |
-| RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | hourly :23 |
+| RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | ~~hourly :23~~ **INACTIVE 2026-08-29** — refresh moved to pg_cron jobid 384 `rpc-refresh-pack-grail-metrics-mv` (`cron_heavy`, `23 * * * *`, migration 20260829235752): the 60 s lambda killed 13 of 24 ticks while the DB refresh committed. Route stays deployed as the revert (re-enable entry 7619844). |
 | RPC Resolve Topshot Stubs | /api/cron/resolve-topshot-stubs | 9,39 |
 | RPC Resolve Wallet Usernames | /api/cron/resolve-wallet-usernames | 8,38 ⟨exec-derived⟩ — NEW |
 | RPC Run Insider Detectors | /api/cron/run-insider-detectors | hourly :26 |
@@ -117,7 +117,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 
 Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check (payer wallet empty by design) · Pinnacle Listings Reconcile (⚠ newly inactive since 06-07 — confirm intended) · Refresh Special Serial Owners MV · UFC Listings Indexer · UFC Strike Pipeline.
 
-(`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily 09:40 UTC. A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
+(`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily **11:46 UTC** (moved off 09:54Z on 2026-08-30 — that hour carried 191 startup timeouts in 7 days; migration 20260830000048). A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
 
 ## pg_cron  ·  64 active (authoritative: `cron.job`; health: `check_pgcron_recent_failures()`)
 
