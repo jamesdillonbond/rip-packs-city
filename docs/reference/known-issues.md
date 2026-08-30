@@ -97,8 +97,8 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#49** | 🟠 partial | PARTLY RESOLVED 2026-08-29  |
 | **#50** | 🟡 open | OPEN, NEW 2026-08-29 — /insights/pack-reality's "Honest +EV ranker" is draining to empty and bo… |
 | **#51** | 🟠 partial | PARTLY RESOLVED 2026-08-29 (PT)  |
-| **#52** | 🟠 partial | PARTLY RESOLVED 2026-08-30 (PT) — the four wallet/fmv RPCs shipped 02:3x–03:2xZ, then the fmv_current DISTINCT-ON class was swept: compute_pack_ev_per_edition_weighted / backfill_pack_rip_metadata / compute_pack_ev_from_pool / sniper-deals / get_market_summary all re-shaped to per-row LATERAL or edition_fmv_current (ledger 08-30; saturation 36→0 backends). REMAINING: `pack_ev_latest` batch consumers (refresh_challenge_costs, rpc_thp_leg_pack_ev, rpc_trust_health_precompute_refresh) unmeasured; get_acquisition_stats measured, not shipped. |
-| **#53** | ✅ resolved | HALF-FIXED 2026-08-30 (PT) — the reader now handles the eszip body the API serves (`3006520`), and the first live run answered the calibration: containment matched 0/38 because Supabase's bundler TRANSPILES, so the census honestly reports tier-2-did-not-run (`fe9559b`). RESOLVED 2026-08-30 (PT): parse mode shipped (`7743d01`→`c0f27da`) — `@deno/eszip` extraction + canonicalising roundtrip + calibration rule. First live census in 21 days (run 33338453882): 38/38 bundles read, 13 match (`canonical`), **25 content-drifted = the real fleet number** (tier 1's 19 all corroborated + 6 invisible to it, incl. `snapshot-institutional-wallets` and `sync-nba-projections`). The redeploys themselves are operator work — register R64/R21. |
+| **#52** | 🟡 open | OPEN, NEW 2026-08-30 — hot LANGUAGE sql RPCs are planned PARAM-BLIND (generic plan) on PG 17, a… |
+| **#53** | 🟡 open | OPEN, NEW 2026-08-30 — edge-fn-drift TIER 2 has read ZERO bodies since at least 08-27, so "19 d… |
 | **#54** | 🟡 open | OPEN, NEW 2026-08-30 — match-topshot-players is a DAILY NO-OP; it needs a PRODUCT DECISION, not… |
 
 <!-- END:ITEM-INDEX -->

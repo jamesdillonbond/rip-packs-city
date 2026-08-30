@@ -228,6 +228,11 @@ export function partitionByDeploySafety(slugs, blocked = GATE_KEY_DEPLOY_BLOCKED
  * Ordered strongest-claim-first; the mode is reported so a calibration shift
  * (e.g. the hosted bundler changing swc versions and "canonical" decaying to
  * "canonical_tight") is visible in the series, not silent.
+ *
+ * @param {string} repoSrc
+ * @param {string} depSrc
+ * @param {((src: string) => Promise<string>) | null} [canonicalise]
+ * @returns {Promise<"verbatim" | "normalised" | "canonical" | "canonical_tight" | null>}
  */
 export async function matchDialects(repoSrc, depSrc, canonicalise = null) {
   if (repoSrc === depSrc) return "verbatim"
@@ -248,6 +253,17 @@ export async function matchDialects(repoSrc, depSrc, canonicalise = null) {
   return null
 }
 
+/**
+ * @param {{
+ *   repo: Array<{ slug: string, src: string }>,
+ *   deployed: any[],
+ *   attempted?: boolean,
+ *   fetchBody: (slug: string) => Promise<any>,
+ *   maxFailuresKept?: number,
+ *   parseEszip?: ((bytes: Uint8Array, opts: { entrypointPath?: string | null }) => Promise<{ source: string }>) | null,
+ *   canonicalise?: ((src: string) => Promise<string>) | null,
+ * }} args
+ */
 export async function runContentCensus({ repo, deployed, attempted = true, fetchBody, maxFailuresKept = 5, parseEszip = null, canonicalise = null }) {
   const contentDrift = []
   const bodyFailures = []

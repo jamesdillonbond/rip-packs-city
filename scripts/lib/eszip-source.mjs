@@ -85,6 +85,10 @@ export function bareSpecifiers(src) {
  * otherwise prefer the `/source/index.ts` shape, then any non-_shared
  * index.ts, then a lone module. Null when genuinely ambiguous — the caller
  * treats that as a failed read, never as "clean".
+ *
+ * @param {string[]} specifiers
+ * @param {string | null} [entrypointPath]
+ * @returns {string | null}
  */
 export function pickEntrypoint(specifiers, entrypointPath = null) {
   // A production bundle references the function's OWN modules by RELATIVE
@@ -135,6 +139,10 @@ function specifierSample(specifiers, max = 6) {
  * Parse a production bundle and return its entrypoint's stored module source.
  * Throws on wasm/parse failure or an unidentifiable entrypoint; the census
  * counts a throw as a failed body read.
+ *
+ * @param {Uint8Array} bytes
+ * @param {{ entrypointPath?: string | null }} [opts]
+ * @returns {Promise<{ source: string, specifier: string, specifiers: string[] }>}
  */
 export async function extractEntrypointSource(bytes, { entrypointPath = null } = {}) {
   const { Parser } = await eszip()
@@ -156,6 +164,9 @@ export async function extractEntrypointSource(bytes, { entrypointPath = null } =
  * Push repo source through the same build → parse roundtrip the deployed
  * bundle went through, yielding swc-printed text comparable with
  * extractEntrypointSource's output.
+ *
+ * @param {string} src
+ * @returns {Promise<string>}
  */
 export async function canonicaliseSource(src) {
   const { build, Parser } = await eszip()
