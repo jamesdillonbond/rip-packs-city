@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · ⛔ MEASURED — GitHub Actions does not honour our schedules: 14.9% of runs start on time, the DAILY guards run up to 12 HOURS late, and #48's remaining lever does not exist
+
+**Reached by trying to answer a falsifier nobody had read.** #48 specified an experiment (`sleep 60 → 300` + `timeout-minutes 10 → 25`, same commit) — **which had already shipped in `1de79b1a8` on 2026-08-27 23:09 PT and sat unevaluated for two days.** ⭐ *A queued experiment that ships and is never read is a decision nobody made.*
+
+## Three attempts at the falsifier, each refuted by the next
+
+1. **Pre/post split** — there are **no pre-experiment backstop dispatches** inside the ~73 h `pipeline_runs` retention. Nothing to compare.
+2. **Hour bands** — I read hours 9/13/18 as bad and hour 1 as clean (0 % over n=358), and was ready to file "the hour dominates, not the stagger". **The per-DAY split destroyed it:** hour 13 was **91.5 % killed on 08-27 and 0 % on BOTH 08-28 and 08-29**. Same hour, same cohort convention, opposite result. ⭐ *A pooling artifact that survived one control and died to the next.*
+3. **Per-day rate** — **49.5 % → 11.9 % → 29.0 % → 0 %**. Not monotonic, so it tracks neither deploy. `npm run pipelines:kills` calls the pipeline **RECOVERED** (293 clean ticks, p=2.2e-14) and its own output warns the pooled 10.2 % is historical — correct, and it does not attribute the recovery either.
+
+## 🚨 The real finding, and it is bigger than #48
+
+The cron is `38 2,8,14,20`. **The runs are not.** Over this workflow's last 30 scheduled runs: **not one started within 5 minutes of its slot** — median **+45 min**, p90 **+205**, max **+356 against a 360-minute cycle**, i.e. at least one run landed a full cycle late, *on top of the window it exists to back up*.
+
+**Repo-wide: 449 sampled scheduled runs across 16 workflows, 67 (14.9 %) on time.** Split by whether the measurement can even be trusted:
+
+| uncensored (daily, gap 1440) | n | ≤5 min | p50 | max |
+|---|---:|---:|---:|---:|
+| `db-pin-staleness` | 21 | **0** | 43 | **728 (12.1 h)** |
+| `edge-fn-drift` | 22 | **0** | 55 | **737 (12.3 h)** |
+| `snapshot-institutional-wallets-backstop` | 30 | **0** | 63 | **720 (12.0 h)** |
+
+**0 of 73 daily runs started on time.**
+
+⚠ **The censoring caveat is load-bearing and is stated in the filing rather than buried:** delay is measured against the nearest preceding slot, so a workflow on a 20-minute cycle **cannot show more than ~20 minutes of lateness however late it is**. The frequent workflows' p50 of 7–13 min is therefore **NOT evidence of punctuality**, and `ops-monitor` (slots 2 min apart) is **uninterpretable** — I nearly published its p50 as if it meant something.
+
+⭐ **The pattern runs the wrong way round: the SPARSER the schedule, the worse the delay** — so this repo's careful minute-picking is applied precisely where GitHub honours it least.
+
+## What it invalidates
+
+- **#48's last lever is gone.** *"Move it to a quiet hour"* **cannot be done on GHA.** Both remaining levers in that item (stagger, hour) are unsound. The real choice is to move the trigger to **pg_cron / cron-job.org** — which the primaries already use and which do honour time — or **retire the backstop**. A decision, not a diagnosis.
+- **The "~2h after each primary" redundancy property does not hold** when a run can be a full cycle late.
+- 🚨 **`e2e-smoke` is the one that should worry us.** CLAUDE.md: with Sentry dark since 08-18, *"the scheduled `E2E DOM Smoke` badge is the ENTIRE detection surface"* for client-only failures. It starts **p50 +60 min, 0 of 23 runs on time, max a full cycle late.** The only client-error detector is materially later than its schedule implies.
+- **`db-pin-staleness` is self-undermining** — a *staleness* check that can itself be 12 h late.
+
+✅ **SHIPPED: the false premise is REMOVED, not reworded.** `wallet-backfill-backstop.yml` claimed *"Minute :38 is GHA-empty (rpc-pipeline 5,25,45; allday-ingest 10,30,50; …)"*. Rewording it would invite the next session to re-derive a collision-free minute; the header now carries the measurement and the explicit instruction not to.
+
+⛔ **NOT claimed:** that any workflow SKIPPED (this measures start delay only; shedding is a separate real question, not re-measured), that the frequent workflows are punctual (censored), or that this is a GitHub bug — delayed `schedule` events are documented behaviour. **The finding is that this repo's scheduling model assumes a precision the platform does not offer, and there is now a number for it.**
+
+**Verified:** full suite **1416 files / 15568 tests** green · inbox guard green (filing indexed, counts 325→326, 08-29 section 16→17).
+
+**Revert path:** `git revert` the commit below — restores the old header comment and removes the filing + register text. No DB half, no behaviour change (the workflow's schedule and steps are untouched).
+
+
 ### 2026-08-29 · ✅ SHIPPED (DB) — the edge-fn 4xx alert stops asserting a cause it cannot observe (known-issues #51, partial)
 
 **The arm's `detail` said, as fact:** *"A 4xx here is a MISCONFIGURATION (stale ?key= gate, rotated secret, bad route), not an upstream blip."* ⛔ **It cannot know that.** `net._http_response` has **no url column** — the URL lives in `net.http_request_queue`, which pg_net DRAINS on completion — so the function sees a status code and a body and nothing else. It had already asserted "edge-function call … MISCONFIGURATION" over three `GRAPHQL_VALIDATION_FAILED` replies from the Dapper Studio endpoint **dispatched by the database itself**.

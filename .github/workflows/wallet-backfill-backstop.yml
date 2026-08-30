@@ -18,13 +18,33 @@ name: Wallet Backfill Backstop
 # skip_cached defaults true (walks only the on-chain->cache diff), so a
 # redundant fire mostly no-ops.
 #
-# Cadence: once per 6h window, ~2h after each primary window start (02:38 /
-# 08:38 / 14:38 / 20:38 UTC), so if a primary cohort silently died the backstop
-# still refreshes that 6h cycle. Minute :38 is GHA-empty (rpc-pipeline+listing
-# 5,25,45; allday-ingest 10,30,50; pinnacle-owner 6,26,46; ops-monitor 13,43;
-# sales-indexers-backstop 18,48). Cohorts fire sequentially with short sleeps
-# to mirror the primaries' ~14-min intra-wave stagger without holding the
-# runner long.
+# Cadence: nominally once per 6h window, ~2h after each primary window start
+# (02:38 / 08:38 / 14:38 / 20:38 UTC), so if a primary cohort silently died the
+# backstop still refreshes that 6h cycle. Cohorts fire sequentially with sleeps
+# to mirror the primaries' intra-wave stagger without holding the runner long.
+#
+# ⛔⛔ THE TWO TIMING CLAIMS ABOVE ARE ASPIRATIONAL, NOT WHAT HAPPENS. Measured
+# 2026-08-29 over the last 30 scheduled runs of THIS workflow: **not one started
+# within 5 minutes of its slot** — median **+45 min**, p90 **+205 min**, max
+# **+356 min against a 360-min cycle**, i.e. at least one run landed essentially
+# a whole cycle late, on top of the window it was meant to backstop.
+#
+# ⛔ So the deleted sentence "Minute :38 is GHA-empty (rpc-pipeline 5,25,45;
+# allday-ingest 10,30,50; …)" bought NOTHING and is removed rather than reworded:
+# it reasoned about a minute GitHub does not honour. **Do not re-derive a
+# collision-free minute here.** It is not a scheduling knob on this platform.
+#
+# ⚠ This is not specific to this workflow. Across all 16 scheduled workflows in
+# this repo, 449 sampled runs: **14.9 % started within 5 min of schedule**, and
+# of the DAILY ones (where the measurement cannot be censored by a short cycle)
+# **0 of 73** did, with maxima of 720–737 min (~12 h). The sparser the schedule,
+# the worse the delay. Full filing:
+# docs/overnight/inbox/2026-08-29T2230Z-github-actions-schedules-are-not-honoured.md
+#
+# ⭐ CONSEQUENCE FOR ANY FIX HERE: "move it to a quiet hour" is NOT an available
+# lever — a GHA-scheduled job cannot be placed in an hour band. If this backstop's
+# timing ever has to be real, it must move to a scheduler that honours time
+# (pg_cron or cron-job.org, which the primaries already use), or be retired.
 #
 # OPERATOR end-state (optional, secret-gated — do NOT do from a code session):
 # the cron-job.org "RPC Seed Wallet Refresh" cohort entries can later be
