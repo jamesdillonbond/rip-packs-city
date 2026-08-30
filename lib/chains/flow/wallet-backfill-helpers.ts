@@ -387,26 +387,30 @@ async function upsertWmcChunks(
 }
 
 
+// Keyset paging (2026-08-30). These reads used to page with LIMIT/OFFSET on
+// ORDER BY moment_id, so page k re-walked the first k*1000 index entries: a
+// 154k-row whale cost ~12M index-entry visits to load once (O(n²)), and the
+// pgss diff on the 13:57–14:13Z storm showed this one statement shape at 520
+// calls / 2,498 s / 2.7M buffer hits in 16 min. Paging on `moment_id > last`
+// over the unique (wallet_address, collection_id, moment_id) index makes every
+// page an O(page) index-only range scan (1,122 buffers per 1,000 rows measured
+// on the whale). moment_id is text and both ORDER BY and the cursor compare use
+// the column's own collation, so the cursor is exact. The deterministic-order
+// argument from 2026-08-16 (snapshot-institutional-wallets) still holds and is
+// now also what makes the cursor correct.
 async function loadCachedMomentIds(wallet: string, collectionUuid: string): Promise<Set<string>> {
   const ids = new Set<string>()
   const PAGE = 1000
-  let from = 0
+  let after: string | null = null
   while (true) {
     // deno-lint-ignore no-explicit-any
-    const { data, error } = await (supabaseAdmin as any)
+    let q = (supabaseAdmin as any)
       .from("wallet_moments_cache")
       .select("moment_id")
       .eq("wallet_address", wallet)
       .eq("collection_id", collectionUuid)
-      // Deterministic order is required to offset-page correctly: without it
-      // Postgres may return a row on two pages and none, so the Set comes back
-      // short. Milder here than in snapshot-institutional-wallets (2026-08-16),
-      // where the same omission fabricated 161k events: this Set only decides
-      // what to SKIP, so a missing id costs a redundant idempotent re-upsert
-      // rather than a false record. Fix it anyway — it was ~13.5% of a large
-      // wallet's rows.
-      .order("moment_id", { ascending: true })
-      .range(from, from + PAGE - 1)
+    if (after != null) q = q.gt("moment_id", after)
+    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
     if (error) {
       console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
       return ids
@@ -414,7 +418,7 @@ async function loadCachedMomentIds(wallet: string, collectionUuid: string): Prom
     const rows = (data ?? []) as Array<{ moment_id: string }>
     for (const r of rows) ids.add(String(r.moment_id))
     if (rows.length < PAGE) break
-    from += PAGE
+    after = String(rows[rows.length - 1].moment_id)
   }
   return ids
 }
@@ -461,18 +465,17 @@ async function loadCachedMomentIdsAndKeys(
 ): Promise<Map<string, boolean>> {
   const map = new Map<string, boolean>()
   const PAGE = 1000
-  let from = 0
+  let after: string | null = null
   while (true) {
+    // Keyset paging — see loadCachedMomentIds above for why not LIMIT/OFFSET.
     // deno-lint-ignore no-explicit-any
-    const { data, error } = await (supabaseAdmin as any)
+    let q = (supabaseAdmin as any)
       .from("wallet_moments_cache")
       .select("moment_id, edition_key")
       .eq("wallet_address", wallet)
       .eq("collection_id", collectionUuid)
-      // Same reason as loadCachedMomentIds above: offset paging without a
-      // deterministic order silently duplicates and drops rows.
-      .order("moment_id", { ascending: true })
-      .range(from, from + PAGE - 1)
+    if (after != null) q = q.gt("moment_id", after)
+    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
     if (error) {
       console.warn(`[wallet-backfill] cached-id-key read failed: ${error.message}`)
       return map
@@ -480,7 +483,7 @@ async function loadCachedMomentIdsAndKeys(
     const rows = (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>
     for (const r of rows) map.set(String(r.moment_id), r.edition_key != null)
     if (rows.length < PAGE) break
-    from += PAGE
+    after = String(rows[rows.length - 1].moment_id)
   }
   return map
 }

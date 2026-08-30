@@ -31,6 +31,9 @@ const H = vi.hoisted(() => {
     usernameOutcome: { found: false, reason: "not_found" } as any,
     // captured
     rpcCalls: [] as Array<{ name: string; params: any }>,
+    // every builder method call on a wallet_moments_cache read, in order —
+    // pins the keyset-paging shape (2026-08-30: no .range, .gt cursor).
+    wmcReadCalls: [] as Array<{ method: string; args: any[] }>,
   }
 
   function resolveRead(ctx: any) {
@@ -41,7 +44,13 @@ const H = vi.hoisted(() => {
       const count = state.cachedCount != null
         ? state.cachedCount
         : (Array.isArray(state.cachedRows) ? state.cachedRows.length : 0)
-      return { data: state.cachedRows, error: null, count }
+      // Emulate keyset paging: `.gt("moment_id", cursor)` then `.limit(n)`.
+      let rows = Array.isArray(state.cachedRows) ? [...state.cachedRows] : state.cachedRows
+      if (Array.isArray(rows)) {
+        if (ctx.gtMomentId != null) rows = rows.filter((r: any) => String(r.moment_id) > ctx.gtMomentId)
+        if (ctx.limit != null) rows = rows.slice(0, ctx.limit)
+      }
+      return { data: rows, error: null, count }
     }
     // seeded_wallets SELECT (the stats freshness probe). The UPDATE that
     // stamps last_refreshed_per_collection sets ctx.op and falls through.
@@ -58,11 +67,16 @@ const H = vi.hoisted(() => {
         const ctx: any = { table, op: "select" }
         const b: any = {}
         for (const m of [
-          "select", "eq", "in", "order", "limit", "is", "gte", "lt",
+          "select", "eq", "in", "order", "limit", "is", "gte", "lt", "gt",
           "not", "ilike", "upsert", "insert", "delete", "update", "range",
         ]) {
-          b[m] = (..._a: any[]) => {
+          b[m] = (...a: any[]) => {
             if (m === "update") ctx.op = "update"
+            if (table === "wallet_moments_cache") {
+              state.wmcReadCalls.push({ method: m, args: a })
+              if (m === "gt" && a[0] === "moment_id") ctx.gtMomentId = String(a[1])
+              if (m === "limit") ctx.limit = a[0]
+            }
             return b
           }
         }
@@ -516,6 +530,26 @@ describe("runIdOnlyBackfill", () => {
     expect(log.p_rows_skipped).toBe(0)
     const upsert = H.state.rpcCalls.find((c: any) => c.name ==="upsert_wmc_batch")
     expect(upsert.params.p_rows).toHaveLength(3)
+  })
+
+  it("reads the cache with keyset paging (moment_id > last, no OFFSET) and the Set is complete across pages (2026-08-30)", async () => {
+    // 1,500 cached ids → two pages of the 1,000-row reader. LIMIT/OFFSET made
+    // page k re-walk k*1000 index entries (O(n²) on a 154k-row whale).
+    const ids = Array.from({ length: 1500 }, (_, i) => String(100000 + i))
+    H.state.cachedRows = ids.map((moment_id) => ({ moment_id }))
+    H.state.wmcReadCalls.length = 0
+    ;(fetch as any).mockResolvedValue(flowIdsResponse(ids.map(Number)))
+    const out = await runIdOnlyBackfill(baseArgs({ skipCached: true }))
+    expect(out.rowsFound).toBe(1500)
+    // Every on-chain id was found in the cache → nothing to upsert.
+    expect(lastLog().p_rows_skipped).toBe(1500)
+    expect(H.state.rpcCalls.some((c: any) => c.name === "upsert_wmc_batch")).toBe(false)
+    const calls = H.state.wmcReadCalls
+    expect(calls.some((c: any) => c.method === "range")).toBe(false)
+    const gts = calls.filter((c: any) => c.method === "gt")
+    expect(gts).toHaveLength(1) // first page has no cursor; second page has one
+    expect(gts[0].args).toEqual(["moment_id", ids[999]])
+    expect(calls.filter((c: any) => c.method === "limit").every((c: any) => c.args[0] === 1000)).toBe(true)
   })
 
   it("filters already-cached ids when skipCached=true", async () => {

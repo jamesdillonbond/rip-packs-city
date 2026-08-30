@@ -139,15 +139,18 @@ async function logRun(args: {
 async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
   const ids = new Set<string>()
   const PAGE = 1000
-  let from = 0
+  // Keyset paging on moment_id over the unique (wallet, collection, moment_id)
+  // index — LIMIT/OFFSET re-walked the prefix on every page (O(n²) on whales).
+  // Mirrors loadCachedMomentIds in lib/chains/flow/wallet-backfill-helpers.ts.
+  let after: string | null = null
   while (true) {
-    const { data, error } = await (supabaseAdmin as any)
+    let q = (supabaseAdmin as any)
       .from("wallet_moments_cache")
       .select("moment_id")
       .eq("wallet_address", wallet)
       .eq("collection_id", NBA_TOP_SHOT_UUID)
-      .order("moment_id", { ascending: true })
-      .range(from, from + PAGE - 1)
+    if (after != null) q = q.gt("moment_id", after)
+    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
     if (error) {
       console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
       return ids
@@ -155,7 +158,7 @@ async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
     const rows = (data ?? []) as Array<{ moment_id: string }>
     for (const r of rows) ids.add(String(r.moment_id))
     if (rows.length < PAGE) break
-    from += PAGE
+    after = String(rows[rows.length - 1].moment_id)
   }
   return ids
 }
