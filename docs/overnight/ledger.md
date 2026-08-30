@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ POST-SHIP VERIFICATION (not mine — the 15:58Z `wallet-username-resolver` fix): **IT WORKED. Its stated EXIT CONDITION will still fail, for an unrelated reason — do not read that as the fix failing.**
+
+**Verified the first run to land after that pass (11:08 PT), which happened after its author had finished. The failure MODE changed, which is the whole signal:**
+
+| run (PT) | error | `rows_found` | `errored` |
+|---|---|---:|---:|
+| 02:08 · 05:08 · 08:08 | `canceling statement due to statement timeout` | **0** | 0 |
+| **11:08 — first post-fix** | `all 300 username lookups failed; first: http 530` | **300** | 300 |
+
+⭐ **The fix hit exactly what it targeted.** `wallet_usernames_unresolved()` was scanning 21 days of `sales` + `pack_purchases` and dying before returning anything — `rows_found = 0`, `errored = 0`, nothing ever reached the fetch stage. It now **returns 300 candidates and gets all the way to the lookups**. The DB bottleneck is gone.
+
+🚨 **But the pipeline is now a DEAD-HOST casualty instead:** all 300 lookups fail `http 530` — `public-api.nbatopshot.com`, the same decommissioned endpoint behind the other eight suppressed pipelines. ⚠ **The 530 was already there, MASKED**: the 08-29 20:08 run shows `errored: 99, first_error_reason: http 530` before the timeouts took over. **Fixing the timeout did not create this; it revealed it.**
+
+## ⚠ The trap, and why I deliberately did NOT act on it
+
+That entry's stated exit is **"`wallet-username-resolver` … leave[s] `get_pipeline_alerts()` within 48 h."** It will **not** leave — it now fails on the dead host, so `failure_rate` (and my new arm) keep it there. ⛔ **Read naively in 48 h, that reads as "the fix failed", which is FALSE.**
+
+⭐ **And the obvious tidy-up is the actual trap: adding it to the dead-host suppression class would make it leave `get_pipeline_alerts()` — literally satisfying the stated exit condition — for a reason that has nothing to do with the fix.** That would **fabricate a passed exit**. So it stays unsuppressed and still alerting, on purpose. This is CLAUDE.md's *"re-TEST a stated exit condition, never re-read it"*, with the sharper corollary that **an exit condition phrased as "the alert goes away" can be satisfied by silencing the alert** — the same shape as [[a-failing-arm-holds-every-silence-alarm-green]], one layer up.
+
+👉 **The honest exit for that fix is the one it can actually own: `rows_found > 0` (achieved, 0 → 300) and no `statement timeout` in `pipeline_runs.error`.** Both already true at n=1. ⚠ **n=1 — the job is 3-hourly (02:08/05:08/08:08/11:08), so the next confirmations are ~14:08 and ~17:08 PT; one run cannot rate a fix, only classify it.** Whether the resolver should now join the dead-host class is a separate decision that should be taken **after** its exit is judged, not before.
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830181738 + console + one VACUUM FULL) — the username resolver is the ninth dead-host name, badge_editions gave back half its heap, and jobid 408's first scheduled tick verified
 
 **Pass: desktop, 18:0x–18:3xZ.**
