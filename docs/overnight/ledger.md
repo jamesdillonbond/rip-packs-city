@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 🚨 `edge-fn-drift` IS A TRUE RED (19 proven drifted) — **and following its own remediation line would take two working pipelines DOWN.** Diagnosed, nothing shipped.
+
+**The last of the three unwatched detectors. It is NOT a false red like `migration-parity` was — it is correctly reporting real drift, and it has been doing so unread since at least 08-27.**
+
+```
+edge-fn drift: 38 repo functions, 67 deployed
+PROVEN drifted (repo needs an import map, deployed built without one) — 19
+DRIFT: 19 function(s). Redeploy each with deno.json in `files` AND import_map_path
+```
+
+## ⛔ The collision — two documented facts that have never been read together
+
+The detector's advice is **"Redeploy each"**. But [[edge-fn-deploy-blocked-by-unset-gate-key]] records six functions whose `*_GATE_KEY` secret is **unset** while the repo source reads `Deno.env.get()` — **deploying one makes its gate fail closed and 403 EVERY TICK**, which is the mechanism of the 24 h 08-11 AllDay/Pinnacle outage and of the `backfill-topshot-pack-supply` break.
+
+🚨 **Two of the 19 drifted are on that do-not-deploy list: `ingest-pinnacle-mints` (pg_cron 83, 84) and `compute-golazos-pack-ev` (jobid 44).**
+
+⭐ **And the drift signature IS their documented state, which is why this is a trap rather than a coincidence.** That memory's own non-timestamp proof for exactly these two is that they are *"deployed `import_map: false` while their repo sources import `@supabase/supabase-js` by bare specifier — the repo source would boot-fail, and they are not boot-failing."* **That is precisely what "repo needs an import map, deployed built without one" detects.** They are drifted **because they were never redeployed, and they must not be** until the operator sets the secrets.
+
+⛔ **So the drift list silently mixes two populations — "drifted, safe to redeploy" and "drifted, MUST NOT be redeployed yet" — and the detector has no way to say which is which.** Anyone actioning the list top-to-bottom takes out two live pipelines. ⚠ `compute-topshot-pack-ev` is also in the list and is currently under the **dead-host suppression**, so redeploying it fixes nothing either.
+
+## ⚠ And the number is a LOWER BOUND, because half the detector is dead
+
+```
+##[error]edge-fn drift TIER 2 DID NOT RUN — 38 body read(s) attempted, 0 succeeded
+```
+
+**Tier 1 (import-map inference) produced the 19; tier 2 (actual body comparison) read ZERO of 38.** So **19 is "proven drifted by an argument that cannot produce a false positive", never "the number of drifted functions"** — the script's own header says so. ⚠ **A detector reporting a real finding while silently running at half capacity is the more dangerous half of this**, and it is invisible on the badge: the same run exits 1 either way.
+
+## 👉 What I did NOT do, deliberately
+
+**Nothing shipped.** Redeploying edge functions is operator-gated here (secrets are operator-only), two of the targets would break on deploy, and `get_edge_function` returns the full deployed `index.ts` — **a live gate literal into the transcript**, the leak vector that burned a real PAT on 08-16. **Diagnosing this needed no body reads and I made none.**
+
+**Order of operations for whoever takes it:** (1) fix **tier 2** first, so the population is known rather than bounded; (2) **exclude the six gate-key functions** from any redeploy list until their secrets are set; (3) only then redeploy the remainder with `deno.json` in `files` AND `import_map_path`. ⚠ **Doing (3) before (2) is an outage, not a fix.**
+
+
 ### 2026-08-30 · ✅ SHIPPED — `migration-parity` was RED on 3 of its last 4 scheduled runs and **none of them was a parity violation**
 
 **Found by doing the read the sentinel says nobody can do.** Its `Detector Health (GitHub Actions)` check reports **`[NOT CONFIGURED]`** — no `GITHUB_ACTIONS_READ_TOKEN` — and warns in its own words that the three daily detectors are unwatched, so *"a correct one can stay red indefinitely with nobody reading it."* I read them with `gh` instead:
