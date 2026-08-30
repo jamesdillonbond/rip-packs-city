@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (prod DB, one config row) — the pack-reality +EV board is DARK BY MARKET, not by defect: its liveness arm is deactivated, and the filing's proposed fix is REFUTED
+
+**Prod state: one `UPDATE` to `public_board_liveness_watchlist`.** No schema change, no view change.
+`supabase/migrations/20260830225125_audit_20260830_deactivate_pack_reality_top_ev_liveness_arm.sql`
+(repo file md5-verified byte-identical to the applied statements: `29abea81…`).
+
+Actioned inbox `2026-08-30T2115Z` Candidate 1, which offered (a) land the depletion leg or (b) carry
+the board `is_active=false`. **Took (b) — but only after (a) turned out to be refutable.**
+
+⛔ **BOTH of the filing's premises are wrong, and the night pass must not re-derive them:**
+- **"A writer has revived"** — no. Every one of the 10 positive-EV rows sits at minute **:13**, which
+  is pg_cron **jobid 71 `backfill_topshot_historical_pack_ev`** — a HISTORICAL reconstruction job
+  that never stopped. The filing checked only the atlas `:25` writer and the dead edge fn, so it
+  read a long-running backfill as a revival. Those rows carry NULL `price_source`, NULL
+  `total_unopened` **and** NULL `depletion_pct`: nothing indicates the packs are still buyable.
+- **"One NULL-handling default suppresses 100% of it"** — the NULL is a SYMPTOM. The live writer
+  (**jobid 217 `rpc-atlas-pack-ev`, :25**, last run 22:25Z) is healthy and wrote **56** Top Shot rows
+  today with price and supply populated, avg `fmv_coverage_pct` **100.0**, `pack_ev` from
+  **-892.87 to -1.65 — zero positive**. ⭐ **The board is empty because no live Top Shot pack is +EV.**
+  Landing the depletion leg would have left it just as empty — an "exit condition" the null already
+  satisfies.
+
+ⓘ **Third correction:** "the depletion COMPUTATION stopped" is **Top-Shot-scoped, not global**. On
+08-30 `nfl_all_day` is 1279/1279, `laliga_golazos` 130/130, `disney_pinnacle` 91/91 populated;
+only `nba_top_shot` reads **0/148**. A whole-table count would have hidden that in either direction.
+
+**Why deactivating is right rather than lazy:** a TOP +EV board is market-driven and can honestly
+empty, exactly like `candy_deals_board` and `topshot_underpriced_serials_board` (both deactivated
+2026-08-01 for this reason). `min_rows = 1` meant *any* empty state paged forever, and a permanently
+BREACHing arm is indistinguishable from a broken one — it would have masked the next genuinely-dark
+board. Breaching active arms **1 → 0** after the change, and the empty result set also confirms
+nothing else was hiding behind it.
+
+⚠ **NOT a blind silencing, which is the risk this class carries:** `topshot_pack_reality_dist`
+(6 rows) and `topshot_pack_reality_stats` (1 row) remain `is_active=true` and healthy, so a real
+pack-reality pipeline break still pages through two sibling arms. The note names the re-activation
+condition: a restored live Top Shot ask source (the Atlas migration, inbox 1610Z) **and** the atlas
+writer observed producing positive-EV rows with non-null depletion.
+
+⛔ The filing's ban on relaxing the view's `COALESCE(depletion_pct,100) < 90` **stands and is now
+better supported** — the only rows it excludes are historical reconstructions with no supply data,
+which is precisely the wrong-not-empty failure the guard exists to prevent.
+
+**Revert path:** `update public.public_board_liveness_watchlist set is_active = true where
+view_name = 'topshot_pack_reality_top_ev';` (the prior note text is in this commit's diff).
+
 ### 2026-08-30 · ✅ FIXED (2 commits) — the census and watermark work each tripped one guard on landing, and both guards were right
 
 **Pass: cloud, 22:4x–23:2xZ.** Correction entry: three pushes tonight (`d52cda7`, `c0f27da`, `1b13355`) ran CI red, and `efdf60e` ran Smoke red — caught in-pass by reading the runs, fixed within the hour, tree green again at `54fa768` (CI ✅ + Smoke ✅).
