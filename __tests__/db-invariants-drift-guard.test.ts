@@ -299,8 +299,9 @@ const PINS = [
     test: "supabase/tests/promote_unmapped_sales.sql",
     // ⚠ Keep this comment ABOVE `migration:` — check-db-pin-staleness.mjs matches
     // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
+    // Re-pointed 2026-08-30: a per-scope 20-minute minimum gap between real drains.
     migration:
-      "supabase/migrations/20260829134500_audit_20260829_promote_unmapped_sales_does_not_overlap_itself.sql",
+      "supabase/migrations/20260830150207_audit_20260830_promote_unmapped_sales_minimum_gap_between_drains.sql",
   },
   {
     // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is

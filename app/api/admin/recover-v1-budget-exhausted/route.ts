@@ -165,6 +165,9 @@ async function run(startedAt: string, startedMs: number) {
           p_limit: PROMOTE_LIMIT,
         })
         summary.promoted = Number((pr as any)?.promoted ?? 0) || 0
+        // 2026-08-30: the drain skips itself for 20 min after a real run; surface that
+        // so a manual recovery does not read a throttled tick as "nothing promoted".
+        if ((pr as any)?.skipped) summary.promote_skipped = String((pr as any).skipped)
       } catch (e) {
         console.log(`[${PIPELINE_NAME}] promote err: ${e instanceof Error ? e.message : String(e)}`)
       }

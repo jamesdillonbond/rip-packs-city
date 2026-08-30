@@ -188,11 +188,18 @@ INSERT INTO public.sales
 -- to cause in production.
 CREATE UNIQUE INDEX sales_tx_hash_uniq ON public.sales (transaction_hash);
 
+-- 2026-08-30: the per-scope minimum-gap stamp the function reads and writes.
+CREATE TABLE public.promote_unmapped_sales_state (
+  scope       text PRIMARY KEY,
+  last_run_at timestamptz NOT NULL
+);
+
 -- Stubbed dependency (no-op) so the test is self-contained.
 CREATE FUNCTION public.log_pipeline_run(
   p_pipeline text, p_started_at timestamptz,
   p_rows_found integer DEFAULT 0, p_rows_written integer DEFAULT 0,
-  p_ok boolean DEFAULT true, p_collection_slug text DEFAULT NULL, p_extra jsonb DEFAULT NULL
+  p_ok boolean DEFAULT true, p_collection_slug text DEFAULT NULL, p_extra jsonb DEFAULT NULL,
+  p_rows_skipped integer DEFAULT 0
 ) RETURNS void LANGUAGE sql AS $$ SELECT $$;
 
 -- >>> BEGIN verbatim allday_sales_cross_source_dedup (keep byte-identical to the migration) >>>
@@ -268,6 +275,9 @@ DECLARE
   v_ok           boolean := true;
   v_run          jsonb;
   v_started_at   timestamptz := clock_timestamp();
+  v_last_run_at  timestamptz;
+  -- Minimum gap between two REAL drains of the same scope (2026-08-30).
+  c_min_gap      constant interval := interval '20 minutes';
   -- Mirrors the hardcoded constant in allday_sales_cross_source_dedup(). That
   -- BEFORE INSERT trigger is the ONLY insert-suppressing trigger on
   -- public.sales, and it fires for this collection alone.
@@ -317,6 +327,49 @@ BEGIN
       'eligible', NULL,
       'promoted', NULL);
   END IF;
+
+  -- ── MINIMUM GAP (2026-08-30) ───────────────────────────────────────────────
+  -- Eight call sites fire this after every ingest tick, and jobid 215 hourly:
+  -- measured 24 h to 2026-08-30 14:50Z, nfl_all_day ran 244 times (100 of them
+  -- the concurrent-skip above), the 144 real drains averaged 38 s each --
+  -- ~1.5 h/day of cron_heavy-class IO -- and promoted 87 sales in total, i.e.
+  -- one promotion per minute of scanning. The cost is the `candidates` CTE:
+  -- 104,908 unresolved AllDay rows, each probed against nft_edition_map and
+  -- the bloated wallet_moments_cache (moment_id, collection_id) index, on
+  -- every call, to find the ~0.6 that became resolvable since the last one.
+  -- A drain that ran less than c_min_gap ago is skipped for this scope. The
+  -- ingest cadence is 20 min, so a promotable sale still lands within one
+  -- ingest interval; what changes is that the 10-min history backfill's and
+  -- the hourly job's calls no longer each pay the full scan. Scoped like the
+  -- lock: golazos does not wait on AllDay. Recorded honestly as a skip row
+  -- (rows_* NULL) with the previous run's timestamp so the gap is auditable.
+  SELECT s.last_run_at INTO v_last_run_at
+    FROM public.promote_unmapped_sales_state s
+   WHERE s.scope = COALESCE(p_collection_id::text, 'ALL');
+  IF v_last_run_at IS NOT NULL AND v_last_run_at > v_started_at - c_min_gap THEN
+    PERFORM public.log_pipeline_run(
+      'promote_unmapped_sales', v_started_at,
+      p_rows_found := NULL,
+      p_rows_written := NULL,
+      p_rows_skipped := NULL,
+      p_ok := true,
+      p_collection_slug := (SELECT slug FROM public.collections WHERE id = p_collection_id),
+      p_extra := jsonb_build_object(
+        'note', 'skipped_recent_run',
+        'scope', COALESCE(p_collection_id::text, 'ALL'),
+        'last_run_at', to_char(v_last_run_at, 'YYYY-MM-DD"T"HH24:MI:SSOF'),
+        'min_gap_seconds', EXTRACT(epoch FROM c_min_gap)::integer)
+    );
+    RETURN jsonb_build_object(
+      'skipped', 'recent_run',
+      'scope', COALESCE(p_collection_id::text, 'ALL'),
+      'last_run_at', v_last_run_at,
+      'eligible', NULL,
+      'promoted', NULL);
+  END IF;
+  INSERT INTO public.promote_unmapped_sales_state (scope, last_run_at)
+  VALUES (COALESCE(p_collection_id::text, 'ALL'), v_started_at)
+  ON CONFLICT (scope) DO UPDATE SET last_run_at = EXCLUDED.last_run_at;
 
   WITH candidates AS (
     SELECT us.id, us.collection_id, us.nft_id, us.resolution_hint,
@@ -579,6 +632,25 @@ SELECT _assert_eq((:'run'::jsonb->>'blocked_insert_vanished'), '1', 'only the tr
 SELECT _assert_eq((:'run'::jsonb->>'still_unresolved'), '4', 'ghost + vanished + horizon-parked + zero-price stay unresolved');
 SELECT _assert_eq((:'run'::jsonb->>'archived'), '1', 'the >7d-old resolved row is archived (deleted)');
 SELECT _assert_eq((:'run'::jsonb->>'resolve_ratio'), '0.5000', 'resolve_ratio is promoted/eligible');
+
+-- ── 2026-08-30: minimum gap between two real drains of the same scope ─────
+-- The unscoped run above stamped scope ALL. An immediate second unscoped call
+-- must be a recorded skip, not a second 104k-row scan; a scoped call has its
+-- own stamp and runs. (The skip path returns explicit NULLs, like the
+-- concurrency skip, so a caller can tell it from a drain of nothing.)
+SELECT public.promote_unmapped_sales() AS run2 \gset
+SELECT _assert_eq((:'run2'::jsonb->>'skipped'), 'recent_run', 'a second drain within 20 min of the last is skipped');
+SELECT _assert((:'run2'::jsonb->'promoted') = 'null'::jsonb, 'the recent-run skip reports promoted as NULL, not 0');
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.promote_unmapped_sales_state WHERE scope = 'ALL'), '1',
+  'the ALL scope carries exactly one stamp');
+SELECT _assert(
+  (public.promote_unmapped_sales('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)->>'skipped') IS NULL,
+  'a scoped call is stamped separately and is not throttled by the unscoped run');
+UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '21 minutes' WHERE scope = 'ALL';
+SELECT _assert(
+  (public.promote_unmapped_sales()->>'skipped') IS NULL,
+  'once the gap has passed the next unscoped call drains again');
 
 -- (2) Edition-resolution precedence + serial COALESCE landed in `sales`.
 SELECT _assert_eq(
