@@ -30,12 +30,31 @@
 // code is invisible to every guard built on this helper.
 
 import { describe, it, expect } from "vitest"
-import { readdirSync, statSync, readFileSync } from "node:fs"
+import { readdirSync, statSync, readFileSync, mkdirSync, writeFileSync, mkdtempSync } from "node:fs"
 import { join, relative, sep } from "node:path"
+import { tmpdir } from "node:os"
 import { stripCommentsWithState } from "../scripts/lib/strip-comments.mjs"
 
 const ROOT = process.cwd()
-const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", ".vercel"])
+
+/** Unambiguous build/VCS noise at ANY depth. */
+const SKIP_ANYWHERE = new Set(["node_modules", ".git"])
+
+/**
+ * Build output — skipped ONLY at the repo root.
+ *
+ * ⛔ THIS SPLIT IS A BUG FIX, NOT TIDINESS. The first version of this guard
+ * skipped all of these by bare name at any depth, which silently excluded
+ * `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` — **`dist` is a
+ * real ROUTE SEGMENT here, not build output** — hiding the repo's third-largest
+ * source file (2,384 lines) and its sibling `error.tsx` from a guard whose
+ * entire purpose is to make a blind spot countable. The census read 2,871 files
+ * and should have read 2,881.
+ * ⭐ The population was unchanged (both files end `code`), so nothing was
+ * mis-reported — but it was luck, not design, and a name-based exclusion is a
+ * CLAIM about every directory in the tree that happens to share the name.
+ */
+const SKIP_AT_ROOT = new Set([".next", "dist", "build", "coverage", ".vercel"])
 
 /**
  * Files ending in `sq` or `dq`. These fail SAFE (comments survive; no source is
@@ -47,11 +66,12 @@ const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", "coverag
  */
 const MAX_KEEPS_TOO_MUCH = 7
 
-function walk(dir: string, out: string[] = []): string[] {
+export function walk(dir: string, depth = 0, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (SKIP.has(entry)) continue
+    if (SKIP_ANYWHERE.has(entry)) continue
+    if (depth === 0 && SKIP_AT_ROOT.has(entry)) continue
     const full = join(dir, entry)
-    if (statSync(full).isDirectory()) walk(full, out)
+    if (statSync(full).isDirectory()) walk(full, depth + 1, out)
     else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) out.push(full)
   }
   return out
@@ -81,6 +101,28 @@ describe("stripComments — DEFECT 4 population is COUNTED, not merely described
     // A walk that silently finds nothing exits clean and reads as coverage.
     // This is the assertion whose absence let the header's claim stand.
     expect(files.length).toBeGreaterThan(2000)
+  })
+
+  it("the walk skips build output at the ROOT but not a `dist` ROUTE SEGMENT", () => {
+    // Built on a SYNTHETIC tree rather than by naming the real route, because a
+    // guard that names its instances dies on the first rename — and this repo
+    // has lost three that way. The property is about the walk, not about which
+    // route currently happens to contain a `dist` segment.
+    const tmp = mkdtempSync(join(tmpdir(), "walk-scope-"))
+    mkdirSync(join(tmp, "dist"), { recursive: true })
+    mkdirSync(join(tmp, "app", "pack", "dist", "x"), { recursive: true })
+    mkdirSync(join(tmp, "node_modules", "pkg", "dist"), { recursive: true })
+    writeFileSync(join(tmp, "dist", "bundle.js"), "// root build output")
+    writeFileSync(join(tmp, "app", "pack", "dist", "x", "page.tsx"), "export const a = 1")
+    writeFileSync(join(tmp, "node_modules", "pkg", "dist", "i.d.ts"), "export {}")
+
+    const found = walk(tmp).map((f) => relative(tmp, f).split(sep).join("/"))
+
+    // The bug: a bare-name skip drops this real source file.
+    expect(found).toContain("app/pack/dist/x/page.tsx")
+    // Still excluded, or the census would drown in build output.
+    expect(found).not.toContain("dist/bundle.js")
+    expect(found).not.toContain("node_modules/pkg/dist/i.d.ts")
   })
 
   it("POSITIVE CONTROL — the sweep can SEE a desync", () => {

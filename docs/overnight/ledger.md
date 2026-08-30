@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 🚨 FIXED — the census guard I shipped four hours earlier was ITSELF structurally blind, and it hid the repo's third-largest source file
+
+**Found by using the guard's own lesson on a different item, which is the only reason it surfaced.** Known-issues #14 ends with *"derive this population from the tree by size, not from a list — that is why the largest instance went unnamed."* Doing exactly that, the file #14 names as the biggest (`app/(collections)/[collection]/pack/dist/[distId]/page.tsx`, **2,384 lines**) **did not appear in my tree walk at all.**
+
+🚨 **The cause is a one-word claim about every directory in the repo: `dist`.** My `SKIP` set listed it as build output and matched it **by bare name at any depth** — but `dist` is a real **ROUTE SEGMENT** here (`/pack/dist/[distId]`). So `__tests__/strip-comments-defect-4-population.test.ts` — **the guard I shipped tonight to make a blind spot countable** — was silently excluding a 2,384-line **server page** and its `error.tsx`. It read **2,871** files and should have read **2,881**.
+
+⭐ **The irony is the finding: I shipped a guard whose stated purpose is "a boundary nobody can COUNT is not a visible boundary", and gave it a blind spot of exactly that shape, in the same file, within the hour.** A name-based exclusion is not a filter — it is a **CLAIM about every directory in the tree that happens to share the name**, and CLAUDE.md already says to assert an exclusion at the PROPERTY's granularity.
+
+✅ **What was NOT wrong, stated plainly so the fix is not oversold: the reported population is unchanged at 7.** Both newly-visible files end in the `code` state, so no number this guard published was ever wrong. ⚠ **That was luck, not design** — a 2,384-line `.tsx` full of JSX prose is precisely where a DEFECT 4 `sq` desync would hide, and the ban-at-zero arm was not looking at it.
+
+**Fixed** by splitting the exclusions by the property that actually distinguishes them: `node_modules`/`.git` are noise **at any depth**; `.next`/`dist`/`build`/`coverage`/`.vercel` are build output **only at the repo root**.
+
+✅ **Pinned by a SYNTHETIC tree, not by naming the real route** — a guard that names its instances dies on the first rename, and this repo has lost three that way. The control builds `root/dist/bundle.js`, `root/app/pack/dist/x/page.tsx` and `root/node_modules/pkg/dist/i.d.ts` in a temp dir and asserts the middle one IS walked while the other two are not, so it tests the walk's **scoping rule** rather than today's routes. **2 mutations, both red:** reverting to the bare-name skip (the original bug) and dropping the root skip entirely — so it fails in *both* directions, not just the one I happened to hit.
+
+**Verified:** 7/7 in the file · census now inspects **2,881** files · population still **7** (6 `sq`, 1 `dq`) · ban-at-zero still holds.
+
+⚠ **Two numbers in known-issues #14 are now stale and were NOT edited here** (its own re-derivation was 08-24 and the file has moved since): `CollectionTabClient.tsx` is **1,394**, not 1,347 — **it grew another 47 lines**, which is the third time that entry's "shrinking" claim has gone the wrong way. ⚠ And #14 calls the pack/dist page *"the biggest one"*: by a whole-tree line count it is **third**, behind `app/api/support-chat/route.ts` (**4,210**) and `app/dashboard/DashboardClient.tsx` (**2,658**). Left for whoever takes #14 properly, with the measurement recorded here so it is not re-derived from scratch.
+
+**Revert path:** `git revert` the commit below — restores the bare-name skip (i.e. re-introduces the blind spot) and removes the scope control. No DB half.
+
+
 ### 2026-08-29 · ✅ R67's EXIT CONDITION MET — the clock sweep is quiet on a clean tree, and the one thing it cannot see says so
 
 **The measurement, on a frozen tree at `a9bff1170`.** Four full suites, 15,522 tests each, at 00:30 / 05:30 / 13:30 / 20:30 UTC:
