@@ -10,6 +10,65 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (Cloudflare worker + tests) — spork-proxy gained a REACHABILITY FLOOR; and the premise it was queued under ("repo↔deployed SPORKS drift") is REFUTED — there was none
+
+**Prod state: `wrangler deploy` of `workers/spork-proxy`, version `f43af71e-f519-4237-b5ce-ca87517c5ed0`.**
+Previous code upload was 2026-06-27 (every version since was a "Secret Change", i.e. same bytes).
+
+⛔ **THE HANDOFF PREMISE WAS WRONG, and the correction is the more useful half.** The item was queued
+as *"the deployed build already behaves with the new mainnet24 floor; the repo copy still lists
+mainnet17–23 — reconcile before deploying"*, and ledger 08-30 (spork entry) says *"the DEPLOYED
+worker evidently differs — worker-deploy-drift class"*. **It did not differ.** Fetched the live
+script from the CF API (`GET /accounts/{id}/workers/scripts/spork-proxy`) and it listed
+**mainnet17–27 with byte-identical maxHeights**, the same `CURRENT_SPORK_MIN_HEIGHT`, and the tx
+lookup. ⭐ **"Behaves with the mainnet24 floor" was a DNS consequence, not a code difference** — the
+deployed worker still *tries* the dead nodes, they just fail to resolve. There was nothing to
+reconcile, and a "reconciling" deploy would have been a no-op.
+
+**Measured, not inherited** (`dns.lookup` on `access-001.<spork>.nodes.onflow.org`, 2026-08-30):
+mainnet17–23 **ENOTFOUND** (all 7) · mainnet24–27 **resolve**. That confirms the floor moved; it
+does not confirm anything about repo drift, which is the distinction the filing collapsed.
+
+**What actually shipped, which is the real defect the drift story was hiding:**
+- `REACHABLE_FLOOR_HEIGHT = 65_264_619` (mainnet24 root @ 2023-11-08T16:07:03Z) + `REACHABLE_SPORKS`.
+- Events path: a range starting below the floor now returns **400 `below_spork_floor`** *before*
+  `pickSpork`. ⚠ **This is the bug a naive list deletion would have CREATED:** with 17–23 removed,
+  `SPORKS.find(s => start <= s.maxHeight)` hands a 2022 range to **mainnet24**, which does not hold
+  those blocks — an empty **200** that reads as "no events". A silent wrong answer, not an error.
+- Tx walk: covers only reachable sporks (4 nodes, not 11 — every miss used to dial 7 dead ones).
+- An explicit `?spork=` naming a decommissioned node returns **400 `spork_below_floor`**, distinct
+  from `unknown_spork`.
+
+⭐ **The SPORKS list was deliberately NOT trimmed.** The entries are still load-bearing for range
+math, and keeping them makes a Flow restoration a **one-constant** change — the same reversibility
+precedent set for `HIST_WINDOW_START`. Deleting entries to express deadness throws that away.
+
+**Caller compatibility verified before deploying, because the contract is load-bearing:**
+`app/api/admin/backfill-topshot-buyers` treats **404 = spork floor** and **any other status =
+FAULT** (`ok:false`). The decoder (`lib/chains/flow/dapper-v1-tx-decode.ts`) sets only `tx` — **no
+caller anywhere passes `&spork=`** — so every real lookup takes the unqualified walk and still ends
+in **404 `tx_not_found_in_listed_sporks`**. Floor-vs-fault detection is untouched. Both edge-fn
+callers already clamp at `SPORK_FLOOR = 65264619`, so neither can trip the new 400.
+
+**Tests: 15 existing + 3 new, and the 3 new ones were proven non-vacuous.** Positive control: setting
+`REACHABLE_FLOOR_HEIGHT = 0` (the pre-fix behaviour) fails **exactly those 3** and no others. Four
+existing tests had heights below the new floor and were moved above it — the property each pins is
+unchanged. The `wrangler-worker-names-are-unique` rationale comment ("would lose mainnet17–23") was
+corrected rather than deleted; its assertion still stands on the other half.
+
+**Verified after deploy:** health ping **200** `{"ok":true,"worker":"spork-proxy"}` · an unauthenticated
+real query still **401** · and the re-fetched deployed bytes contain `65264619`, `below_spork_floor`
+and `spork_below_floor`. (Auth'd below-floor probing needs `SPORK_PROXY_SECRET`, which this session
+does not hold — covered by the unit tests instead.)
+
+ⓘ Full suite 1416/1417 files. The one red — `api-allday-listings-indexer` — is a `beforeAll` hook
+timing out at 10 s under full-suite parallel load (that run logged 995 s of environment time); it
+passes in **918 ms** in isolation and my change touches none of it.
+
+**Revert path:** `git revert` this commit and `wrangler deploy` from `workers/spork-proxy`. Or, if
+Flow restores the old nodes, do NOT revert — just lower `REACHABLE_FLOOR_HEIGHT`; the SPORKS
+entries never left.
+
 ### 2026-08-30 · ✅ SHIPPED (four renames) — the "BODY-DIFF" verdicts were my own classifier's artifact: all eight stamp-mismatched files are comment-only deltas, and item 6 closes completely
 
 **Pass: desktop, 21:0x–21:2xZ.** Correction to the 18:1xZ entry, held to the higher bar a correction demands.
