@@ -687,3 +687,11 @@ precisely how this stayed broken.
 ⚠ **Sibling idiom, NOT this bug, left alone deliberately:** `scripts/fix-inbox-index-counts.mjs` uses
 `import.meta.url.endsWith(path.basename(process.argv[1]))`. That **works** on Windows, so the ban does
 not flag it — though a basename match would also fire for a same-named file in another directory.
+
+### Measuring CLAUDE.md against the memory-file limit (displaced from CLAUDE.md, 2026-08-29)
+
+Kept verbatim, because the numbers are what make the rule stick:
+
+> **KEEPING IT UNDER: the limit is on CHARACTERS; `wc -c` counts BYTES and this file lives inside that gap** (it once read 40,086 on a true 39,610). **Count with `node -e`, not `wc` — and not Python `len()`, which counts CODE POINTS and under-reports by one per astral emoji (4 × 🚨 here, so it reads 39,974 as 39,970)** — `.length` is what the harness and CI's guard both measure.
+
+Three instruments, three different answers on the same file. `.length` is the only one that matches what the harness and `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts` measure.

@@ -1431,3 +1431,14 @@ Measured across 17 scheduled workflows in one 24h window: **observed ≈ `min(ex
 ⚠ **A dropped tick emits NO run, NO badge and NO email**, so the workflow reads `active`, its last run reads `success`, and nothing says the alarm did not fire — *an instrument that never RUNS is indistinguishable from one that ran and found nothing.* `scheduler-liveness.yml` (daily, because daily schedules are the ones surviving) catches **total silence only**; ⛔ at a 12.7h observed max gap **no silence bound both clears today's steady state and catches an hourly job that stopped an hour ago**, and saying so is the point.
 
 ⚠ **Compute inter-run gaps over CONTIGUOUS pages only.** A union across paginated API pages straddles an unsampled hole and reported a bogus 31.8h maximum where the true figure was 12.7h.
+
+### ⚠ `spy.mockRestore()` CLEARS `mock.calls` — assert before you restore
+
+Found 2026-08-29 building `og-fetches-are-bounded`. The natural shape puts the restore in a `finally` and the assertion after it:
+
+```ts
+try { await ogFetch(url) } finally { spy.mockRestore() }
+expect(spy).toHaveBeenCalledWith(OG_FETCH_TIMEOUT_MS)   // reads [] — fails on a CORRECT helper
+```
+
+`mockRestore()` resets the mock's state as well as unpatching it, so the assertion reads an empty call list and the case fails against code that is doing exactly the right thing. Capture what you need inside the `try` (`const args = spy.mock.calls.map(c => [...c])`) and assert on that. The tell is a mutation suite where the **baseline** is red and every mutation is red too — a test that can never pass is not a strict test, it is a broken one.

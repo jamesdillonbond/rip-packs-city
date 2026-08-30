@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-29 · 📝 MEMORY — the session's two general lessons promoted, and CLAUDE.md paid for one by DISPLACING another
+
+**Session close for the R66 + R72 pass.** Everything shipped is already recorded above; this entry is only about where the durable lessons now live, because a fact left in a session log stops being read.
+
+⭐ **Into CLAUDE.md (Measurement discipline), merged into its nearest sibling rather than added as a new bullet:** *a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production.* Rendering one character per `ImageResponse` with **no `fonts`** showed `→` costing no fetch, and I nearly filed *"the register wrongly flagged `insights/serial-premiums`"*; satori's bundled default covers arrows and production never uses it. It belongs in the memory file rather than a reference doc by that file's own criterion — it is needed **before** a session knows which subsystem it is in.
+
+⚠ **PAID FOR BY DISPLACEMENT, per the file's own rule, and BOTH halves verified rather than assumed.** (1) The size-accounting header's worked numbers (`wc -c` 40,086 on a true 39,610; Python `len()` reading 39,974 as 39,970) moved **verbatim** into [tooling-gotchas.md](../reference/tooling-gotchas.md) under a new heading, leaving the operative instruction plus a pointer. (2) The *Diff the SET, not the count* bullet's trust-board case became a pointer — **and I checked the pointer resolves before relying on it**: [trust-board-and-safety.md](../reference/trust-board-and-safety.md) already carries that case in more detail than the memory file did. A displacement whose target does not actually contain the text is a deletion wearing a link.
+
+📏 **CLAUDE.md is at 39,953 / 40,000 — 47 characters of headroom**, measured with `node -e` `.length` (not `wc -c`, not Python `len()`). Stated as a number so the next session knows exactly what it has: **anything added must displace something.** ⚠ A DATED SAMPLE like every other number here.
+
+✅ **Into the reference docs:**
+- [key-files-and-honesty.md](../reference/key-files-and-honesty.md) — `lib/og/marks.tsx` + `lib/og/og-fetch.ts` added beside `brand-fonts.ts`: next/og's **two** remote fallbacks, why no config fix exists, the probe that gets it wrong, `og/collection` reaching the CDN through DATA, the 10 s product budget, and the three guards.
+- [testing-and-ci.md](../reference/testing-and-ci.md) — the R66 correction on the earlier "guarded rather than fixed" note, **hermetic by STUBBING hides a dependency / hermetic by THROWING reports it**, the two-instruments-with-a-separating-mutation pattern, and a new gotcha: **`spy.mockRestore()` CLEARS `mock.calls`**, so asserting after the `finally` fails on a CORRECT helper — the tell is a mutation suite whose **baseline** is red.
+
+**Verified:** full suite **1,416 files / 15,573 tests** green · `tsc` 0 · `claude-md-stays-under-the-memory-file-limit` green · register, inbox-index and retired-rule guards green.
+
+⛔ **Left for Trevor, unchanged and stated rather than quietly dropped:** the pg_cron gate-key rotation for `backfill-topshot-pack-sales`; **R70** (the `sales-counterparty-backfill` fixes live in a Cloudflare Worker this session can neither stop nor deploy); **R58**'s residual 13 orphan `sets` rows (destructive SQL, exact DELETE in the filing); **R60** (needs a Chrome-capable session); and `underlying_set_count` (one predicate in a pinned function — batch it into the next migration that must happen anyway). ⚠ **New this session:** the sandbox egress gateway now **403s `www.rippackscity.com`**, so live HTTP verification had to route through Vercel's own infra — worth knowing before a future session reads a failed curl as a site outage.
+
+**Revert path:** docs only — `git revert` this commit.
+
 ### 2026-08-30 · ✅ RECOVERED — two production migrations had NO committed file, and the CI job that should have caught it could not run
 
 **`Migration parity` was RED on `73220044c` — but not for the reason the badge implies.** The job exited **RC=2, "could not RUN (config or query error)"**, on `query_sql failed: Could not query the database for the schema cache`. ⭐ *That workflow's own design is what made this legible: it treats "the check could not answer" as a distinct, LOUD outcome rather than a pass — and its header says so.* A check that cannot answer is not a pass.
