@@ -171,7 +171,7 @@ function greenStubs(overrides: SmokeStub[] = []): SmokeStub[] {
     htmlStub("/nba-top-shot/pack/dist/5048", "<html><h2>Sales History</h2>20 rows</html>"),
     htmlStub("/nfl-all-day/edition/446", "<html><h2>Activity</h2>sales table</html>"),
     { match: (u) => u.includes("/api/og/collection"), respond: () => ({ headers: { "content-type": "image/png" }, body: "png-bytes" }) },
-    { match: (u) => u === "https://smoke.test/profile", respond: () => ({ status: 308, headers: { location: "https://smoke.test/dashboard" } }) },
+    { match: (u) => u === "https://smoke.test/profile", respond: () => ({ status: 200, body: "<main>Look up any collector. No account needed.</main>" }) }, // R36: /profile is the anon entry page now, not a 308 to the auth-gated dashboard
     jsonStub("/api/sniper-feed", {
       deals: [{ source: "flowty", listingResourceID: "123", storefrontAddress: "0xabc", askPrice: 12.5 }],
     }),

@@ -691,6 +691,20 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // is the signed-in user's own bio editor and stays auth-gated. The
   // dynamic route is hit by anonymous visitors clicking a shared link, so
   // sending them to /login defeats the share flow.
+  // ⚠ BARE `/profile` — EXACT MATCH, added 2026-08-29 (register R36). The
+  // prefix test below does NOT cover it (`"/profile".startsWith("/profile/")`
+  // is false), so this path fell through to the gate and 302'd to /login. It is
+  // now served by `app/profile/page.tsx`, a SERVER component that redirects a
+  // signed-in visitor to /dashboard and renders a public, no-account wallet
+  // lookup for everyone else.
+  // ⛔ THIS WIDENS THE PUBLIC SURFACE BY EXACTLY ONE PATH STRING and by design
+  // cannot widen it further: it is `===`, not a prefix, so it cannot reach
+  // `/profile/edit`, `/dashboard`, or anything else. The page itself renders
+  // NOTHING user-specific on the anonymous branch — that is what makes the
+  // un-gate safe, and `__tests__/proxy-profile-entry-is-public-but-nothing-else.test.ts`
+  // pins both halves so a later prefix "tidy-up" cannot quietly open /profile/edit.
+  if (pathname === "/profile") return true
+
   if (
     pathname.startsWith("/profile/") &&
     pathname !== "/profile/edit" &&

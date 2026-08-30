@@ -113,7 +113,15 @@ const nextConfig: NextConfig = {
       },
       // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.
       { source: "/panini-blockchain/:path*", destination: "/nba-top-shot/overview", permanent: false },
-      { source: "/profile", destination: "/dashboard", permanent: true },
+      // ⛔ REMOVED 2026-08-29 (register R36): `/profile` → `/dashboard` was a
+      // PERMANENT redirect into an auth-gated page, so the leftmost mobile tab
+      // sent every anonymous first-run visitor `/profile` → 308 → `/dashboard`
+      // → 307 → `/login`. `app/profile/page.tsx` now serves that path and does
+      // the signed-in redirect ITSELF, on the server — see the header there for
+      // why fixing the destination is safe where fixing the nav was not.
+      // ⚠ It was `permanent: true` (308), which browsers and crawlers CACHE.
+      // Anyone who hit it before this ships may keep skipping the new page until
+      // that cache expires; the page is correct for them the moment it does.
     ]
   },
 }

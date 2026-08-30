@@ -935,36 +935,49 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       ...(PANINI_PUBLIC ? ["/insights/panini-squeeze"] : []),
     ].map((page) => checkPublicPage(page))),
 
-    // /profile redirects to /dashboard (308) — the May 6 migration retired the
-    // standalone /profile editor in favour of /dashboard's editor surface, so
-    // the legacy bookmark URL now 308s through. Bearer-bypass is opted out
-    // with Authorization: "" so we exercise the actual rewrite, not the bypass.
+    // 🚨 THIS CHECK USED TO ASSERT "/profile 308s to /dashboard" AND WOULD HAVE
+    // GONE PERMANENTLY RED the moment register R36 shipped — the exact failure
+    // this repo records as indistinguishable from a broken instrument at a
+    // glance. Found by grepping for what READS a path before changing it.
+    //
+    // What it asserts now is the fix itself: an ANONYMOUS visitor gets a real
+    // page, not a login wall. `/profile` is the leftmost mobile tab, and the
+    // measured pre-fix chain was 308 → /dashboard → 307 → /login?next=%2Fdashboard.
+    // `Authorization: ""` opts out of the bearer bypass so this exercises the
+    // genuine anonymous path, exactly as the old check did.
     time(async () => {
       const meta = {
-        name: "/profile redirects to /dashboard (308)",
+        name: "/profile serves the anonymous entry page (200, no login wall)",
         endpoint: "/profile",
-        expected: "308-to-dashboard",
+        expected: "200-anon-entry",
       };
       const res = await smokeFetch(`${BASE_URL}/profile`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA, Authorization: "" },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(8000),
       });
       const location = res.headers.get("location") ?? "";
-      const ok = res.status === 308 && location.includes("/dashboard");
+      const body = res.status === 200 ? await res.text().catch(() => "") : "";
+      // ⚠ Assert the ABSENCE of the redirect AND the PRESENCE of the page's own
+      // copy. Status alone would pass on any 200, including a future regression
+      // that renders an empty shell.
+      const ok =
+        res.status === 200 &&
+        !location.includes("/login") &&
+        body.includes("No account needed");
       return {
         ...meta,
         passed: ok,
         detail: `HTTP ${res.status}${location ? ` → ${location}` : ""}`,
         statusCode: res.status,
         bodyExcerpt: null,
-        notes: { location },
+        notes: { location, hasAnonCopy: body.includes("No account needed") },
       };
     }, {
-      name: "/profile redirects to /dashboard (308)",
+      name: "/profile serves the anonymous entry page (200, no login wall)",
       endpoint: "/profile",
-      expected: "308-to-dashboard",
+      expected: "200-anon-entry",
     }),
 
     // Phase 3 — market API returns listings for Top Shot.
