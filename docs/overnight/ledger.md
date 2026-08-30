@@ -10,6 +10,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 🔧 CI RED, MINE, FIXED — the anon-exec guard caught my alert-arm migration, and it was RIGHT
+
+`Unit tests (vitest)` failed on `0519697d` (1 of 15,597): `migration-new-function-states-its-anon-exec-decision` flagged `20260830165431 → public.get_pipeline_alerts`. **The guard was correct and the fix is NOT a revoke.**
+
+⚠ **Why a revoke would have been the WRONG fix, which the guard's own header spells out:** my migration re-creates the **pre-existing** `get_pipeline_alerts()` via `CREATE OR REPLACE` to append the third arm. **`CREATE OR REPLACE FUNCTION` does NOT reset a function's ACL** (unlike views and reloptions), so dropping in a `REVOKE` to silence the guard would have been **an unreviewed production ACL change dressed as boilerplate**. The new function in the same migration already carried a correct three-role revoke; only the *replaced* one was unmarked.
+
+✅ **Fixed with the decision marker, stating the truth rather than the convenient thing.** ⭐ The detector is `/anon-exec:s*S+/` — **any** token, not literally `intentional` — so the honest form was available: `-- anon-exec: unchanged -- get_pipeline_alerts is PRE-EXISTING…`. Writing `intentional` would have asserted anon exec is wanted, which is **false**: re-verified live before writing the line, `anon=false, authenticated=false, service_role=true, postgres=true`. ⚠ **Reaching for the documented escape-hatch WORDING without checking whether the words are true is how a guard becomes a rubber stamp.**
+
+⚠ **Note the marker is matched PER LINE** — the token and the function name must share one line — and `get_pipeline_alerts` does **not** match `get_pipeline_alerts_core` (the trailing `_` is a word char), so the marker vouches for exactly the one function it names. Verified locally: 3/3 green, and CI had already proved the guard fails without it — a known offender, both directions.
+
+
 ### 2026-08-30 · ✅ SHIPPED (migration 20260830171144 APPLIED) — `ingest` joins the dead-host suppression class, with its impact measured BEFORE it was silenced
 
 **Cleaning up the signal I created an hour ago.** The new arm surfaced `ingest` (TS sales GQL) as stalled; leaving it would page forever on a host that is not coming back, so it now joins the existing **"dead host 2026-08-30"** class at the **same expiry (2026-09-13 00:00Z)**, so the whole class lapses and is re-checked together.
