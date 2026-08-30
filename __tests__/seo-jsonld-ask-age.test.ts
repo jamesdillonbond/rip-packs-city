@@ -26,6 +26,15 @@ import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 const NO_FMV = { route_slug: "8:133", player_name: "Dame" }
 const HOUR = 3_600_000
 const iso = (hoursAgo: number) => new Date(Date.now() - hoursAgo * HOUR).toISOString()
+// ⚠ priceValidUntil is a schema.org DATE, not a datetime: "the price is no longer available AFTER
+// this date". So it must be compared as a calendar day, never by Date.parse() — which reads
+// "2026-08-30" as 00:00Z on the 30th, i.e. the START of the day it still covers. The first
+// version of this file did exactly that and reddened CI on every run between 00:00Z and ~13:00Z
+// (2026-08-30 00:16Z, expected 1788048000000 > 1788048977148). Two consequences, both encoded
+// below: a FRESH ask is asserted as "valid through today or later" (a string compare on
+// YYYY-MM-DD), and the "already elapsed" fixture sits BEYOND the ~36 h date-granularity fog the
+// shipping commit named, not at 31 h — at 31 h the elapsed-date claim is true only after ~19:00Z.
+const todayUtc = () => new Date().toISOString().slice(0, 10)
 const offerOf = (ld: unknown) =>
   ((ld as { "@graph": Array<Record<string, unknown>> })["@graph"][0].offers ?? undefined) as
     | Record<string, unknown>
@@ -37,23 +46,27 @@ describe("editionJsonLd — an ask-sourced price carries its own expiry", () => 
     expect(offer).toMatchObject({ price: 45, availability: "https://schema.org/InStock" })
   })
 
-  it("a FRESH ask gets a priceValidUntil in the FUTURE", () => {
+  it("a FRESH ask gets a priceValidUntil that is TODAY or LATER (a date, compared as a date)", () => {
     const offer = offerOf(editionJsonLd(NO_FMV, "nba-top-shot", 45, iso(1)))
     expect(offer!.priceValidUntil, "no expiry was published at all").toBeTruthy()
-    expect(Date.parse(String(offer!.priceValidUntil))).toBeGreaterThan(Date.now())
+    expect(String(offer!.priceValidUntil)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // ISO dates sort lexically; >= today means "still vouched for at some point today".
+    expect(String(offer!.priceValidUntil) >= todayUtc()).toBe(true)
   })
 
-  it("🚨 a 31-HOUR-OLD ask still publishes, but its expiry has already ELAPSED", () => {
-    // The live condition on the day this shipped. The price is still shown — an old
-    // ask is a real observation — but the document no longer claims we stand behind
-    // it today.
-    const offer = offerOf(editionJsonLd(NO_FMV, "nba-top-shot", 45, iso(31)))
+  it("🚨 a DAYS-OLD ask still publishes, but its expiry date has already PASSED", () => {
+    // The live condition on the day this shipped was a 31 h outage. The price is still
+    // shown — an old ask is a real observation — but the document no longer claims we
+    // stand behind it today. The fixture is 48 h, not 31: with a date-granular field the
+    // "already elapsed" claim is unambiguous only beyond ~36 h (ASK_STALE_HOURS + one
+    // calendar day), and a 31 h fixture is true or false depending on the hour CI runs.
+    const offer = offerOf(editionJsonLd(NO_FMV, "nba-top-shot", 45, iso(48)))
     expect(offer, "the Offer was dropped; a stale price should expire, not vanish").toBeTruthy()
     expect(offer!.price).toBe(45)
     expect(
-      Date.parse(String(offer!.priceValidUntil)),
-      "a day-old ask was published to Google with a live, unexpired price",
-    ).toBeLessThan(Date.now())
+      String(offer!.priceValidUntil) < todayUtc(),
+      "a two-day-old ask was published to Google with a live, unexpired price",
+    ).toBe(true)
   })
 
   it("the expiry is measured from when we CONFIRMED the ask, not from now", () => {
