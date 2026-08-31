@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 🚨 FOUND, NOT FIXED — the fleet's top-level alarm went permanently CRITICAL tonight because a detector that is WORKING is red, and GitHub reports "found something" and "could not run" identically
+
+⚠ **Live condition: `Pipeline Sentinel` is red right now and will mask any NEW critical until this is resolved.**
+It succeeded 13:10Z and 17:42Z on 08-30, then failed 19:54Z / 21:23Z / 23:43Z / 05:56Z.
+
+⭐ **Trigger confirmed from the last GREEN run's own payload, not inferred:** it reads
+`"Detector Health (GitHub Actions)","status":"ok","detail":"[NOT CONFIGURED] set GITHUB_ACTIONS_READ_TOKEN…"`.
+Somebody set that Vercel env var between 17:42Z and 19:54Z; the arm took its **first real reading**, found
+`edge-fn-drift` at a **12× consecutive-failure streak** (crit at 7), and has been CRITICAL every run since.
+**Nothing broke — an arm was switched on and correctly reported a condition that had been true for a week.**
+
+🚨 **But the detector is not broken; its "failure" IS its finding.** Reading the LOG rather than the badge:
+`38 repo functions, 67 deployed … CONTENT drift — 25 … exit code 1`, and **that workflow documents `exit 1`
+as "drift found"** (`exit 2` = config error / rejected token, i.e. actually broken). **GitHub Actions
+collapses both into `conclusion: "failure"`**, so the arm cannot separate *ran-and-found-something* from
+*could-not-run*. That is this repo's **"three states, never two"** with the middle state collapsed into the third.
+
+⭐⭐ **The sharpest part: the arm reproduces the exact defect it was written to prevent.** Its own comment —
+*"a permanently-red instrument is indistinguishable from a broken one at a glance — it would desensitise every
+OTHER arm in this report"* — is applied to the NOT-CONFIGURED branch but **not** to a watched detector that is
+correctly and permanently red; and its own detail string says *"a detector red for many days running is usually
+CORRECT and unread"* while escalating to `critical` on **streak length alone**.
+
+⛔ **The streak can never reach 0 without an operator.** 19 of the 25 drifted functions are safe to redeploy, but
+**6 must NOT be** — `backfill-allday-pack-supply`, `backfill-pack-opens-api`, `compute-golazos-pack-ev`,
+`ingest-allday-pack-opens`, `ingest-pinnacle-mints`, `ingest-topshot-pack-opens-history` — their `*_GATE_KEY`
+secrets are UNSET, so deploying makes the gate fail CLOSED and 403 every tick (the 08-11 outage mechanism).
+**They are drifted BECAUSE they were correctly never redeployed.** Meanwhile the same run already carries two
+live warns (#54 `match-topshot-players`, D37 `unmapped_resolution_backlog_max=275`), so every future critical
+now lands in an already-red alarm.
+
+⛔ **Not fixed here, and the two tempting fixes are both wrong:** raising `crit_at` or dropping the workflow from
+`WATCHED` silences a true signal, against this repo's own 08-29 precedent — *"all four WARN arms addressed at
+the mechanism, not the threshold."* 👉 **The mechanism fix is to read the detector's REPORT, not its badge:**
+`edge-fn-drift.yml` already uploads `edge-fn-drift-report.json` on every run, and *"did it produce a report?"*
+answers the question actually being asked — **is the instrument alive** — while being immune to whether the
+contents are clean. A detector that could not run produces no artifact; that is the true `critical`.
+
+ⓘ **Two things that are NOT wrong, so nobody chases them:** setting the token was correct (the arm was designed
+to be configured, and its first reading was accurate — the problem is what it does with an accurate reading),
+and **edge-fn-drift's red is correct and should STAY red** — it was blind until the 08-30 tier-2 parse fix
+closed #53, so ⛔ do not "fix" the streak by breaking the detector again.
+
+Filing: [inbox 2026-08-31T0700Z](inbox/2026-08-31T0700Z-the-fleet-alarm-went-permanently-critical-tonight-because-a-CORRECT-detector-is-red.md).
+**Revert:** n/a — diagnosis + docs only; no code, no config, no threshold touched.
+
 ### 2026-08-30 · ✅ SHIPPED — arm 2 for the cron triage, because the instrument I shipped four hours earlier is structurally blind to the fleet's MOST COMMON failure; plus production verified 94/94 by rendered DOM
 
 **Found by using my own instrument and asking what it is silent about.** Arm 1 ranks per job by seconds
