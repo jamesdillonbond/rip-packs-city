@@ -1,7 +1,7 @@
 # 📏 jobid 71 is **not retirable** — it is the sole feeder for **89 of 598** Top Shot packs — and its daily working set is **frozen at ~92**, refreshed twice a day for 1,806 wasted seconds/day
 
 **Filed:** 2026-08-30 ~23:20 PT (2026-08-31 06:20Z) · **By:** Claude Code, Trevor's box, overnight pass
-**Class:** pipeline characterisation · **Status:** MEASURED. ⛔ **Nothing shipped — pack-EV is an off-limits lane, and §5 confirms that blocker still holds.**
+**Class:** pipeline characterisation · **Status:** ✅ **CLOSED 2026-08-31 as a CHARACTERISATION** — the question it was opened to answer (*should jobid 71 be retired?*) is answered: **NO, it is the sole feeder for 89 of 598 packs.** ⛔ Nothing shipped and nothing to ship here — pack-EV is an off-limits lane and §7's blocker was re-read and HOLDS. ⚠ **§6 remains genuinely OPEN as a named next measurement** (why ~475 candidates are eligible but only ~92 ever insert), deliberately not run because measuring it is itself a large IO event.
 
 ---
 

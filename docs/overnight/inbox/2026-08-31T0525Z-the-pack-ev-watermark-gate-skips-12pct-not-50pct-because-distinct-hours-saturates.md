@@ -1,7 +1,7 @@
 # ⚠ Tonight's pack-EV watermark gate skips **11.8%** of ticks, not the ~50% it was sized for — because `count(DISTINCT date_trunc('hour', …))` **cannot see sub-hourly cadence**
 
 **Filed:** 2026-08-30 ~22:25 PT (2026-08-31 05:25Z) · **By:** Claude Code, Trevor's box, overnight pass
-**Class:** instrument blindness → a sizing claim · **Status:** MEASURED. ⛔ **NOT a revert candidate** — see §4.
+**Class:** instrument blindness → a sizing claim · **Status:** ✅ **CLOSED 2026-08-31** — the recommended action was documentation and it shipped (ledger correction + this filing); the finding was then CONFIRMED on a doubled sample (skip rate 11.8% → 5.9% over 34 ticks). ⛔ Still NOT a revert candidate — see §4. ⓘ One deliberate carry-forward: the function's own body comment still says "~half of all ticks" and should ride along with the next migration that touches it for a real reason (§6.2).
 **Subject:** `supabase/migrations/20260830222057_audit_20260830_mv_pack_ev_latest_refresh_watermark_gate.sql`
 (shipped ~22:2xZ 08-30 by the cloud session) and its ledger entry.
 

@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · 🧹 SESSION CLOSE — two filings closed, known-issues #25 corrected to ACTIVE, handoff written
+
+**Closing the overnight pass.** Tree clean, in sync with `origin/main`, CI green, nothing uncommitted.
+
+**Closed as resolved:**
+- **[0525Z pack-EV gate sizing](inbox/2026-08-31T0525Z-the-pack-ev-watermark-gate-skips-12pct-not-50pct-because-distinct-hours-saturates.md)**
+  — its recommended action was documentation and that shipped; the finding was then **confirmed on a
+  doubled sample** (skip rate 11.8% → **5.9%** over 34 ticks, moving toward the ~3.3% the gap
+  distribution predicted). ⓘ One deliberate carry-forward: the function's own body comment still says
+  "~half of all ticks" and should **ride along with the next migration that touches it for a real
+  reason** — not its own `apply_migration`.
+- **[0620Z jobid 71](inbox/2026-08-31T0620Z-jobid71-is-not-retirable-it-is-the-sole-feeder-for-89-packs-and-its-working-set-is-frozen.md)**
+  — closed as a CHARACTERISATION: the question it opened (*retire it?*) is answered **NO** (sole feeder
+  for 89 of 598 packs). ⚠ Its §6 stays open as a **named next measurement**, deliberately not run.
+
+**Corrected — known-issues #25 was stale in a way that mattered.** It read *"ARM SHIPPED, INACTIVE
+until one env var is set … that is now the whole remaining task."* **The env var IS set** — dated to
+the change from the sentinel's own payloads (17:42Z run still says `[NOT CONFIGURED]`; 19:54Z is the
+first real reading). So the secrets decision it was blocked on is **made**, and the entry now records
+the consequence: ⭐ **its first real reading took the fleet alarm CRITICAL, and the streak cannot reach
+zero by engineering work** because 6 of the 25 drifted functions must not be redeployed. The
+recommended next step (an **ACK with `reason` + `expires_at`**, not `crit_at`, not `enabled=false`) is
+written into the item.
+
+**Handoff:** [docs/handoff-2026-08-31-claude-code-overnight.md](../handoff-2026-08-31-claude-code-overnight.md)
+— shipped table, the three needs-Trevor items in priority order, what is open-but-not-blocked, and
+**the three of my own claims I retracted**, so the next session does not inherit them.
+
+**State at close:** `db:pins:check` **189/189 clean** · `Migration parity` **green** · full suite
+**1417/1417 · 15,624 passed** · production **94/94 rendered-DOM** · DB idle.
+⚠ `Pipeline Sentinel` remains **CRITICAL by design** — needs-Trevor item 1.
+
+**Revert:** n/a — docs only.
+
 ### 2026-08-31 · ⛔ CORRECTION to my own 1425Z filing 20 minutes later — it is a REDISCOVERY, and its headline recommendation is WRONG for the one job it called "the sharpest"
 
 **Both errors were one `grep` of my own memory store away, and I ran that grep only after publishing.**
