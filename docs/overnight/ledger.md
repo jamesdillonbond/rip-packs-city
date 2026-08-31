@@ -33,6 +33,22 @@ most fragmented (48.91%) — rebuilt in 32.5 s, which settles the 08-30 failures
 book wmc index maintenance in the 02:00–04:00Z band and 600 s is ample. Remaining unattended and self-executing:
 410 closes the budget to 600 s at 04:03Z, 414 verifies and unschedules every `tmp-reindex-wmc-%` job (415 included) at 04:06Z.
 
+🏁 **CLOSED 04:16Z — every exit condition met.** `wmc-reindex-verify` at 04:06Z logged **`ok = true`**, `invalid_left: []`,
+with all four targets recorded in `extra`: `idx_wmc_cohort_cover` **90.32% / 146.8 MB**, `idx_wmc_coll_ek_serial_cover`
+**81.67% / 168.5 MB**, `idx_wmc_moment_collection_cover` **86.38% / 149.1 MB**,
+`wallet_moments_cache_wallet_collection_moment_key` **90.61% / 165.3 MB**. `cron_heavy` rolconfig is back to exactly
+`statement_timeout=600s`; **zero** `tmp-reindex-wmc-%` jobs remain under either username (414 returned `5 rows` —
+411, 412, 413, 415 and itself); **zero** invalid indexes on `wallet_moments_cache`. Rebuild durations: **34.4 / 49.9 /
+32.5 / 33.3 s**.
+
+⚠ **One cosmetic red to not re-chase: jobid 410 reports `status = failed`, `return_message = "job canceled"`, and its
+work fully committed.** Its command unschedules `tmp-reindex-wmc-budget-%`, a pattern that matches **its own row**, so
+pg_cron cancels the run as it deletes the job it is running — after the `ALTER ROLE` and the unschedule have already
+taken effect (both verified above: timeout 600 s, budget jobs gone). A self-unscheduling pg_cron job is expected to
+land this way; **read the end state, never the status flag** — the same rule as the rest of the `job_run_details`
+class. 414 did the same thing three minutes later and happened to report `succeeded`, which is exactly how little the
+flag is worth.
+
 **📏 The live leaderboard is not the 19-day leaderboard.** Ranking `pg_stat_statements` by disk reads still
 names `panini_squeeze_board` at **374 GB / 16,677 calls / 1,496 ms mean** — but the board reads an MV since
 `20260822222254`/`20260823220555`, and EXPLAIN today is **5 ms / 290 buffers, all hit**. The aggregate straddles
