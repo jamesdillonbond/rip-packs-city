@@ -1,38 +1,76 @@
--- DB invariant: public.apply_fmv_thin_sales_guard — classifies inflated FMVs
--- (> $200, not already ASK_ONLY, not already capped) into three caps: a
--- COMMON/FANDOM outlier vs its set siblings, a thin-sales WAP outlier, and a
--- stale-30d holdover. This test pins the DETECTION logic via dry-run (which
--- computes every cap + count but writes nothing), plus the p_mode validation and
--- the read-only guarantee. The live-mode WRITE targets base-schema tables
--- (fmv_calibration_caps) not reproduced here, so it is intentionally out of scope.
--- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260831151141_audit_20260831_thin_sales_guard_lateral_latest_instead_of_distinct_on_the_whole_history.sql);
--- ⚠ Re-pointed 2026-08-31: that migration replaced the driving cursor (a DISTINCT ON
--- over the WHOLE partitioned fmv_snapshots history) with `FROM editions CROSS JOIN
--- LATERAL (newest snapshot)`. The assertions below still EXERCISE the change rather
--- than going vacuous: `total_examined` is the count of rows that cursor yields, so a
--- cursor regression moves it. Cap logic, INSERTs, return object and signature are
--- unchanged by that migration.
--- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
+-- audit_20260831_thin_sales_guard_lateral_latest_instead_of_distinct_on_the_whole_history
 --
--- Runs inside a rolled-back transaction so it leaves no residue.
+-- WHY: apply_fmv_thin_sales_guard(p_mode) was the #1 REAL read consumer on the pg_stat_statements
+-- DIFF over 2026-08-31 13:25:13Z -> 15:02:50Z (the only larger row is public.query_sql, the generic
+-- SQL passthrough, whose per-call mean is meaningless because every caller collapses into it):
+-- 10 calls, 13,034,115 shared blocks, 1,303,411 blocks/call, 18,205 ms. Its driving cursor is a
+-- `DISTINCT ON (edition_id) ... FROM fmv_snapshots ORDER BY edition_id, computed_at DESC` over the
+-- WHOLE partitioned history -- 1,353,022 rows / 710 MB -- and then throws 26,364 of the 27,160
+-- resulting rows away on `fmv_usd > 200 AND confidence <> 'ASK_ONLY'`, keeping 796.
+-- Measured 2026-08-31 15:0xZ, EXPLAIN (ANALYZE, BUFFERS), baseline re-run AFTER the candidate so both
+-- readings are in the same state:
+--     baseline  1,300,717 / 1,300,773 buffers, 2,034 / 1,939 ms, 796 rows
+--     candidate   168,886            buffers,     383       ms, 796 rows
+-- = 7.7x fewer buffers touched, 5.1x faster. This is a PLAN change (Merge Append over 1.35 M rows ->
+-- 27,331 index probes on fmv_snapshots_*_edition_id_computed_at_idx), so it cannot be a warm-cache
+-- artifact. Same class as 20260830165128 (get_market_summary) and the 08-30 pack-EV wave.
+-- (i) The guard currently applies ZERO caps per call (dry_run 15:06:47Z: total_examined 796,
+-- skipped_already_capped 616, thin/stale/common all 0) -- so this was 1.3 M buffers to decide nothing.
+--
+-- WHAT: drive the cursor from `editions` with a LATERAL "newest snapshot for this edition" instead of
+-- materialising the newest row for EVERY edition first. EQUIVALENCE PROVEN, not asserted: both shapes
+-- run side by side at 15:05Z returned 796 rows and the symmetric difference over all 26 output columns
+-- was 0 in both directions (`base EXCEPT cand` = 0, `cand EXCEPT base` = 0). Driving from `editions`
+-- loses nothing: `SELECT count(*) FROM fmv_snapshots f WHERE NOT EXISTS (SELECT 1 FROM editions e
+-- WHERE e.id = f.edition_id)` = 0, and the original's `JOIN editions` was already an inner join.
+-- NOT driven from edition_fmv_current, even though it is the same 27,160 edition_ids and is what
+-- 20260830165128 used: it lags fmv_snapshots by its refresh watermark, and 70 of 27,160 rows had a
+-- DIFFERENT (fmv_usd, confidence) at 15:04Z -- enough to move editions in and out of a `> 200` filter.
+-- The LATERAL reads the live newest row, so there is no lag and no population drift.
+--
+-- Nothing else in the function body changes: same cap branches, same INSERTs, same return object,
+-- same signature, same SECURITY DEFINER / VOLATILE / search_path. ACL (postgres + service_role only,
+-- no anon, no authenticated) is preserved by CREATE OR REPLACE and re-asserted below.
+-- (!) `p_mode text DEFAULT 'dry_run'::text` is LOAD-BEARING and is restated verbatim: a bare
+-- `SELECT apply_fmv_thin_sales_guard()` must stay a dry run. Postgres refused the first attempt at
+-- this migration ("cannot remove parameter defaults from existing function") because the default was
+-- omitted -- that refusal is the safety net, not a nuisance.
+-- (!) The guards below anchor on `SELECT l.*, e.tier` / `CROSS JOIN LATERAL`, NOT on `WITH latest AS`
+-- or `DISTINCT ON`. Second attempt at this migration aborted on its own post-condition because the
+-- explanatory COMMENT inside the new body quotes the old cursor, and prosrc contains comments: an
+-- anchor that also matches the text describing the change is not an anchor. Both strings chosen here
+-- appear in exactly one of the two bodies and in neither comment.
+-- anon-exec: apply_fmv_thin_sales_guard (no anon/authenticated EXECUTE before or after; ACL re-asserted)
+--
+-- EXIT / FALSIFIER (derived from the post-fix measurement above, not from a hoped-for round number):
+--   PASS if, on the next pgss diff that contains this function, blocks/call is under 400,000
+--   (candidate measured 168,886 for the cursor; the loop body adds ~3,000) AND a dry_run still
+--   reports total_examined = 796 +/- normal drift with the same skipped/applied split.
+--   FAIL (revert) if blocks/call stays above 1,000,000, or total_examined changes by more than the
+--   number of editions whose latest snapshot legitimately crossed the 200 / ASK_ONLY boundary.
+--
+-- REVERT: re-apply the prior body -- `WITH latest AS (SELECT DISTINCT ON (edition_id) ... FROM
+-- fmv_snapshots fs ORDER BY edition_id, computed_at DESC) SELECT l.*, e.tier, e.set_name,
+-- e.external_id, c.slug FROM latest l JOIN editions e ON e.id = l.edition_id JOIN collections c
+-- ON c.id = l.collection_id WHERE l.fmv_usd > 200 AND l.confidence::text <> 'ASK_ONLY'` -- keeping
+-- every other line of this file. The prior body is in git history at this migration's parent.
 
-BEGIN;
+-- Guard: refuse to run if the body we measured is not the body that is live (a concurrent session
+-- may have changed it). RAISEs rather than silently replacing something else.
+DO $guard$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'apply_fmv_thin_sales_guard'
+      AND p.prosrc LIKE '%SELECT l.*, e.tier%'
+      AND p.prosrc NOT LIKE '%CROSS JOIN LATERAL%'
+      AND p.prosrc LIKE '%thin-sales-guard-v3%'
+  ) THEN
+    RAISE EXCEPTION 'apply_fmv_thin_sales_guard does not carry the DISTINCT ON cursor this migration was measured against - re-measure before replacing it';
+  END IF;
+END
+$guard$;
 
-CREATE TABLE collections (id uuid PRIMARY KEY, slug text);
-CREATE TABLE editions (id uuid PRIMARY KEY, collection_id uuid, tier text, set_name text, external_id text);
-CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numeric);
--- fmv_snapshots with every column the guard's `latest` CTE selects.
-CREATE TABLE fmv_snapshots (
-  id bigserial PRIMARY KEY, edition_id uuid, collection_id uuid, fmv_usd numeric,
-  asp_usd numeric, asp_without_outliers numeric, ask_proxy_fmv numeric,
-  top_shot_ask numeric, flowty_ask numeric, cross_market_ask numeric,
-  sales_count_7d int, sales_count_30d int, confidence text, algo_version text,
-  computed_at timestamptz DEFAULT now(), floor_price_usd numeric, listing_count int,
-  days_since_sale int, unique_buyers_30d int, offer_count int,
-  velocity_factor numeric, utility_factor numeric, loan_factor numeric);
-
--- >>> BEGIN verbatim apply_fmv_thin_sales_guard (byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.apply_fmv_thin_sales_guard(p_mode text DEFAULT 'dry_run'::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -216,68 +254,36 @@ BEGIN
   );
 END;
 $function$;
--- <<< END verbatim apply_fmv_thin_sales_guard <<<
 
-DO $seed$
-DECLARE
-  ts uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+REVOKE ALL ON FUNCTION public.apply_fmv_thin_sales_guard(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.apply_fmv_thin_sales_guard(text) FROM anon;
+REVOKE ALL ON FUNCTION public.apply_fmv_thin_sales_guard(text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_fmv_thin_sales_guard(text) TO service_role;
+
+-- Post-condition: the new cursor is live, the old one is gone, the default survived, and the ACL is
+-- exactly what it was.
+DO $post$
+DECLARE v_src text; v_acl text; v_args text;
 BEGIN
-  INSERT INTO collections VALUES (ts, 'nba-top-shot');
-  INSERT INTO editions (id, collection_id, tier, set_name, external_id) VALUES
-    ('e0000001-0000-0000-0000-000000000001', ts, 'COMMON', 'SetA', 'X1'),  -- E1 outlier
-    ('e0000010-0000-0000-0000-000000000010', ts, 'COMMON', 'SetA', 'X1b'), -- sibling
-    ('e0000011-0000-0000-0000-000000000011', ts, 'COMMON', 'SetA', 'X1c'), -- sibling
-    ('e0000002-0000-0000-0000-000000000002', ts, 'RARE',   'SetB', 'X2'),  -- E2 thin-sales
-    ('e0000003-0000-0000-0000-000000000003', ts, 'RARE',   'SetC', 'X3'),  -- E3 stale-30d
-    ('e0000004-0000-0000-0000-000000000004', ts, 'RARE',   'SetD', 'X4'),  -- E4 ASK_ONLY (skip)
-    ('e0000005-0000-0000-0000-000000000005', ts, 'RARE',   'SetE', 'X5'),  -- E5 fmv<=200 (skip)
-    ('e0000006-0000-0000-0000-000000000006', ts, 'COMMON', 'SetF', 'X6');  -- E6 already capped
+  SELECT p.prosrc, p.proacl::text, pg_get_function_arguments(p.oid)
+    INTO v_src, v_acl, v_args
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'apply_fmv_thin_sales_guard';
 
-  -- E1: COMMON, $600, 1 sale/7d → outlier vs siblings ($20/$30, p90≈29 → cap 145)
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, sales_count_7d, sales_count_30d, confidence, algo_version)
-    VALUES ('e0000001-0000-0000-0000-000000000001', ts, 600, 1, 5, 'LOW', 'fmv_v1');
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence) VALUES
-    ('e0000010-0000-0000-0000-000000000010', ts, 20, 'LOW'),   -- sibling (not examined, fmv<=200)
-    ('e0000011-0000-0000-0000-000000000011', ts, 30, 'LOW');
-  -- E2: RARE, $1000, 0 sales/7d, wap 100 → fmv > wap*5=500 → thin-sales WAP cap
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, sales_count_7d, sales_count_30d, asp_without_outliers, confidence, algo_version)
-    VALUES ('e0000002-0000-0000-0000-000000000002', ts, 1000, 0, 4, 100, 'LOW', 'fmv_v1');
-  -- E3: RARE, $300, 10 sales/7d (skips thin-sales), 0 sales/30d → stale-30d
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, sales_count_7d, sales_count_30d, confidence, algo_version)
-    VALUES ('e0000003-0000-0000-0000-000000000003', ts, 300, 10, 0, 'LOW', 'fmv_v1');
-  -- E4: ASK_ONLY → never examined
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version)
-    VALUES ('e0000004-0000-0000-0000-000000000004', ts, 500, 'ASK_ONLY', 'ask_v1');
-  -- E5: $150 (<= $200) → never examined
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, confidence, algo_version)
-    VALUES ('e0000005-0000-0000-0000-000000000005', ts, 150, 'LOW', 'fmv_v1');
-  -- E6: already capped (thin-sales-guard-v3) → examined but skipped
-  INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, sales_count_7d, confidence, algo_version)
-    VALUES ('e0000006-0000-0000-0000-000000000006', ts, 600, 1, 'LOW', 'thin-sales-guard-v3');
-END $seed$;
-
--- p_mode validation: anything but dry_run/live raises.
-DO $chk$
-BEGIN
-  PERFORM apply_fmv_thin_sales_guard('bogus');
-  RAISE EXCEPTION 'expected apply_fmv_thin_sales_guard to reject an invalid mode';
-EXCEPTION WHEN OTHERS THEN
-  IF SQLERRM NOT LIKE '%p_mode must be%' THEN RAISE; END IF;
-END $chk$;
-
--- Dry-run detection: 4 examined (E1,E2,E3,E6; E4 ASK_ONLY + E5 <=200 excluded),
--- 1 skipped-already-capped (E6), and one of each cap reason (E1/E2/E3).
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'mode'), 'dry_run', 'echoes the mode');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'total_examined'), '4', 'examines only >200 non-ASK_ONLY rows');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'skipped_already_capped'), '1', 'skips the already thin-sales-guard-v3 row');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'common_outlier_count'), '1', 'flags the COMMON set-sibling outlier');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'thin_sales_count'), '1', 'flags the thin-sales WAP outlier');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'stale_count'), '1', 'flags the stale-30d holdover');
-SELECT _assert_eq((apply_fmv_thin_sales_guard('dry_run')->>'total_caps_applied'), '3', 'three caps detected in total');
-
--- Read-only guarantee: dry-run adds no rows (no thin-sales-guard-v3 writes beyond
--- the one seeded E6) — snapshot count is unchanged after several dry-runs.
-SELECT _assert_eq((SELECT count(*)::text FROM fmv_snapshots), '8', 'dry-run wrote nothing (still the 8 seeded rows)');
-
-SELECT '✓ apply_fmv_thin_sales_guard invariants pass' AS result;
-ROLLBACK;
+  IF v_src NOT LIKE '%CROSS JOIN LATERAL%' THEN
+    RAISE EXCEPTION 'post-condition failed: LATERAL cursor not present';
+  END IF;
+  IF v_src LIKE '%SELECT l.*, e.tier%' THEN
+    RAISE EXCEPTION 'post-condition failed: the DISTINCT ON cursor is still present';
+  END IF;
+  IF v_args NOT LIKE '%DEFAULT ''dry_run''%' THEN
+    RAISE EXCEPTION 'post-condition failed: the dry_run default was lost (args=%)', v_args;
+  END IF;
+  IF v_acl LIKE '%anon=%' OR v_acl LIKE '%authenticated=%' THEN
+    RAISE EXCEPTION 'post-condition failed: anon/authenticated gained EXECUTE (acl=%)', v_acl;
+  END IF;
+  IF v_acl NOT LIKE '%service_role=X%' THEN
+    RAISE EXCEPTION 'post-condition failed: service_role lost EXECUTE (acl=%)', v_acl;
+  END IF;
+END
+$post$;

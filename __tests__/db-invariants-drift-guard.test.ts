@@ -209,7 +209,11 @@ const PINS = [
   {
     fn: "apply_fmv_thin_sales_guard",
     test: "supabase/tests/apply_fmv_thin_sales_guard.sql",
-    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+    // Re-pointed 2026-08-31 to the LATERAL-cursor migration, applied to prod at
+    // 15:11:41Z by a no-push session; its file was recovered byte-exact from
+    // prod (md5 fc5dfa269a88d16e8afc6edc831c75a6). The driving cursor is the
+    // only body change, and total_examined still exercises it.
+    migration: "supabase/migrations/20260831151141_audit_20260831_thin_sales_guard_lateral_latest_instead_of_distinct_on_the_whole_history.sql",
   },
   {
     fn: "rpc_guard_block_destructive",
