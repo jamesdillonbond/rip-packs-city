@@ -76,6 +76,31 @@ before publishing:** the entry that COMMISSIONED an instrument, and `grep -ril` 
 
 ---
 
+## ⚠ Two things found at ARCHIVE time, after the first close — read this before trusting the section above
+
+**Both were caught only by re-running the guards against live instead of trusting the earlier close.**
+
+1. **A second fileless migration + a stale pin, neither of them mine.** `db:pins:check` had slipped
+   189 → **188 clean, 1 STALE** (`apply_fmv_thin_sales_guard`): migration
+   `20260831151141_..._thin_sales_guard_lateral_latest...` was applied to prod at **15:11:41Z** by a
+   no-push session with no file, no commit and nothing on `origin` — heading **two** gates red. Recovered
+   byte-exact (md5 `fc5dfa269a88d16e8afc6edc831c75a6`, 14,528 bytes, verified on prod, in memory and on
+   readback) and the pin re-pointed. ⭐ **The pin needed a judgement, not a mechanical copy:** the
+   watermark-gate case is the precedent for assertions going vacuous, so I checked — this test's
+   `total_examined = 4` is the count of rows the *driving cursor* yields, i.e. exactly what the migration
+   changed, so the assertions still exercise it. ⚠ **Not run locally** (no `psql`/`docker`); the
+   `DB invariants (SQL)` CI job is its first real execution, and it fails loudly rather than quietly.
+
+2. 🚨 **Another Claude Code session is working in THIS SAME working tree** and committed my
+   uncommitted edits under its own messages — my recovered migration, my pin repoint (my comment text
+   verbatim) and my ledger entry all landed in **its** commits `a6b3c4ab2` / `e4a351acd`. **Nothing was
+   lost and the tree is correct**, but the provenance in `git log` is wrong, and my own tip is not the
+   commit carrying my work. ⚠ **The sharper risk: the sweep does not wait for you to finish** — had the
+   timing differed, mid-edit unverified files would have been committed and pushed. **On this shared
+   tree, verify BEFORE writing a file, and re-read `git log` at close.** That session also shipped
+   ✅ **known-issues #20 RESOLVED NEGATIVELY** (atlas-proxy deployed, Cloudflare egress Atlas-WAF-blocked
+   46/46) — so **#20 is off the needs-Trevor list**, which supersedes nothing above but shortens it.
+
 ## State at close
 
 `db:pins:check` **189/189 clean** · `Migration parity` **green** · full suite **1417/1417, 15,624
