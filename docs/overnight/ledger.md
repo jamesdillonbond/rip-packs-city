@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration `20260831001448`, applied + committed) — get_acquisition_stats drops from 3.2 s to 24 ms: the cost was a count(*) that read 90 MB of scattered heap, not the three redundant scans
+
+**Prod changes:** partial index `idx_wmc_locked_count` on `wallet_moments_cache (wallet_address, collection_id) WHERE is_locked`
+(built `CONCURRENTLY` out-of-band ~00:15Z, 2.6 MB, valid; the migration stamps it `IF NOT EXISTS` for parity), single-pass
+rewrite of `get_acquisition_stats` (was three identical `(wallet, collection_id)` scans of `moment_acquisitions` where the
+breakdown `GROUP BY` already held everything the totals need), `VACUUM (ANALYZE)` on never-vacuumed `moment_acquisitions`
+(938k rows, 237 MB, upd 4,266/del 34 lifetime — same append-mostly class as `pack_ev_history`), and the same
+`autovacuum_vacuum_insert_threshold=5000` storage parameter as `20260830222057`.
+File md5-minus-trailing-newline == DB stored statements md5: `5811f823…`.
+
+**This was #52 sub-item (a), the last un-measured hot RPC**: 3,313 calls / 3,247 ms mean / **113 GB shared buffers** since
+the 08-12 reset. The EXPLAIN split surprised: the three `moment_acquisitions` scans cost only ~830 buffers each — the
+monster was `locked_count`, whose bitmap scan visited **11,485 scattered heap pages for 15,326 rows** (one page per row;
+`is_locked` was in no index, and the reference wallet's wmc rows are spread across the 940 MB heap). Post-index the count
+is an index-only scan: 11,601 → 3,190 buffers, 2,235 ms → 11.8 ms on the standalone probe; full function warm:
+**23.7 ms / 5,085 buffers all-hit** (cold: 1.44 s / 3,875 reads, ~⅓ the old page count). Heap fetches (3,934) will keep
+shrinking as wmc autovacuum (active, last 23:30Z) sets VM bits on the partial index's pages.
+
+**Exactness held to the byte**: `buy_price` is `numeric`, so per-method raw sums re-summed equal the old global sum
+exactly; output verified byte-identical pre/post on the reference wallet, a pack_pull-only wallet (14,282 rows), and a
+nonexistent wallet (`{"breakdown": [], "total_moments": 0, "total_spent": null, "locked_count": 0}`).
+
+**Also verified this pass:** the 00:07:03Z `sync-nba-projections` tick logged `pipeline_runs` id 1297736 — live proof
+yesterday's cron-job.org re-enable took (the revert had been verified only from the console's "Next execution" text). It
+failed `all_upstreams_failed`, which is the suppressed dead-host-class state the D28 suppression row documents; cadence
+unbroken (15:07 → 18:07 → 21:07 → 00:07).
+
+**Falsifier:** `pg_stat_statements` mean for the `get_acquisition_stats` PostgREST statement should fall from 3,247 ms
+toward tens of ms on new calls; if it does not, the app is calling with a different collection_id whose wallet rows defeat
+the index — measure that wallet, do not widen the index blindly.
+**Revert:** in the migration header (function body from git history; `DROP INDEX CONCURRENTLY idx_wmc_locked_count`; `RESET` the storage parameter).
+
 ### 2026-08-30 · ✅ SHIPPED (prod DB, one config row) — the pack-reality +EV board is DARK BY MARKET, not by defect: its liveness arm is deactivated, and the filing's proposed fix is REFUTED
 
 **Prod state: one `UPDATE` to `public_board_liveness_watchlist`.** No schema change, no view change.
