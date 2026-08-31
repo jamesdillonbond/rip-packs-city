@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ✅ SHIPPED (migrations `20260831132548` + `20260831133323`) — an `OFFSET 0` fence on `refresh_unmapped_backlog_growth`, and a correction of my own sizing in the same pass
+
+**Found with the triage instrument built earlier tonight**, on a job outside the pack-EV lane. jobid 261
+`rpc-refresh-unmapped-backlog-growth` failed **67 of 325 runs (20.6%)** in 14 days. Split by MECHANISM
+rather than lumped, and the split is the finding:
+
+| bucket | n | range | cause |
+|---|---:|---|---|
+| <100 s | 7 | 16.5–41.2 s | `job startup timeout` — the fleet worker-pool condition, **not this job** |
+| 100–125 s | 51 | 120.0–122.6 s | statement timeout, **on the DB-level 120 s nose** |
+| >125 s | 9 | 127.2–**685.6 s** | *same* timeout error ⇒ the excess is **QUEUE WAIT** |
+
+⭐ **Two facts worth carrying out of that table.** (1) **The binding ceiling is the DATABASE-level
+`statement_timeout = 120s`, not the function's own `SET statement_timeout = '90s'`** — kills land at
+120.1 s, never 90, so the declared value is INERT on the pg_cron path exactly as CLAUDE.md records; the
+job runs as `postgres`, which carries no role-level timeout. (2) **Bucket 3 is a measured demonstration
+that `cron.job_run_details` duration ≠ statement time** — one error, durations 120 → 685 s, the
+difference being queue wait. ⚠ **So my own triage's `wasted_*_s` OVER-COUNTS whenever queue wait is
+present** — a limitation of the instrument, found by using it.
+
+**Shipped:** an `OFFSET 0` optimization fence on the `tx` CTE. Equivalence proven over the population
+both directions (`EXCEPT` each way = 0, 3 rows each) before ship. SECDEF, `proconfig` and ACL all
+preserved and asserted in-migration.
+
+⛔⛔ **AND THEN I CAUGHT MY OWN SIZING BEING WRONG — the second migration is that correction.** I sized
+the fence from an **inline `EXPLAIN`**: unfenced 102,791 buffers / 10,725 ms vs fenced 9,296 / 1,507.
+Those readings are real. **They describe a plan the FUNCTION DOES NOT USE.** The tell was sitting in
+`cron.job_run_details` the whole time: the production ticks of that same body are **~2 s, not ~10 s**.
+⭐ **Re-measured at the FUNCTION level** — DO-block + `clock_timestamp()` with a `RAISE` to roll the
+write back, so the cache row is untouched — **unfenced 1,550 ms → fenced 560 ms (2.8×, not the ~7×
+the inline numbers implied).** Still a real win; a smaller one than first published, and both the
+migration header and the in-body comment now say so. This is
+[[a-parameterised-function-does-not-plan-like-inline-text]], which I had in memory and walked into anyway.
+
+⚠ **The falsifier came back HONEST and is recorded rather than buried: the first post-fix tick was
+3.01 s against pre-fix ticks of 2.08 / 2.13 / 2.14 s on the same slots — n=1 shows NO improvement on a
+WARM tick, and is nominally slower.** That is consistent, not contradictory: the job is **bimodal**
+(usually ~2 s, 60 kills at the 120 s wall in 14 days) and this targets the **cold/contended tail**.
+👉 **Confirming it needs a bad IO band, not one tick** — watch bucket 2 (the 120.0–122.6 s population)
+over a week; if 120 s kills persist at the old rate the fence did not reach the failing case.
+
+ⓘ Two migrations because the comment lives in `prosrc`: editing the first migration's FILE would have
+drifted the pin from prod. M1's file is restored to exactly what it applied; M2 carries the corrected
+text; the pin points at M2. Verified: drift guard **197/197**, `db:pins:check` **189 pins / 189 clean**,
+full suite **1417/1417 · 15,624 passed**, live `prosrc` re-read (fence present, SECDEF true,
+anon/auth EXECUTE false, service_role true).
+
+**Revert:** re-apply the pre-fence body from `20260810030734` (the migration headers carry the exact
+path); nothing else to unwind — no DDL, no data change.
+
 ### 2026-08-31 · ✅ SHIPPED (eight partial indexes, built CONCURRENTLY, migration stamped) + 🚨 A "NEEDS TREVOR" RAISED FIVE HOURS AGO IS REFUTED BY ITS OWN FALSIFIER — a correctness repoint on 07-05 quietly orphaned the index behind `get_serial_backfill_targets`, and the drift sweep is winning after all
 
 > ⚠ **SCOPE OF THE NO-PUSH BLOCKER.** This was a cloud pass; no `mcp__remote-devices__*` tools were present, so
