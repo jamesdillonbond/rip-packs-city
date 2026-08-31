@@ -82,7 +82,11 @@ migration header and the in-body comment now say so. This is
 
 ⚠ **The falsifier came back HONEST and is recorded rather than buried: the first post-fix tick was
 3.01 s against pre-fix ticks of 2.08 / 2.13 / 2.14 s on the same slots — n=1 shows NO improvement on a
-WARM tick, and is nominally slower.** That is consistent, not contradictory: the job is **bimodal**
+WARM tick.** ⚠ **Self-correction, same session, ~30 min later: I wrote "and is nominally slower" from the
+three most recent pre-fix ticks. Widening the window by one shows a pre-fix tick of **3.07 s** at 09:29Z, so
+the pre-fix range is 2.08–3.07 s and the post-fix 3.01 s sits INSIDE it — not slower, just unchanged.**
+⭐ Quoting a range from the three nearest points is a selection, and it happened to make my own change look
+worse; the same shortcut in the other direction is how a fix gets over-claimed. That is consistent, not contradictory: the job is **bimodal**
 (usually ~2 s, 60 kills at the 120 s wall in 14 days) and this targets the **cold/contended tail**.
 👉 **Confirming it needs a bad IO band, not one tick** — watch bucket 2 (the 120.0–122.6 s population)
 over a week; if 120 s kills persist at the old rate the fence did not reach the failing case.
