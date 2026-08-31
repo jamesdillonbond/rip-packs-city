@@ -114,3 +114,26 @@ CLAUDE.md's *"a directional claim needs a DISTRIBUTION, not a snapshot."*
 
 👉 **Cheap general check:** whenever a derived cadence equals or nearly equals the bucket count, the
 instrument is saturated and the real rate is unknown and higher.
+
+---
+
+## ✅ CONFIRMED ON A DOUBLED SAMPLE — 2026-08-31 ~07:00 PT (14:00Z)
+
+The gate's own counters, re-read ~8.5 h later:
+
+| | at filing (07:00Z) | now (14:00Z) |
+|---|---:|---:|
+| `refreshed_count` | 15 | **32** |
+| `skipped_count` | 2 | **2** |
+| **skip rate** | **11.8%** | **5.9%** |
+
+⭐ **The sample doubled (17 → 34 ticks) and the rate HALVED, moving toward the ~3.3% the gap
+distribution predicted rather than away from it.** §2 flagged that n = 17 was too small to be decisive
+on its own and that §3's inter-snapshot gaps — median 5.6 min, **96.7% shorter than the job's 30-minute
+tick** — implied an even lower steady-state rate than the counters then showed. **It did.** Seventeen
+further ticks produced **zero** additional skips.
+
+⚠ Still not a rate to quote as final — it is 34 ticks. But the direction is now confirmed by the
+instrument's own counters on an independent second sample, and the headline stands and strengthens:
+the gate was sized for ~50% and is delivering **single digits**, so **~94% of ticks still do the full
+`REFRESH … CONCURRENTLY`.** ⛔ The recommendation is unchanged: correct the claim, do not widen the gate.
