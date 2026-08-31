@@ -137,6 +137,35 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 
 ---
 
+## ⭐ CRON WASTE TRIAGE — use the committed query, do NOT re-derive one (2026-08-31)
+
+👉 **[`supabase/analysis/cron-waste-triage.sql`](../../supabase/analysis/cron-waste-triage.sql)** — paste it into
+Supabase MCP `execute_sql`. Read-only, mutates nothing.
+
+⚠ **Do not write your own "which cron jobs waste the most time" query.** The obvious one — rank by
+`sum(duration) WHERE status = 'failed'` over a fixed 7-day window — is the one known-issues #42 used, and it
+went **0-for-4**: on 2026-08-29 it ranked jobid 211 **first by a factor of four** (10,214 s of "reclaimable
+waste") for a job fixed the day before that had succeeded in ~2 s on every tick since, and it advertised
+~15,345 s of savings across four healthy jobs. ⭐ **The mechanism is general and worth carrying out of pg_cron:
+a pooled rate straddling a fix measures the fix's ABSENCE and reads as its FAILURE — so the more actively a
+fleet is being repaired, the more confidently a pooled ranking points at the jobs that were repaired.**
+
+⭐ **The fix is NOT a shorter window** (that cannot see a daily job at all — it trades one blind spot for
+another). It is reporting the pooled and recent windows **side by side** and classifying the split into
+**five** verdicts: `LIVE` (reclaimable now — rank on `wasted_recent_s`, never `wasted_pooled_s`), `RECOVERED`
+(pooled waste is historical), **`UNPROVEN`** (too few recent runs to tell recovery from luck — derived from
+`p_null` = P(zero recent failures | the rate was unchanged), so a daily job that shows two clean runs is not
+called fixed), **`SILENT`** (⛔ zero recent RUNS — not recovered, not anything; a job that stopped running
+looks identical to a job that was fixed and wants the opposite response), and `UNSCHEDULED`.
+
+**First run, 2026-08-31 05:4xZ** (14 d pooled / 48 h recent): it put **jobid 211 in RECOVERED** with 21,019 s
+of pooled waste correctly marked historical, found **jobid 256 `rpc-thin-sale-ask-disclosure-refresh`
+UNSCHEDULED** (so #42's "600 s burned daily" no longer applies), and put **jobids 4 and 325 in UNPROVEN**
+(`p_null` 0.184 and 0.473) rather than in #42's "all four healthy" — which is the instrument declining to
+claim what it cannot support in **both** directions. ⚠ Header caveats in the file cover the traps that are
+specific to this data (`status <> 'succeeded'` vs `= 'failed'`, self-cancel artifacts, queue wait in
+`start_time`, and that a pg_cron `status` is a dispatch outcome, not the work's).
+
 ## ⭐ FLEET HEALTH — a whole-`pipeline_runs` sweep, 24 h to 2026-08-27 02:00Z (a dated sample; re-derive)
 
 **161 distinct pipelines, 15,636 runs, 1,078 of them `ok = false` (6.9%).** The point of this block is not the numbers, which move; it is that

@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — known-issues #42's remaining action, which was on the INSTRUMENT: the cron waste triage is now a committed query with five verdicts, and its first run corrects #42 in BOTH directions
+
+#42 ended with *"the remaining action is on the INSTRUMENT — split the triage on the change point — not on any job."*
+Done: **`supabase/analysis/cron-waste-triage.sql`** (new directory; read-only, run via MCP `execute_sql`; the SQL test
+runner only walks `supabase/tests`, so it is not executed as a test). Pointer added to
+[cron-and-schedulers.md](../reference/cron-and-schedulers.md).
+
+**Why a committed FILE and not a better ad-hoc query:** the defect #42 recorded is that the triage was re-derived from
+memory each time and got the window wrong, ranking jobid 211 **first by 4×** (10,214 s "reclaimable") for a job fixed
+the day before that had succeeded in ~2 s on every tick since. ⭐ **The mechanism generalises well beyond pg_cron: a
+pooled rate straddling a fix measures the fix's ABSENCE and reads as its FAILURE — so the more actively a fleet is
+being repaired, the more confidently a pooled ranking points at exactly the jobs that were repaired.**
+
+⛔ **The fix is NOT a shorter window** — that cannot see a daily job at all and only trades one blind spot for another.
+It reports pooled and recent **side by side** and classifies the split into five verdicts: `LIVE` (reclaimable now —
+rank on `wasted_recent_s`, never `wasted_pooled_s`), `RECOVERED`, **`UNPROVEN`**, **`SILENT`**, `UNSCHEDULED`.
+⭐ **`UNPROVEN` keeps it honest in the direction nobody guards** — it is this repo's own *compute P(pass | the fix did
+nothing)* turned on the triage itself (`p_null = (1-rate)^runs_recent`), so a daily job showing two clean runs is not
+called fixed. ⭐ **`SILENT` is the third state**: zero recent RUNS is not recovery — a job that stopped running is
+indistinguishable from one that was repaired, and the two want opposite responses.
+
+📏 **First run (14 d pooled / 48 h recent) against #42's own claims, and it moves them both ways.** ✅ jobid **211 →
+RECOVERED**, its 21,019 s of pooled waste correctly marked historical — the exact artifact #42 recorded. ✅ jobid
+**256 `rpc-thin-sale-ask-disclosure-refresh` → UNSCHEDULED**, so its "600 s burned daily, and it is in no register" no
+longer applies; the job is simply gone. ⚠ **But jobids 4 and 325 come back `UNPROVEN` (`p_null` 0.184 and 0.473), not
+healthy — so #42's closing "all four are healthy" was itself over-claimed in the recovery direction**, on two clean
+runs that a coin flip explains. Live head is now jobids **217 / 71 / 73 at 1,841 / 1,806 / 1,237 wasted-seconds per
+day**, which is real and current. ⚠ Dated sample — re-run the file, do not quote it.
+
+⚠ **Retention correction worth carrying: `cron.job_run_details` holds ~52 days (192,331 runs, 304 jobids), not the
+7 days #42 assumed.** The pooled window was never the constraint it was believed to be.
+
+Verified: query runs verbatim as committed (not a hand-edited variant); `npm test` **1417/1417 files, 15,622 passed**;
+memory-doc link guard 154/154; register integrity 115 rows; `npm run docs:issues-index` regenerated.
+**Revert:** `git revert <this sha>` — repo-only, no DB or prod state touched.
+
 ### 2026-08-30 · 📏 MEASURED, nothing shipped — tonight's pack-EV watermark gate skips 11.8% of ticks, not the ~50% it was sized for, because `count(DISTINCT hour)` saturates at 24
 
 ⚠ **A correction to tonight's `20260830222057` entry, filed as a NEW entry rather than an edit to it** — that
