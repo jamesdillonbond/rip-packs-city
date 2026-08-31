@@ -96,6 +96,18 @@ fail again, and go back on cooldown — over a set **this ledger already recorde
 
 **Exit (24 h):** blocks/call falls from ~103,000 toward <1,000 and the mean from ~6 s toward <100 ms, in a pgss diff
 against a fresh `audit_20260830_pgss_snap` row.
+
+📏 **POST-SHIP READING, 13:21Z (added by the device-bridged session that committed this entry) — the fix WORKS, but
+this exit criterion as written cannot be met and should not be read as a failure.** pgss diffed against the
+11:11:22Z snapshot over 2 h 10 m: **2 calls, 7,297 blocks/call, 269.6 ms mean** — against 103,123 blocks/call and
+~6,656 ms before, i.e. a **14× drop in blocks and 25× in time**. ⛔ But the entry's own EXPLAIN records the
+post-index plan at **10,340 buffers**, so a threshold of *"<1,000 blocks/call"* contradicts the measurement taken
+15 minutes earlier in the same pass; and *"<100 ms"* was set from the **warm** 21.3 ms figure while real calls pay
+cold reads (the observed 269.6 ms sits between the cold 694 ms and warm 21.3 ms bracket the entry itself
+published). ⭐ **Restated exit, measurable and consistent with the plan actually shipped: blocks/call ≤ ~11,000 and
+mean well under 1 s.** Both are already met. The lesson generalises: **an exit threshold must be derived from the
+post-fix measurement you just took, not from the hoped-for order of magnitude** — otherwise a working fix files
+itself as a failure 24 h later.
 **Falsifier:** blocks/call unchanged ⇒ the planner is not matching the OR predicate to the index (check by EXPLAIN
 *through the function*), and the fix is instead to split the body into two `UNION ALL` branches that each match one of
 the pre-existing partials.
