@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⛔ RETRACTION of my own 0700Z filing — the sentinel's Detector Health arm is working AS DESIGNED, and the real defect is an alarm whose CLEARING CONDITION is outside the estate
+
+**Correcting the entry I wrote hours ago on this same page.** I diagnosed the arm from its BEHAVIOUR
+and did not read the register entry that COMMISSIONED it. known-issues **#25** says it twice:
+
+> *"A streak, not a single red — one red run is a detector doing its job; **the defect is a red that
+> PERSISTS unread**."* … *"Both red ones are **LOUDLY CORRECT**."*
+
+⭐ **The arm was built ON PURPOSE to page on a detector that is correct and has stayed red unread** —
+that is its whole thesis, after #23 and #24 sat unnoticed for a fortnight because nothing read the
+GitHub Actions instruments.
+
+**Retracted:** *"the arm conflates found-something with could-not-run"* (it never claimed to measure
+brokenness) · *"it reproduces the exact defect it was written to prevent"* (it is doing exactly what it
+was specified to do) · and **my recommended fix — read the run's report artifact — is the WRONG fix and
+does not even generalise: of the three watched workflows, only `edge-fn-drift` uploads an artifact.**
+
+**Survives, and it is the only part that should drive action:** ⭐ **this red can NEVER be cleared by
+engineering work.** The design assumes a persistent red means *read it and act*; here it HAS been read
+and acted on, and **6 of the 25 are correctly immovable** until an operator sets `*_GATE_KEY` secrets
+(deploying them fails the gate CLOSED — the 2026-08-11 outage mechanism). **An alarm whose clearing
+condition lies outside the estate stays red forever and desensitises every other arm** — the one case
+#25's design did not anticipate. Also still true, just not this arm's bug: GHA maps every non-zero exit
+to `conclusion:"failure"`.
+
+👉 **Revised recommendation — an ACK with an EXPIRY and a stated reason**, mirroring
+`pipeline_alert_suppression` (`reason` + `expires_at`), which this sentinel already honours for
+pipelines. ⛔ Still NOT raising `crit_at`, still NOT dropping the workflow from `WATCHED`. **An expiring,
+reasoned ack is the opposite of silencing, because it comes back.**
+
+⭐ **The transferable lesson, and the reason this is a ledger entry rather than a quiet edit: I applied
+"a filed FINDING is a hypothesis" to two other sessions tonight and not to myself.** #25 was one grep
+away the whole time. **Before proposing a change to an instrument, read the entry that commissioned it —
+behaviour alone will mislead you about what it CLAIMS.** ⚠ And a generic-sounding fix deserves one
+check that it generalises: "read the report artifact" covered 1 of 3.
+
+ⓘ Corrections applied to the filing (title, status line, and a §-level correction at the foot), its
+INDEX entry, and the memory note — the original text is struck through rather than deleted, so the
+error stays legible.
+
+**Revert:** n/a — docs + memory only.
+
 ### 2026-08-31 · ⛔ CORRECTION + ✅ SHIPPED — the Top Shot host did NOT recover (4/4 probes 530, with a positive control), and the drift report's "SAFE to redeploy" advice gains a third state
 
 ⚠ **Correcting the entry immediately below this one, as a NEW entry rather than an edit to it** — that

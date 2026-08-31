@@ -1,7 +1,9 @@
-# 🚨 The fleet's top-level alarm went **permanently CRITICAL** tonight — because a detector that is **working correctly** is red, and GitHub reports "found something" and "could not run" identically
+# 🚨 The fleet's top-level alarm went **permanently CRITICAL** tonight — and its clearing condition is OUTSIDE the estate
+
+> ⛔ **THIS FILING CARRIES A SELF-CORRECTION — READ IT BEFORE §2, §3 OR §5.** My original diagnosis ("the arm conflates found-something with could-not-run" / "it reproduces the defect it was written to prevent") is **WRONG**: known-issues #25 commissioned this arm specifically to page on a detector that is **correct and red unread**, so it is working as designed, and §5's recommended fix is the wrong fix. The part that survives — and the only part that should drive action — is that **this red can never be cleared by engineering work**, because 6 of the 25 need an operator to set secrets. See the correction at the foot of this file.
 
 **Filed:** 2026-08-31 ~00:55 PT (07:00Z) · **By:** Claude Code, Trevor's box, overnight pass
-**Class:** honesty / instrument desensitisation · **Status:** DIAGNOSED TO THE MINUTE. ⛔ **NOT fixed here** — see §5.
+**Class:** alarm whose clearing condition is outside the estate · **Status:** ⚠ **PARTLY RETRACTED 2026-08-31 — see the SELF-CORRECTION at the foot.** ⛔ Not fixed here.
 **Urgency:** the sentinel is red *now* and will mask any NEW critical until this is resolved.
 
 ---
@@ -116,3 +118,51 @@ to make `critical` mean *"an instrument stopped working"* again.
 - **`edge-fn-drift`'s red is correct and should stay red** until the drift is resolved — it was blind
   until the 08-30 tier-2 parse fix (`7743d0180`, closing #53) and is now finally reporting a real
   census. ⛔ **Do not "fix" the streak by breaking the detector again.**
+
+---
+
+## ⛔ SELF-CORRECTION — 2026-08-31 ~03:20 PT (10:20Z), by the session that filed this
+
+**§2 and §3 are WRONG about the arm's intent, and I found it by reading the arm's own test header and
+known-issues #25 — which I should have read BEFORE filing, not after.**
+
+**What #25 says, twice, in the entry that commissioned this arm:**
+
+> *"A streak, not a single red — one red run is a detector doing its job; **the defect is a red that
+> PERSISTS unread**."* … *"Both red ones are **LOUDLY CORRECT** — the state CLAUDE.md warns is
+> indistinguishable from a broken instrument at a glance."*
+
+⭐ **So the arm was built ON PURPOSE to page on a detector that is CORRECT and has stayed red unread.**
+That is its entire thesis: #23 and #24 both sat unnoticed for two weeks because nothing read the
+GitHub Actions instruments. It is not confusing "found something" with "could not run" — **it never
+claimed to measure brokenness.** It measures *unread persistence*, and on that measure it is working
+exactly as specified.
+
+**Retracted:**
+- ⛔ *"The arm reproduces the exact defect it was written to prevent"* — it does not. It was written to
+  surface persistent unread reds, and it is surfacing one.
+- ⛔ *"It treats a working detector as broken"* — it makes no brokenness claim.
+- ⛔ **§5's recommended fix (read the report artifact) is the WRONG FIX**, and it also does not
+  generalise: of the three watched workflows, **only `edge-fn-drift` uploads an artifact at all.**
+
+**What SURVIVES, and it is the part worth keeping:**
+1. **GitHub Actions really does collapse `exit 1` and `exit 2` into `conclusion: "failure"`.** True as a
+   general fact about the platform — it is just not this arm's defect.
+2. **The masking cost is real.** A permanently-red sentinel desensitises every other arm, which the
+   arm's own author accepted for the not-configured branch.
+3. ⭐ **THE GENUINELY NEW POINT, and the only one that should drive action: this red can never be
+   cleared by engineering work.** The arm's design assumes a persistent red means *"read it and act"* —
+   here it HAS been read and acted on repeatedly, and **6 of the 25 are correctly immovable** until an
+   operator sets `*_GATE_KEY` secrets. **An alarm whose clearing condition is outside the estate will
+   stay red forever**, which is the one case #25's design did not anticipate.
+
+👉 **REVISED RECOMMENDATION — not a semantics change, an ACKNOWLEDGEMENT with an expiry.** This
+codebase already has the right pattern for "known, owned, not actionable now": `pipeline_alert_suppression`
+(`reason` + `expires_at`), which the sentinel already honours for pipelines. Give the Detector Health
+arm the same: an ack carrying **who owns it, why it cannot clear, and a date it re-surfaces**. ⛔ Still
+NOT `crit_at`, still NOT dropping it from `WATCHED` — an expiring, reasoned ack is the opposite of
+silencing, because it comes back.
+
+⭐ **The lesson for me, plainly: I diagnosed an instrument's intent from its behaviour instead of
+reading the register entry that commissioned it.** CLAUDE.md's *"a filed FINDING is a hypothesis"*
+applies to findings I file too, and #25 was one grep away the whole time.
