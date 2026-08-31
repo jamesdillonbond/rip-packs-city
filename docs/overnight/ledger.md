@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📏 MEASURED + EQUIVALENCE-PROVEN, ⛔ NOT SHIPPED — `mv_pack_ev_latest` touches 304,034 buffers to produce 1,855 rows, and a control caught my own headline being cold-vs-warm
+
+**The new triage instrument's first real lead, found the hour it was committed.**
+`supabase/analysis/cron-waste-triage.sql` ranks jobid 73 `rpc-refresh-mv-pack-ev-latest` third in `LIVE` at
+**1,237 wasted s/day** — 66 failures in 14 d, every one at the 600 s ceiling, best success 597 s. ⚠ Tonight's
+watermark gate does not fix it; it skips 11.8% of ticks.
+
+🚨 **The defect:** the MV's `DISTINCT ON (pack_listing_id) … ORDER BY pack_listing_id, snapshotted_at DESC` walks all
+**300,779** `pack_ev_history` rows **in index order** and heap-fetches every one — index order ≠ heap order, so ~300k
+**random** visits at ~1 buffer/row — then discards **163,180 of 165,035** survivors to keep **1,855**. ⭐ **Not a
+missing-index case:** the right index exists; Postgres has no index skip-scan, so `DISTINCT ON` walks the range
+regardless. **Rewrite:** take the winning `(pack_listing_id, snapshotted_at)` pairs **index-only** off the existing
+`idx_pack_ev_history_listing_covering` (it already carries every filter column), then join back for 1,855 rows —
+plan flips Index Scan → **Index Only Scan**, `Heap Fetches` 3,611.
+
+⚠⚠ **A CONTROL CHANGED THE HEADLINE, recorded rather than buried.** My first pair read **8,118 → 2,265 ms** and I was
+about to publish 3.6×. Re-running the ORIGINAL once the pool was warm gave **425 ms** — so that pair was
+**cold-vs-warm**, the trap CLAUDE.md names in those words. **Warm-vs-warm is 425 → 179 ms (2.4×).** ⭐ **The robust
+figure is BUFFERS: 304,034 → 17,682 (17.2×), identical cold and warm because buffers count WORK, not cache luck** —
+and that is also the bimodality: 304k fits a resident pool and cannot finish a cold one, the same signature fixed on
+jobids 211 and 237.
+
+✅ **Equivalence proven over the population, both directions** — all 20 projected columns, `EXCEPT` each way = **0 / 0**,
+INTERSECT **1,855**. Not "same count": same rows.
+
+⛔ **Why it is NOT shipped, and this is a rule call rather than caution.** A materialized view cannot be
+`CREATE OR REPLACE`d, so this is `DROP MATERIALIZED VIEW … CASCADE`. Blast radius **enumerated, not assumed** (recursive
+`pg_depend`, depth ≤ 5): exactly two views, nothing deeper — 🚨 `v_topshot_pack_market` carries **`security_invoker=on`**,
+the reloption silently stripped **four** times in this repo; the two views' ACLs **differ on purpose**
+(`anon=rxm` vs `anon=xm`) so harmonising them either breaks a surface or opens one; two MV indexes must be recreated and
+**the UNIQUE one is the `CONCURRENTLY` dependency** — miss it and jobid 73 fails forever with an error naming the view,
+which is the exact coupling `supabase/tests/mv_refresh_wrappers.sql` exists to pin; and three functions
+(`get_pack_detail_bundle`, `get_pack_market_row`, `refresh_mv_pack_ev_latest`) reference these objects by NAME, which
+`pg_depend` does not protect. **Destructive multi-object SQL on a public read surface is outside what an autonomous pass
+ships, and both comparable precedents (the 211 and 237 indexes) were Trevor's explicit call — this is larger than either.**
+
+👉 **Full one-transaction recipe with post-state assertions + revert is in the filing**, and it instructs capturing the
+view definitions/ACLs **at ship time** rather than from the filing (a snapshot rots; the deliverable is the derivation).
+⚠ **Explicitly NOT claimed:** that this takes jobid 73 under its ceiling (the `REFRESH … CONCURRENTLY` machinery is
+untouched and was ~24 of 25 s on the 237 precedent), that any output changes, or that it is urgent — nothing is starved.
+
+Filing: [inbox 2026-08-31T0545Z](inbox/2026-08-31T0545Z-mv-pack-ev-latest-reads-304k-buffers-to-produce-1855-rows-and-the-rewrite-is-equivalence-proven.md).
+**Revert:** n/a — measurement + docs only; no code, no DB state, no prod change.
+
 ### 2026-08-30 · ✅ SHIPPED — known-issues #42's remaining action, which was on the INSTRUMENT: the cron waste triage is now a committed query with five verdicts, and its first run corrects #42 in BOTH directions
 
 #42 ended with *"the remaining action is on the INSTRUMENT — split the triage on the change point — not on any job."*
