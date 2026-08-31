@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · 🧹 RECOVERED — a second fileless migration (`apply_fmv_thin_sales_guard`) plus its stale pin, both found by re-running the guards at archive time rather than trusting the earlier close
+
+**Caught only because I re-ran the checks instead of assuming the session-close state held.** `npm run
+db:pins:check` had gone **189 → 188 clean, 1 STALE**, and the stale pin was **not mine**:
+`apply_fmv_thin_sales_guard`.
+
+**Diagnosis:** migration `20260831151141_audit_20260831_thin_sales_guard_lateral_latest_instead_of_distinct_on_the_whole_history`
+was applied to prod at **15:11:41Z** by a concurrent session and — 15 minutes later, and still at this
+commit — had **no file on disk, no commit, and nothing on `origin`**. Prod ahead of the repo, so **two**
+gates were headed red: `db-pin-staleness` (stale pin) and `Migration parity` (missing file). Same
+no-push class as the three sessions picked up earlier tonight.
+
+**Recovered byte-exactly, and verified as such rather than assumed** — fetched straight from
+`supabase_migrations.schema_migrations` by a throwaway script run inside the repo (so it could resolve
+`@supabase/supabase-js`), deliberately **not** round-tripped through the transcript where mangling would
+be invisible: **md5 `fc5dfa269a88d16e8afc6edc831c75a6` on prod, on the in-memory string, and on the
+file read back** — 14,528 bytes, matching `stored_len`. Script deleted; tree verified clean.
+
+⭐ **The pin half needed a judgement, and I made it explicitly rather than mechanically.** The
+2350Z watermark-gate case is the precedent for *"update the verbatim block and the assertions can go
+vacuous"* — so I read what this test actually asserts before touching it. It pins **detection via
+`dry_run`**, and its headline assertion is **`total_examined = 4`**, which is *the count of rows the
+driving cursor yields* — i.e. **exactly the thing this migration changed**
+(`DISTINCT ON` over the whole 1.35 M-row partitioned history → `FROM editions CROSS JOIN LATERAL
+(newest snapshot)`). **So the assertions still exercise the change rather than going silent**, which is
+the opposite of the gate case, and the migration's own header states the cap branches, INSERTs, return
+object and signature are untouched. Verbatim block updated, header re-pointed with that reasoning
+recorded at the site, PINS entry re-pointed.
+
+📏 **`db:pins:check` back to 189 pins, 189 clean, 0 needing attention** · drift guard 197/197 · full
+suite **1417/1417, 15,624 passed**.
+
+⚠ **Stated, not glossed: I could not run the SQL invariant file locally** — this box has neither `psql`
+nor `docker`. The `DB invariants (SQL)` CI job is its first real execution. That is an honest falsifier:
+if the LATERAL cursor yields a different `total_examined` on the fixture, the job reds loudly rather
+than passing quietly. ⛔ **And I did not touch the FMV logic** — that shipped to prod by another session
+before I arrived; this is repo-side sync of a change that already exists in production.
+
+⭐ **The transferable bit: re-run the guards at session close, not just at the last thing you changed.**
+Both of tonight's fileless migrations were other sessions' work landing while I was elsewhere in the
+tree, and the only reason either was caught is that a check was re-run against live rather than against
+a remembered result.
+
+**Revert:** `git revert <this sha>` restores the previous pin target and verbatim block. ⛔ **It does NOT
+revert the DB** — the function's LATERAL cursor is live in prod and its own revert path is in the
+recovered migration's header.
+
 ### 2026-08-31 · ⛔ `atlas-proxy` DEPLOYED — and the lane it exists to open is MEASURED DEAD (Cloudflare egress is Atlas-WAF-blocked, 46/46)
 
 **Shipped a production state change with no repo code change: a Cloudflare Worker deploy.** `workers/atlas-proxy`

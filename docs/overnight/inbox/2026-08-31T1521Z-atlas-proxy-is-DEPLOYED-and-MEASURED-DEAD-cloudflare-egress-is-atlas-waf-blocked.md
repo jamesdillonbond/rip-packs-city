@@ -76,3 +76,15 @@ curl -s -X POST https://atlas-proxy.tdillonbond.workers.dev \
 - ⭐ **An egress allow-list is per-provider, and one provider's success raises NO prior for another's.** Supabase 90% / Cloudflare 0% against the same WAF, the same day, the same request bytes.
 - ⭐ **Before condemning a lane, test the cheapest alternative explanation the record itself supplies** — here the filing's own *"Atlas allows curl"* line generated a header-shaped hypothesis that was falsified in 20 probes. Cheap to run, and it is the difference between "this is dead" and "we never tried the obvious thing".
 - ⚠ **A hedged claim's hedge is the part to re-test.** 1610Z said *"much more likely to succeed"* and *"not proof"* in consecutive sentences; the confident half was wrong and the cautious half was right.
+
+## 7. ⚠ POST-FILING, AND IT IS THE MOST EXPENSIVE PART: THIS ANSWER WAS ALREADY ON RECORD, FROM 2026-06-17
+
+After filing, a grep of the memory store turned up `atlas-undici-403-and-edition-map`, written **2026-06-16/17**, which already says:
+
+> *"this is the INVERSE of Trevor's same-day AllDay finding (`5f1a28d`: nflallday WAF passes Vercel, **403s Cloudflare Workers**), so **a Worker proxy isn't a safe bet for Atlas either**"* … *"Vercel + GH runner + **(almost certainly) Cloudflare Workers** all 403/block"*
+
+**The prediction was right, it was specific, it named the mechanism, and it cited a measured sibling case.** `atlas-proxy` was written anyway on 2026-08-09, filed as **#20**, carried in CLAUDE.md's *"Needs TREVOR"* bullet for **75 days**, and on 2026-08-30 the 1610Z filing *raised* the prior on it — reasoning from Supabase's success to Cloudflare's likely success, which is the exact inference this record already contradicted.
+
+🚨 **So the durable rule is wider than the recorded one.** The store's existing lesson is *grep memory before publishing a MEASUREMENT* ([[grep-the-memory-store-before-publishing-a-measurement]]). This case says: **grep it before OPENING an item, before RAISING a prior on one, and before doing the operator work — the cheapest possible refutation is a store that already ran the experiment on a sibling upstream.**
+
+⭐ **The 46/46 was still worth doing.** The June note said *"almost certainly"* and reasoned by analogy from a different WAF; #20 could not be closed on that. But it should have been carried as **"likely dead, one probe to confirm"** — a five-minute task — rather than as a blocking operator item behind an absent human for two and a half months. ⚠ **The cost of a hedged prediction filed as a maybe is that it reads as unknown.**
