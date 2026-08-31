@@ -166,3 +166,24 @@ silencing, because it comes back.
 ⭐ **The lesson for me, plainly: I diagnosed an instrument's intent from its behaviour instead of
 reading the register entry that commissioned it.** CLAUDE.md's *"a filed FINDING is a hypothesis"*
 applies to findings I file too, and #25 was one grep away the whole time.
+
+### ⚠ Addendum — the escape hatch that already exists, and is currently UNUSED
+
+`sentinel_threshold_config` (`check_name, warn_at, crit_at, enabled`) is read by the route, and
+**`enabled = false` forces a check to `ok` after evaluation**. That is the lever a session under
+pressure will reach for, and it is **worse than the threshold change this filing already warns
+against**: it is a *permanent* silencer carrying **no reason and no expiry**, so a check switched off
+this way is indistinguishable from one that never existed.
+
+📏 **Measured 2026-08-31 10:2xZ — nothing is silenced today.** All six rows are `enabled = true`
+(`Edition Coverage`, `FMV Confidence (canonical TS)`, `FMV Freshness`, `Sales Ingest (2h)`,
+`Sniper Feed`, `TS Edition Writer Leak (48h)`), and **`Detector Health (GitHub Actions)` has no row at
+all**, so it runs on its hardcoded 3 / 7. ⭐ Recorded as a **negative**: the temptation is live and has
+not been taken, and this line is what makes it visible if it ever is.
+
+👉 **This is also why the revised recommendation is an ACK and not `enabled=false`.** The ack the
+sentinel needs is the shape it already uses for pipelines — `reason` + `expires_at`, downgrading
+`critical` → `warn` rather than to `ok`, with the reason rendered in the detail. **Implementing that
+means two nullable columns on this table plus a small route change; it is specified, not started.**
+⛔ **And the DECISION to ack this particular red is Trevor's, not a night pass's** — building the
+mechanism and using it are separate acts, and only the first is safe to do unattended.
