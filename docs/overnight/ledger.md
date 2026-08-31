@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED to main, ⛔ DELIBERATELY NOT DEPLOYED — `compute-topshot-pack-ev` stops reporting `ok:true` through a total upstream failure
+
+**Repo only. No prod change: the function is NOT redeployed, and it is currently PAUSED.**
+
+Pays the *"⚠ Owed regardless"* item from inbox `2026-08-30T0230Z`: the `fetched.length === 0` branch
+logged a **hardcoded `ok: true`**, so during the 08-28 `public-api.nbatopshot.com` 530 outage
+**1,216 of 1,333 ticks reported green while writing zero rows**, every one carrying
+`gql_errors == nodes_processed`. RPC's top defect class — a bounded scan reporting ok.
+
+**The fix keeps the two causes apart**, which is the whole point: `fetched.length === 0` means either
+*nothing to do* (no targets, or every node legitimately had no listing → still `ok:true`) or *every
+fetch failed* (→ `ok:false` + `error: all_gql_fetches_failed: N/M nodes`). Only
+`nodes_processed > 0 && gql_errors >= nodes_processed` flips it, so an idle tick stays green.
+
+⛔ **NOT DEPLOYED, for two independent reasons — do not "just deploy it":**
+1. **The pipeline is already paused and suppressed.** `pipeline_runs` shows **no tick since
+   2026-08-30 03:00Z (~21 h)**, and `pipeline_alert_suppression` carries it to **2026-09-13**
+   ("dead host … schedules paused, cron-job.org 7526594/7617630/7658302, pg_cron 16"). The defect is
+   **dormant**: there are no ticks to mislabel, so deploying buys nothing today.
+2. **This function is in the edge-fn-drift tier-1 class** — it imports `@supabase/supabase-js` by
+   **bare specifier** while the deployed build has `import_map:false`, i.e. repo and deployed
+   genuinely differ. Deploying would need `deno.json` in `files` **and** `import_map_path`, and would
+   ship every other accumulated repo change with it — the "deploy just my one-line change" trap.
+
+👉 **Deploy this WITH the un-pause**, whenever the Atlas migration restores a Top Shot source — at
+that moment the honest flag is exactly what tells you whether the restored pipeline is working.
+
+ⓘ Verified: `npx tsc --noEmit` clean for this file, and the **full suite 1417/1417 files /
+15,622 tests** green, including all 8 files that touch this function.
+
+⚠ **A local red that was NOT real, recorded so the next session does not chase it:**
+`edge-fn-drift-checker.test.ts` failed here with `Cannot find package '@deno/eszip'`. That is
+**tonight's new dependency against a stale `node_modules`, not a red main** — it is declared in
+`package.json` (and 4× in the lock); `npm ci` fixed it and the file went 43/43 with the lock
+unchanged. CLAUDE.md's "run `npm ci` first in a fresh sandbox" applies to a LONG-RUNNING session too,
+the moment another session adds a dependency.
+
+**Revert path:** `git revert` this commit. Nothing to undo in prod — it was never deployed.
+
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831004414`, applied + committed) — refresh-error-triage was timing out on the storm's own 193 KB error bodies; classification now reads the head, proven equivalent on all 459 live signatures
 
 **Prod change:** `refresh_error_triage()` classifies `LEFT(error, 1500)` instead of the full error (both legs; sample_error
