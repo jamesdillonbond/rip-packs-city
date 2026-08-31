@@ -25,6 +25,14 @@ Mid-flight evidence this is safe: 411 `idx_wmc_coll_ek_serial_cover` **34.4 s �
 backends, 0 lock waiters, 0 invalid indexes); the 08-30 failures were a daytime-concurrency artifact, not a
 size problem. **Falsifier:** if 415 leaves an `*_ccnew`, the verify reports it and the close-out drops it.
 
+✅ **OUTCOME (03:45Z, all four rebuilt, verify can now pass):** 413 `wallet_moments_cache_wallet_collection_moment_key`
+**32.5 s, 48.23% → 90.26%, 313 → 165 MB**; 415 `idx_wmc_cohort_cover` **33.3 s, 54.16% → 90.31%, 243 → 146 MB**.
+Final densities **90.31 / 82.04 / 87.00 / 90.26** — every target clear of the 60% gate, **zero invalid indexes**, 0–1 active
+backends throughout, **~237 MB of index bloat reclaimed** across the four. The 313 MB unique key — the biggest and the
+most fragmented (48.91%) — rebuilt in 32.5 s, which settles the 08-30 failures as **daytime concurrency, not size**:
+book wmc index maintenance in the 02:00–04:00Z band and 600 s is ample. Remaining unattended and self-executing:
+410 closes the budget to 600 s at 04:03Z, 414 verifies and unschedules every `tmp-reindex-wmc-%` job (415 included) at 04:06Z.
+
 **📏 The live leaderboard is not the 19-day leaderboard.** Ranking `pg_stat_statements` by disk reads still
 names `panini_squeeze_board` at **374 GB / 16,677 calls / 1,496 ms mean** — but the board reads an MV since
 `20260822222254`/`20260823220555`, and EXPLAIN today is **5 ms / 290 buffers, all hit**. The aggregate straddles
