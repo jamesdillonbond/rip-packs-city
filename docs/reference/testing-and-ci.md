@@ -1098,6 +1098,43 @@ its BODY makes it call itself and blow the stack. **Remove the wrapper; do not d
 after two genuine reds, which is precisely the context that makes a third feel confirmed. **Read the
 failure, not the count.**
 
+⛔⛔ **HOW to verify a strip actually happened — content inequality, NEVER length (2026-08-30).**
+CLAUDE.md warns *"using it is not a guarantee it stripped — blind THREE times"* but has never said how
+to check, and **the obvious check is structurally broken**:
+
+```js
+if (out.length !== raw.length) { /* stripped */ }   // ⛔ ALWAYS FALSE
+```
+
+`stripComments` **blanks comments IN PLACE with spaces** — it preserves byte offsets deliberately, so
+line/column numbers still line up with the original source. **Length is identical by design.** Proven in
+one line: `"const a=1 // x
+const b=2"` → `"const a=1      
+const b=2"`, same length.
+
+A length-based verifier therefore reports "strip failed" for **every file that HAS comments** — the exact
+inverse of the truth — and it fails **silently in the safe-looking direction**: the sweep skips those files
+and returns a confident zero. Measured on an ad-hoc empty-state-copy sweep the same day: it declared
+**211 of 219** client `.tsx` files unstrippable, scanned almost nothing, and reported **0 hits**, which
+reads as a clean codebase. The real run found 9 candidates.
+
+**The correct check, and report both arms so a no-op run is visible:**
+```js
+const out = stripComments(raw)
+const proved = out !== raw     // ✅ comments existed AND were blanked
+// else: file genuinely had no comments — count it SEPARATELY, never as success
+```
+
+⭐ **And prove it against a known offender first** — four one-line cases take seconds and would have caught
+this immediately: a line comment (must blank), a block comment (must blank), a `https://` URL (must
+SURVIVE — it contains `//`), and a JSX string (must survive). This is the same
+*"prove a scripted guard against a known offender"* rule the repo already carries, applied to the
+stripper itself rather than to the guard using it.
+
+ⓘ **Audited 2026-08-30: no committed guard in `__tests__/` or `scripts/` uses a length-based strip
+verification**, so nothing here is currently vacuous from this cause. It is a trap for the next person who
+follows the "verify it stripped" advice — which is why it is written down rather than left as a near miss.
+
 ## A fixture that BATCHES what production STAGGERS can silently disarm the assertion (2026-08-22)
 
 ⚠ **Found by mutation testing, invisible to review.** `supabase/tests/backfill_pinnacle_trade_acquisitions.sql` exists to catch exactly one regression: copying the sibling `backfill_pinnacle_mint_acquisitions`'s `nft_id`-scoped `NOT EXISTS` gate onto the trade path. The mint needs that gate (a mint is a Pin's FIRST acquisition); the trade path must not have it (a Pin trades many times), and the two functions sit side by side and are near-identical, so "make them consistent" is the tempting wrong edit. **Applying that exact mutation left the test GREEN.**
