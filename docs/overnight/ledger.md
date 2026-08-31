@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (one cron job, self-cleaning) + 📏 MEASURED — the reindex wave could not satisfy its own exit criterion, and the night's #1 live DB consumer turns out to be healthy-by-design
+
+**The wave was booked one index short.** `run_wmc_reindex_verify()` gates on **four** indexes at ≥60% leaf
+density, but tonight's jobs 411/412/413 covered only three. The fourth, `idx_wmc_cohort_cover`, was never
+successfully reindexed: jobid **397 timed out at 600 s on 08-30 08:09Z** (daytime writes), and it sat at
+**54.76% density / 30.07% fragmentation, 243 MB**. The 04:06Z verify was therefore destined to report
+`ok=false` and then tear down every `tmp-reindex-wmc-%` job, stranding that index until another night's window.
+Booked **jobid 415 `tmp-reindex-wmc-5`** (cron_heavy, `43 3 * * *`, `REINDEX INDEX CONCURRENTLY
+public.idx_wmc_cohort_cover`) inside the still-open 1800 s budget. It deliberately matches 414's
+`tmp-reindex-wmc-%` + `username = current_user` cleanup pattern, so it **removes itself** at 04:06Z with the rest.
+Mid-flight evidence this is safe: 411 `idx_wmc_coll_ek_serial_cover` **34.4 s → 83.86%**, 412
+`idx_wmc_moment_collection_cover` **49.9 s → 89.26%**, both far inside budget at a quiet hour (0 active
+backends, 0 lock waiters, 0 invalid indexes); the 08-30 failures were a daytime-concurrency artifact, not a
+size problem. **Falsifier:** if 415 leaves an `*_ccnew`, the verify reports it and the close-out drops it.
+
+**📏 The live leaderboard is not the 19-day leaderboard.** Ranking `pg_stat_statements` by disk reads still
+names `panini_squeeze_board` at **374 GB / 16,677 calls / 1,496 ms mean** — but the board reads an MV since
+`20260822222254`/`20260823220555`, and EXPLAIN today is **5 ms / 290 buffers, all hit**. The aggregate straddles
+the 08-12 reset and the 08-22 fix, so it reports a cost that no longer exists. ⭐ **The instrument that does not
+lie already exists**: `audit_20260830_pgss_snap` (2-hourly snapshots, built 08-30). Diffing live pgss against
+the newest snapshot gives a true ~2 h leaderboard, and it is a different list: `refresh_wmc_fmv_drift_active`
+**417 s / 6.1 GB / 25 calls**, then `query_sql` (the sentinel's own probes, by design), then the wmc paging and
+`backfill_wmc_metadata_from_editions` legs.
+
+**📏 `refresh_wmc_fmv_drift_active` is NOT a defect — it is duty-cycle-limited, and it is winning.** First
+readings looked alarming: cutoff **3.6 hours** behind with **12,939 pending editions**, and two consecutive
+reads showed the cutoff frozen. Both impressions were wrong, and the reason is worth keeping: the container
+clock ran ~10 minutes ahead of the DB, so "two readings minutes apart" were really ~60 s apart and straddled no
+run. Measured against DB time: one run advances the cutoff **+7.66 minutes of backlog** (23:28:13 → 23:35:54)
+in ~65 s, the caller fires roughly **every 5 minutes**, and the 08-20Z FMV sweep is producing **~4,250
+editions/hour**. So each cycle drains ~468 editions against ~354 arriving — **net positive, ~1.3×**, and the
+08-28 materialized-CTE fix holds (the temp-table build is **17 ms / 812 buffers**, not the cost). The drain does
+15 s of work per 300 s of wall clock; the 3.6-hour staleness is that **95% idle duty cycle**, not slow SQL.
+⛔ **Not changed here on purpose**: the 5-minute cadence and 25-edition chunk were sized for saturation
+(`20260812233257`), a prior pass measured this family at a tenth of the instance, and tonight's reindex wave is
+holding the budget — raising the duty cycle is a freshness-vs-instance-load trade for Trevor, not a night-pass
+edit. **Falsifier if revisited:** read `rwfd_state.last_cutoff` twice against **`now()` from the DB**, never a
+container clock, and compare the advance to the gap between calls.
+
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831004852`, applied + committed) — the 193 KB error bodies are now stopped at the door: a BEFORE INSERT trigger truncates `pipeline_runs.error` at 8,000 chars, because the writer fix could NOT be a code handoff after all
 
 Supersedes the previous entry's "writer-side fix needs a code handoff" line: `log_pipeline_run` is not the only writer —
