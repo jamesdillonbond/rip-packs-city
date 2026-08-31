@@ -179,7 +179,16 @@ WARM tick.** ⚠ **Self-correction, same session, ~30 min later: I wrote "and is
 three most recent pre-fix ticks. Widening the window by one shows a pre-fix tick of **3.07 s** at 09:29Z, so
 the pre-fix range is 2.08–3.07 s and the post-fix 3.01 s sits INSIDE it — not slower, just unchanged.**
 ⭐ Quoting a range from the three nearest points is a selection, and it happened to make my own change look
-worse; the same shortcut in the other direction is how a fix gets over-claimed. That is consistent, not contradictory: the job is **bimodal**
+worse; the same shortcut in the other direction is how a fix gets over-claimed.
+
+✅ **SECOND post-fix tick, 14:29Z: 0.97 s — below the ENTIRE pre-fix range (2.08–3.07 s over 6 ticks).**
+And it explains the first: `CREATE OR REPLACE` invalidates a plpgsql function's cached plans, so the 3.01 s
+tick at 13:29Z paid re-planning and **0.97 s is the steady state** — consistent with the 560 ms function-level
+measurement plus insert overhead. ⚠ **Still n = 2, and still not the claim**: the fix was argued to target the
+COLD/contended tail (60 kills at the 120 s wall in 14 days), and confirming THAT needs a bad IO band. But the
+warm path is now measurably better rather than merely not-worse, which is more than the first tick supported.
+⭐ Worth carrying: **the first tick after a `CREATE OR REPLACE` is a re-planning tick — do not read it as the
+new steady state, in either direction.** That is consistent, not contradictory: the job is **bimodal**
 (usually ~2 s, 60 kills at the 120 s wall in 14 days) and this targets the **cold/contended tail**.
 👉 **Confirming it needs a bad IO band, not one tick** — watch bucket 2 (the 120.0–122.6 s population)
 over a week; if 120 s kills persist at the old rate the fence did not reach the failing case.
